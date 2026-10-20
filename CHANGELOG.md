@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.10] - 2026-10-20
+
+> Autoscaling: containers follow the load, without a redeploy.
+
+### Upgrade notes
+
+- **One additive migration (0088: a nullable `services.autoscale` column), nothing to turn on, nothing that worked is refused.** Every existing service keeps running `replicas` containers. The autoscaler looks only at services with an autoscale configuration, and its windows are held in memory, so they restart after a panel restart.
+
+### Added
+
+- **Autoscaling** for docker services on the panel host. Set it with `autoscale` on `PATCH /v1/services/:id`:
+  - `minReplicas` 1–10, default 1, and `maxReplicas` up to 10;
+  - `metric`: `cpu` (percent of the CPU limit, or of one core), `memory` (percent of the memory limit) or `rps` (requests per second per container, from traffic analytics);
+  - `target`, the value per container to keep near;
+  - `scaleUpSeconds` (default 60) and `scaleDownSeconds` (default 300).
+
+  Every 30 s the needed count is the current count times value ÷ target, with a 10 % tolerance. Scaling up waits the up window and takes the smallest count asked for in it; scaling down waits the down window and takes the largest. Each deploy creates every container up to the maximum and stops the spares. Scaling starts a spare and routes it after it passes the healthcheck, or routes containers away and then stops them. Changes are audited as `service.autoscale`.
+- **Autoscale status.** `GET /v1/services/:id/autoscale` shows the containers serving, the last value, the count asked for, why it holds (a deploy or canary in progress, no traffic analytics for `rps`, a node or Swarm service, no spare yet) and the last change. The web app has an Autoscaling card in Settings (Replicas shows "managed by autoscaling") and a status card on the Overview. The CLI has `ninedeploy autoscale show|set|off`, and the SDK `client.services.autoscale`. See [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md).
+
+### Changed
+
+- **The runtime reconcile** revives only the containers of an autoscaled service that serve, never its stopped spares.
+
 ## [0.16.9] - 2026-10-20
 
 > Canary releases: a new version takes the traffic step by step, and backs out on its own.

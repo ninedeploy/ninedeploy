@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.10",
+    "date": "2026-10-20",
+    "title": "Autoscaling",
+    "changes": [
+      "Autoscaling (Service → Settings → Autoscaling): a docker service can run between a minimum and a maximum number of containers, set by load, without a redeploy. It scales on CPU, on memory, or on requests per second per container (with traffic analytics on).",
+      "It adds containers once the need has lasted the scale-up window (default 60 s), and removes them once it has lasted the scale-down window (default 300 s). A new container gets traffic only after it passes the healthcheck. Each change shows in the activity log with the reason.",
+      "The service's Overview shows the containers serving, the metric against its target, and the last change. The CLI has ninedeploy autoscale show|set|off, and the SDK client.services.autoscale.",
+      "Nothing changes until you turn it on, and it applies fully at the next deploy, which creates the spare containers. It holds during a deploy or a canary, and for services on a node or on Swarm."
+    ]
+  },
+  {
     "version": "0.16.9",
     "date": "2026-10-20",
     "title": "Canary releases",
