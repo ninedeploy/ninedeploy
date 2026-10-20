@@ -618,9 +618,29 @@ export const triggerDeploy = z.object({
 });
 export type TriggerDeploy = z.infer<typeof triggerDeploy>;
 
+/**
+ * Every deployment status. `awaiting_approval` (0.16.13) appears only on a
+ * deploy into a lane that requires approval: it is not running, not
+ * finished, and never claimed by the worker until an admin approves it.
+ */
+export const DEPLOYMENT_STATUSES = [
+  'queued',
+  'building',
+  'deploying',
+  'running',
+  'superseded',
+  'failed',
+  'cancelled',
+  'awaiting_approval',
+] as const;
+export type DeploymentStatus = (typeof DEPLOYMENT_STATUSES)[number];
+
+/** A deploy that has ended: nothing will happen to it on its own any more. */
+export const FINISHED_DEPLOYMENT_STATUSES = ['running', 'superseded', 'failed', 'cancelled'] as const;
+
 export const deployment = z.object({
   id: z.number().int(),
-  status: z.enum(['queued', 'building', 'deploying', 'running', 'superseded', 'failed', 'cancelled']),
+  status: z.enum(DEPLOYMENT_STATUSES),
   commitSha: z.string().nullable(),
   message: z.string().nullable(),
   author: z.string().nullable(),
@@ -628,6 +648,9 @@ export const deployment = z.object({
   startedAt: z.string().datetime().nullable(),
   finishedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
+  /** 0.16.13: who approved or rejected a deploy that waited for approval, and when (absent on older panels; null when it never waited). */
+  reviewedBy: z.string().nullable().optional(),
+  reviewedAt: z.string().datetime().nullable().optional(),
 });
 export type Deployment = z.infer<typeof deployment>;
 
@@ -654,6 +677,29 @@ export const queueItem = z.object({
   createdAt: z.string().datetime(),
 });
 export type QueueItem = z.infer<typeof queueItem>;
+
+/** 0.16.13: one deploy waiting for approval (`GET /v1/services/approvals`). */
+export const approvalItem = z.object({
+  id: z.number().int(),
+  serviceId: z.number().int(),
+  serviceName: z.string(),
+  status: z.literal('awaiting_approval'),
+  commitSha: z.string().nullable(),
+  imageDigest: z.string().nullable(),
+  message: z.string().nullable(),
+  author: z.string().nullable(),
+  trigger: z.string(),
+  createdAt: z.string().datetime(),
+  /** True when this caller is an admin of the service's lane and may approve or reject it. */
+  mayReview: z.boolean(),
+});
+export type ApprovalItem = z.infer<typeof approvalItem>;
+
+export const approvalsResponse = z.object({
+  items: z.array(approvalItem),
+  count: z.number().int(),
+});
+export type ApprovalsResponse = z.infer<typeof approvalsResponse>;
 
 export const queueResponse = z.object({
   items: z.array(queueItem),
@@ -882,6 +928,8 @@ export const envVar = z.object({
   key: z.string(),
   value: z.string(),
   isSecret: z.boolean(),
+  /** 0.16.13: true when the service is in a protected lane and the caller is not its admin; `value` is then ''. */
+  hidden: z.boolean().optional(),
 });
 export type EnvVar = z.infer<typeof envVar>;
 

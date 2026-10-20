@@ -16,6 +16,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { searchLogs } from '../lib/logSearch.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
 import { badRequest, notFound } from '../lib/errors.js';
+import { assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 
 const searchBody = z.object({
   query: z.string().min(1).max(500),
@@ -51,6 +52,7 @@ export const logSearchRoutes: FastifyPluginAsync = async (app) => {
     if (body.data.serviceId !== undefined) {
       const svc = await loadServiceForUser(app.db, body.data.serviceId, req.user!);
       await assertServiceRole(app.db, svc, req.user!, 'member');
+      await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'logs'); // 0.16.13
       serviceCreatedAt = svc.createdAt instanceof Date ? svc.createdAt : null;
     }
     let since = body.data.sinceMinutes !== undefined

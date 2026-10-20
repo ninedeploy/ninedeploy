@@ -15,6 +15,8 @@ interface EnvEntry {
   key: string;
   value: string;
   isSecret: boolean;
+  /** 0.16.13: a protected lane's value, kept from this caller (`value` is ''). */
+  hidden?: boolean;
 }
 
 /**
@@ -195,6 +197,11 @@ export function EnvCard({
               delivers REAL newlines — the old warning (values arriving as a
               literal \n) is resolved on panels ≥0.10.21. The hint stays for
               older panels: the dashboard may be newer than its server. */}
+          {(env.data ?? []).some((v) => v.hidden) && (
+            <p className="w-full text-[11px] leading-relaxed text-violet-300/80">
+              This service is in a protected lane: its values are for workspace admins. You can still set new values.
+            </p>
+          )}
           {literalNewlines &&
             (value.includes('\n') ||
               Object.values(drafts).some((d) => d.includes('\n')) ||
@@ -208,7 +215,7 @@ export function EnvCard({
               type="button"
               onClick={() => {
                 const content = `${(env.data ?? [])
-                  .filter((v) => !v.isSecret)
+                  .filter((v) => !v.isSecret && !v.hidden)
                   .map((v) => `${v.key}=${v.value}`)
                   .join('\n')}\n`;
                 // downloadBlob delays the URL revoke — a synchronous revoke
@@ -354,8 +361,8 @@ export function EnvCard({
                         </div>
                         <Input
                           value={dirty ? draft : v.value}
-                          type={v.isSecret ? 'password' : 'text'}
-                          placeholder={v.isSecret ? '•••• hidden' : ''}
+                          type={v.isSecret || v.hidden ? 'password' : 'text'}
+                          placeholder={v.isSecret ? '•••• hidden' : v.hidden ? '•••• protected lane' : ''}
                           onChange={(e) => setDrafts((d) => ({ ...d, [v.id]: e.target.value }))}
                           className="h-7 min-w-0 flex-1 font-mono text-[11px]"
                         />

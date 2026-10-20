@@ -13,6 +13,7 @@ import type {
   LabelPatchInput,
   Environment,
   EnvironmentCreateInput,
+  EnvironmentPatchInput,
   ProjectEntry,
   ProjectPatchInput,
   Service,
@@ -205,6 +206,12 @@ export interface ServicesApi {
     list: () => Promise<Environment[]>;
     create: (input: EnvironmentCreateInput) => Promise<Environment>;
     rename: (id: number, name: string) => Promise<Environment>;
+    /**
+     * 0.16.13: rename a lane and/or switch `protected` (variable values, logs
+     * and shells for workspace admins only) and `requireApproval` (each deploy
+     * waits for an admin). The two switches need an admin seat.
+     */
+    update: (id: number, input: EnvironmentPatchInput) => Promise<Environment>;
     remove: (id: number) => Promise<{ ok: boolean }>;
   };
   serviceTags: {
@@ -317,6 +324,7 @@ export function servicesApi(t: Transport): ServicesApi {
       list: () => get<Environment[]>('/v1/environments'),
       create: (input) => send<Environment>('POST', '/v1/environments', input),
       rename: (id, name) => send<Environment>('PATCH', `/v1/environments/${id}`, { name }),
+      update: (id, input) => send<Environment>('PATCH', `/v1/environments/${id}`, input),
       remove: (id) => send<{ ok: boolean }>('DELETE', `/v1/environments/${id}`),
     },
     serviceTags: {

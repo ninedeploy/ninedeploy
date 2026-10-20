@@ -14,6 +14,14 @@ export const deploysSpecs: RouteSpecMap = {
     queryType: '{ status?: string }',
     validation: 'handler',
   },
+  'GET /v1/services/approvals': {
+    summary: 'Every deployment waiting for approval the caller can see',
+    description:
+      "0.16.13. Deploys into a lane that requires approval wait as `awaiting_approval` until an admin of the lane approves or rejects them. Oldest first; `mayReview` says whether this caller may decide. Kept out of `/queue`, whose status set older clients parse strictly.",
+    tag: 'deploys',
+    floor: 'authed',
+    responseType: 'ApprovalsResponse',
+  },
   'GET /v1/services/:id/deploys': {
     summary: "List a service's deployments",
     tag: 'deploys',
@@ -182,6 +190,22 @@ export const deploysSpecs: RouteSpecMap = {
     tag: 'deploys',
     floor: 'viewer',
     responseType: 'CanaryStatusView',
+  },
+  'POST /v1/services/:id/deploys/:depId/approve': {
+    summary: 'Approve a deployment waiting for approval',
+    description:
+      "0.16.13. `awaiting_approval` → `queued`; the worker then builds it as usual. Needs an admin of the service's lane: an admin or owner seat in the lane's workspace, an admin grant, or an operator (being the service's creator is not enough). `400 not_awaiting_approval` for a deploy that is not waiting. Still works after the lane's switch is turned off.",
+    tag: 'deploys',
+    floor: 'admin',
+    responseType: "{ ok: true; status: 'queued' }",
+  },
+  'POST /v1/services/:id/deploys/:depId/reject': {
+    summary: 'Reject a deployment waiting for approval',
+    description:
+      "0.16.13. `awaiting_approval` → `cancelled`; it will not run. Same rules as approve. The deploy's author can instead withdraw it with the cancel route.",
+    tag: 'deploys',
+    floor: 'admin',
+    responseType: "{ ok: true; status: 'cancelled' }",
   },
   'POST /v1/services/:id/deploys/:depId/canary/promote': {
     summary: 'Promote a canary: switch all traffic to the new release now',

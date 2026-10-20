@@ -2,6 +2,7 @@ import { and, DrizzleQueryError, eq, sql } from 'drizzle-orm';
 import { deployments, type DB } from '@ninedeploy/db';
 import { badRequest } from './errors.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
+import { approvalStamp } from './protectedLanes.js';
 import type { AuthedUser } from './resourceAccess.js';
 
 /**
@@ -27,6 +28,10 @@ export interface EnqueueTarget {
   id: number;
   type: string;
   dockerSocket?: boolean | null;
+  /** 0.16.13: with the lane, lets an admin's deploy into an approval-gated lane start approved. */
+  ownerUserId?: number | null;
+  environmentId?: number | null;
+  previewParentServiceId?: number | null;
 }
 
 /**
@@ -63,9 +68,28 @@ export async function enqueueUserDeploy(
   user: AuthedUser,
   service: EnqueueTarget,
   values: { message: string; commitSha?: string | null; imageDigest?: string | null },
-  opts: { subject?: string } = {},
+  opts: { subject?: string; selfApproval?: boolean } = {},
 ): Promise<number> {
   await assertMayEnqueueDeploy(db, user, service, opts);
+  // 0.16.13: an admin starting a deploy into an approval-gated lane approves
+  // it by doing so. Anyone else's waits: the worker holds it at claim time.
+  // `selfApproval: false` is for a caller acting on someone's stored
+  // authority (a deploy hook URL): whoever holds the URL is not that admin.
+  const review =
+    opts.selfApproval !== false &&
+    service.ownerUserId !== undefined &&
+    (service.environmentId != null || service.previewParentServiceId != null)
+      ? await approvalStamp(
+          db,
+          {
+            id: service.id,
+            ownerUserId: service.ownerUserId,
+            environmentId: service.environmentId,
+            previewParentServiceId: service.previewParentServiceId,
+          },
+          user,
+        )
+      : {};
   const [dep] = await db
     .insert(deployments)
     .values({
@@ -78,6 +102,7 @@ export async function enqueueUserDeploy(
       message: values.message,
       ...(values.commitSha !== undefined ? { commitSha: values.commitSha } : {}),
       ...(values.imageDigest !== undefined ? { imageDigest: values.imageDigest } : {}),
+      ...review,
     })
     .returning({ id: deployments.id })
     .catch((err: unknown) => {

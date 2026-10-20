@@ -969,6 +969,92 @@ async function sleepChecks(token, serviceId, hostname) {
   if (off.status !== 200 || off.json?.sleepAfterMinutes !== null) fail(`sleep off answered ${off.status}`);
 }
 
+// 0.16.13: protected lanes and deploy approvals, end to end. A lane with
+// both switches on; a guest holding a member grant on it sees the service's
+// variable names but not their values, is refused its logs, and its deploy
+// waits; the operator approves it and it builds. A signed webhook push waits
+// too and is rejected. Everything is switched back off and removed after.
+const APPROVALS_IN = [0, 16, 13];
+async function waitStatus(token, serviceId, depId, wanted, ms) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const all = (await api(`/v1/services/${serviceId}/deploys`, { token })).json;
+    const d = (Array.isArray(all) ? all : (all?.deploys ?? [])).find((x) => x.id === depId);
+    if (d?.status === wanted) return d;
+    if (Date.now() > end) fail(`deploy #${depId} is '${d?.status ?? 'missing'}' after ${ms / 1000} s (wanted '${wanted}')`);
+    await sleep(1000);
+  }
+}
+async function approvalChecks(token, serviceId, hook) {
+  const svcPath = `/v1/services/${serviceId}`;
+  const tags = (await api(`${svcPath}/tags`, { token })).json;
+  const workspaceId = tags?.workspaces?.[0]?.id ?? (await api('/v1/workspaces', { token })).json?.[0]?.id;
+  if (!workspaceId) fail('no workspace to make a lane in');
+  const created = await api('/v1/environments', { method: 'POST', token, body: { workspaceId, name: `journey-prod-${suffix}` } });
+  if (created.status !== 200 || created.json?.protected !== false || created.json.requireApproval !== false) {
+    fail(`a new lane should start with both switches off: ${created.status} ${created.text.slice(0, 200)}`);
+  }
+  const laneId = created.json.id;
+  const on = await api(`/v1/environments/${laneId}`, { method: 'PATCH', token, body: { protected: true, requireApproval: true } });
+  if (on.status !== 200 || on.json?.protected !== true || on.json.requireApproval !== true) fail(`lane switches: ${on.status} ${on.text.slice(0, 200)}`);
+  const moved = await api(svcPath, { method: 'PATCH', token, body: { environmentId: laneId } });
+  if (moved.status !== 200) fail(`moving the service into the lane answered ${moved.status} ${moved.text.slice(0, 200)}`);
+  const envKey = await api(`${svcPath}/env`, { method: 'POST', token, body: { key: 'JOURNEY_LANE_SECRET', value: `v-${suffix}` } });
+  if (envKey.status !== 200 && envKey.status !== 201) fail(`env create answered ${envKey.status}`);
+
+  const guest = await createGuest(token, 'lane');
+  const grant = await api(`/v1/workspaces/${workspaceId}/access-grants`, { method: 'POST', token, body: { userId: guest.id, environmentId: laneId, role: 'member' } });
+  if (grant.status !== 201) fail(`member grant on the lane answered ${grant.status} ${grant.text.slice(0, 200)}`);
+  const seen = (await api(`${svcPath}/env`, { token: guest.token })).json;
+  const row = Array.isArray(seen) ? seen.find((e) => e.key === 'JOURNEY_LANE_SECRET') : null;
+  if (!row || row.value !== '' || row.hidden !== true) fail(`the member should see the name, not the value: ${JSON.stringify(row)}`);
+  const logs = await api(`${svcPath}/logs?tail=5`, { token: guest.token });
+  if (logs.status !== 403 || errorCode(logs) !== 'protected_lane') fail(`the member read runtime logs: ${logs.status} ${logs.text.slice(0, 200)}`);
+  const leave = await api(svcPath, { method: 'PATCH', token: guest.token, body: { environmentId: null } });
+  if (leave.status !== 403 || errorCode(leave) !== 'protected_lane') fail(`the member moved the service out of the lane: ${leave.status} ${leave.text.slice(0, 200)}`);
+  step('protected lane: a member sees variable names with values hidden, is refused runtime logs (403 protected_lane) and cannot move the service out');
+
+  const asked = await api(`${svcPath}/deploys`, { method: 'POST', token: guest.token });
+  const askedId = asked.json?.deploymentId;
+  if (!askedId) fail(`the member's deploy answered ${asked.status} ${asked.text.slice(0, 200)}`);
+  await waitStatus(token, serviceId, askedId, 'awaiting_approval', 30_000);
+  const selfApprove = await api(`${svcPath}/deploys/${askedId}/approve`, { method: 'POST', token: guest.token });
+  if (selfApprove.status !== 403) fail(`the member approved their own deploy: ${selfApprove.status}`);
+  const waiting = (await api('/v1/services/approvals', { token })).json;
+  if (!waiting?.items?.some((i) => i.id === askedId && i.mayReview === true)) fail(`GET /v1/services/approvals: ${JSON.stringify(waiting).slice(0, 300)}`);
+  const ok = await api(`${svcPath}/deploys/${askedId}/approve`, { method: 'POST', token });
+  if (ok.status !== 200 || ok.json?.status !== 'queued') fail(`approve answered ${ok.status} ${ok.text.slice(0, 200)}`);
+  const built = await deployEnded(token, serviceId, askedId, 300_000);
+  if (built !== 'running') fail(`the approved deploy ended '${built}'`);
+  const reviewed = ((await api(`${svcPath}/deploys`, { token })).json ?? []).find((d) => d.id === askedId);
+  if (!reviewed?.reviewedBy || !reviewed.reviewedAt) fail(`the approved deploy carries no reviewer: ${JSON.stringify(reviewed)}`);
+  step(`deploy approvals: the member's deploy #${askedId} waited, their own approve was refused (403), the operator's approve built it (running, reviewed by ${reviewed.reviewedBy})`);
+
+  const body = JSON.stringify({ ref: 'refs/heads/main', after: randomBytes(20).toString('hex'), repository: { full_name: 'journey/repo' } });
+  const sig = `sha256=${createHmac('sha256', hook.secret).update(body).digest('hex')}`;
+  const push = await fetch(`http://127.0.0.1:${PANEL_PORT}${hook.url}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': sig },
+    body,
+  });
+  const pushed = await push.json().catch(() => null);
+  if (push.status !== 200 || !pushed?.deploymentId) fail(`signed push into the gated lane answered ${push.status} ${JSON.stringify(pushed)}`);
+  await waitStatus(token, serviceId, pushed.deploymentId, 'awaiting_approval', 30_000);
+  const no = await api(`${svcPath}/deploys/${pushed.deploymentId}/reject`, { method: 'POST', token });
+  if (no.status !== 200 || no.json?.status !== 'cancelled') fail(`reject answered ${no.status} ${no.text.slice(0, 200)}`);
+  await waitStatus(token, serviceId, pushed.deploymentId, 'cancelled', 10_000);
+  step(`deploy approvals: a signed webhook push waited (#${pushed.deploymentId}) and the reject cancelled it`);
+
+  await api(`/v1/workspaces/${workspaceId}/access-grants/${grant.json.id}`, { method: 'DELETE', token });
+  await api(`${svcPath}/env/${envKey.json.id}`, { method: 'DELETE', token });
+  const off = await api(`/v1/environments/${laneId}`, { method: 'PATCH', token, body: { protected: false, requireApproval: false } });
+  if (off.status !== 200 || off.json?.protected !== false || off.json.requireApproval !== false) fail(`lane switches off: ${off.status}`);
+  const out = await api(svcPath, { method: 'PATCH', token, body: { environmentId: null } });
+  if (out.status !== 200) fail(`moving the service out of the lane answered ${out.status}`);
+  const gone = await api(`/v1/environments/${laneId}`, { method: 'DELETE', token });
+  if (gone.status !== 200) fail(`lane delete answered ${gone.status}`);
+}
+
 async function pinHostKeyChecks(token, password) {
   const key = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
   const created = await api('/v1/sources', { method: 'POST', token, body: { name: `pin-${suffix}`, type: 'github', deployKey: key } });
@@ -1585,6 +1671,7 @@ async function main() {
     if (!olderThan(String(health.version), CANARY_IN)) await canaryChecks(token, serviceId, `journey-${suffix}.test`);
     if (!olderThan(String(health.version), AUTOSCALE_IN)) await autoscaleChecks(token, serviceId, `journey-${suffix}.test`);
     if (!olderThan(String(health.version), SLEEP_IN)) await sleepChecks(token, serviceId, `journey-${suffix}.test`);
+    if (!olderThan(String(health.version), APPROVALS_IN)) await approvalChecks(token, serviceId, { url: hookUrl, secret: hookSecret });
   } else {
     step(`${health.version} predates operations and API (0.15): 0.15 checks skipped`);
   }
@@ -1601,7 +1688,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → autoscaling (≥0.16.10) → scale to zero (≥0.16.11) → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → autoscaling (≥0.16.10) → scale to zero (≥0.16.11) → protected lanes and deploy approvals (≥0.16.13) → teardown');
 }
 
 main()

@@ -15,6 +15,7 @@ import {
 import { badRequest, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { assertMayWriteVaultRefs, hasVaultRef } from '../lib/vault.js';
+import { assertMaySeeLaneSecrets, maySeeLaneSecrets } from '../lib/protectedLanes.js';
 
 /**
  * Parse a .env-formatted string into key/value pairs. Handles `export`
@@ -43,12 +44,18 @@ export function parseDotEnv(content: string): Array<{ key: string; value: string
   return out;
 }
 
-function serialize(e: Pick<typeof envVars.$inferSelect, 'id' | 'key' | 'valueEncrypted' | 'isSecret'>) {
+/**
+ * 0.16.13: `hidden` — the service is in a protected lane and the caller is
+ * not its admin. The value then reads '' like a secret's, and `hidden: true`
+ * says why; the variable can still be overwritten.
+ */
+function serialize(e: Pick<typeof envVars.$inferSelect, 'id' | 'key' | 'valueEncrypted' | 'isSecret'>, hidden = false) {
   return {
     id: e.id,
     key: e.key,
-    value: e.isSecret ? '' : decrypt(e.valueEncrypted),
+    value: e.isSecret || hidden ? '' : decrypt(e.valueEncrypted),
     isSecret: e.isSecret,
+    ...(hidden ? { hidden: true } : {}),
   };
 }
 
@@ -56,11 +63,15 @@ function serialize(e: Pick<typeof envVars.$inferSelect, 'id' | 'key' | 'valueEnc
 export const envRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
 
+  /** True when the caller must not read this service's variable values (lib/protectedLanes.ts). */
+  const hidden = async (svc: Parameters<typeof maySeeLaneSecrets>[1], user: AuthedUser): Promise<boolean> =>
+    !(await maySeeLaneSecrets(app.db, svc, user));
+
   app.get('/:id/env', async (req) => {
     const id = num((req.params as { id: string }).id);
-    await loadServiceForUser(app.db, id, req.user!);
+    const hide = await hidden(await loadServiceForUser(app.db, id, req.user!), req.user!);
     const rows = await app.db.query.envVars.findMany({ where: eq(envVars.serviceId, id), orderBy: (e, { asc }) => [asc(e.key)] });
-    return rows.map(serialize);
+    return rows.map((r) => serialize(r, hide));
   });
 
   app.post('/:id/env', async (req) => {
@@ -92,7 +103,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
         // r282: this replaces a (possibly secret) value exactly like PATCH
         // does, so it is audited the same way — key only, never the value.
         void audit(app.db, req.user!.id, 'env.update', `${svc.name}/${updated.key}`);
-        return serialize(updated);
+        return serialize(updated, await hidden(svc, req.user!));
       }
     }
     const [created] = await app.db
@@ -112,7 +123,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
       });
     if (!created) throw badRequest('Env var with that key already exists');
     void audit(app.db, req.user!.id, 'env.create', `${svc.name}/${created.key}`);
-    return serialize(created);
+    return serialize(created, await hidden(svc, req.user!));
   });
 
   app.patch('/:id/env/:varId', async (req) => {
@@ -135,7 +146,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
       .returning();
     if (!updated) throw notFound('Env var not found');
     void audit(app.db, req.user!.id, 'env.update', `${target.name}/${updated.key}`);
-    return serialize(updated);
+    return serialize(updated, await hidden(target, req.user!));
   });
 
   app.delete('/:id/env/:varId', async (req) => {
@@ -224,6 +235,9 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
     const id = num((req.params as { id: string }).id);
     const svc = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'admin');
+    // 0.16.13: the creator of a service is its admin; a protected lane's
+    // values are for the lane's admins only.
+    await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'variable values');
     const rows = await app.db.query.envVars.findMany({
       where: eq(envVars.serviceId, id),
       orderBy: (e, { asc }) => [asc(e.key)],
@@ -282,12 +296,12 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/:id/env/preview', async (req) => {
     const id = num((req.params as { id: string }).id);
-    await loadServiceForUser(app.db, id, req.user!);
+    const hide = await hidden(await loadServiceForUser(app.db, id, req.user!), req.user!);
     const rows = await app.db.query.previewEnvVars.findMany({
       where: eq(previewEnvVars.serviceId, id),
       orderBy: (e, { asc }) => [asc(e.key)],
     });
-    return rows.map(serialize);
+    return rows.map((r) => serialize(r, hide));
   });
 
   app.post('/:id/env/preview', async (req) => {
@@ -308,7 +322,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
         if (!updated) throw badRequest('Could not update existing env var');
         // Key only, never the value — same as the service env routes.
         void audit(app.db, req.user!.id, 'env.preview.update', `${svc.name}/${updated.key}`);
-        return serialize(updated);
+        return serialize(updated, await hidden(svc, req.user!));
       }
     }
     const [created] = await app.db
@@ -326,7 +340,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
       });
     if (!created) throw badRequest('Env var with that key already exists');
     void audit(app.db, req.user!.id, 'env.preview.create', `${svc.name}/${created.key}`);
-    return serialize(created);
+    return serialize(created, await hidden(svc, req.user!));
   });
 
   app.patch('/:id/env/preview/:varId', async (req) => {
@@ -348,7 +362,7 @@ export const envRoutes: FastifyPluginAsync = async (app) => {
       .returning();
     if (!updated) throw notFound('Env var not found');
     void audit(app.db, req.user!.id, 'env.preview.update', `${svc.name}/${updated.key}`);
-    return serialize(updated);
+    return serialize(updated, await hidden(svc, req.user!));
   });
 
   app.delete('/:id/env/preview/:varId', async (req) => {
@@ -380,7 +394,7 @@ export const projectEnvRoutes: FastifyPluginAsync = async (app) => {
       where: and(eq(envVars.scope, 'project'), eq(envVars.scopeKey, id)),
       orderBy: (e, { asc }) => [asc(e.key)],
     });
-    return rows.map(serialize);
+    return rows.map((r) => serialize(r));
   });
 
   app.post('/:id/env', async (req) => {

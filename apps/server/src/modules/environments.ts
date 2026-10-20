@@ -13,7 +13,8 @@ import { badRequest, isUniqueViolation, notFound, parseId } from '../lib/errors.
  *
  * RBAC mirrors projects and labels: reads need any seat in the workspace,
  * writes need `member`, deletion needs `admin` (detaching every service in
- * a lane is a structural change).
+ * a lane is a structural change). 0.16.13: the `protected` and
+ * `requireApproval` switches need `admin` too (lib/protectedLanes.ts).
  */
 
 // F641: trim BEFORE min(1) — the routes store the trimmed name, so a
@@ -25,6 +26,8 @@ const environmentCreate = z.object({
 
 const environmentPatch = z.object({
   name: z.string().trim().min(1).max(80).optional(),
+  protected: z.boolean().optional(),
+  requireApproval: z.boolean().optional(),
 });
 
 function serialize(row: typeof environments.$inferSelect, serviceCount: number) {
@@ -34,6 +37,8 @@ function serialize(row: typeof environments.$inferSelect, serviceCount: number) 
     name: row.name,
     slug: row.slug,
     serviceCount,
+    protected: row.protected,
+    requireApproval: row.requireApproval,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -111,19 +116,27 @@ export const environmentRoutes: FastifyPluginAsync = async (app) => {
     return serialize(row, 0);
   });
 
-  // Rename an environment (member floor on its workspace).
+  // Rename an environment (member floor on its workspace). 0.16.13: turning
+  // `protected` or `requireApproval` on or off needs `admin` — a member could
+  // otherwise lift the very gate that keeps the lane's secrets from them.
   app.patch('/:id', async (req) => {
     const id = parseId((req.params as { id: string }).id);
     const input = environmentPatch.parse(req.body);
     const user = req.user!;
     const row = await app.db.query.environments.findFirst({ where: eq(environments.id, id) });
     if (!row) throw notFound('Environment not found');
-    await assertEnvironmentRole(app.db, row.workspaceId, user, 'member');
+    const switches = input.protected !== undefined || input.requireApproval !== undefined;
+    await assertEnvironmentRole(app.db, row.workspaceId, user, switches ? 'admin' : 'member');
     let updated: typeof environments.$inferSelect | undefined;
     try {
       [updated] = await app.db
         .update(environments)
-        .set({ ...(input.name != null ? { name: input.name.trim() } : {}), updatedAt: new Date() })
+        .set({
+          ...(input.name != null ? { name: input.name.trim() } : {}),
+          ...(input.protected !== undefined ? { protected: input.protected } : {}),
+          ...(input.requireApproval !== undefined ? { requireApproval: input.requireApproval } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(environments.id, id))
         .returning();
     } catch (err) {
@@ -136,6 +149,17 @@ export const environmentRoutes: FastifyPluginAsync = async (app) => {
     }
     if (!updated) throw badRequest('Could not update environment');
     void audit(app.db, user.id, 'environment.update', updated.name);
+    if (input.protected !== undefined && input.protected !== row.protected) {
+      void audit(app.db, user.id, input.protected ? 'environment.protect' : 'environment.unprotect', updated.name);
+    }
+    if (input.requireApproval !== undefined && input.requireApproval !== row.requireApproval) {
+      void audit(
+        app.db,
+        user.id,
+        input.requireApproval ? 'environment.approval_on' : 'environment.approval_off',
+        updated.name,
+      );
+    }
     // F642: report the lane's live service count, as the list route does.
     const members = await app.db
       .select({ id: services.id })

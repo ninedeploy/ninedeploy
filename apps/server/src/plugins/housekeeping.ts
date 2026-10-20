@@ -111,9 +111,11 @@ const DRILL_LEFTOVER_MAX_AGE_MS = 6 * 60 * 60 * 1000;
  *   • the in-flight statuses — the worker and the pipeline still write to them;
  *   • `running` — that row records what is serving traffic right now, carries
  *     the image digest a rollback re-deploys, and is the baseline the next
- *     deploy's config diff is taken against.
+ *     deploy's config diff is taken against;
+ *   • `awaiting_approval` (0.16.13) — it has not run yet and still waits for
+ *     an admin's decision, however long that takes.
  */
-const UNSWEEPABLE_STATUSES = ['queued', 'building', 'deploying', 'running'] as const;
+const UNSWEEPABLE_STATUSES = ['queued', 'building', 'deploying', 'running', 'awaiting_approval'] as const;
 /**
  * r543: a backup or drill still `running` this long after it started is
  * treated as interrupted by the hourly sweep. Far beyond any real dump (the

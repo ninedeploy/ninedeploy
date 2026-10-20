@@ -19,6 +19,8 @@ const REPLAY_OVERLAP_CHARS = 256;
 export function useDeployLogs(serviceId: number | null, deploymentId: number | null) {
   const [lines, setLines] = useState('');
   const [open, setOpen] = useState(false);
+  /** 0.16.13: the server refused the stream for good (a protected lane). */
+  const [refused, setRefused] = useState(false);
   const activeId = useRef<number | null>(null);
   const chunksRef = useRef<string[]>([]);
   const linesRef = useRef('');
@@ -28,6 +30,7 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
     linesRef.current = '';
     setLines('');
     setOpen(false);
+    setRefused(false);
     if (serviceId == null || deploymentId == null) return;
     activeId.current = deploymentId;
 
@@ -113,6 +116,12 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
         // and its whole log was sent. Reconnecting would replay it every 2 s
         // forever (the budget refills on each open).
         if (event?.code === 1000) return;
+        // 0.16.13: a protected lane's logs are for its admins — retrying
+        // cannot change that.
+        if (event?.code === 1008 && event.reason === 'protected lane') {
+          setRefused(true);
+          return;
+        }
         if (activeId.current === deploymentId && attempts < RECONNECT_ATTEMPTS) {
           attempts++;
           reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
@@ -132,5 +141,5 @@ export function useDeployLogs(serviceId: number | null, deploymentId: number | n
     };
   }, [serviceId, deploymentId]);
 
-  return { lines, open };
+  return { lines, open, refused };
 }

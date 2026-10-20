@@ -1067,6 +1067,28 @@ async function previewDatabaseChecks(token, serviceId) {
   step(`${TO}: preview database copies off by default on the upgraded service; the switch is stored and turned off again`);
 }
 
+// 0.16.13: a lane from before the upgrade is neither protected nor gated
+// (migration 0091's NOT NULL DEFAULT false) — deploys into it never wait and
+// its values stay readable; the switches are stored and turned off again.
+const APPROVALS_IN = [0, 16, 13];
+async function laneChecks(token, serviceId, laneId) {
+  const lanes = (await api('/v1/environments', { token })).json;
+  const lane = Array.isArray(lanes) ? lanes.find((l) => l.id === laneId) : null;
+  if (!lane || lane.protected !== false || lane.requireApproval !== false) fail(`${TO}: the upgraded lane #${laneId} should have both switches off: ${JSON.stringify(lane)}`);
+  const svc = (await api(`/v1/services/${serviceId}`, { token })).json;
+  if (svc?.environmentId !== laneId) fail(`${TO}: service #${serviceId} left lane #${laneId}: ${JSON.stringify(svc?.environmentId)}`);
+  const env = (await api(`/v1/services/${serviceId}/env`, { token })).json;
+  const plain = Array.isArray(env) ? env.find((e) => e.key === 'UPGRADE_PLAIN') : null;
+  if (!plain || plain.value !== `plain-${suffix}` || plain.hidden !== undefined) fail(`${TO}: the lane's plain value should read back unhidden: ${JSON.stringify(plain)}`);
+  const waiting = (await api('/v1/services/approvals', { token })).json;
+  if (waiting?.count !== 0) fail(`${TO}: nothing should wait for approval after the upgrade: ${JSON.stringify(waiting).slice(0, 200)}`);
+  const on = await api(`/v1/environments/${laneId}`, { method: 'PATCH', token, body: { protected: true, requireApproval: true } });
+  if (on.status !== 200 || on.json?.protected !== true || on.json.requireApproval !== true) fail(`${TO}: lane switches answered ${on.status} ${on.text.slice(0, 200)}`);
+  const off = await api(`/v1/environments/${laneId}`, { method: 'PATCH', token, body: { protected: false, requireApproval: false } });
+  if (off.status !== 200 || off.json?.protected !== false || off.json.requireApproval !== false) fail(`${TO}: lane switches off answered ${off.status}`);
+  step(`${TO}: the upgraded lane #${laneId} is neither protected nor gated, nothing waits, its values read back; the switches are stored and turned off again`);
+}
+
 const SLEEP_IN = [0, 16, 11];
 async function sleepChecks(token, serviceId) {
   const path = `/v1/services/${serviceId}`;
@@ -1459,6 +1481,17 @@ async function main() {
   const cpuRuleId = cpuRule.json?.id;
   step(`seeded 2 service env vars, managed postgres #${databaseId} (no backup policy) and cpu alert rule #${cpuRuleId}`);
 
+  // A lane holding the service (lanes exist on every supported FROM): 0.16.13
+  // must read it as neither protected nor gated, so the redeploy after the
+  // upgrade runs straight through and a member still reads the values.
+  const wsId = (await api('/v1/workspaces', { token })).json?.[0]?.id;
+  const seededLane = await api('/v1/environments', { method: 'POST', token, body: { workspaceId: wsId, name: `upgrade-prod-${suffix}` } });
+  const laneId = seededLane.json?.id;
+  if (!laneId) fail(`${FROM}: lane create answered ${seededLane.status} ${seededLane.text.slice(0, 200)}`);
+  const inLane = await api(`/v1/services/${serviceId}`, { method: 'PATCH', token, body: { environmentId: laneId } });
+  if (inLane.status !== 200) fail(`${FROM}: moving service #${serviceId} into lane #${laneId} answered ${inLane.status} ${inLane.text.slice(0, 200)}`);
+  step(`seeded lane #${laneId} holding service #${serviceId}`);
+
   // 0.13 seed: a PAT source with a dummy token (POST /v1/sources and its
   // test route exist on v0.10.45). It must list and test the same afterwards.
   const pat = await api('/v1/sources', { method: 'POST', token, body: { name: `upgrade-pat-${suffix}`, type: 'github', token: `ghp_upgrade${suffix}dummy`, defaultBranch: 'main' } });
@@ -1685,6 +1718,7 @@ async function main() {
   if (!olderThan(TO, AUTOSCALE_IN)) await autoscaleChecks(token, serviceId);
   if (!olderThan(TO, SLEEP_IN)) await sleepChecks(token, serviceId);
   if (!olderThan(TO, PREVIEW_DB_IN)) await previewDatabaseChecks(token, serviceId);
+  if (!olderThan(TO, APPROVALS_IN)) await laneChecks(token, serviceId, laneId);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
@@ -1722,7 +1756,8 @@ async function main() {
   const summary01610 = olderThan(TO, AUTOSCALE_IN) ? '' : '; 0.16.10 autoscale settings work on the upgraded data';
   const summary01611 = olderThan(TO, SLEEP_IN) ? '' : '; 0.16.11 scale-to-zero settings work on the upgraded data';
   const summary01612 = olderThan(TO, PREVIEW_DB_IN) ? '' : '; 0.16.12 preview database copies are off by default and switch on the upgraded data';
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}${summary01612}`);
+  const summary01613 = olderThan(TO, APPROVALS_IN) ? '' : '; 0.16.13 lanes from before are neither protected nor gated';
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}${summary01612}${summary01613}`);
 }
 
 main()

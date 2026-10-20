@@ -74,6 +74,12 @@ describe('PipelineStepper', () => {
     expect(onStageClick).toHaveBeenCalledWith('PREPARE');
   });
 
+  it('0.16.13: says a deploy waits for approval', () => {
+    render(<PipelineStepper rawLogs="" deployStatus="awaiting_approval" />);
+    expect(screen.getByText('Awaiting approval')).toBeInTheDocument();
+    expect(screen.getByText(/Waiting for a workspace admin to approve this deploy/)).toBeInTheDocument();
+  });
+
   it('ignores log lines for unknown stage names', () => {
     const stages = parsePipelineStages('##[stage:MYSTERY:running] nope', 'building');
     expect(stages.every((s) => s.status === 'pending')).toBe(true);

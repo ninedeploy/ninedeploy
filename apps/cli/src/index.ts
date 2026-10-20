@@ -147,6 +147,7 @@ import { canaryOff, canaryPromote, canarySet, canaryShow, type CanarySetOptions 
 import { autoscaleOff, autoscaleSet, autoscaleShow, type AutoscaleSetOptions } from './commands/autoscale.js';
 import { sleepNow, sleepOff, sleepSet, sleepShow, sleepWake } from './commands/sleep.js';
 import { previewsDatabaseCopies, previewsShow } from './commands/previews.js';
+import { approvalsDecide, approvalsList, lanesList, lanesSwitch } from './commands/approvals.js';
 
 const program = new Command();
 
@@ -1281,6 +1282,34 @@ previewsCmd.command('show <service>')
 previewsCmd.command('database-copies <service> <onOff>')
   .description('Give each preview its own database copies (PostgreSQL and the Redis family): on | off')
   .action((service: string, onOff: string) => previewsDatabaseCopies(getClient(), service, onOff));
+/* v8 ignore stop */
+
+// ── 0.16.13: protected lanes and deploy approvals ────────────────────────
+const lanesCmd = program.command('lanes').description('Deployment lanes (production, staging, …) and their protection');
+/* v8 ignore start -- exercised by test/approvals.test.ts. */
+lanesCmd.command('list')
+  .description('Lanes with their service count and switches')
+  .option('--json', 'Print raw JSON')
+  .action((opts: { json?: boolean }) => lanesList(getClient(), opts));
+lanesCmd.command('protect <lane> <onOff>')
+  .description("Keep the lane's variable values, logs and shells for workspace admins: on | off (admin)")
+  .action((lane: string, onOff: string) => lanesSwitch(getClient(), 'protected', lane, onOff));
+lanesCmd.command('require-approval <lane> <onOff>')
+  .description('Make every deploy into the lane wait for a workspace admin: on | off (admin)')
+  .action((lane: string, onOff: string) => lanesSwitch(getClient(), 'requireApproval', lane, onOff));
+const approvalsCmd = program.command('approvals').description("Deploys waiting for an admin's approval");
+approvalsCmd.command('list')
+  .description('Deploys waiting for approval that you can see')
+  .option('--json', 'Print raw JSON')
+  .action((opts: { json?: boolean }) => approvalsList(getClient(), opts));
+approvalsCmd.command('approve <service>')
+  .description('Let a waiting deploy build')
+  .option('--deployment <id>', "The deployment (default: the service's oldest waiting deploy)")
+  .action((service: string, opts: { deployment?: string }) => approvalsDecide(getClient(), 'approve', service, opts));
+approvalsCmd.command('reject <service>')
+  .description('Turn a waiting deploy down; it will not run')
+  .option('--deployment <id>', "The deployment (default: the service's oldest waiting deploy)")
+  .action((service: string, opts: { deployment?: string }) => approvalsDecide(getClient(), 'reject', service, opts));
 /* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));

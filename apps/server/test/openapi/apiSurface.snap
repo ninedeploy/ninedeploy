@@ -189,6 +189,7 @@ GET /v1/services/:id/tags viewer nd://scope/read/services
 GET /v1/services/:id/targets viewer nd://scope/read/services
 GET /v1/services/:id/volumes viewer nd://scope/read/volumes
 GET /v1/services/:id/webhooks viewer nd://scope/read/webhooks
+GET /v1/services/approvals authed nd://scope/read/services
 GET /v1/services/queue authed nd://scope/read/services
 GET /v1/settings operator nd://scope/read/settings
 GET /v1/settings/auto-url operator nd://scope/read/settings
@@ -377,8 +378,10 @@ POST /v1/services/:id/badge member nd://scope/write/services
 POST /v1/services/:id/clone admin nd://scope/write/services
 POST /v1/services/:id/deploy-hook member nd://scope/write/services
 POST /v1/services/:id/deploys member nd://scope/write/deploys
+POST /v1/services/:id/deploys/:depId/approve admin nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/canary/promote member nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/cancel member nd://scope/write/deploys
+POST /v1/services/:id/deploys/:depId/reject admin nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/rollback member nd://scope/write/deploys
 POST /v1/services/:id/domains member nd://scope/write/domains
 POST /v1/services/:id/domains/:domainId/verify member nd://scope/write/domains

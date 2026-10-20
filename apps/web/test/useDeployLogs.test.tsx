@@ -112,6 +112,20 @@ describe('useDeployLogs', () => {
     vi.useRealTimers();
   });
 
+  it('0.16.13: a protected lane refusal is final — no reconnect, and it says so', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useDeployLogs(1, 2));
+    const first = FakeWebSocket.instances[0]!;
+    act(() => {
+      first.readyState = 3;
+      (first.onclose as ((ev?: unknown) => void) | null)?.({ code: 1008, reason: 'protected lane' });
+    });
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(result.current.refused).toBe(true);
+    vi.useRealTimers();
+  });
+
   it('r209: a reconnect replaces the replayed backlog instead of appending it', () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useDeployLogs(1, 2));

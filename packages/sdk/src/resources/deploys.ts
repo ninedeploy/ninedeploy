@@ -8,6 +8,7 @@ import type {
   CreatedWebhook,
   Deployment,
   QueueResponse,
+  ApprovalsResponse,
   AiConfigStatus,
   AiConfigUpdate,
   RepoInsights,
@@ -69,6 +70,16 @@ export interface DeploysApi {
      * progress. To stop a canary instead, `cancel` the deployment.
      */
     promoteCanary: (serviceId: number, deploymentId: number) => Promise<{ ok: true }>;
+    /**
+     * 0.16.13: let a deployment waiting for approval build (`awaiting_approval`
+     * → `queued`). Needs an admin of the service's lane; fails with
+     * `400 not_awaiting_approval` for a deploy that is not waiting.
+     */
+    approve: (serviceId: number, deploymentId: number) => Promise<{ ok: true; status: 'queued' }>;
+    /** 0.16.13: the deployments waiting for approval the caller can see, oldest first. */
+    approvals: () => Promise<ApprovalsResponse>;
+    /** 0.16.13: turn down a deployment waiting for approval (→ `cancelled`). Same rules as `approve`. */
+    reject: (serviceId: number, deploymentId: number) => Promise<{ ok: true; status: 'cancelled' }>;
   };
   webhooks: {
     list: (serviceId: number) => Promise<Webhook[]>;
@@ -141,6 +152,11 @@ export function deploysApi(t: Transport): DeploysApi {
       canary: (serviceId) => get<CanaryStatusView>(`/v1/services/${serviceId}/canary`),
       promoteCanary: (serviceId, deploymentId) =>
         send<{ ok: true }>('POST', `/v1/services/${serviceId}/deploys/${deploymentId}/canary/promote`),
+      approve: (serviceId, deploymentId) =>
+        send<{ ok: true; status: 'queued' }>('POST', `/v1/services/${serviceId}/deploys/${deploymentId}/approve`),
+      approvals: () => get<ApprovalsResponse>('/v1/services/approvals'),
+      reject: (serviceId, deploymentId) =>
+        send<{ ok: true; status: 'cancelled' }>('POST', `/v1/services/${serviceId}/deploys/${deploymentId}/reject`),
     },
     webhooks: {
       list: (serviceId) => get<Webhook[]>(`/v1/services/${serviceId}/webhooks`),

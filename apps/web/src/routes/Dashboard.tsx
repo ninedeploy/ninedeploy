@@ -419,8 +419,9 @@ export function Dashboard() {
                         d.status === 'running' ? 'bg-emerald-500/15 text-emerald-300' :
                         d.status === 'failed' ? 'bg-rose-500/15 text-rose-300' :
                         d.status === 'building' || d.status === 'queued' ? 'bg-amber-500/15 text-amber-300' :
+                        d.status === 'awaiting_approval' ? 'bg-violet-500/15 text-violet-300' :
                         'bg-slate-500/15 text-slate-400',
-                      )}>{d.status}</span>
+                      )}>{d.status === 'awaiting_approval' ? 'awaiting approval' : d.status}</span>
                     </td>
                     <td className="px-5 py-3 text-right text-[10px] text-slate-600">
                       {d.finishedAt ? formatDateTime(d.finishedAt) : formatDateTime(d.createdAt)}

@@ -491,13 +491,13 @@ export async function handlePush(
   // Replay dedup: a captured valid push replays indefinitely (the HMAC covers
   // the body, not freshness). Skip when a deployment for this exact commit is
   // already queued/building/running for the service, so a re-sent payload
-  // cannot flood the deploy queue.
+  // cannot flood the deploy queue. 0.16.13: one waiting for approval counts.
   if (push.sha) {
     const existing = await db.query.deployments.findFirst({
       where: and(
         eq(deployments.serviceId, serviceId),
         eq(deployments.commitSha, push.sha),
-        inArray(deployments.status, ['queued', 'building', 'running']),
+        inArray(deployments.status, ['queued', 'building', 'running', 'awaiting_approval']),
       ),
     });
     if (existing) return { ok: 'skipped', reason: 'duplicate', deploymentId: existing.id };
@@ -522,7 +522,7 @@ export async function handlePush(
       where: and(
         eq(deployments.serviceId, serviceId),
         eq(deployments.commitSha, push.sha),
-        inArray(deployments.status, ['queued', 'building', 'running']),
+        inArray(deployments.status, ['queued', 'building', 'running', 'awaiting_approval']),
       ),
     });
     const other = dups.filter((d) => d.id !== dep.id).sort((a, b) => a.id - b.id)[0];

@@ -15,7 +15,7 @@ import { ArchitectureTab } from './ArchitectureTab.js';
 import { ManifestTab } from './ManifestTab.js';
 import { ComposeTab } from './ComposeTab.js';
 import { RuntimeLogsCard } from './RuntimeLogsCard.js';
-import { DeploysTab, IN_FLIGHT } from './DeploysTab.js';
+import { DeploysTab, IN_FLIGHT, WAITING } from './DeploysTab.js';
 import { UploadSourceCard } from '../../components/UploadSource.js';
 import { EnvironmentTab } from './EnvironmentTab.js';
 import { NetworkTab } from './NetworkTab.js';
@@ -87,7 +87,14 @@ export function ServiceDetail() {
   const deploys = useQuery({
     queryKey: ['deploys', id],
     queryFn: () => api.deploys.list(id),
-    refetchInterval: (q) => (q.state.data?.some((d) => IN_FLIGHT.includes(d.status)) ? 2000 : false),
+    // 0.16.13: a deploy waiting for approval is not in flight, but it changes
+    // when an admin decides — keep looking, more slowly.
+    refetchInterval: (q) =>
+      q.state.data?.some((d) => IN_FLIGHT.includes(d.status))
+        ? 2000
+        : q.state.data?.some((d) => d.status === WAITING)
+          ? 10_000
+          : false,
   });
 
   // A new service id must not inherit the previous service's selected

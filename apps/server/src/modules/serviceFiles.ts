@@ -8,6 +8,7 @@ import { badRequest, conflict, notFound, parseId } from '../lib/errors.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
 import { FILE_MOUNTS_UNSUPPORTED, fileMountsSupported } from '../lib/serviceFiles.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
+import { assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 
 /**
  * 0.16.3 file mounts, mounted under `/services`: list (viewer), read one with
@@ -35,6 +36,8 @@ export const serviceFileRoutes: FastifyPluginAsync = async (app) => {
     const params = req.params as { id: string; fileId: string };
     const svc = await loadServiceForUser(app.db, parseId(params.id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
+    // 0.16.13: mounted files hold credentials as often as variables do.
+    await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'mounted files');
     const row = await app.db.query.serviceFiles.findFirst({
       where: and(eq(serviceFiles.id, parseId(params.fileId)), eq(serviceFiles.serviceId, svc.id)),
     });

@@ -181,12 +181,13 @@ describe('r302: unsweepableDeploymentIds', () => {
   it('names the in-flight and live deployments whose log files must survive the mtime sweep', async () => {
     const [svc] = await db.insert(services).values({ name: 's', slug: 's' }).returning();
     const ids: Record<string, number> = {};
-    for (const status of ['queued', 'building', 'running', 'failed', 'superseded'] as const) {
+    for (const status of ['queued', 'building', 'running', 'failed', 'superseded', 'awaiting_approval'] as const) {
       const [d] = await db.insert(deployments).values({ serviceId: svc!.id, status }).returning();
       ids[status] = d!.id;
     }
     const keep = await unsweepableDeploymentIds(db);
-    expect([...keep].sort()).toEqual([ids['queued'], ids['building'], ids['running']].sort());
+    // 0.16.13: a deploy waiting for approval keeps its log however long it waits.
+    expect([...keep].sort()).toEqual([ids['queued'], ids['building'], ids['running'], ids['awaiting_approval']].sort());
   });
 });
 

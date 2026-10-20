@@ -87,6 +87,14 @@ describe('EnvCard', () => {
     expect(passwordInputs.length).toBeGreaterThan(0);
   });
 
+  it('0.16.13: marks values a protected lane keeps from this caller', async () => {
+    apiMock.api.env.list.mockResolvedValue([{ id: 7, key: 'DATABASE_URL', value: '', isSecret: false, hidden: true }]);
+    renderCard();
+    expect(await screen.findByText('DATABASE_URL')).toBeInTheDocument();
+    expect(screen.getByText(/This service is in a protected lane/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('•••• protected lane')).toHaveAttribute('type', 'password');
+  });
+
   it('adds a new variable on submit', async () => {
     const user = userEvent.setup();
     renderCard();

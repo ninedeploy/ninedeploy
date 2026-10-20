@@ -129,7 +129,9 @@ export function PipelineStepper({
                 ? 'All traffic is now served by the new release.'
                 : deployStatus === 'failed'
                   ? 'The health check failed and traffic stayed on the previous release.'
-                  : 'The current release stays live while the new container is prepared.'}
+                  : deployStatus === 'awaiting_approval'
+                    ? 'Waiting for a workspace admin to approve this deploy. The current release stays live.'
+                    : 'The current release stays live while the new container is prepared.'}
             </p>
           </div>
         </div>
@@ -141,10 +143,29 @@ export function PipelineStepper({
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
               : deployStatus === 'failed'
                 ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                : deployStatus === 'awaiting_approval'
+                  ? 'bg-violet-500/10 text-violet-300 border-violet-500/20'
+                  : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
           )}>
-            <span className={cn('h-1.5 w-1.5 rounded-full', isZeroDowntimeLive ? 'bg-emerald-400' : deployStatus === 'failed' ? 'bg-rose-400' : 'bg-amber-300')} />
-            {isZeroDowntimeLive ? 'Live' : deployStatus === 'failed' ? 'Rolled back' : 'Deploying'}
+            <span
+              className={cn(
+                'h-1.5 w-1.5 rounded-full',
+                isZeroDowntimeLive
+                  ? 'bg-emerald-400'
+                  : deployStatus === 'failed'
+                    ? 'bg-rose-400'
+                    : deployStatus === 'awaiting_approval'
+                      ? 'bg-violet-300'
+                      : 'bg-amber-300',
+              )}
+            />
+            {isZeroDowntimeLive
+              ? 'Live'
+              : deployStatus === 'failed'
+                ? 'Rolled back'
+                : deployStatus === 'awaiting_approval'
+                  ? 'Awaiting approval'
+                  : 'Deploying'}
           </span>
         </div>
       </div>

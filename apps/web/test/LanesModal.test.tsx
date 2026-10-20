@@ -102,6 +102,55 @@ describe('LanesModal', () => {
     await waitFor(() => expect(renameSpy).toHaveBeenCalledWith(1, 'prod'));
   });
 
+  it('hides the 0.16.13 switches when the panel does not report them', async () => {
+    mockOf(api.environments.list).mockResolvedValue([lane()]);
+    renderWithProviders(<LanesModal onClose={() => {}} />);
+    await screen.findByText('production');
+    expect(screen.queryByRole('switch', { name: 'Protect production' })).not.toBeInTheDocument();
+  });
+
+  it('switches protection and approvals on a lane', async () => {
+    mockOf(api.environments.list).mockResolvedValue([lane({ protected: false, requireApproval: true })]);
+    const updateSpy = vi
+      .fn()
+      .mockImplementation(async (_id: number, patch: Partial<Environment>) => lane({ protected: false, requireApproval: true, ...patch }));
+    mockOf(api.environments.update).mockImplementation(updateSpy);
+    renderWithProviders(<LanesModal onClose={() => {}} />);
+    const user = userEvent.setup();
+    const protect = await screen.findByRole('switch', { name: 'Protect production' });
+    expect(protect).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('switch', { name: 'Require approval for production' })).toHaveAttribute('aria-checked', 'true');
+    await user.click(protect);
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { protected: true }));
+    await user.click(screen.getByRole('switch', { name: 'Require approval for production' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { requireApproval: false }));
+  });
+
+  it('switches them back off and on', async () => {
+    mockOf(api.environments.list).mockResolvedValue([lane({ protected: true, requireApproval: false })]);
+    const updateSpy = vi
+      .fn()
+      .mockImplementation(async (_id: number, patch: Partial<Environment>) => lane({ protected: true, requireApproval: false, ...patch }));
+    mockOf(api.environments.update).mockImplementation(updateSpy);
+    renderWithProviders(<LanesModal onClose={() => {}} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('switch', { name: 'Protect production' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { protected: false }));
+    await user.click(screen.getByRole('switch', { name: 'Require approval for production' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { requireApproval: true }));
+  });
+
+  it("survives the server refusing a member's switch", async () => {
+    mockOf(api.environments.list).mockResolvedValue([lane({ protected: false, requireApproval: false })]);
+    const updateSpy = vi.fn().mockRejectedValue(new Error('Insufficient role for this workspace'));
+    mockOf(api.environments.update).mockImplementation(updateSpy);
+    renderWithProviders(<LanesModal onClose={() => {}} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('switch', { name: 'Protect production' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
+    expect(screen.getByRole('switch', { name: 'Protect production' })).toHaveAttribute('aria-checked', 'false');
+  });
+
   it('deletes a lane behind an inline confirm', async () => {
     mockOf(api.environments.list).mockResolvedValue([lane()]);
     const removeSpy = vi.fn().mockResolvedValue({ ok: true });

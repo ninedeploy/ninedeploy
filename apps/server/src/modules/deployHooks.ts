@@ -93,7 +93,9 @@ export const publicDeployHookRoutes: FastifyPluginAsync = async (app) => {
     });
     reply.code(202);
     if (inflight) return { deploymentId: inflight.id, alreadyInProgress: true };
-    const deploymentId = await enqueueUserDeploy(app.db, user, svc, { message: 'Deploy hook' });
+    // 0.16.13: whoever holds the URL is not the admin who made it — into an
+    // approval-gated lane the deploy waits like any other.
+    const deploymentId = await enqueueUserDeploy(app.db, user, svc, { message: 'Deploy hook' }, { selfApproval: false });
     void audit(app.db, user.id, 'deploy.trigger', `${svc.name} #${deploymentId}`, { serviceId: svc.id, deploymentId, via: 'deploy_hook' });
     return { deploymentId };
   });

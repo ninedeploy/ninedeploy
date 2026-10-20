@@ -16,7 +16,7 @@ export function LogPanel({
   deploymentId: number | null;
   deployStatus?: string;
 }) {
-  const { lines, open } = useDeployLogs(serviceId, deploymentId);
+  const { lines, open, refused } = useDeployLogs(serviceId, deploymentId);
   const ref = useRef<HTMLPreElement | null>(null);
   const preRef = useAutoScroll(ref, lines);
   const empty = useMemo(() => deploymentId == null, [deploymentId]);
@@ -56,6 +56,14 @@ export function LogPanel({
     return (
       <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 py-16 text-center text-sm text-slate-600">
         Trigger a deploy to see live logs.
+      </div>
+    );
+  }
+
+  if (refused) {
+    return (
+      <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-violet-500/20 bg-violet-500/[0.04] px-6 py-16 text-center text-sm text-violet-200/80">
+        This service is in a protected lane: its deploy logs are for workspace admins.
       </div>
     );
   }

@@ -305,6 +305,52 @@ It reads `running`, `deploying`, `failed` (the newest deployment failed, even wh
 
 ---
 
+### Protected lanes and deploy approvals (0.16.13)
+
+A lane (an environment: production, staging, …) has two switches in **Services → Lanes**. Both are off on every lane, including after an upgrade, and only a workspace admin can change them.
+
+**Protected.** The lane's variable values, deploy logs and runtime logs are for the lane's admins only, and so are its mounted files, log search and AI diagnosis. Members keep working as before:
+- they edit the service and push code, and git deploys keep running;
+- they can set or replace a variable's value;
+- they cannot read a value back: it shows as `•••• protected lane`, and the API returns it as `''` with `hidden: true`.
+
+A member also cannot clone a protected service, export its variables, or move it to another lane. A clone would hand over the variables, and leaving the lane would lift the protection.
+
+**Require approval.** Every deploy into the lane waits as `awaiting approval` until an admin of the lane approves it or rejects it. It does not matter whether a webhook push, a schedule, an image update, a deploy hook or a member started it.
+- Approve and it builds as usual; reject and it ends as `cancelled`.
+- A deploy an admin starts from the panel, the CLI or the API goes through without waiting. A deploy hook URL always waits, because whoever holds the URL is not necessarily the admin who made it.
+- Each service has at most one waiting deploy. A newer push replaces the older waiting deploy, and when a deploy of the service starts, its older waiting deploys are dropped, so approving never ships older code.
+- The author can withdraw a waiting deploy with cancel.
+- Waiting deploys never expire, and the history sweep keeps them.
+- A waiting deploy sends a `deploy.awaiting_approval` notification, which any channel that receives deploy events picks up. Decisions are audited as `deploy.approve` and `deploy.reject`.
+- Turning the switch off does not release deploys that are already waiting; approve or reject them.
+
+**Who counts as an admin of a lane:**
+- an operator;
+- an admin or owner seat in the lane's workspace;
+- an admin access grant covering the service.
+
+Having created the service is not enough. Otherwise a member could approve their own deploy into production, or read the secrets of a service they cloned.
+
+**PR previews** take their parent's lane:
+- a protected service's previews are protected too;
+- an approval-gated service's previews wait for approval. A preview runs the PR's code with the parent's variables, so this is where the gate matters.
+
+Previews of pull requests from forks are still refused, as before.
+
+- API:
+  - `PATCH /v1/environments/:id` with `{ protected, requireApproval }` (admin);
+  - `GET /v1/services/approvals`, which lists what waits and whether you may decide;
+  - `POST /v1/services/:id/deploys/:depId/approve` and `/reject`;
+  - the deploy list carries `reviewedBy` and `reviewedAt`.
+- SDK: `environments.update`, and `deploys.approvals`, `deploys.approve`, `deploys.reject`.
+- CLI:
+  - `ninedeploy lanes list`;
+  - `ninedeploy lanes protect <lane> on|off`;
+  - `ninedeploy lanes require-approval <lane> on|off`;
+  - `ninedeploy approvals list`;
+  - `ninedeploy approvals approve|reject <service> [--deployment <id>]`.
+
 ## 🧩 6. Docker Compose Stacks
 
 A multi-container app deploys as `type: compose`. The stack runs as the compose

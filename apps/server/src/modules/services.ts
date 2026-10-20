@@ -36,6 +36,7 @@ import { autoUrlPreview } from '../lib/autoUrl.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
+import { assertMayLeaveLane, assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { autoscaleStatus, resetAutoscaleState } from '../lib/autoscaler.js';
 import { putToSleep, wakeService } from '../lib/sleep.js';
@@ -841,6 +842,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // the caller holds a seat in, or (0.15) be named by one of their access
     // grants. null clears the lane (ungrouped).
     if (patch.environmentId !== undefined) {
+      // 0.16.13: leaving a protected or approval-gated lane lifts its gate.
+      await assertMayLeaveLane(app.db, existing, req.user!, patch.environmentId);
       if (patch.environmentId === null) {
         patch.environmentId = null;
       } else {
@@ -1638,6 +1641,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:id/logs', async (req) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
+    // 0.16.13: runtime logs echo secrets as readily as build logs.
+    await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'logs');
     const { tail } = runtimeLogsQuery.parse(req.query ?? {});
     if (svc.type === 'pm2') {
       try {
@@ -1672,6 +1677,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // definition into a service the caller owns, so treat it as an admin-level
     // duplication rather than a read operation.
     await assertServiceRole(app.db, svc, req.user!, 'admin');
+    // 0.16.13: and a clone hands its creator the variables — a protected
+    // lane's are for the lane's admins, not for whoever created the service.
+    await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'variables');
     // A clone inherits the source's type and build config — including its
     // lifecycle hooks — so it inherits its host privilege too.
     const sourceBuild = await app.db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, id) });

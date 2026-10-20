@@ -99,6 +99,52 @@ describe('Deploys (queue page)', () => {
     expect(await screen.findByText('Nothing in flight')).toBeInTheDocument();
   });
 
+  it('0.16.13: lists deploys waiting for approval and decides them', async () => {
+    mockOf(api.deploys.queue).mockResolvedValue(queueResponse([]) as never);
+    const waiting = {
+      id: 31,
+      serviceId: 4,
+      serviceName: 'web',
+      status: 'awaiting_approval' as const,
+      commitSha: 'abcdef1234',
+      imageDigest: null,
+      message: 'feat: checkout',
+      author: 'dev',
+      trigger: 'webhook',
+      createdAt: new Date().toISOString(),
+      mayReview: true,
+    };
+    mockOf(api.deploys.approvals).mockResolvedValue({
+      items: [
+        waiting,
+        { ...waiting, id: 32, serviceId: 5, serviceName: 'api', commitSha: null, imageDigest: 'sha256:0123456789abcdef', message: null, mayReview: false },
+        { ...waiting, id: 33, commitSha: null, message: null },
+      ],
+      count: 3,
+    });
+    const approveSpy = vi.fn().mockResolvedValue({ ok: true, status: 'queued' });
+    const rejectSpy = vi.fn().mockRejectedValue(new Error('nope'));
+    mockOf(api.deploys.approve).mockImplementation(approveSpy);
+    mockOf(api.deploys.reject).mockImplementation(rejectSpy);
+    renderWithProviders(<Deploys />);
+    expect(await screen.findByText('Waiting for approval')).toBeInTheDocument();
+    expect(screen.getByText(/feat: checkout/)).toBeInTheDocument();
+    expect(screen.getByText(/sha256:0123456/)).toBeInTheDocument();
+    expect(screen.getByText('a workspace admin decides')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve' })[0]!);
+    await waitFor(() => expect(approveSpy).toHaveBeenCalledWith(4, 31));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reject' })[0]!);
+    await waitFor(() => expect(rejectSpy).toHaveBeenCalledWith(4, 31));
+  });
+
+  it('shows no approvals card when nothing waits', async () => {
+    mockOf(api.deploys.queue).mockResolvedValue(queueResponse([]) as never);
+    mockOf(api.deploys.approvals).mockResolvedValue({ items: [], count: 0 });
+    renderWithProviders(<Deploys />);
+    expect(await screen.findByText('Nothing in flight')).toBeInTheDocument();
+    expect(screen.queryByText('Waiting for approval')).toBeNull();
+  });
+
   it('shows the empty state when the queue is empty', async () => {
     mockOf(api.deploys.queue).mockResolvedValue(queueResponse([]) as never);
     renderWithProviders(<Deploys />);

@@ -129,6 +129,7 @@ export function createFakeApiModule() {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       rename: vi.fn(),
+      update: vi.fn(),
       remove: vi.fn(),
     },
     ai: {
@@ -146,6 +147,9 @@ export function createFakeApiModule() {
       remove: vi.fn(),
       configDiff: vi.fn(),
       promote: vi.fn(),
+      approvals: vi.fn().mockResolvedValue({ items: [], count: 0 }),
+      approve: vi.fn(),
+      reject: vi.fn(),
     },
     domains: {
       list: vi.fn(),

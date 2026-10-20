@@ -35,6 +35,7 @@ const STATUS_COLORS: Record<string, (s: string) => string> = {
   deploying: c.yellow,
   building: c.yellow,
   queued: c.yellow,
+  awaiting_approval: c.magenta,
   pending: c.yellow,
   creating: c.yellow,
   error: c.red,

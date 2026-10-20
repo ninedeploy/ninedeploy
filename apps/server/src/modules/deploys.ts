@@ -4,8 +4,8 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { deployments, services } from '@ninedeploy/db';
-import type { FastifyPluginAsync } from 'fastify';
+import { deployments, services, users } from '@ninedeploy/db';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { diffLines, renderDiff } from '../lib/diff.js';
 import { buildEnv, capture } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
@@ -18,7 +18,8 @@ import { assertMayDeployStoredService } from '../lib/hostPrivilege.js';
 import { enqueueUserDeploy } from '../lib/deployQueue.js';
 import { assertRemoteDatabaseReachable, assertRemoteDeploySupported, assertRemoteServiceSupported } from '../lib/remoteDeploy.js';
 import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
-import { badRequest, notFound, parseId as num } from '../lib/errors.js';
+import { assertMaySeeLaneSecrets, isLaneAdmin, maySeeLaneSecrets } from '../lib/protectedLanes.js';
+import { badRequest, forbidden, notFound, parseId as num } from '../lib/errors.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
 import { dockerTransport, isEngineTransport, openExecTty, SHELL_CMD } from '../lib/dockerTty.js';
 import { reserveLive, runTerminalSession, startLegacyExecRecord, type TerminalSocket } from '../lib/terminalSessions.js';
@@ -34,6 +35,14 @@ const IN_FLIGHT_STATUSES = ['queued', 'building', 'deploying'] as const;
 /** True while the worker or the pipeline may still write to this row. */
 const isInFlight = (status: string): boolean =>
   (IN_FLIGHT_STATUSES as readonly string[]).includes(status);
+
+/**
+ * 0.16.13: the statuses cancel may end — the in-flight ones plus a deploy
+ * still waiting for approval, which its author may withdraw.
+ */
+const CANCELLABLE_STATUSES = [...IN_FLIGHT_STATUSES, 'awaiting_approval'] as const;
+const isCancellable = (status: string): boolean =>
+  (CANCELLABLE_STATUSES as readonly string[]).includes(status);
 
 const promoteInput = z.object({
   /** The service to redeploy at this lane's pinned commit. */
@@ -138,6 +147,18 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       orderBy: desc(deployments.id),
       limit: 50,
     });
+    // 0.16.13: who approved or rejected a deploy that waited.
+    const reviewerIds = [...new Set(rows.map((d) => d.reviewedBy).filter((v): v is number => v != null))];
+    const reviewers = new Map(
+      reviewerIds.length === 0
+        ? []
+        : (
+            await app.db
+              .select({ id: users.id, name: users.name, email: users.email })
+              .from(users)
+              .where(inArray(users.id, reviewerIds))
+          ).map((u) => [u.id, u.name || u.email]),
+    );
     return rows.map((d) => ({
       id: d.id,
       status: d.status,
@@ -148,6 +169,8 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       startedAt: d.startedAt ? d.startedAt.toISOString() : null,
       finishedAt: d.finishedAt ? d.finishedAt.toISOString() : null,
       createdAt: d.createdAt.toISOString(),
+      reviewedBy: d.reviewedBy != null ? (reviewers.get(d.reviewedBy) ?? null) : null,
+      reviewedAt: d.reviewedAt ? d.reviewedAt.toISOString() : null,
     }));
   });
 
@@ -244,6 +267,36 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     return { items, count: items.length, byStatus };
   });
 
+  // 0.16.13: the deploys waiting for approval the caller can see, oldest
+  // first, each with whether this caller may approve it. Kept out of
+  // `/queue`, whose status set older clients parse strictly.
+  app.get('/approvals', { onRequest: [app.authenticate] }, async (req) => {
+    const visible = await visibleServiceIdSet(app.db, req.user!);
+    if (visible && visible.size === 0) return { items: [], count: 0 };
+    const where = [eq(deployments.status, 'awaiting_approval' as const)];
+    if (visible) where.push(inArray(deployments.serviceId, Array.from(visible)));
+    const rows = await app.db.query.deployments.findMany({ where: and(...where), orderBy: asc(deployments.id), limit: 200 });
+    const serviceIds = Array.from(new Set(rows.map((r) => r.serviceId)));
+    const serviceRows = serviceIds.length ? await app.db.query.services.findMany({ where: inArray(services.id, serviceIds) }) : [];
+    const byId = new Map(serviceRows.map((s) => [s.id, s]));
+    const mayReview = new Map<number, boolean>();
+    for (const s of serviceRows) mayReview.set(s.id, await isLaneAdmin(app.db, s, req.user!));
+    const items = rows.map((d) => ({
+      id: d.id,
+      serviceId: d.serviceId,
+      serviceName: byId.get(d.serviceId)?.name ?? `service-${d.serviceId}`,
+      status: d.status,
+      commitSha: d.commitSha,
+      imageDigest: d.imageDigest,
+      message: d.message,
+      author: d.author,
+      trigger: d.trigger,
+      createdAt: d.createdAt.toISOString(),
+      mayReview: mayReview.get(d.serviceId) ?? false,
+    }));
+    return { items, count: items.length };
+  });
+
   // Rollback to a previous deployment. Re-runs the exact commit SHA (repo
   // deploys) or the exact image digest (image deploys) so a moved `:latest`
   // tag can't silently change what gets deployed.
@@ -290,16 +343,20 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, cancelTarget, req.user!, 'member');
     const dep = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) });
     if (!dep || dep.serviceId !== id) throw notFound('Deployment not found');
-    if (!isInFlight(dep.status)) {
+    if (!isCancellable(dep.status)) {
       throw badRequest('Deployment is not in progress');
     }
     const flipped = await app.db
       .update(deployments)
       .set({ status: 'cancelled', finishedAt: new Date() })
-      .where(and(eq(deployments.id, depId), inArray(deployments.status, [...IN_FLIGHT_STATUSES])))
+      .where(and(eq(deployments.id, depId), inArray(deployments.status, [...CANCELLABLE_STATUSES])))
       .returning({ id: deployments.id });
     if (flipped.length === 0) throw badRequest('Deployment is not in progress');
-    if (dep.status === 'queued') {
+    if (dep.status === 'awaiting_approval') {
+      // No run owns it — end the log stream of anyone following it.
+      logBus.publish(depId, '⏹ Withdrawn before it was approved');
+      logBus.end(depId);
+    } else if (dep.status === 'queued') {
       // Never picked up — it is fully cancelled here.
       logBus.publish(depId, '⏹ Cancelled before the worker picked it up');
     } else {
@@ -308,6 +365,58 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     }
     void audit(app.db, req.user!.id, 'deploy.cancel', `#${depId}`);
     return { ok: true, status: 'cancelled' };
+  });
+
+  // 0.16.13 deploy approvals. A deploy into a lane that requires approval
+  // waits as `awaiting_approval`; an admin on the service lets it build
+  // (→ `queued`, the worker claims it as usual) or turns it down
+  // (→ `cancelled`). Both stay available after the lane's switch is turned
+  // off, so nothing is left waiting with no way out; anyone who may cancel
+  // can still withdraw a waiting deploy with the cancel route.
+  const reviewDeploy = async (
+    req: FastifyRequest,
+    decision: 'approve' | 'reject',
+  ) => {
+    const id = num((req.params as { id: string }).id);
+    const depId = num((req.params as { depId: string }).depId);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    // The lane's admin, not the service's creator: a member must not approve
+    // their own deploy into production.
+    if (!(await isLaneAdmin(app.db, svc, req.user!))) {
+      throw forbidden('Only a workspace admin may approve or reject a deploy into this lane');
+    }
+    const dep = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) });
+    if (!dep || dep.serviceId !== id) throw notFound('Deployment not found');
+    if (dep.status !== 'awaiting_approval') throw badRequest('This deployment is not waiting for approval', 'not_awaiting_approval');
+    const now = new Date();
+    const flipped = await app.db
+      .update(deployments)
+      .set(
+        decision === 'approve'
+          ? { status: 'queued', reviewedBy: req.user!.id, reviewedAt: now }
+          : { status: 'cancelled', reviewedBy: req.user!.id, reviewedAt: now, finishedAt: now },
+      )
+      .where(and(eq(deployments.id, depId), eq(deployments.status, 'awaiting_approval')))
+      .returning({ id: deployments.id });
+    if (flipped.length === 0) throw badRequest('This deployment is not waiting for approval', 'not_awaiting_approval');
+    if (decision === 'approve') {
+      logBus.publish(depId, '✓ Approved — queued for the worker');
+    } else {
+      logBus.publish(depId, '⏹ Rejected — this deploy will not run');
+      logBus.end(depId);
+    }
+    return { entity: `${svc.name} #${depId}`, serviceId: id };
+  };
+
+  app.post('/:id/deploys/:depId/approve', { onRequest: [app.authenticate] }, async (req) => {
+    const done = await reviewDeploy(req, 'approve');
+    void audit(app.db, req.user!.id, 'deploy.approve', done.entity, { serviceId: done.serviceId });
+    return { ok: true, status: 'queued' as const };
+  });
+  app.post('/:id/deploys/:depId/reject', { onRequest: [app.authenticate] }, async (req) => {
+    const done = await reviewDeploy(req, 'reject');
+    void audit(app.db, req.user!.id, 'deploy.reject', done.entity, { serviceId: done.serviceId });
+    return { ok: true, status: 'cancelled' as const };
   });
 
   // 0.16.9 canary releases. The canary of a deploy in progress: its step,
@@ -365,6 +474,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     if (isInFlight(dep.status)) {
       throw badRequest('Cancel the deployment before removing it');
     }
+    if (dep.status === 'awaiting_approval') {
+      throw badRequest('This deployment is waiting for approval — reject or cancel it before removing it');
+    }
     if (dep.status === 'running') {
       throw badRequest('This deployment is the version currently serving traffic and cannot be removed');
     }
@@ -373,7 +485,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // the worker.
     const removed = await app.db
       .delete(deployments)
-      .where(and(eq(deployments.id, depId), notInArray(deployments.status, [...IN_FLIGHT_STATUSES, 'running'])))
+      .where(
+        and(eq(deployments.id, depId), notInArray(deployments.status, [...IN_FLIGHT_STATUSES, 'running', 'awaiting_approval'])),
+      )
       .returning({ id: deployments.id });
     if (removed.length === 0) throw badRequest('Deployment changed state — reload and try again');
     deleteLog(depId);
@@ -413,11 +527,13 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:id/deploys/:depId/logs/download', { onRequest: [app.authenticate] }, async (req, reply) => {
     const id = num((req.params as { id: string }).id);
     const depId = num((req.params as { depId: string }).depId);
-    await loadServiceForUser(app.db, id, req.user!);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
     const dep = await app.db.query.deployments.findFirst({
       where: and(eq(deployments.id, depId), eq(deployments.serviceId, id)),
     });
     if (!dep) throw notFound('Deployment not found');
+    // 0.16.13: build logs echo secrets — a protected lane keeps them for admins.
+    await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'deploy logs');
 
     const logPath = path.join(config.paths.logsDir, `${depId}.log`);
     if (!existsSync(logPath)) throw notFound('Build log not found');
@@ -446,10 +562,16 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     }
     // Ownership check mirrors the HTTP routes: a member may only stream logs
     // of their own services.
+    let svc: Awaited<ReturnType<typeof loadServiceForUser>>;
     try {
-      await loadServiceForUser(app.db, id, user);
+      svc = await loadServiceForUser(app.db, id, user);
     } catch {
       socket.close(1008, 'not found');
+      return;
+    }
+    // 0.16.13: a protected lane keeps its build logs for admins.
+    if (!(await maySeeLaneSecrets(app.db, svc, user))) {
+      socket.close(1008, 'protected lane');
       return;
     }
     // The deployment itself must belong to the service in the URL — without
@@ -483,7 +605,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     const finishIfSettled = async (): Promise<void> => {
       if (finished || !open()) return;
       const row = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) }).catch(() => null);
-      if (row === null || (row && isInFlight(row.status))) return;
+      // 0.16.13: a deploy waiting for approval has not run yet — keep the
+      // stream open so a follower sees it build once approved.
+      if (row === null || (row && (isInFlight(row.status) || row.status === 'awaiting_approval'))) return;
       if (finished || !open() || logBus.isWriting(depId)) return;
       finished = true;
       cleanup();
@@ -515,7 +639,11 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       // F532: a live session is not live access — a member removed from the
       // service's workspace (r694 seat loss) kept receiving this build log
       // until the client closed it. Re-run the connect-time ownership check.
-      const stillAllowed = await loadServiceForUser(app.db, id, fresh).then(() => true, () => false);
+      // 0.16.13: and a lane turned protected mid-stream closes it for non-admins.
+      const stillAllowed = await loadServiceForUser(app.db, id, fresh).then(
+        (current) => maySeeLaneSecrets(app.db, current, fresh),
+        () => false,
+      );
       if (!stillAllowed) {
         socket.close(1008, 'access revoked');
         cleanup();

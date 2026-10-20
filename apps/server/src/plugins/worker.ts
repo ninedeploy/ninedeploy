@@ -7,6 +7,7 @@ import { runDeployment } from '../engine/pipeline.js';
 import { logBus } from '../engine/logs.js';
 import { removeInterruptedCandidates } from '../engine/interruptedRuntime.js';
 import { audit } from '../lib/audit.js';
+import { dropStaleApprovals, holdForApprovalIfNeeded } from '../lib/protectedLanes.js';
 import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
 import { createBuildSlots } from '../engine/buildSlots.js';
 
@@ -360,13 +361,38 @@ export default fp(
       }
       // Candidate queue, oldest first.
       const queued = await fastify.db
-        .select({ id: deployments.id, serverId: services.serverId, serviceId: deployments.serviceId })
+        .select({
+          id: deployments.id,
+          serverId: services.serverId,
+          serviceId: deployments.serviceId,
+          serviceName: services.name,
+          ownerUserId: services.ownerUserId,
+          environmentId: services.environmentId,
+          previewParentServiceId: services.previewParentServiceId,
+          reviewedAt: deployments.reviewedAt,
+        })
         .from(deployments)
         .innerJoin(services, eq(services.id, deployments.serviceId))
         .where(and(eq(deployments.status, 'queued'), notInArray(deployments.serviceId, buildingServices)))
         .orderBy(asc(deployments.createdAt));
       for (const row of queued) {
         if (inFlightServices.has(row.serviceId)) continue; // r272
+        // 0.16.13: a deploy into an approval-gated lane that nobody reviewed
+        // waits for an admin instead of building. Gating here, not at each
+        // insert, covers every trigger (webhook, schedule, image poll, API).
+        if (await holdForApprovalIfNeeded(fastify.db, row)) {
+          logBus.publish(row.id, '⏸ Waiting for approval: this lane requires a workspace admin to approve each deploy');
+          // A newer waiting deploy replaces an older one: at most one waits
+          // per service, and approving never ships older code.
+          for (const staleId of await dropStaleApprovals(fastify.db, row.serviceId, row.id)) {
+            logBus.publish(staleId, `⏹ Replaced by a newer deploy (#${row.id}) waiting for approval`);
+            logBus.end(staleId);
+          }
+          void audit(fastify.db, row.ownerUserId ?? null, 'deploy.awaiting_approval', `${row.serviceName} #${row.id}`, {
+            serviceId: row.serviceId,
+          });
+          continue;
+        }
         const key = String(row.serverId ?? 0);
         if ((perPartition.get(key) ?? 0) < config.deployConcurrency) return { id: row.id, serviceId: row.serviceId };
       }
@@ -424,6 +450,18 @@ export default fp(
             // the run's own lines.
             logBus.beginRun(queued.id);
             claimedRun = queued.id;
+            // 0.16.13: older deploys of this service still waiting for
+            // approval are stale now; approving one later would roll the
+            // service back to older code. Best-effort: the claim is won and
+            // must reach the pipeline whatever happens here.
+            try {
+              for (const staleId of await dropStaleApprovals(fastify.db, queued.serviceId, queued.id)) {
+                logBus.publish(staleId, `⏹ Dropped: a newer deploy (#${queued.id}) of this service started`);
+                logBus.end(staleId);
+              }
+            } catch (err) {
+              fastify.log.warn({ err, deploymentId: queued.id }, 'could not drop stale approvals');
+            }
             return queued;
           }
           fastify.log.info({ deploymentId: queued.id }, 'deployment already claimed, skipping');

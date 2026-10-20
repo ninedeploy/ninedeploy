@@ -10,6 +10,7 @@ import { getSettingJson, getSettingString, setSettingJson, setSettingString } fr
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole, roleAtLeast, serviceWorkspaceIds, userWorkspaceMemberships } from '../lib/resourceAccess.js';
 import { logBus } from '../engine/logs.js';
+import { assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 import { redactEgressTarget } from '../lib/egressGuard.js';
 import {
   buildDiagnosisMessages,
@@ -189,6 +190,8 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     const depId = num((req.params as { depId: string }).depId);
     const svc = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
+    // 0.16.13: the diagnosis quotes the build log back.
+    await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'deploy logs');
     // r508: a member role on the service is not enough on its own — a service
     // in a workspace the caller created for themselves would pass it.
     await assertMayUseAi(app.db, req.user!, await serviceWorkspaceIds(app.db, svc.id));

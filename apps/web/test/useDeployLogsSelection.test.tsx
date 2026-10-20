@@ -9,7 +9,7 @@ function nullSelectionCase(kind: 'service' | 'deployment' | 'both') {
   try {
     const old = FakeWebSocket.instances[0]!;
     act(() => { old.open(); old.message('previous\n'); vi.advanceTimersByTime(200); });
-    expect(view.result.current).toEqual({ lines: 'previous\n', open: true });
+    expect(view.result.current).toEqual({ lines: 'previous\n', open: true, refused: false });
     view.rerender({ service: kind === 'deployment' ? 1 : null, deployment: kind === 'service' ? 2 : null });
     act(() => { old.open(); old.message('late\n'); old.closeFromServer(); vi.advanceTimersByTime(2200); });
     return { ...view.result.current, sockets: FakeWebSocket.instances.length, closeCalls: old.close.mock.calls.length };
@@ -25,13 +25,13 @@ function reselectionCase() {
     view.rerender({ deployment: 2 });
     const current = FakeWebSocket.instances[1]!;
     act(() => { current.open(); current.message('fresh\n'); old.message('stale\n'); old.closeFromServer(); vi.advanceTimersByTime(2200); });
-    expect(view.result.current).toEqual({ lines: 'fresh\n', open: true });
+    expect(view.result.current).toEqual({ lines: 'fresh\n', open: true, refused: false });
     expect(FakeWebSocket.instances).toHaveLength(2);
   } finally { view.unmount(); vi.useRealTimers(); vi.unstubAllGlobals(); }
 }
 
 it.each(['service', 'deployment', 'both'] as const)('F79: clearing %s selection resets state and ignores disposed callbacks', (kind) => {
-  expect(nullSelectionCase(kind)).toEqual({ lines: '', open: false, sockets: 1, closeCalls: 1 });
+  expect(nullSelectionCase(kind)).toEqual({ lines: '', open: false, refused: false, sockets: 1, closeCalls: 1 });
 });
 it('F79: re-selection remains owned by the new socket', () => {
   reselectionCase();

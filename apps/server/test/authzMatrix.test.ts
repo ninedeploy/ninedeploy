@@ -670,6 +670,7 @@ export const MATRIX: Record<string, Rule> = {
   // ── any signed-in user (lists filter by visibility) ──
   'GET /v1/services': R('authed'),
   'GET /v1/services/queue': R('authed'),
+  'GET /v1/services/approvals': R('authed'),
   'GET /v1/databases': R('authed'),
   'GET /v1/projects': R('authed'),
   'GET /v1/workspaces': R('authed'),
@@ -806,6 +807,12 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/services/:id/wake': R('member', { allow404: 'the matrix service is not asleep, so the at-floor call is 400 not_asleep; covered by test/sleepRoutes.test.ts' }),
   'ALL /_nd/wake': R('public', { allow404: 'no domain routes the matrix host; covered by test/wakeRoutes.test.ts' }),
   'ALL /_nd/wake/*': R('public', { allow404: 'no domain routes the matrix host; covered by test/wakeRoutes.test.ts' }),
+  'POST /v1/services/:id/deploys/:depId/approve': R('admin', {
+    allow404: 'the seeded deployment may not exist; with one, it is not waiting and the answer is 400 not_awaiting_approval (test/deployApprovals.test.ts)',
+  }),
+  'POST /v1/services/:id/deploys/:depId/reject': R('admin', {
+    allow404: 'the seeded deployment may not exist; with one, it is not waiting and the answer is 400 not_awaiting_approval (test/deployApprovals.test.ts)',
+  }),
   'POST /v1/services/:id/deploys/:depId/canary/promote': R('member', {
     allow404: 'the seeded deployment may not exist; with one, no canary runs and the answer is 400 no_canary (test/canaryRoutes.test.ts)',
   }),

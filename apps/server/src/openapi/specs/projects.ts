@@ -82,7 +82,9 @@ export const projectsSpecs: RouteSpecMap = {
     validation: 'zod',
   },
   'PATCH /v1/environments/:id': {
-    summary: 'Rename an environment',
+    summary: 'Rename an environment, or switch its protection and approvals',
+    description:
+      "0.16.13: `protected` keeps the variable values, deploy and runtime logs, mounted files and log search of the lane's services (and their PR previews) for the lane's admins; `requireApproval` makes every deploy into the lane wait for an admin. Both default to off and need `admin` on the workspace to change; a rename alone needs `member`.",
     tag: 'environments',
     floor: 'member',
     localBody: 'environments.ts#environmentPatch',

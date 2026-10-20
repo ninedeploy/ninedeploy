@@ -45,6 +45,10 @@ export const deploymentStatus = [
   'superseded',
   'failed',
   'cancelled',
+  // 0.16.13: a deploy into a lane with `require_approval` set waits here
+  // until a workspace admin approves (→ queued) or rejects (→ cancelled).
+  // The worker claims only `queued`, so a waiting row never builds.
+  'awaiting_approval',
 ] as const;
 export const deploymentTrigger = ['user', 'webhook', 'cli', 'schedule'] as const;
 export const domainStatus = ['pending', 'active', 'error'] as const;
@@ -364,6 +368,11 @@ export const environments = sqliteTable(
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
+    // 0.16.13 (0091), both off by default. `protected`: the lane's variable
+    // values, logs and shells are for workspace admins only. `requireApproval`:
+    // every deploy into the lane waits for an admin (`awaiting_approval`).
+    protected: integer('protected', { mode: 'boolean' }).notNull().default(false),
+    requireApproval: integer('require_approval', { mode: 'boolean' }).notNull().default(false),
     createdAt: ts('created_at'),
     updatedAt: tsUpdatable('updated_at'),
   },
@@ -673,6 +682,11 @@ export const deployments = sqliteTable(
     // local image id. NULL on every pre-0072 row.
     buildHost: text('build_host'),
     imageId: text('image_id'),
+    // 0.16.13 (0091): who decided an `awaiting_approval` deploy, and when.
+    // The outcome is the status (queued onwards = approved, cancelled =
+    // rejected). NULL on every deploy that never waited.
+    reviewedBy: integer('reviewed_by').references((): AnySQLiteColumn => users.id, { onDelete: 'set null' }),
+    reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
     startedAt: integer('started_at', { mode: 'timestamp' }),
     finishedAt: integer('finished_at', { mode: 'timestamp' }),
     createdAt: ts('created_at'),

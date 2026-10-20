@@ -4,12 +4,13 @@ import { useState } from 'react';
 import { api } from '../lib/api.js';
 import { useWorkspace } from '../lib/workspace.js';
 import { useToast } from './Toast.js';
-import { Button, Input, Modal, Skeleton, Spinner } from './ui.js';
+import { Button, Input, Modal, Skeleton, Spinner, Switch } from './ui.js';
 
 /**
- * Manage deployment lanes (environments): create, rename, delete. The
- * server enforces the role floors (create/rename `member`, delete `admin`)
- * — failures surface as toasts instead of being pre-filtered here.
+ * Manage deployment lanes (environments): create, rename, delete, and
+ * (0.16.13) switch protection and deploy approvals. The server enforces the
+ * role floors (create/rename `member`, delete and the switches `admin`) —
+ * failures surface as toasts instead of being pre-filtered here.
  */
 export function LanesModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
@@ -62,12 +63,34 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
     onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Delete failed', 'error'),
   });
 
-  const busy = create.isPending || rename.isPending || remove.isPending;
+  // 0.16.13: the two lane switches. Admin-only on the server; a member's
+  // attempt surfaces as the server's 403 toast.
+  const toggle = useMutation({
+    mutationFn: (input: { id: number; protected?: boolean; requireApproval?: boolean }) => {
+      const { id, ...patch } = input;
+      return api.environments.update(id, patch);
+    },
+    onSuccess: (env, input) => {
+      invalidate();
+      if (input.protected !== undefined) {
+        toast(input.protected ? `"${env.name}" is protected` : `"${env.name}" is no longer protected`, 'info');
+      } else {
+        toast(
+          input.requireApproval ? `Deploys into "${env.name}" now wait for approval` : `Deploys into "${env.name}" no longer wait for approval`,
+          'info',
+        );
+      }
+    },
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Could not change the lane', 'error'),
+  });
+
+  const busy = create.isPending || rename.isPending || remove.isPending || toggle.isPending;
 
   return (
     <Modal title="Deployment lanes" onClose={onClose}>
       <p className="mb-4 text-xs text-slate-500">
-        Lanes group services per workspace — production, staging, … — and power the promote flow on the deploy tab.
+        Lanes group services per workspace — production, staging, … — and power the promote flow on the deploy tab. A protected
+        lane keeps its variable values and logs for workspace admins; with approval on, each deploy into it waits for one.
       </p>
 
       {lanes.isLoading ? (
@@ -116,6 +139,35 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
                     <span className="text-[11px] text-slate-500">
                       {e.serviceCount} service{e.serviceCount === 1 ? '' : 's'}
                     </span>
+                    {/* Absent on panels before 0.16.13. */}
+                    {e.protected !== undefined && (
+                      <span className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                        <label
+                          className="flex items-center gap-2 text-[11px] text-slate-400"
+                          title="Variable values, deploy and runtime logs and mounted files of this lane's services are for workspace admins only"
+                        >
+                          <Switch
+                            checked={!!e.protected}
+                            disabled={busy}
+                            label={`Protect ${e.name}`}
+                            onChange={(v) => toggle.mutate({ id: e.id, protected: v })}
+                          />
+                          Protected
+                        </label>
+                        <label
+                          className="flex items-center gap-2 text-[11px] text-slate-400"
+                          title="Every deploy into this lane waits for a workspace admin to approve it; an admin's own deploys go straight through"
+                        >
+                          <Switch
+                            checked={!!e.requireApproval}
+                            disabled={busy}
+                            label={`Require approval for ${e.name}`}
+                            onChange={(v) => toggle.mutate({ id: e.id, requireApproval: v })}
+                          />
+                          Require approval
+                        </label>
+                      </span>
+                    )}
                   </span>
                   <span className="flex shrink-0 items-center gap-1">
                     {confirmDeleteId === e.id ? (

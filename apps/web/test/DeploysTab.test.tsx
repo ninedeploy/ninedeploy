@@ -112,6 +112,45 @@ describe('DeploysTab (per-service)', () => {
     });
   });
 
+  it('offers approve and reject on a waiting deploy to a lane admin', async () => {
+    const waiting = baseDeploy({ id: 21, status: 'awaiting_approval', message: 'fix: login', trigger: 'webhook' });
+    mockOf(api.deploys.approvals).mockResolvedValue({
+      items: [{ ...waiting, serviceId: 1, serviceName: 'web', imageDigest: null, status: 'awaiting_approval', mayReview: true }],
+      count: 1,
+    });
+    const approveSpy = vi.fn().mockResolvedValue({ ok: true, status: 'queued' });
+    const rejectSpy = vi.fn().mockRejectedValue(new Error('Only a workspace admin may approve or reject a deploy into this lane'));
+    mockOf(api.deploys.approve).mockImplementation(approveSpy);
+    mockOf(api.deploys.reject).mockImplementation(rejectSpy);
+    renderWithProviders(
+      <DeploysTab serviceId={1} repoUrl={null} deploys={[waiting, baseDeploy({ id: 20 })]} loading={false} activeId={null} onSelect={() => {}} />,
+    );
+    expect(screen.getByText('Deployment #21 is waiting for approval')).toBeInTheDocument();
+    expect(screen.getByText('awaiting approval')).toBeInTheDocument();
+    // Withdraw is offered; rollback and remove are not.
+    expect(screen.getByLabelText('Cancel deployment #21')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Rollback to deployment #21')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Remove deployment #21')).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Approve/ }));
+    await waitFor(() => expect(approveSpy).toHaveBeenCalledWith(1, 21));
+    await user.click(screen.getByRole('button', { name: /Reject/ }));
+    await waitFor(() => expect(rejectSpy).toHaveBeenCalledWith(1, 21));
+  });
+
+  it('tells someone who may not decide who does', async () => {
+    const waiting = baseDeploy({ id: 22, status: 'awaiting_approval', commitSha: null, message: null, author: null });
+    mockOf(api.deploys.approvals).mockResolvedValue({
+      items: [{ ...waiting, serviceId: 1, serviceName: 'web', imageDigest: null, status: 'awaiting_approval', mayReview: false }],
+      count: 1,
+    });
+    renderWithProviders(
+      <DeploysTab serviceId={1} repoUrl={null} deploys={[waiting]} loading={false} activeId={null} onSelect={() => {}} />,
+    );
+    expect(await screen.findByText(/A workspace admin approves deploys into this lane/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Approve/ })).not.toBeInTheDocument();
+  });
+
   it('offers promotion only to same-repo services and queues it', async () => {
     const REPO = 'https://github.com/acme/web.git';
     mockOf(api.services.list).mockResolvedValue([

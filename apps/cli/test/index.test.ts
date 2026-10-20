@@ -242,6 +242,8 @@ vi.mock('../src/commands/sleep.js', () => ({
 }));
 // 0.16.12: previews.ts resolves services through uptime.ts. Exercised by test/previews.test.ts.
 vi.mock('../src/commands/previews.js', () => ({ previewsDatabaseCopies: vi.fn(), previewsShow: vi.fn() }));
+// 0.16.13: exercised by test/approvals.test.ts.
+vi.mock('../src/commands/approvals.js', () => ({ approvalsDecide: vi.fn(), approvalsList: vi.fn(), lanesList: vi.fn(), lanesSwitch: vi.fn() }));
 vi.mock('../src/commands/housekeeping.js', () => ({
   housekeepingPrune: h.housekeepingPrune,
   positiveIntOption: h.positiveIntOption,
@@ -405,6 +407,9 @@ describe('program registration', () => {
       'sleep',
       // 0.16.12: PR preview settings (database copies).
       'previews',
+      // 0.16.13: protected lanes and deploy approvals.
+      'lanes',
+      'approvals',
       'doctor',
       'sources', 'github-app', 'deploy', 'webhooks', 'firewall', 'manifest',
     ]);
@@ -448,7 +453,8 @@ describe('program registration', () => {
     // 0.16.10: + `autoscale` (3).
     // 0.16.11: + `sleep` (5).
     // 0.16.12: + `previews` (2).
-    expect(h.FakeCommand.instances).toHaveLength(303);
+    // 0.16.13: + `lanes` (3) and `approvals` (3).
+    expect(h.FakeCommand.instances).toHaveLength(311);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);
@@ -466,6 +472,12 @@ describe('program registration', () => {
     ]);
     expect(findCommand('previews').children.map((c) => c.cmdName)).toEqual([
       'show <service>', 'database-copies <service> <onOff>',
+    ]);
+    expect(findCommand('lanes').children.map((c) => c.cmdName)).toEqual([
+      'list', 'protect <lane> <onOff>', 'require-approval <lane> <onOff>',
+    ]);
+    expect(findCommand('approvals').children.map((c) => c.cmdName)).toEqual([
+      'list', 'approve <service>', 'reject <service>',
     ]);
     expect(findCommand('servers').children).toHaveLength(2);
     expect(findCommand('swarm').children).toHaveLength(6);

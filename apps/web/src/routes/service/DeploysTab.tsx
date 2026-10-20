@@ -5,16 +5,21 @@ import type { Deployment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Card, CardBody, Button, ConfirmDialog, Skeleton, Spinner, StatusBadge, cn } from '../../components/ui.js';
+import { ApprovalCard } from './ApprovalCard.js';
 import { LogPanel } from './LogPanel.js';
 
 export const IN_FLIGHT = ['queued', 'building', 'deploying'];
+
+/** 0.16.13: a deploy into an approval-gated lane, waiting for an admin. Not in flight, not finished. */
+export const WAITING = 'awaiting_approval';
 
 /**
  * A deployment can be removed from history once it is finished AND is not the
  * one serving traffic. The server enforces both (and the `admin` role); this
  * only decides whether to offer the button.
  */
-export const isRemovable = (status: string): boolean => !IN_FLIGHT.includes(status) && status !== 'running';
+export const isRemovable = (status: string): boolean =>
+  !IN_FLIGHT.includes(status) && status !== 'running' && status !== WAITING;
 
 /** Deployment history + the live build log for the selected deployment. */
 export function DeploysTab({
@@ -37,6 +42,8 @@ export function DeploysTab({
   const { toast } = useToast();
   const activeDeployRow = deploys.find((d) => d.id === activeId) ?? null;
   const inFlight = !!activeDeployRow && IN_FLIGHT.includes(activeDeployRow.status);
+  // The worker keeps at most one waiting deploy per service.
+  const waitingRow = deploys.find((d) => d.status === WAITING) ?? null;
   // Rollback swaps the LIVE release to an older one — the more disruptive
   // action on this page got the LESS protection (a hover-revealed icon, no
   // confirm), while a plain redeploy of a running service asks first.
@@ -114,6 +121,7 @@ export function DeploysTab({
         }}
         onClose={() => setPendingRollback(null)}
       />
+      {waitingRow && <ApprovalCard serviceId={serviceId} waiting={waitingRow} />}
       <DeploymentsCard
         deploys={deploys}
         activeId={activeId}
@@ -440,7 +448,7 @@ function DeploymentsCard({
                       </span>
                     </span>
                   </button>
-                  {onCancel && IN_FLIGHT.includes(d.status) && (
+                  {onCancel && (IN_FLIGHT.includes(d.status) || d.status === WAITING) && (
                     <button type="button"
                       onClick={() => onCancel(d.id)}
                       className="shrink-0 rounded p-1.5 text-slate-500 opacity-0 transition hover:bg-white/5 hover:text-amber-300 group-hover:opacity-100 focus-visible:opacity-100"
@@ -450,7 +458,12 @@ function DeploymentsCard({
                       <X size={12} />
                     </button>
                   )}
-                  {onRollback && i > 0 && !IN_FLIGHT.includes(d.status) && d.status !== 'failed' && d.status !== 'cancelled' && (
+                  {onRollback &&
+                    i > 0 &&
+                    !IN_FLIGHT.includes(d.status) &&
+                    d.status !== WAITING &&
+                    d.status !== 'failed' &&
+                    d.status !== 'cancelled' && (
                     <button type="button"
                       onClick={() => onRollback(d.id)}
                       className="shrink-0 rounded p-1.5 text-slate-600 opacity-0 transition hover:bg-white/5 hover:text-indigo-300 group-hover:opacity-100 focus-visible:opacity-100"

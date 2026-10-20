@@ -41,6 +41,81 @@ function commitLabel(item: QueueItem): string {
   return '—';
 }
 
+/**
+ * 0.16.13: deploys waiting for an admin's approval, across every service the
+ * caller can see. Renders nothing when none waits (or on a panel without the
+ * route), so the queue below stays the page's main content.
+ */
+function ApprovalsCard() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const approvals = useQuery({
+    queryKey: ['approvals'],
+    queryFn: () => api.deploys.approvals(),
+    refetchInterval: 10_000,
+    retry: false,
+  });
+  const decide = useMutation({
+    mutationFn: async (input: { serviceId: number; id: number; decision: 'approve' | 'reject' }): Promise<void> => {
+      if (input.decision === 'approve') await api.deploys.approve(input.serviceId, input.id);
+      else await api.deploys.reject(input.serviceId, input.id);
+    },
+    onSuccess: (_res, input) => {
+      qc.invalidateQueries({ queryKey: ['approvals'] });
+      qc.invalidateQueries({ queryKey: ['deploys-queue'] });
+      toast(input.decision === 'approve' ? `Deployment #${input.id} approved` : `Deployment #${input.id} rejected`, 'info');
+    },
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Could not record the decision', 'error'),
+  });
+  const items = approvals.data?.items ?? [];
+  if (items.length === 0) return null;
+  return (
+    <Card className="mb-5 border-violet-500/20">
+      <CardBody>
+        <div className="mb-3 text-sm font-medium text-slate-200">Waiting for approval</div>
+        <ul className="space-y-2">
+          {items.map((d) => (
+            <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2">
+              <span className="min-w-0 text-xs">
+                <Link to={`/services/${d.serviceId}`} className="font-medium text-slate-200 hover:text-indigo-300">
+                  {d.serviceName}
+                </Link>
+                <span className="ml-2 font-mono text-[11px] text-slate-500">
+                  #{d.id} · {d.commitSha ? d.commitSha.slice(0, 7) : d.imageDigest ? d.imageDigest.slice(0, 15) : '—'}
+                </span>
+                <span className="ml-2 text-[11px] text-slate-500">
+                  {d.message ? d.message.split('\n')[0] : d.trigger} · {relativeAge(d.createdAt)}
+                </span>
+              </span>
+              {d.mayReview ? (
+                <span className="flex shrink-0 items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={decide.isPending}
+                    onClick={() => decide.mutate({ serviceId: d.serviceId, id: d.id, decision: 'reject' })}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={decide.isPending}
+                    onClick={() => decide.mutate({ serviceId: d.serviceId, id: d.id, decision: 'approve' })}
+                  >
+                    Approve
+                  </Button>
+                </span>
+              ) : (
+                <span className="text-[11px] text-slate-500">a workspace admin decides</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </CardBody>
+    </Card>
+  );
+}
+
 export function Deploys() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -125,6 +200,8 @@ export function Deploys() {
           </div>
         }
       />
+
+      <ApprovalsCard />
 
       {queue.isLoading ? (
         <Skeleton className="h-32" />

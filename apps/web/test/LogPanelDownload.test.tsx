@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // r561: the on-screen buffer is the trimmed tail; Download must fetch the
 // full log from the server instead of saving that buffer.
-const logs = vi.hoisted(() => ({ lines: 'tail of a trimmed log\n', open: true }));
+const logs = vi.hoisted(() => ({ lines: 'tail of a trimmed log\n', open: true, refused: false }));
 vi.mock('../src/lib/useDeployLogs.js', () => ({ useDeployLogs: () => logs }));
 
 const apiMock = vi.hoisted(() => ({
@@ -29,6 +29,17 @@ import { LogPanel } from '../src/routes/service/LogPanel.js';
 describe('LogPanel download (r561)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('0.16.13: says a protected lane keeps the log from this caller', () => {
+    logs.refused = true;
+    try {
+      render(<LogPanel serviceId={4} deploymentId={9} deployStatus="running" />);
+      expect(screen.getByText(/its deploy logs are for workspace admins/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Download/ })).not.toBeInTheDocument();
+    } finally {
+      logs.refused = false;
+    }
   });
 
   it('downloads the FULL log from the server endpoint, not the trimmed on-screen buffer', async () => {
