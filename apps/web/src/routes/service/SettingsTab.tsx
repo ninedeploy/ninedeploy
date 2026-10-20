@@ -14,6 +14,7 @@ import { BuildPlacementCard, OrchestratorCard } from './PlacementCards.js';
 import { BuildArgsField, parseBuildArgNames } from './BuildArgsField.js';
 import { ContainerOptionsCard } from './ContainerOptionsCard.js';
 import { CanaryCard } from './CanaryCard.js';
+import { AutoscaleCard } from './AutoscaleCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
 
@@ -36,6 +37,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <StatusBadgeCard serviceId={serviceId} serviceName={svc.name} />
       <DeployHookCard serviceId={serviceId} />
       <ScalingCard svc={svc} />
+      {/* 0.16.10: next to Scaling, whose replicas it manages while on. */}
+      <AutoscaleCard svc={svc} />
     </div>
   );
 }
@@ -934,6 +937,8 @@ function ScalingCard({ svc }: { svc: Service }) {
   }
 
   const desired = Math.max(1, Math.min(Math.floor(Number(replicas)) || 1, 10));
+  // 0.16.10: with autoscaling saved, it sets the count; replicas applies again once it is off.
+  const autoscale = svc.autoscale ?? null;
 
   return (
     <Card>
@@ -953,13 +958,20 @@ function ScalingCard({ svc }: { svc: Service }) {
               value={replicas}
               onChange={(e) => setReplicas(e.target.value)}
               inputMode="numeric"
+              disabled={autoscale != null}
               className="h-9 w-44 font-mono text-xs"
             />
           </Field>
-          <Button type="submit" size="sm" variant="secondary" disabled={save.isPending || desired === (svc.replicas ?? 1)}>
+          <Button type="submit" size="sm" variant="secondary" disabled={autoscale != null || save.isPending || desired === (svc.replicas ?? 1)}>
             {save.isPending ? 'Saving…' : 'Save replicas'}
           </Button>
         </form>
+        {autoscale && (
+          <p className="mt-2 text-xs text-indigo-200">
+            Managed by autoscaling: {autoscale.minReplicas}–{autoscale.maxReplicas} containers, set in the Autoscaling card
+            below. Replicas applies again from the next deploy after autoscaling is turned off.
+          </p>
+        )}
         <p className="mt-2 text-xs text-slate-500">
           Each replica is a full container of the deployed release on the service bridge; Traefik
           round-robins across them and health-checks each one (a dead replica stops receiving

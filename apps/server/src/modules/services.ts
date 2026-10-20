@@ -36,6 +36,7 @@ import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
+import { autoscaleStatus, resetAutoscaleState } from '../lib/autoscaler.js';
 import {
   assertServiceRole,
   maxRole,
@@ -144,6 +145,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     gitLfs: s.gitLfs ?? false,
     runtimeOptions: s.runtimeOptions ?? null,
     canary: s.canary ?? null,
+    autoscale: s.autoscale ?? null,
     port: s.port,
     publishedPort: s.publishedPort ?? null,
     portMappings: s.portMappings ?? [],
@@ -682,6 +684,13 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       // Validated by the schema above; normalising only drops fields.
       patch.runtimeOptions = next as RuntimeOptions | null;
     }
+    // 0.16.10 autoscaling: docker services only (saved on a node or Swarm
+    // service too; the autoscaler holds there and says why). A change starts
+    // the autoscaler's windows again.
+    if (patch.autoscale != null && (patch.type ?? existing.type) !== 'docker') {
+      throw badRequest('Autoscaling applies to docker services only');
+    }
+    if (patch.autoscale !== undefined) resetAutoscaleState(id);
     // 0.16.9 canary releases: docker services only. Saved on a node or a
     // Swarm service too, where a deploy logs why it switches all at once
     // (engine/canary.ts canarySkipReason), so a later move needs no re-save.
@@ -1285,6 +1294,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     void audit(app.db, req.user!.id, 'service.targets', `${svc.name}: ${requested.join(',') || 'cleared'}`);
     const rows = await app.db.select().from(serviceTargets).where(eq(serviceTargets.serviceId, id));
     return { targets: rows.map((t) => ({ serverId: t.serverId, runtimeId: t.runtimeId, status: t.status })) };
+  });
+
+  // 0.16.10: what the autoscaler sees and did last for this service.
+  app.get('/:id/autoscale', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    return autoscaleStatus(await loadServiceForUser(app.db, id, req.user!));
   });
 
   app.get('/:id/targets', async (req) => {

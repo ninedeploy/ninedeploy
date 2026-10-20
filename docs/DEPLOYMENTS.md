@@ -42,6 +42,40 @@ A deploy switches all traffic at once, and its log names why, when:
 
 The traffic log is read every 10 s, so the last few seconds of a step can count towards the next step. Nothing about a canary is stored: a panel restart during one fails that deploy (as any interrupted deploy), removes the new container, and routes everything to the previous release.
 
+### Autoscaling (0.16.10)
+
+A docker service on the panel host can run between a minimum and a maximum number of containers, set by load, without a redeploy. Configure it under **Service → Settings → Autoscaling**, or with `autoscale` on `PATCH /v1/services/:id`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `minReplicas` | 1 | containers it never goes below (1–10) |
+| `maxReplicas` | — | containers it never goes above (up to 10, above the minimum) |
+| `metric` | `cpu` | `cpu`, `memory` or `rps` |
+| `target` | — | the value per container to keep near (see below) |
+| `scaleUpSeconds` | 60 | how long the need must last before it adds containers (30–3600) |
+| `scaleDownSeconds` | 300 | how long the need must last before it removes containers (60–3600) |
+
+The metrics, per container:
+- `cpu`: percent of the service's CPU limit, or of one core without a limit.
+- `memory`: percent of the service's memory limit. Set a limit, or this reads the host's memory.
+- `rps`: requests per second over the last minute, from traffic analytics. Traffic analytics (**Traefik → Traffic**) must be on; otherwise the autoscaler holds and says so.
+
+**How it decides.** Every 30 s, the count it needs is the current count times value ÷ target, within the bounds. Within 10 % of the target nothing changes. It adds containers once the need has lasted `scaleUpSeconds`, to the smallest count asked for in that time. It removes them once the need has lasted `scaleDownSeconds`, to the largest count asked for in that time, so a short dip does not drop capacity.
+
+**How it scales.** Each deploy creates all `maxReplicas` containers (`<runtime>`, `<runtime>-r2`, …) and stops those it does not need. It keeps as many serving as served before the deploy, within the bounds. Scaling up starts a stopped container and routes it only after it passes the service's healthcheck. Scaling down first routes containers away, then stops them. Each change is in the activity log as `service.autoscale`, with the reason.
+
+`GET /v1/services/:id/autoscale` shows:
+- the containers serving now;
+- the last value and the count it asks for;
+- why it holds, if it does: a deploy or a canary in progress, no traffic analytics for `rps`, or no spare container yet;
+- the last change.
+
+Notes:
+- Turning autoscaling on applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turning it off keeps the containers that serve now until the next deploy, which runs `replicas` containers again.
+- As with replicas, a host port reaches the first container only; the others serve through the domain.
+- Autoscaling holds for services on a node and for Swarm services (Swarm scales with its own replicas).
+- Stopped spare containers take disk space only. With `--restart always`, a Docker restart starts them again; the autoscaler stops them at its next look.
+
 ### Healthcheck timeout (0.16.1)
 
 The gate in step 3 accepts any answer below 500 on the health path and waits **300 seconds** by default. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.

@@ -18,6 +18,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { recordCanaryHit } from '../engine/canaryState.js';
+import { recordServiceRequest } from './requestRate.js';
 import { TRAEFIK_CONTAINER } from '../engine/dockerNames.js';
 import { audit } from './audit.js';
 import { run } from './exec.js';
@@ -554,9 +555,12 @@ export class TrafficTailer {
         malformed++;
         continue;
       }
-      agg.add(hit, scopeFor(hit, index));
+      const scope = scopeFor(hit, index);
+      agg.add(hit, scope);
       // 0.16.9: a canary in progress measures each release from these lines.
       recordCanaryHit(hit.service ?? null, hit.status, hit.durationMs, hit.startMs);
+      // 0.16.10: the autoscaler's requests-per-second metric.
+      recordServiceRequest(scope.serviceId, hit.startMs);
       count++;
     }
     return { lines: count, malformed };

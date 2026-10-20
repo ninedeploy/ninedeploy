@@ -426,7 +426,8 @@ export default fp(
                 // quietly halves capacity while the row reads `running`.
                 await reviveReplicas(
                   runtimeId,
-                  svc.replicas ?? 1,
+                  // 0.16.10: an autoscaled service's stopped spares are not drift.
+                  svc.autoscale ? (svc.runtimeReplicas ?? 1) : (svc.replicas ?? 1),
                   (line) => fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, line),
                   owned,
                 );

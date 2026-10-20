@@ -3,6 +3,7 @@
 // surface is re-exported unchanged from there.
 import type {
   Attachment,
+  AutoscaleStatusView,
   ComposePreviewRequestInput,
   ComposePreviewResponse,
   CreateProjectInput,
@@ -165,6 +166,15 @@ export interface ServicesApi {
     /** Swarm tasks of the service; `stack: null` when it is not on Swarm. */
     swarm: (id: number) => Promise<ServiceSwarmStatus>;
     // ── end 0.16 T8 ──
+    // ── 0.16.10 autoscaling ──
+    /**
+     * Autoscaling status (`GET /v1/services/:id/autoscale`, viewer):
+     * `{ enabled: false, replicas }` when off; otherwise the bounds, metric,
+     * target, last value, desired count, why it is holding and the last
+     * scaling event. The configuration itself is `autoscale` on the service
+     * and is set with `update(id, { autoscale })` (`null` turns it off).
+     */
+    autoscale: (id: number) => Promise<AutoscaleStatusView>;
   };
   labels: {
     /** `query` is appended verbatim, e.g. `?workspaceId=1`. */
@@ -275,6 +285,7 @@ export function servicesApi(t: Transport): ServicesApi {
       },
       imageTransfers: (id, query) => get<ImageTransfer[]>(apiGetUrl(`/v1/services/${id}/image-transfers`, { ...query })),
       swarm: (id) => get<ServiceSwarmStatus>(`/v1/services/${id}/swarm`),
+      autoscale: (id) => get<AutoscaleStatusView>(`/v1/services/${id}/autoscale`),
       // ── end 0.16 T8 ──
     },
     labels: {

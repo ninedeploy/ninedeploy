@@ -125,6 +125,16 @@ describe('runtime state reconciliation', () => {
     expect(updates).toEqual([]);
   });
 
+  it('0.16.10: an autoscaled service revives only the containers that serve, never its stopped spares', async () => {
+    mockDocker({ state: ['running', 'exited', 'exited', 'exited'] });
+    await reconcileOnce(
+      svcRow({ id: 33, status: 'running', runtimeId: 'web-7', replicas: 1, runtimeReplicas: 2, autoscale: { minReplicas: 1, maxReplicas: 4 } }),
+    );
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', ['start', 'web-7-r2']);
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', ['start', 'web-7-r3']);
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', ['start', 'web-7-r4']);
+  });
+
   it('leaves single-replica services without replica inspections', async () => {
     mockDocker({ state: ['running'] });
     await reconcileOnce(svcRow({ id: 32, status: 'running', runtimeId: 'web-1' }));

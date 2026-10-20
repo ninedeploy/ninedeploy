@@ -454,6 +454,22 @@ export function createCanaryApiMock() {
   };
 }
 
+/**
+ * The `autoscaleApi` object of `src/lib/autoscaleApi.js` (0.16.10). `status`
+ * resolves to autoscaling off, so a page that polls it renders nothing extra.
+ * Mock the module with the real query keys kept:
+ *
+ *     vi.mock('../src/lib/autoscaleApi.js', async (importOriginal) => ({
+ *       ...(await importOriginal<typeof import('../src/lib/autoscaleApi.js')>()),
+ *       autoscaleApi: (await import('./apiMock.js')).createAutoscaleApiMock(),
+ *     }));
+ */
+export function createAutoscaleApiMock() {
+  return {
+    status: vi.fn().mockResolvedValue({ enabled: false, replicas: 1 }),
+  };
+}
+
 /** Mock module for `src/lib/auth.js`: `useAuth` is a controllable spy. */
 export function createAuthMock() {
   // `useAuth` resolves to a signed-out session by default. It used to be a bare

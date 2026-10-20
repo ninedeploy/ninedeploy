@@ -160,3 +160,50 @@ describe('docker builder candidate ownership on failure', () => {
     expect(replica!.slice(0, replica!.indexOf('memcached:1.6')).includes('-p')).toBe(false);
   });
 });
+
+describe('0.16.10 autoscaled services', () => {
+  const auto = { minReplicas: 1, maxReplicas: 4, metric: 'cpu', target: 50, scaleUpSeconds: 60, scaleDownSeconds: 300 };
+
+  it('creates every container up to the maximum and keeps as many serving as before', async () => {
+    const lines: string[] = [];
+    const runtime = await dockerBuilder.buildAndRun({
+      ...ctx(1),
+      service: { ...service, publishedPort: null, replicas: 1, runtimeReplicas: 2, autoscale: auto },
+      log: (l: string) => lines.push(l),
+    } as never);
+    expect(runCalls().map((a) => a[3])).toEqual(['web-7', 'web-7-r2', 'web-7-r3', 'web-7-r4']);
+    expect(runArgs()).toContainEqual(['stop', '-t', '5', 'web-7-r3', 'web-7-r4']);
+    expect(runtime.replicas).toBe(2);
+    expect(lines).toContain('Autoscaling: 2 of 4 containers serve; web-7-r3, web-7-r4 are ready to start');
+  });
+
+  it('starts within the bounds: the minimum on a first deploy, never more than were created', async () => {
+    const first = await dockerBuilder.buildAndRun({
+      ...ctx(1),
+      service: { ...service, publishedPort: null, runtimeReplicas: null, autoscale: { ...auto, minReplicas: 2 } },
+    } as never);
+    expect(first.replicas).toBe(2);
+    vi.clearAllMocks();
+    const all = await dockerBuilder.buildAndRun({
+      ...ctx(1),
+      service: { ...service, publishedPort: null, runtimeReplicas: 9, autoscale: { ...auto, maxReplicas: 2 } },
+    } as never);
+    expect(all.replicas).toBe(2);
+    expect(runArgs().some((a) => a[0] === 'stop')).toBe(false);
+  });
+
+  it('keeps all of them serving when the spares cannot be stopped', async () => {
+    execMocks.run.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'stop') throw new Error('daemon busy');
+      return undefined;
+    });
+    const lines: string[] = [];
+    const runtime = await dockerBuilder.buildAndRun({
+      ...ctx(1),
+      service: { ...service, publishedPort: null, runtimeReplicas: 1, autoscale: { ...auto, maxReplicas: 2 } },
+      log: (l: string) => lines.push(l),
+    } as never);
+    expect(runtime.replicas).toBe(2);
+    expect(lines).toContain('warning: could not stop the spare containers (daemon busy); all 2 serve for now');
+  });
+});

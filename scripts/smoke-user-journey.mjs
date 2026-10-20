@@ -818,6 +818,89 @@ async function canaryChecks(token, serviceId, hostname) {
   if (trafficOff.status !== 200) fail(`canary: disabling traffic analytics answered ${trafficOff.status}`);
 }
 
+// 0.16.10: autoscaling on requests per second, through the real Traefik and
+// traffic log. A redeploy creates the spare containers stopped; steady
+// requests scale the service up to its maximum (each spare started, probed,
+// routed); once they stop it scales back down and the spares are stopped.
+const AUTOSCALE_IN = [0, 16, 10];
+/** Container name → state, for the service's generation, as the DinD daemon sees it. */
+function generationStates(runtimeId) {
+  const r = dindRun(['ps', '-a', '--filter', `name=^${runtimeId}`, '--format', '{{.Names}} {{.State}}']);
+  return Object.fromEntries(r.stdout.split(/\r?\n/).filter(Boolean).map((l) => l.split(' ')));
+}
+async function autoscaleChecks(token, serviceId, hostname) {
+  const svcPath = `/v1/services/${serviceId}`;
+  const on = await api('/v1/traffic/settings', { method: 'PUT', token, body: { enabled: true } });
+  if (on.status !== 200) fail(`autoscale: enabling traffic analytics answered ${on.status}`);
+  let code = '';
+  for (let i = 0; i < 30 && code !== '200'; i++) {
+    code = routeStatusesTls(hostname, 1)[0] ?? '';
+    if (code !== '200') await sleep(1000);
+  }
+  if (code !== '200') fail(`autoscale: ${hostname} is not routed after Traefik was recreated (last ${code || 'none'})`);
+
+  const set = await api(svcPath, {
+    method: 'PATCH',
+    token,
+    body: { autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'rps', target: 0.2, scaleUpSeconds: 30, scaleDownSeconds: 60 } },
+  });
+  if (set.status !== 200 || set.json?.autoscale?.maxReplicas !== 3) fail(`autoscale PATCH answered ${set.status} ${set.text.slice(0, 300)}`);
+  const dep = (await api(`${svcPath}/deploys`, { method: 'POST', token, body: {} })).json?.deploymentId;
+  if (!dep) fail('autoscale: the redeploy was not queued');
+  const ended = await deployEnded(token, serviceId, dep, 240_000);
+  if (ended !== 'running') fail(`autoscale: the redeploy #${dep} ended '${ended}'`);
+  const runtimeId = (await api(svcPath, { token })).json?.runtimeId;
+  const created = generationStates(runtimeId);
+  if (created[runtimeId] !== 'running' || created[`${runtimeId}-r2`] !== 'exited' || created[`${runtimeId}-r3`] !== 'exited') {
+    fail(`autoscale: the deploy should run ${runtimeId} and keep -r2/-r3 stopped: ${JSON.stringify(created)}`);
+  }
+  step(`autoscale: deploy #${dep} created ${Object.keys(created).length} containers, 1 serving, 2 stopped spares`);
+
+  // Up: about 5 requests a second against a target of 0.2 per container.
+  const t0 = Date.now();
+  let status = null;
+  while (Date.now() - t0 < 300_000) {
+    routeStatusesTls(hostname, 5);
+    status = (await api(`${svcPath}/autoscale`, { token })).json;
+    if (status?.replicas === 3) break;
+    await sleep(1000);
+  }
+  if (status?.replicas !== 3) fail(`autoscale: did not reach 3 containers under load within 300 s: ${JSON.stringify(status)}`);
+  const upS = Math.round((Date.now() - t0) / 1000);
+  const up = generationStates(runtimeId);
+  if (up[`${runtimeId}-r2`] !== 'running' || up[`${runtimeId}-r3`] !== 'running') fail(`autoscale: scaled to 3 but the spares are not running: ${JSON.stringify(up)}`);
+  const routes = traefikFile('dynamic/ninedeploy.yml');
+  if (!routes.includes(`${runtimeId}-r3:`)) fail(`autoscale: dynamic/ninedeploy.yml does not route ${runtimeId}-r3: ${routes.slice(0, 500)}`);
+  const served = routeStatusesTls(hostname, 10);
+  if (!served.every((c) => c === '200')) fail(`autoscale: at 3 containers ${hostname} answered ${served.join(',')}`);
+  step(`autoscale: scaled 1 → 3 under load in ${upS} s (${status.value} req/s per container, target 0.2; last: ${status.lastEvent?.reason}); all routed, 10/10 served`);
+
+  // Down: no traffic.
+  const t1 = Date.now();
+  while (Date.now() - t1 < 360_000) {
+    status = (await api(`${svcPath}/autoscale`, { token })).json;
+    if (status?.replicas === 1) break;
+    await sleep(5000);
+  }
+  if (status?.replicas !== 1) fail(`autoscale: did not scale back to 1 without traffic within 360 s: ${JSON.stringify(status)}`);
+  const downS = Math.round((Date.now() - t1) / 1000);
+  let down = {};
+  for (let i = 0; i < 20; i++) {
+    down = generationStates(runtimeId);
+    if (down[`${runtimeId}-r2`] === 'exited' && down[`${runtimeId}-r3`] === 'exited') break;
+    await sleep(1000);
+  }
+  if (down[runtimeId] !== 'running' || down[`${runtimeId}-r2`] !== 'exited' || down[`${runtimeId}-r3`] !== 'exited') fail(`autoscale: after scaling down: ${JSON.stringify(down)}`);
+  const events = (await auditEntries(token, 'service.autoscale')).filter((e) => e.meta?.serviceId === serviceId);
+  if (events.length < 2) fail(`autoscale: expected the scale-up and scale-down in the activity log, got ${events.length}`);
+  step(`autoscale: back to 1 without traffic in ${downS} s, spares stopped; ${events.length} service.autoscale entries in the activity log`);
+
+  const off = await api(svcPath, { method: 'PATCH', token, body: { autoscale: null } });
+  if (off.status !== 200 || off.json?.autoscale !== null) fail(`autoscale off answered ${off.status}`);
+  const trafficOff = await api('/v1/traffic/settings', { method: 'PUT', token, body: { enabled: false } });
+  if (trafficOff.status !== 200) fail(`autoscale: disabling traffic analytics answered ${trafficOff.status}`);
+}
+
 async function pinHostKeyChecks(token, password) {
   const key = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
   const created = await api('/v1/sources', { method: 'POST', token, body: { name: `pin-${suffix}`, type: 'github', deployKey: key } });
@@ -1432,6 +1515,7 @@ async function main() {
     await grantChecks(token, serviceId);
     if (!olderThan(String(health.version), UPTIME_IN)) await uptimeChecks(token, serviceId);
     if (!olderThan(String(health.version), CANARY_IN)) await canaryChecks(token, serviceId, `journey-${suffix}.test`);
+    if (!olderThan(String(health.version), AUTOSCALE_IN)) await autoscaleChecks(token, serviceId, `journey-${suffix}.test`);
   } else {
     step(`${health.version} predates operations and API (0.15): 0.15 checks skipped`);
   }
@@ -1448,7 +1532,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → autoscaling (≥0.16.10) → teardown');
 }
 
 main()

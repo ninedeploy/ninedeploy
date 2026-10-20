@@ -18,6 +18,7 @@ import backupSchedulerPlugin from './plugins/backupScheduler.js';
 import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import collectorPlugin from './plugins/collector.js';
 import uptimePlugin from './plugins/uptime.js';
+import autoscalerPlugin from './plugins/autoscaler.js';
 import dbPlugin from './plugins/db.js';
 import housekeepingPlugin from './plugins/housekeeping.js';
 import logShipperPlugin from './plugins/logShipper.js';
@@ -151,6 +152,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(collectorPlugin);
   // Uptime monitors (0.16.8): idle until an operator creates one
   await app.register(uptimePlugin);
+  // Autoscaling (0.16.10): idle until a service has an autoscale configuration
+  await app.register(autoscalerPlugin);
   // Scheduled database backups
   await app.register(backupSchedulerPlugin);
   // Image auto-update (watchtower-style digest watch, opt-in per service)

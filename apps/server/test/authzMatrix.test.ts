@@ -801,6 +801,7 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/services/:id/deploys/:depId/cancel': R('member'),
   'POST /v1/services/:id/deploys/:depId/rollback': R('member'),
   'GET /v1/services/:id/canary': R('viewer'),
+  'GET /v1/services/:id/autoscale': R('viewer'),
   'POST /v1/services/:id/deploys/:depId/canary/promote': R('member', {
     allow404: 'the seeded deployment may not exist; with one, no canary runs and the answer is 400 no_canary (test/canaryRoutes.test.ts)',
   }),

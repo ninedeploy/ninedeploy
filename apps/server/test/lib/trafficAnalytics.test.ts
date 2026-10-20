@@ -253,7 +253,9 @@ describe('commitRollups', () => {
 describe('TrafficTailer', () => {
   it('0.16.9: feeds each line to a canary in progress, by the weighted leaf that answered', async () => {
     const C = await import('../../src/engine/canaryState.js');
-    await seedDomains();
+    const R = await import('../../src/lib/requestRate.js');
+    R.resetRequestRates();
+    const { serviceId } = await seedDomains();
     C.beginCanary(1, 'web', 9, 1, true);
     C.setCanaryStep(1, 1, { runtimeId: 'web-9', replicas: 1, port: null, weight: 10 }, T0, T0 + 120_000);
     writeFileSync(
@@ -265,6 +267,8 @@ describe('TrafficTailer', () => {
       expect(C.canaryStats(1)).toMatchObject({ canary: { requests: 1, errors: 1 }, stable: { requests: 1, errors: 0 } });
       // The rollups count every request by its router, the canary's too.
       expect(await minuteRow('d:1')).toMatchObject({ requests: 3 });
+      // 0.16.10: and the autoscaler's per-service request rate.
+      expect(R.serviceRequestRate(serviceId, 60_000, T0 + 30_000, 0)).toBe(3 / 60);
     } finally {
       C.resetCanaryState();
     }

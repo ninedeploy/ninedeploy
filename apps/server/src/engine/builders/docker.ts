@@ -1322,7 +1322,16 @@ export const dockerBuilder: Builder = {
     // the multi-server render + healthCheck in renderDynamicConfig. Replicas
     // are clones of a container that already passed `docker run`; per-replica
     // health gates would 10x the boot time for no real safety.
-    const replicaCount = Math.max(1, Math.min(service.replicas ?? 1, MAX_REPLICAS));
+    // 0.16.10 autoscaling: every container up to the maximum is created, and
+    // as many as served before (within the bounds) keep running; the
+    // autoscaler starts and stops the rest without a redeploy.
+    const autoscale = service.autoscale ?? null;
+    const replicaCount = autoscale
+      ? Math.max(1, Math.min(autoscale.maxReplicas, MAX_REPLICAS))
+      : Math.max(1, Math.min(service.replicas ?? 1, MAX_REPLICAS));
+    const servingCount = autoscale
+      ? Math.max(autoscale.minReplicas, Math.min(service.runtimeReplicas ?? autoscale.minReplicas, replicaCount))
+      : replicaCount;
     // Achieved count starts at 1 (the primary is up) and grows per replica
     // that actually started — the proxy renders THIS, so a replica that
     // failed to start never becomes a dead round-robin backend.
@@ -1414,6 +1423,18 @@ export const dockerBuilder: Builder = {
         }
         replicaEnvFile?.cleanup();
       }
+    if (autoscale && achievedReplicas > servingCount) {
+      const spare = replicaNames(name, achievedReplicas).slice(servingCount);
+      try {
+        await run('docker', ['stop', '-t', '5', ...spare], {}, swallowLine);
+        log(`Autoscaling: ${servingCount} of ${achievedReplicas} containers serve; ${spare.join(', ')} ${spare.length === 1 ? 'is' : 'are'} ready to start`);
+        achievedReplicas = servingCount;
+      } catch (err) {
+        // All of them run and the proxy routes them all; the autoscaler stops
+        // the extra ones at its next look.
+        log(`warning: could not stop the spare containers (${msg(err)}); all ${achievedReplicas} serve for now`);
+      }
+    }
 
     // Capture the resolved image reference so rollback can later pin this
     // exact image. r397: prefer the REPO digest (`repo@sha256:…`, pullable

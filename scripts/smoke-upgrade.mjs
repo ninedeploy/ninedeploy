@@ -1048,6 +1048,23 @@ async function openapiChecks(token) {
 // 0.16.9: the upgraded service stores a canary configuration (migration
 // 0087 added the column) and reads it back with its defaults; no canary runs
 // until a deploy, and turning it off restores the row.
+// 0.16.10: the upgraded service stores an autoscale configuration (migration
+// 0088 added the column) and its status reads it back; turning it off
+// restores the row.
+const AUTOSCALE_IN = [0, 16, 10];
+async function autoscaleChecks(token, serviceId) {
+  const path = `/v1/services/${serviceId}`;
+  const set = await api(path, { method: 'PATCH', token, body: { autoscale: { maxReplicas: 3, target: 70 } } });
+  if (set.status !== 200 || set.json?.autoscale?.metric !== 'cpu' || set.json.autoscale.scaleDownSeconds !== 300) {
+    fail(`${TO}: autoscale PATCH on the upgraded service answered ${set.status} ${set.text.slice(0, 300)}`);
+  }
+  const status = await api(`${path}/autoscale`, { token });
+  if (status.status !== 200 || status.json?.enabled !== true || status.json.maxReplicas !== 3) fail(`${TO}: autoscale status on the upgraded service: ${status.status} ${status.text.slice(0, 200)}`);
+  const off = await api(path, { method: 'PATCH', token, body: { autoscale: null } });
+  if (off.status !== 200 || off.json?.autoscale !== null) fail(`${TO}: autoscale off answered ${off.status} ${off.text.slice(0, 200)}`);
+  step(`${TO}: autoscale settings stored on the upgraded service (1–3 on cpu 70%), status enabled, turned off again`);
+}
+
 const CANARY_IN = [0, 16, 9];
 async function canaryChecks(token, serviceId) {
   const path = `/v1/services/${serviceId}`;
@@ -1637,6 +1654,7 @@ async function main() {
   if (!olderThan(TO, CATALOG_IN)) await catalogChecks(token);
   if (!olderThan(TO, UPTIME_IN)) await uptimeChecks(token, serviceId);
   if (!olderThan(TO, CANARY_IN)) await canaryChecks(token, serviceId);
+  if (!olderThan(TO, AUTOSCALE_IN)) await autoscaleChecks(token, serviceId);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
@@ -1671,7 +1689,8 @@ async function main() {
     : '; 0.15 leaves Traefik untouched, and terminals, traffic analytics, the OpenAPI document and access grants work on the upgraded data';
   const summary0168 = olderThan(TO, UPTIME_IN) ? '' : '; 0.16.8 uptime monitors and status pages work on the upgraded data';
   const summary0169 = olderThan(TO, CANARY_IN) ? '' : '; 0.16.9 canary settings work on the upgraded data';
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}`);
+  const summary01610 = olderThan(TO, AUTOSCALE_IN) ? '' : '; 0.16.10 autoscale settings work on the upgraded data';
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}`);
 }
 
 main()

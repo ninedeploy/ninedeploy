@@ -155,6 +155,7 @@ GET /v1/servers/:id/stats operator -
 GET /v1/services authed nd://scope/read/services
 GET /v1/services/:id viewer nd://scope/read/services
 GET /v1/services/:id/attachments viewer nd://scope/read/services
+GET /v1/services/:id/autoscale viewer nd://scope/read/services
 GET /v1/services/:id/badge member nd://scope/read/services
 GET /v1/services/:id/canary viewer nd://scope/read/services
 GET /v1/services/:id/deploy-hook member nd://scope/read/services

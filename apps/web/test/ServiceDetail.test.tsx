@@ -5,6 +5,7 @@ import { Link, Route, Routes, useLocation } from 'react-router';
 import { ServiceDetail } from '../src/routes/service/index.js';
 import { api, getToken } from '../src/lib/api.js';
 import { canaryApi } from '../src/lib/canaryApi.js';
+import { autoscaleApi } from '../src/lib/autoscaleApi.js';
 import { renderRoute, renderWithProviders, mockOf } from './helpers.js';
 
 vi.mock('../src/lib/api.js', async () => {
@@ -25,6 +26,13 @@ vi.mock('../src/lib/uptimeApi.js', async (importOriginal) => ({
 vi.mock('../src/lib/canaryApi.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/canaryApi.js')>()),
   canaryApi: (await import('./apiMock.js')).createCanaryApiMock(),
+}));
+
+// 0.16.10: the Overview autoscale panel polls its own route while autoscaling
+// is on; mocked so it never takes a raw fetch either.
+vi.mock('../src/lib/autoscaleApi.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/autoscaleApi.js')>()),
+  autoscaleApi: (await import('./apiMock.js')).createAutoscaleApiMock(),
 }));
 
 vi.mock('../src/lib/useDeployLogs.js', () => ({
@@ -2017,6 +2025,48 @@ describe('ServiceDetail', () => {
       mockOf(api.services.get).mockResolvedValue(canaryService as never);
       renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
       expect(await screen.findByRole('switch', { name: 'Canary releases' })).toHaveAttribute('aria-checked', 'true');
+    });
+  });
+
+  describe('0.16.10 autoscaling', () => {
+    const autoscale = { minReplicas: 1, maxReplicas: 4, metric: 'cpu', target: 50, scaleUpSeconds: 60, scaleDownSeconds: 300 };
+    const autoscaledService = { ...service, replicas: 2, autoscale };
+
+    it('shows the live autoscale status on the Overview and the bounds in the runtime card', async () => {
+      mockOf(api.services.get).mockResolvedValue(autoscaledService as never);
+      mockOf(autoscaleApi.status).mockResolvedValue({
+        enabled: true, replicas: 2, minReplicas: 1, maxReplicas: 4, metric: 'cpu', target: 50, value: 48, desired: 2, holding: null, lastEvent: null,
+      });
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      expect(await screen.findByText('2 of 1–4')).toBeInTheDocument();
+      expect(screen.getByText('48% · target 50%')).toBeInTheDocument();
+      expect(screen.getByText('1–4, autoscaled')).toBeInTheDocument();
+      expect(autoscaleApi.status).toHaveBeenCalledWith(1);
+    });
+
+    it('does not poll without autoscaling', async () => {
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      await screen.findByText('api');
+      await waitFor(() => expect(api.deploys.list).toHaveBeenCalled());
+      expect(autoscaleApi.status).not.toHaveBeenCalled();
+      expect(screen.queryByText('Containers serving')).not.toBeInTheDocument();
+    });
+
+    it('leaves the replicas to autoscaling on the Settings tab while it is on', async () => {
+      mockOf(api.services.get).mockResolvedValue(autoscaledService as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      expect(await screen.findByRole('switch', { name: 'Autoscaling' })).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByLabelText('Replicas (1-10)')).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Save replicas' })).toBeDisabled();
+      expect(screen.getByText(/Managed by autoscaling: 1–4 containers, set in the Autoscaling card below/)).toBeInTheDocument();
+    });
+
+    it('keeps the replicas editable without autoscaling', async () => {
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      expect(await screen.findByLabelText('Replicas (1-10)')).not.toBeDisabled();
+      expect(screen.queryByText(/Managed by autoscaling/)).not.toBeInTheDocument();
+      // The fixture predates the field, so the Autoscaling card stays hidden.
+      expect(screen.queryByRole('switch', { name: 'Autoscaling' })).not.toBeInTheDocument();
     });
   });
 

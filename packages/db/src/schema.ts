@@ -487,6 +487,9 @@ export const services = sqliteTable(
     // 0.16.9: canary releases (engine/canary.ts). Null = a deploy switches
     // all traffic at once, as every deploy did before.
     canary: text('canary', { mode: 'json' }).$type<ServiceCanaryConfig>(),
+    // 0.16.10: autoscaling (lib/autoscaler.ts). Null = `replicas`
+    // containers, as every service had before.
+    autoscale: text('autoscale', { mode: 'json' }).$type<ServiceAutoscaleConfig>(),
     // 0.16.1: the secret in the public status-badge URL
     // (`/v1/badges/<token>.svg`). Null = no badge, the default.
     badgeToken: text('badge_token'),
@@ -686,6 +689,16 @@ export interface DomainRedirectRule {
   regex: string;
   replacement: string;
   permanent: boolean;
+}
+
+/** `services.autoscale` (0.16.10); validated by `autoscaleConfig` in @ninedeploy/schemas. */
+export interface ServiceAutoscaleConfig {
+  minReplicas: number;
+  maxReplicas: number;
+  metric: 'cpu' | 'memory' | 'rps';
+  target: number;
+  scaleUpSeconds: number;
+  scaleDownSeconds: number;
 }
 
 /** `services.canary` (0.16.9); validated by `canaryConfig` in @ninedeploy/schemas. */

@@ -262,6 +262,22 @@ when `--steps` is missing, and the server fills in the rest. The values are
 checked with the API's schema before anything is sent. `canary show` says when
 traffic analytics is off: the steps are then judged on the healthcheck only.
 
+```bash
+# Autoscaling (0.16.10; docker services on the panel host). <service> is an id, slug or name.
+ninedeploy autoscale show <service> [--json]              # bounds, metric and target (% for cpu/memory, req/s for rps),
+                                                          # containers serving, last value, desired count, why it holds, last change
+ninedeploy autoscale set <service> [--min 1] [--max N] [--metric cpu|memory|rps] [--target X] \
+  [--up-seconds 60] [--down-seconds 300] [--json]
+ninedeploy autoscale off <service>                        # sends { autoscale: null }
+```
+
+`autoscale set` keeps the current value of each option you do not give. On a
+service with autoscaling off, `--max` and `--target` are required (they have no
+default) and the server fills in the rest. The values are checked with the
+API's schema before anything is sent, and an error names the flag. Turning it
+on applies fully at the next deploy, which creates the spare containers; until
+then it can only scale down. `--json` on `show` prints `{ config, status }`.
+
 `swarm join` answers `node_swarm_not_enabled` until the node's owner sets
 `NINEDEPLOY_AGENT_SWARM_MANAGER=<panel advertise address>:2377` in the agent's
 environment and restarts it; the CLI prints that hint. Every node feature
@@ -418,6 +434,11 @@ await client.services.update(serviceId, { canary: null });                      
 const canary = await client.deploys.canary(serviceId);   // CanaryStatusView: { active: false } or step, weight, canary/stable stats
 await client.deploys.promoteCanary(serviceId, canary.deploymentId!);   // 400 no_canary when none is running
 await client.deploys.cancel(serviceId, canary.deploymentId!);          // stops it: all traffic back to the previous release
+
+// 0.16.10: autoscaling (docker services on the panel host)
+await client.services.update(serviceId, { autoscale: { maxReplicas: 4, target: 70 } });   // cpu by default; the server fills in the defaults
+await client.services.update(serviceId, { autoscale: null });                            // off
+const scaling = await client.services.autoscale(serviceId);   // AutoscaleStatusView: { enabled: false, replicas } or bounds, value, desired, holding, lastEvent
 ```
 
 `GET /v1/servers` now carries `terminal: { host, container, reason? }` per node

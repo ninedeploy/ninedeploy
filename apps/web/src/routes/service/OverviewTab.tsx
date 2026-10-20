@@ -8,6 +8,7 @@ import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, StatusBadge } from '../../components/ui.js';
 import { PluginSlot } from '../../components/PluginSlot.js';
 import { ServiceUptimeCard } from '../../components/uptime/ServiceUptimeCard.js';
+import { AutoscalePanel } from './AutoscalePanel.js';
 
 /** Health, metrics and runtime metadata for one service. */
 export function OverviewTab({ serviceId, svc }: { serviceId: number; svc: Service }) {
@@ -18,6 +19,9 @@ export function OverviewTab({ serviceId, svc }: { serviceId: number; svc: Servic
         <MetricsCard serviceId={serviceId} svc={svc} />
         <RuntimeInfoCard svc={svc} />
       </div>
+
+      {/* 0.16.10: the live container count beside the resources it scales on; polled only with autoscaling on. */}
+      <AutoscalePanel serviceId={serviceId} enabled={svc.type === 'docker' && svc.autoscale != null} />
 
       {/* 0.16.8 uptime monitors attached to this service */}
       <ServiceUptimeCard serviceId={serviceId} svc={svc} />
@@ -258,7 +262,10 @@ function RuntimeInfoCard({ svc }: { svc: Service }) {
     ['Git Credential', svc.repoUrl ? (svc.sourceName ?? 'public / none') : '—'],
     ['CPU Limit', svc.cpuLimitMilli ? `${svc.cpuLimitMilli / 1000} cores` : svc.cpuShares ? `${svc.cpuShares} shares` : 'unlimited'],
     ['Memory Limit', svc.memLimitMb ? `${svc.memLimitMb} MiB` : 'unlimited'],
-    ['Replicas', svc.type === 'docker' ? String(svc.replicas ?? 1) : '—'],
+    [
+      'Replicas',
+      svc.type !== 'docker' ? '—' : svc.autoscale ? `${svc.autoscale.minReplicas}–${svc.autoscale.maxReplicas}, autoscaled` : String(svc.replicas ?? 1),
+    ],
   ];
 
   return (

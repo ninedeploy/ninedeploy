@@ -144,6 +144,7 @@ import {
   type MonitorAddOptions,
 } from './commands/uptime.js';
 import { canaryOff, canaryPromote, canarySet, canaryShow, type CanarySetOptions } from './commands/canary.js';
+import { autoscaleOff, autoscaleSet, autoscaleShow, type AutoscaleSetOptions } from './commands/autoscale.js';
 
 const program = new Command();
 
@@ -1231,6 +1232,26 @@ canaryCmd.command('promote <service>')
   .description('Skip the remaining steps and send all traffic to the new release now')
   .option('--deployment <id>', 'The deployment to promote (default: the one running)')
   .action((service: string, opts: { deployment?: string }) => canaryPromote(getClient(), service, opts));
+/* v8 ignore stop */
+
+// ── 0.16.10: autoscaling ─────────────────────────────────────────────────
+const autoscaleCmd = program.command('autoscale').description('Autoscaling: run between a minimum and a maximum number of containers, set by load');
+/* v8 ignore start -- exercised by test/autoscale.test.ts. */
+autoscaleCmd.command('show <service>')
+  .description('The autoscaling configuration and what it is doing now')
+  .option('--json', 'Print raw JSON')
+  .action((service: string, opts: { json?: boolean }) => autoscaleShow(getClient(), service, opts));
+autoscaleCmd.command('set <service>')
+  .description('Turn autoscaling on or change it (docker services); options not given keep their value')
+  .option('--min <n>', 'Containers it never goes below (1-10, default 1)')
+  .option('--max <n>', 'Containers it never goes above (2-10, above --min; required to turn it on)')
+  .option('--metric <metric>', 'cpu, memory or rps (default cpu)')
+  .option('--target <value>', 'Value per container to keep near: percent for cpu/memory, requests per second for rps (required to turn it on)')
+  .option('--up-seconds <n>', 'How long the need must last before adding containers (30-3600, default 60)')
+  .option('--down-seconds <n>', 'How long the need must last before removing containers (60-3600, default 300)')
+  .option('--json', 'Print the stored configuration as JSON')
+  .action((service: string, opts: AutoscaleSetOptions) => autoscaleSet(getClient(), service, opts));
+autoscaleCmd.command('off <service>').description('Turn autoscaling off').action((service: string) => autoscaleOff(getClient(), service));
 /* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));

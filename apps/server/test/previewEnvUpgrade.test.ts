@@ -93,7 +93,7 @@ async function populated011(): Promise<{ db: DB; client: Client }> {
 
 // The service row as the 0.11-0.15 schema reads it: the 0.16 placement
 // columns (0072) and the 0.16.1 healthcheck/container-option columns (0074)
-// badge token (0075) and port mappings / healthcheck mode (0077) and the deploy hook (0079) and canary (0087) do not exist before those migrations and play no part in env assembly, so
+// badge token (0075) and port mappings / healthcheck mode (0077) and the deploy hook (0079) and canary (0087) and autoscale (0088) do not exist before those migrations and play no part in env assembly, so
 // this works on a 0.11 database and on a fully migrated one.
 const {
   buildOn: _b,
@@ -113,6 +113,7 @@ const {
   dockerLabels: _dl,
   gitLfs: _lfs,
   canary: _cn,
+  autoscale: _as,
   ...SERVICE_COLUMNS_015
 } = getTableColumns(services);
 const serviceRow = async (db: DB, id: number) =>

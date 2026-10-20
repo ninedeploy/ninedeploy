@@ -151,6 +151,14 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: '{ ok: boolean; status: string }',
   },
+  'GET /v1/services/:id/autoscale': {
+    summary: 'What the autoscaler sees for a service',
+    description:
+      '0.16.10. `enabled: false` without an autoscale configuration. Otherwise the containers serving now (`replicas`), the bounds, the metric and target, the last value per container, the count it asks for (`desired`), why the autoscaler holds (`holding`: a deploy or canary in progress, no traffic analytics for `rps`, a node or Swarm service, spares not created yet) and the last scaling event.',
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'AutoscaleStatusView',
+  },
   'GET /v1/services/:id/canary': {
     summary: "The canary of a service's deploy in progress",
     description:

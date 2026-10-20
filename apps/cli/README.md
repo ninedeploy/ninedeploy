@@ -172,6 +172,15 @@ ninedeploy canary off web                               # The next deploy switch
 ninedeploy canary promote web [--deployment <id>]       # Skip the remaining steps; stop one with `deploys cancel`
 ```
 
+### 📈 Autoscaling (0.16.10)
+```bash
+ninedeploy autoscale show web [--json]                        # Bounds, metric and target, containers serving, last value, desired count, last change
+ninedeploy autoscale set web --max 4 --target 70              # Turn it on (cpu by default); --metric memory|rps, --min, --up-seconds, --down-seconds
+ninedeploy autoscale set web --metric rps --target 200        # Options not given keep their value; rps needs traffic analytics
+ninedeploy autoscale off web                                  # The next deploy runs the fixed replicas again
+```
+Turning it on applies fully at the next deploy, which creates the spare containers.
+
 ---
 
 ## 📄 License
