@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.12] - 2026-10-20
+
+> A database copy per PR preview: realistic data in every preview, production never touched.
+
+### Upgrade notes
+
+- **One additive migration (0090: nullable `databases.preview_copy_of` and `databases.preview_service_id`, both `ON DELETE SET NULL`, and `services.preview_database_copy`, default off), nothing to turn on, nothing that worked is refused.** No preview gets a copy until a parent service turns it on.
+
+### Added
+
+- **A database copy per preview.** With `previewDatabaseCopy: true` on a parent service (Settings → Previews), each PR preview gets its own copy of every database attached to the parent.
+  - **When and from what:** on the preview's first deploy, from the parent database's latest completed backup (fetched from remote storage when the local file is gone), or a dump taken then when there is none.
+  - **The copy:** a managed database named `<database> · PR #<n>`, with its own container, volume and credentials, and the parent's limits. It is attached under the parent's variable name, so the preview's `DATABASE_URL` points at it.
+  - **Lifecycle:** later deploys of the PR keep it. It is removed with the preview (container, volume, backups) and swept hourly once orphaned (for example when the parent service is deleted). It is left out of the daily built-in backups.
+  - **Engines:** PostgreSQL and the Redis family on the panel host. MySQL, MariaDB and MongoDB dumps carry the server's own users, so they are not copied yet; neither are node databases. The deploy log names what is left out.
+  - **Failure:** a copy that cannot be made fails the preview's deploy; it never falls back to production.
+- **Clients.** The web app has the switch in the preview settings and a "Preview copy" badge on a preview's attached databases. The CLI has `ninedeploy previews show|database-copies`. See [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md).
+
 ## [0.16.11] - 2026-10-20
 
 > Scale to zero: an idle service sleeps, and its next request wakes it.

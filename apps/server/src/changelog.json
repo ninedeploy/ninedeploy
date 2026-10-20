@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.12",
+    "date": "2026-10-20",
+    "title": "A database copy per preview",
+    "changes": [
+      "Give each preview its own database copies (Service → Settings → Previews): every PR preview gets its own copy of the parent's PostgreSQL and Redis-family databases, made from the latest backup, so a preview runs against realistic data and never touches production.",
+      "The copy is made on the preview's first deploy and kept for the PR's later deploys. The preview's database variable points at it, so its migrations run against the copy.",
+      "Closing the PR removes the copies with the preview. Copies left behind are cleaned up hourly, and they get no daily backups. MySQL, MariaDB and MongoDB are not copied yet, and the deploy log says so.",
+      "The CLI has ninedeploy previews show and ninedeploy previews database-copies. Nothing changes until you turn it on."
+    ]
+  },
+  {
     "version": "0.16.11",
     "date": "2026-10-20",
     "title": "Scale to zero",
