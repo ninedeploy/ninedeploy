@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.13] - 2026-10-20
+
+> Protected lanes and deploy approvals: production secrets stay with admins, and production deploys wait for one.
+
+### Upgrade notes
+
+- **One additive migration (0091), nothing to turn on, nothing that worked is refused.**
+  - On `environments`: `protected` and `require_approval`, both default off.
+  - On `deployments`: `reviewed_by` and `reviewed_at`, both nullable; `reviewed_by` is `ON DELETE SET NULL`.
+  - No lane is protected or gated after the upgrade, and no deploy waits.
+- A new deployment status, `awaiting_approval`, appears only on a deploy into a lane whose admin turned approvals on.
+  - It is kept out of `GET /v1/services/queue`, so clients that parse that list strictly are unaffected.
+  - It is listed at `GET /v1/services/approvals` instead.
+
+### Added
+
+- **Protected lanes.** `protected: true` on a lane (`PATCH /v1/environments/:id`, admin; Services → Lanes) keeps the following for the lane's admins:
+  - the variable values of the lane's services and of their PR previews: a member reads `''` with `hidden: true`, can still write values, but cannot export them;
+  - deploy logs (stream and download), runtime logs, log search, AI diagnosis and mounted files: a member is refused with `403 protected_lane`;
+  - the lane itself: a member cannot clone a protected service or move a service out of a protected or gated lane.
+- **Deploy approvals.** With `requireApproval: true` on a lane:
+  - **What waits:** every deploy that is not an admin's own, from a webhook, a schedule, an image update, a deploy hook URL or a member. It waits as `awaiting_approval`; the worker holds it at claim time, so every trigger is covered.
+  - **Deciding:** `POST /v1/services/:id/deploys/:depId/approve` queues it; `/reject` cancels it. The author can withdraw it with cancel. The deploy list carries `reviewedBy` and `reviewedAt`.
+  - **One waiting deploy per service:** a newer waiting deploy replaces the older one, and a deploy that starts drops the older waiting ones, so approving never ships older code.
+  - **Kept and announced:** waiting deploys are kept by the history sweep and by webhook replay dedup. They send a `deploy.awaiting_approval` notification, and decisions are audited as `deploy.approve` and `deploy.reject`.
+- **Lane admin.** An operator, an admin or owner seat in the lane's workspace, or an admin grant covering the service. Being the service's creator is not enough.
+- **Clients.**
+  - **Web:** the two switches in Services → Lanes; an approval card on the service's Deploys tab and a "Waiting for approval" list on the Deploys page; hidden values and refused logs say why.
+  - **CLI:** `ninedeploy lanes list|protect|require-approval` and `ninedeploy approvals list|approve|reject`.
+  - **SDK:** `environments.update`, and `deploys.approvals`, `deploys.approve`, `deploys.reject`.
+  - See [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md#protected-lanes-and-deploy-approvals-01613).
+
+### Not yet
+
+- PR previews from forks are still refused, as before. Building them behind an approval, with a clone that never sends the parent's credentials to the fork, is next on the roadmap.
+
 ## [0.16.12] - 2026-10-20
 
 > A database copy per PR preview: realistic data in every preview, production never touched.

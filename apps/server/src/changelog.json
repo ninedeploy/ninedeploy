@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.16.13",
+    "date": "2026-10-20",
+    "title": "Protected lanes and deploy approvals",
+    "changes": [
+      "Protected lanes (Services → Lanes): a lane such as production can keep its variable values, deploy and runtime logs and mounted files for workspace admins. Members still edit the service, set new values and push code, and git deploys keep working; they see the names, not the values.",
+      "Deploy approvals: with Require approval on, every deploy into the lane waits until a workspace admin approves or rejects it, whether a push, a schedule, a deploy hook or a member started it. An admin's own deploys go straight through, and a newer waiting deploy replaces an older one.",
+      "Waiting deploys show on the service's Deploys tab and on the Deploys page with Approve and Reject, and send a deploy.awaiting_approval notification. PR previews follow their parent's lane. The CLI has ninedeploy lanes and ninedeploy approvals.",
+      "Both switches are off on every lane, including after the upgrade, and only a workspace admin can turn them on. Creating a service does not make you its lane's admin."
+    ]
+  },
+  {
     "version": "0.16.12",
     "date": "2026-10-20",
     "title": "A database copy per preview",
