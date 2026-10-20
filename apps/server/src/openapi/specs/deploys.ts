@@ -261,4 +261,14 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'operator',
     responseType: '{ diagnosis: string; model: string }',
   },
+  'POST /v1/ai/services/:id/logs/analyze': {
+    summary: "AI analysis of a running service's recent runtime logs",
+    description:
+      "0.16.15. Reads the newest `tail` lines (20-5000, default 300), sanitizes them like a diagnosis and sends the tail to the configured provider. Answers the model's analysis (health, problems with the quoted lines, next steps), the model and how many lines it saw. Needs `member` on the service, a protected lane's logs need its admin, and the AI spend rule applies. `400 not_running` for a service with no runtime, `400 no_logs` when it wrote nothing.",
+    tag: 'ai',
+    floor: 'operator',
+    localBody: 'ai.ts#analyzeLogsBody',
+    responseType: 'RuntimeLogAnalysis',
+    validation: 'zod',
+  },
 };

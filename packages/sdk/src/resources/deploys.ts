@@ -10,6 +10,7 @@ import type {
   QueueResponse,
   ApprovalsResponse,
   AiConfigStatus,
+  RuntimeLogAnalysis,
   AiConfigUpdate,
   RepoInsights,
   TriggerDeploy,
@@ -116,6 +117,12 @@ export interface DeploysApi {
     diagnose: (serviceId: number, deploymentId: number) => Promise<{ diagnosis: string; model: string }>;
     /** Describe the app in plain language, get a schema-valid .ninedeploy manifest. */
     suggestManifest: (description: string) => Promise<{ manifest: Record<string, unknown>; model: string }>;
+    /**
+     * 0.16.15: what the provider makes of a running service's recent runtime
+     * logs (`tail` lines, 20-5000, default 300; sanitized before they leave the
+     * panel). `400 not_running` / `no_logs` when there is nothing to read.
+     */
+    analyzeLogs: (serviceId: number, input?: { tail?: number }) => Promise<RuntimeLogAnalysis>;
   };
 }
 
@@ -188,6 +195,7 @@ export function deploysApi(t: Transport): DeploysApi {
         ),
       suggestManifest: (description) =>
         send<{ manifest: Record<string, unknown>; model: string }>('POST', '/v1/ai/suggest-manifest', { description }),
+      analyzeLogs: (serviceId, input) => send<RuntimeLogAnalysis>('POST', `/v1/ai/services/${serviceId}/logs/analyze`, input ?? {}),
     },
   };
 }

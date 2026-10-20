@@ -1103,6 +1103,24 @@ async function laneChecks(token, serviceId, laneId) {
   step(`${TO}: the upgraded lane #${laneId} is neither protected nor gated, nothing waits, its values read back; the switches are stored and turned off again`);
 }
 
+// 0.16.15: the AI configuration saved before reads as an OpenAI-compatible
+// provider, still configured; Claude can be chosen without a base URL, and
+// the configuration is put back as it was.
+const AI_PROVIDERS_IN = [0, 16, 15];
+async function aiProviderChecks(token) {
+  const before = (await api('/v1/ai/config', { token })).json;
+  if (before?.configured !== true || before.provider !== 'openai' || before.model !== 'gpt-upgrade' || before.baseUrl !== 'https://ai.invalid/v1') {
+    fail(`${TO}: the upgraded AI configuration: ${JSON.stringify(before)}`);
+  }
+  const claude = await api('/v1/ai/config', { method: 'PUT', token, body: { provider: 'anthropic', model: 'claude-sonnet-5-5' } });
+  if (claude.status !== 200) fail(`${TO}: AI config PUT for Claude answered ${claude.status} ${claude.text.slice(0, 200)}`);
+  const now = (await api('/v1/ai/config', { token })).json;
+  if (now?.provider !== 'anthropic' || now.baseUrl !== 'https://api.anthropic.com' || now.configured !== true) fail(`${TO}: AI config after choosing Claude: ${JSON.stringify(now)}`);
+  const back = await api('/v1/ai/config', { method: 'PUT', token, body: { baseUrl: 'https://ai.invalid/v1', model: 'gpt-upgrade' } });
+  if (back.status !== 200) fail(`${TO}: AI config PUT back answered ${back.status}`);
+  step(`${TO}: the AI configuration from before reads as OpenAI-compatible and configured; Claude is stored without a base URL and the old configuration put back`);
+}
+
 const SLEEP_IN = [0, 16, 11];
 async function sleepChecks(token, serviceId) {
   const path = `/v1/services/${serviceId}`;
@@ -1506,6 +1524,12 @@ async function main() {
   if (inLane.status !== 200) fail(`${FROM}: moving service #${serviceId} into lane #${laneId} answered ${inLane.status} ${inLane.text.slice(0, 200)}`);
   step(`seeded lane #${laneId} holding service #${serviceId}`);
 
+  // An AI configuration in the pre-0.16.15 shape (no provider): it must
+  // still read as configured and OpenAI-compatible after the upgrade.
+  const aiSeed = await api('/v1/ai/config', { method: 'PUT', token, body: { baseUrl: 'https://ai.invalid/v1', model: 'gpt-upgrade', apiKey: `sk-upgrade-${suffix}` } });
+  if (aiSeed.status !== 200) fail(`${FROM}: AI config PUT answered ${aiSeed.status} ${aiSeed.text.slice(0, 200)}`);
+  step('seeded an OpenAI-compatible AI configuration');
+
   // 0.13 seed: a PAT source with a dummy token (POST /v1/sources and its
   // test route exist on v0.10.45). It must list and test the same afterwards.
   const pat = await api('/v1/sources', { method: 'POST', token, body: { name: `upgrade-pat-${suffix}`, type: 'github', token: `ghp_upgrade${suffix}dummy`, defaultBranch: 'main' } });
@@ -1734,6 +1758,7 @@ async function main() {
   if (!olderThan(TO, PREVIEW_DB_IN)) await previewDatabaseChecks(token, serviceId);
   if (!olderThan(TO, APPROVALS_IN)) await laneChecks(token, serviceId, laneId);
   if (!olderThan(TO, FORKS_IN)) await forkPreviewChecks(token, serviceId);
+  if (!olderThan(TO, AI_PROVIDERS_IN)) await aiProviderChecks(token);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
@@ -1773,7 +1798,8 @@ async function main() {
   const summary01612 = olderThan(TO, PREVIEW_DB_IN) ? '' : '; 0.16.12 preview database copies are off by default and switch on the upgraded data';
   const summary01613 = olderThan(TO, APPROVALS_IN) ? '' : '; 0.16.13 lanes from before are neither protected nor gated';
   const summary01614 = olderThan(TO, FORKS_IN) ? '' : '; 0.16.14 fork PR previews are off by default';
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}${summary01612}${summary01613}${summary01614}`);
+  const summary01615 = olderThan(TO, AI_PROVIDERS_IN) ? '' : '; 0.16.15 the AI configuration from before reads as OpenAI-compatible';
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}${summary01612}${summary01613}${summary01614}${summary01615}`);
 }
 
 main()

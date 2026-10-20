@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
-import { Download, Pause, Play, Search, Terminal } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Bot, Download, Pause, Play, Search, Terminal, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { downloadBlob } from '../../lib/format.js';
-import { Button, Card, CardBody, Input, Select } from '../../components/ui.js';
+import { useToast } from '../../components/Toast.js';
+import { Button, Card, CardBody, Input, Select, Spinner } from '../../components/ui.js';
 
 /** Line counts offered; the server caps a read at 5000 (RUNTIME_LOG_TAIL_MAX). */
 const TAILS = [300, 1000, 5000] as const;
@@ -12,6 +13,9 @@ const TAILS = [300, 1000, 5000] as const;
  * Runtime logs of the running container: live (refreshed every 3 s, pausable),
  * searchable (case-insensitive, matching lines only, matches highlighted), and
  * downloadable as the lines loaded. Coolify and Dokploy offer the same.
+ * 0.16.15: and, when the operator configured an AI provider, analyzed —
+ * the newest lines go (sanitized) to the provider, which answers with the
+ * service's health, the problems it sees and what to do.
  */
 export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: string }) {
   const [tail, setTail] = useState<number>(300);
@@ -38,6 +42,15 @@ export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: 
   }, [shown]);
 
   const download = () => downloadBlob(text, `${slug}-runtime.log`, 'text/plain');
+
+  const { toast } = useToast();
+  const aiConfig = useQuery({ queryKey: ['ai-config'], queryFn: () => api.ai.getConfig(), staleTime: 60_000 });
+  const [analysis, setAnalysis] = useState<{ text: string; model: string; lines: number } | null>(null);
+  const analyze = useMutation({
+    mutationFn: () => api.ai.analyzeLogs(serviceId, { tail }),
+    onSuccess: (res) => setAnalysis({ text: res.analysis, model: res.model, lines: res.lines }),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Analysis failed', 'error'),
+  });
 
   return (
     <Card className="mt-5">
@@ -70,8 +83,37 @@ export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: 
             <Button size="sm" variant="secondary" onClick={download} disabled={!text} aria-label="Download logs">
               <Download size={13} /> Download
             </Button>
+            {aiConfig.data?.configured && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => analyze.mutate()}
+                disabled={!text || analyze.isPending}
+                aria-label="Analyze logs with AI"
+              >
+                {analyze.isPending ? <Spinner className="h-3 w-3" /> : <Bot size={13} />} Analyze
+              </Button>
+            )}
           </div>
         </div>
+        {analysis && (
+          <div className="mb-3 rounded-lg border border-indigo-500/20 bg-indigo-500/[0.06] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <Bot size={13} className="text-indigo-300" /> AI analysis of the last {analysis.lines} lines · {analysis.model}
+              </span>
+              <button
+                type="button"
+                onClick={() => setAnalysis(null)}
+                className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"
+                aria-label="Close the analysis"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-slate-200">{analysis.text}</div>
+          </div>
+        )}
         <pre
           ref={pre}
           onScroll={(e) => {

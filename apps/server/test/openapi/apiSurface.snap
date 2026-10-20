@@ -279,6 +279,7 @@ PATCH /v1/workspaces/:id admin -
 PATCH /v1/workspaces/:id/members/:memberId admin -
 POST /scim/v2/Users scim -
 POST /v1/ai/services/:id/deploys/:depId/diagnose operator -
+POST /v1/ai/services/:id/logs/analyze operator -
 POST /v1/ai/suggest-manifest operator -
 POST /v1/alerts operator nd://scope/write/alerts
 POST /v1/auth/2fa/disable self -

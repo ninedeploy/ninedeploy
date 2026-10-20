@@ -1,12 +1,14 @@
 import { eq } from 'drizzle-orm';
 import { deployments, users, workspaces } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { aiConfigUpdate, ninedeployManifest, type AiConfigStatus as AiConfigStatusT } from '@ninedeploy/schemas';
+import { aiConfigUpdate, ninedeployManifest, RUNTIME_LOG_TAIL_MAX, type AiConfigStatus as AiConfigStatusT } from '@ninedeploy/schemas';
 import { z } from 'zod';
-import { decrypt, encrypt } from '../lib/crypto.js';
+import { encrypt } from '../lib/crypto.js';
 import { HttpError, badRequest, forbidden, notFound, parseId as num } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
-import { getSettingJson, getSettingString, setSettingJson, setSettingString } from '../lib/settings.js';
+import { getSettingString, setSettingJson, setSettingString } from '../lib/settings.js';
+import { AI_CONFIG_KEY, AI_KEY_KEY, aiComplete, effectiveBaseUrl, loadAiConfig, loadStoredAiConfig } from '../lib/aiProvider.js';
+import { readRuntimeLogs } from '../lib/runtimeLogs.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole, roleAtLeast, serviceWorkspaceIds, userWorkspaceMemberships } from '../lib/resourceAccess.js';
 import { logBus } from '../engine/logs.js';
@@ -14,17 +16,18 @@ import { assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 import { redactEgressTarget } from '../lib/egressGuard.js';
 import {
   buildDiagnosisMessages,
+  buildRuntimeLogMessages,
   buildSuggestMessages,
   MAX_LOG_CHARS,
-  parseChatCompletionContent,
   sanitizeLogForAi,
   stripJsonFence,
   truncateTail,
 } from '../lib/aiDiagnosis.js';
 
 /**
- * AI failure diagnosis (BYO-key). The operator configures an
- * OpenAI-compatible endpoint + model + API key once for the instance;
+ * AI features (BYO-key). The operator configures a provider (0.16.15: an
+ * OpenAI-compatible endpoint or Claude, lib/aiProvider.ts) + model + API key
+ * once for the instance;
  * operators and the members of an operator's workspaces (r508) may then ask
  * for a failed build log to be diagnosed. The key is
  * stored encrypted at rest (settings table, `encrypt()` envelope) and never
@@ -35,17 +38,19 @@ import {
  * blocked. Only the instance operator can set it.
  */
 
-const AI_CONFIG_KEY = 'ai_diagnosis_config';
-const AI_KEY_KEY = 'ai_diagnosis_key_encrypted';
-
-const DIAGNOSIS_TIMEOUT_MS = 30_000;
 const DIAGNOSIS_MAX_TOKENS = 700;
+const LOG_ANALYSIS_MAX_TOKENS = 800;
 const SUGGEST_MAX_TOKENS = 900;
 
 /** Free-text app description — long enough to be useful, short enough
  * to stay a rounding error next to the system prompt. */
 const suggestManifest = z.object({
   description: z.string().min(10).max(4000),
+});
+
+/** 0.16.15: how many of the newest runtime log lines to read (the sanitized tail sent is capped at MAX_LOG_CHARS). */
+const analyzeLogsBody = z.object({
+  tail: z.number().int().min(20).max(RUNTIME_LOG_TAIL_MAX).default(300),
 });
 
 /**
@@ -81,60 +86,11 @@ async function assertMayUseAi(
   throw forbidden(AI_ACCESS_REFUSED);
 }
 
-async function loadAiConfig(
-  db: Parameters<typeof getSettingJson>[0],
-): Promise<{ baseUrl: string; model: string; apiKey: string } | null> {
-  const json = await getSettingJson<{ baseUrl?: string; model?: string }>(db, AI_CONFIG_KEY, null);
-  const encrypted = await getSettingString(db, AI_KEY_KEY, null);
-  if (!json?.baseUrl || !json.model || !encrypted) return null;
-  try {
-    return { baseUrl: json.baseUrl, model: json.model, apiKey: decrypt(encrypted) };
-  } catch {
-    // Undecryptable envelope (rotated-away master key) → treat as unconfigured
-    // rather than half-working: the operator re-enters the key.
-    return null;
-  }
-}
-
-/** POST an OpenAI-compatible chat completion and return the assistant text. */
-async function chatCompletion(
-  cfg: { baseUrl: string; model: string; apiKey: string },
-  messages: Array<{ role: 'system' | 'user'; content: string }>,
-  maxTokens: number,
-): Promise<string> {
-  const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-  let res: Awaited<ReturnType<typeof fetch>>;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
-      body: JSON.stringify({
-        model: cfg.model,
-        max_tokens: maxTokens,
-        temperature: 0.2,
-        messages,
-      }),
-      signal: AbortSignal.timeout(DIAGNOSIS_TIMEOUT_MS),
-    });
-  } catch (err) {
-    const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timed out' : 'is unreachable';
-    throw new HttpError(504, 'ai_upstream', `The AI provider ${reason}.`);
-  }
-  if (!res.ok) {
-    // Body may echo the key on auth failures — never relay it upstream-text.
-    throw new HttpError(502, 'ai_upstream', `The AI provider rejected the request (HTTP ${res.status}).`);
-  }
-  const content = parseChatCompletionContent(await res.json().catch(() => null));
-  if (!content) throw new HttpError(502, 'ai_upstream', 'The AI provider returned an unreadable response.');
-  return content;
-}
-
-async function requestDiagnosis(
-  cfg: { baseUrl: string; model: string; apiKey: string },
-  logTail: string,
-): Promise<string> {
-  return chatCompletion(cfg, buildDiagnosisMessages(logTail), DIAGNOSIS_MAX_TOKENS);
-}
+/** A system + user message pair as the provider module takes it. */
+const asPrompt = (messages: Array<{ role: 'system' | 'user'; content: string }>) => ({
+  system: messages.find((m) => m.role === 'system')?.content ?? '',
+  user: messages.filter((m) => m.role === 'user').map((m) => m.content).join('\n\n'),
+});
 
 /**
  * F833: the log tail the provider sees, sanitized BEFORE the final cut. The
@@ -156,13 +112,16 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
   // Config status — any authenticated user (the deploy tab needs it to decide
   // whether to offer the button). Carries no key material.
   app.get('/config', async (req) => {
-    const json = await getSettingJson<{ baseUrl?: string; model?: string }>(app.db, AI_CONFIG_KEY, null);
+    const json = await loadStoredAiConfig(app.db);
     const hasKey = (await getSettingString(app.db, AI_KEY_KEY, null)) !== null;
+    const baseUrl = effectiveBaseUrl(json);
     const status: AiConfigStatusT = {
-      configured: !!(json?.baseUrl && json.model && hasKey),
+      configured: !!(baseUrl && json?.model && hasKey),
+      // 0.16.15: a configuration stored before has no provider and means openai.
+      provider: json?.provider ?? 'openai',
       // r658: the provider endpoint is operator configuration — often an
       // internal gateway's address. Only the operator's Settings page needs it.
-      baseUrl: req.user!.isOperator ? (json?.baseUrl ?? null) : null,
+      baseUrl: req.user!.isOperator ? baseUrl : null,
       model: json?.model ?? null,
       hasApiKey: hasKey,
     };
@@ -171,12 +130,21 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
 
   // Config write — instance operator only. The key arrives once over the wire
   // and is immediately sealed; it is never echoed back.
-  app.put('/config', { onRequest: [app.requireOperator] }, async (req) => {    const input = aiConfigUpdate.parse(req.body ?? {});
-    await setSettingJson(app.db, AI_CONFIG_KEY, { baseUrl: input.baseUrl, model: input.model });
+  app.put('/config', { onRequest: [app.requireOperator] }, async (req) => {
+    const input = aiConfigUpdate.parse(req.body ?? {});
+    const provider = input.provider ?? 'openai';
+    // 0.16.15: an `anthropic` configuration without a base URL calls the
+    // Anthropic API; the stored row then carries no baseUrl.
+    await setSettingJson(app.db, AI_CONFIG_KEY, {
+      provider,
+      ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+      model: input.model,
+    });
     if (input.apiKey) await setSettingString(app.db, AI_KEY_KEY, encrypt(input.apiKey));
     // F832: the audit entity fans out to the activity feed, the live event
     // stream and notifications — never the baseUrl's userinfo or path.
-    void audit(app.db, req.user!.id, 'ai.config', `${input.model} @ ${redactEgressTarget(input.baseUrl)}`);
+    const target = input.baseUrl ? redactEgressTarget(input.baseUrl) : provider;
+    void audit(app.db, req.user!.id, 'ai.config', `${input.model} @ ${target}`);
     return { ok: true };
   });
 
@@ -208,9 +176,34 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     const raw = logBus.read(depId);
     if (!raw.trim()) throw badRequest('This deployment has no build log to diagnose');
 
-    const diagnosis = await requestDiagnosis(cfg, logTailForAi(raw));
+    const diagnosis = await aiComplete(cfg, asPrompt(buildDiagnosisMessages(logTailForAi(raw))), DIAGNOSIS_MAX_TOKENS);
     void audit(app.db, req.user!.id, 'ai.diagnose', `service=${svc.name} deployment=${depId}`);
     return { diagnosis, model: cfg.model };
+  });
+
+  // 0.16.15: what the model makes of a running service's recent runtime
+  // logs — errors, their likely cause, what to do. Same gates as a
+  // diagnosis: `member` on the service, a protected lane's logs for its
+  // admins, the AI spend rule, the same rate cap; the same sanitizer runs
+  // before anything leaves the host.
+  app.post('/services/:id/logs/analyze', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'logs');
+    await assertMayUseAi(app.db, req.user!, await serviceWorkspaceIds(app.db, svc.id));
+    const { tail } = analyzeLogsBody.parse(req.body ?? {});
+
+    const cfg = await loadAiConfig(app.db);
+    if (!cfg) throw badRequest('AI analysis is not configured — ask the operator to set it up in Settings');
+    if (!svc.runtimeId) throw badRequest('This service is not running, so it has no runtime logs to analyze', 'not_running');
+
+    const raw = await readRuntimeLogs(app.db, svc, tail).catch(() => '');
+    if (!raw.trim()) throw badRequest('The service has written no logs to analyze yet', 'no_logs');
+    const sent = logTailForAi(raw);
+    const analysis = await aiComplete(cfg, asPrompt(buildRuntimeLogMessages(svc.name, sent)), LOG_ANALYSIS_MAX_TOKENS);
+    void audit(app.db, req.user!.id, 'ai.analyze_logs', `service=${svc.name}`, { serviceId: svc.id });
+    return { analysis, model: cfg.model, lines: sent.split('\n').filter((l) => l.trim()).length };
   });
 
   // AI deploy assist: describe the app in plain language, get a schema-valid
@@ -227,7 +220,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     const cfg = await loadAiConfig(app.db);
     if (!cfg) throw badRequest('AI assist is not configured — ask the operator to set it up in Settings');
 
-    const raw = await chatCompletion(cfg, buildSuggestMessages(input.description), SUGGEST_MAX_TOKENS);
+    const raw = await aiComplete(cfg, asPrompt(buildSuggestMessages(input.description)), SUGGEST_MAX_TOKENS);
     let candidate: unknown;
     try {
       candidate = JSON.parse(stripJsonFence(raw));

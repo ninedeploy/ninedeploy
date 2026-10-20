@@ -137,6 +137,7 @@ export function createFakeApiModule() {
       updateConfig: vi.fn(),
       diagnose: vi.fn(),
       suggestManifest: vi.fn(),
+      analyzeLogs: vi.fn(),
     },
     deploys: {
       trigger: vi.fn(),

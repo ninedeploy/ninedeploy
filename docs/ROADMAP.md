@@ -99,8 +99,8 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
 6. **AI that fixes, not only explains:**
    - a failed-deploy diagnosis that proposes a concrete change, applied in one click or opened as a PR through the GitHub App;
    - an automatic investigation when an alert fires;
-   - runtime-log analysis;
-   - Claude as a first-class provider next to OpenAI-compatible endpoints.
+   - runtime-log analysis (done, 0.16.15; see [AI.md](AI.md));
+   - Claude as a first-class provider next to OpenAI-compatible endpoints (done, 0.16.15).
 7. **Observability:**
    - a Prometheus `/metrics` endpoint and OTLP export;
    - per-container utilisation history (Coolify, 139 votes);

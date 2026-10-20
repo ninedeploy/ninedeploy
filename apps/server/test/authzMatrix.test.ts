@@ -872,6 +872,10 @@ export const MATRIX: Record<string, Rule> = {
     note: 'operator by default; the AI allowlist setting opens it to named workspaces',
   }),
   'POST /v1/ai/suggest-manifest': R('operator', { note: 'operator by default; widened by the AI allowlist' }),
+  'POST /v1/ai/services/:id/logs/analyze': R('operator', {
+    body: () => ({}),
+    note: 'operator by default; widened by the AI allowlist. Unconfigured in the matrix, so the at-floor call is 400; covered by test/aiLogAnalysis.test.ts',
+  }),
   'PUT /v1/ai/config': OP,
   'POST /v1/templates/:id/prepare': R('member', { body: (r) => ({ name: uniq(r, 'tpl'), projectId: r.project }) }),
   'POST /v1/templates/:id/deploy': R('member', { body: (r) => ({ name: uniq(r, 'tpl'), projectId: r.project }) }),

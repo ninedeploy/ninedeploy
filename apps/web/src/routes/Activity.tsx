@@ -131,6 +131,7 @@ export function Activity() {
   const ACTION_LABELS: Record<string, string> = {
     'alert.oom': 'Out of memory',
     'ai.diagnose': 'AI diagnosis',
+    'ai.analyze_logs': 'AI log analysis',
     'ai.suggest': 'AI manifest',
     'service.oom': 'Out of memory',
     // 0.16.11 scale to zero (service.wake carries meta.trigger: request, manual, start or restart).

@@ -243,6 +243,7 @@ vi.mock('../src/commands/sleep.js', () => ({
 // 0.16.12: previews.ts resolves services through uptime.ts. Exercised by test/previews.test.ts.
 vi.mock('../src/commands/previews.js', () => ({ previewsDatabaseCopies: vi.fn(), previewsForks: vi.fn(), previewsShow: vi.fn() }));
 // 0.16.13: exercised by test/approvals.test.ts.
+vi.mock('../src/commands/aiLogs.js', () => ({ logsAnalyze: vi.fn() }));
 vi.mock('../src/commands/approvals.js', () => ({ approvalsDecide: vi.fn(), approvalsList: vi.fn(), lanesList: vi.fn(), lanesSwitch: vi.fn() }));
 vi.mock('../src/commands/housekeeping.js', () => ({
   housekeepingPrune: h.housekeepingPrune,
@@ -455,7 +456,8 @@ describe('program registration', () => {
     // 0.16.12: + `previews` (2).
     // 0.16.13: + `lanes` (3) and `approvals` (3).
     // 0.16.14: + `previews forks`.
-    expect(h.FakeCommand.instances).toHaveLength(312);
+    // 0.16.15: + `logs analyze`.
+    expect(h.FakeCommand.instances).toHaveLength(313);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);

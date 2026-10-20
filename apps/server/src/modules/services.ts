@@ -37,6 +37,7 @@ import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { assertMayLeaveLane, assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
+import { readRuntimeLogs } from '../lib/runtimeLogs.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { autoscaleStatus, resetAutoscaleState } from '../lib/autoscaler.js';
 import { putToSleep, wakeService } from '../lib/sleep.js';
@@ -65,11 +66,11 @@ import { assertPrimaryVolumeNotAttachedElsewhere, assertSlugVolumeNotRetained } 
 import { composeBuilder } from '../engine/builders/compose.js';
 import { dockerBuilder, railpackRefusedForInstall } from '../engine/builders/docker.js';
 import { remoteHookRefusal } from '../lib/remoteDeploy.js';
-import { pm2Builder, pm2Logs, pm2Restart, pm2Start, pm2Stop } from '../engine/builders/pm2.js';
+import { pm2Builder, pm2Restart, pm2Start, pm2Stop } from '../engine/builders/pm2.js';
 import { deleteLog } from '../engine/logs.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { removeServiceBridgeIfEmpty, serviceBridgeName } from '../lib/serviceBridge.js';
-import { removeSwarmStack, restartSwarmService, scaleSwarmService, swarmRuntimeOf, swarmServiceLogs } from '../lib/swarm.js';
+import { removeSwarmStack, restartSwarmService, scaleSwarmService, swarmRuntimeOf } from '../lib/swarm.js';
 import { applyDefaultTags, replaceServiceTags } from './serviceTags.js';
 import { analyseComposeContent, stackEnvSeeds, stackPublicUrl } from './composeStacks.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
@@ -1650,26 +1651,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // 0.16.13: runtime logs echo secrets as readily as build logs.
     await assertMaySeeLaneSecrets(app.db, svc, req.user!, 'logs');
     const { tail } = runtimeLogsQuery.parse(req.query ?? {});
-    if (svc.type === 'pm2') {
-      try {
-        return { lines: await pm2Logs(svc.runtimeId, tail) };
-      } catch {
-        return { lines: '' };
-      }
-    }
+    // 0.16.15: one reader for this route and the AI log analysis (PM2,
+    // Swarm, a node's agent or the panel host's container).
     try {
-      // ── 0.16 T7 swarm ── every task's logs, wherever it runs.
-      const swarmRuntime = swarmRuntimeOf(svc);
-      if (swarmRuntime) return { lines: await swarmServiceLogs(swarmRuntime, tail) };
-      // ── end 0.16 T7 ──
-      if (svc.serverId != null) {
-        // An agent before 0.16.3 ignores `tail` and returns the last 300 lines.
-        return { lines: await remoteDocker(svc.serverId, 'docker.logs', { name: svc.runtimeId, tail: String(tail) }) };
-      }
-      // r667: 300 LINES is no byte bound — a container printing one endless
-      // line used to be buffered whole; past 8 MiB the read stops.
-      const out = await capture('docker', ['logs', '--tail', String(tail), '--timestamps', svc.runtimeId], { maxOutputBytes: 8 * 1024 * 1024 });
-      return { lines: out };
+      return { lines: await readRuntimeLogs(app.db, svc, tail) };
     } catch {
       return { lines: '' };
     }

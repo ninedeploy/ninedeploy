@@ -4,8 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** 0.16.3 runtime logs: search with highlights, line count, pause and download. */
 
-const apiMock = vi.hoisted(() => ({ api: { services: { logs: vi.fn() } } }));
+const apiMock = vi.hoisted(() => ({
+  api: { services: { logs: vi.fn() }, ai: { getConfig: vi.fn(), analyzeLogs: vi.fn() } },
+}));
 vi.mock('../src/lib/api.js', () => apiMock);
+const toastSpy = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock('../src/components/Toast.js', () => ({ useToast: () => toastSpy }));
 
 const formatMock = vi.hoisted(() => ({ downloadBlob: vi.fn() }));
 vi.mock('../src/lib/format.js', async (importOriginal) => ({
@@ -30,6 +34,7 @@ const pre = () => document.querySelector('pre')!;
 beforeEach(() => {
   vi.clearAllMocks();
   apiMock.api.services.logs.mockResolvedValue({ lines: LINES });
+  apiMock.api.ai.getConfig.mockResolvedValue({ configured: false, baseUrl: null, model: null, hasApiKey: false });
 });
 
 describe('RuntimeLogsCard', () => {
@@ -98,5 +103,36 @@ describe('RuntimeLogsCard', () => {
     fireEvent.scroll(el);
     fireEvent.change(screen.getByLabelText('Search logs'), { target: { value: '' } });
     expect(el.scrollTop).toBe(1000);
+  });
+
+  it('0.16.15: offers no analysis without an AI provider', async () => {
+    renderCard();
+    await waitFor(() => expect(pre().textContent).toBe(LINES));
+    expect(screen.queryByLabelText('Analyze logs with AI')).not.toBeInTheDocument();
+  });
+
+  it('0.16.15: analyzes the lines on screen with the configured provider, and closes the answer', async () => {
+    apiMock.api.ai.getConfig.mockResolvedValue({ configured: true, provider: 'anthropic', baseUrl: null, model: 'claude-sonnet-5-5', hasApiKey: true });
+    apiMock.api.ai.analyzeLogs.mockResolvedValue({ analysis: 'Health: degraded. Problems: db timeout.', model: 'claude-sonnet-5-5', lines: 3 });
+    renderCard();
+    fireEvent.click(await screen.findByLabelText('Analyze logs with AI'));
+    expect(await screen.findByText('Health: degraded. Problems: db timeout.')).toBeInTheDocument();
+    expect(apiMock.api.ai.analyzeLogs).toHaveBeenCalledWith(4, { tail: 300 });
+    expect(screen.getByText(/AI analysis of the last 3 lines · claude-sonnet-5-5/)).toBeInTheDocument();
+    // The log itself is still the first <pre>.
+    expect(pre().textContent).toBe(LINES);
+    fireEvent.click(screen.getByLabelText('Close the analysis'));
+    expect(screen.queryByText(/AI analysis of the last/)).not.toBeInTheDocument();
+  });
+
+  it('0.16.15: says why an analysis failed', async () => {
+    apiMock.api.ai.getConfig.mockResolvedValue({ configured: true, baseUrl: null, model: 'm', hasApiKey: true });
+    apiMock.api.ai.analyzeLogs.mockRejectedValueOnce(new Error('The AI provider timed out.')).mockRejectedValueOnce('nope');
+    renderCard();
+    fireEvent.click(await screen.findByLabelText('Analyze logs with AI'));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('The AI provider timed out.', 'error'));
+    await waitFor(() => expect(screen.getByLabelText('Analyze logs with AI')).not.toBeDisabled());
+    fireEvent.click(screen.getByLabelText('Analyze logs with AI'));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Analysis failed', 'error'));
   });
 });

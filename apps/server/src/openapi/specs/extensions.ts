@@ -127,6 +127,8 @@ export const extensionsSpecs: RouteSpecMap = {
   },
   'PUT /v1/ai/config': {
     summary: 'Configure the AI assistant',
+    description:
+      "0.16.15: `provider` is `openai` (any OpenAI-compatible chat-completions endpoint; what a body without `provider` means, as before) or `anthropic` (Claude through the Messages API; `baseUrl` optional, defaulting to https://api.anthropic.com). The key is sealed and never returned.",
     tag: 'ai',
     floor: 'operator',
     body: aiConfigUpdate,

@@ -148,6 +148,7 @@ import { autoscaleOff, autoscaleSet, autoscaleShow, type AutoscaleSetOptions } f
 import { sleepNow, sleepOff, sleepSet, sleepShow, sleepWake } from './commands/sleep.js';
 import { previewsDatabaseCopies, previewsForks, previewsShow } from './commands/previews.js';
 import { approvalsDecide, approvalsList, lanesList, lanesSwitch } from './commands/approvals.js';
+import { logsAnalyze } from './commands/aiLogs.js';
 
 const program = new Command();
 
@@ -881,6 +882,14 @@ logsCmd
     (query: string, opts: { service?: string; since?: string; limit?: string; drain?: string; json?: boolean }) =>
       logsSearch(getClient(), query, opts),
   );
+/* v8 ignore start -- exercised by test/aiLogs.test.ts. */
+logsCmd
+  .command('analyze <service>')
+  .description("0.16.15: the configured AI provider reads the service's newest runtime logs: health, problems, next steps")
+  .option('--tail <n>', 'How many of the newest lines to read (20-5000, default 300)')
+  .option('--json', 'Print raw JSON')
+  .action((service: string, opts: { tail?: string; json?: boolean }) => logsAnalyze(getClient(), service, opts));
+/* v8 ignore stop */
 
 // ── Email templates (G-30) ─────────────────────────────────────────────────
 const emailTemplatesCmd = program.command('email-templates').description('Manage per-workspace email template overrides');

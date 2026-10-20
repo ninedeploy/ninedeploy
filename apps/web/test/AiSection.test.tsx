@@ -95,6 +95,50 @@ describe('AiSection', () => {
     await waitFor(() => expect(updateSpy).toHaveBeenCalledWith({ baseUrl: 'https://ai.example.com/v1', model: 'gpt-test' }));
   });
 
+  it('0.16.15: offers Claude, saving it without a base URL', async () => {
+    mockOf(api.ai.getConfig).mockResolvedValue({ configured: false, provider: 'openai', baseUrl: null, model: null, hasApiKey: false });
+    const updateSpy = vi.fn().mockResolvedValue({ ok: true });
+    mockOf(api.ai.updateConfig).mockImplementation(updateSpy);
+    renderWithProviders(<AiSection />);
+    const user = userEvent.setup();
+    const provider = await screen.findByLabelText('Provider');
+    await user.selectOptions(provider, 'anthropic');
+    expect(screen.getByLabelText(/Base URL/i)).toHaveValue('');
+    expect(screen.getByLabelText(/Model/i)).toHaveValue('claude-sonnet-5-5');
+    expect(screen.getByLabelText(/API key/i)).toHaveAttribute('placeholder', 'sk-ant-…');
+    await user.type(screen.getByLabelText(/API key/i), 'sk-ant-12345678');
+    await user.click(screen.getByRole('button', { name: /Save AI settings/ }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith({ provider: 'anthropic', model: 'claude-sonnet-5-5', apiKey: 'sk-ant-12345678' }));
+    // Back to OpenAI-compatible: its defaults return, and the URL is required again.
+    await user.selectOptions(provider, 'openai');
+    expect(screen.getByLabelText(/Base URL/i)).toHaveValue('https://api.openai.com/v1');
+    await user.clear(screen.getByLabelText(/Base URL/i));
+    expect(screen.getByRole('button', { name: /Save AI settings/ })).toBeDisabled();
+  });
+
+  it('0.16.15: shows a stored Claude configuration with the default API left empty', async () => {
+    mockOf(api.ai.getConfig).mockResolvedValue({
+      configured: true,
+      provider: 'anthropic',
+      baseUrl: 'https://api.anthropic.com',
+      model: 'claude-opus-5-5',
+      hasApiKey: true,
+    });
+    renderWithProviders(<AiSection />);
+    expect(await screen.findByText(/Configured — claude-opus-5-5/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Provider')).toHaveValue('anthropic');
+    expect(screen.getByLabelText(/Base URL/i)).toHaveValue('');
+    expect(screen.getByLabelText(/Model/i)).toHaveValue('claude-opus-5-5');
+  });
+
+  it('0.16.15: a fresh Claude row without a model offers the default model', async () => {
+    mockOf(api.ai.getConfig).mockResolvedValue({ configured: false, provider: 'anthropic', baseUrl: 'https://gw.example/anthropic', model: null, hasApiKey: false });
+    renderWithProviders(<AiSection />);
+    await screen.findByText(/Not configured/);
+    expect(screen.getByLabelText(/Base URL/i)).toHaveValue('https://gw.example/anthropic');
+    expect(screen.getByLabelText(/Model/i)).toHaveValue('claude-sonnet-5-5');
+  });
+
   it('disables the form for non-operators', async () => {
     mockOf(useAuth).mockReturnValue({
       user: { id: 7, email: 'bob@example.com', name: 'Bob', isOperator: false },
