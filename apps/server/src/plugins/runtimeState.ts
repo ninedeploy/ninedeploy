@@ -393,6 +393,8 @@ export default fp(
           // ── 0.16 T7 swarm ── Swarm restarts its own tasks; a Swarm service has no container to inspect or revive here.
           if (swarmRuntimeOf(svc)) continue;
           // ── end 0.16 T7 ──
+          // 0.16.11: a sleeping service's containers are stopped on purpose; its next request wakes it.
+          if (svc.asleepAt != null) continue;
           try {
             if (svc.type === 'pm2') {
               let live = await pm2Status(runtimeId);

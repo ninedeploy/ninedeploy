@@ -236,6 +236,10 @@ vi.mock('../src/commands/canary.js', () => ({
 vi.mock('../src/commands/autoscale.js', () => ({
   autoscaleOff: vi.fn(), autoscaleSet: vi.fn(), autoscaleShow: vi.fn(),
 }));
+// 0.16.11: sleep.ts loads the schemas runtime too. Exercised by test/sleep.test.ts.
+vi.mock('../src/commands/sleep.js', () => ({
+  sleepNow: vi.fn(), sleepOff: vi.fn(), sleepSet: vi.fn(), sleepShow: vi.fn(), sleepWake: vi.fn(),
+}));
 vi.mock('../src/commands/housekeeping.js', () => ({
   housekeepingPrune: h.housekeepingPrune,
   positiveIntOption: h.positiveIntOption,
@@ -395,6 +399,8 @@ describe('program registration', () => {
       'canary',
       // 0.16.10: autoscaling.
       'autoscale',
+      // 0.16.11: scale to zero.
+      'sleep',
       'doctor',
       'sources', 'github-app', 'deploy', 'webhooks', 'firewall', 'manifest',
     ]);
@@ -436,7 +442,8 @@ describe('program registration', () => {
     // 0.16.8: + `monitors` (7) and `status-pages` (6).
     // 0.16.9: + `canary` (4).
     // 0.16.10: + `autoscale` (3).
-    expect(h.FakeCommand.instances).toHaveLength(294);
+    // 0.16.11: + `sleep` (5).
+    expect(h.FakeCommand.instances).toHaveLength(300);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);
@@ -448,6 +455,9 @@ describe('program registration', () => {
     ]);
     expect(findCommand('autoscale').children.map((c) => c.cmdName)).toEqual([
       'show <service>', 'set <service>', 'off <service>',
+    ]);
+    expect(findCommand('sleep').children.map((c) => c.cmdName)).toEqual([
+      'show <service>', 'set <service> <minutes>', 'off <service>', 'now <service>', 'wake <service>',
     ]);
     expect(findCommand('servers').children).toHaveLength(2);
     expect(findCommand('swarm').children).toHaveLength(6);

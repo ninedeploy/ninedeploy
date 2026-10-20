@@ -145,6 +145,7 @@ import {
 } from './commands/uptime.js';
 import { canaryOff, canaryPromote, canarySet, canaryShow, type CanarySetOptions } from './commands/canary.js';
 import { autoscaleOff, autoscaleSet, autoscaleShow, type AutoscaleSetOptions } from './commands/autoscale.js';
+import { sleepNow, sleepOff, sleepSet, sleepShow, sleepWake } from './commands/sleep.js';
 
 const program = new Command();
 
@@ -1252,6 +1253,21 @@ autoscaleCmd.command('set <service>')
   .option('--json', 'Print the stored configuration as JSON')
   .action((service: string, opts: AutoscaleSetOptions) => autoscaleSet(getClient(), service, opts));
 autoscaleCmd.command('off <service>').description('Turn autoscaling off').action((service: string) => autoscaleOff(getClient(), service));
+/* v8 ignore stop */
+
+// ── 0.16.11: scale to zero ───────────────────────────────────────────────
+const sleepCmd = program.command('sleep').description('Scale to zero: stop an idle service and wake it on the next request');
+/* v8 ignore start -- exercised by test/sleep.test.ts. */
+sleepCmd.command('show <service>')
+  .description('When the service sleeps, and whether it is asleep now')
+  .option('--json', 'Print raw JSON')
+  .action((service: string, opts: { json?: boolean }) => sleepShow(getClient(), service, opts));
+sleepCmd.command('set <service> <minutes>')
+  .description('Sleep after this many minutes without a request (5-1440; docker services on the panel host)')
+  .action((service: string, minutes: string) => sleepSet(getClient(), service, minutes));
+sleepCmd.command('off <service>').description('Never sleep').action((service: string) => sleepOff(getClient(), service));
+sleepCmd.command('now <service>').description('Put the service to sleep now').action((service: string) => sleepNow(getClient(), service));
+sleepCmd.command('wake <service>').description('Wake a sleeping service').action((service: string) => sleepWake(getClient(), service));
 /* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));

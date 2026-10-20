@@ -128,6 +128,27 @@ it('shows an error card with retry when the dashboard query fails', async () => 
     await screen.findByText('2 services need attention');
   });
 
+  it('0.16.11: shows a sleeping service as asleep, not unhealthy, and keeps it out of the banner', async () => {
+    mockOf(api.dashboard.get).mockResolvedValue({ ...dashData, health: [dashData.health[0]!, dashData.health[1]!] } as never);
+    mockOf(api.services.list).mockResolvedValue([
+      { id: 1, name: 'api', status: 'running', asleepAt: null },
+      { id: 2, name: 'slow', status: 'running', asleepAt: '2026-10-20T10:00:00Z' },
+    ] as never);
+    renderWithProviders(<Dashboard />);
+    await screen.findByText('All systems operational');
+    expect(screen.getByText('asleep')).toHaveClass('text-sky-400');
+    expect(screen.queryByText('unhealthy')).not.toBeInTheDocument();
+  });
+
+  it('0.16.11: a service that answers is healthy even while the list still says asleep', async () => {
+    mockOf(api.dashboard.get).mockResolvedValue({ ...dashData, health: [dashData.health[0]!] } as never);
+    mockOf(api.services.list).mockResolvedValue([{ id: 1, name: 'api', status: 'running', asleepAt: '2026-10-20T10:00:00Z' }] as never);
+    renderWithProviders(<Dashboard />);
+    await waitFor(() => expect(api.services.list).toHaveBeenCalled());
+    expect(await screen.findByText('healthy')).toBeInTheDocument();
+    expect(screen.queryByText('asleep')).not.toBeInTheDocument();
+  });
+
   it('renders the empty health state with a hub link', async () => {
     mockOf(api.dashboard.get).mockResolvedValue({ ...dashData, health: [], recentDeploys: [] } as never);
     renderWithProviders(<Dashboard />);

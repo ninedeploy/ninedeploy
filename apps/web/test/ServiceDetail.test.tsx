@@ -6,6 +6,7 @@ import { ServiceDetail } from '../src/routes/service/index.js';
 import { api, getToken } from '../src/lib/api.js';
 import { canaryApi } from '../src/lib/canaryApi.js';
 import { autoscaleApi } from '../src/lib/autoscaleApi.js';
+import { sleepApi } from '../src/lib/sleepApi.js';
 import { renderRoute, renderWithProviders, mockOf } from './helpers.js';
 
 vi.mock('../src/lib/api.js', async () => {
@@ -33,6 +34,12 @@ vi.mock('../src/lib/canaryApi.js', async (importOriginal) => ({
 vi.mock('../src/lib/autoscaleApi.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/autoscaleApi.js')>()),
   autoscaleApi: (await import('./apiMock.js')).createAutoscaleApiMock(),
+}));
+
+// 0.16.11: the header's Wake now / Sleep now call their own routes; mocked so
+// they never take a raw fetch either.
+vi.mock('../src/lib/sleepApi.js', async () => ({
+  sleepApi: (await import('./apiMock.js')).createSleepApiMock(),
 }));
 
 vi.mock('../src/lib/useDeployLogs.js', () => ({
@@ -2070,4 +2077,52 @@ describe('ServiceDetail', () => {
     });
   });
 
+
+  describe('0.16.11 scale to zero', () => {
+    const asleepAt = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
+
+    it('shows a sleeping service as asleep in the header and wakes it', async () => {
+      mockOf(api.services.get).mockResolvedValue({ ...service, sleepAfterMinutes: 15, asleepAt } as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      const badge = await screen.findByText('asleep');
+      expect(badge.getAttribute('title')).toMatch(/^Asleep since .+ — its next request wakes it$/);
+      expect(screen.getByText('since 3h ago')).toBeInTheDocument();
+      // Restart and Stop stay: Restart wakes it too, Stop ends the sleep.
+      expect(screen.getByRole('button', { name: /Restart/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Sleep now/ })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Wake now/ }));
+      await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Service woken up', 'success'));
+      expect(sleepApi.wake).toHaveBeenCalledWith(1);
+    });
+
+    it('offers Sleep now next to Restart while awake with Sleep when idle on, and names a refusal', async () => {
+      mockOf(api.services.get).mockResolvedValue({ ...service, sleepAfterMinutes: 15, asleepAt: null } as never);
+      mockOf(sleepApi.sleep).mockRejectedValueOnce(new Error('Cannot put the service to sleep: no domain routes to the service, so no request could wake it'));
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Sleep now/ }));
+      await waitFor(() =>
+        expect(toastSpy.toast).toHaveBeenCalledWith('Cannot put the service to sleep: no domain routes to the service, so no request could wake it', 'error'),
+      );
+      expect(screen.queryByText('asleep')).not.toBeInTheDocument();
+    });
+
+    it('offers no sleep action without Sleep when idle', async () => {
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      await screen.findByRole('button', { name: /Restart/ });
+      expect(screen.queryByRole('button', { name: /Sleep now|Wake now/ })).not.toBeInTheDocument();
+    });
+
+    it('offers the Sleep when idle card on the Settings tab', async () => {
+      mockOf(api.services.get).mockResolvedValue({ ...service, sleepAfterMinutes: 20, asleepAt: null } as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      expect(await screen.findByRole('switch', { name: 'Sleep when idle' })).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByLabelText('Sleep after (minutes)')).toHaveValue('20');
+    });
+
+    it('hides the card on a panel that does not report the field', async () => {
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      await screen.findByText('Service settings');
+      expect(screen.queryByRole('switch', { name: 'Sleep when idle' })).not.toBeInTheDocument();
+    });
+  });
 });

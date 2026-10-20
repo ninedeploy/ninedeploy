@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { autoscaleConfig } from './autoscale.js';
+
+/** 0.16.11 scale to zero: the bounds of `sleepAfterMinutes`. */
+export const SLEEP_AFTER_MIN = 5;
+export const SLEEP_AFTER_MAX = 1440;
 import { canaryConfig } from './canary.js';
 import { dockerLabels } from './dockerLabels.js';
 import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, providerBaseUrl, repoBaseDir, repoRelativePath, slug } from './common.js';
@@ -398,6 +402,8 @@ export const updateService = z.object({
   canary: canaryConfig.nullable().optional(),
   /** 0.16.10: scale between min and max replicas on a metric (docker services on the panel host); null turns it off. */
   autoscale: autoscaleConfig.nullable().optional(),
+  /** 0.16.11: stop the service after this many minutes without a request, wake it on the next one (5–1440); null turns it off. */
+  sleepAfterMinutes: z.number().int().min(SLEEP_AFTER_MIN).max(SLEEP_AFTER_MAX).nullable().optional(),
   port: z.number().int().min(1).max(65535).optional(),
   publishedPort: z.number().int().min(1).max(65535).nullable().optional(),
   /** Extra host ports, TCP or UDP, single or ranges (docker services on the panel host); null or [] clears them. */
@@ -495,6 +501,10 @@ export const service = z.object({
   canary: canaryConfig.nullable().optional(),
   /** Autoscaling (0.16.10); null = `replicas` containers. */
   autoscale: autoscaleConfig.nullable().optional(),
+  /** Scale to zero (0.16.11): minutes without a request before the service sleeps; null = never. */
+  sleepAfterMinutes: z.number().int().nullable().optional(),
+  /** When the service went to sleep; null = awake. Its first request wakes it. */
+  asleepAt: z.string().nullable().optional(),
   autoUrl: z.string().nullable(),
   port: z.number().int().nullable(),
   publishedPort: z.number().int().nullable().optional(),

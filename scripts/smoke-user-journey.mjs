@@ -901,6 +901,74 @@ async function autoscaleChecks(token, serviceId, hostname) {
   if (trafficOff.status !== 200) fail(`autoscale: disabling traffic analytics answered ${trafficOff.status}`);
 }
 
+// 0.16.11: scale to zero through the real Traefik. Here Traefik runs inside
+// DinD and the panel is a sibling container, so `host.docker.internal:3000`
+// does not reach the panel: a sleep is refused (nothing sleeps that could
+// not wake). A relay inside DinD then gives Traefik the path a real host
+// has; the service sleeps, and a request through its domain wakes it (307
+// back to the same URL, then the app answers).
+const SLEEP_IN = [0, 16, 11];
+const RELAY = 'nd-smoke-panel-relay';
+/** Status, redirect target and body of one request through Traefik over HTTPS, redirects not followed. */
+function tlsRequest(hostname, { method = 'GET', accept = '*/*' } = {}) {
+  const r = panelRun(['sh', '-c', `curl -sk -m 40 -X ${method} -H 'Accept: ${accept}' -o /tmp/nd-body -w '%{http_code} %{redirect_url}' --connect-to ${hostname}:443:${DIND}:443 https://${hostname}/; echo; head -c 300 /tmp/nd-body`]);
+  const [first = '', ...rest] = r.stdout.split('\n');
+  const [code = '', location = ''] = first.split(' ');
+  return { code, location, body: rest.join('\n') };
+}
+async function sleepChecks(token, serviceId, hostname) {
+  const svcPath = `/v1/services/${serviceId}`;
+  const set = await api(svcPath, { method: 'PATCH', token, body: { sleepAfterMinutes: 15 } });
+  if (set.status !== 200 || set.json?.sleepAfterMinutes !== 15 || set.json.asleepAt !== null) fail(`sleep PATCH answered ${set.status} ${set.text.slice(0, 200)}`);
+
+  const blind = await api(`${svcPath}/sleep`, { method: 'POST', token });
+  if (blind.status !== 400 || !/Traefik cannot reach the panel/.test(blind.text)) fail(`a sleep Traefik could not wake should be refused: ${blind.status} ${blind.text.slice(0, 300)}`);
+  step('scale to zero: refused while Traefik cannot reach the panel (400 cannot_sleep, the reason named)');
+
+  const panelIp = docker(['inspect', PANEL, '--format', `{{(index .NetworkSettings.Networks "${NET}").IPAddress}}`]).trim();
+  const relay = dindRun(['run', '-d', '--name', RELAY, '-p', '3000:3000', 'alpine/socat:1.8.0.3', 'TCP-LISTEN:3000,fork,reuseaddr', `TCP:${panelIp}:3000`]);
+  if (relay.status !== 0) fail(`could not start the panel relay in DinD: ${relay.all.slice(0, 300)}`);
+  // The refusal is remembered for a minute.
+  await sleep(62_000);
+
+  const runtimeId = (await api(svcPath, { token })).json?.runtimeId;
+  const slept = await api(`${svcPath}/sleep`, { method: 'POST', token });
+  if (slept.status !== 200) fail(`sleep answered ${slept.status} ${slept.text.slice(0, 300)}`);
+  const asleep = (await api(svcPath, { token })).json;
+  const state = () => dindRun(['inspect', runtimeId, '--format', '{{.State.Status}}']).stdout;
+  if (!asleep?.asleepAt || state() !== 'exited') fail(`after sleep: asleepAt ${asleep?.asleepAt}, ${runtimeId} ${state()}`);
+  const routes = traefikFile('dynamic/ninedeploy.yml');
+  if (!routes.includes('svc_ninedeploy_wake') || !routes.includes('prefix: "/_nd/wake"')) fail(`a sleeping service's domain does not route to the wake endpoint: ${routes.slice(0, 600)}`);
+  step(`scale to zero: ${runtimeId} asleep (container stopped, its domain routed to the panel's wake endpoint)`);
+
+  const t0 = Date.now();
+  const first = tlsRequest(hostname, { accept: 'text/html' });
+  const wakeMs = Date.now() - t0;
+  if (first.code !== '307' || !first.location.endsWith('/')) fail(`the first request to the sleeping service: ${JSON.stringify(first)}`);
+  const awake = (await api(svcPath, { token })).json;
+  if (awake?.asleepAt !== null || state() !== 'running') fail(`after the wake: asleepAt ${awake?.asleepAt}, ${runtimeId} ${state()}`);
+  let code = '';
+  for (let i = 0; i < 10 && code !== '200'; i++) {
+    code = tlsRequest(hostname).code;
+    if (code !== '200') await sleep(1000);
+  }
+  if (code !== '200') fail(`after the wake ${hostname} answered ${code}`);
+  step(`scale to zero: the first request woke it in ${wakeMs} ms (307 back to the same URL), then 200`);
+
+  const again = await api(`${svcPath}/sleep`, { method: 'POST', token });
+  if (again.status !== 200) fail(`second sleep answered ${again.status}`);
+  const post = tlsRequest(hostname, { method: 'POST' });
+  if (post.code !== '503' || !/Send the request again/.test(post.body)) fail(`a POST to the sleeping service: ${JSON.stringify(post)}`);
+  if ((await api(svcPath, { token })).json?.asleepAt !== null) fail('a POST did not wake the service');
+  const wakes = (await auditEntries(token, 'service.wake')).filter((e) => e.meta?.serviceId === serviceId);
+  if (wakes.length < 2 || !wakes.every((e) => e.meta?.trigger === 'request')) fail(`service.wake entries: ${JSON.stringify(wakes.map((e) => e.meta))}`);
+  step(`scale to zero: a POST to a sleeping service woke it and was told to send again (503); ${wakes.length} service.wake entries`);
+
+  dindRun(['rm', '-f', RELAY]);
+  const off = await api(svcPath, { method: 'PATCH', token, body: { sleepAfterMinutes: null } });
+  if (off.status !== 200 || off.json?.sleepAfterMinutes !== null) fail(`sleep off answered ${off.status}`);
+}
+
 async function pinHostKeyChecks(token, password) {
   const key = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
   const created = await api('/v1/sources', { method: 'POST', token, body: { name: `pin-${suffix}`, type: 'github', deployKey: key } });
@@ -1516,6 +1584,7 @@ async function main() {
     if (!olderThan(String(health.version), UPTIME_IN)) await uptimeChecks(token, serviceId);
     if (!olderThan(String(health.version), CANARY_IN)) await canaryChecks(token, serviceId, `journey-${suffix}.test`);
     if (!olderThan(String(health.version), AUTOSCALE_IN)) await autoscaleChecks(token, serviceId, `journey-${suffix}.test`);
+    if (!olderThan(String(health.version), SLEEP_IN)) await sleepChecks(token, serviceId, `journey-${suffix}.test`);
   } else {
     step(`${health.version} predates operations and API (0.15): 0.15 checks skipped`);
   }
@@ -1532,7 +1601,7 @@ async function main() {
   }
   step('service deleted');
 
-  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → autoscaling (≥0.16.10) → teardown');
+  console.log('\n✓ User journey green: boot → register → create → deploy → logs → domain → signed webhook redeploy → compose stack → managed postgres (+ backup policy) + redis (+ KeyDB and Dragonfly with backup, drill and restore from 0.15.6) → preview-only env → GitHub App/Gitea surfaces → 0.14 Traefik directory, custom config, certificates, public access, import, secret managers (≥0.14) → 0.15 terminals, host shell, traffic analytics, OpenAPI, access grants (≥0.15) → uptime monitors (≥0.16.8) → canary releases (≥0.16.9) → autoscaling (≥0.16.10) → scale to zero (≥0.16.11) → teardown');
 }
 
 main()

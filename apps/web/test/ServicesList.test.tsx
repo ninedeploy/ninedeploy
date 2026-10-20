@@ -71,6 +71,16 @@ describe('ServicesList', () => {
     expect(screen.getByText('dev')).toBeInTheDocument();
   });
 
+  it('0.16.11: shows a sleeping service as asleep, with since when in its tooltip', async () => {
+    mockOf(api.services.list).mockResolvedValue([{ ...services[0]!, asleepAt: '2026-10-20T10:00:00Z' }] as never);
+    renderWithProviders(<ServicesList />);
+    const badge = await screen.findByText('asleep');
+    expect(badge.getAttribute('title')).toMatch(/^Asleep since 20 Oct 2026/);
+    expect(screen.queryByText('running', { selector: 'span' })).not.toBeInTheDocument();
+    // Still running underneath: Stop is offered, and ends the sleep.
+    expect(screen.getByTitle('Stop service')).toBeInTheDocument();
+  });
+
   it('opens and closes the deploy wizard from the header button', async () => {
     const user = userEvent.setup();
     mockOf(api.services.list).mockResolvedValue(services as never);

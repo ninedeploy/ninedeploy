@@ -4,12 +4,13 @@ import { Cpu, GitBranch, HardDrive, Layers, MemoryStick, Play, Plus, Search, Ser
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
 import { useTagScope } from '../lib/projects.js';
-import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, StatusBadge, cn } from '../components/ui.js';
+import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, cn } from '../components/ui.js';
 import { DeployWizard } from '../components/DeployWizard.js';
 import { LanesModal } from '../components/LanesModal.js';
 import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
 import { formatPortMapping } from '@ninedeploy/schemas';
 import { portMappingLabel } from './service/PortMappingsCard.js';
+import { ServiceStatusBadge } from './service/SleepState.js';
 
 export function ServicesList() {
   const [wizard, setWizard] = useState(false);
@@ -223,7 +224,8 @@ export function ServicesList() {
                               <div className="font-mono text-[11px] text-slate-500 truncate">{s.slug}</div>
                             </div>
                           </div>
-                          <StatusBadge status={s.status} />
+                          {/* 0.16.11: a sleeping service reads "asleep", not running. */}
+                          <ServiceStatusBadge svc={s} />
                         </div>
 
                         {/* Live CPU & RAM Telemetry Badges */}

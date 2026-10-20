@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import {
   buildConfigs,
   databaseAttachments,
   deployments,
+  domains,
   environments,
   envVars,
   serviceLabels,
@@ -37,6 +38,9 @@ import { setSettingString } from '../lib/settings.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { autoscaleStatus, resetAutoscaleState } from '../lib/autoscaler.js';
+import { putToSleep, wakeService } from '../lib/sleep.js';
+import { sleepDeps } from '../lib/sleepRuntime.js';
+import { wakeUnreachableReason } from '../lib/panelUpstream.js';
 import {
   assertServiceRole,
   maxRole,
@@ -146,6 +150,8 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     runtimeOptions: s.runtimeOptions ?? null,
     canary: s.canary ?? null,
     autoscale: s.autoscale ?? null,
+    sleepAfterMinutes: s.sleepAfterMinutes ?? null,
+    asleepAt: s.asleepAt ? s.asleepAt.toISOString() : null,
     port: s.port,
     publishedPort: s.publishedPort ?? null,
     portMappings: s.portMappings ?? [],
@@ -691,6 +697,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       throw badRequest('Autoscaling applies to docker services only');
     }
     if (patch.autoscale !== undefined) resetAutoscaleState(id);
+    // 0.16.11 scale to zero: docker services only.
+    if (patch.sleepAfterMinutes != null && (patch.type ?? existing.type) !== 'docker') {
+      throw badRequest('Scale to zero applies to docker services only');
+    }
     // 0.16.9 canary releases: docker services only. Saved on a node or a
     // Swarm service too, where a deploy logs why it switches all at once
     // (engine/canary.ts canarySkipReason), so a later move needs no re-save.
@@ -1296,6 +1306,46 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     return { targets: rows.map((t) => ({ serverId: t.serverId, runtimeId: t.runtimeId, status: t.status })) };
   });
 
+  // 0.16.11 scale to zero, by hand: put a service to sleep now, or wake it.
+  const wakeFromRoute = async (svc: Service, req: FastifyRequest, trigger: string) => {
+    if (!(await wakeService(sleepDeps(app.db, (line) => req.log.info(line)), svc, trigger))) {
+      throw new HttpError(409, 'wake_failed', 'The service could not be woken: its containers did not start or failed the healthcheck');
+    }
+    return { ok: true, status: 'running' };
+  };
+  app.post('/:id/wake', async (req) => {
+    const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    if (svc.asleepAt == null) throw badRequest('The service is not asleep', 'not_asleep');
+    return wakeFromRoute(svc, req, 'manual');
+  });
+  app.post('/:id/sleep', async (req) => {
+    const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    const routed = (await app.db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, svc.id), eq(domains.status, 'active')))).length;
+    // The hold reasons that matter by hand: everything but the idle window and traffic analytics.
+    const reason =
+      svc.asleepAt != null
+        ? 'the service is asleep already'
+        : svc.type !== 'docker'
+          ? 'scale to zero applies to docker services only'
+          : svc.serverId != null
+            ? 'scale to zero runs on the panel host only for now'
+            : svc.orchestrator === 'swarm'
+              ? 'scale to zero does not apply to Swarm services'
+              : svc.status !== 'running' || !svc.runtimeId
+                ? 'the service is not running'
+                : routed === 0
+                  ? 'no domain routes to the service, so no request could wake it'
+                  : null;
+    if (reason) throw badRequest(`Cannot put the service to sleep: ${reason}`, 'cannot_sleep');
+    const unreachable = await wakeUnreachableReason();
+    if (unreachable) throw badRequest(`Cannot put the service to sleep: ${unreachable}`, 'cannot_sleep');
+    if (!(await putToSleep(sleepDeps(app.db, (line) => req.log.info(line)), svc))) throw new HttpError(409, 'sleep_failed', 'The service changed meanwhile; try again');
+    void audit(app.db, req.user!.id, 'service.sleep_now', `${svc.name} #${svc.id}`, { serviceId: svc.id });
+    return { ok: true, asleep: true };
+  });
+
   // 0.16.10: what the autoscaler sees and did last for this service.
   app.get('/:id/autoscale', async (req) => {
     const id = num((req.params as { id: string }).id);
@@ -1392,7 +1442,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // pass inside that window restarted what the user was stopping, then never
     // looked at the `stopped` row again. A failed stop restores the previous
     // status, unless something else has moved the row since.
-    await app.db.update(services).set({ status: 'stopped' }).where(eq(services.id, svc.id));
+    // 0.16.11: a stop ends a sleep too.
+    await app.db.update(services).set({ status: 'stopped', asleepAt: null }).where(eq(services.id, svc.id));
     try {
       // ── 0.16 T7 swarm ── stop = scale to 0 tasks (the stack and its spec stay).
       const swarmRuntime = swarmRuntimeOf(svc);
@@ -1442,6 +1493,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // service's, for a name ending in "#<n>". meta.serviceId is what the
     // per-service Activity filter matches (modules/activity.ts).
     void audit(app.db, req.user!.id, 'service.stop', `${svc.name} #${svc.id}`, { serviceId: svc.id });
+    // Its domains pointed at the wake endpoint; they route to the service again.
+    if (svc.asleepAt != null) await writeDynamicConfig(app.db).catch((err: unknown) => req.log.warn({ err, serviceId: svc.id }, 'routes after stopping a sleeping service'));
     app.kernel?.events.emit('service.stopped', {
       serviceId: svc.id,
     });
@@ -1452,6 +1505,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
+    // 0.16.11: a sleeping service is woken (its containers started, its routes back).
+    if (svc.asleepAt != null) return wakeFromRoute(svc, req, 'start');
     // ── 0.16 T7 swarm ── start = scale back to the service's replicas.
     const swarmRuntime = swarmRuntimeOf(svc);
     if (swarmRuntime) {
@@ -1512,6 +1567,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
+    // 0.16.11: a sleeping service is woken (its containers started, its routes back).
+    if (svc.asleepAt != null) return wakeFromRoute(svc, req, 'restart');
     // ── 0.16 T7 swarm ── restart = `docker service update --force` (a rolling restart of every task).
     const swarmRuntime = swarmRuntimeOf(svc);
     if (swarmRuntime) {

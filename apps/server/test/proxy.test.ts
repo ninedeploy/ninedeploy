@@ -1690,10 +1690,13 @@ describe('golden dynamic config is valid Traefik v3 (r638)', () => {
           { id: 2, serviceId: 1, hostname: '*.example.com', path: '/', ssl: true, status: 'active' },
           { id: 3, serviceId: 2, hostname: 'api.example.com', path: '/v1', ssl: false, status: 'active' },
           { id: 4, serviceId: 2, hostname: 'awaiting.example.org', path: '/', ssl: true, status: 'pending' },
+          // 0.16.11: a sleeping service routes to the wake endpoint (addPrefix).
+          { id: 5, serviceId: 3, hostname: 'sleepy.example.org', path: '/', ssl: false, status: 'active' },
         ],
         [
           { ...svc(1, 'web'), replicas: 3, runtimeReplicas: 3, healthPath: '/healthz' },
           { ...svc(2, 'api'), type: 'pm2' },
+          { ...svc(3, 'sleepy'), asleepAt: new Date(0) },
         ],
         { 1: true },
         { panel_domain: 'panel.example.com' },

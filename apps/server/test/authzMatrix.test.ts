@@ -802,6 +802,10 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/services/:id/deploys/:depId/rollback': R('member'),
   'GET /v1/services/:id/canary': R('viewer'),
   'GET /v1/services/:id/autoscale': R('viewer'),
+  'POST /v1/services/:id/sleep': R('member', { allow404: 'the matrix service is not a running docker service with a domain, so the at-floor call is 400 cannot_sleep; covered by test/sleepRoutes.test.ts' }),
+  'POST /v1/services/:id/wake': R('member', { allow404: 'the matrix service is not asleep, so the at-floor call is 400 not_asleep; covered by test/sleepRoutes.test.ts' }),
+  'ALL /_nd/wake': R('public', { allow404: 'no domain routes the matrix host; covered by test/wakeRoutes.test.ts' }),
+  'ALL /_nd/wake/*': R('public', { allow404: 'no domain routes the matrix host; covered by test/wakeRoutes.test.ts' }),
   'POST /v1/services/:id/deploys/:depId/canary/promote': R('member', {
     allow404: 'the seeded deployment may not exist; with one, no canary runs and the answer is 400 no_canary (test/canaryRoutes.test.ts)',
   }),

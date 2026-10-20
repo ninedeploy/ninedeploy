@@ -103,14 +103,14 @@ describe('measure', () => {
 });
 
 describe('requestRate', () => {
-  it('counts per service in ten-second buckets, leaves out the last bucket, and forgets after an hour', () => {
+  it('counts per service in ten-second buckets, leaves out the last bucket, and forgets after a day', () => {
     recordServiceRequest(null, 0);
     recordServiceRequest(1, 5_000);
     recordServiceRequest(1, 15_000);
     expect(serviceRequestRate(1, 20_000, 30_000)).toBe(0.1);
     expect(serviceRequestRate(1, 20_000, 30_000, 0)).toBe(0.05);
     expect(serviceRequestRate(2, 20_000, 30_000)).toBe(0);
-    expect(serviceRequestRate(1, 1, 4 * 3_600_000)).toBe(0);
+    expect(serviceRequestRate(1, 1, 25 * 3_600_000)).toBe(0);
     expect(serviceRequestRate(1, 20_000, 30_000)).toBe(0);
   });
 });

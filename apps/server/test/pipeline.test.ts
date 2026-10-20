@@ -670,6 +670,8 @@ describe('runDeployment', () => {
 
     const svcUpdate = updates.find((u) => u.table === services && u.values.status === 'running');
     expect(svcUpdate?.values).toMatchObject({ runtimeId: 'c-1', runtimeReplicas: 2 });
+    // 0.16.11: a deploy ends a sleep.
+    expect(svcUpdate?.values.asleepAt).toBeNull();
   });
 
   it('demotes older running rows to superseded when the build goes live', async () => {

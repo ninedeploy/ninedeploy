@@ -175,6 +175,23 @@ export interface ServicesApi {
      * and is set with `update(id, { autoscale })` (`null` turns it off).
      */
     autoscale: (id: number) => Promise<AutoscaleStatusView>;
+    // ── 0.16.11 scale to zero ──
+    /**
+     * Put a docker service to sleep now (`POST /v1/services/:id/sleep`,
+     * member): its domains are routed to the panel's wake endpoint and its
+     * containers stop; the next request wakes it. Works without
+     * `sleepAfterMinutes`, which is set with `update(id, { sleepAfterMinutes })`
+     * (5-1440, `null` = never). Answers 400 `cannot_sleep` (the message says
+     * why) or 409 `sleep_failed`.
+     */
+    sleep: (id: number) => Promise<{ ok: boolean; asleep: boolean }>;
+    /**
+     * Wake a sleeping service (`POST /v1/services/:id/wake`, member): starts
+     * its containers, waits for the healthcheck and routes its domains back.
+     * Answers 400 `not_asleep` or 409 `wake_failed`. `start` and `restart`
+     * wake a sleeping service too.
+     */
+    wake: (id: number) => Promise<{ ok: boolean; status: string }>;
   };
   labels: {
     /** `query` is appended verbatim, e.g. `?workspaceId=1`. */
@@ -286,6 +303,8 @@ export function servicesApi(t: Transport): ServicesApi {
       imageTransfers: (id, query) => get<ImageTransfer[]>(apiGetUrl(`/v1/services/${id}/image-transfers`, { ...query })),
       swarm: (id) => get<ServiceSwarmStatus>(`/v1/services/${id}/swarm`),
       autoscale: (id) => get<AutoscaleStatusView>(`/v1/services/${id}/autoscale`),
+      sleep: (id) => send<{ ok: boolean; asleep: boolean }>('POST', `/v1/services/${id}/sleep`),
+      wake: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/wake`),
       // ── end 0.16 T8 ──
     },
     labels: {

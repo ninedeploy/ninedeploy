@@ -135,6 +135,14 @@ describe('runtime state reconciliation', () => {
     expect(execMocks.capture).not.toHaveBeenCalledWith('docker', ['start', 'web-7-r4']);
   });
 
+  it('0.16.11: leaves a sleeping service alone — its containers are stopped on purpose', async () => {
+    mockDocker({ state: ['exited'] });
+    const { updates } = await reconcileOnce(svcRow({ id: 34, status: 'running', runtimeId: 'web-7', asleepAt: new Date(0) }));
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['start']));
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['inspect']));
+    expect(updates).toEqual([]);
+  });
+
   it('leaves single-replica services without replica inspections', async () => {
     mockDocker({ state: ['running'] });
     await reconcileOnce(svcRow({ id: 32, status: 'running', runtimeId: 'web-1' }));

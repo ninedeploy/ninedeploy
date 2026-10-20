@@ -490,6 +490,11 @@ export const services = sqliteTable(
     // 0.16.10: autoscaling (lib/autoscaler.ts). Null = `replicas`
     // containers, as every service had before.
     autoscale: text('autoscale', { mode: 'json' }).$type<ServiceAutoscaleConfig>(),
+    // 0.16.11 scale to zero (lib/sleep.ts): minutes without a request before
+    // the service sleeps, and when it went to sleep. Null = never sleeps /
+    // awake, which every service was before.
+    sleepAfterMinutes: integer('sleep_after_minutes'),
+    asleepAt: integer('asleep_at', { mode: 'timestamp' }),
     // 0.16.1: the secret in the public status-badge URL
     // (`/v1/badges/<token>.svg`). Null = no badge, the default.
     badgeToken: text('badge_token'),

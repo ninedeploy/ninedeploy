@@ -278,6 +278,25 @@ API's schema before anything is sent, and an error names the flag. Turning it
 on applies fully at the next deploy, which creates the spare containers; until
 then it can only scale down. `--json` on `show` prints `{ config, status }`.
 
+```bash
+# Scale to zero (0.16.11; docker services on the panel host). <service> is an id, slug or name.
+ninedeploy sleep show <service> [--json]                  # the setting, and whether it is asleep now (since when)
+ninedeploy sleep set <service> <minutes>                  # sends { sleepAfterMinutes: <5-1440> }
+ninedeploy sleep off <service>                            # sends { sleepAfterMinutes: null }
+ninedeploy sleep now <service>                            # POST /v1/services/:id/sleep, works without a setting
+ninedeploy sleep wake <service>                           # POST /v1/services/:id/wake, waits for the healthcheck
+```
+
+`sleep set` checks the minutes (a whole number from 5 to 1440) before anything
+is sent. A service sleeps only with traffic analytics on (**Traefik → Traffic**),
+because requests are counted from the traffic log, and with at least one routed
+domain, because a request through a domain is what wakes it. `sleep now` and
+`sleep wake` print the server's refusal as it is: `cannot_sleep` (the message
+says why: not a docker service, on a node or Swarm, not running, no routed
+domain, asleep already), `sleep_failed`, `not_asleep`, `wake_failed`.
+`services start` and `services restart` wake a sleeping service too; `services
+stop` ends the sleep. `--json` on `show` prints `{ sleepAfterMinutes, asleepAt }`.
+
 `swarm join` answers `node_swarm_not_enabled` until the node's owner sets
 `NINEDEPLOY_AGENT_SWARM_MANAGER=<panel advertise address>:2377` in the agent's
 environment and restarts it; the CLI prints that hint. Every node feature
@@ -439,6 +458,12 @@ await client.deploys.cancel(serviceId, canary.deploymentId!);          // stops 
 await client.services.update(serviceId, { autoscale: { maxReplicas: 4, target: 70 } });   // cpu by default; the server fills in the defaults
 await client.services.update(serviceId, { autoscale: null });                            // off
 const scaling = await client.services.autoscale(serviceId);   // AutoscaleStatusView: { enabled: false, replicas } or bounds, value, desired, holding, lastEvent
+
+// 0.16.11: scale to zero (docker services on the panel host)
+await client.services.update(serviceId, { sleepAfterMinutes: 30 });     // 5-1440 (SLEEP_AFTER_MIN / SLEEP_AFTER_MAX); null = never
+const svc = await client.services.get(serviceId);                      // svc.sleepAfterMinutes, svc.asleepAt (ISO, null = awake)
+await client.services.sleep(serviceId);   // { ok: true, asleep: true }; 400 cannot_sleep (the message says why), 409 sleep_failed
+await client.services.wake(serviceId);    // { ok: true, status: 'running' }; 400 not_asleep, 409 wake_failed
 ```
 
 `GET /v1/servers` now carries `terminal: { host, container, reason? }` per node

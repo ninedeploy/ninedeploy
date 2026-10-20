@@ -31,6 +31,12 @@ import {
   servableCertificates,
 } from '../lib/customCertificates.js';
 import { canaryRouteFor } from './canaryState.js';
+import { panelWakeUpstream } from '../lib/panelUpstream.js';
+
+/** 0.16.11: the path prefix the wake endpoint answers under (modules/wake.ts). */
+export const WAKE_PREFIX = '/_nd/wake';
+const WAKE_MW = 'mw_ninedeploy_wake';
+const WAKE_SVC = 'svc_ninedeploy_wake';
 import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
 
 // Defined in a leaf module and re-exported here: `proxy` and `serviceBridge`
@@ -1040,6 +1046,8 @@ export async function renderDynamicConfig(
   // r637: emitted once, only when some router uses it — an unreferenced
   // middleware is harmless, but an empty `middlewares:` section is not.
   let httpsRedirectUsed = false;
+  /** 0.16.11: some sleeping service routes to the wake endpoint. */
+  let wakeUsed = false;
   // F521: the wildcard hosts this render will route (same gates as the loop).
   const wildcardHosts = all
     .filter((o) => {
@@ -1202,10 +1210,18 @@ export async function renderDynamicConfig(
         ? `      priority: ${EXACT_OVER_WILDCARD_PRIORITY + fullRule.length}\n`
         : '';
 
+    // 0.16.11 scale to zero: a sleeping service's domains reach the panel's
+    // wake endpoint (modules/wake.ts), after the domain's own middlewares, so
+    // a protected domain still asks for its credentials before anything wakes.
+    const asleep = !forNode && svc.type === 'docker' && svc.asleepAt != null;
+    if (asleep) {
+      mwList.push(WAKE_MW);
+      wakeUsed = true;
+    }
     routers.push(
       `    ${key}:\n` +
         `      rule: "${yamlDoubleQuoted(fullRule)}"\n` +
-        `      service: svc_${key}\n` +
+        `      service: ${asleep ? WAKE_SVC : `svc_${key}`}\n` +
         priority +
         (mwList.length ? `      middlewares:\n${mwList.map((m) => `        - ${m}`).join('\n')}\n` : '') +
         `      entryPoints:\n        - ${entry}` +
@@ -1409,6 +1425,10 @@ export async function renderDynamicConfig(
 
   if (httpsRedirectUsed) {
     middlewares.push(`    ${HTTPS_REDIRECT_MW}:\n      redirectScheme:\n        scheme: https\n        permanent: false\n`);
+  }
+  if (wakeUsed) {
+    middlewares.push(`    ${WAKE_MW}:\n      addPrefix:\n        prefix: "${WAKE_PREFIX}"\n`);
+    svcBlocks.push(`    ${WAKE_SVC}:\n      loadBalancer:\n        servers:\n          - url: "${panelWakeUpstream()}"`);
   }
 
   // Traefik v3's file provider rejects empty sections (`middlewares: {}`

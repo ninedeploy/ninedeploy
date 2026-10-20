@@ -7,7 +7,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api, authedFetch } from '../../lib/api.js';
 import { ContainerTerminal } from '../../components/ContainerTerminal.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, ConfirmDialog, Skeleton, StatusBadge, cn } from '../../components/ui.js';
+import { Button, Card, CardBody, ConfirmDialog, Skeleton, cn } from '../../components/ui.js';
 import { downloadBlob } from '../../lib/format.js';
 import { OverviewTab } from './OverviewTab.js';
 import { ServiceTrafficCard } from './ServiceTrafficCard.js';
@@ -25,6 +25,7 @@ import { FrameworkTab } from './FrameworkTab.js';
 import { ActivityTab } from './ActivityTab.js';
 import { DangerZone } from './DangerZone.js';
 import { CanaryPanel } from './CanaryPanel.js';
+import { ServiceStatusBadge, SleepActions } from './SleepState.js';
 
 import { ContainerFileBrowser } from '../../components/ContainerFileBrowser.js';
 import { ServiceDomainLauncher } from '../../components/ServiceDomainLauncher.js';
@@ -244,9 +245,10 @@ export function ServiceDetail() {
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{svc.name}</h1>
-            <StatusBadge status={svc.status} />
+            {/* 0.16.11: "asleep" with since when while the service sleeps. */}
+            <ServiceStatusBadge svc={svc} since />
           </div>
           <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-slate-500">
             <span className="uppercase tracking-wide text-slate-400">{svc.type}</span>
@@ -283,6 +285,8 @@ export function ServiceDetail() {
           </Button>
           {svc.status === 'running' && (
             <>
+              {/* 0.16.11: Wake now while asleep, Sleep now while awake with Sleep when idle on. */}
+              <SleepActions svc={svc} />
               <Button variant="secondary" size="md" onClick={() => lifecycle.mutate('restart')} disabled={lifecycle.isPending} title="Restart">
                 <RotateCcw size={15} /> Restart
               </Button>

@@ -1051,6 +1051,20 @@ async function openapiChecks(token) {
 // 0.16.10: the upgraded service stores an autoscale configuration (migration
 // 0088 added the column) and its status reads it back; turning it off
 // restores the row.
+// 0.16.11: the upgraded service stores sleepAfterMinutes (migration 0089),
+// is awake (asleepAt null), and refuses a wake it does not need.
+const SLEEP_IN = [0, 16, 11];
+async function sleepChecks(token, serviceId) {
+  const path = `/v1/services/${serviceId}`;
+  const set = await api(path, { method: 'PATCH', token, body: { sleepAfterMinutes: 30 } });
+  if (set.status !== 200 || set.json?.sleepAfterMinutes !== 30 || set.json.asleepAt !== null) fail(`${TO}: sleep PATCH on the upgraded service answered ${set.status} ${set.text.slice(0, 300)}`);
+  const wake = await api(`${path}/wake`, { method: 'POST', token });
+  if (wake.status !== 400 || wake.json?.error?.code !== 'not_asleep') fail(`${TO}: waking an awake service answered ${wake.status} ${wake.text.slice(0, 200)}`);
+  const off = await api(path, { method: 'PATCH', token, body: { sleepAfterMinutes: null } });
+  if (off.status !== 200 || off.json?.sleepAfterMinutes !== null) fail(`${TO}: sleep off answered ${off.status}`);
+  step(`${TO}: sleepAfterMinutes stored on the upgraded service (30), awake, a needless wake refused (not_asleep), turned off again`);
+}
+
 const AUTOSCALE_IN = [0, 16, 10];
 async function autoscaleChecks(token, serviceId) {
   const path = `/v1/services/${serviceId}`;
@@ -1655,6 +1669,7 @@ async function main() {
   if (!olderThan(TO, UPTIME_IN)) await uptimeChecks(token, serviceId);
   if (!olderThan(TO, CANARY_IN)) await canaryChecks(token, serviceId);
   if (!olderThan(TO, AUTOSCALE_IN)) await autoscaleChecks(token, serviceId);
+  if (!olderThan(TO, SLEEP_IN)) await sleepChecks(token, serviceId);
 
   docker(['stop', PANEL]);
   const post = await inspectDb(TO);
@@ -1690,7 +1705,8 @@ async function main() {
   const summary0168 = olderThan(TO, UPTIME_IN) ? '' : '; 0.16.8 uptime monitors and status pages work on the upgraded data';
   const summary0169 = olderThan(TO, CANARY_IN) ? '' : '; 0.16.9 canary settings work on the upgraded data';
   const summary01610 = olderThan(TO, AUTOSCALE_IN) ? '' : '; 0.16.10 autoscale settings work on the upgraded data';
-  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}`);
+  const summary01611 = olderThan(TO, SLEEP_IN) ? '' : '; 0.16.11 scale-to-zero settings work on the upgraded data';
+  console.log(`\n✓ Upgrade green: ${FROM} → ${TO} keeps users, services, history, domains and running apps; migrates; recovers the interrupted deploy; deploys again; 0.12 backup policy, preview env, disk alert and panel-backup defaults work on the upgraded data; 0.13 GitHub App/Gitea surfaces answer without GitHub${summary014}${summary015}${summary0168}${summary0169}${summary01610}${summary01611}`);
 }
 
 main()

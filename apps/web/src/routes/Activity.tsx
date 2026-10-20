@@ -133,6 +133,10 @@ export function Activity() {
     'ai.diagnose': 'AI diagnosis',
     'ai.suggest': 'AI manifest',
     'service.oom': 'Out of memory',
+    // 0.16.11 scale to zero (service.wake carries meta.trigger: request, manual, start or restart).
+    'service.sleep': 'Asleep',
+    'service.sleep_now': 'Put to sleep',
+    'service.wake': 'Woke up',
   };
   const actionLabel = (action: string) => ACTION_LABELS[action] ?? action;
 

@@ -181,6 +181,16 @@ ninedeploy autoscale off web                                  # The next deploy 
 ```
 Turning it on applies fully at the next deploy, which creates the spare containers.
 
+### 💤 Scale to Zero (0.16.11)
+```bash
+ninedeploy sleep show web [--json]     # "sleeps after N minutes without a request" or "never sleeps"; asleep now, and since when
+ninedeploy sleep set web 30            # Sleep after 30 minutes without a request (5-1440)
+ninedeploy sleep off web               # Never sleep
+ninedeploy sleep now web               # Sleep now, even without a setting
+ninedeploy sleep wake web              # Wake it now; the next request, `services start` and `services restart` wake it too
+```
+Docker services on the panel host. It needs traffic analytics on (Traefik → Traffic) and a routed domain: requests are counted from the traffic log, and a request through a domain wakes it. The containers, volumes and variables stay as they are while it sleeps.
+
 ---
 
 ## 📄 License

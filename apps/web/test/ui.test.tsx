@@ -219,6 +219,13 @@ describe('StatusBadge', () => {
     },
   );
 
+  it('0.16.11: tones the asleep status and carries a tooltip', () => {
+    render(<StatusBadge status="asleep" title="Asleep since 20 Oct" />);
+    const badge = screen.getByText('asleep');
+    expect(badge.className).toContain('bg-sky-500/15');
+    expect(badge).toHaveAttribute('title', 'Asleep since 20 Oct');
+  });
+
   it('falls back to the neutral tone for unknown statuses', () => {
     render(<StatusBadge status="weird" />);
     const badge = screen.getByText('weird');

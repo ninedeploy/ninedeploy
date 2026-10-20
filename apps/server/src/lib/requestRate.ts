@@ -1,7 +1,8 @@
 /**
  * 0.16.10: requests per service, counted in memory from the traffic tailer
- * (lib/trafficAnalytics.ts), for the autoscaler's `rps` metric. Ten-second
- * buckets, kept one hour. Nothing is persisted: after a restart the rate
+ * (lib/trafficAnalytics.ts), for the autoscaler's `rps` metric and the
+ * idle check of scale to zero (0.16.11). Ten-second buckets, kept 24 hours
+ * (the longest idle window); only buckets that saw a request are stored. Nothing is persisted: after a restart the rate
  * starts from zero, which only delays a scale-down (the autoscaler waits a
  * full window before it acts on a rate).
  *
@@ -9,7 +10,7 @@
  */
 
 export const REQUEST_RATE_BUCKET_MS = 10_000;
-const KEEP_MS = 60 * 60 * 1000;
+const KEEP_MS = 24 * 60 * 60 * 1000;
 
 const buckets = new Map<number, Map<number, number>>();
 
@@ -42,6 +43,13 @@ export function serviceRequestRate(serviceId: number, windowMs: number, now: num
     else if (b >= start && b < end) total += n;
   }
   return total / ((end - start) * (REQUEST_RATE_BUCKET_MS / 1000));
+}
+
+/** When the latest counted request to `serviceId` started (to its bucket's end), or null with none in the last day. */
+export function lastServiceRequestAt(serviceId: number): number | null {
+  const m = buckets.get(serviceId);
+  if (!m || m.size === 0) return null;
+  return (Math.max(...m.keys()) + 1) * REQUEST_RATE_BUCKET_MS;
 }
 
 /** Tests only. */

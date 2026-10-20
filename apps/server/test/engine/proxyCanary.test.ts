@@ -10,7 +10,7 @@ import { beginCanary, endCanary, resetCanaryState, setCanaryStep } from '../../s
  * the new one (`_canary`); without one it renders exactly as before.
  */
 vi.mock('../../src/config.js', () => ({
-  config: { paths: { dataDir: '' }, acmeEmail: null, dnsProvider: '', dnsToken: null },
+  config: { port: 3000, paths: { dataDir: '' }, acmeEmail: null, dnsProvider: '', dnsToken: null },
 }));
 
 const makeDb = (domainRows: unknown[], serviceRows: unknown[], settingRows: unknown[] = []) => ({
@@ -91,5 +91,21 @@ describe('renderDynamicConfig during a canary', () => {
     beginCanary(1, 'web', 9, 1, true);
     const doc = await render();
     expect(doc.http.services['svc_web_4'].loadBalancer).toBeDefined();
+  });
+});
+
+describe('0.16.11 a sleeping service', () => {
+  it('routes its domains to the panel wake endpoint, after its own middlewares', async () => {
+    const doc = await render([{ ...svcRow, asleepAt: new Date(0) }]);
+    expect(doc.http.routers['web_4'].service).toBe('svc_ninedeploy_wake');
+    expect(doc.http.routers['web_4'].middlewares.at(-1)).toBe('mw_ninedeploy_wake');
+    expect((doc.http as Record<string, any>).middlewares['mw_ninedeploy_wake']).toEqual({ addPrefix: { prefix: '/_nd/wake' } });
+    expect(doc.http.services['svc_ninedeploy_wake'].loadBalancer.servers[0].url).toBe('http://host.docker.internal:3000');
+  });
+
+  it('an awake one renders as before, with no wake service', async () => {
+    const doc = await render();
+    expect(doc.http.routers['web_4'].service).toBe('svc_web_4');
+    expect(doc.http.services['svc_ninedeploy_wake']).toBeUndefined();
   });
 });

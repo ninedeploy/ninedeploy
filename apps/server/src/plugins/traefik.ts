@@ -7,6 +7,7 @@ import {
   writeDynamicConfig,
 } from '../engine/proxy.js';
 import { materialiseCustomConfig } from '../lib/traefikCustomConfig.js';
+import { detectPanelOnNetwork } from '../lib/panelUpstream.js';
 
 /**
  * Ensures the shared Docker network, the Traefik reverse proxy, and the dynamic
@@ -40,6 +41,9 @@ export default fp(
       } catch (err) {
         fastify.log.error({ err }, 'traefik bootstrap failed (docker unreachable?) — deferring to the watchdog');
       }
+      // 0.16.11: read only — whether an earlier wake set-up put the panel
+      // container on the network, so a sleeping service's routes stay right.
+      await detectPanelOnNetwork();
       await writeDynamicConfig(fastify.db).catch((err) =>
         fastify.log.error({ err }, 'failed to write traefik dynamic config'),
       );

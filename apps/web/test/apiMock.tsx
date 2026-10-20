@@ -470,6 +470,21 @@ export function createAutoscaleApiMock() {
   };
 }
 
+/**
+ * The `sleepApi` object of `src/lib/sleepApi.js` (0.16.11): sleep and wake
+ * resolve as the server answers them. Mock the module:
+ *
+ *     vi.mock('../src/lib/sleepApi.js', async () => ({
+ *       sleepApi: (await import('./apiMock.js')).createSleepApiMock(),
+ *     }));
+ */
+export function createSleepApiMock() {
+  return {
+    sleep: vi.fn().mockResolvedValue({ ok: true, asleep: true }),
+    wake: vi.fn().mockResolvedValue({ ok: true, status: 'running' }),
+  };
+}
+
 /** Mock module for `src/lib/auth.js`: `useAuth` is a controllable spy. */
 export function createAuthMock() {
   // `useAuth` resolves to a signed-out session by default. It used to be a bare

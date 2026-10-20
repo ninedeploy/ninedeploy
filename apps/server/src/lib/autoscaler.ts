@@ -201,6 +201,7 @@ export function holdReason(svc: Service, inFlight: ReadonlySet<number>, canaryRu
   if (svc.serverId != null) return 'autoscaling runs on the panel host only for now; this service runs on a node';
   if (svc.orchestrator === 'swarm') return 'a Swarm service scales with its own replicas';
   if (svc.status !== 'running' || !svc.runtimeId) return 'the service is not running';
+  if (svc.asleepAt != null) return 'the service is asleep (scale to zero)';
   if (inFlight.has(svc.id)) return 'a deploy is in progress';
   if (canaryRunning) return 'a canary release is in progress';
   return null;

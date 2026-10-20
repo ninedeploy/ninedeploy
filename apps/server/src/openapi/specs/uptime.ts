@@ -112,4 +112,19 @@ export const uptimeSpecs: RouteSpecMap = {
     floor: 'public',
     responseType: 'string (text/html)',
   },
+  // 0.16.11 scale to zero (modules/wake.ts). Not called directly: Traefik
+  // sends a sleeping service's requests here, with the visitor's Host header.
+  'ALL /_nd/wake': {
+    summary: 'Wake endpoint for a sleeping service (Traefik only)',
+    tag: 'services',
+    description:
+      "No session. Traefik routes a sleeping service's domains here with the path prefixed by `/_nd/wake`. The service is found by the Host header and the path. GET and HEAD wait up to 25 s for the wake, then `307` to the same URL; other methods get `503` with `Retry-After`. A slower wake answers a self-reloading `503` page. `404` for a host no domain routes. Added in 0.16.11.",
+    floor: 'public',
+  },
+  'ALL /_nd/wake/*': {
+    summary: 'Wake endpoint for a sleeping service (Traefik only)',
+    tag: 'services',
+    description: 'The same as `/_nd/wake`, for every path below it.',
+    floor: 'public',
+  },
 };

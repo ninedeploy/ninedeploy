@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ArrowRight, CheckCircle2, Cpu, Database, GitBranch, Globe, HardDrive, Link2, MemoryStick, Package, Rocket, Server, Sparkles, Upload, XCircle } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, Cpu, Database, GitBranch, Globe, HardDrive, Link2, MemoryStick, Moon, Package, Rocket, Server, Sparkles, Upload, XCircle } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
@@ -26,6 +26,13 @@ export function Dashboard() {
     queryFn: () => api.stats.snapshot(),
     refetchInterval: 3000,
   });
+  // 0.16.11 scale to zero: the health probe cannot reach a sleeping service's
+  // stopped containers, so its entry reads unhealthy. The service list says
+  // which ones sleep; a sleeping service is not down.
+  const servicesQuery = useQuery({ queryKey: ['services'], queryFn: () => api.services.list(), refetchInterval: 15_000 });
+  const asleepIds = new Set((servicesQuery.data ?? []).filter((sv) => sv.asleepAt != null).map((sv) => sv.id));
+  const isAsleep = (h: { serviceId: number; status: string; healthy: boolean | null }) =>
+    h.status === 'running' && h.healthy !== true && asleepIds.has(h.serviceId);
   const importRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
 
@@ -83,8 +90,8 @@ export function Dashboard() {
   const s = data.stats;
   // Unknown health (a remote node's runtime — the panel cannot probe it) is
   // NOT an alarm: only an explicit false counts against the banner.
-  const allHealthy = data.health.every((h) => h.status !== 'running' || h.healthy !== false);
-  const unhealthyCount = data.health.filter((h) => h.status === 'running' && h.healthy === false).length;
+  const allHealthy = data.health.every((h) => h.status !== 'running' || h.healthy !== false || isAsleep(h));
+  const unhealthyCount = data.health.filter((h) => h.status === 'running' && h.healthy === false && !isAsleep(h)).length;
 
   const host = snapshot.data?.host;
   const memPct = host && host.memTotalBytes > 0 ? Math.round((host.memUsedBytes / host.memTotalBytes) * 100) : 0;
@@ -294,7 +301,8 @@ export function Dashboard() {
         ) : (
           <div className="nd-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data.health.map((h) => {
-              const isRunning = h.status === 'running';
+              const asleep = isAsleep(h);
+              const isRunning = h.status === 'running' && !asleep;
               // null = the runtime lives on a remote node the panel cannot
               // probe — show the running state without a health verdict.
               const isHealthy = h.healthy;
@@ -310,13 +318,15 @@ export function Dashboard() {
                         <div className="flex items-center gap-2.5">
                           <div className={cn(
                             'grid h-9 w-9 place-items-center rounded-lg ring-1 ring-inset transition',
+                            asleep ? 'bg-sky-500/15 text-sky-300 ring-sky-500/20' :
                             isRunning && isHealthy === true ? 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/20' :
                             isRunning && isHealthy === false ? 'bg-rose-500/10 text-rose-300 ring-rose-500/20' :
                             isRemote ? 'bg-indigo-500/10 text-indigo-300 ring-indigo-500/20' :
                             h.status === 'stopped' ? 'bg-slate-500/10 text-slate-400 ring-slate-500/20' :
                             'bg-amber-500/10 text-amber-300 ring-amber-500/20',
                           )}>
-                            {isRunning && isHealthy === true ? <CheckCircle2 size={17} /> :
+                            {asleep ? <Moon size={17} /> :
+                             isRunning && isHealthy === true ? <CheckCircle2 size={17} /> :
                              isRunning && isHealthy === false ? <XCircle size={17} /> :
                              isRemote ? <Server size={17} /> :
                              h.status === 'stopped' ? <Server size={17} /> :
@@ -338,12 +348,13 @@ export function Dashboard() {
                           )}
                           <div className={cn(
                             'text-[10px] font-medium uppercase',
+                            asleep ? 'text-sky-400' :
                             isRunning && isHealthy === true ? 'text-emerald-400' :
                             isRunning && isHealthy === false ? 'text-rose-400' :
                             isRemote ? 'text-indigo-400' :
                             h.status === 'stopped' ? 'text-slate-500' : 'text-amber-400',
                           )}>
-                            {isRunning && isHealthy === true ? 'healthy' : isRunning && isHealthy === false ? 'unhealthy' : isRemote ? 'on node' : h.status}
+                            {asleep ? 'asleep' : isRunning && isHealthy === true ? 'healthy' : isRunning && isHealthy === false ? 'unhealthy' : isRemote ? 'on node' : h.status}
                           </div>
                         </div>
                       </div>
@@ -370,7 +381,7 @@ export function Dashboard() {
                           'h-full rounded-full transition-all',
                           isRunning && isHealthy ? 'w-full bg-emerald-500' :
                           isRunning && !isHealthy ? 'w-1/4 bg-rose-500 animate-pulse' :
-                          h.status === 'stopped' ? 'w-0' : 'w-1/2 bg-amber-500',
+                          asleep || h.status === 'stopped' ? 'w-0' : 'w-1/2 bg-amber-500',
                         )}
                       />
                     </div>

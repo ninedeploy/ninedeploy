@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoscaleConfig, desiredReplicas, updateService } from '../src/index.js';
+import { autoscaleConfig, desiredReplicas, SLEEP_AFTER_MAX, SLEEP_AFTER_MIN, updateService } from '../src/index.js';
 
 describe('autoscaleConfig', () => {
   it('fills the defaults', () => {
@@ -49,5 +49,15 @@ describe('desiredReplicas', () => {
     expect(desiredReplicas(3, 0, cfg)).toBe(1);
     expect(desiredReplicas(3, 0, { ...cfg, minReplicas: 2 })).toBe(2);
     expect(desiredReplicas(0, 100, cfg)).toBe(2);
+  });
+});
+
+describe('sleepAfterMinutes (0.16.11)', () => {
+  it('takes 5–1440 minutes, and null turns it off', () => {
+    expect(updateService.parse({ sleepAfterMinutes: 15 }).sleepAfterMinutes).toBe(15);
+    expect(updateService.parse({ sleepAfterMinutes: null }).sleepAfterMinutes).toBeNull();
+    expect(updateService.safeParse({ sleepAfterMinutes: SLEEP_AFTER_MIN - 1 }).success).toBe(false);
+    expect(updateService.safeParse({ sleepAfterMinutes: SLEEP_AFTER_MAX + 1 }).success).toBe(false);
+    expect(updateService.safeParse({ sleepAfterMinutes: 7.5 }).success).toBe(false);
   });
 });

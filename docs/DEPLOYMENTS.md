@@ -76,6 +76,38 @@ Notes:
 - Autoscaling holds for services on a node and for Swarm services (Swarm scales with its own replicas).
 - Stopped spare containers take disk space only. With `--restart always`, a Docker restart starts them again; the autoscaler stops them at its next look.
 
+### Scale to zero (0.16.11)
+
+A docker service on the panel host can sleep when nobody uses it and wake on the next request. Set **Service → Settings → Sleep when idle**, or `sleepAfterMinutes` (5–1440) on `PATCH /v1/services/:id`; `null` turns it off.
+
+**Going to sleep.** Every minute, a service sleeps once its domains have had no request for `sleepAfterMinutes`:
+1. Its domains are routed to the panel's wake endpoint.
+2. Its containers stop. Nothing is removed: the containers, volumes and variables stay as they are.
+
+The service stays `running` in the panel with an `asleepAt` time, and the activity log records `service.sleep`.
+
+**Waking up.** The next request through one of its domains:
+1. starts the containers and waits for the healthcheck (the service's healthcheck timeout, or 60 s);
+2. routes the domains back, and the activity log records `service.wake`.
+
+What the visitor gets:
+- a GET or HEAD is sent back to the same URL, which the app now answers. Most apps wake in a few seconds, so the visitor sees only a slower first page;
+- other methods get `503` with `Retry-After`, because their body cannot be replayed;
+- if the wake takes longer than 25 s, a small "Waking up" page that reloads itself (`503` with `Retry-After` for non-browser clients).
+
+A domain's basic auth and IP allow list run before the wake, so a protected service wakes only for allowed visitors.
+
+**By hand.**
+- `POST /v1/services/:id/sleep` puts a service to sleep now, even without `sleepAfterMinutes`.
+- `POST /v1/services/:id/wake`, **Start** or **Restart** wakes it.
+- **Stop** ends the sleep (the service is then stopped). A deploy ends it too; the new release is awake.
+
+Requirements and limits:
+- Traffic analytics must be on (**Traefik → Traffic**): requests are counted from the traffic log. Without it nothing sleeps.
+- The service needs at least one routed domain; otherwise nothing could wake it. Host ports and the service's internal network do not count as requests and do not wake it, so a service reached only that way should not sleep.
+- Panel host only; not for node or Swarm services. Nothing sleeps during a deploy or a canary, and the autoscaler holds while a service sleeps.
+- The idle window starts again after a panel restart and after each deploy.
+
 ### Healthcheck timeout (0.16.1)
 
 The gate in step 3 accepts any answer below 500 on the health path and waits **300 seconds** by default. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.

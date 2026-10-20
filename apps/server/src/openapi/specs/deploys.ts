@@ -151,6 +151,22 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: '{ ok: boolean; status: string }',
   },
+  'POST /v1/services/:id/sleep': {
+    summary: 'Put a service to sleep now (scale to zero)',
+    description:
+      "0.16.11. Routes the service's domains to the wake endpoint, then stops its containers; the next request through a domain wakes it. `400 cannot_sleep` names why not (not a running docker service on the panel host, or no routed domain). Works without `sleepAfterMinutes`.",
+    tag: 'services',
+    floor: 'member',
+    responseType: '{ ok: boolean; asleep: boolean }',
+  },
+  'POST /v1/services/:id/wake': {
+    summary: 'Wake a sleeping service',
+    description:
+      '0.16.11. Starts its containers, waits for the healthcheck and routes its domains back. `400 not_asleep` when it is awake, `409 wake_failed` when it would not start or pass the healthcheck (it stays asleep). Start and restart wake a sleeping service the same way.',
+    tag: 'services',
+    floor: 'member',
+    responseType: '{ ok: boolean; status: string }',
+  },
   'GET /v1/services/:id/autoscale': {
     summary: 'What the autoscaler sees for a service',
     description:

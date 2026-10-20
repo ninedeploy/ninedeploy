@@ -332,14 +332,17 @@ const STATUS_TONES: Record<string, string> = {
   failed: 'bg-rose-500/15 text-rose-300 ring-rose-500/20',
   active: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20',
   pending: 'bg-amber-500/15 text-amber-300 ring-amber-500/20',
+  // 0.16.11 scale to zero: a running service whose containers sleep until a request.
+  asleep: 'bg-sky-500/15 text-sky-300 ring-sky-500/20',
 };
 
 /** States with work in flight: their dot pulses. */
 const BUSY_STATUSES = new Set(['deploying', 'building', 'queued', 'pending', 'deleting']);
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, title }: { status: string; title?: string }) {
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
         STATUS_TONES[status] ?? 'bg-slate-500/15 text-slate-300 ring-slate-500/20',

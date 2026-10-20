@@ -1578,6 +1578,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       // What actually runs, not what was asked for: the proxy renders this
       // count, so a replica that failed to start must not stay a dead backend.
       runtimeReplicas: runtime!.replicas ?? 1,
+      // 0.16.11: a deploy ends a sleep; the new release is awake and routed.
+      asleepAt: null,
     })
     .where(eq(services.id, service.id))
     .returning({ id: services.id });
