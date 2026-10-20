@@ -464,6 +464,12 @@ function routeStatuses(hostname, n) {
   return r.stdout.split(/\s+/).filter(Boolean);
 }
 const served = (code) => /^[23]\d\d$/.test(code);
+/** The same over HTTPS (Traefik's default certificate, so -k): an SSL domain's plain-HTTP router only redirects and reaches no release. */
+function routeStatusesTls(hostname, n) {
+  const r = panelRun(['sh', '-c', `for i in $(seq 1 ${n}); do curl -sk -o /dev/null -m 5 -w '%{http_code}\n' --connect-to ${hostname}:443:${DIND}:443 https://${hostname}/; done`]);
+  return r.stdout.split(/\s+/).filter(Boolean);
+}
+const ok200 = (code) => code === '200';
 
 /** Audit rows of one action (GET /v1/activity), meta parsed. */
 async function auditEntries(token, action) {
@@ -733,11 +739,11 @@ async function canaryChecks(token, serviceId, hostname) {
   const on = await api('/v1/traffic/settings', { method: 'PUT', token, body: { enabled: true } });
   if (on.status !== 200 || on.json?.enabled !== true) fail(`canary: enabling traffic analytics answered ${on.status} ${on.text.slice(0, 200)}`);
   let code = '';
-  for (let i = 0; i < 30 && !served(code); i++) {
-    code = routeStatuses(hostname, 1)[0] ?? '';
-    if (!served(code)) await sleep(1000);
+  for (let i = 0; i < 30 && !ok200(code); i++) {
+    code = routeStatusesTls(hostname, 1)[0] ?? '';
+    if (!ok200(code)) await sleep(1000);
   }
-  if (!served(code)) fail(`canary: ${hostname} is not routed after Traefik was recreated (last ${code || 'none'})`);
+  if (!ok200(code)) fail(`canary: ${hostname} is not routed after Traefik was recreated (last ${code || 'none'})`);
 
   const svcPath = `/v1/services/${serviceId}`;
   const set = await api(svcPath, { method: 'PATCH', token, body: { canary: { steps: [50], stepSeconds: 60, minRequests: 5 } } });
@@ -750,8 +756,8 @@ async function canaryChecks(token, serviceId, hostname) {
   const s1 = await canaryRunning(token, serviceId, d1, 240_000);
   const split = traefikFile('dynamic/ninedeploy.yml');
   if (!/weighted:/.test(split) || !/_canary:/.test(split) || !/weight: 50/.test(split)) fail(`canary: dynamic/ninedeploy.yml has no 50 % weighted split: ${split.slice(0, 600)}`);
-  const codes = routeStatuses(hostname, 30);
-  if (codes.length !== 30 || !codes.every(served)) fail(`canary: 30 requests during the split answered ${codes.join(',')}`);
+  const codes = routeStatusesTls(hostname, 30);
+  if (codes.length !== 30 || !codes.every(ok200)) fail(`canary: 30 requests during the split answered ${codes.join(',')}`);
   const errors = traefikFileProviderErrors();
   if (errors.length) fail(`canary: Traefik refused the weighted config: ${errors.join(' | ').slice(0, 400)}`);
   let measured = null;
@@ -761,7 +767,13 @@ async function canaryChecks(token, serviceId, hostname) {
     await sleep(2000);
   }
   if (measured?.measured !== true || !(measured.canary?.requests > 0) || !(measured.stable?.requests > 0)) {
-    fail(`canary: the access log did not measure both releases: ${JSON.stringify(measured).slice(0, 400)}`);
+    const tailer = (await api('/v1/traffic/settings', { token })).json;
+    const totals = (await api(`${svcPath}/traffic?range=1h`, { token })).json?.totals;
+    const lines = panelRun(['sh', '-c', 'tail -n 3 /data/traffic-logs/access.log; ls -la /data/traffic-logs']).all;
+    fail(
+      `canary: the access log did not measure both releases: ${JSON.stringify(measured).slice(0, 400)}\n` +
+        `  tailer: ${JSON.stringify(tailer).slice(0, 300)}\n  service traffic totals: ${JSON.stringify(totals)}\n  access log:\n${lines.slice(0, 1500)}`,
+    );
   }
   const promote = await api(`${svcPath}/deploys/${d1}/canary/promote`, { method: 'POST', token });
   if (promote.status !== 200) fail(`canary promote answered ${promote.status} ${promote.text.slice(0, 200)}`);
@@ -771,8 +783,8 @@ async function canaryChecks(token, serviceId, hostname) {
   if (!after || after === before) fail(`canary: the promoted release is not live (${before} → ${after})`);
   if ((await api(`${svcPath}/canary`, { token })).json?.active !== false) fail('canary: still active after the promoted deploy finished');
   if (/weighted:/.test(traefikFile('dynamic/ninedeploy.yml'))) fail('canary: the weighted split outlived the promoted deploy');
-  const live = routeStatuses(hostname, 5);
-  if (!live.every(served)) fail(`canary: after the promote ${hostname} answered ${live.join(',')}`);
+  const live = routeStatusesTls(hostname, 5);
+  if (!live.every(ok200)) fail(`canary: after the promote ${hostname} answered ${live.join(',')}`);
   step(
     `canary: deploy #${d1} held at ${s1.weight}% (weighted split in Traefik, 30/30 served; new ${measured.canary.requests} req / previous ${measured.stable.requests} req, ` +
       `${measured.canary.errorRate}% 5xx), promoted, ${before} → ${after}`,
@@ -786,11 +798,18 @@ async function canaryChecks(token, serviceId, hostname) {
   if (cancel.status !== 200) fail(`canary cancel answered ${cancel.status} ${cancel.text.slice(0, 200)}`);
   const end2 = await deployEnded(token, serviceId, d2, 120_000);
   if (end2 !== 'cancelled') fail(`canary: the cancelled deploy #${d2} ended '${end2}'`);
+  // The route marks the row at once; the pipeline routes back at its next check (5 s).
+  let ended = false;
+  for (let i = 0; i < 30 && !ended; i++) {
+    ended = (await api(`${svcPath}/canary`, { token })).json?.active === false;
+    if (!ended) await sleep(1000);
+  }
+  if (!ended) fail(`canary: still active 30 s after deploy #${d2} was cancelled`);
   const kept = (await api(svcPath, { token })).json?.runtimeId;
   if (kept !== after) fail(`canary: a cancelled canary changed the live release (${after} → ${kept})`);
   if (/weighted:/.test(traefikFile('dynamic/ninedeploy.yml'))) fail('canary: the weighted split outlived the cancelled deploy');
-  const back = routeStatuses(hostname, 5);
-  if (!back.every(served)) fail(`canary: after the cancel ${hostname} answered ${back.join(',')}`);
+  const back = routeStatusesTls(hostname, 5);
+  if (!back.every(ok200)) fail(`canary: after the cancel ${hostname} answered ${back.join(',')}`);
   step(`canary: deploy #${d2} cancelled during its step; ${after} kept all traffic (5/5 served), no split left`);
 
   const off = await api(svcPath, { method: 'PATCH', token, body: { canary: null } });

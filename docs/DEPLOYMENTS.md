@@ -30,7 +30,7 @@ A failed step sends all traffic back to the previous release, stops the new cont
 
 While a canary runs:
 - **Promote** (`POST /v1/services/:id/deploys/:depId/canary/promote`) skips the remaining steps and switches all traffic now.
-- **Cancel** stops it: all traffic goes back to the previous release.
+- **Cancel** stops it: within about 5 seconds, all traffic goes back to the previous release.
 - `GET /v1/services/:id/canary` shows the step, the share and each release's requests, 5xx rate and p95 so far.
 - With sticky sessions on, a visitor stays on one release (cookie `ninedeploy_release`).
 
