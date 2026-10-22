@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- Give the serialized coverage job 30 minutes: the 20-minute limit canceled the run after all 8,929 server tests passed, before web coverage and the remaining guards finished. Test commands, coverage thresholds and required checks are unchanged.
+
 ## [0.17.1] - 2026-10-22
 
 > HTTP readiness during deploys, recoverable Docker/Compose releases, required CI workflows and the October Node security baseline.
