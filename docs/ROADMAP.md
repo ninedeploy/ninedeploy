@@ -2,6 +2,12 @@
 
 This plan was drawn up on 2026-10-08 from a feature-gap analysis against Dokploy v0.30.0 and Coolify v4.4.x. Every gap listed here was checked against the NineDeploy source code.
 
+## Competitive follow-up — 2026-10-21
+
+The current implementation sequence is: required CI for a pinned commit; immutable release/artifact promotion across lanes and nodes; longer metrics retention with Prometheus/OTLP export and durable log delivery; real database restore drills with measured recovery; HTTP MCP/OAuth; and remaining node management parity. These are separate acceptance packages, not a claim of overall competitor parity.
+
+The required GitHub workflow gate and Docker artifact promotion from the panel and capable nodes are included in **0.17.1**, with UI/API/SDK support. Node-built artifacts retain a verified panel copy and their historical build-node identity. A recorded image can run without rebuilding on the panel or one node, using sealed stream transfer or an optional pinned registry archive, with target runtime settings retained. Swarm/fan-out promotion and complete environment snapshots remain open. Release publication remains gated on checks and upgrade/runtime smokes. See [GitHub App CI requirements](GITHUB_APP.md#required-ci-workflows-0171) and [artifact promotion](DEPLOYMENTS.md#docker-artifact-promotion-0171).
+
 ## The rule every release follows
 
 **Installed servers must upgrade in place without breaking.** Panels update themselves, so any release reaches every operator automatically.
@@ -91,9 +97,14 @@ superiority over another platform:
 - GitHub commit statuses and PR comments;
 - SSO/SAML/SCIM in the self-hosted build.
 
-The unreleased readiness, node metric history, log-drain and availability work is
+The 0.17.0 readiness, node metric history, log-drain and availability work is
 tracked in [Node operations](NODE_OPERATIONS.md), including its verification and
 the remaining delivery/recovery priorities.
+
+The next increment adds recorded restores for self-contained inline Compose
+stacks on the panel host: encrypted resolved configuration/environment and local
+image IDs, with explicit recovery limits. See [Deployments](DEPLOYMENTS.md#recorded-compose-releases-0171).
+This is not yet general immutable releases for every runtime or an image archive.
 
 Each item below ships as its own patch release, opt-in, with the upgrade smoke extended to cover it.
 

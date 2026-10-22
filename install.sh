@@ -197,11 +197,56 @@ install_node_apt() {
 
 # Node.js: signed repo first, consented script second.
 install_node() {
-  install_node_apt 24 && return 0
-  install_node_apt 22 && return 0
+  local major="${1:-24}"
+  install_node_apt "$major" && return 0
   warn "NodeSource APT repository unavailable — falling back to their setup script."
-  (run_vendor_script "https://deb.nodesource.com/setup_24.x" || run_vendor_script "https://deb.nodesource.com/setup_22.x") \
+  run_vendor_script "https://deb.nodesource.com/setup_${major}.x" \
     && sudo apt-get install -y nodejs
+}
+
+# Supported Node lines and their October 21, 2026 security patch floors.
+supported_node_version() {
+  local version="${1#v}" minor patch floor_minor floor_patch
+  [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || return 1
+  minor="${BASH_REMATCH[2]}"; patch="${BASH_REMATCH[3]}"
+  case "${BASH_REMATCH[1]}" in
+    22) floor_minor=23; floor_patch=4 ;;
+    24) floor_minor=22; floor_patch=1 ;;
+    26) floor_minor=12; floor_patch=1 ;;
+    *) return 1 ;;
+  esac
+  (( minor > floor_minor || (minor == floor_minor && patch >= floor_patch) ))
+}
+
+ensure_node() {
+  local required='22.23.4+, 24.22.1+ or 26.12.1+ (supported majors only)'
+  local major=24 current_version installed_version
+  if command -v node &>/dev/null && supported_node_version "$(node -v)"; then
+    ok "Node.js $(node -v)"
+    return 0
+  fi
+  current_version=$(node -v 2>/dev/null || true)
+  if [[ "$current_version" =~ ^v?([0-9]+)\. ]]; then
+    case "${BASH_REMATCH[1]}" in
+      22|24|26) major="${BASH_REMATCH[1]}" ;;
+      25) major=26 ;;
+      *) (( BASH_REMATCH[1] <= 26 )) || fail "Unsupported Node.js $current_version. Select $required manually; the installer will not downgrade it." ;;
+    esac
+  fi
+  warn "Node.js is missing or below the security baseline. Installing a supported Node $major runtime: $required"
+  if command -v apt-get &>/dev/null; then
+    install_node "$major" || fail "Could not install a secure Node.js runtime. Install $required manually: https://nodejs.org/"
+  elif command -v brew &>/dev/null; then
+    brew upgrade "node@$major" 2>/dev/null || brew install "node@$major"
+  else
+    fail "Install Node.js $required manually: https://nodejs.org/"
+  fi
+  # Mirrors can lag the security release; a successful package install alone
+  # never proves that the executable on PATH is patched.
+  installed_version=$(node -v 2>/dev/null || true)
+  command -v node &>/dev/null && supported_node_version "$installed_version" && [[ "${installed_version#v}" == "$major".* ]] \
+    || fail "Node.js on PATH still misses the security baseline or changed the requested major ($major). Need $required; check your package mirror and PATH."
+  ok "Node.js $(node -v) meets the security baseline"
 }
 
 # Docker from Docker Inc.'s signed APT repository.
@@ -696,33 +741,8 @@ fi
 # and Nixpacks, so none of these are needed on the host.
 if [ "$INSTALL_MODE" != "docker" ]; then
 
-# Node.js ≥ 22.13 (pnpm 11 requires node:sqlite)
-if command -v node &>/dev/null; then
-  NODE_MAJOR=$(node -v | sed 's/v//' | cut -d. -f1)
-  NODE_MINOR=$(node -v | sed 's/v//' | cut -d. -f2)
-  if [ "$NODE_MAJOR" -gt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -ge 13 ]; }; then
-    ok "Node.js $(node -v)"
-  else
-    warn "Node.js $(node -v) is older than recommended (≥ 22.13). Upgrading to LTS via NodeSource…"
-    if command -v apt-get &>/dev/null; then
-      install_node || fail "Could not upgrade Node.js. Install >= 22.13 manually: https://nodejs.org/"
-      ok "Upgraded Node.js to $(node -v)"
-    else
-      fail "Node.js $(node -v) — need ≥ 22.13. Upgrade: https://nodejs.org/"
-    fi
-  fi
-else
-  warn "Node.js not found. Installing Active LTS via NodeSource…"
-  info "This downloads the NodeSource repository and the Node.js package — a few minutes on slow mirrors. Progress lines follow."
-  if command -v apt-get &>/dev/null; then
-    install_node || fail "Could not install Node.js. Install >= 22.13 manually: https://nodejs.org/"
-  elif command -v brew &>/dev/null; then
-    brew install node@24 2>/dev/null || brew install node@22
-  else
-    fail "Node.js not found and no supported package manager. Install manually: https://nodejs.org/"
-  fi
-  ok "Node.js $(node -v) installed"
-fi
+# Enforce the supported Node security patch baseline, including after upgrades.
+ensure_node
 
 # r570: when packageManager pins a pnpm the host does not have yet, a
 # corepack-managed pnpm downloads it on first use — behind an interactive

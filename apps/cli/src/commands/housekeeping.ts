@@ -42,8 +42,9 @@ export async function imagesList(
       ageHours: i.ageHours.toFixed(1),
       dangling: i.dangling ? 'yes' : '',
       inUse: i.inUse ? 'yes' : '',
+      release: i.releaseProtected ? 'kept' : '',
     })),
-    ['repository', 'tag', 'size', 'ageHours', 'dangling', 'inUse'],
+    ['repository', 'tag', 'size', 'ageHours', 'dangling', 'inUse', 'release'],
   );
   info(`${images.length} images, total ${fmtBytes(totalBytes)}.`);
 }

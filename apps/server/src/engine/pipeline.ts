@@ -6,11 +6,16 @@ import { buildConfigs, databaseAttachments, databases, type DB, deployments, dom
 import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
+import { assertCiGateForBuild } from '../lib/ciGate.js';
+import { archiveDockerArtifact, artifactRuntimeService, assertArtifactAvailable, assertArtifactTarget, cacheNodeDockerArtifact, parseDockerArtifact, prepareArtifactImage, supportsDockerArtifact } from '../lib/dockerArtifact.js';
+import { withReleaseImageLock } from '../lib/releaseImageRetention.js';
 import { GithubAppError } from '../lib/githubApp.js';
 import { githubAppCloneHint, resolveCloneCreds } from '../lib/sourceCreds.js';
 import { classifyCloneFailure, redactGitOutput } from '../lib/cloneFailure.js';
 import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
+import { renderComposeRelease } from '../lib/composeRelease.js';
+import { assertReleaseTarget, readReleaseRecord, storeReleaseRecord } from '../lib/releaseRecords.js';
 import { extractSourceUpload, isUploadSourced, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
 import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
@@ -21,6 +26,7 @@ import { deployToTargets, type FanoutContext, pullableReleaseRef, recordFanoutRe
 import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
 import {
   resolveBuildPlacement,
+  assertNoSecretsInPushedImage,
   type BuildPlacement,
   buildElsewhere,
   type PlacedBuild,
@@ -730,12 +736,34 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   if (!dep) return;
   const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
   if (!service) return;
-  if (kernelCtx?.hooks) {
+  const restore = dep.restoredFromDeploymentId != null ? await readReleaseRecord(db, deploymentId).catch(() => null) : null;
+  await assertCiGateForBuild(db, dep, service);
+  const artifact = dep.promotionSourceDeploymentId != null ? parseDockerArtifact(dep.artifact) : null;
+  if (artifact) {
+    if (artifact.commitSha !== dep.commitSha) throw new Error('Artifact commit does not match the queued candidate');
+    await assertArtifactTarget(db, artifact, service);
+    await assertArtifactAvailable(db, artifact);
+    // Build placement and Git LFS concern source builds, never artifact runs.
+    Object.assign(service, { buildOn: 'target', buildServerId: null, gitLfs: false });
+  }
+  if (dep.restoredFromDeploymentId != null) {
+    if (!restore) throw new Error('Recorded Compose release is missing or cannot be decrypted; no runtime was changed.');
+    assertReleaseTarget(restore, service);
+    // Runtime inputs only. Keep current ownership, lane/approval and host authority.
+    Object.assign(service, {
+      composeContent: renderComposeRelease(restore), composeService: restore.composeService,
+      port: restore.port, healthPath: restore.healthPath, templateId: null,
+      buildOn: 'target', buildServerId: null,
+    });
+  }
+  if (kernelCtx?.hooks && !restore && !artifact) {
     // HookPipeline.call already isolates handler errors and timeouts.
     await kernelCtx.hooks.call('deploy:before', { service, targetCommit: dep.commitSha ?? undefined }).catch(() => undefined);
   }
-  const buildConfig = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
-  const configSnapshot = await snapshotConfig(db, service, buildConfig);
+  const buildConfig = restore ? undefined : await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
+  const configSnapshot = restore
+    ? JSON.stringify({ restoredFromDeploymentId: dep.restoredFromDeploymentId, port: restore.port, composeServices: Object.keys(restore.model.services as object) })
+    : await snapshotConfig(db, service, buildConfig);
 
   const log = (line: string) => logBus.publish(deploymentId, line);
   // The worker's claim flipped queued→building; a cancel in the milliseconds
@@ -866,7 +894,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   let builder = builders[service.type];
   // 0.16 T4: lifted so a build placed elsewhere can rebind the node builder
   // with the shipped image.
-  let remoteBuilderFor: ((prebuiltImage?: { tag: string; imageId: string }) => Builder) | null = null;
+  let remoteBuilderFor: ((prebuiltImage?: BuildContext['prebuiltImage']) => Builder) | null = null;
   if (service.serverId != null) {
     const serverId = service.serverId;
     if (!remoteDeploySupported(service.type)) {
@@ -880,7 +908,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // there is no remote operation for it. Refuse loudly rather than letting
     // the remote builder fail on the missing Dockerfile. (0.16 T4: built on
     // the panel and shipped, it is fine; a build server refuses it itself.)
-    if ((buildConfig?.buildPack ?? 'auto') === 'static' && buildAway === null) {
+    if (!artifact && (buildConfig?.buildPack ?? 'auto') === 'static' && buildAway === null) {
       const reason =
         'the static build pack runs its build commands on the panel host and has no remote implementation';
       log(`✗ ${reason}`);
@@ -908,7 +936,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // r266: container shapes the agent has no slot for (command, docker
     // socket, extra volumes) — refused rather than silently dropped; r268: and
     // a repository the node would have to clone with the panel's credential.
-    const serviceRefusal = await remoteServiceRefusal(db, service);
+    const serviceRefusal = await remoteServiceRefusal(db, artifact ? artifactRuntimeService(service) : service);
     if (serviceRefusal) {
       log(`✗ ${serviceRefusal}`);
       await safeFail(db, deploymentId, service.id, service.runtimeId);
@@ -984,7 +1012,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // not after it — and on the panel host only: a node builds through its
     // agent, never railpack. (0.16 T4: a build placed elsewhere checks the
     // host that builds it, in buildElsewhere.)
-    if (service.serverId == null && buildAway === null && service.type === 'docker' && !service.image && buildConfig?.buildPack === 'railpack') {
+    if (!artifact && service.serverId == null && buildAway === null && service.type === 'docker' && !service.image && buildConfig?.buildPack === 'railpack') {
       const railpackRefusal = await railpackUnavailableReason();
       if (railpackRefusal) throw new Error(railpackRefusal);
     }
@@ -992,7 +1020,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     log('##[stage:PREPARE:running] Resolving repository, sources and workspace');
     // Image-based deploys and inline compose stacks skip git entirely;
     // repo-based deploys resolve creds + checkout.
-    if (service.composeContent) {
+    if (artifact) {
+      sha = artifact.commitSha;
+      log(`Recorded artifact ${artifact.imageId} from deployment #${dep.promotionSourceDeploymentId}; skipping checkout, manifest application and compilation`);
+    } else if (service.composeContent) {
       // `services.composeContent` is the source of truth for an inline stack,
       // so the workspace file is rewritten from it on EVERY deploy: a rollback,
       // a manually edited file or a wiped workspace all repair themselves here
@@ -1067,6 +1098,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           if (failMessage) throw new Error(failMessage);
           throw gitText === msg(err) ? err : new Error(gitText);
         }
+      }
+      if (dep.ciGate && sha.toLowerCase() !== dep.ciGate.headSha?.toLowerCase()) {
+        throw new Error('Checkout returned a different commit from the required CI candidate; no build was started');
       }
       await db.update(deployments).set({ commitSha: sha }).where(eq(deployments.id, deploymentId));
 
@@ -1145,8 +1179,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
 
     // 0.16.12: a PR preview of a parent with previewDatabaseCopy gets its own
     // copies of the parent's databases before its environment is assembled.
-    if (service.isEphemeralPreview) await ensurePreviewDatabaseCopies(db, service, log);
-    const runtimeEnvironment = await loadRuntimeEnv(db, service, templateDatabaseId, log);
+    if (service.isEphemeralPreview && !restore) await ensurePreviewDatabaseCopies(db, service, log);
+    const runtimeEnvironment: RuntimeEnvironment = restore
+      ? { values: {}, attachmentCount: 0, readyAttachmentCount: 0, managedDatabaseKeys: [], secretKeys: [], withheldFromPreview: [], attachedDatabases: [] }
+      : await loadRuntimeEnv(db, service, templateDatabaseId, log);
     fanoutEnv = runtimeEnvironment.values;
     if (runtimeEnvironment.withheldFromPreview.length > 0) {
       log(
@@ -1249,6 +1285,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     }
 
     const ctx: BuildContext = {
+      ...(!artifact && supportsDockerArtifact(service) && /^[a-f0-9]{40}$/i.test(sha) ? { recordDockerArtifact: true } : {}),
+      ...(artifact ? { prebuiltImage: { tag: artifact.imageId, imageId: artifact.imageId, builtWithNixpacks: artifact.builtWithNixpacks, builtStatic: artifact.builtStatic } } : {}),
+      ...(restore ? { restoreComposeRelease: restore } : {}),
       deploymentId,
       service: serviceForBuild,
       buildConfig: effectiveBuildConfig ?? undefined,
@@ -1260,7 +1299,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       env: runtimeEnvironment.values,
       buildSecretKeys: runtimeEnvironment.secretKeys,
       // Registry-type sources provide private-image credentials.
-      registryAuth: await loadRegistryAuth(db, service, log),
+      registryAuth: artifact ? undefined : await loadRegistryAuth(db, service, log),
       // No serverId / agentCall: a node-pinned service gets the remote
       // builders above, which bind their own agent caller (D8: this used to
       // say a node service never reached this point).
@@ -1268,7 +1307,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       // a mid-flight attach (before this deployment claims its slot) is
       // reflected in the next run, but NOT in any already-queued deployment
       // (the deployment row pins the configuration snapshot).
-      volumeAttachments: await db
+      volumeAttachments: restore ? [] : await db
         .select()
         .from(serviceVolumeAttachments)
         .where(eq(serviceVolumeAttachments.serviceId, service.id)),
@@ -1298,6 +1337,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     }
 
     fanoutAttachments = ctx.volumeAttachments ?? [];
+    if (artifact) {
+      await withReleaseImageLock(() => prepareArtifactImage(db, artifact, service, deploymentId, log));
+      if (service.serverId != null && remoteBuilderFor) builder = remoteBuilderFor(ctx.prebuiltImage);
+    } else if (supportsDockerArtifact(service) && (service.pushRegistrySourceId != null || service.pushRepository)) {
+      await assertNoSecretsInPushedImage(ctx);
+    }
     log('##[stage:BUILD:running] Building image and compiling dependencies');
     // ── 0.16 T4 build placement: build away, ship, then run (design §6.3) ──
     // A build failure fails the deploy before any host that runs the service
@@ -1317,13 +1362,40 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           ctx.service = { ...ctx.service, port };
         }
         if (placed.builtWithNixpacks && ctx.env['PORT'] === undefined && port != null) ctx.env['PORT'] = String(port);
-        builder = remoteBuilderFor(shipped);
+        builder = remoteBuilderFor({ ...shipped, builtWithNixpacks: placed.builtWithNixpacks, builtStatic: placed.builtStatic });
       } else {
         ctx.prebuiltImage = { ...shipped, builtWithNixpacks: placed.builtWithNixpacks, builtStatic: placed.builtStatic };
       }
     }
     // ── end 0.16 T4 ──
     runtime = await builder.buildAndRun(ctx, previous);
+    if (artifact && runtime.imageDigest !== artifact.imageId) throw new Error('Runtime image identity does not match the recorded artifact');
+    if (ctx.recordDockerArtifact && (service.pushRegistrySourceId != null || service.pushRepository) && (!runtime.artifactBuild || !runtime.imageDigest)) {
+      throw new Error('Registry archival is required but the source image could not be recorded; the candidate will not receive traffic');
+    }
+    if (!artifact && supportsDockerArtifact(service) && runtime.artifactBuild && runtime.imageDigest && /^[a-f0-9]{40}$/i.test(sha)) {
+      try {
+        const originServerId = placed ? placed.buildHost : service.serverId;
+        let captured = parseDockerArtifact({ version: 1, imageId: runtime.imageDigest, repoUrl: service.repoUrl,
+          commitSha: sha, originDeploymentId: deploymentId, ...(originServerId != null ? { originServerId } : {}), ...runtime.artifactBuild });
+        await withReleaseImageLock(async () => {
+          await cacheNodeDockerArtifact(db, captured, service, deploymentId, log);
+          captured = await archiveDockerArtifact(db, captured, service, log);
+          await db.update(deployments).set({ artifact: captured }).where(eq(deployments.id, deploymentId));
+        });
+      } catch (err) {
+        if (service.pushRegistrySourceId != null || service.pushRepository) throw err;
+        log('Docker artifact record unavailable; this deployment cannot be promoted without rebuilding');
+      }
+    }
+    if (runtime.composeRelease && !restore) {
+      try {
+        await storeReleaseRecord(db, deploymentId, runtime.composeRelease);
+      } catch {
+        // Recording is observational; a storage/key failure must not tear down a live stack.
+        log('Release record unavailable: the resolved Compose model could not be encrypted and stored');
+      }
+    }
     // ── 0.16 T6 node databases (O7) ──
     // A node database sits on its own `nd-dbnet-<slug>` bridge on the node;
     // the service reaches it once its new container joins that bridge —

@@ -7,11 +7,19 @@ import type { RouteSpecMap } from '../types.js';
  * cross-checks every entry); bodies name the zod schema the handler parses.
  */
 export const deploysSpecs: RouteSpecMap = {
+  'GET /v1/services/:id/deploys/:depId/release': {
+    summary: 'Whether a deployment has a restorable release record',
+    description: 'Metadata only. Recorded inline Compose releases check local image availability on the original panel host: missing images or a failed Docker check disable restore. Queueing and the worker check again. Legacy redeploys use current settings; volume data is never restored.',
+    tag: 'deploys',
+    floor: 'viewer',
+    responseType: "{ available: boolean; mode: 'recorded-compose' | 'recorded-docker' | 'legacy' | 'unavailable'; imageCount: number; reason: string; imageAvailability?: 'present' | 'missing' | 'unknown'; missingImageCount?: number | null }",
+  },
   'GET /v1/services/queue': {
     summary: 'Every in-flight deployment the caller can see',
+    description: 'Set includeCi=true to include persisted awaiting_ci candidates and their byStatus count. Omit it for the original three-status response; the current SDK opts in automatically.',
     tag: 'deploys',
     floor: 'authed',
-    queryType: '{ status?: string }',
+    queryType: '{ status?: string; includeCi?: boolean }',
     validation: 'handler',
   },
   'GET /v1/services/approvals': {
@@ -249,10 +257,11 @@ export const deploysSpecs: RouteSpecMap = {
   },
   'POST /v1/services/:id/promote': {
     summary: "Deploy another service at this service's running commit",
+    description: 'Default mode=commit preserves the rebuild flow. mode=artifact copies the recorded immutable image and commit into the target queue, without checkout or build. Both services track the same repository. A retained panel- or node-origin artifact can run on the panel or one Docker node through sealed stream transfer or a pinned registry archive; host hooks, Swarm and fan-out are refused. Target runtime settings/env apply; build-time values remain in the image. Protected-source secret authority, required CI and lane approval still apply. sourceDeploymentId optionally rejects a stale source selection.',
     tag: 'deploys',
     floor: 'member',
     localBody: 'deploys.ts#promoteInput',
-    responseType: '{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string }',
+    responseType: "{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string; mode?: 'artifact'; imageId?: string }",
     validation: 'zod',
   },
   'POST /v1/ai/services/:id/deploys/:depId/diagnose': {

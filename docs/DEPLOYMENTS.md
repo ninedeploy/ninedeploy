@@ -1,6 +1,6 @@
 # Deployments & Pipeline Engine
 
-NineDeploy provides a robust, zero-downtime deployment engine supporting Docker, PM2, Compose and Nixpacks builds with health checks, blue-green port flipping, rollback safety, and preview environments.
+NineDeploy deploys Docker, PM2 and Compose services, including images built with Nixpacks. Container releases use health checks and blue-green traffic switching; Compose replaces its stack in place and has a brief interruption. Rollback behavior depends on the release type, as described below.
 
 ---
 
@@ -110,7 +110,9 @@ Requirements and limits:
 
 ### Healthcheck timeout (0.16.1)
 
-The gate in step 3 accepts any answer below 500 on the health path and waits **300 seconds** by default. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.
+The ordinary panel-host Docker HTTP gate in step 3 accepts HTTP **200–499** on the health path and waits **300 seconds** by default. If direct container-IP access fails, the sibling container checks the same HTTP path from the runtime's bridge; it never downgrades HTTP readiness to an open TCP socket. Exposed-port recovery also requires an HTTP response. Redirects are checked without following them to another host. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.
+
+Choose a health path that reflects the application's readiness, including required database migrations and dependencies. The ordinary HTTP mode retains acceptance of authentication/error routes such as 401/404; choose **HTTP readiness (2xx / 3xx response)** for 2xx/3xx only, or a command below for a stronger application-specific check. TCP and container-running checks prove only those signals. Services publishing a direct host port use stop-then-start and cannot keep two instances on the same host port during the readiness wait.
 
 ### Healthcheck command (0.16.3)
 
@@ -296,9 +298,34 @@ Turning the switch off refuses the fork's next push again, as before. Previews t
 
 ## ⏪ 5. Rollbacks & Deployment History
 
-- Every deployment records an immutable image digest and exact configuration snapshot.
-- Rollback redeploys that exact verified digest — preventing unexpected changes from floating `:latest` tags.
+- Image deployments record the resolved image digest when the runtime provides one; source deployments record a commit. Legacy rollback redeploys that artifact using **current** service settings and environment. The config diff is descriptive, not a complete recoverable configuration.
 - Deployment history stays honest: when a new deploy goes live, older rows are settled into a `superseded` state instead of lingering as "Running", both at finalize time and during a reconciliation pass at panel boot.
+
+### Recorded Compose releases (0.17.1)
+
+New inline Compose deploys on the **panel host** can record their resolved Compose model, including resolved environment values and the image IDs actually used by all containers. This is a separate AES-GCM encrypted record; history, config diffs and the release metadata API never return its payload. Instance key rotation includes it. Keep the instance master keys with database backups.
+
+The Deploys tab shows **Release recovery** and distinguishes recorded restores from legacy redeploys. A recorded rollback uses the old model and image IDs, without a checkout, image pull, rebuild, current env resolution or platform build hooks. The queue receives its own copy in the same transaction as the deployment, so deleting the original history later does not change its input. Current lane approvals and host privileges still apply; inline Compose execution remains operator-only. The editable service definition stays as it is: the next ordinary deploy applies those edits again.
+
+- Only successful, previously serving releases are restorable. Old history has no retroactive record; deploy once to create one.
+- Restore on the original panel host. The guard checks the service, slug, panel target and an existing primary container's name; it does not fingerprint the Docker daemon. Moving the panel database does not move images or volume data. Node/Swarm and repository-based Compose snapshots are not implemented.
+- Models with bind/anonymous mounts, unresolved environment entries, external config/secret/env/label files or profiles do not receive a restorable record. A capture or storage failure is logged without model contents and does not fail an otherwise healthy deployment.
+- Pinned image IDs must still exist on that Docker daemon. NineDeploy's image cleanup preserves every image ID referenced by a retained release record, including unused/untagged images and copied queued restores. This applies to automatic cleanup, hourly maintenance, Images API/CLI, system cleanup and doctor repair. The inventory reports `releaseProtected` separately from `inUse`; CLI `images ls` shows `release: kept`.
+- Protection ends when the last referring deployment record is deleted (including normal history retention). Unreadable encrypted records stop image cleanup rather than risk deleting their images. Keep the master keys available; recover them or explicitly remove affected history before retrying cleanup. Manual Docker commands outside NineDeploy can still remove images. A missing image fails **before** stopping the running project; records do not archive image layers.
+- Cleanup with protected images reports an image-size estimate; shared layers can make the actual reclaimed disk space smaller. The disk-usage reading after cleanup remains separate.
+- Compose still replaces its project **in place**, with a brief interruption. This is not blue-green deployment or automatic recovery after a failed start.
+- Named volume **data is not snapshotted or rewound**. Database migrations and data compatibility remain application responsibilities.
+- Before manually downgrading to 0.17.0, cancel queued/awaiting-approval recorded restores and stop the worker. That version ignores the new restore input and must not process it. The additive table/column can stay; after upgrading again their encrypted records are readable.
+
+`GET /v1/services/:id/deploys/:depId/release` (viewer) returns `available`, `mode`, `imageCount` and `reason`. Recorded releases also return `imageAvailability` (`present`, `missing` or `unknown`) and `missingImageCount` (unique IDs; `null` when Docker cannot be checked). SDK: `deploys.releaseInfo`. The bounded local image check includes untagged images. Missing images or an unsuccessful Docker check disable confirmation; the API repeats the check and refuses `POST .../rollback` before queueing. Availability is a point-in-time result: the worker still checks image IDs again before teardown.
+
+Real-Docker verification uses a disposable daemon and panel, including changed YAML/env/tags, panel restart, source-history pruning, exact image/env recovery, retained volume data and missing-image refusal:
+
+```sh
+node scripts/smoke-user-journey.mjs --image=ninedeploy-local:YOUR_BUILD --compose-release-only
+```
+
+The model comes from [`docker compose config`](https://docs.docker.com/reference/cli/docker/compose/config/); restore uses [`up --pull never --no-build`](https://docs.docker.com/reference/cli/docker/compose/up/). Compose's canonical dollar escaping is retained during replay rather than escaped a second time.
 
 ### Deploy hook: redeploy from CI (0.16.2)
 
@@ -581,3 +608,21 @@ version to install, and nothing else changes. The full reference is
   there; a refused target is recorded with the reason and the primary is not
   affected.
 - **Health** on a node is container state, not an HTTP probe through Traefik.
+
+## Docker artifact promotion (0.17.1)
+
+A successful repository-backed Docker deployment on the panel or a capable node records its actual immutable image ID and buildpack conventions. Node-built artifacts retain a verified image copy on the panel before their record is saved, so recovery does not depend on the origin node staying online. In Deploys, choose **Same artifact · no rebuild** and a service tracking the same repository. Confirmation names the image and target. The deployment detail shows the original build, historical build node and promotion source.
+
+`POST /v1/services/:id/promote` accepts `{ "targetServiceId": 2, "mode": "artifact", "sourceDeploymentId": 123 }`. The optional source ID refuses a stale selection if another release is now running. The current SDK exposes `deploys.promote(source, target, { mode: 'artifact', sourceDeploymentId })`. Omitting mode preserves the existing **same commit · rebuild** behavior, including for older clients and historical deployments without an artifact.
+
+Artifact mode copies the record into the target deployment. It survives source history deletion and panel restart. Exporting an image from a protected source lane requires that lane's secret-reading authority, including for previews inheriting a protected parent: build-time secrets may already be baked into the image. Target required GitHub workflows must pass for the pinned commit, and target lane approval remains required. No Git checkout, manifest application or compilation occurs. The worker transfers the image to a node using the existing sealed, verified stream relay, or pulls its recorded registry digest. The candidate's actual image ID must match before it can serve traffic; missing images never trigger a rebuild or mutable-tag fallback.
+
+Target runtime environment, attached databases, files, volumes, ports, command, resource limits, restart policy and health checks apply. Source build-time variables, dependencies and files stay baked into the image; changing target build settings cannot rewrite them. Configure target routes and dependencies in the panel: source manifests are not replayed during promotion. Database/volume contents are never copied or restored.
+
+The source build may run on the panel, target node or a separate build node; a promotion can run on the panel or one Docker node. Nodes need a sealed transport and `image.manage`; stream transfers also need `stream`. Runtime capability, database and file/volume guards still apply, while Git credential and build-pack requirements are skipped because no node build occurs. Host pre-deploy/post-deploy/pre-stop hooks, Swarm and multi-node fan-out remain unsupported. Node capture requires sealed transport, image.manage and stream when the panel does not already hold the exact image. Missing capabilities or a failed observation/cache leave an ordinary deployment working without an artifact record; configure a push registry when successful archival must be required before traffic changes.
+
+For a registry archive, an operator selects **Push registry** and **Repository** in the source service's Build placement settings, then deploys it on the panel or a capable node. The source's registry credential must be bound to exactly one host. The successful push records the manifest digest separately from the image ID, and Deploys shows the immutable registry reference. A push or archive-record failure fails the candidate before routing changes. The existing secret-export policy refuses Nixpacks images containing secret environment variables and Dockerfile builds using secret build arguments. Existing historical artifacts are not uploaded retroactively.
+
+An archived artifact can restore a missing local image or reach a target node even after its source deployment history is deleted. Registry credentials are loaded at use time and their original host binding is checked again; a removed/revoked credential fails recovery. The registry must remain reachable and retain the recorded manifest and layers: NineDeploy does not control external registry garbage collection. Registry retention is not a database/volume backup.
+
+Without an archive, keep the image on the panel: all NineDeploy image cleanup paths protect it while any source or copied deployment record is retained. Deleting the last retained record releases that protection; external Docker cleanup can still remove the image. Node caches can be repopulated from the panel or archive. A corrupted artifact record stops NineDeploy image cleanup until that history is repaired or removed.

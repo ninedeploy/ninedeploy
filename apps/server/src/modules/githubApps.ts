@@ -507,6 +507,7 @@ export const githubAppsRoutes: FastifyPluginAsync = async (app) => {
       default_permissions: {
         contents: 'read',
         metadata: 'read',
+        actions: 'read',
         pull_requests: 'write',
         statuses: 'write',
         ...(input.checks ? { checks: 'write' } : {}),

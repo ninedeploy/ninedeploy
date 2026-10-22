@@ -217,7 +217,7 @@ export function StorageSection() {
                   setForm((prev) => ({ ...prev, maxAgeHours: val }));
                 }}
               />
-              <p className="text-[11px] text-slate-500 mt-1">Only images and build layers older than this age will be pruned (168h = 7 days).</p>
+              <p className="text-[11px] text-slate-500 mt-1">Only images and build layers older than this age will be pruned (168h = 7 days). Images referenced by recorded Compose releases are kept until that deployment history is deleted.</p>
             </div>
 
             <div className="space-y-2 pt-2">

@@ -33,7 +33,7 @@ const { serviceGithubRoutes } = await import('../../src/modules/serviceGithub.js
 const { clearGithubAppCaches } = await import('../../src/lib/githubApp.js');
 const { encrypt } = await import('../../src/lib/crypto.js');
 const { buildTestApp } = await import('../helpers.js');
-const { fakeGithub, json, migratedDb, rsaKeyPair, seedApp, seedInstallation } = await import('../lib/githubAppKit.js');
+const { closeMigratedDb, fakeGithub, json, migratedDb, rsaKeyPair, seedApp, seedInstallation } = await import('../lib/githubAppKit.js');
 
 const key = rsaKeyPair('pkcs1');
 const OPERATOR = 1;
@@ -80,6 +80,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  closeMigratedDb(db);
   vi.restoreAllMocks();
 });
 
@@ -101,6 +102,22 @@ const hookRow = () => db.query.webhooks.findFirst({ where: eq(webhooks.id, hookI
 const audits = async (action: string) => (await db.select().from(auditLog)).filter((a) => a.action === action);
 
 describe('GET /:id/github', () => {
+  it('stores exact required workflow paths for a service admin and refuses invalid or duplicate policies', async () => {
+    const app = await server();
+    await call(app, OPERATOR, 'PUT', `/${svcId}/github`, { sourceId: appSourceId });
+    const workflows = ['.github/workflows/ci.yml', '.github/workflows/security.yaml'];
+    expect(await call(app, OWNER, 'PATCH', `/${svcId}/github/feedback`, { requiredWorkflows: workflows }))
+      .toMatchObject({ status: 200, body: { link: { requiredWorkflows: workflows } } });
+    expect((await linkRow())?.requiredWorkflows).toEqual(workflows);
+    for (const paths of [['ci'], ['../../ci.yml'], [workflows[0], workflows[0]]]) {
+      expect((await call(app, OWNER, 'PATCH', `/${svcId}/github/feedback`, { requiredWorkflows: paths })).status).toBe(400);
+    }
+    expect((await call(app, STRANGER, 'PATCH', `/${svcId}/github/feedback`, { requiredWorkflows: [] })).status).toBe(404);
+    expect((await linkRow())?.requiredWorkflows).toEqual(workflows);
+    expect(await call(app, OWNER, 'PATCH', `/${svcId}/github/feedback`, { requiredWorkflows: [] }))
+      .toMatchObject({ status: 200, body: { link: { requiredWorkflows: [] } } });
+    await app.close();
+  });
   it('returns null when unlinked, the link view once linked, and 404s a stranger', async () => {
     const app = await server();
     expect(await call(app, OWNER, 'GET', `/${svcId}/github`)).toMatchObject({ status: 200, body: { link: null } });

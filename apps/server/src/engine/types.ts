@@ -1,8 +1,13 @@
 import type { BuildConfig, Service, ServiceVolumeAttachment } from '@ninedeploy/db';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 import type { IBuildCache } from '../kernel/types.js';
+import type { ComposeRelease } from '../lib/composeRelease.js';
 
 export interface BuildContext {
+  /** Normal source builds only: observe the actual node image for a retained artifact. */
+  recordDockerArtifact?: boolean;
+  /** Trusted encrypted release input, restored without pulling or rebuilding. */
+  restoreComposeRelease?: ComposeRelease;
   deploymentId: number;
   service: Service;
   buildConfig?: BuildConfig;
@@ -116,6 +121,10 @@ export interface BuildContext {
 
 /** Identifies a running workload so the engine can stop/inspect it later. */
 export interface DeployRuntime {
+  /** Buildpack conventions needed to run the same image in another environment. */
+  artifactBuild?: { builtWithNixpacks: boolean; builtStatic: boolean };
+  /** Resolved secret-bearing model; the pipeline encrypts it in its own table. */
+  composeRelease?: ComposeRelease;
   /** Docker container name or PM2 process name. */
   runtimeId: string;
   port: number | null;

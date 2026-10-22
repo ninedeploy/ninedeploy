@@ -18,7 +18,6 @@ import {
 import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { pruneDrillLeftovers } from '../lib/backupDrill.js';
-import { run } from '../lib/exec.js';
 import { deleteLog, pruneOldLogs } from '../engine/logs.js';
 import { pruneResetTokens } from '../lib/passwordReset.js';
 import { executeAutoPrune, getAutoPruneStatus } from '../engine/autoPrune.js';
@@ -29,8 +28,8 @@ import { pruneTrafficRollups } from '../lib/trafficAnalytics.js';
 import { pruneImageTransfers } from '../lib/imageTransferRetention.js';
 import { pruneUptime } from '../lib/uptime.js';
 import { sweepOrphanPreviewCopies } from '../lib/previewDatabases.js';
+import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 
-const swallow = () => {};
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
 /** Export artifacts (secret-bearing archives + scratch files) older than this
  * are crash leftovers — a live export cleans up within seconds. */
@@ -115,7 +114,7 @@ const DRILL_LEFTOVER_MAX_AGE_MS = 6 * 60 * 60 * 1000;
  *   • `awaiting_approval` (0.16.13) — it has not run yet and still waits for
  *     an admin's decision, however long that takes.
  */
-const UNSWEEPABLE_STATUSES = ['queued', 'building', 'deploying', 'running', 'awaiting_approval'] as const;
+const UNSWEEPABLE_STATUSES = ['queued', 'building', 'deploying', 'running', 'awaiting_approval', 'awaiting_ci'] as const;
 /**
  * r543: a backup or drill still `running` this long after it started is
  * treated as interrupted by the hourly sweep. Far beyond any real dump (the
@@ -408,12 +407,11 @@ export async function pruneExpiredPendingDomains(
 
 /**
  * Remove dangling (untagged) Docker images — the orphaned layers left behind by
- * failed/interrupted builds. Tagged images (incl. `ninedeploy/<slug>:<sha>` used
- * for rollback) and images referenced by a running container are never dangling,
- * so this is safe and never evicts something in use.
+ * failed/interrupted builds. Retained Compose releases can also refer to an
+ * untagged image; the shared release-aware cleanup protects those IDs too.
  */
-function pruneDanglingImages(): void {
-  void run('docker', ['image', 'prune', '-f'], {}, swallow).catch(() => undefined);
+async function pruneDanglingImages(db: import('@ninedeploy/db').DB): Promise<void> {
+  await pruneReleaseImages(db, { danglingOnly: true });
 }
 
 /**
@@ -520,7 +518,7 @@ export default fp(
         await step('uptime', () => pruneUptime(fastify.db, now));
         // 0.16.12 database copies whose preview was removed without its teardown.
         await step('preview-databases', () => sweepOrphanPreviewCopies(fastify.db, (line) => fastify.log.info({ component: 'housekeeping' }, line)));
-        await step('dangling-images', () => pruneDanglingImages());
+        await step('dangling-images', () => pruneDanglingImages(fastify.db));
 
         await step('disk-auto-prune', async () => {
           const pruneStatus = await getAutoPruneStatus(fastify.db);

@@ -313,6 +313,8 @@ export interface ImageInfo {
   ageHours: number;
   dangling: boolean;
   inUse: boolean;
+  /** Kept by NineDeploy cleanup while any recorded Compose release refers to it. */
+  releaseProtected?: boolean;
 }
 
 /** Body for `POST /v1/housekeeping/images/prune`. The server

@@ -176,6 +176,12 @@ describe('ServiceDetail', () => {
     fireEvent.click(await screen.findByRole('tab', { name: new RegExp(`^${escaped}(\\s|$)`) }));
   };
 
+  const confirmRollback = async () => {
+    const button = await screen.findByRole('button', { name: 'Rollback' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+  };
+
   it('0.15: the overview tab shows the service traffic card', async () => {
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     expect(await screen.findByText(/Traffic analytics is off/)).toBeInTheDocument();
@@ -1005,7 +1011,7 @@ describe('ServiceDetail', () => {
       { id: 11, serviceId: 1, status: 'running', commitSha: 'abc1234', imageDigest: null, message: null, author: null, trigger: 'user', logPath: null, startedAt: null, finishedAt: null, createdAt: '2026-01-02T00:00:00Z' },
       { id: 10, serviceId: 1, status: 'running', commitSha: 'def5678', imageDigest: null, message: null, author: null, trigger: 'user', logPath: null, startedAt: null, finishedAt: null, createdAt: '2026-01-01T00:00:00Z' },
     ] as never);
-    mockOf(api.deploys.rollback).mockRejectedValue(new Error('x'));
+    mockOf(api.deploys.rollback).mockRejectedValue(new Error('A recorded image is no longer available'));
     mockOf(api.services.remove).mockRejectedValue(new Error('x'));
     mockOf(api.domains.create).mockRejectedValue(new Error('That hostname is reserved for the NineDeploy panel'));
     mockOf(api.domains.remove).mockRejectedValue(new Error('x'));
@@ -1017,8 +1023,8 @@ describe('ServiceDetail', () => {
     // Rollback failure (deploys tab) — after the confirmation dialog (r402).
     await openTab('Deploys');
     fireEvent.click(await screen.findByTitle('Rollback to #10'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Rollback' }));
-    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Rollback failed', 'error'));
+    await confirmRollback();
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('A recorded image is no longer available', 'error'));
 
     // Domain add/remove failures (network tab).
     await openTab('Network');
@@ -1057,7 +1063,7 @@ describe('ServiceDetail', () => {
     const rb = await screen.findByTitle('Rollback to #10');
     fireEvent.click(rb);
     // Rollback asks for confirmation first (r402).
-    fireEvent.click(await screen.findByRole('button', { name: 'Rollback' }));
+    await confirmRollback();
     await waitFor(() => expect(api.deploys.rollback).toHaveBeenCalledWith(service.id, 10));
     // Failed deploys never offer rollback.
     expect(screen.queryByTitle('Rollback to #9')).not.toBeInTheDocument();
@@ -1100,7 +1106,7 @@ describe('ServiceDetail', () => {
     await openTab('Deploys');
     await screen.findByText('#5');
     fireEvent.click(await screen.findByTitle('Rollback to #4'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Rollback' }));
+    await confirmRollback();
     await waitFor(() => expect(api.deploys.rollback).toHaveBeenCalledWith(1, 4));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Rollback started', 'info'));
   });

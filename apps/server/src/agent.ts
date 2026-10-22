@@ -269,6 +269,7 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
     exe: 'docker',
     build: (p) => {
       const argv = ['run', '-d', '--name', validated(str(p, 'name'), RE_NAME, 'name'), '--restart', 'unless-stopped', '--network', 'ninedeploy'];
+      if (/^sha256:[a-f0-9]{64}$/.test(str(p, 'image') ?? '')) argv.push('--pull', 'never');
       argv.push(...resourceArgs(p));
       const vol = str(p, 'volume');
       if (vol !== undefined) argv.push('-v', `${validated(vol, RE_NAME, 'volume name')}:${validated(str(p, 'mount') ?? '/', RE_PATH, 'mount path')}`);
@@ -284,6 +285,7 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
     exe: 'docker',
     build: (p) => {
       const argv = ['run', '-d', '--name', validated(str(p, 'name'), RE_NAME, 'name'), '--restart', 'unless-stopped', '--network', 'ninedeploy'];
+      if (/^sha256:[a-f0-9]{64}$/.test(str(p, 'image') ?? '')) argv.push('--pull', 'never');
       argv.push(...resourceArgs(p));
       const vol = str(p, 'volume');
       if (vol !== undefined) argv.push('-v', `${validated(vol, RE_NAME, 'volume name')}:${validated(str(p, 'mount') ?? '/', RE_PATH, 'mount path')}`);

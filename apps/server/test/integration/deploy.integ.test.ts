@@ -46,6 +46,7 @@ if (ENABLED) {
 }
 
 describe.skipIf(!ENABLED || !HOST_CAN_REACH_CONTAINERS)('deploy pipeline (real Docker daemon)', () => {
+  const slug = `integ-e2e-${process.pid}-${Date.now().toString(36)}`;
   // createDb returns { db, client } — migrations run against the drizzle handle.
   const db = createDb({ url: ':memory:' }).db;
   let serviceId: number;
@@ -55,19 +56,22 @@ describe.skipIf(!ENABLED || !HOST_CAN_REACH_CONTAINERS)('deploy pipeline (real D
     await ensureNetwork(() => undefined);
     const [svc] = await db
       .insert(services)
-      .values({ name: 'integ-e2e', slug: 'integ-e2e', type: 'docker', image: 'nginx:1.27-alpine', port: 80, healthPath: '/' })
+      .values({ name: 'integ-e2e', slug, type: 'docker', image: 'nginx:1.27-alpine', port: 80, healthPath: '/' })
       .returning();
     serviceId = svc!.id;
     await db.insert(buildConfigs).values({ serviceId, buildPack: 'dockerfile' });
   }, 240_000);
 
   afterAll(async () => {
-    // Sweep every container this service ever ran (blue-green names).
-    const list = await capture('docker', ['ps', '-a', '--format', '{{.Names}}']);
-    for (const name of list.split('\n').map((n) => n.trim()).filter((n) => n.startsWith('nd-svc-integ-e2e'))) {
-      await capture('docker', ['rm', '-f', name]).catch(() => '');
+    // Runtime names change independently of bridge names. Select only this
+    // run's service on its unique bridge, including stopped generations.
+    const owned = ['ps', '-aq', '--filter', `label=ninedeploy.service=${serviceId}`, '--filter', `network=${serviceBridgeName(slug)}`];
+    if (serviceId != null) {
+      const ids = (await capture('docker', owned)).trim().split(/\s+/).filter(Boolean);
+      if (ids.length > 0) await capture('docker', ['rm', '-f', ...ids]);
+      expect((await capture('docker', owned)).trim(), 'test teardown must remove every owned deployment runtime').toBe('');
     }
-    await capture('docker', ['network', 'rm', serviceBridgeName('integ-e2e')]).catch(() => '');
+    await capture('docker', ['network', 'rm', serviceBridgeName(slug)]).catch(() => '');
   }, 120_000);
 
   const deploy = async () => {
@@ -83,7 +87,7 @@ describe.skipIf(!ENABLED || !HOST_CAN_REACH_CONTAINERS)('deploy pipeline (real D
   // way platform infrastructure (Traefik, the probe container) does: from a
   // container attached to the service's bridge, by name.
   const httpGet = (runtimeId: string) =>
-    capture('docker', ['run', '--rm', '--network', serviceBridgeName('integ-e2e'), 'busybox:1.36', 'wget', '-qO-', `http://${runtimeId}/`]);
+    capture('docker', ['run', '--rm', '--network', serviceBridgeName(slug), 'busybox:1.36', 'wget', '-qO-', `http://${runtimeId}/`]);
 
   it('deploys an image, health checks it, and reports running', async () => {
     const { dep, svc } = await deploy();
@@ -98,7 +102,7 @@ describe.skipIf(!ENABLED || !HOST_CAN_REACH_CONTAINERS)('deploy pipeline (real D
     const inspect = await capture('docker', ['inspect', svc.runtimeId!, '--format', '{{json .NetworkSettings.Networks}}']);
     // Model B: the runtime is a member of its per-slug bridge (where Traefik
     // and the probe container are attached), not the shared mesh.
-    expect(inspect).toContain(serviceBridgeName('integ-e2e'));
+    expect(inspect).toContain(serviceBridgeName(slug));
   }, 300_000);
 
   it('rolls back to the first deployment', async () => {

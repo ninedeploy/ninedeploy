@@ -28,7 +28,7 @@ a shared Docker network (`ninedeploy`); Traefik is the intended sole public
 listener on :80/:443, with an explicit, operator-gated escape hatch for direct
 host port publishing (`services.published_port`).
 
-- **Runtime**: Node ≥ 22.13, pnpm 11 workspace, Turborepo (`turbo run build/dev/lint/typecheck/test/clean/db:*`)
+- **Runtime**: Node 22.23.4+, 24.22.1+ or 26.12.1+ (supported majors only), pnpm 11 workspace, Turborepo (`turbo run build/dev/lint/typecheck/test/clean/db:*`)
 - **Language**: TypeScript 7 strict (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `isolatedModules`), Biome for lint/format
 - **Testing**: Vitest 5 + `@vitest/coverage-v8`, Testing Library. Server: 308 files / 4 647 tests, green. Monorepo: 7 498 tests across 470 files, all green (0.10.8). Coverage gates are **tiered**, not uniformly 100 — see [§13](#13-testing)
 
@@ -789,6 +789,11 @@ and since 0.10.38 (r581) **the end-to-end smokes gate publication**:
    separate panel and node Docker daemons: HTTP readiness must refuse an
    unready candidate while keeping the prior release serving, node memory
    must reach service history, and a node log line must reach its drain.
+   The 0.17.1 Compose release-record package adds a focused
+   `scripts/smoke-user-journey.mjs --compose-release-only --image=…:vX.Y.Z`
+   gate: restore pinned local images and recorded environment after a panel
+   restart and source-history deletion, retain named-volume data, and refuse
+   missing images before stopping the live stack.
 3. **promote-release** — only when all smokes pass: `:latest` is re-pointed
    at the already-pushed manifest (registry retag, no rebuild; only when the
    tag is the highest `vX.Y.Z`, per r573), then the GitHub Release is created.
@@ -818,7 +823,7 @@ that may run privileged containers).
 
 ## 14. Installation, updates and supervision
 
-- **`install.sh`** (~2 350 lines): checks/installs Node ≥ 22.13 and Docker via
+- **`install.sh`** (~2 350 lines): checks/installs Node 22.23.4+, 24.22.1+ or 26.12.1+ (supported majors only) and Docker via
   signed APT repos, installs a **checksum-verified Nixpacks** binary, resolves
   the target version via release channels (`--channel=release` default,
   `--channel=main`, `--version vX.Y.Z`), supports both **bare-metal** and
@@ -1364,4 +1369,4 @@ been worse.
   mcp, plugin-sdk, cli), 99 % web, 95 % server, each floor justified in its
   config rather than silently ratcheted
 - **TypeScript strict** — `noUncheckedIndexedAccess`, `verbatimModuleSyntax`,
-  `isolatedModules`; Node ≥ 22.13
+  `isolatedModules`; Node 22.23.4+, 24.22.1+ or 26.12.1+ (supported majors only)

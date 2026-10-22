@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+## [0.17.1] - 2026-10-22
+
+> HTTP readiness during deploys, recoverable Docker/Compose releases, required CI workflows and the October Node security baseline.
+
+- Keep ordinary Docker HTTP readiness checks as HTTP after the direct-container-IP grace period. The sibling probe and exposed-port recovery now require a valid 200–499 response on the configured health path, rather than accepting an open TCP socket while the app still returns 502/503. Do not follow redirects to another host during direct readiness checks. Explicit strict HTTP/TCP/command modes retain their own contracts.
+
+- Record ordinary node-built Docker artifacts with the actual running image ID and buildpack conventions. Retain a verified copy on the panel before saving the record, so promotion and rollback survive origin-node removal. Deployment details expose the historical build node. Optional capture failures keep legacy deployment behavior; configured registry archival remains required before traffic changes.
+
+- Promote a panel-origin Docker artifact to the panel or one node without rebuilding. Use sealed verified stream transfer or an optional registry archive pinned by manifest digest and checked against the original image ID. Archives survive loss of the panel image and source history; credentials are re-resolved against their operator-approved host binding. Source builds configured with a push registry use the existing secret-export guard and fail before traffic changes if archival fails. Deployment cards show the archive reference; node runtime port conventions and candidate image checks are preserved. Swarm/fan-out and host deploy hooks remain unsupported.
+- Durable artifact copies pin the original image/commit, retain target runtime configuration and still pass target CI/lane approval and protected-source secret authority. UI confirmation names the image and explains baked build-time values; the SDK/API retain commit promotion as the default. Additive migration 0095 leaves existing deployments unchanged. Retained artifact history protects image IDs from NineDeploy cleanup; missing unarchived images fail closed.
+
+- Required GitHub Actions workflows per service: opt-in exact workflow paths, a durable `awaiting_ci` queue state, immutable commit pinning before lane review/build, run/attempt receipts and cancellation. Missing checks or API/permission errors never pass; completed non-success checks fail the candidate. Polling holds no build slots and resumes after restart. Additive migration 0094 defaults all existing links to no required workflows. New App manifests request Actions read permission; existing Apps need that permission before enabling the gate.
+- Respect outbound request cancellation while DNS is still resolving, so stopping CI polling cannot wait indefinitely on a stalled lookup. A late DNS answer never starts the cancelled request.
+
+- Require the October 21, 2026 Node security baseline (22.23.4+, 24.22.1+ or 26.12.1+ within supported majors). Pin Docker/CI to 26.12.1; check the runtime before release checks, and recheck the standalone installer's actual Node executable after upgrading. Preserve existing supported majors; a Node 26 security update must not switch the host to Node 24.
+- Check recorded Compose image availability in recovery metadata and again before queueing a restore. Distinguish missing images from Docker connection failures, hide host error details, and recheck eligibility when opening confirmation.
+- Keep image IDs referenced by retained Compose release records out of all NineDeploy image-cleanup paths, including dangling and automatic cleanup. Unreadable records stop image cleanup. Inventory/CLI and deploy recovery explain protection and when it ends.
+
+- Recorded panel-host inline Compose releases: encrypted resolved configuration/environment and actual image IDs, copied into rollback jobs; restore without current YAML/env, pulls or rebuilds. Recovery eligibility and limits are shown in Deploys. Named volume data stays current; records require retained local images and a supported self-contained model. See [Deployments](docs/DEPLOYMENTS.md#recorded-compose-releases-0171).
+- Additive migration 0093 stores encrypted release records separately from deployment history and marks copied restores. Key rotation includes the new encrypted store; release promotion adds a real-Docker Compose restore smoke.
+- Fix in-memory database transactions trying to reserve a second connection for a PRAGMA. Commit/rollback and foreign-key enforcement are regression-tested.
+- Remove the stale feature-version prefix from `deploys diagnose --help`.
+
 ## [0.17.0] - 2026-10-20
 
 > Application readiness, node resource history and log drains, and AI that proposes a fix.

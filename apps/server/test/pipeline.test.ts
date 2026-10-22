@@ -2,7 +2,8 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deployments, domains, serviceFiles, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { auditLog, deploymentReleaseRecords, deployments, domains, serviceFiles, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { createComposeRelease } from '../src/lib/composeRelease.js';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
 import { GithubAppError } from '../src/lib/githubApp.js';
@@ -51,12 +52,13 @@ const h = vi.hoisted(() => {
 vi.mock('../src/config.js', () => ({ config: h.config }));
 // The finalize grace period sleeps 2s in real life — stub it for tests.
 const execMock = vi.hoisted(() => ({
+  capture: vi.fn(async () => `sha256:${'a'.repeat(64)}`),
   sleep: vi.fn(async () => undefined),
   run: vi.fn(async () => ({ stdout: '', stderr: '' })),
 }));
 const sleepMock = execMock;
 vi.mock('../src/lib/exec.js', () => execMock);
-vi.mock('../src/lib/crypto.js', () => ({ decrypt: h.decrypt }));
+vi.mock('../src/lib/crypto.js', () => ({ decrypt: h.decrypt, encrypt: (value: string) => `sealed:${value}` }));
 vi.mock('../src/lib/git.js', () => ({ checkoutCommit: h.checkoutCommit }));
 // 0.16.1: the uploaded-source extraction is stubbed; which service takes it is the real rule.
 // 0.16.3: the LFS fetch itself has its own tests (test/gitLfs.test.ts).
@@ -161,6 +163,8 @@ const service = {
 
 interface FakeDb {
   query: {
+    serviceTargets: { findFirst: ReturnType<typeof vi.fn> };
+    deploymentReleaseRecords: { findFirst: ReturnType<typeof vi.fn> };
     deployments: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
     services: { findFirst: ReturnType<typeof vi.fn> };
     buildConfigs: { findFirst: ReturnType<typeof vi.fn> };
@@ -192,6 +196,8 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
   const inserts: { table: unknown; values: Record<string, unknown> }[] = [];
   const db: FakeDb = {
     query: {
+      serviceTargets: { findFirst: vi.fn().mockResolvedValue(undefined) },
+      deploymentReleaseRecords: { findFirst: vi.fn().mockResolvedValue(undefined) },
       deployments: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
       services: { findFirst: vi.fn() },
       buildConfigs: { findFirst: vi.fn() },
@@ -248,7 +254,7 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
     insert: vi.fn((table: unknown) => ({
       values: (values: Record<string, unknown>) => {
         inserts.push({ table, values });
-        return Promise.resolve();
+        return Object.assign(Promise.resolve(), { onConflictDoNothing: () => Promise.resolve() });
       },
     })),
   };
@@ -268,6 +274,154 @@ function baseSetup(db: FakeDb, over: Record<string, unknown> = {}) {
   db.query.envVars.findMany.mockResolvedValue([]);
   db.query.databaseAttachments.findMany.mockResolvedValue([]);
 }
+
+describe('artifact promotion pipeline', () => {
+  const imageId = `sha256:${'a'.repeat(64)}`;
+  const sha = 'c'.repeat(40);
+  const artifact = { version: 1, imageId, repoUrl: service.repoUrl, commitSha: sha, originDeploymentId: 99, builtWithNixpacks: true, builtStatic: false };
+  beforeEach(() => { vi.clearAllMocks(); });
+  function setup(over: Record<string, unknown> = {}) {
+    const state = makeDb();
+    baseSetup(state.db, over);
+    state.db.query.deployments.findFirst.mockResolvedValue({ ...dep, commitSha: sha, artifact, promotionSourceDeploymentId: 99 });
+    return state;
+  }
+  it('ships a recorded panel image to a node and runs it without Git credentials or a node build', async () => {
+    const { db, updates } = setup({ serverId: 4, sourceId: 9, port: null });
+    db.query.sources.findFirst.mockResolvedValue({ type: 'github', tokenEncrypted: 'panel-only', allowOnNodes: false });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'static' });
+    (db.query as unknown as Record<string, unknown>)['servers'] = { findFirst: vi.fn(async () => ({ id: 4, name: 'artifact-node' })) };
+    h.agentOp.mockImplementation(async (_db: unknown, _server: unknown, op: string, params: Record<string, unknown>) => ({ exitCode: 0,
+      lines: op === 'agent.ping' ? ['ND-AGENT {"version":"0.17.0","caps":["stream","image.manage","build-path-guard"]}']
+        : op === 'docker.imageInspect' ? [imageId + '|123'] : op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env']
+          : op === 'docker.inspect' ? [params.format === 'image' ? imageId : 'running|none|0|0'] : [],
+    }));
+    await runDeployment(db as never, 1);
+    expect(h.shipImageByStream).toHaveBeenCalledWith(db, expect.objectContaining({ source: null, target: 4, imageId }), expect.any(Function));
+    expect(h.agentOp.mock.calls.find(call => call[2] === 'docker.runEnv')?.[3]).toMatchObject({ image: imageId });
+    expect(h.agentOp.mock.calls.map(call => call[2])).not.toContain('git.ensure');
+    expect(h.agentOp.mock.calls.map(call => call[2])).not.toContain('docker.build');
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(updates.some(update => update.table === deployments && update.values.status === 'running')).toBe(true);
+  });
+  it('uses the exact image and target runtime env, without checkout or build placement', async () => {
+    const { db, updates } = setup({ buildOn: 'server', buildServerId: 999, gitLfs: true });
+    db.query.envVars.findMany.mockResolvedValue([{ key: 'TARGET_ENV', valueEncrypted: 'production', isSecret: false }]);
+    h.builder.buildAndRun.mockResolvedValueOnce({ runtimeId: 'candidate', port: 3000, healthPath: '/', imageDigest: imageId } as never);
+    await runDeployment(db as never, 1);
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(h.buildSourceImage).not.toHaveBeenCalled();
+    expect(h.shipImageByStream).not.toHaveBeenCalled();
+    expect(h.builder.buildAndRun).toHaveBeenCalledWith(expect.objectContaining({ commitSha: sha,
+      prebuiltImage: { tag: imageId, imageId, builtWithNixpacks: true, builtStatic: false },
+      env: expect.objectContaining({ TARGET_ENV: 'dec:production' }), registryAuth: undefined,
+    }), undefined);
+    expect(updates.some(u => u.table === deployments && u.values.status === 'running')).toBe(true);
+  });
+  it('fails before changing a runtime when the image disappears while queued', async () => {
+    const { db, updates } = setup();
+    execMock.capture.mockRejectedValueOnce(new Error('missing'));
+    await expect(runDeployment(db as never, 1)).rejects.toThrow('Recorded artifact image is missing');
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(updates.some(u => u.table === deployments && u.values.status === 'failed')).toBe(true);
+  });
+  it.each([{ repoUrl: 'https://other.test/repo' }, { orchestrator: 'swarm' }])('rechecks queued target changes %j', async change => {
+    const { db } = setup(change);
+    await expect(runDeployment(db as never, 1)).rejects.toThrow('Artifact promotion requires');
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+  });
+  it('rejects mismatched runtime identity and retires only the candidate', async () => {
+    const { db, updates } = setup({ runtimeId: 'old-serving' });
+    h.builder.buildAndRun.mockResolvedValueOnce({ runtimeId: 'candidate', port: 3000, healthPath: '/', imageDigest: `sha256:${'b'.repeat(64)}` } as never);
+    await runDeployment(db as never, 1);
+    expect(h.builder.stop).toHaveBeenCalledWith('candidate');
+    expect(h.builder.stop).not.toHaveBeenCalledWith('old-serving');
+    expect(updates.some(u => u.table === deployments && u.values.status === 'running')).toBe(false);
+  });
+  it('records the source build image and buildpack conventions', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db);
+    h.checkoutCommit.mockResolvedValueOnce(sha);
+    h.builder.buildAndRun.mockResolvedValueOnce({ runtimeId: 'built', port: 3000, healthPath: '/', imageDigest: imageId, artifactBuild: { builtWithNixpacks: true, builtStatic: false } } as never);
+    await runDeployment(db as never, 1);
+    expect(updates).toContainEqual({ table: deployments, values: { artifact: { ...artifact, originDeploymentId: 1 } } });
+  });
+  it('refuses registry archival of Nixpacks secret env before building or changing traffic', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { pushRegistrySourceId: 1, pushRepository: 'team/app' });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'nixpacks' });
+    db.query.envVars.findMany.mockResolvedValue([{ key: 'PRIVATE_TOKEN', valueEncrypted: 'fixture-secret', isSecret: true }]);
+    await runDeployment(db as never, 1);
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(updates.some(update => update.table === deployments && update.values.status === 'failed')).toBe(true);
+    expect(updates.some(update => update.table === deployments && update.values.status === 'running')).toBe(false);
+  });
+});
+
+describe('node-built artifact pipeline', () => {
+  const imageId = `sha256:${'a'.repeat(64)}`;
+  const sha = 'c'.repeat(40);
+  const originalAgent = h.agentOp.getMockImplementation()!;
+  const originalCapture = execMock.capture.getMockImplementation()!;
+  const originalShip = h.shipImageByStream.getMockImplementation()!;
+  beforeEach(() => { vi.clearAllMocks(); });
+  afterEach(() => {
+    h.agentOp.mockReset().mockImplementation(originalAgent);
+    execMock.capture.mockReset().mockImplementation(originalCapture);
+    h.shipImageByStream.mockReset().mockImplementation(originalShip);
+  });
+  function sourceNode(caps = ['stream', 'image.manage', 'build-path-guard']) {
+    const state = makeDb(); baseSetup(state.db, { serverId: 4 });
+    h.checkoutCommit.mockResolvedValueOnce(sha);
+    state.db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'dockerfile' });
+    (state.db.query as unknown as Record<string, unknown>)['servers'] = { findFirst: vi.fn(async () => ({ id: 4, name: 'origin' })) };
+    h.agentOp.mockImplementation(async (_db: unknown, _server: unknown, op: string, params: Record<string, unknown>) => ({ exitCode: 0,
+      lines: op === 'agent.ping' ? [`ND-AGENT ${JSON.stringify({ version: '0.17.0', caps })}`]
+        : op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env']
+          : op === 'docker.inspect' ? [params.format === 'image' ? imageId : 'running|none|0|0'] : [],
+    }));
+    execMock.capture.mockRejectedValueOnce(new Error('not on panel'));
+    return state;
+  }
+  it('records a normal node build only after retaining its verified panel copy', async () => {
+    const { db, updates } = sourceNode();
+    await runDeployment(db as never, 1);
+    expect(h.shipImageByStream).toHaveBeenCalledWith(db, expect.objectContaining({ source: 4, target: null, imageId }), expect.any(Function));
+    expect(updates).toContainEqual({ table: deployments, values: { artifact: { version: 1, imageId, repoUrl: service.repoUrl, commitSha: sha, originDeploymentId: 1, originServerId: 4, builtWithNixpacks: false, builtStatic: false } } });
+    expect(updates.some(update => update.table === deployments && update.values.status === 'running')).toBe(true);
+  });
+  it('keeps legacy node deployment working without a restorable artifact on an older agent', async () => {
+    const { db, updates } = sourceNode(['build-path-guard']);
+    await runDeployment(db as never, 1);
+    expect(h.shipImageByStream).not.toHaveBeenCalled();
+    expect(updates.some(update => update.table === deployments && update.values.artifact)).toBe(false);
+    expect(updates.some(update => update.table === deployments && update.values.status === 'running')).toBe(true);
+  });
+  it.each([false, true])('does not publish a partial record if caching fails (registry=%s)', async registry => {
+    const { db, updates } = sourceNode();
+    db.query.services.findFirst.mockResolvedValue({ ...service, serverId: 4, runtimeId: 'old-serving', ...(registry ? { pushRegistrySourceId: 1, pushRepository: 'team/app' } : {}) });
+    h.shipImageByStream.mockRejectedValueOnce(new Error('transfer failed'));
+    await runDeployment(db as never, 1);
+    expect(updates.some(update => update.table === deployments && update.values.artifact)).toBe(false);
+    expect(updates.some(update => update.table === deployments && update.values.status === (registry ? 'failed' : 'running'))).toBe(true);
+    const removed = h.agentOp.mock.calls.filter(call => call[2] === 'docker.rm').map(call => (call[3] as Record<string, unknown>).name);
+    if (registry) expect(removed).not.toContain('old-serving');
+    else expect(removed).toContain('old-serving');
+  });
+  it('refuses required archival if the running node image cannot be observed', async () => {
+    const { db, updates } = sourceNode();
+    db.query.services.findFirst.mockResolvedValue({ ...service, serverId: 4, runtimeId: 'old-serving', pushRegistrySourceId: 1, pushRepository: 'team/app' });
+    h.agentOp.mockImplementation(async (_db: unknown, _server: unknown, op: string) => ({ exitCode: 0,
+      lines: op === 'agent.ping' ? ['ND-AGENT {"version":"0.17.0","caps":["build-path-guard"]}'] : op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env'] : [],
+    }));
+    await runDeployment(db as never, 1);
+    expect(updates.some(update => update.table === deployments && update.values.artifact)).toBe(false);
+    expect(updates.some(update => update.table === deployments && update.values.status === 'failed')).toBe(true);
+    expect(h.agentOp.mock.calls.filter(call => call[2] === 'docker.rm').map(call => (call[3] as Record<string, unknown>).name)).toEqual(['web-1']);
+  });
+});
 
 describe('0.16.1 uploaded source', () => {
   it('a service with no repository or image builds the uploaded archive the deployment names; git is not touched', async () => {
@@ -531,6 +685,24 @@ describe('runDeployment', () => {
 
   afterEach(() => {
     logBus.removeAllListeners();
+  });
+
+  it('refuses an unverified required CI policy before checkout or build even when called outside the worker', async () => {
+    const { db } = makeDb();
+    baseSetup(db);
+    db.query.serviceGithubLinks.findFirst.mockResolvedValue({ requiredWorkflows: ['.github/workflows/ci.yml'] });
+    await expect(runDeployment(db as never, 1)).rejects.toThrow('Required CI has not been verified');
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+  });
+
+  it('refuses CI evidence for a different commit before checkout or build', async () => {
+    const { db } = makeDb();
+    baseSetup(db);
+    db.query.deployments.findFirst.mockResolvedValue({ ...dep, ciGate: { version: 1, state: 'passed', headSha: 'a'.repeat(40) } });
+    await expect(runDeployment(db as never, 1)).rejects.toThrow('Required CI has not passed for this exact commit');
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
   });
 
   it('treats a deployment row deleted mid-flight as cancelled (stops the zombie pipeline)', async () => {    const { db, updates } = makeDb();
@@ -3118,6 +3290,7 @@ describe('0.13: a GitHub App clone', () => {
     const made = makeDb();
     baseSetup(made.db, { ownerUserId: OWNER });
     made.db.query.serviceGithubLinks.findFirst.mockResolvedValue({
+      requiredWorkflows: [],
       id: 1,
       serviceId: 5,
       installationRowId: 3,
@@ -3238,6 +3411,7 @@ describe('0.13 (T5): GitHub App repositories on nodes — pipeline wiring', () =
     const made = makeDb();
     baseSetup(made.db, { ownerUserId: 42, ...over });
     made.db.query.serviceGithubLinks.findFirst.mockResolvedValue({
+      requiredWorkflows: [],
       id: 1,
       serviceId: 5,
       installationRowId: 3,
@@ -3909,3 +4083,62 @@ describe('0.16.12 preview database copies in the pipeline', () => {
   });
 });
 // ── end 0.16.12 ──
+
+describe('recorded Compose restore pipeline', () => {
+  const saved = () => createComposeRelease({ serviceId: 5, slug: 'web', composeService: 'app', runtimeId: 'ndcmp-web-app-1', port: 8080, healthPath: '/old-ready' }, JSON.stringify({ services: { app: { image: 'old:latest', environment: { TOKEN: 'old-$$HOME-secret' } } } }), { app: `sha256:${'a'.repeat(64)}` });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logBus.removeAllListeners();
+    h.config.wildcardDomain = '';
+    h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'ndcmp-web-app-1', port: 8080, healthPath: '/old-ready' }));
+    h.builder.isHealthy.mockResolvedValue(true);
+    h.builder.stop.mockResolvedValue(undefined);
+    h.writeDynamicConfig.mockResolvedValue(undefined);
+    h.getAcmeEmail.mockResolvedValue(null);
+    h.decrypt.mockImplementation(value => value === 'record' ? JSON.stringify(saved()) : `dec:${value}`);
+  });
+  afterEach(() => { logBus.removeAllListeners(); });
+
+  it('uses recorded Compose content, routing settings and env instead of current edits and hooks', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { type: 'compose', composeContent: 'services: {app: {image: new:latest}}', composeService: 'app', port: 9999, healthPath: '/new', runtimeId: 'ndcmp-web-app-1', repoUrl: null, image: null });
+    db.query.deployments.findFirst.mockResolvedValue({ ...dep, restoredFromDeploymentId: 99 });
+    db.query.deploymentReleaseRecords.findFirst.mockResolvedValue({ payloadEncrypted: 'record' });
+    db.query.envVars.findMany.mockResolvedValue([{ key: 'TOKEN', valueEncrypted: 'new-secret', isSecret: true }]);
+    db.query.buildConfigs.findFirst.mockResolvedValue({ preDeployCmd: 'must-not-run', postDeployCmd: 'must-not-run' });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    const ctx = h.builder.buildAndRun.mock.calls.at(-1)![0];
+    expect(ctx.service).toMatchObject({ port: 8080, healthPath: '/old-ready', composeService: 'app' });
+    expect(ctx.restoreComposeRelease).toEqual(saved());
+    expect(ctx.env).toEqual({});
+    expect(ctx.volumeAttachments).toEqual([]);
+    expect(ctx.buildConfig).toBeUndefined();
+    expect(h.checkoutCommit).not.toHaveBeenCalled();
+    expect(h.reconcileTemplateDependencies).not.toHaveBeenCalled();
+    expect(execMock.run.mock.calls.some(call => JSON.stringify(call).includes('must-not-run'))).toBe(false);
+    expect(readFileSync(path.join(reposDir, '5', 'docker-compose.yml'), 'utf8')).toContain('old-$$HOME-secret');
+    expect(lines.join('\n')).not.toContain('old-$HOME-secret');
+    expect(lines.join('\n')).not.toContain('old-$$HOME-secret');
+    expect(h.builder.stop).not.toHaveBeenCalled();
+  });
+
+  it('fails a missing record before the builder, without falling back to the current stack definition', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { type: 'compose', composeContent: 'services: {}', repoUrl: null });
+    db.query.deployments.findFirst.mockResolvedValue({ ...dep, restoredFromDeploymentId: 99 });
+    await expect(runDeployment(db as never, 1)).rejects.toThrow(/missing or cannot be decrypted/);
+    expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    expect(h.builder.stop).not.toHaveBeenCalled();
+  });
+
+  it('stores a builder release record encrypted after a normal inline deployment', async () => {
+    const { db, inserts } = makeDb();
+    baseSetup(db, { type: 'compose', composeContent: 'services: {}', repoUrl: null });
+    h.builder.buildAndRun.mockResolvedValueOnce({ runtimeId: 'ndcmp-web-app-1', port: 8080, healthPath: '/', composeRelease: saved() } as never);
+    await runDeployment(db as never, 1);
+    const row = inserts.find(r => r.table === deploymentReleaseRecords);
+    expect(row?.values.deploymentId).toBe(1);
+    expect(row?.values.payloadEncrypted).toBe(`sealed:${JSON.stringify(saved())}`);
+  });
+});

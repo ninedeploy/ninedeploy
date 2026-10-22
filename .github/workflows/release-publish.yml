@@ -135,8 +135,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 26
+          node-version: 26.12.1
           cache: pnpm
+
+      - name: Verify Node security baseline
+        run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -327,11 +330,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 26
+          node-version: 26.12.1
           cache: pnpm
 
       # smoke-upgrade reads the migrated SQLite file with @libsql/client,
       # resolved from packages/db; nothing else is needed (no build).
+      - name: Verify Node security baseline
+        run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -385,6 +391,10 @@ jobs:
       - name: Node readiness, resource history and log drain smoke on the pushed image
         timeout-minutes: 10
         run: node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --node-operations-only --no-swarm
+
+      - name: Recorded Compose release restore smoke on the pushed image
+        timeout-minutes: 10
+        run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only
 
   # r581: publication. Runs only when both smokes passed (needs: is
   # all-success by default), and changes nothing that was built — `:latest`

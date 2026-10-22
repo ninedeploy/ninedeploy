@@ -416,7 +416,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     let deployment = await app.db.query.deployments.findFirst({
       where: and(
         eq(deployments.serviceId, prepared.service.id),
-        inArray(deployments.status, ['queued', 'building', 'deploying']),
+        inArray(deployments.status, ['queued', 'building', 'deploying', 'awaiting_ci']),
       ),
       orderBy: desc(deployments.id),
     });

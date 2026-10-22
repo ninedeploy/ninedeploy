@@ -9,7 +9,7 @@ import { AiProposalCard } from './AiProposalCard.js';
 import { ApprovalCard } from './ApprovalCard.js';
 import { LogPanel } from './LogPanel.js';
 
-export const IN_FLIGHT = ['queued', 'building', 'deploying'];
+export const IN_FLIGHT = ['queued', 'building', 'deploying', 'awaiting_ci'];
 
 /** 0.16.13: a deploy into an approval-gated lane, waiting for an admin. Not in flight, not finished. */
 export const WAITING = 'awaiting_approval';
@@ -49,6 +49,14 @@ export function DeploysTab({
   // action on this page got the LESS protection (a hover-revealed icon, no
   // confirm), while a plain redeploy of a running service asks first.
   const [pendingRollback, setPendingRollback] = useState<number | null>(null);
+  const restoreInfo = useQuery({
+    queryKey: ['release-info', serviceId, pendingRollback],
+    queryFn: () => api.deploys.releaseInfo(serviceId, pendingRollback!),
+    enabled: pendingRollback != null,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    retry: false,
+  });
 
   // Per-row queue position so the per-service tab carries the same
   // affordance the global /deploys page exposes. Oldest queued id
@@ -77,7 +85,7 @@ export function DeploysTab({
       qc.invalidateQueries({ queryKey: ['service', serviceId] });
       toast('Rollback started', 'info');
     },
-    onError: () => toast('Rollback failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Rollback failed', 'error'),
   });
 
   const cancelDeploy = useMutation({
@@ -111,11 +119,13 @@ export function DeploysTab({
         title="Rollback to this deployment?"
         message={(() => {
           const row = deploys.find((d) => d.id === pendingRollback);
-          return `The live release will be replaced by deployment #${pendingRollback}${row?.commitSha ? ` (${row.commitSha.slice(0, 7)})` : ''}. The currently running version stays in history and can be rolled back to.`;
+          const detail = restoreInfo.isError ? 'Release information could not be loaded.' : restoreInfo.data?.reason ?? 'Checking the release record…';
+          return `The live release will be replaced by deployment #${pendingRollback}${row?.commitSha ? ` (${row.commitSha.slice(0, 7)})` : ''}. ${detail}`;
         })()}
         confirmLabel="Rollback"
+        confirmDisabled={!restoreInfo.data?.available || restoreInfo.isError || restoreInfo.isFetching}
         onConfirm={() => {
-          if (pendingRollback != null) {
+          if (pendingRollback != null && restoreInfo.data?.available && !restoreInfo.isFetching) {
             rollback.mutate(pendingRollback);
             onSelect(null);
           }
@@ -133,6 +143,24 @@ export function DeploysTab({
         loading={loading}
         positionById={positionById}
       />
+
+      {activeDeployRow?.ciGate && (
+        <Card><CardBody className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-slate-200">Required CI <StatusBadge status={activeDeployRow.ciGate.state === 'waiting' ? 'awaiting_ci' : activeDeployRow.ciGate.state === 'passed' ? 'success' : 'failed'} /></div>
+          <p className="text-xs text-slate-400">{activeDeployRow.ciGate.reason}</p>
+          <p className="break-all font-mono text-xs text-slate-400">{activeDeployRow.ciGate.headSha ?? 'Resolving commit…'}</p>
+          <ul className="space-y-1 text-xs text-slate-400">{activeDeployRow.ciGate.checks.map((check) => (
+            <li key={check.path}><span className="font-mono">{check.path}</span> · {check.state}{check.runId ? ` · run #${check.runId}, attempt ${check.attempt}` : ''}</li>
+          ))}</ul>
+        </CardBody></Card>
+      )}
+      {activeDeployRow?.artifact && <Card><CardBody className="space-y-1">
+        <h3 className="text-sm font-medium">Immutable Docker artifact</h3>
+        <p className="break-all font-mono text-xs text-slate-400">{activeDeployRow.artifact.imageId}</p>
+        {activeDeployRow.artifact.originServerId != null && <p className="text-xs text-slate-400">Built on node #{activeDeployRow.artifact.originServerId} · Recoverable image copy retained on the panel.</p>}
+        {activeDeployRow.artifact.registryRef && <p className="break-all font-mono text-xs text-slate-400">Registry archive: {activeDeployRow.artifact.registryRef}</p>}
+        <p className="text-xs text-slate-400">Built by deployment #{activeDeployRow.artifact.originDeploymentId}{activeDeployRow.artifact.promotionSourceDeploymentId ? ` · Promoted from #${activeDeployRow.artifact.promotionSourceDeploymentId} without rebuilding` : ''} · Protected from NineDeploy image cleanup while this history is retained.</p>
+      </CardBody></Card>}
 
       <PromoteCard serviceId={serviceId} repoUrl={repoUrl} deploys={deploys} />
 
@@ -167,6 +195,7 @@ export function DeploysTab({
       </Card>
 
       {activeId && !inFlight && <ConfigDiffCard serviceId={serviceId} deploymentId={activeId} />}
+      {activeId && !inFlight && <ReleaseRecordCard serviceId={serviceId} deploymentId={activeId} />}
       {activeId && activeDeployRow?.status === 'failed' && (
         <AiDiagnosisCard key={activeId} serviceId={serviceId} deploymentId={activeId} onDeployed={onSelect} />
       )}
@@ -175,6 +204,18 @@ export function DeploysTab({
 }
 
 // ── Config diff vs the previous deployment ────────────────────────────────
+function ReleaseRecordCard({ serviceId, deploymentId }: { serviceId: number; deploymentId: number }) {
+  const info = useQuery({ queryKey: ['release-info', serviceId, deploymentId], queryFn: () => api.deploys.releaseInfo(serviceId, deploymentId), retry: false });
+  return <Card><CardBody>
+    <h3 className="text-sm font-medium">Release recovery</h3>
+    <p className="mt-1 text-sm text-neutral-400">
+      {info.isError ? 'Release information could not be loaded.' : info.data?.reason ?? 'Checking the release record…'}
+    </p>
+    {info.data?.mode === 'recorded-compose' && <p className="mt-2 text-xs text-neutral-400">Encrypted release record · {info.data.imageCount} pinned images · Images are protected from NineDeploy cleanup while this history is retained. Compose replaces the stack in place with a brief interruption.</p>}
+    {info.data?.mode === 'recorded-docker' && <p className="mt-2 text-xs text-neutral-400">Pinned Docker image · No rebuild or pull · Protected from NineDeploy cleanup while this history is retained.</p>}
+  </CardBody></Card>;
+}
+
 function ConfigDiffCard({ serviceId, deploymentId }: { serviceId: number; deploymentId: number }) {
   const [open, setOpen] = useState(false);
   const diff = useQuery({
@@ -248,7 +289,10 @@ function PromoteCard({
   const qc = useQueryClient();
   const { toast } = useToast();
   const [targetId, setTargetId] = useState('');
+  const [mode, setMode] = useState<'artifact' | 'commit'>('artifact');
+  const [confirmTarget, setConfirmTarget] = useState<{ target: number; sourceDeploymentId: number; imageId: string } | null>(null);
   const running = deploys.find((d) => d.status === 'running' && d.commitSha);
+  const artifactMode = !!running?.artifact && mode === 'artifact';
   const candidatesQ = useQuery({
     queryKey: ['services'],
     queryFn: () => api.services.list(),
@@ -260,14 +304,17 @@ function PromoteCard({
   );
 
   const promote = useMutation({
-    mutationFn: (target: number) => api.deploys.promote(serviceId, target),
-    onSuccess: (res, target) => {
+    mutationFn: ({ target, sourceDeploymentId }: { target: number; sourceDeploymentId?: number }) => sourceDeploymentId != null
+      ? api.deploys.promote(serviceId, target, { mode: 'artifact', sourceDeploymentId })
+      : api.deploys.promote(serviceId, target),
+    onSuccess: (res, { target }) => {
       qc.invalidateQueries({ queryKey: ['deploys', target] });
       toast(
         `Promotion queued — deploying service #${target} @ ${res.commitSha.slice(0, 7)}`,
         'info',
       );
       setTargetId('');
+      setConfirmTarget(null);
     },
     onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Promotion failed', 'error'),
   });
@@ -275,6 +322,14 @@ function PromoteCard({
   if (!running || !repoUrl || candidates.length === 0) return null;
 
   return (
+    <><ConfirmDialog open={confirmTarget != null} title="Promote recorded artifact?"
+      message={<div className="space-y-3">
+        <p>Run the recorded image on {candidates.find(s => s.id === confirmTarget?.target)?.name ?? 'the target'}.</p>
+        <p className="break-all font-mono text-xs text-slate-400">{confirmTarget?.imageId}</p>
+        <p>Target runtime environment, volumes, ports and health checks apply. Build-time values remain baked into the image.</p>
+        <p>Required CI and lane approval still apply. No source checkout or build will run. The image is transferred to a node or restored from its pinned registry digest when needed.</p>
+      </div>}
+      confirmLabel="Promote artifact" confirmDisabled={promote.isPending} onClose={() => setConfirmTarget(null)} onConfirm={() => confirmTarget != null && promote.mutate(confirmTarget)} />
     <Card>
       <CardBody className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
@@ -282,14 +337,16 @@ function PromoteCard({
             <ArrowUpRight size={15} />
           </span>
           <div>
-            <div className="text-sm font-medium text-slate-200">Promote this commit</div>
+            <div className="text-sm font-medium text-slate-200">{artifactMode ? 'Promote this artifact' : 'Promote this commit'}</div>
             <div className="mt-0.5 text-[11px] text-slate-500">
-              Re-deploy another service at <span className="font-mono">{running.commitSha?.slice(0, 7)}</span> — the
-              staging → production hop.
+              {artifactMode ? 'Run the same image without rebuilding on the panel or one node. Host hooks and multi-node fan-out are not supported.' : <>Re-deploy another service at <span className="font-mono">{running.commitSha?.slice(0, 7)}</span> — the staging → production hop.</>}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {running.artifact && <select aria-label="Promotion mode" value={mode} onChange={e => setMode(e.target.value as 'artifact' | 'commit')} className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300">
+            <option value="artifact">Same artifact · no rebuild</option><option value="commit">Same commit · rebuild</option>
+          </select>}
           <select
             value={targetId}
             onChange={(e) => setTargetId(e.target.value)}
@@ -306,7 +363,7 @@ function PromoteCard({
           <button
             type="button"
             disabled={!targetId || promote.isPending}
-            onClick={() => promote.mutate(Number(targetId))}
+            onClick={() => artifactMode ? setConfirmTarget({ target: Number(targetId), sourceDeploymentId: running.id, imageId: running.artifact!.imageId }) : promote.mutate({ target: Number(targetId) })}
             className="flex items-center gap-1.5 rounded-lg bg-indigo-500/15 px-3 py-1.5 text-xs font-medium text-indigo-200 ring-1 ring-inset ring-indigo-500/30 transition hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {promote.isPending && <Spinner className="h-3 w-3" />}
@@ -314,7 +371,7 @@ function PromoteCard({
           </button>
         </div>
       </CardBody>
-    </Card>
+    </Card></>
   );
 }
 

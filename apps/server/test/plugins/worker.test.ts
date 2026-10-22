@@ -7,6 +7,11 @@ const pipelineMock = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/engine/pipeline.js', () => pipelineMock);
+// Queue-slot unit tests use a statement stub. CI admission and HTTP polling
+// are covered with the real DB and worker in workerCi.test.ts.
+vi.mock('../../src/lib/ciGate.js', () => ({
+  holdForCiIfNeeded: vi.fn(async () => false), pollCiGates: vi.fn(async () => []),
+}));
 
 const configMock = vi.hoisted(() => ({ config: { deployConcurrency: 1 } }));
 vi.mock('../../src/config.js', () => configMock);

@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt, or } from 'drizzle-orm';
 import { deployments, environments, services, workspaceMembers, type DB } from '@ninedeploy/db';
 import type { WorkspaceRole } from '@ninedeploy/schemas';
 import { grantRoleForService, grantsForUser } from './accessGrants.js';
@@ -199,7 +199,7 @@ export async function dropStaleApprovals(db: DbLike, serviceId: number, startedI
     .where(
       and(
         eq(deployments.serviceId, serviceId),
-        inArray(deployments.status, ['awaiting_approval']),
+        or(inArray(deployments.status, ['awaiting_approval', 'awaiting_ci']), and(eq(deployments.status, 'queued'), isNotNull(deployments.ciGate))),
         lt(deployments.id, startedId),
       ),
     )

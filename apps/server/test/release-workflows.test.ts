@@ -11,6 +11,17 @@ type Workflow = { jobs: Record<string, { steps: Step[] }> };
 const readWorkflow = (name: string) => load(readFileSync(new URL(`../../../.github/workflows/${name}`, import.meta.url), 'utf8')) as Workflow;
 
 describe('release delivery invariants', () => {
+  it('requires the October 2026 Node security baseline for the release and Docker runtime', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
+    expect(pkg.engines.node).toBe('^22.23.4 || ^24.22.1 || ^26.12.1');
+    const dockerfile = readFileSync(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+    expect(dockerfile).toContain('ENV NODE_VERSION=26.12.1');
+    expect(dockerfile).toContain('FROM secure-node AS build');
+    expect(dockerfile).toContain('FROM secure-node AS runtime');
+    expect(dockerfile).toContain('echo "$NODE_SHA256  /tmp/node-security.tar.xz" | sha256sum -c -');
+    expect(dockerfile).toContain('test "$(node --version)" = "v${NODE_VERSION}"');
+  });
+
   it('never deletes historical registry versions during publication', () => {
     const workflow = readWorkflow('release-publish.yml');
     for (const job of Object.values(workflow.jobs)) {
@@ -77,7 +88,7 @@ describe('release delivery invariants', () => {
     // turbo has no edges between those tasks, so local green could diverge
     // from CI's sequential invocations (the 0.10.30 escape class).
     const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
-    expect(pkg.scripts['release:check']).toBe('pnpm typecheck && pnpm lint && pnpm build && pnpm turbo run test --concurrency=1');
+    expect(pkg.scripts['release:check']).toBe('node scripts/check-node-version.mjs && pnpm typecheck && pnpm lint && pnpm build && pnpm turbo run test --concurrency=1');
   });
 
   it('r475: the pnpm pins in the Dockerfile and installer track packageManager', () => {
@@ -314,6 +325,11 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect(steps[nodeOps]!.run).toBe('node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --node-operations-only --no-swarm');
     expect(steps[nodeOps]!.if).toBeUndefined();
     expect(steps[nodeOps]!['timeout-minutes']).toBeGreaterThan(0);
+    const composeRestore = steps.findIndex((s) => s.run?.includes('--compose-release-only'));
+    expect(composeRestore).toBeGreaterThan(nodeOps);
+    expect(steps[composeRestore]!.run).toBe('node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only');
+    expect(steps[composeRestore]!.if).toBeUndefined();
+    expect(steps[composeRestore]!['timeout-minutes']).toBeGreaterThan(0);
   });
 
   it(':latest and the GitHub Release come only after the smokes, as a retag of the smoked manifest', () => {

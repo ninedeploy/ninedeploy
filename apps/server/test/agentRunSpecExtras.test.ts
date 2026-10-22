@@ -13,6 +13,13 @@ import { nodeRunExtras, nodeRunExtrasChecks, nodeRunNeeds } from '../src/lib/rem
 const base = { name: 'api-5', image: 'acme/api:1' };
 
 describe('docker.runSpec userLabels and healthCmd (agent)', () => {
+  it.each(['run', 'create'] as const)('never implicitly pulls an artifact image ID during %s', verb => {
+    const image = `sha256:${'a'.repeat(64)}`;
+    const argv = runSpecArgv(parseRunSpec({ ...base, image }), verb);
+    expect(argv).toEqual(expect.arrayContaining(['--pull', 'never']));
+    expect(argv.indexOf('--pull')).toBeLessThan(argv.indexOf(image));
+    expect(runSpecArgv(parseRunSpec(base), verb)).not.toContain('--pull');
+  });
   it('appends the user labels after the panel labels and the healthcheck flags before the image', () => {
     const spec = parseRunSpec({ ...base, serviceId: 5, userLabels: { 'com.example.team': 'payments', 'a.b': '' }, healthCmd: 'pg_isready -U app' });
     expect(spec.userLabels).toEqual([['a.b', ''], ['com.example.team', 'payments']]);

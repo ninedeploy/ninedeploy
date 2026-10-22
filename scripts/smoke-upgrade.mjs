@@ -113,6 +113,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
+import { resolveSmokeImage } from './lib/smoke-image.mjs';
 
 const repoVersion = /export const VERSION = '([^']*)';/.exec(
   readFileSync(new URL('../apps/server/src/version.ts', import.meta.url), 'utf8'),
@@ -130,8 +131,7 @@ const TO_IMAGE = arg('to-image');
 // --from-image=<ref> does the same for the FROM side, for a rollback rehearsal
 // (--from=<candidate> --from-image=<local ref> --to=<previous release>).
 const FROM_IMAGE = arg('from-image');
-const image = (tag) =>
-  TO_IMAGE && tag === TO ? TO_IMAGE : FROM_IMAGE && tag === FROM ? FROM_IMAGE : `ghcr.io/ninedeploy/ninedeploy:${tag}`;
+const image = (role) => resolveSmokeImage(role, { from: FROM, to: TO, fromImage: FROM_IMAGE, toImage: TO_IMAGE });
 
 const PANEL_PORT = 4641;
 const suffix = randomBytes(4).toString('hex');
@@ -182,7 +182,7 @@ async function api(p, { method = 'GET', token, body } = {}) {
   return { status: r.status, json, text };
 }
 
-function startPanel(tag) {
+function startPanel(role) {
   docker(['rm', '-f', PANEL], { allowFail: true });
   docker(['run', '-d', '--name', PANEL, '--network', NET, '-p', `127.0.0.1:${PANEL_PORT}:3000`,
     '-v', `${VOLUME}:/data`,
@@ -191,7 +191,7 @@ function startPanel(tag) {
     '-e', 'NINEDEPLOY_SETUP_TOKEN=nd-smoke-setup-token',
     '-e', `NINEDEPLOY_MASTER_KEY=${MASTER}`,
     '-e', `DOCKER_HOST=tcp://${DIND}:2375`,
-    image(tag)]);
+    image(role)]);
 }
 
 async function waitHealthy(wantVersion) {
@@ -290,12 +290,12 @@ async function inspectDb(label) {
 function pullOrFail(tag, role) {
   if (role === 'to' && TO_IMAGE) return; // a local candidate is not pulled
   if (role === 'from' && FROM_IMAGE) return;
-  const r = spawnSync('docker', ['pull', image(tag)], { encoding: 'utf8', timeout: 900_000, maxBuffer: 8 << 20 });
+  const r = spawnSync('docker', ['pull', image(role)], { encoding: 'utf8', timeout: 900_000, maxBuffer: 8 << 20 });
   if (r.status === 0) return;
   const why = (r.stderr || r.error?.message || '').trim().split(/\r?\n/).slice(-3).join(' | ');
   fail(role === 'from'
-    ? `the FROM release image ${image(tag)} cannot be pulled (${why}). ${tag} is a published release, so installed servers pin this image — investigate the registry before releasing anything else.`
-    : `the TO image ${image(tag)} cannot be pulled (${why}) — it was not pushed, or not under this tag.`);
+    ? `the FROM release image ${image(role)} cannot be pulled (${why}). ${tag} is a published release, so installed servers pin this image — investigate the registry before releasing anything else.`
+    : `the TO image ${image(role)} cannot be pulled (${why}) — it was not pushed, or not under this tag.`);
 }
 
 // 0.13: the GitHub App and Gitea surfaces, checked without a real GitHub.
@@ -1453,12 +1453,12 @@ async function rollbackChecks({ sidecar }) {
 }
 
 async function main() {
-  console.log(`Upgrade smoke: ${image(FROM)} → ${image(TO)}`);
+  console.log(`Upgrade smoke: ${image('from')} → ${image('to')}`);
   step(`topology: network ${NET}, dind ${DIND}, panel ${PANEL} (:${PANEL_PORT}), volume ${VOLUME}`);
 
   pullOrFail(FROM, 'from');
   pullOrFail(TO, 'to');
-  step(`pulled ${image(FROM)} and ${image(TO)}`);
+  step(`pulled ${image('from')} and ${image('to')}`);
 
   // ── bring up DinD ───────────────────────────────────────────────────────
   docker(['network', 'create', NET]);
@@ -1473,7 +1473,7 @@ async function main() {
   }
 
   // ── FROM: boot and seed real state ──────────────────────────────────────
-  startPanel(FROM);
+  startPanel('from');
   const fromHealth = await waitHealthy(FROM.replace(/^v/, ''));
   step(`${FROM} up (db ${fromHealth.db})`);
 
@@ -1598,7 +1598,7 @@ async function main() {
   const appContainers = dind(['ps', '--filter', 'status=running', '--format', '{{.Names}}']);
 
   // ── TO: same volume, same secrets ───────────────────────────────────────
-  startPanel(TO);
+  startPanel('to');
   const toHealth = await waitHealthy(TO.replace(/^v/, ''));
   step(`${TO} up on the same volume (db ${toHealth.db})`);
 

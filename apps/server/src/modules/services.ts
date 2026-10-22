@@ -1119,7 +1119,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // mid-flight build's runtime — refuse until the pipeline settles; the user
     // can cancel first.
     const activeDeploy = await app.db.query.deployments.findFirst({
-      where: and(eq(deployments.serviceId, id), inArray(deployments.status, ['queued', 'building'])),
+      where: and(eq(deployments.serviceId, id), inArray(deployments.status, ['queued', 'building', 'awaiting_ci'])),
     });
     if (activeDeploy) {
       throw conflict('A deployment is queued or building — cancel it or wait for it to finish before deleting');

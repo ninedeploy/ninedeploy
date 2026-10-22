@@ -463,6 +463,27 @@ const PROBE_SETUP_TIMEOUT_MS = 30_000;
  * inside the prober; this bounds the CLI-to-daemon exec create/start/attach. */
 const PROBE_EXEC_TIMEOUT_MS = 10_000;
 
+/** Probe the same HTTP endpoint from the runtime's bridge when the panel
+ * cannot reach container IPs (Docker Desktop). An open TCP socket alone is
+ * not readiness: applications commonly listen while migrations still return
+ * 502/503. Read only the status line and do not follow redirects. */
+async function probeSiblingHttp(ip: string, port: number, healthPath: string): Promise<void> {
+  let status: number | undefined;
+  await run('docker', [
+    'exec', PROBE_CONTAINER, 'sh', '-c',
+    'printf "GET %s HTTP/1.0\\r\\nHost: %s:%s\\r\\nConnection: close\\r\\n\\r\\n" "$1" "$2" "$3" | nc -w 3 "$2" "$3" | head -n 1',
+    'probe', healthPath, ip, String(port),
+  ], { timeoutMs: PROBE_EXEC_TIMEOUT_MS }, (line) => {
+    const match = /^HTTP\/1\.[01] (\d{3})(?:\s|$)/.exec(line);
+    if (match && status === undefined) status = Number(match[1]);
+  });
+  // Keep the ordinary HTTP mode's existing acceptance of 4xx (for apps that
+  // require authentication); http-strict still requires 2xx/3xx.
+  if (status === undefined || status < 200 || status >= 500) {
+    throw new Error(status === undefined ? 'HTTP readiness received no valid HTTP response' : `HTTP readiness received status ${status}`);
+  }
+}
+
 /**
  * Resolve a container's IP address on the shared Docker network, or null when
  * the container is not running. The host can route to bridge-network IPs
@@ -1038,7 +1059,7 @@ export const dockerBuilder: Builder = {
       target = ctx.prebuiltImage.tag;
       builtWithNixpacks = ctx.prebuiltImage.builtWithNixpacks === true;
       builtStatic = ctx.prebuiltImage.builtStatic === true;
-      log(`Running ${target} (${ctx.prebuiltImage.imageId.slice(0, 19)}), built on a build server and shipped to the panel host …`);
+      log(`Running recorded image ${target} without pulling or building …`);
     } else
     // ── end 0.16 T4 ──
     if (service.image) {
@@ -1183,6 +1204,7 @@ export const dockerBuilder: Builder = {
     // byte-identical to the docker run path.
     const multiLine = hasMultiLineEnv(env);
     const args = ['run', '-d', '--name', name, '--restart', safeRestartPolicy(buildConfig?.restartPolicy), '--network', bridge];
+    if (ctx.prebuiltImage) args.push('--pull', 'never');
     // r593: label the generation with its deployment (and service) id so a
     // panel restart mid-deploy can find and remove exactly this candidate at
     // boot. Replicas clone `args`, so they carry the same labels.
@@ -1291,7 +1313,7 @@ export const dockerBuilder: Builder = {
       if (composeSpec) {
         await run(
           'docker',
-          ['compose', '-p', `ndrt-${name}`, '-f', composeSpec.path, 'up', '-d', '--no-build'],
+          ['compose', '-p', `ndrt-${name}`, '-f', composeSpec.path, 'up', '-d', '--no-build', ...(ctx.prebuiltImage ? ['--pull', 'never'] : [])],
           { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting application container ${name} (compose bridge: real newlines in env)` },
           log,
         );
@@ -1394,7 +1416,7 @@ export const dockerBuilder: Builder = {
               );
               await run(
                 'docker',
-                ['compose', '-p', `ndrt-${replicaName}`, '-f', replicaComposeSpec.path, 'up', '-d', '--no-build'],
+                ['compose', '-p', `ndrt-${replicaName}`, '-f', replicaComposeSpec.path, 'up', '-d', '--no-build', ...(ctx.prebuiltImage ? ['--pull', 'never'] : [])],
                 { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting replica ${replicaName}` },
                 log,
               );
@@ -1464,6 +1486,7 @@ export const dockerBuilder: Builder = {
       ...(service.healthCheck === 'running' ? { healthCheck: 'running' as const } : {}),
       ...(service.healthCheck === 'command' && service.healthCommand ? { healthCheck: 'command' as const, healthCommand: service.healthCommand } : {}),
       imageDigest: digest,
+      artifactBuild: { builtWithNixpacks, builtStatic },
       replicas: achievedReplicas,
     };
   },
@@ -1549,6 +1572,7 @@ export const dockerBuilder: Builder = {
           try {
             const res = await fetch(buildProbeUrl(ip, runtime.port, healthPath), {
               signal: AbortSignal.timeout(3000),
+              redirect: 'manual',
             });
             // Always drain/cancel the body so the undici connection is released
             // instead of leaking one socket per probe iteration.
@@ -1557,20 +1581,16 @@ export const dockerBuilder: Builder = {
             } catch {
               /* body already consumed */
             }
-            if (res.status < 500) return true;
+            if (res.status >= 200 && res.status < 500) return true;
           } catch {
             /* not up yet — retry until the grace period ends */
           }
           await sleep(1000);
           continue;
         }
-        // Sibling probe: a raw TCP connect from the shared network. We probe
-        // by the INSPECTED IP (container names can wildcard-resolve through
-        // Docker Desktop's upstream DNS) and at the TCP level rather than
-        // HTTP: busybox wget FOLLOWS redirects, and relative redirects from
-        // apps like Jellyfin (Location: web/) then resolve as hostnames.
-        // "Is the port accepting connections inside the network" is exactly
-        // the signal this fallback needs.
+        // Change the probe's vantage point, never its HTTP readiness contract.
+        // Use the inspected IP (container names can wildcard-resolve) and a
+        // raw HTTP request so redirects cannot move the probe to another host.
         try {
           await ensureProbeContainer(log);
           // Without this the prober cannot route into the runtime's per-slug
@@ -1578,9 +1598,7 @@ export const dockerBuilder: Builder = {
           // turned every post-grace healthcheck into 5 minutes of blind nc
           // timeouts against a perfectly healthy container.
           await ensureProbeNetworks(runtime.runtimeId, log);
-          await run('docker', [
-            'exec', PROBE_CONTAINER, 'nc', '-w', '3', ip, String(runtime.port),
-          ], { timeoutMs: PROBE_EXEC_TIMEOUT_MS }, log);
+          await probeSiblingHttp(ip, runtime.port, healthPath);
           return true;
         } catch (probeErr) {
           probeContainerReady = false;
@@ -1605,9 +1623,7 @@ export const dockerBuilder: Builder = {
           .filter((port) => port !== runtime.port);
         for (const candidate of fallbackPorts) {
           try {
-            await run('docker', [
-              'exec', PROBE_CONTAINER, 'nc', '-w', '3', ip, String(candidate),
-            ], { timeoutMs: PROBE_EXEC_TIMEOUT_MS }, () => undefined);
+            await probeSiblingHttp(ip, candidate, healthPath);
             log(`detected healthy image port ${candidate}/tcp; replacing incorrect configured port ${runtime.port}`);
             runtime.port = candidate;
             return true;

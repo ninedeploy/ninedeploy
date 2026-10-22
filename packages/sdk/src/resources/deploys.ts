@@ -36,8 +36,11 @@ export interface DeploysApi {
      * metadata. The optional `status` filter is a comma-separated token
      * list (e.g. `?status=queued,building`).
      */
+    /** This SDK opts into CI waits; older SDKs keep the original three-status queue response. */
     queue: (query?: string) => Promise<QueueResponse>;
     rollback: (serviceId: number, deploymentId: number) => Promise<{ deploymentId: number }>;
+    /** Metadata only; resolved environment and encrypted payload are never returned. */
+    releaseInfo: (serviceId: number, deploymentId: number) => Promise<{ available: boolean; mode: 'recorded-compose' | 'recorded-docker' | 'legacy' | 'unavailable'; imageCount: number; reason: string; imageAvailability?: 'present' | 'missing' | 'unknown'; missingImageCount?: number | null }>;
     /** Cancel a queued/in-flight deployment (checkpoints abort at step boundaries). */
     cancel: (serviceId: number, deploymentId: number) => Promise<{ ok: boolean; status: string }>;
     /**
@@ -55,7 +58,7 @@ export interface DeploysApi {
      * commit — the staging → production lane hop. Both services must
      * track the same repository and the caller needs `member` on both.
      */
-    promote: (serviceId: number, targetServiceId: number) => Promise<{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string }>;
+    promote: (serviceId: number, targetServiceId: number, options?: { mode: 'commit' | 'artifact'; sourceDeploymentId?: number }) => Promise<{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string; mode?: 'artifact'; imageId?: string }>;
     // ── 0.16 T8 surfaces ──
     /** Image transfers of one deployment (`GET /v1/deployments/:id/image-transfers`, any seat on its service). */
     imageTransfers: (deploymentId: number) => Promise<ImageTransfer[]>;
@@ -139,10 +142,13 @@ export function deploysApi(t: Transport): DeploysApi {
       trigger: (serviceId, input) =>
         send<{ deploymentId: number; alreadyInProgress?: boolean }>('POST', `/v1/services/${serviceId}/deploys`, input ?? {}),
       list: (serviceId) => get<Deployment[]>(`/v1/services/${serviceId}/deploys`),
-      queue: (query) =>
-        get<QueueResponse>(`/v1/services/queue${query ? (query.startsWith('?') ? query : `?${query}`) : ''}`),
+      queue: (query) => {
+        const filter = query?.replace(/^\?/, '');
+        return get<QueueResponse>(`/v1/services/queue?includeCi=true${filter ? `&${filter}` : ''}`);
+      },
       rollback: (serviceId, deploymentId) =>
         send<{ deploymentId: number }>('POST', `/v1/services/${serviceId}/deploys/${deploymentId}/rollback`),
+      releaseInfo: (serviceId, deploymentId) => get(`/v1/services/${serviceId}/deploys/${deploymentId}/release`),
       cancel: (serviceId, deploymentId) =>
         send<{ ok: boolean; status: string }>('POST', `/v1/services/${serviceId}/deploys/${deploymentId}/cancel`),
       remove: (serviceId, deploymentId) =>
@@ -151,11 +157,11 @@ export function deploysApi(t: Transport): DeploysApi {
         get<{ deploymentId: number; previousDeploymentId: number | null; changed: boolean; diff: string }>(
           `/v1/services/${serviceId}/deploys/${deploymentId}/diff`,
         ),
-      promote: (serviceId, targetServiceId) =>
-        send<{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string }>(
+      promote: (serviceId, targetServiceId, options) =>
+        send<{ ok: boolean; deploymentId: number; commitSha: string; promotedFrom: string; mode?: 'artifact'; imageId?: string }>(
           'POST',
           `/v1/services/${serviceId}/promote`,
-          { targetServiceId },
+          { targetServiceId, ...options },
         ),
       logDownloadUrl: (serviceId, deploymentId) =>
         `/v1/services/${serviceId}/deploys/${deploymentId}/logs/download`,

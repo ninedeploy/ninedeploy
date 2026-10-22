@@ -51,6 +51,24 @@ describe('GithubCard', () => {
     mockOf(api.sources.list).mockResolvedValue([]);
   });
 
+  it('saves and clears required CI workflows and keeps an authorization error visible', async () => {
+    mockOf(api.services.github.get).mockResolvedValue({ link: { ...LINK, requiredWorkflows: ['.github/workflows/ci.yml'] } });
+    mockOf(api.services.github.feedback).mockRejectedValueOnce(new Error('Service admin required')).mockResolvedValue({ link: LINK });
+    const user = userEvent.setup();
+    renderWithProviders(<GithubCard svc={SVC} />);
+    const input = await screen.findByLabelText('Required CI workflows');
+    expect(input).toHaveValue('.github/workflows/ci.yml');
+    await user.clear(input);
+    await user.type(input, '.github/workflows/security.yaml');
+    await user.click(screen.getByRole('button', { name: 'Save CI requirements' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Service admin required');
+    expect(api.services.github.feedback).toHaveBeenLastCalledWith(5, { requiredWorkflows: ['.github/workflows/security.yaml'] });
+    await user.clear(input);
+    await user.click(screen.getByRole('button', { name: 'Save CI requirements' }));
+    await waitFor(() => expect(api.services.github.feedback).toHaveBeenLastCalledWith(5, { requiredWorkflows: [] }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
   it('renders nothing for a service without a repository, or a preview', () => {
     const image = renderWithProviders(<GithubCard svc={{ ...SVC, repoUrl: null } as Service} />);
     expect(screen.queryByText('GitHub App')).toBeNull();

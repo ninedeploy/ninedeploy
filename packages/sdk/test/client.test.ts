@@ -346,13 +346,13 @@ describe('createClient', () => {
       expect(last(calls)).toMatchObject({ url: '/v1/services/1/deploys/2', init: { method: 'DELETE' } });
 
       await client.deploys.queue();
-      expect(last(calls)).toMatchObject({ url: '/v1/services/queue', init: { method: 'GET' } });
+      expect(last(calls)).toMatchObject({ url: '/v1/services/queue?includeCi=true', init: { method: 'GET' } });
 
       await client.deploys.queue('?status=queued,building');
-      expect(last(calls)).toMatchObject({ url: '/v1/services/queue?status=queued,building', init: { method: 'GET' } });
+      expect(last(calls)).toMatchObject({ url: '/v1/services/queue?includeCi=true&status=queued,building', init: { method: 'GET' } });
 
       await client.deploys.queue('status=queued');
-      expect(last(calls)).toMatchObject({ url: '/v1/services/queue?status=queued', init: { method: 'GET' } });
+      expect(last(calls)).toMatchObject({ url: '/v1/services/queue?includeCi=true&status=queued', init: { method: 'GET' } });
     });
   });
 
@@ -687,6 +687,13 @@ describe('createClient', () => {
   });
 
   describe('deploys promote', () => {
+    it('sends artifact mode and the selected source release without changing legacy calls', async () => {
+      const { fetchMock, calls } = makeFetch(() => ok({ ok: true, deploymentId: 30, commitSha: 'abc1234', promotedFrom: 'staging', mode: 'artifact', imageId: 'sha256:recorded' }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      const res = await client.deploys.promote(5, 9, { mode: 'artifact', sourceDeploymentId: 7 });
+      expect(last(calls)).toMatchObject({ url: '/v1/services/5/promote', init: { method: 'POST', body: JSON.stringify({ targetServiceId: 9, mode: 'artifact', sourceDeploymentId: 7 }) } });
+      expect(res).toMatchObject({ mode: 'artifact', imageId: 'sha256:recorded' });
+    });
     it('posts the promotion target to the promote endpoint', async () => {
       const { fetchMock, calls } = makeFetch(() => ok({ ok: true, deploymentId: 30, commitSha: 'abc1234', promotedFrom: 'web-staging' }));
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });

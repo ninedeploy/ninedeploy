@@ -255,7 +255,7 @@ export const servicesSpecs: RouteSpecMap = {
     validation: 'zod',
   },
   'PATCH /v1/services/:id/github/feedback': {
-    summary: 'Toggle GitHub deploy feedback for a service',
+    summary: 'Set GitHub deploy feedback and required CI workflows',
     tag: 'github',
     floor: 'admin',
     body: serviceGithubFeedbackPatch,

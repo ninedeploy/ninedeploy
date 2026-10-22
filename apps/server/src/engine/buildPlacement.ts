@@ -137,7 +137,7 @@ export interface PlacedBuildDeps {
  * BuildKit as secrets and is not affected; a service that ships by stream
  * relay keeps the image on hosts that hold the env anyway.
  */
-async function assertNoSecretsInPushedImage(ctx: BuildContext): Promise<void> {
+export async function assertNoSecretsInPushedImage(ctx: BuildContext): Promise<void> {
   const secretKeys = (ctx.buildSecretKeys ?? []).filter((key) => key in ctx.env);
   if (secretKeys.length === 0) return;
   const { pack } = await primaryBuildPack(ctx.workDir, ctx.buildConfig);

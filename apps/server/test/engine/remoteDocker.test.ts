@@ -77,6 +77,64 @@ const ctx = (over: Partial<BuildContext> = {}): BuildContext =>
   }) as BuildContext;
 
 describe('remote docker builder — image services', () => {
+  it('records the actual image and pack conventions of an ordinary node source build when requested', async () => {
+    const imageId = `sha256:${'c'.repeat(64)}`;
+    const { agent, ops } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: [imageId] } });
+    const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ repoUrl: 'https://example.test/repo.git' }), recordDockerArtifact: true } as Partial<BuildContext>));
+    expect(runtime).toMatchObject({ imageDigest: imageId, artifactBuild: { builtWithNixpacks: false, builtStatic: false } });
+    expect(ops()).toContain('docker.build');
+    expect(ops()).toContain('git.ensure');
+  });
+  it.each(['unreachable', 'invalid image'])('keeps an ordinary deployment usable when optional image observation fails: %s', async reason => {
+    const base = fakeAgent();
+    const agent: AgentCall = async (op, params, sink) => op === 'docker.inspect'
+      ? reason === 'unreachable' ? Promise.reject(new Error('temporary disconnect')) : { exitCode: 0, lines: ['mutable:latest'] }
+      : base.agent(op, params, sink);
+    const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ repoUrl: 'https://example.test/repo.git' }), recordDockerArtifact: true }));
+    expect(runtime.runtimeId).toBe('web-7');
+    expect(runtime.artifactBuild).toBeUndefined();
+    expect(base.calls.some(call => call.op === 'docker.rm')).toBe(false);
+  });
+  it.each([{ builtWithNixpacks: true, builtStatic: false }, { builtWithNixpacks: false, builtStatic: true }])('records placed source build conventions %j without changing legacy placement', async pack => {
+    const imageId = `sha256:${'c'.repeat(64)}`;
+    const { agent } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: [imageId] } });
+    const runtime = await createRemoteDockerBuilder(agent, { prebuiltImage: { tag: 'ninedeploy/web:placed', imageId, ...pack } }).buildAndRun(ctx({ service: svc({ repoUrl: 'https://example.test/repo.git' }), recordDockerArtifact: true }));
+    expect(runtime).toMatchObject({ imageDigest: imageId, artifactBuild: pack });
+  });
+  it('does not record a placed tag that no longer names the shipped image', async () => {
+    const imageId = `sha256:${'c'.repeat(64)}`;
+    const { agent } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: [`sha256:${'d'.repeat(64)}`] } });
+    const runtime = await createRemoteDockerBuilder(agent, { prebuiltImage: { tag: 'ninedeploy/web:placed', imageId } }).buildAndRun(ctx({ service: svc({ repoUrl: 'https://example.test/repo.git' }), recordDockerArtifact: true }));
+    expect(runtime.artifactBuild).toBeUndefined();
+    expect(runtime.imageDigest).toBeUndefined();
+  });
+  it.each([{ builtWithNixpacks: true, builtStatic: false, port: 3000 }, { builtWithNixpacks: false, builtStatic: true, port: 80 }])('runs an immutable artifact with its original pack conventions %j', async pack => {
+    const imageId = `sha256:${'a'.repeat(64)}`;
+    const { agent, calls, ops } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: [imageId] } });
+    const runtime = await createRemoteDockerBuilder(agent, { prebuiltImage: { tag: imageId, imageId, ...pack } }).buildAndRun(ctx({ service: svc({ port: null, repoUrl: 'https://example.test/repo.git' }) }));
+    expect(runtime).toMatchObject({ port: pack.port, imageDigest: imageId });
+    expect(calls.find(call => call.op === 'docker.runEnv')?.params.image).toBe(imageId);
+    expect(ops()).not.toContain('docker.pull');
+    expect(ops()).not.toContain('git.ensure');
+    expect(ops()).not.toContain('docker.build');
+    expect(calls.find(call => call.op === 'file.writeEnv')?.params.env).toMatchObject(pack.builtWithNixpacks ? { PORT: '3000', FOO: 'bar' } : { FOO: 'bar' });
+  });
+  it('removes only the candidate when the node reports a different runtime image', async () => {
+    const imageId = `sha256:${'a'.repeat(64)}`;
+    const { agent, calls } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: [`sha256:${'b'.repeat(64)}`] } });
+    await expect(createRemoteDockerBuilder(agent, { prebuiltImage: { tag: imageId, imageId } }).buildAndRun(ctx(), { runtimeId: 'old-serving', port: 3000, healthPath: '/' })).rejects.toThrow('Runtime image identity');
+    expect(calls.filter(call => call.op === 'docker.rm').map(call => call.params.name)).toEqual(['web-7']);
+  });
+  it('cleans the candidate if image verification loses contact with the node', async () => {
+    const imageId = `sha256:${'a'.repeat(64)}`;
+    const node = fakeAgent();
+    const agent: AgentCall = async (op, params, sink) => {
+      if (op === 'docker.inspect') throw new Error('node disconnected');
+      return node.agent(op, params, sink);
+    };
+    await expect(createRemoteDockerBuilder(agent, { prebuiltImage: { tag: imageId, imageId } }).buildAndRun(ctx())).rejects.toThrow('node disconnected');
+    expect(node.calls.filter(call => call.op === 'docker.rm').map(call => call.params.name)).toEqual(['web-7']);
+  });
   it('pulls and runs the image on the node, never locally', async () => {
     const { agent, calls, ops } = fakeAgent();
     const runtime = await createRemoteDockerBuilder(agent).buildAndRun(

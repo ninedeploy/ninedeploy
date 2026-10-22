@@ -362,10 +362,10 @@ describe('deploys routes', () => {
   });
 
   // ── cancel ────────────────────────────────────────────────────────────────
-  it('cancels a queued deployment', async () => {
+  it.each(['queued', 'awaiting_ci'] as const)('cancels a %s deployment', async (status) => {
     const app = await buildTestApp({
       db: createFakeDb({
-        findFirst: { services: svcRow({ id: 1 }), deployments: depRow({ id: 9, serviceId: 1, status: 'queued' }) },
+        findFirst: { services: svcRow({ id: 1 }), deployments: depRow({ id: 9, serviceId: 1, status }) },
         update: { deployments: [{ id: 9 }] },
       }),
     });
@@ -1201,6 +1201,7 @@ describe('global deploy queue', () => {
             { ...depRow({ id: 1, serviceId: 1, status: 'building' }) },
             { ...depRow({ id: 2, serviceId: 2, status: 'queued' }) },
             { ...depRow({ id: 3, serviceId: 3, status: 'queued' }) },
+            { ...depRow({ id: 4, serviceId: 3, status: 'awaiting_ci' }) },
           ],
           services: [
             svcRow({ id: 1, name: 'web' }),
@@ -1211,15 +1212,16 @@ describe('global deploy queue', () => {
       }),
     });
     await app.register(deploysRoutes, { prefix: '/services' });
-    const res = await app.inject({ method: 'GET', url: '/services/queue', headers: asUser() });
+    const res = await app.inject({ method: 'GET', url: '/services/queue?includeCi=true', headers: asUser() });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.count).toBe(3);
-    expect(body.byStatus).toEqual({ building: 1, queued: 2, deploying: 0 });
+    expect(body.count).toBe(4);
+    expect(body.byStatus).toEqual({ building: 1, queued: 2, deploying: 0, awaiting_ci: 1 });
     expect(body.items.map((i: { id: number; serviceName: string }) => [i.id, i.serviceName])).toEqual([
       [1, 'web'],
       [2, 'api'],
       [3, 'worker'],
+      [4, 'worker'],
     ]);
   });
 

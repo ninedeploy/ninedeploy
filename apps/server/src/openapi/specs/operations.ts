@@ -105,12 +105,14 @@ export const operationsSpecs: RouteSpecMap = {
   },
   'GET /v1/housekeeping/images': {
     summary: 'List images on the host',
+    description: 'ImageInfo.releaseProtected marks image IDs held by retained encrypted Compose release records, separately from container use. NineDeploy image cleanup preserves them until the last referring deployment history is deleted.',
     tag: 'housekeeping',
     floor: 'operator',
     responseType: '{ images: ImageInfo[]; totalCount: number; totalBytes: number }',
   },
   'POST /v1/housekeeping/images/prune': {
     summary: 'Prune images',
+    description: 'Preserves image IDs referenced by retained Compose release records, including in dry-run and dangling-only modes. Cleanup refuses to run if release records cannot be read.',
     tag: 'housekeeping',
     floor: 'operator',
     localBody: 'images.ts#pruneBody',

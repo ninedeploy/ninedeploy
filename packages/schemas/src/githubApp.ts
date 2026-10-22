@@ -222,13 +222,19 @@ export const serviceGithubLinkPut = z.object({
 });
 export type ServiceGithubLinkPut = z.infer<typeof serviceGithubLinkPut>;
 
-/** PATCH /v1/services/:id/github/feedback (admin). Both default to off. */
+/** Exact workflow file paths, never display names or third-party check labels. */
+export const requiredGithubWorkflows = z.array(
+  z.string().trim().max(200).regex(/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/, 'Use a .github/workflows/<file>.yml or .yaml path'),
+).max(10).refine((paths) => new Set(paths).size === paths.length, { message: 'Workflow paths must be unique' });
+
+/** PATCH /v1/services/:id/github/feedback (admin). Feedback and required CI default to off. */
 export const serviceGithubFeedbackPatch = z
   .object({
     /** Post commit statuses (`ninedeploy/<slug>`) for deploys. */
     reportStatus: z.boolean().optional(),
     /** Upsert one comment per PR with the preview URL and outcome. */
     prComment: z.boolean().optional(),
+    requiredWorkflows: requiredGithubWorkflows.optional(),
   })
   .refine(atLeastOneField, { message: 'nothing to update' });
 export type ServiceGithubFeedbackPatch = z.infer<typeof serviceGithubFeedbackPatch>;
@@ -256,6 +262,7 @@ export const serviceGithubLink = z.object({
   watchPaths: z.string().nullable(),
   reportStatus: z.boolean(),
   prComment: z.boolean(),
+  requiredWorkflows: requiredGithubWorkflows.optional(),
   previousSourceId: z.number().int().nullable(),
   /** Enabled AND the installation is neither suspended nor removed: the App drives deploys. */
   active: z.boolean(),

@@ -13,7 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.
 ```
 
 ### What the installer does:
-1. Detects or installs **Node.js (≥22.13)** and **pnpm (v11 via Corepack)**.
+1. Detects or installs **Node.js (22.23.4+, 24.22.1+ or 26.12.1+ within those supported majors)** and **pnpm (v11 via Corepack)**. Existing supported Node majors are retained during patching. It rechecks the security patch level and selected major after installation; stale package mirrors or an unexpected executable on PATH stop setup.
 2. Verifies Docker daemon connectivity.
 3. Clones or updates the repository to `~/ninedeploy`.
 4. Builds the monorepo packages.
@@ -113,7 +113,7 @@ Re-running the installation script performs a seamless, zero-data-loss upgrade:
 curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash
 
 # Pin to a specific version
-bash install.sh --version v0.17.0
+bash install.sh --version v0.17.1
 
 # Track edge (main branch)
 bash install.sh --channel main

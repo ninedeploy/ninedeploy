@@ -205,7 +205,7 @@ export interface VettedAddress {
  * vetted addresses — null when nothing was resolved (an IP literal, or
  * private egress allowed), i.e. when there is nothing to pin.
  */
-async function vetPublicHttpUrl(raw: string): Promise<{ url: URL; host: string; addresses: VettedAddress[] | null }> {
+async function vetPublicHttpUrl(raw: string, signal?: AbortSignal | null): Promise<{ url: URL; host: string; addresses: VettedAddress[] | null }> {
   let url: URL;
   try {
     url = new URL(raw);
@@ -226,8 +226,18 @@ async function vetPublicHttpUrl(raw: string): Promise<{ url: URL; host: string; 
 
   let addresses: VettedAddress[];
   try {
-    addresses = await lookup(host, { all: true });
+    signal?.throwIfAborted();
+    if (!signal) addresses = await lookup(host, { all: true });
+    else addresses = await new Promise<VettedAddress[]>((resolve, reject) => {
+      // DNS lookup itself is not abortable. Settle the caller promptly and
+      // discard its late answer; cancellation must never proceed to fetch.
+      const abort = () => reject(signal.reason);
+      signal.addEventListener('abort', abort, { once: true });
+      void lookup(host, { all: true }).then(resolve, reject)
+        .finally(() => signal.removeEventListener('abort', abort));
+    });
   } catch {
+    signal?.throwIfAborted();
     throw new EgressBlockedError(raw, `the hostname ${host} could not be resolved`);
   }
   if (addresses.length === 0) throw new EgressBlockedError(raw, `the hostname ${host} resolved to no addresses`);
@@ -299,7 +309,9 @@ export function bundledAgentClass(): AgentCtor | null {
 
 /** `fetch`, refusing anything that points inside the host's own network. */
 export async function guardedFetch(raw: string, init?: RequestInit): Promise<Response> {
-  const { host, addresses } = await vetPublicHttpUrl(raw);
+  init?.signal?.throwIfAborted();
+  const { host, addresses } = await vetPublicHttpUrl(raw, init?.signal);
+  init?.signal?.throwIfAborted();
   // Do not let fetch turn one validated public URL into an unchecked private
   // redirect target. Callers receive the redirect response and can make an
   // explicit, separately guarded follow-up request if their protocol needs it.

@@ -35,4 +35,4 @@ The MCP server enforces the panel's own scope model: each tool declares the API-
 - **Deploys** — add the deploy write scopes; no `operator` scope needed for your own services.
 - **Instance administration** (users, plugins, config center, pruning) — requires an operator token. Treat that as giving the agent operator power: it can read instance-wide inventories, and container inspection reveals container environment variables. **Secret values in the Config Center always come back masked over MCP** — the panel UI is the only reveal surface.
 
-Requires Node **>= 22.13**. Full tool catalogue and CLI/SDK docs: [`docs/AI_MCP_CLI.md`](https://github.com/ninedeploy/ninedeploy/blob/main/docs/AI_MCP_CLI.md).
+Requires Node **22.23.4+, 24.22.1+ or 26.12.1+ within those supported majors**. Full tool catalogue and CLI/SDK docs: [`docs/AI_MCP_CLI.md`](https://github.com/ninedeploy/ninedeploy/blob/main/docs/AI_MCP_CLI.md).

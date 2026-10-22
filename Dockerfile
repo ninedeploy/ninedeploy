@@ -30,12 +30,32 @@
 # PM2-based services are not available in this mode (the daemon runs in the
 # host PID space); Docker-based services and templates work normally.
 
+# The security-release image index can precede its platform manifests. Use
+# the official, checksum-pinned Node binaries in a shared stage so neither
+# cached base images nor registry propagation can leave an old runtime.
+FROM node:26-slim AS secure-node
+ARG TARGETARCH
+ENV NODE_VERSION=26.12.1
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
+  && case "$TARGETARCH" in \
+       amd64) NODE_ARCH="x64"; NODE_SHA256="6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd" ;; \
+       arm64) NODE_ARCH="arm64"; NODE_SHA256="42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb" ;; \
+       *) echo "Unsupported Node architecture: $TARGETARCH" >&2; exit 1 ;; \
+     esac \
+  && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o /tmp/node-security.tar.xz \
+  && echo "$NODE_SHA256  /tmp/node-security.tar.xz" | sha256sum -c - \
+  && tar -xJf /tmp/node-security.tar.xz -C /usr/local --strip-components=1 \
+  && test "$(node --version)" = "v${NODE_VERSION}" \
+  && rm -f /tmp/node-security.tar.xz \
+  && rm -rf /var/lib/apt/lists/*
+
 # ── Stage 1: build the monorepo ──────────────────────────────────────────
-FROM node:26-slim AS build
+FROM secure-node AS build
 WORKDIR /app
 
 # Native modules (ssh2 -> node-gyp) need a toolchain at install time;
-# node:26-slim ships without python3/make/g++ and the install fails
+# The slim base ships without python3/make/g++ and the install fails
 # nondeterministically depending on which optional deps resolve.
 RUN apt-get update  && apt-get install -y --no-install-recommends python3 make g++  && rm -rf /var/lib/apt/lists/*
 
@@ -59,10 +79,10 @@ RUN pnpm install --frozen-lockfile
 
 # Copy the rest and build (tsc for server/packages, vite for web).
 COPY . .
-RUN pnpm build
+RUN node scripts/check-node-version.mjs && pnpm build
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────
-FROM node:26-slim AS runtime
+FROM secure-node AS runtime
 WORKDIR /app
 
 ARG NIXPACKS_VERSION=1.41.0

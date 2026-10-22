@@ -8,6 +8,7 @@ import { logBus } from '../engine/logs.js';
 import { removeInterruptedCandidates } from '../engine/interruptedRuntime.js';
 import { audit } from '../lib/audit.js';
 import { dropStaleApprovals, holdForApprovalIfNeeded } from '../lib/protectedLanes.js';
+import { holdForCiIfNeeded, pollCiGates } from '../lib/ciGate.js';
 import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
 import { createBuildSlots } from '../engine/buildSlots.js';
 
@@ -137,6 +138,28 @@ export default fp(
     let generation = 0;
     let closed = false;
     const live = (gen: number): boolean => running && gen === generation;
+    let ciAbort = new AbortController();
+    let ciPoll: Promise<void> | undefined;
+    let ciTimer: NodeJS.Timeout | undefined;
+    const startCiMonitor = () => {
+      ciTimer = setInterval(() => {
+        if (!running || ciPoll) return;
+        ciPoll = pollCiGates(fastify.db, { signal: ciAbort.signal })
+          .then(async (transitions) => {
+            for (const event of transitions) {
+              logBus.publish(event.deploymentId, `${event.status === 'queued' ? '✓' : '⏹'} ${event.reason}`);
+              if (event.status !== 'queued') logBus.end(event.deploymentId);
+              const svc = await fastify.db.query.services.findFirst({ where: eq(services.id, event.serviceId) });
+              if (svc) await audit(fastify.db, svc.ownerUserId ?? null,
+                event.status === 'queued' ? 'deploy.ci_passed' : event.status === 'failed' ? 'deploy.failed' : 'deploy.cancelled',
+                `${svc.name} #${event.deploymentId}`, { serviceId: svc.id, reason: event.reason });
+            }
+          })
+          .catch((err: unknown) => fastify.log.error({ err }, 'CI gate poll failed'))
+          .finally(() => { ciPoll = undefined; });
+      }, POLL_MS);
+      ciTimer.unref?.();
+    };
 
     // ── 0.16 T4 build slots (M2, design §6.3) ──
     // A build placed on the panel or a build server takes a slot keyed by its
@@ -378,6 +401,22 @@ export default fp(
         .orderBy(asc(deployments.createdAt));
       for (const row of queued) {
         if (inFlightServices.has(row.serviceId)) continue; // r272
+        if (await holdForCiIfNeeded(fastify.db, row.id)) {
+          const held = await fastify.db.query.deployments.findFirst({ where: eq(deployments.id, row.id) });
+          if (held?.status !== 'awaiting_ci') {
+            if (held?.status === 'cancelled') {
+              logBus.publish(row.id, `⏹ ${held.ciGate?.reason ?? 'Deployment cancelled before CI admission'}`);
+              logBus.end(row.id);
+            }
+            continue;
+          }
+          logBus.publish(row.id, '⏸ Waiting for required GitHub workflows before approval and build');
+          for (const staleId of await dropStaleApprovals(fastify.db, row.serviceId, row.id)) {
+            logBus.publish(staleId, `⏹ Replaced by a newer deploy (#${row.id}) waiting for CI`);
+            logBus.end(staleId);
+          }
+          continue;
+        }
         // 0.16.13: a deploy into an approval-gated lane that nobody reviewed
         // waits for an admin instead of building. Gating here, not at each
         // insert, covers every trigger (webhook, schedule, image poll, API).
@@ -447,6 +486,13 @@ export default fp(
                 WHERE active.service_id = ${deployments.serviceId}
                   AND active.status = 'building'
               )`,
+              // A CI receipt may become queued just as a newer run starts.
+              // Recheck under the atomic claim, including across processes.
+              sql`(${deployments.ciGate} IS NULL OR NOT EXISTS (
+                SELECT 1 FROM deployments AS newer
+                WHERE newer.service_id = ${deployments.serviceId} AND newer.id > ${deployments.id}
+                  AND (newer.started_at IS NOT NULL OR newer.status IN ('building', 'deploying', 'running', 'superseded'))
+              ))`,
             ))) as
             | { rowsAffected?: number }
             | undefined;
@@ -548,6 +594,9 @@ export default fp(
     fastify.decorate('worker', {
       stop: async () => {
         running = false;
+        clearInterval(ciTimer);
+        ciAbort.abort();
+        await ciPoll;
         clearInterval(sweepTimer);
         clearTimeout(remoteGraceTimer);
         for (const t of timers) clearTimeout(t);
@@ -574,6 +623,8 @@ export default fp(
         if (running || closed) return;
         running = true;
         generation++;
+        ciAbort = new AbortController();
+        startCiMonitor();
         sweepTimer = setInterval(() => void sweepStaleBuilding(), STALE_SWEEP_EVERY_MS);
         sweepTimer.unref?.();
         for (let slot = 0; slot < config.deployConcurrency; slot++) {
@@ -588,6 +639,7 @@ export default fp(
     });
 
     // One loop per concurrency slot; all loops share the same claim guard.
+    startCiMonitor();
     for (let slot = 0; slot < config.deployConcurrency; slot++) {
       schedule(POLL_MS + slot * 100);
     }

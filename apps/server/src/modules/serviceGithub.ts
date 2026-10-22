@@ -25,15 +25,15 @@ import { githubRepoFromUrl } from '../lib/sourceCreds.js';
  *
  *   GET    /:id/github           viewer   — the link and whether the App drives the service
  *   PUT    /:id/github           operator — link (or re-link) to an installation's repository
- *   PATCH  /:id/github/feedback  admin    — commit statuses / PR comments on or off
+ *   PATCH  /:id/github/feedback  admin    — feedback and required CI workflow policy
  *   POST   /:id/github/migrate   operator — link a PAT/webhook service, keeping both as fallback
  *   POST   /:id/github/finalize  operator — detach the old source, deactivate the webhooks
  *   DELETE /:id/github           operator — revert: restore the old source and webhooks, unlink
  *
  * The link decides which credential clones the repository, so every route
  * that writes it mirrors the operator-only source-attach gate
- * (`modules/services.ts`); the feedback toggles only make the panel talk to
- * GitHub about deploys it already runs, so they sit at the service-admin tier.
+ * (`modules/services.ts`); feedback and required-workflow policies sit at the
+ * service-admin tier. A CI policy does not widen the clone credential.
  * Authorization runs before the body is parsed, and every mutation is audited
  * with ids and names only.
  */
@@ -52,6 +52,7 @@ function serializeLink(link: ServiceGithubLink, inst: GithubAppInstallation) {
     watchPaths: link.watchPaths ?? null,
     reportStatus: link.reportStatus,
     prComment: link.prComment,
+    requiredWorkflows: link.requiredWorkflows,
     previousSourceId: link.previousSourceId ?? null,
     active: link.enabled && !inst.suspendedAt && !inst.removedAt,
     createdAt: link.createdAt.toISOString(),
@@ -249,6 +250,7 @@ export const serviceGithubRoutes: FastifyPluginAsync = async (app) => {
       .set({
         ...(input.reportStatus !== undefined ? { reportStatus: input.reportStatus } : {}),
         ...(input.prComment !== undefined ? { prComment: input.prComment } : {}),
+        ...(input.requiredWorkflows !== undefined ? { requiredWorkflows: input.requiredWorkflows } : {}),
         updatedAt: new Date(),
       })
       .where(eq(serviceGithubLinks.id, link.id))
@@ -258,6 +260,7 @@ export const serviceGithubRoutes: FastifyPluginAsync = async (app) => {
       change: 'feedback',
       reportStatus: row!.reportStatus,
       prComment: row!.prComment,
+      requiredWorkflows: row!.requiredWorkflows,
     });
     return { link: serializeLink(row!, inst) };
   });

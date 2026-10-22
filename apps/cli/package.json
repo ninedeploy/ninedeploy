@@ -1,6 +1,6 @@
 {
   "name": "ninedeploy",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Interactive CLI for NineDeploy self-hosted PaaS",
   "license": "MIT",
   "repository": {
@@ -16,6 +16,9 @@
     "src"
   ],
   "type": "module",
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
   "bin": {
     "ninedeploy": "./dist/index.js"
   },

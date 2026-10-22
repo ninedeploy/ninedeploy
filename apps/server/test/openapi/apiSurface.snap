@@ -165,6 +165,7 @@ GET /v1/services/:id/deploys viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/diff viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/logs viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/logs/download viewer nd://scope/read/deploys
+GET /v1/services/:id/deploys/:depId/release viewer nd://scope/read/deploys
 GET /v1/services/:id/domains viewer nd://scope/read/domains
 GET /v1/services/:id/domains/:domainId/dns viewer nd://scope/read/domains
 GET /v1/services/:id/env viewer nd://scope/read/env

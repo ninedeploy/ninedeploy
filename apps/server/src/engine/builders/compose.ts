@@ -5,6 +5,7 @@ import { capture, run } from '../../lib/exec.js';
 import { repoRelative } from '../../lib/repoPath.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { connectTraefikToComposeNetwork } from '../../lib/serviceBridge.js';
+import { createComposeRelease, IMAGE_ID, type ComposeRelease } from '../../lib/composeRelease.js';
 
 const DEPLOY_HEARTBEAT_MS = 20_000;
 
@@ -250,6 +251,7 @@ export const composeBuilder: Builder = {
     }
 
     let runtimeId: string;
+    let composeRelease: ComposeRelease | undefined;
     try {
       const gateOpts = {
         cwd: workDir,
@@ -263,6 +265,12 @@ export const composeBuilder: Builder = {
       // Every step gets a hard ceiling so ONE hung docker call can never pin
       // the worker's per-server deploy slot for the default 30-minute timeout.
       await run('docker', [...stackArgs, 'config', '--quiet'], { ...gateOpts, timeoutMs: 120_000 }, log);
+      if (ctx.restoreComposeRelease) {
+        const ids = [...new Set(Object.values(ctx.restoreComposeRelease.model.services as Record<string, { image: string }>).map(s => s.image))];
+        const present = (await capture('docker', ['image', 'inspect', ...ids, '--format', '{{.Id}}'], { timeoutMs: 30_000 })).trim().split(/\s+/);
+        if (ids.some(id => !present.includes(id))) throw new Error('A recorded Compose image is no longer present. The running stack was not changed.');
+        log('Restoring the recorded Compose model and local image IDs; no pull or rebuild');
+      } else {
       try {
         await run('docker', [...stackArgs, 'pull', '--ignore-buildable', '--quiet'], { ...gateOpts, timeoutMs: 900_000, heartbeatLabel: `Pulling images for ${project} (can take minutes on slow links)` }, log);
       } catch (pullErr) {
@@ -284,6 +292,7 @@ export const composeBuilder: Builder = {
         { ...gateOpts, timeoutMs: 1_200_000, heartbeatLabel: `Building images for ${project} (the previous revision keeps serving)` },
         log,
       );
+      }
 
       // Stop the previous project revision — no blue-green for compose. Kept
       // as it always was (only its position moved): existing stacks get the
@@ -302,6 +311,7 @@ export const composeBuilder: Builder = {
       // r590: no `--build` — every image was built above, so the gap between
       // `down` and a serving stack is container start time only.
       const upArgs = [...stackArgs, 'up', '-d', '--remove-orphans'];
+      if (ctx.restoreComposeRelease) upArgs.push('--pull', 'never', '--no-build');
       await run(
         'docker',
         upArgs,
@@ -349,6 +359,25 @@ export const composeBuilder: Builder = {
       } catch (err) {
         log(`warning: could not resolve main container name, using ${runtimeId}: ${err instanceof Error ? err.message : err}`);
       }
+      if (service.composeContent && !ctx.restoreComposeRelease) {
+        try {
+          const resolved = await capture('docker', [...stackArgs, 'config', '--format', 'json'], { cwd: workDir, env: gateOpts.env, timeoutMs: 15_000 });
+          const ids = (await capture('docker', [...stackArgs, 'ps', '-aq'], { cwd: workDir, env: gateOpts.env, timeoutMs: 15_000 })).trim().split(/\s+/).filter(Boolean);
+          if (ids.length === 0 || ids.length > 512 || ids.some(id => !/^[a-f0-9]{12,64}$/.test(id))) throw new Error('Invalid Compose container list');
+          const inspected = await capture('docker', ['inspect', ...ids, '--format', '{{index .Config.Labels "com.docker.compose.service"}}|{{.Image}}'], { timeoutMs: 15_000 });
+          const images: Record<string, string> = Object.create(null);
+          for (const line of inspected.trim().split('\n')) {
+            const [name, image] = line.trim().split('|');
+            if (!name || !image || !IMAGE_ID.test(image) || (images[name] && images[name] !== image)) throw new Error('Inconsistent Compose container images');
+            images[name] = image;
+          }
+          composeRelease = createComposeRelease({ serviceId: service.id, slug: service.slug, composeService, runtimeId, port: service.port ?? null, healthPath: service.healthPath || '/' }, resolved, images);
+          log('Recorded the resolved Compose release and container image IDs');
+        } catch {
+          // Never print the resolved model or command stderr: both can contain secrets.
+          log('Release record unavailable: this stack could not be captured as a self-contained model with all container images');
+        }
+      }
     } finally {
       // r352: restore the repo's own .env byte-for-byte, or remove only the
       // file this builder created. Untouched when the panel had no values.
@@ -369,6 +398,7 @@ export const composeBuilder: Builder = {
       port: service.port ?? null,
       healthPath: service.healthPath || '/',
       imageDigest: undefined, // multi-container: digest pinning is per-service
+      ...(composeRelease ? { composeRelease } : {}),
     };
   },
 

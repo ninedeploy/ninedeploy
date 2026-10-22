@@ -160,6 +160,15 @@ describe('listImages', () => {
 });
 
 describe('pruneImages', () => {
+  it.each([false, true])('retains recorded release images in a dry-run (dangling=%s)', async danglingOnly => {
+    const protectedId = danglingOnly ? 'sha256:dddd' : 'sha256:aaaa';
+    const control = JSON.stringify({ Repository: danglingOnly ? '<none>' : 'control', Tag: danglingOnly ? '<none>' : 'old', ID: 'sha256:eeee', Size: '1MB', CreatedAt: '2020-01-01T00:00:00Z' });
+    execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: `${IMG_LS_JSON}\n${control}` });
+    fakeContainers([]);
+    const result = await pruneImages({ danglingOnly, dryRun: true }, new Set([protectedId]));
+    expect(result.removed).not.toContain(protectedId);
+    expect(result.removed).toContain('sha256:eeee');
+  });
   it('runs `docker image prune -f` for danglingOnly and parses the freed bytes', async () => {
     execState.byArgs.set('docker image ls --no-trunc --format {{json .}}', { stdout: IMG_LS_JSON });
     execState.byArgs.set('docker ps -aq --no-trunc', { stdout: '' });

@@ -36,7 +36,7 @@ export function GithubCard({ svc }: { svc: Service }) {
           <GitBranch size={16} className="text-indigo-400" /> GitHub App
         </div>
         {link ? (
-          <LinkedView svc={svc} link={link} isOperator={isOperator} />
+          <LinkedView key={link.id} svc={svc} link={link} isOperator={isOperator} />
         ) : (
           <MigrateView svc={svc} options={appSources.map((s) => ({ id: s.id, name: s.name }))} />
         )}
@@ -128,6 +128,7 @@ function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGith
         </label>
       </div>
       <p className="text-[11px] text-slate-500">Feedback toggles need the admin role on this service.</p>
+      <CiPolicy key={JSON.stringify(link.requiredWorkflows ?? [])} serviceId={svc.id} workflows={link.requiredWorkflows ?? []} onSaved={refresh} />
 
       {isOperator && (
         <div className="space-y-3 border-t border-white/5 pt-3">
@@ -173,6 +174,37 @@ function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGith
         onConfirm={() => finalize.mutate()}
         onClose={() => setConfirmFinalize(false)}
       />
+    </div>
+  );
+}
+
+function CiPolicy({ serviceId, workflows, onSaved }: { serviceId: number; workflows: string[]; onSaved: () => void }) {
+  const [value, setValue] = useState(workflows.join('\n'));
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const save = useMutation({
+    mutationFn: () => api.services.github.feedback(serviceId, { requiredWorkflows: value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) }),
+    onSuccess: () => { setError(null); onSaved(); toast('Required CI workflows updated', 'success'); },
+    onError: (err) => setError(errorText(err)),
+  });
+  return (
+    <div className="space-y-2 border-t border-white/5 pt-3">
+      <label htmlFor={`ci-workflows-${serviceId}`} className="block text-slate-200">Required CI workflows</label>
+      <p className="text-[11px] leading-relaxed text-slate-500">
+        Deploy only after every listed GitHub Actions workflow succeeds for the exact commit. One file path per line; leave empty to disable.
+        Requires the App&apos;s Actions read permission. CI runs before lane approval; missing checks wait up to two hours.
+        Changes apply to new candidates; cancel an existing waiting deploy to change its captured policy.
+      </p>
+      <textarea id={`ci-workflows-${serviceId}`} rows={3} value={value} onChange={(e) => setValue(e.target.value)}
+        placeholder=".github/workflows/ci.yml" spellCheck={false}
+        className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 font-mono text-xs text-slate-200 focus:border-indigo-400 focus:outline-none" />
+      <div className="flex items-center gap-3">
+        <Button size="sm" variant="secondary" disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? 'Saving…' : 'Save CI requirements'}
+        </Button>
+        <span className="text-[11px] text-slate-500">Service admin required</span>
+      </div>
+      {error && <p role="alert" className="text-rose-300">{error}</p>}
     </div>
   );
 }

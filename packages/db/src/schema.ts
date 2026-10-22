@@ -49,6 +49,7 @@ export const deploymentStatus = [
   // until a workspace admin approves (→ queued) or rejects (→ cancelled).
   // The worker claims only `queued`, so a waiting row never builds.
   'awaiting_approval',
+  'awaiting_ci',
 ] as const;
 export const deploymentTrigger = ['user', 'webhook', 'cli', 'schedule'] as const;
 export const domainStatus = ['pending', 'active', 'error'] as const;
@@ -665,6 +666,43 @@ export const repoInsights = sqliteTable(
 );
 
 // ─── deployments ──────────────────────────────────────────────────────────
+/** Immutable CI policy/source snapshot, with durable polling and run receipts. */
+export interface DeploymentCiGate {
+  version: 1;
+  linkId: number;
+  installationRowId: number;
+  repoId: number;
+  repoFullName: string;
+  repoUrl: string;
+  branch: string;
+  ownerServiceId: number;
+  ownerRepoUrl: string;
+  preview: boolean;
+  workflows: string[];
+  headSha: string | null;
+  state: 'waiting' | 'passed' | 'failed';
+  reason: string;
+  checks: Array<{ path: string; state: 'missing' | 'pending' | 'success' | 'failure'; runId: number | null; attempt: number | null }>;
+  deadlineAt: number;
+  checkedAt: number | null;
+  nextCheckAt: number;
+}
+
+/** Local, immutable Docker build output. Contains no runtime environment. */
+export interface DeploymentArtifact {
+  version: 1;
+  imageId: string;
+  repoUrl: string;
+  commitSha: string;
+  originDeploymentId: number;
+  /** Historical build node; absent for panel-origin records. Not a live FK. */
+  originServerId?: number;
+  builtWithNixpacks: boolean;
+  builtStatic: boolean;
+  /** Optional immutable registry archive. Credentials are resolved at use time. */
+  registry?: { sourceId: number; repository: string; digest: string };
+}
+
 export const deployments = sqliteTable(
   'deployments',
   {
@@ -674,6 +712,10 @@ export const deployments = sqliteTable(
       .references(() => services.id, { onDelete: 'cascade' }),
     status: text('status', { enum: deploymentStatus }).notNull().default('queued'),
     commitSha: text('commit_sha'),
+    ciGate: text('ci_gate', { mode: 'json' }).$type<DeploymentCiGate>(),
+    artifact: text('artifact', { mode: 'json' }).$type<DeploymentArtifact>(),
+    // No FK: the queued promotion owns its artifact even if source history expires.
+    promotionSourceDeploymentId: integer('promotion_source_deployment_id'),
     // Resolved image digest (sha256:...) the runtime actually ran. Lets rollback
     // pin the exact image instead of re-pulling a mutable tag like `:latest`.
     imageDigest: text('image_digest'),
@@ -684,6 +726,9 @@ export const deployments = sqliteTable(
     // JSON snapshot of the effective build config + env key fingerprint at
     // deploy start — powers the config diff against the previous deployment.
     configSnapshot: text('config_snapshot'),
+    // A restore owns a COPY of its encrypted release record. No FK: pruning
+    // the source deployment must not change an already queued restore.
+    restoredFromDeploymentId: integer('restored_from_deployment_id'),
     // 0.16 (0072): where the image was built (`panel` | `node:<id>`) and its
     // local image id. NULL on every pre-0072 row.
     buildHost: text('build_host'),
@@ -710,6 +755,19 @@ export const deployments = sqliteTable(
     // index it scanned the whole history every hour.
     createdIdx: index('deployments_created_idx').on(t.createdAt),
   }),
+);
+
+// Separate from deployments: list/detail/diff APIs must never serialize the
+// resolved Compose environment. Records are insert-only (except key rotation).
+export const deploymentReleaseRecords = sqliteTable(
+  'deployment_release_records',
+  {
+    id: id(),
+    deploymentId: integer('deployment_id').notNull().references(() => deployments.id, { onDelete: 'cascade' }),
+    payloadEncrypted: text('payload_encrypted').notNull(),
+    createdAt: ts('created_at'),
+  },
+  (t) => ({ deploymentIdx: uniqueIndex('deployment_release_records_deployment_idx').on(t.deploymentId) }),
 );
 
 /** One `domains.redirects` rule (0.16.1); validated by `redirectRule` in @ninedeploy/schemas. */
@@ -1060,6 +1118,7 @@ export const serviceGithubLinks = sqliteTable(
     watchPaths: text('watch_paths'),
     reportStatus: integer('report_status', { mode: 'boolean' }).notNull().default(false),
     prComment: integer('pr_comment', { mode: 'boolean' }).notNull().default(false),
+    requiredWorkflows: text('required_workflows', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
     /** `services.source_id` at migrate time, so a revert can restore it. */
     previousSourceId: integer('previous_source_id').references(() => sources.id, { onDelete: 'set null' }),
     createdAt: ts('created_at'),

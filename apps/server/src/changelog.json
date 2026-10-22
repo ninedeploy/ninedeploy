@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.17.1",
+    "date": "2026-10-22",
+    "title": "Readiness fixes and recoverable releases",
+    "changes": [
+      "Ordinary Docker HTTP readiness keeps checking the configured endpoint after the direct-IP grace period. An open TCP port with HTTP 502/503 no longer permits traffic to move to the candidate; alternate exposed ports must pass HTTP too. Direct probes do not follow redirects to another host.",
+      "Record Docker artifacts from the panel or a capable node, retain a verified panel image copy, and promote or roll back without rebuilding. Preserve target runtime settings; optional registry archives are pinned by digest. Swarm and fan-out artifact promotion remain unsupported.",
+      "Recorded inline Compose restores keep encrypted resolved configuration/environment and pinned image IDs across panel restarts and source-history deletion. Preserve named-volume data and refuse missing images before stopping the live stack.",
+      "Protect images referenced by retained Docker/Compose release records from every NineDeploy cleanup path. Recovery metadata and confirmations explain availability and limits; key rotation covers encrypted release records.",
+      "Require configured GitHub Actions workflows on the exact commit before approval/build. Persist and resume awaiting-CI jobs without holding build slots; cancellation also aborts pending DNS resolution. Existing services default to no required workflows.",
+      "Require Node 22.23.4+, 24.22.1+ or 26.12.1+ on supported majors. Docker and CI use 26.12.1; the standalone installer verifies the actual runtime after a security update.",
+      "Additive migrations 0093-0095 store Compose releases, required CI configuration and Docker artifacts. Before downgrading to 0.17.0, cancel queued recorded restores and stop the worker; see docs/DEPLOYMENTS.md.",
+      "Fix in-memory SQLite transaction connection reservation and remove a stale CLI diagnose-help version prefix."
+    ]
+  },
+  {
     "version": "0.17.0",
     "date": "2026-10-20",
     "title": "Application readiness, node telemetry and proposed fixes",

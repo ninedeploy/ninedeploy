@@ -443,7 +443,7 @@ deploys.command('rollback <serviceId> <deployId>').description('Rollback to a pr
 
 /* v8 ignore start -- exercised by test/aiDiagnose.test.ts. */
 deploys.command('diagnose <service> <deployId>')
-  .description('0.16.16: the configured AI provider diagnoses a failed deployment and may propose a settings change')
+  .description('The configured AI provider diagnoses a failed deployment and may propose a settings change')
   .option('--apply', 'Apply the proposed settings change and start a deploy')
   .option('--json', 'Print raw JSON')
   .action((service: string, depId: string, opts: { apply?: boolean; json?: boolean }) => deploysDiagnose(getClient(), service, depId, opts));

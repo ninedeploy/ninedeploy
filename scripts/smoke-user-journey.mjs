@@ -39,7 +39,7 @@
 // daemon for (Traefik's config directory, the nd-dbpub config, the custom
 // config preflight) resolves to the panel's real files, as on a host install.
 //
-// Usage: node scripts/smoke-user-journey.mjs [--image=ghcr.io/ninedeploy/ninedeploy:vX.Y.Z]
+// Usage: node scripts/smoke-user-journey.mjs [--image=...] [--compose-release-only]
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -86,6 +86,7 @@ async function api(path, { method = 'GET', token, body } = {}) {
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
   });
   const text = await r.text();
   let json = null;
@@ -1490,6 +1491,124 @@ async function redisFamilyChecks(token) {
   }
 }
 
+/** Real artifact restore, including mutable tags, literal dollars and volume data. */
+async function composeReleaseChecks(token) {
+  const oldSecret = `first-$HOME-\${TOKEN}-$$-${suffix}`;
+  const newSecret = `second-${suffix}`;
+  const content = (image, revision) => JSON.stringify({
+    services: { web: {
+      image, restart: 'unless-stopped',
+      command: ['sh', '-c', 'printf "%s" "$$REV/$$TOKEN" > /state/rendered; exec tail -f /dev/null'],
+      environment: { REV: revision, TOKEN: '${SAVED_TOKEN:?}' },
+      volumes: ['state:/state'],
+    } }, volumes: { state: {} },
+  });
+  const created = await api('/v1/services', { method: 'POST', token, body: { name: `recorded-${suffix}`, type: 'compose', composeService: 'web', composeContent: content('busybox:1.36', 'old') } });
+  if (created.status !== 200 && created.status !== 201) fail(`recorded stack create failed (${created.status})`);
+  const id = created.json?.id ?? created.json?.service?.id;
+  const base = `/v1/services/${id}`;
+  const environment = await api(`${base}/env`, { method: 'POST', token, body: { key: 'SAVED_TOKEN', value: oldSecret, isSecret: true } });
+  if (environment.status !== 200 && environment.status !== 201) fail('recorded stack environment create failed');
+  const envId = environment.json?.id;
+  const inner = (...args) => docker(['exec', DIND, 'docker', '-H', `tcp://127.0.0.1:${DIND_PORT}`, ...args]);
+  const waitForDeploy = async (depId, expected = 'running') => {
+    for (let i = 0; i < 180; i++) {
+      const list = await api(`${base}/deploys`, { token });
+      if (list.status !== 200) fail('recorded deploy history unavailable');
+      const row = (Array.isArray(list.json) ? list.json : list.json?.items ?? []).find(d => d.id === depId);
+      if (row && ['running', 'failed', 'cancelled', 'superseded'].includes(row.status)) {
+        if (row.status !== expected) fail(`recorded deploy #${depId}: ${row.status}, expected ${expected}`);
+        return;
+      }
+      await sleep(1000);
+    }
+    fail(`recorded deploy #${depId} timed out`);
+  };
+  const deploy = async () => {
+    const r = await api(`${base}/deploys`, { method: 'POST', token, body: {} });
+    if (r.status !== 200 && r.status !== 202) fail('recorded deploy enqueue failed');
+    await waitForDeploy(r.json.deploymentId);
+    return r.json.deploymentId;
+  };
+  const first = await deploy();
+  const detail = await api(base, { token });
+  const runtimeId = detail.json?.runtimeId ?? detail.json?.service?.runtimeId;
+  if (!runtimeId) fail('recorded stack has no runtime');
+  const firstImage = inner('inspect', runtimeId, '--format', '{{.Image}}');
+  const info = await api(`${base}/deploys/${first}/release`, { token });
+  if (info.status !== 200 || info.json?.mode !== 'recorded-compose' || !info.json.available) fail('first Compose release was not recorded');
+  if (inner('exec', runtimeId, 'cat', '/state/rendered') !== `old/${oldSecret}`) fail('initial resolved environment differs');
+  inner('exec', runtimeId, 'sh', '-c', 'printf current-data > /state/persistent');
+  step('first Compose release recorded; literal dollars reached the container');
+
+  const edited = await api(base, { method: 'PATCH', token, body: { composeContent: content('alpine:3.22', 'new') } });
+  if (edited.status !== 200) fail('Compose definition edit failed');
+  const changed = await api(`${base}/env/${envId}`, { method: 'PATCH', token, body: { key: 'SAVED_TOKEN', value: newSecret, isSecret: true } });
+  if (changed.status !== 200) fail('Compose environment edit failed');
+  const second = await deploy();
+  const secondImage = inner('inspect', runtimeId, '--format', '{{.Image}}');
+  if (secondImage === firstImage || inner('exec', runtimeId, 'cat', '/state/rendered') !== `new/${newSecret}`) fail('control deploy did not apply the new image and environment');
+  inner('exec', runtimeId, 'sh', '-c', 'printf newer-data > /state/persistent');
+  // A mutable name now resolves to the WRONG image. Only the recorded ID works.
+  inner('tag', secondImage, 'busybox:1.36');
+  // The first image is now unused and untagged. Both manual cleanup paths
+  // must respect its encrypted release record, rather than Docker's refs.
+  for (const route of ['/v1/housekeeping/images/prune', '/v1/system/prune-images']) {
+    const pruned = await api(route, { method: 'POST', token, body: route.includes('housekeeping') ? { danglingOnly: true } : undefined });
+    if (pruned.status !== 200) fail(`release-aware cleanup failed (${route}: ${pruned.status})`);
+    if (inner('image', 'inspect', firstImage, '--format', '{{.Id}}') !== firstImage) fail('cleanup removed a recorded untagged image');
+  }
+  docker(['restart', PANEL]);
+  for (let i = 0; i < 90; i++) {
+    try { if ((await api('/health')).status === 200) break; } catch { /* booting */ }
+    if (i === 89) fail('panel did not restart');
+    await sleep(1000);
+  }
+  const atRest = docker(['exec', PANEL, 'node', '--input-type=module', '-e', `import{readFileSync}from'node:fs';const b=readFileSync('/data/ninedeploy.db');if(b.includes(${JSON.stringify(oldSecret)}))process.exit(1);console.log('encrypted release storage verified');`]);
+  if (!atRest.includes('verified')) fail('resolved secret appeared in the database');
+  const rollback = await api(`${base}/deploys/${first}/rollback`, { method: 'POST', token });
+  if (rollback.status !== 200) fail(`recorded rollback refused (${rollback.status})`);
+  const pruned = await api(`${base}/deploys/${first}`, { method: 'DELETE', token });
+  if (pruned.status !== 200) fail('source history could not be pruned after copying the restore record');
+  await waitForDeploy(rollback.json.deploymentId);
+  if (inner('inspect', runtimeId, '--format', '{{.Image}}') !== firstImage) fail('restore used a mutable image tag');
+  if (inner('exec', runtimeId, 'cat', '/state/rendered') !== `old/${oldSecret}`) fail('restore did not preserve the recorded environment literally');
+  if (inner('exec', runtimeId, 'cat', '/state/persistent') !== 'newer-data') fail('restore changed persistent volume data');
+  for (const route of ['release', 'diff', 'logs/download']) {
+    const r = await api(`${base}/deploys/${rollback.json.deploymentId}/${route}`, { token });
+    if (r.status !== 200 || r.text.includes(oldSecret) || r.text.includes(newSecret) || r.text.includes('payloadEncrypted')) fail(`release ${route} response leaked or failed`);
+  }
+  step('restart + source pruning preserved the release; original image and environment restored, current volume data retained');
+
+  // Keep the inactive second release too, while actually deleting an
+  // unreferenced control image through the automatic-cleanup entry point.
+  inner('pull', 'busybox:1.35');
+  const controlImage = inner('image', 'inspect', 'busybox:1.35', '--format', '{{.Id}}');
+  if ([firstImage, secondImage].includes(controlImage)) fail('cleanup control is not a distinct image');
+  const images = await api('/v1/housekeeping/images', { token });
+  if (images.status !== 200 || !images.json?.images?.some(i => i.id === secondImage && i.releaseProtected && !i.inUse)) fail('inactive recorded image is not shown as release-protected');
+  const configured = await api('/v1/housekeeping/prune/config', { method: 'PATCH', token, body: { maxAgeHours: 1, pruneImages: true, pruneBuildCache: false, pruneContainers: false, pruneVolumes: false } });
+  if (configured.status !== 200) fail('release-aware automatic cleanup configuration failed');
+  const cleaned = await api('/v1/housekeeping/prune', { method: 'POST', token });
+  if (cleaned.status !== 200 || /failed|skipped/i.test(cleaned.json?.details?.imagesFreed ?? '')) fail('release-aware automatic cleanup failed');
+  if (inner('image', 'inspect', secondImage, '--format', '{{.Id}}') !== secondImage) fail('automatic cleanup removed an inactive recorded image');
+  if (inner('image', 'ls', '-q', '--no-trunc').split('\n').includes(controlImage)) fail('automatic cleanup did not remove the unreferenced control image');
+  step('manual dangling/system cleanup and automatic cleanup preserved recorded images while deleting the unreferenced control');
+
+  // An operator can still delete an image outside NineDeploy. Refuse BEFORE down/up.
+  inner('image', 'rm', '-f', secondImage);
+  const readiness = await api(`${base}/deploys/${second}/release`, { token });
+  if (readiness.status !== 200 || readiness.json?.available !== false || readiness.json?.imageAvailability !== 'missing' || readiness.json?.missingImageCount !== 1) fail('release metadata did not report the externally deleted image');
+  const missing = await api(`${base}/deploys/${second}/rollback`, { method: 'POST', token });
+  if (missing.status !== 400 || missing.json?.deploymentId) fail('missing-image restore was not refused before queueing');
+  if (inner('inspect', runtimeId, '--format', '{{.State.Running}}|{{.Image}}') !== `true|${firstImage}`) fail('missing-image restore changed the running stack');
+  if (inner('exec', runtimeId, 'cat', '/state/rendered') !== `old/${oldSecret}`) fail('missing-image refusal changed the environment');
+  step('pruned image refused before teardown; the previous stack kept running');
+  const deleted = await api(base, { method: 'DELETE', token });
+  if (deleted.status !== 200 && deleted.status !== 204) fail('recorded stack cleanup failed');
+  console.log('\n✓ Compose release smoke green: encrypted durable record → edited YAML/env/image → panel restart → copied restore → source pruning → exact image/env recovery → volume preservation → missing-image refusal');
+}
+
 async function main() {
   console.log(`User-journey smoke against ${IMAGE}`);
   step(`topology: network ${NET}, dind ${DIND}, panel ${PANEL} (:${PANEL_PORT})`);
@@ -1557,6 +1676,10 @@ async function main() {
   if (reg.status !== 200 || !reg.json?.tokens?.accessToken) fail(`register failed: ${reg.status} ${reg.text.slice(0, 200)}`);
   const token = reg.json.tokens.accessToken;
   step('first admin registered (operator)');
+  if (process.argv.includes('--compose-release-only')) {
+    await composeReleaseChecks(token);
+    return;
+  }
 
   // ── create a docker-image service ───────────────────────────────────────
   const svcRes = await api('/v1/services', { method: 'POST', token, body: {

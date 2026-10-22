@@ -12,7 +12,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../lib/audit.js';
 import { badRequest, unprocessable } from '../lib/errors.js';
-import { listImages, pruneImages } from '../lib/imageInventory.js';
+import { listReleaseImages, pruneReleaseImages } from '../lib/releaseImageRetention.js';
 
 const pruneBody = z.object({
   /** Keep at least this many images per repository. */
@@ -32,7 +32,7 @@ export const housekeepingImageRoutes: FastifyPluginAsync = async (app) => {
   // List every image on the host, with metadata.
   // GET /v1/housekeeping/images
   app.get('/images', async () => {
-    const rows = await listImages();
+    const rows = await listReleaseImages(app.db);
     return { images: rows, totalCount: rows.length, totalBytes: rows.reduce((acc, r) => acc + r.sizeBytes, 0) };
   });
 
@@ -53,7 +53,7 @@ export const housekeepingImageRoutes: FastifyPluginAsync = async (app) => {
     if (!opts.danglingOnly && !opts.keepLast && !opts.olderThanHours) {
       throw badRequest('Refusing to prune with no filter: set danglingOnly, keepLast, or olderThanHours');
     }
-    const result = await pruneImages(opts);
+    const result = await pruneReleaseImages(app.db, opts);
     void audit(
       app.db,
       req.user!.id,

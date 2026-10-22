@@ -20,6 +20,7 @@ const STATUS_BADGE: Record<QueueItem['status'], { label: string; tone: 'amber' |
   queued: { label: 'Queued', tone: 'amber' },
   building: { label: 'Building', tone: 'sky' },
   deploying: { label: 'Deploying', tone: 'indigo' },
+  awaiting_ci: { label: 'Waiting for CI', tone: 'amber' },
 };
 
 const POLL_MS = 3_000;
@@ -194,6 +195,7 @@ export function Deploys() {
             <Badge tone="sky">{counts.building} building</Badge>
             <Badge tone="indigo">{counts.deploying} deploying</Badge>
             <Badge tone="amber">{counts.queued} queued</Badge>
+            {!!counts.awaiting_ci && <Badge tone="amber">{counts.awaiting_ci} waiting for CI</Badge>}
             <span className="text-xs text-slate-500">
               auto-refresh {POLL_MS / 1000}s
             </span>

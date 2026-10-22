@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/mcp",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Official Model Context Protocol (MCP) server for NineDeploy AI integration",
   "license": "MIT",
   "repository": {
@@ -18,7 +18,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
   },
   "bin": {
     "ninedeploy-mcp": "./dist/index.js"

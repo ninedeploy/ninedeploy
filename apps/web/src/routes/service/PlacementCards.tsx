@@ -195,6 +195,7 @@ export function BuildPlacementCard({ svc }: { svc: ServiceDetail }) {
               A build away from where the service runs hands the image over by a sealed stream through the panel, verified by its
               digest. With a push registry it is pushed there and pulled on the target instead (a registry credential from Sources).
               Applied on the next deploy.
+              {' '}Repository-backed Docker builds on the panel or a capable node also archive their promotion artifact here. Node-built artifacts retain a verified image copy on the panel. A recorded registry digest can restore the same image after local cleanup; registry retention must keep that digest.
             </p>
           </form>
         )}

@@ -1,5 +1,5 @@
-import { and, DrizzleQueryError, eq, sql } from 'drizzle-orm';
-import { deployments, type DB } from '@ninedeploy/db';
+import { and, DrizzleQueryError, eq, inArray, sql } from 'drizzle-orm';
+import { deployments, type DB, type DeploymentArtifact } from '@ninedeploy/db';
 import { badRequest } from './errors.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
 import { approvalStamp } from './protectedLanes.js';
@@ -48,7 +48,7 @@ export async function assertMayEnqueueDeploy(
 ): Promise<void> {
   await assertMayDeployStoredService(db, user, service);
   const queuedRows = await db.query.deployments.findMany({
-    where: and(eq(deployments.serviceId, service.id), eq(deployments.status, 'queued')),
+    where: and(eq(deployments.serviceId, service.id), inArray(deployments.status, ['queued', 'awaiting_ci'])),
     columns: { id: true },
   });
   if (queuedRows.length >= MAX_QUEUED_PER_SERVICE) {
@@ -68,7 +68,7 @@ export async function enqueueUserDeploy(
   db: DB,
   user: AuthedUser,
   service: EnqueueTarget,
-  values: { message: string; commitSha?: string | null; imageDigest?: string | null },
+  values: { message: string; commitSha?: string | null; imageDigest?: string | null; restoredFromDeploymentId?: number; artifact?: DeploymentArtifact; promotionSourceDeploymentId?: number },
   opts: { subject?: string; selfApproval?: boolean } = {},
 ): Promise<number> {
   await assertMayEnqueueDeploy(db, user, service, opts);
@@ -100,10 +100,12 @@ export async function enqueueUserDeploy(
       // Recheck inside the insert: a concurrent enqueue may fill the last slot.
       // NULL makes the existing trigger constraint abort that losing insert.
       trigger: sql`(select case when count(*) < ${MAX_QUEUED_PER_SERVICE} then 'user' else null end
-        from ${deployments} where ${deployments.serviceId} = ${service.id} and ${deployments.status} = 'queued')`,
+        from ${deployments} where ${deployments.serviceId} = ${service.id} and ${deployments.status} in ('queued', 'awaiting_ci'))`,
       message: values.message,
       ...(values.commitSha !== undefined ? { commitSha: values.commitSha } : {}),
       ...(values.imageDigest !== undefined ? { imageDigest: values.imageDigest } : {}),
+      ...(values.restoredFromDeploymentId !== undefined ? { restoredFromDeploymentId: values.restoredFromDeploymentId } : {}),
+      ...(values.artifact !== undefined ? { artifact: values.artifact, promotionSourceDeploymentId: values.promotionSourceDeploymentId } : {}),
       ...review,
     })
     .returning({ id: deployments.id })

@@ -130,6 +130,8 @@ const CRASH_LOOP_RESTARTS = 3;
 export interface PrebuiltImage {
   tag: string;
   imageId: string;
+  builtWithNixpacks?: boolean;
+  builtStatic?: boolean;
 }
 
 // ── 0.16 T3 node builds (design §2.2) ──
@@ -414,6 +416,7 @@ export function createRemoteDockerBuilder(
       // placement lands, so every deploy takes the branches below as before.
       if (opts.prebuiltImage) {
         target = opts.prebuiltImage.tag;
+        builtWithNixpacks = opts.prebuiltImage.builtWithNixpacks ?? false;
         log(`Running ${target} (${opts.prebuiltImage.imageId.slice(0, 19)}), built elsewhere and shipped to the node …`);
       } else
       // ── end 0.16 T4 ──
@@ -464,13 +467,13 @@ export function createRemoteDockerBuilder(
       // Dockerfile-less source deploy gets a port and therefore a route.
       let runService = service;
       let runEnv = env;
-      if (builtWithNixpacks) {
-        const port = service.port ?? DEFAULT_NIXPACKS_PORT;
+      if (builtWithNixpacks || opts.prebuiltImage?.builtStatic) {
+        const port = service.port ?? (opts.prebuiltImage?.builtStatic ? 80 : DEFAULT_NIXPACKS_PORT);
         if (service.port == null) {
-          log(`No container port configured; using Nixpacks default ${port}/tcp for runtime and Traefik`);
+          log(`No container port configured; using ${opts.prebuiltImage?.builtStatic ? 'static image' : 'Nixpacks'} default ${port}/tcp for runtime and Traefik`);
           runService = { ...service, port };
         }
-        if (env['PORT'] === undefined) runEnv = { ...env, PORT: String(port) };
+        if (builtWithNixpacks && env['PORT'] === undefined) runEnv = { ...env, PORT: String(port) };
       }
 
       // 0.16.6: container options travel on docker.runSpec when the agent
@@ -493,7 +496,30 @@ export function createRemoteDockerBuilder(
         files: ctx.nodeFiles ?? [],
       });
 
+      if (opts.prebuiltImage && target === opts.prebuiltImage.imageId) {
+        try {
+          const actual = (await agent('docker.inspect', { name, format: 'image' }, () => undefined)).lines.filter(line => line.trim()).at(-1)?.trim();
+          if (actual !== opts.prebuiltImage.imageId) throw new Error('Runtime image identity does not match the recorded artifact');
+        } catch (err) {
+          await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
+          throw err;
+        }
+      }
+
+      let sourceImageId: string | undefined;
+      if (ctx.recordDockerArtifact && !service.image) {
+        try {
+          const actual = (await agent('docker.inspect', { name, format: 'image' }, () => undefined)).lines.filter(line => line.trim()).at(-1)?.trim();
+          if (!actual || !/^sha256:[a-f0-9]{64}$/.test(actual)) throw new Error('unreadable image ID');
+          if (opts.prebuiltImage && actual !== opts.prebuiltImage.imageId) throw new Error('placed build image changed');
+          sourceImageId = actual;
+        } catch {
+          log('Node artifact image could not be observed; this deployment continues without an artifact record');
+        }
+      }
+
       return {
+        ...(sourceImageId ? { artifactBuild: { builtWithNixpacks, builtStatic: opts.prebuiltImage?.builtStatic ?? false } } : {}),
         runtimeId: name,
         port: resolvedPort,
         healthPath: service.healthPath ?? '/',
@@ -503,7 +529,7 @@ export function createRemoteDockerBuilder(
         // pinning while a rollback re-pulled whatever the tag points at today.
         // The node offers no repo-digest lookup, so an unpinned release
         // records none and rollback honestly means "this tag".
-        imageDigest: service.image && /@sha256:[0-9a-f]{64}$/i.test(target) ? target : undefined,
+        imageDigest: sourceImageId ?? (opts.prebuiltImage && target === opts.prebuiltImage.imageId ? opts.prebuiltImage.imageId : (service.image && /@sha256:[0-9a-f]{64}$/i.test(target) ? target : undefined)),
         // 0.16.4: the command runs as the container's Docker healthcheck; the state poll waits for "healthy".
         ...(runService.healthCheck === 'command' && runService.healthCommand?.trim()
           ? { healthCheck: 'command' as const, healthCommand: runService.healthCommand.trim() }

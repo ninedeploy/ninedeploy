@@ -326,18 +326,19 @@ describe('system resources routes', () => {
   });
 
   it('prunes images', async () => {
+    execMocks.capture.mockResolvedValue('');
     const app = await appWith();
     const res = await app.inject({ method: 'POST', url: '/prune-images', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
-    expect(execMocks.run).toHaveBeenCalled();
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], { timeoutMs: 300_000 });
   });
 
-  it('prune succeeds even when docker fails', async () => {
-    execMocks.run.mockRejectedValueOnce(new Error('down'));
+  it('reports a failed cleanup instead of claiming success', async () => {
+    execMocks.capture.mockRejectedValueOnce(new Error('down'));
     const app = await appWith();
     const res = await app.inject({ method: 'POST', url: '/prune-images', headers: asUser() });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(500);
   });
 
   it('reports the update-check result (force flag forwarded)', async () => {

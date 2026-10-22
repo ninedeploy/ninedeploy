@@ -336,10 +336,11 @@ const STATUS_TONES: Record<string, string> = {
   asleep: 'bg-sky-500/15 text-sky-300 ring-sky-500/20',
   // 0.16.13: a deploy into an approval-gated lane, waiting for an admin.
   awaiting_approval: 'bg-violet-500/15 text-violet-300 ring-violet-500/20',
+  awaiting_ci: 'bg-amber-500/15 text-amber-300 ring-amber-500/20',
 };
 
 /** Statuses whose wire name is not the words to show. */
-const STATUS_LABELS: Record<string, string> = { awaiting_approval: 'awaiting approval' };
+const STATUS_LABELS: Record<string, string> = { awaiting_approval: 'awaiting approval', awaiting_ci: 'waiting for CI' };
 
 /** States with work in flight: their dot pulses. */
 const BUSY_STATUSES = new Set(['deploying', 'building', 'queued', 'pending', 'deleting']);
@@ -672,6 +673,7 @@ export function ConfirmDialog({
   message,
   confirmLabel = 'Delete',
   confirmWord,
+  confirmDisabled = false,
   onConfirm,
   onClose,
 }: {
@@ -680,6 +682,7 @@ export function ConfirmDialog({
   message: ReactNode;
   confirmLabel?: string;
   confirmWord?: string;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -705,7 +708,7 @@ export function ConfirmDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" disabled={fired || (confirmWord != null && word !== confirmWord)} onClick={() => { setFired(true); onConfirm(); onClose(); }}>
+          <Button variant="danger" disabled={confirmDisabled || fired || (confirmWord != null && word !== confirmWord)} onClick={() => { setFired(true); onConfirm(); onClose(); }}>
             {confirmLabel}
           </Button>
         </>

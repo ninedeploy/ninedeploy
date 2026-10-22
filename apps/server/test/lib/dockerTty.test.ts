@@ -180,14 +180,17 @@ describe('D1: the runtime image has no python3, so 0.14 never had a PTY in docke
   });
 
   it('the runtime stage is a Debian slim image and installs no python', () => {
-    // `node:*-slim` ships without python3 (the build stage installs it for
-    // native modules and documents exactly that); the runtime stage installs
-    // only ca-certificates, curl, docker-cli, git and tini.
-    expect(runtime!.split('\n')[0]).toMatch(/^node:\S*-slim\s+AS\s+runtime/i);
-    expect(runtime!).not.toMatch(/python/i);
-    const installs = [...runtime!.matchAll(/apt-get install[^\n]*(?:\\\n[^\n]*)*/g)].map((m) => m[0]);
-    expect(installs.length).toBeGreaterThan(0);
-    for (const line of installs) expect(line).not.toMatch(/python/);
+    // The runtime inherits the shared security-patched Node stage. Check its
+    // ancestry too: Python must never arrive indirectly from the build stage.
+    expect(runtime!.split('\n')[0]).toMatch(/^secure-node\s+AS\s+runtime/i);
+    const base = stages.find((s) => /^node:\S*-slim\s+AS\s+secure-node\b/i.test(s));
+    expect(base).toBeDefined();
+    for (const stage of [runtime!, base!]) {
+      expect(stage).not.toMatch(/python/i);
+      const installs = [...stage.matchAll(/apt-get install[^\n]*(?:\\\n[^\n]*)*/g)].map((m) => m[0]);
+      expect(installs.length).toBeGreaterThan(0);
+      for (const line of installs) expect(line).not.toMatch(/python/);
+    }
     // …while python3 exists only in the build stage, which the runtime does not inherit.
     const build = stages.find((s) => /^\S+\s+AS\s+build\b/im.test(s));
     expect(build).toMatch(/python3/);

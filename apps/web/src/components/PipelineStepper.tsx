@@ -128,7 +128,9 @@ export function PipelineStepper({
               {isZeroDowntimeLive
                 ? 'All traffic is now served by the new release.'
                 : deployStatus === 'failed'
-                  ? 'The health check failed and traffic stayed on the previous release.'
+                  ? 'The deployment failed. Inspect its CI results and output for the failed step.'
+                  : deployStatus === 'awaiting_ci'
+                    ? 'Waiting for required CI workflows on the pinned commit. The current release stays live.'
                   : deployStatus === 'awaiting_approval'
                     ? 'Waiting for a workspace admin to approve this deploy. The current release stays live.'
                     : 'The current release stays live while the new container is prepared.'}
@@ -162,7 +164,9 @@ export function PipelineStepper({
             {isZeroDowntimeLive
               ? 'Live'
               : deployStatus === 'failed'
-                ? 'Rolled back'
+                ? 'Failed'
+                : deployStatus === 'awaiting_ci'
+                  ? 'Waiting for CI'
                 : deployStatus === 'awaiting_approval'
                   ? 'Awaiting approval'
                   : 'Deploying'}

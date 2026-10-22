@@ -39,6 +39,8 @@ export interface ImageInfo {
   dangling: boolean;
   /** True when at least one container (running or stopped) uses the image. */
   inUse: boolean;
+  /** Referenced by a retained encrypted Compose release record. */
+  releaseProtected: boolean;
 }
 
 export interface PruneOptions {
@@ -50,6 +52,13 @@ export interface PruneOptions {
   danglingOnly?: boolean;
   /** Report what would be deleted without actually deleting. */
   dryRun?: boolean;
+  /** Internal: auto-prune includes untagged images as well as tagged ones. */
+  includeDangling?: boolean;
+}
+
+export interface ImageCommands {
+  capture: typeof capture;
+  run: typeof run;
 }
 
 export interface PruneResult {
@@ -71,12 +80,13 @@ export interface PruneResult {
  * each line, which is the only way to get the exact byte
  * counts and the per-image id in a single round-trip.
  */
-export async function listImages(): Promise<ImageInfo[]> {
+export async function listImages(releaseImages: ReadonlySet<string> = new Set(), execution?: ImageCommands): Promise<ImageInfo[]> {
+  const commands = execution ?? { capture, run };
   let raw: string;
   try {
     // `--format '{{json .}}'` is supported on every supported
     // docker engine version; one JSON object per line.
-    raw = await capture('docker', [
+    raw = await commands.capture('docker', [
       'image',
       'ls',
       '--no-trunc',
@@ -117,6 +127,7 @@ export async function listImages(): Promise<ImageInfo[]> {
       ageHours,
       dangling: repository === '<none>' && tag === '<none>',
       inUse: false, // populated in the second pass below
+      releaseProtected: releaseImages.has(id),
     });
     if (id) ids.add(id);
   }
@@ -124,7 +135,7 @@ export async function listImages(): Promise<ImageInfo[]> {
   // Second pass: `docker ps -aq` + `docker inspect` report which images are in use.
   // A single round-trip covers every container, including ones
   // NineDeploy did not start (operator's own side-car work).
-  const inUse = await inUseImageIds(ids);
+  const inUse = await inUseImageIds(ids, commands);
   for (const r of rows) r.inUse = inUse.has(r.id);
 
   return rows;
@@ -141,13 +152,14 @@ export async function listImages(): Promise<ImageInfo[]> {
  * On `dryRun`, no `rm` is issued — the candidate set is
  * returned in `removed` so the caller can render it.
  */
-export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult> {
+export async function pruneImages(opts: PruneOptions = {}, releaseImages: ReadonlySet<string> = new Set(), execution?: ImageCommands): Promise<PruneResult> {
+  const commands = execution ?? { capture, run };
   const keepLast = Math.max(0, opts.keepLast ?? 0);
   const olderThanHours = opts.olderThanHours ?? 0;
   const danglingOnly = opts.danglingOnly ?? false;
   const dryRun = opts.dryRun ?? false;
 
-  const images = await listImages();
+  const images = await listImages(releaseImages, commands);
 
   // 1. Dangling-only path.
   if (danglingOnly) {
@@ -155,16 +167,16 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
     // When keepLast is set, docker image prune -f cannot honour the keep window —
     // it has no --keep-last equivalent. Filter dangling candidates client-side
     // and delete only the unprotected ones via docker image rm.
-    if (dryRun || keepLast > 0) {
+    if (dryRun || keepLast > 0 || releaseImages.size > 0) {
       const dangling = images.filter(img => img.dangling);
       dangling.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const toDelete = (keepLast < dangling.length ? dangling.slice(keepLast) : [])
-        .filter(img => !img.inUse && (olderThanHours <= 0 || img.ageHours >= olderThanHours));
+        .filter(img => !img.inUse && !releaseImages.has(img.id) && (olderThanHours <= 0 || img.ageHours >= olderThanHours));
       const freedBytes = toDelete.reduce((sum, img) => sum + parseHumanBytes(img.size), 0);
       const removed: string[] = [];
       if (!dryRun && toDelete.length > 0) {
         try {
-          await run('docker', ['image', 'rm', ...toDelete.map(img => img.id)], {}, () => {});
+          await commands.run('docker', ['image', 'rm', ...toDelete.map(img => img.id)], { timeoutMs: 60_000 }, () => {});
           removed.push(...toDelete.map(img => img.id));
         } catch (err) {
           throw new Error(`docker image rm failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -184,7 +196,7 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
     if (olderThanHours > 0) args.push('--filter', `until=${olderThanHours}h`);
     let out: string;
     try {
-      out = await capture('docker', args);
+      out = await commands.capture('docker', args, { timeoutMs: 300_000 });
     } catch (err) {
       throw new Error(`docker image prune failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -233,8 +245,9 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
   const candidates: ImageInfo[] = [];
   for (const img of images) {
     if (img.inUse) continue;
+    if (releaseImages.has(img.id)) continue;
     if (protectedIds.has(img.id)) continue;
-    if (img.dangling) continue;
+    if (img.dangling && !opts.includeDangling) continue;
     if (olderThanHours > 0 && img.ageHours < olderThanHours) continue;
     candidates.push(img);
   }
@@ -257,7 +270,7 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
   const sink = (_line: string): void => undefined;
   const stillExists = async (id: string): Promise<boolean> => {
     try {
-      await capture('docker', ['image', 'inspect', id, '--format', '{{.Id}}']);
+      await commands.capture('docker', ['image', 'inspect', id, '--format', '{{.Id}}']);
       return true;
     } catch {
       return false;
@@ -267,7 +280,7 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
     const slice = candidates.slice(i, i + CHUNK);
     const args = ['image', 'rm', ...slice.map((c) => c.id)];
     try {
-      await run('docker', args, { timeoutMs: 60_000 }, sink);
+      await commands.run('docker', args, { timeoutMs: 60_000 }, sink);
       for (const c of slice) {
         removed.push(c.id);
         removedLabels.push(`${c.repository}:${c.tag}`);
@@ -300,7 +313,7 @@ export async function pruneImages(opts: PruneOptions = {}): Promise<PruneResult>
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-async function inUseImageIds(allIds: Set<string>): Promise<Set<string>> {
+async function inUseImageIds(allIds: Set<string>, commands: ImageCommands): Promise<Set<string>> {
   if (allIds.size === 0) return new Set();
   // r311: `docker ps --format '{{.Image}}'` is NOT the image id — it is the
   // reference the container was started from (`nginx:1.27`, `ghcr.io/o/a`),
@@ -313,7 +326,7 @@ async function inUseImageIds(allIds: Set<string>): Promise<Set<string>> {
   // refuses those images too, so the dry-run must not offer them either.
   let raw: string;
   try {
-    raw = await capture('docker', ['ps', '-aq', '--no-trunc']);
+    raw = await commands.capture('docker', ['ps', '-aq', '--no-trunc']);
   } catch {
     return new Set();
   }
@@ -329,14 +342,14 @@ async function inUseImageIds(allIds: Set<string>): Promise<Set<string>> {
   for (let i = 0; i < containers.length; i += CHUNK) {
     const slice = containers.slice(i, i + CHUNK);
     try {
-      collect(await capture('docker', ['inspect', '--format', '{{.Image}}', ...slice]));
+      collect(await commands.capture('docker', ['inspect', '--format', '{{.Image}}', ...slice]));
     } catch {
       // A container removed between `ps` and `inspect` fails the whole
       // batch (docker exits 1 and capture drops stdout). Re-ask one by one
       // so the survivors still count; a vanished container holds no image.
       for (const c of slice) {
         try {
-          collect(await capture('docker', ['inspect', '--format', '{{.Image}}', c]));
+          collect(await commands.capture('docker', ['inspect', '--format', '{{.Image}}', c]));
         } catch {
           /* container gone */
         }

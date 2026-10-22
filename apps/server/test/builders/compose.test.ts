@@ -4,12 +4,13 @@ import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { composeBuilder } from '../../src/engine/builders/compose.js';
 import { NOW } from '../helpers.js';
+import { createComposeRelease } from '../../src/lib/composeRelease.js';
 
 const h = vi.hoisted(() => {
   const run = vi.fn(async (_cmd: string, _args: unknown[], _opts: unknown, sink?: (line: string) => void) => {
     sink?.('');
   });
-  const capture = vi.fn(async () => 'running');
+  const capture = vi.fn(async (_cmd: string, _args: unknown[], _opts?: unknown) => 'running');
   return { run, capture };
 });
 vi.mock('../../src/lib/exec.js', () => ({ run: h.run, sleep: vi.fn(async () => undefined), capture: h.capture }));
@@ -26,6 +27,48 @@ const makeCtx = (over: Record<string, unknown> = {}) => ({
   env: { TOKEN: 'secret-value' },
   log: vi.fn(),
   ...over,
+});
+
+describe('recorded Compose runtime', () => {
+  const image = `sha256:${'a'.repeat(64)}`;
+  const input = () => createComposeRelease({ serviceId: 3, slug: 'stack', composeService: 'api', runtimeId: 'ndcmp-stack-api-1', port: 3000, healthPath: '/' }, JSON.stringify({ services: { api: { image: 'example:latest', environment: { TOKEN: 'snapshot-secret' } } } }), { api: image });
+  beforeEach(() => {
+    h.run.mockReset();
+    h.run.mockResolvedValue(undefined);
+    h.capture.mockReset();
+    h.capture.mockImplementation(async (_cmd, raw) => {
+      const args = raw as string[];
+      if (args[0] === 'image') return image;
+      if (args[0] === 'inspect') return `api|${image}`;
+      if (args.includes('config')) return JSON.stringify({ services: { api: { image: 'example:latest', environment: { TOKEN: 'snapshot-secret' } } } });
+      if (args.includes('-aq')) return 'a'.repeat(64);
+      return JSON.stringify({ Name: 'ndcmp-stack-api-1', State: 'running' });
+    });
+  });
+  afterAll(() => { h.capture.mockReset(); h.capture.mockResolvedValue('running'); });
+
+  it('records the actual running image and resolved environment without logging secrets', async () => {
+    const ctx = makeCtx({ service: { id: 3, slug: 'stack', composeService: 'api', composeContent: 'services: {}', port: 3000, healthPath: '/' } });
+    const runtime = await composeBuilder.buildAndRun(ctx as never);
+    expect(runtime.composeRelease).toEqual(input());
+    expect(JSON.stringify(ctx.log.mock.calls)).not.toContain('snapshot-secret');
+  });
+
+  it('restores only local pinned images, skipping pulls and builds', async () => {
+    await composeBuilder.buildAndRun(makeCtx({ restoreComposeRelease: input(), env: {}, volumeAttachments: [] }) as never);
+    const commands = h.run.mock.calls.map(c => c[1] as string[]);
+    expect(commands.some(a => a.includes('pull') || a.includes('build'))).toBe(false);
+    expect(commands.find(a => a.includes('up'))).toEqual(expect.arrayContaining(['--pull', 'never', '--no-build']));
+    expect(commands.some(a => a.includes('down'))).toBe(true);
+    expect(h.capture).toHaveBeenCalledWith('docker', ['image', 'inspect', image, '--format', '{{.Id}}'], expect.objectContaining({ timeoutMs: 30_000 }));
+  });
+
+  it('refuses a pruned image before stopping or replacing the running project', async () => {
+    h.capture.mockRejectedValueOnce(new Error('No such image'));
+    await expect(composeBuilder.buildAndRun(makeCtx({ restoreComposeRelease: input(), env: {} }) as never)).rejects.toThrow('No such image');
+    const commands = h.run.mock.calls.map(c => c[1] as string[]);
+    expect(commands.some(a => a.includes('down') || a.includes('up') || a.includes('pull') || a.includes('build'))).toBe(false);
+  });
 });
 
 describe('composeBuilder.buildAndRun', () => {

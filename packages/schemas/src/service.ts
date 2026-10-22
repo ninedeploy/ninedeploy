@@ -640,11 +640,24 @@ export const DEPLOYMENT_STATUSES = [
   'failed',
   'cancelled',
   'awaiting_approval',
+  'awaiting_ci',
 ] as const;
 export type DeploymentStatus = (typeof DEPLOYMENT_STATUSES)[number];
 
 /** A deploy that has ended: nothing will happen to it on its own any more. */
 export const FINISHED_DEPLOYMENT_STATUSES = ['running', 'superseded', 'failed', 'cancelled'] as const;
+
+export const deploymentCiSummary = z.object({
+  state: z.enum(['waiting', 'passed', 'failed']),
+  reason: z.string(),
+  headSha: z.string().nullable(),
+  checkedAt: z.string().datetime().nullable(),
+  deadlineAt: z.string().datetime(),
+  checks: z.array(z.object({
+    path: z.string(), state: z.enum(['missing', 'pending', 'success', 'failure']),
+    runId: z.number().nullable(), attempt: z.number().nullable(),
+  })),
+});
 
 export const deployment = z.object({
   id: z.number().int(),
@@ -659,6 +672,8 @@ export const deployment = z.object({
   /** 0.16.13: who approved or rejected a deploy that waited for approval, and when (absent on older panels; null when it never waited). */
   reviewedBy: z.string().nullable().optional(),
   reviewedAt: z.string().datetime().nullable().optional(),
+  ciGate: deploymentCiSummary.nullable().optional(),
+  artifact: z.object({ imageId: z.string(), originDeploymentId: z.number().int(), originServerId: z.number().int().positive().optional(), promotionSourceDeploymentId: z.number().int().nullable(), registryRef: z.string().optional() }).nullable().optional(),
 });
 export type Deployment = z.infer<typeof deployment>;
 
@@ -674,7 +689,7 @@ export const queueItem = z.object({
   id: z.number().int(),
   serviceId: z.number().int(),
   serviceName: z.string(),
-  status: z.enum(['queued', 'building', 'deploying']),
+  status: z.enum(['queued', 'building', 'deploying', 'awaiting_ci']),
   commitSha: z.string().nullable(),
   imageDigest: z.string().nullable(),
   message: z.string().nullable(),
@@ -716,6 +731,7 @@ export const queueResponse = z.object({
     queued: z.number().int(),
     building: z.number().int(),
     deploying: z.number().int(),
+    awaiting_ci: z.number().int().optional(),
   }),
 });
 export type QueueResponse = z.infer<typeof queueResponse>;

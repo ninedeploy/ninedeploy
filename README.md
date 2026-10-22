@@ -10,8 +10,8 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.17.0-blue.svg)](./CHANGELOG.md)
-[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-green.svg)](https://nodejs.org)
+[![Release](https://img.shields.io/badge/Release-0.17.1-blue.svg)](./CHANGELOG.md)
+[![Node.js](https://img.shields.io/badge/Node.js-22.23.4%2B%20%7C%2024.22.1%2B%20%7C%2026.12.1%2B-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
 [![Tests](https://img.shields.io/badge/Tests-13%2C000%20passing-brightgreen.svg)](#testing)
@@ -46,7 +46,7 @@ drive Docker on one host, and optionally on a handful of remote ones.
 | | |
 | :--- | :--- |
 | **Host** | Linux. The installer handles Debian/Ubuntu end to end (signed APT repos for Node and Docker); other distributions work if Node and Docker are already present. |
-| **Runtime** | Node.js ≥ 22.13 (bare-metal mode only), Docker Engine + the Compose plugin. |
+| **Runtime** | Node.js 22.23.4+, 24.22.1+ or 26.12.1+ within those supported majors (bare-metal mode only); Docker Engine + the Compose plugin. Docker/CI use Node 26.12.1. |
 | **Ports** | `80`/`443` free for Traefik. The panel listens on port `3000` over plain HTTP. **Since 0.16 a fresh install publishes it on `0.0.0.0` in both modes** and prints `http://<server-ip>:3000` plus a one-time **setup token** that the first-admin form requires (pass `--private` to keep it on `127.0.0.1`). Upgrades keep their bind: older Docker installs stay on `127.0.0.1` (`NINEDEPLOY_BIND`), bare metal on `NINEDEPLOY_HOST`. Once a domain with HTTPS is attached, set the bind to `127.0.0.1`. The panel's **Doctor** page (`GET /v1/doctor`) warns when the panel listens on a non-loopback address over plain HTTP. |
 | **Privileges** | `sudo` for the installer in **both** modes. Bare metal uses it for the systemd unit, firewall and optional PM2. Docker mode still uses it for base packages and Docker itself (`apt-get`, `systemctl enable docker`), swap, `ufw` rules for 22/80/443, stopping a stock `apache2`/`nginx` that holds 80/443 on a fresh host, and creating `/opt/ninedeploy-docker`. Membership in the `docker` group is enough only for running and upgrading the stack with `docker compose` afterwards. |
 
@@ -70,12 +70,12 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.17.0     # pin an exact tag
+./install.sh --version v0.17.1     # pin an exact tag
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```
 
-> **Where `main` stands:** the default channel installs the newest release tag (**0.17.0**).
+> **Where `main` stands:** the default channel installs the newest release tag (**0.17.1**).
 > Work lands on `main` before it is tagged — see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*
 > (empty right now), or run `--channel main` to get it today.
 
@@ -281,8 +281,10 @@ Watch paths, `[skip ci]` handling, cancellation and PR previews: [**docs/DEPLOYM
 
 ### Deployments
 
-- **Blue-green with automatic rollback** for Docker services, plus one-click rollback to any prior
-  deploy by pinned digest.
+- **Blue-green with automatic rollback** for Docker services. Manual rollback redeploys a recorded
+  commit or image using current settings and environment.
+- **Recorded inline Compose restores (0.17.1):** encrypted resolved configuration/environment
+  and pinned local images, with [explicit recovery limits](docs/DEPLOYMENTS.md#recorded-compose-releases-0171).
 - **Three runtimes:** containers, PM2 host processes, and Compose stacks (`ndcmp-` prefixed). PM2 and
   Compose are host-privileged and therefore operator-only.
 - **Ephemeral PR previews** — a pull request spins up `service-pr-123` with the parent's non-secret
@@ -609,15 +611,15 @@ pnpm build && RUN_INTEGRATION=1 pnpm --filter @ninedeploy/server exec vitest run
 
 | Package | Files | Tests | Coverage floor (stmts/branch/func/lines) |
 | :--- | ---: | ---: | :--- |
-| `apps/server` | 500 | 8,734 | 93.25 / 87.3 / 91 / 95.1 |
-| `apps/web` | 162 | 2,332 | 97.5 / 91.5 / 97.5 / 97.5 |
-| `apps/cli` | 54 | 984 | 83 / 80 / 80 / 83 |
+| `apps/server` | 505 | 8,817 | 93.25 / 87.3 / 91 / 95.1 |
+| `apps/web` | 162 | 2,335 | 97.5 / 91.5 / 97.5 / 97.5 |
+| `apps/cli` | 54 | 985 | 83 / 80 / 80 / 83 |
 | `packages/schemas` | 24 | 510 | 100 |
-| `packages/sdk` | 18 | 331 | 100 |
+| `packages/sdk` | 19 | 333 | 100 |
 | `packages/mcp` | 2 | 47 | 90 / 80 / 95 / 95 |
-| `packages/db` | 13 | 55 | 100 |
+| `packages/db` | 14 | 56 | 100 |
 | `packages/plugin-sdk` | 1 | 7 | 100 |
-| **Total** | **774** | **13,000** | |
+| **Total** | **781** | **13,090** | |
 
 Unit and route suites only — the server's seven testcontainers integration files (real Postgres,
 MySQL, Redis and MongoDB backup/restore, a deploy end-to-end, a compose-stack deploy and a volume

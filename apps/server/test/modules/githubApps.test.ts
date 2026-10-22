@@ -113,7 +113,7 @@ describe('POST /manifest', () => {
       redirect_url: 'https://panel.example.com/github-apps/callback',
       setup_url: 'https://panel.example.com/github-apps/installed',
       setup_on_update: true,
-      default_permissions: { contents: 'read', metadata: 'read', pull_requests: 'write', statuses: 'write' },
+      default_permissions: { contents: 'read', metadata: 'read', actions: 'read', pull_requests: 'write', statuses: 'write' },
       default_events: ['push', 'pull_request'],
     });
     expect(body.manifest.default_permissions.checks).toBeUndefined();

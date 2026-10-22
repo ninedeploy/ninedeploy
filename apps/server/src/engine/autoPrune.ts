@@ -5,6 +5,7 @@ import { getSettingJson, getSettingString, setSettingJson, setSettingString } fr
 import { run } from '../lib/exec.js';
 import { replicaNames } from './dockerNames.js';
 import { config } from '../config.js';
+import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 
 export const DEFAULT_AUTOPRUNE_CONFIG: AutoPruneConfig = {
   enabled: true,
@@ -175,9 +176,9 @@ export async function executeAutoPrune(
 
   if (cfg.pruneImages) {
     try {
-      const res = await actualRunner('docker', ['image', 'prune', '-af', '--filter', filterUntil]);
-      totalFreed += parseReclaimedBytes(res.stdout);
-      details.imagesFreed = res.stdout.trim() || 'No images pruned';
+      const res = await pruneReleaseImages(db, { includeDangling: true, olderThanHours: cfg.maxAgeHours }, actualRunner);
+      totalFreed += res.freedBytes;
+      details.imagesFreed = res.output.trim() || 'No images pruned';
     } catch {
       details.imagesFreed = 'Prune images failed or skipped';
     }

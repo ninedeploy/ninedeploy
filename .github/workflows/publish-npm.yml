@@ -73,9 +73,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 26
+          node-version: 26.12.1
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify Node security baseline
+        run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { deployments, services, users } from '@ninedeploy/db';
+import { deployments, services, users, type DB } from '@ninedeploy/db';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { diffLines, renderDiff } from '../lib/diff.js';
 import { buildEnv, capture } from '../lib/exec.js';
@@ -16,6 +16,10 @@ import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertMayDeployStoredService } from '../lib/hostPrivilege.js';
 import { enqueueUserDeploy } from '../lib/deployQueue.js';
+import { ciSummary } from '../lib/ciGate.js';
+import { artifactRuntimeService, artifactSummary, assertArtifactAvailable, assertArtifactTarget, parseDockerArtifact } from '../lib/dockerArtifact.js';
+import { withReleaseImageLock } from '../lib/releaseImageRetention.js';
+import { assertReleaseTarget, checkReleaseImages, readReleaseRecord, storeReleaseRecord } from '../lib/releaseRecords.js';
 import { assertRemoteDatabaseReachable, assertRemoteDeploySupported, assertRemoteServiceSupported } from '../lib/remoteDeploy.js';
 import { assertServiceRole, visibleServiceIdSet } from '../lib/resourceAccess.js';
 import { assertMaySeeLaneSecrets, isLaneAdmin, maySeeLaneSecrets } from '../lib/protectedLanes.js';
@@ -30,7 +34,7 @@ import { localSwarmTaskFor, swarmRuntimeOf } from '../lib/swarm.js';
  * Shared by cancel (which is the only legal transition out of them) and delete
  * (which refuses them outright).
  */
-const IN_FLIGHT_STATUSES = ['queued', 'building', 'deploying'] as const;
+const IN_FLIGHT_STATUSES = ['queued', 'building', 'deploying', 'awaiting_ci'] as const;
 
 /** True while the worker or the pipeline may still write to this row. */
 const isInFlight = (status: string): boolean =>
@@ -47,6 +51,9 @@ const isCancellable = (status: string): boolean =>
 const promoteInput = z.object({
   /** The service to redeploy at this lane's pinned commit. */
   targetServiceId: z.number().int().positive(),
+  mode: z.enum(['commit', 'artifact']).default('commit'),
+  /** Refuse a stale browser selection rather than promote a newer release. */
+  sourceDeploymentId: z.number().int().positive().optional(),
 });
 
 export const deploysRoutes: FastifyPluginAsync = async (app) => {
@@ -109,7 +116,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     await assertMayDeployStoredService(app.db, req.user!, target);
     assertRemoteDeploySupported(target);
     await assertRemoteDatabaseReachable(app.db, target);
-    await assertRemoteServiceSupported(app.db, target);
+    await assertRemoteServiceSupported(app.db, input.mode === 'artifact' ? artifactRuntimeService(target) : target);
     // Same repository is the promotion invariant: the target redeploys at the
     // source's pinned SHA, which only makes sense over a shared history.
     // F534: a repo-less target (image / inline compose) never checks the SHA
@@ -123,6 +130,31 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!latest?.commitSha) {
       throw badRequest('Source has no running deployment with a pinned commit — deploy it first');
+    }
+    if (input.sourceDeploymentId != null && input.sourceDeploymentId !== latest.id) {
+      throw badRequest('Source release changed; refresh deployment history before promoting');
+    }
+    if (input.mode === 'artifact') {
+      // Build-time values can be baked into the image. Moving that image to
+      // another service must not export a protected lane's secrets.
+      await assertMaySeeLaneSecrets(app.db, source, req.user!, 'build artifacts');
+      let artifact: ReturnType<typeof parseDockerArtifact>;
+      try {
+        artifact = parseDockerArtifact(latest.artifact);
+        if (artifact.repoUrl !== source.repoUrl || artifact.commitSha !== latest.commitSha) throw new Error('Source artifact no longer matches the running release');
+        await assertArtifactTarget(app.db, artifact, target);
+      } catch (err) {
+        throw badRequest(err instanceof Error && !(err instanceof z.ZodError) ? err.message : 'Source has no recorded Docker artifact; deploy it first');
+      }
+      const deploymentId = await withReleaseImageLock(async () => {
+        try { await assertArtifactAvailable(app.db, artifact); } catch (err) { throw badRequest((err as Error).message); }
+        return enqueueUserDeploy(app.db, req.user!, target, {
+          commitSha: latest.commitSha, artifact, promotionSourceDeploymentId: latest.id,
+          message: `Artifact promoted from ${source.name} #${latest.id} @ ${latest.commitSha!.slice(0, 7)}`,
+        }, { subject: 'Target' });
+      });
+      void audit(app.db, req.user!.id, 'deploy.promote', `${target.name} #${deploymentId}`, { targetServiceId: target.id, sourceDeploymentId: latest.id, deploymentId, imageId: artifact.imageId });
+      return { ok: true, deploymentId, commitSha: latest.commitSha, promotedFrom: source.name, mode: 'artifact', imageId: artifact.imageId };
     }
     // r640: shared enqueue (privilege re-check + queued cap + insert).
     const deploymentId = await enqueueUserDeploy(
@@ -171,6 +203,8 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       createdAt: d.createdAt.toISOString(),
       reviewedBy: d.reviewedBy != null ? (reviewers.get(d.reviewedBy) ?? null) : null,
       reviewedAt: d.reviewedAt ? d.reviewedAt.toISOString() : null,
+      ciGate: ciSummary(d.ciGate),
+      artifact: artifactSummary(d.artifact, d.promotionSourceDeploymentId),
     }));
   });
 
@@ -192,8 +226,11 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
    * must surface that with the position number.
    */
   app.get('/queue', { onRequest: [app.authenticate] }, async (req) => {
-    const query = req.query as { status?: string };
-    const allowed = ['queued', 'building', 'deploying'] as const;
+    const query = req.query as { status?: string; includeCi?: string };
+    // Older clients parse the original three statuses strictly. Only clients
+    // that understand CI waits opt in; their SDK sets this flag automatically.
+    const includeCi = query.includeCi === 'true';
+    const allowed = includeCi ? ['queued', 'building', 'deploying', 'awaiting_ci'] as const : ['queued', 'building', 'deploying'] as const;
     type AllowedStatus = (typeof allowed)[number];
     const statusFilter: AllowedStatus[] | null = query.status
       ? allowed.filter((s) => query.status!.split(',').map((s) => s.trim()).includes(s))
@@ -204,7 +241,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // skipped).
     const visible = await visibleServiceIdSet(app.db, req.user!);
     if (visible && visible.size === 0) {
-      return { items: [], count: 0, byStatus: { queued: 0, building: 0, deploying: 0 } };
+      return { items: [], count: 0, byStatus: { queued: 0, building: 0, deploying: 0, ...(includeCi ? { awaiting_ci: 0 } : {}) } };
     }
 
     // Two-step query: the deployment rows through the relational helper
@@ -261,10 +298,11 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       });
 
     // Aggregate counts for the badge in the top bar.
-    const byStatus = { queued: 0, building: 0, deploying: 0 };
+    const byStatus = { queued: 0, building: 0, deploying: 0, awaiting_ci: 0 };
     for (const it of items) byStatus[it.status as AllowedStatus] += 1;
 
-    return { items, count: items.length, byStatus };
+    const { awaiting_ci: ciCount, ...legacyCounts } = byStatus;
+    return { items, count: items.length, byStatus: includeCi ? { ...legacyCounts, awaiting_ci: ciCount } : legacyCounts };
   });
 
   // 0.16.13: the deploys waiting for approval the caller can see, oldest
@@ -300,6 +338,38 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
   // Rollback to a previous deployment. Re-runs the exact commit SHA (repo
   // deploys) or the exact image digest (image deploys) so a moved `:latest`
   // tag can't silently change what gets deployed.
+  // Metadata only: never return the resolved Compose model or its ciphertext.
+  app.get('/:id/deploys/:depId/release', { onRequest: [app.authenticate] }, async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const depId = num((req.params as { depId: string }).depId);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    const dep = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) });
+    if (!dep || dep.serviceId !== id) throw notFound('Deployment not found');
+    const unavailable = (reason: string) => ({ available: false, mode: 'unavailable' as const, imageCount: 0, reason });
+    if (dep.artifact) {
+      try {
+        if (dep.status !== 'running' && dep.status !== 'superseded') return unavailable('This deployment did not finish as a serving release.');
+        const artifact = parseDockerArtifact(dep.artifact);
+        if (artifact.commitSha !== dep.commitSha) return unavailable('Recorded artifact does not match the deployment commit.');
+        await assertArtifactTarget(app.db, artifact, svc);
+        await assertArtifactAvailable(app.db, artifact);
+        return { available: true, mode: 'recorded-docker', imageCount: 1, reason: 'Runs the recorded Docker image without rebuilding, transferring it to the target or restoring its pinned registry digest when needed. Current target settings and environment apply; volume data is not restored.' };
+      } catch { return unavailable('Recorded Docker artifact is incompatible, missing or its registry archive is unavailable.'); }
+    }
+    try {
+      const record = await readReleaseRecord(app.db, depId);
+      if (record) {
+        if (dep.status !== 'running' && dep.status !== 'superseded') return unavailable('This deployment did not finish as a serving release.');
+        assertReleaseTarget(record, svc);
+        return { mode: 'recorded-compose', imageCount: Object.keys(record.model.services as object).length, ...await checkReleaseImages(record) };
+      }
+    } catch {
+      return unavailable('The release record cannot be read on this service and host.');
+    }
+    if (svc.composeContent) return unavailable('No restorable Compose release record. Deploy a self-contained inline stack on the panel host to record one.');
+    return { available: true, mode: 'legacy', imageCount: 0, reason: 'Legacy redeploy: uses the previous commit or image with current service settings and environment.' };
+  });
+
   app.post('/:id/deploys/:depId/rollback', { onRequest: [app.authenticate] }, async (req) => {
     const id = num((req.params as { id: string }).id);
     const depId = num((req.params as { depId: string }).depId);
@@ -311,9 +381,43 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // through). A docker service passes straight through to the node.
     assertRemoteDeploySupported(svc);
     await assertRemoteDatabaseReachable(app.db, svc);
-    await assertRemoteServiceSupported(app.db, svc);
     const old = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) });
     if (!old || old.serviceId !== id) throw notFound('Deployment not found');
+    await assertRemoteServiceSupported(app.db, old.artifact ? artifactRuntimeService(svc) : svc);
+    if (old.artifact) {
+      if (old.status !== 'running' && old.status !== 'superseded') throw badRequest('Only a successfully served Docker artifact can be restored.');
+      let artifact: ReturnType<typeof parseDockerArtifact>;
+      try {
+        artifact = parseDockerArtifact(old.artifact);
+        if (artifact.commitSha !== old.commitSha) throw new Error('Recorded artifact does not match the deployment commit');
+        await assertArtifactTarget(app.db, artifact, svc);
+      } catch { throw badRequest('Recorded Docker artifact is incompatible with this service and panel host.'); }
+      const deploymentId = await withReleaseImageLock(async () => {
+        try { await assertArtifactAvailable(app.db, artifact); } catch (err) { throw badRequest((err as Error).message); }
+        return enqueueUserDeploy(app.db, req.user!, svc, { message: `Rollback to #${depId}`, commitSha: artifact.commitSha, artifact, promotionSourceDeploymentId: depId });
+      });
+      void audit(app.db, req.user!.id, 'deploy.rollback', `${svc.name} #${deploymentId}`, { targetServiceId: svc.id, sourceDeploymentId: depId, deploymentId, imageId: artifact.imageId });
+      return { deploymentId };
+    }
+    const record = await readReleaseRecord(app.db, depId).catch(() => {
+      throw badRequest('The recorded release cannot be decrypted. The running stack was not changed.');
+    });
+    if (record) {
+      if (old.status !== 'running' && old.status !== 'superseded') throw badRequest('Only a successfully served Compose release can be restored.');
+      try { assertReleaseTarget(record, svc); } catch { throw badRequest('Restore this Compose release on its original service and panel host.'); }
+      const readiness = await checkReleaseImages(record);
+      if (!readiness.available) throw badRequest(readiness.reason);
+      // Copy before queue visibility. Pruning the original row later cannot
+      // change the approved restore input; failures roll back both inserts.
+      const deploymentId = await app.db.transaction(async tx => {
+        const db = tx as unknown as DB;
+        const queued = await enqueueUserDeploy(db, req.user!, svc, { message: `Rollback to #${depId}`, restoredFromDeploymentId: depId });
+        await storeReleaseRecord(db, queued, record);
+        return queued;
+      });
+      void audit(app.db, req.user!.id, 'deploy.rollback', `Recorded Compose release #${depId}`, { sourceDeploymentId: depId, deploymentId });
+      return { deploymentId };
+    }
     // An inline compose stack is defined by the YAML on the service row, and
     // deployments keep no history of it: "rolling back" would re-run the
     // CURRENT file and change nothing while reporting success. Refuse with the
@@ -352,7 +456,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(deployments.id, depId), inArray(deployments.status, [...CANCELLABLE_STATUSES])))
       .returning({ id: deployments.id });
     if (flipped.length === 0) throw badRequest('Deployment is not in progress');
-    if (dep.status === 'awaiting_approval') {
+    if (dep.status === 'awaiting_approval' || dep.status === 'awaiting_ci') {
       // No run owns it — end the log stream of anyone following it.
       logBus.publish(depId, '⏹ Withdrawn before it was approved');
       logBus.end(depId);

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 import type { DB } from '@ninedeploy/db';
 import {
   databases,
@@ -668,8 +669,8 @@ export async function fixDoctorFinding(
       break;
     }
     case 'prune_dangling_images': {
-      const outText = await capture('docker', ['image', 'prune', '-f']);
-      collect(`image prune: ${parseReclaimedBytes(outText)} bytes reclaimed`);
+      const result = await pruneReleaseImages(db, { danglingOnly: true });
+      collect(`image prune: ${result.freedBytes} bytes reclaimed`);
       break;
     }
     case 'prune_build_cache': {

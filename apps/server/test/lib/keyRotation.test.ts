@@ -3,6 +3,7 @@ import {
   backupDestinations,
   configEntries,
   databases,
+  deploymentReleaseRecords,
   envVars,
   logDrains,
   notificationChannels,
@@ -40,6 +41,12 @@ function makeDb(rowsByTable: Map<unknown, Array<Record<string, unknown>>>, updat
 }
 
 describe('rotateSecrets', () => {
+  it('rotates encrypted release records with the instance key ring', async () => {
+    const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const db = makeDb(new Map([[deploymentReleaseRecords, [{ id: 1, v: 'release-enc' }]]]), updates);
+    expect(await rotateSecrets(db as never)).toBe(1);
+    expect(updates).toEqual([{ table: deploymentReleaseRecords, values: { payloadEncrypted: 're:release-enc' } }]);
+  });
   it('re-encrypts every stored secret with the active key version', async () => {
     const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
     const rows = new Map<unknown, Array<Record<string, unknown>>>([

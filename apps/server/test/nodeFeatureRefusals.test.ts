@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, type DB, imageTransfers, runMigrations, servers, services } from '@ninedeploy/db';
 import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability, serverAgentInfo as serverAgentInfoSchema, serverFeatures as serverFeaturesSchema } from '@ninedeploy/schemas';
 
@@ -74,6 +74,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
 };
 
 let db: DB;
+let dbClient: ReturnType<typeof createDb>['client'];
 let serverId: number;
 
 beforeEach(async () => {
@@ -82,10 +83,17 @@ beforeEach(async () => {
   h.pingThrows = null;
   h.ops = [];
   caps.resetNodeCapabilityCache();
-  ({ db } = createDb({ url: ':memory:' }));
+  ({ db, client: dbClient } = createDb({ url: ':memory:' }));
   await runMigrations(db, fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url)));
   const [row] = await db.insert(servers).values({ name: 'edge-1', host: '10.0.0.5', port: 4600, tokenEncrypted: encrypt('t'), status: 'online' }).returning();
   serverId = row!.id;
+});
+
+// Release each native connection before another test allocates one. Leaving
+// clients to GC can crash libsql 0.5.29 finalizers on Windows (libsql-js#231).
+afterEach(() => {
+  dbClient?.close();
+  dbClient = undefined;
 });
 
 const scripted = async (op: string) => {

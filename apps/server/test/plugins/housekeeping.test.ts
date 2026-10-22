@@ -1,4 +1,4 @@
-﻿import Fastify from 'fastify';
+import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   auditLog,
@@ -14,6 +14,7 @@ import {
 
 const logsMock = vi.hoisted(() => ({ pruneOldLogs: vi.fn(() => 0), deleteLog: vi.fn(() => true) }));
 const execMock = vi.hoisted(() => ({
+  capture: vi.fn(async () => ''),
   run: vi.fn(async (_c: string, _a: unknown[], _o: unknown, sink?: (l: string) => void) => {
     sink?.('');
   }),
@@ -32,7 +33,7 @@ vi.mock('../../src/engine/logs.js', () => ({
   pruneOldLogs: logsMock.pruneOldLogs,
   deleteLog: logsMock.deleteLog,
 }));
-vi.mock('../../src/lib/exec.js', () => ({ run: execMock.run }));
+vi.mock('../../src/lib/exec.js', () => ({ run: execMock.run, capture: execMock.capture }));
 // 0.16.12: the preview-copy sweep (tested in test/lib/previewDatabases.test.ts).
 const previewCopies = vi.hoisted(() => ({ sweepOrphanPreviewCopies: vi.fn(async (..._a: unknown[]) => 0) }));
 vi.mock('../../src/lib/previewDatabases.js', () => previewCopies);
@@ -67,7 +68,7 @@ function makeDb(expiredDeployments: Array<{ id: number }> = []) {
   const select = vi.fn(() => ({
     from: vi.fn(() => ({ where: vi.fn(async () => expiredDeployments) })),
   }));
-  return { db: { delete: del, select } as never, deleted };
+  return { db: { delete: del, select, query: { deployments: { findMany: vi.fn(async () => []) }, deploymentReleaseRecords: { findMany: vi.fn(async () => []) } } } as never, deleted };
 }
 
 async function buildApp(db: ReturnType<typeof makeDb>['db'], kernel?: unknown) {
@@ -81,6 +82,7 @@ async function buildApp(db: ReturnType<typeof makeDb>['db'], kernel?: unknown) {
 describe('housekeeping plugin', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    execMock.capture.mockReset().mockResolvedValue('');
     logsMock.pruneOldLogs.mockClear();
     logsMock.deleteLog.mockClear();
     autoPruneMock.executeAutoPrune.mockClear();
@@ -109,7 +111,7 @@ describe('housekeeping plugin', () => {
     // captured command output inside the SQLite file that gets backed up whole.
     expect(tables).toContain(jobRuns);
     // Dangling Docker images are pruned each tick too.
-    expect(execMock.run).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], {}, expect.any(Function));
+    expect(execMock.capture).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], { timeoutMs: 300_000 });
     // `sessions` had no retention either: one row per login, forever, each
     // carrying an IP + User-Agent. The panel filters dead rows out of its
     // RESPONSE, so the growth was invisible while the file kept growing.
@@ -179,7 +181,7 @@ describe('housekeeping plugin', () => {
 
     expect(kernel.getPlugin).toHaveBeenCalledWith('metric-history');
     // The rest of the tick still ran.
-    expect(execMock.run).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], {}, expect.any(Function));
+    expect(execMock.capture).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], { timeoutMs: 300_000 });
     await app.close();
   });
 
@@ -194,7 +196,7 @@ describe('housekeeping plugin', () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     // The failure is contained: the Docker prune later in the same tick ran.
-    expect(execMock.run).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], {}, expect.any(Function));
+    expect(execMock.capture).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], { timeoutMs: 300_000 });
     await app.close();
   });
 
@@ -245,7 +247,9 @@ describe('housekeeping plugin', () => {
 
   it('logs and continues when a retention delete fails', async () => {
     const del = vi.fn(() => ({ where: vi.fn(async () => Promise.reject(new Error('db locked'))) }));
-    const app = await buildApp({ delete: del, select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(async () => []) })) })) } as never);
+    const { db } = makeDb();
+    Object.assign(db, { delete: del });
+    const app = await buildApp(db);
     const errorSpy = vi.spyOn(app.log, 'error');
 
     await vi.advanceTimersByTimeAsync(60_000);
@@ -262,7 +266,7 @@ describe('housekeeping plugin', () => {
     // …and the steps after it still run: the first failing delete used to
     // skip the rest of the sweep, the disk auto-prune check included.
     expect(drillMock.pruneDrillLeftovers).toHaveBeenCalled();
-    expect(execMock.run).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], {}, expect.any(Function));
+    expect(execMock.capture).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], { timeoutMs: 300_000 });
     expect(autoPruneMock.executeAutoPrune).toHaveBeenCalledTimes(1);
     // Still reschedules the next tick.
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
@@ -301,15 +305,15 @@ describe('housekeeping plugin', () => {
   });
 
   it('absorbs a failing docker image prune without breaking the tick', async () => {
-    execMock.run.mockRejectedValueOnce(new Error('docker unavailable'));
+    execMock.capture.mockResolvedValueOnce('').mockRejectedValueOnce(new Error('docker unavailable'));
     const { db } = makeDb();
     const app = await buildApp(db);
 
     await vi.advanceTimersByTimeAsync(60_000);
 
-    // The prune rejection is caught (fire-and-forget); the rest of the tick still ran.
+    // The awaited prune rejection is isolated by the housekeeping step; the rest of the tick still ran.
     expect(logsMock.pruneOldLogs).toHaveBeenCalledTimes(1);
-    expect(execMock.run).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], {}, expect.any(Function));
+    expect(execMock.capture).toHaveBeenCalledWith('docker', ['image', 'prune', '-f'], { timeoutMs: 300_000 });
     await app.close();
   });
 

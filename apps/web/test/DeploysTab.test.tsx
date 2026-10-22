@@ -57,6 +57,7 @@ const baseDeploy = (over: Partial<Deployment> = {}): Deployment => ({
 describe('DeploysTab (per-service)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOf(api.deploys.releaseInfo).mockResolvedValue({ available: true, mode: 'legacy', imageCount: 0, reason: 'Legacy redeploy: current settings and environment.' });
     mockOf(useAuth).mockReturnValue({
       user: { id: 1, email: 'ada@example.com', name: 'Ada', isOperator: true },
       loading: false,
@@ -64,6 +65,68 @@ describe('DeploysTab (per-service)', () => {
       setup: vi.fn(),
       logout: vi.fn(),
     });
+  });
+
+  it('shows the pinned CI candidate and pending workflows, allows cancellation, and offers no rollback or deletion', async () => {
+    mockOf(api.deploys.cancel).mockResolvedValue({ ok: true });
+    const sha = 'a'.repeat(40);
+    const candidate = baseDeploy({ id: 44, status: 'awaiting_ci', commitSha: sha, ciGate: {
+      state: 'waiting', reason: 'Waiting for required GitHub workflows on the pinned commit', headSha: sha,
+      checkedAt: null, deadlineAt: '2026-10-21T23:00:00.000Z',
+      checks: [{ path: '.github/workflows/ci.yml', state: 'pending', runId: 123, attempt: 2 }],
+    } });
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 45 }), candidate]} loading={false} activeId={44} onSelect={() => {}} />);
+    expect(screen.getByText(sha)).toBeInTheDocument();
+    expect(screen.getByText(/run #123, attempt 2/)).toHaveTextContent('pending');
+    expect(screen.getAllByText('waiting for CI').length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('Rollback to #44')).toBeNull();
+    expect(screen.queryByLabelText('Remove deployment #44')).toBeNull();
+    await userEvent.setup().click(screen.getByLabelText('Cancel deployment #44'));
+    await waitFor(() => expect(api.deploys.cancel).toHaveBeenCalledWith(1, 44));
+  });
+
+  it('shows recorded recovery limits and confirms a recorded Compose restore', async () => {
+    mockOf(api.deploys.releaseInfo).mockResolvedValue({ available: true, mode: 'recorded-compose', imageCount: 2, reason: 'Recorded environment and images. Volume data is not restored.' });
+    mockOf(api.deploys.rollback).mockResolvedValue({ deploymentId: 22 });
+    const user = userEvent.setup();
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 8 }), baseDeploy({ id: 7, status: 'superseded' })]} loading={false} activeId={7} onSelect={() => {}} />);
+    expect(await screen.findByText(/Encrypted release record/)).toHaveTextContent('2 pinned images');
+    expect(screen.getByText(/Encrypted release record/)).toHaveTextContent('protected from NineDeploy cleanup');
+    await user.click(screen.getByLabelText('Rollback to deployment #7'));
+    const confirm = await screen.findByRole('button', { name: 'Rollback' });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await user.click(confirm);
+    await waitFor(() => expect(api.deploys.rollback).toHaveBeenCalledWith(1, 7));
+  });
+
+  it('disables confirmation when no release is restorable', async () => {
+    mockOf(api.deploys.releaseInfo).mockResolvedValue({ available: false, mode: 'unavailable', imageCount: 0, reason: 'No recorded images.' });
+    const user = userEvent.setup();
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 8 }), baseDeploy({ id: 7, status: 'superseded' })]} loading={false} activeId={null} onSelect={() => {}} />);
+    await user.click(screen.getByLabelText('Rollback to deployment #7'));
+    expect(await screen.findByText(/No recorded images/)).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Rollback' });
+    expect(confirm).toBeDisabled();
+    await user.click(confirm);
+    expect(api.deploys.rollback).not.toHaveBeenCalled();
+  });
+
+  it('rechecks a previously eligible release and blocks confirmation when its images disappear', async () => {
+    mockOf(api.deploys.releaseInfo).mockResolvedValueOnce({ available: true, mode: 'recorded-compose', imageCount: 1, reason: 'Recorded image is available.' });
+    let finish!: (value: Awaited<ReturnType<typeof api.deploys.releaseInfo>>) => void;
+    mockOf(api.deploys.releaseInfo).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const user = userEvent.setup();
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 8 }), baseDeploy({ id: 7, status: 'superseded' })]} loading={false} activeId={7} onSelect={() => {}} />);
+    await screen.findByText('Recorded image is available.');
+    await user.click(screen.getByLabelText('Rollback to deployment #7'));
+    const confirm = await screen.findByRole('button', { name: 'Rollback' });
+    await waitFor(() => expect(api.deploys.releaseInfo).toHaveBeenCalledTimes(2));
+    expect(confirm).toBeDisabled();
+    finish({ available: false, mode: 'recorded-compose', imageCount: 1, imageAvailability: 'missing', missingImageCount: 1, reason: '1 recorded image is missing from this host.' });
+    await screen.findAllByText(/1 recorded image is missing/);
+    expect(confirm).toBeDisabled();
+    await user.click(confirm);
+    expect(api.deploys.rollback).not.toHaveBeenCalled();
   });
 
   it('shows the per-service queue position on every queued row', async () => {
@@ -197,6 +260,47 @@ describe('DeploysTab (per-service)', () => {
     );
     await screen.findByText('#7');
     expect(screen.queryByText('Promote this commit')).not.toBeInTheDocument();
+  });
+
+  it('confirms the exact artifact and pins the selected source deployment', async () => {
+    const repoUrl = 'https://github.com/acme/web.git';
+    const imageId = `sha256:${'a'.repeat(64)}`;
+    const registryRef = `registry.example.test/team/app@sha256:${'b'.repeat(64)}`;
+    mockOf(api.services.list).mockResolvedValue([{ id: 2, name: 'production', repoUrl }] as never);
+    const promote = vi.fn().mockResolvedValue({ ok: true, deploymentId: 30, commitSha: 'abcdef12345', promotedFrom: 'staging' });
+    mockOf(api.deploys.promote).mockImplementation(promote);
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={repoUrl}
+      deploys={[baseDeploy({ id: 7, status: 'running', artifact: { imageId, originDeploymentId: 7, originServerId: 4, promotionSourceDeploymentId: null, registryRef } })]}
+      loading={false} activeId={7} onSelect={() => {}} />);
+    const user = userEvent.setup();
+    await screen.findByText('Promote this artifact');
+    await user.selectOptions(screen.getByLabelText('Promotion target service'), '2');
+    await user.click(screen.getByRole('button', { name: 'Promote' }));
+    expect(promote).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toHaveTextContent(imageId);
+    expect(screen.getByRole('dialog')).toHaveTextContent('Build-time values remain baked');
+    expect(screen.getByRole('dialog')).toHaveTextContent('pinned registry digest');
+    await user.click(screen.getByRole('button', { name: 'Promote artifact' }));
+    await waitFor(() => expect(promote).toHaveBeenCalledWith(1, 2, { mode: 'artifact', sourceDeploymentId: 7 }));
+    expect(screen.getByText('Immutable Docker artifact')).toBeInTheDocument();
+    expect(screen.getByText(`Registry archive: ${registryRef}`)).toBeInTheDocument();
+    expect(screen.getByText(/Built on node #4/)).toHaveTextContent('Recoverable image copy retained on the panel');
+  });
+
+  it('allows an explicit commit rebuild even when an artifact exists', async () => {
+    const repoUrl = 'https://github.com/acme/web.git';
+    mockOf(api.services.list).mockResolvedValue([{ id: 2, name: 'production', repoUrl }] as never);
+    const promote = vi.fn().mockResolvedValue({ ok: true, deploymentId: 30, commitSha: 'abcdef12345', promotedFrom: 'staging' });
+    mockOf(api.deploys.promote).mockImplementation(promote);
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={repoUrl}
+      deploys={[baseDeploy({ id: 7, status: 'running', artifact: { imageId: 'sha256:recorded', originDeploymentId: 7, promotionSourceDeploymentId: null } })]}
+      loading={false} activeId={null} onSelect={() => {}} />);
+    const user = userEvent.setup();
+    await screen.findByText('Promote this artifact');
+    await user.selectOptions(screen.getByLabelText('Promotion mode'), 'commit');
+    await user.selectOptions(screen.getByLabelText('Promotion target service'), '2');
+    await user.click(screen.getByRole('button', { name: 'Promote' }));
+    await waitFor(() => expect(promote).toHaveBeenCalledWith(1, 2));
   });
 
   it('offers AI diagnosis for a failed deployment when configured', async () => {

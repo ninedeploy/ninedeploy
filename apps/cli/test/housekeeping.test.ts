@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NineDeployClient } from '@ninedeploy/sdk';
 import { InvalidArgumentError } from 'commander';
-import { housekeepingPrune, positiveIntOption } from '../src/commands/housekeeping.js';
+import { housekeepingPrune, imagesList, positiveIntOption } from '../src/commands/housekeeping.js';
 
 describe('CLI housekeeping command', () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
@@ -48,6 +48,12 @@ describe('CLI housekeeping command', () => {
     expect(logSpy).toHaveBeenCalledWith('  ✓ System housekeeping prune completed.');
     expect(logSpy).toHaveBeenCalledWith('    Space reclaimed: 0 B');
     expect(logSpy).toHaveBeenCalledWith('    Disk used after: 20%');
+  });
+
+  it('shows when a retained release protects an otherwise unused image', async () => {
+    const client = { housekeeping: { listImages: async () => ({ totalBytes: 1024, images: [{ repository: 'app', tag: 'old', size: '1KB', sizeBytes: 1024, ageHours: 24, dangling: false, inUse: false, releaseProtected: true }] }) } } as unknown as NineDeployClient;
+    await imagesList(client);
+    expect(logSpy.mock.calls.flat().join(' ')).toContain('kept');
   });
 
   it('handles housekeeping error', async () => {

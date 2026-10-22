@@ -53,7 +53,11 @@ export function createDb(opts: CreateDbOptions): CreateDbResult {
   // PRAGMAs issued on the first connection were silently gone (busy_timeout
   // fell back to 0 → immediate SQLITE_BUSY) after the first transaction.
   const client = createClient({ url: opts.url, authToken: opts.authToken, timeout: BUSY_TIMEOUT_MS });
-  if (typeof client.transaction === 'function') {
+  // :memory: has ONE connection: a transaction borrows it and returns the
+  // same connection, whose initial foreign_keys pragma is already set.
+  // Asking the parent client for a replacement while it is borrowed throws
+  // TRANSACTION_ACTIVE and strands the transaction before Drizzle sees it.
+  if (typeof client.transaction === 'function' && opts.url !== 'file::memory:') {
     const beginTransaction = client.transaction.bind(client);
     client.transaction = async (...args: Parameters<typeof client.transaction>) => {
       const tx = await beginTransaction(...args);

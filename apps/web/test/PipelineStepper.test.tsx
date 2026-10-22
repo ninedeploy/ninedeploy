@@ -80,6 +80,13 @@ describe('PipelineStepper', () => {
     expect(screen.getByText(/Waiting for a workspace admin to approve this deploy/)).toBeInTheDocument();
   });
 
+  it('shows CI waiting before any preparation or build stage starts', () => {
+    render(<PipelineStepper rawLogs="" deployStatus="awaiting_ci" />);
+    expect(screen.getByText('Waiting for CI')).toBeInTheDocument();
+    expect(screen.getByText(/Waiting for required CI workflows on the pinned commit/)).toBeInTheDocument();
+    expect(parsePipelineStages('', 'awaiting_ci').every((stage) => stage.status === 'pending')).toBe(true);
+  });
+
   it('ignores log lines for unknown stage names', () => {
     const stages = parsePipelineStages('##[stage:MYSTERY:running] nope', 'building');
     expect(stages.every((s) => s.status === 'pending')).toBe(true);
@@ -125,7 +132,7 @@ describe('PipelineStepper', () => {
         deployStatus="failed"
       />
     );
-    expect(screen.getByText('Rolled back')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
 
     rerender(
       <PipelineStepper

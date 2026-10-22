@@ -144,6 +144,7 @@ export function createFakeApiModule() {
       list: vi.fn(),
       queue: vi.fn().mockResolvedValue({ items: [], count: 0, byStatus: { queued: 0, building: 0, deploying: 0 } }),
       rollback: vi.fn(),
+      releaseInfo: vi.fn().mockResolvedValue({ available: true, mode: 'legacy', imageCount: 0, reason: 'Legacy redeploy: current settings and environment.' }),
       cancel: vi.fn(),
       remove: vi.fn(),
       configDiff: vi.fn(),

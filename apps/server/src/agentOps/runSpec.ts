@@ -255,6 +255,7 @@ export function parseRunSpec(p: Params, env: NodeJS.ProcessEnv = process.env): R
  */
 export function runSpecArgv(spec: RunSpec, verb: 'run' | 'create'): string[] {
   const argv = verb === 'run' ? ['run', '-d'] : ['create'];
+  if (/^sha256:[a-f0-9]{64}$/.test(spec.image)) argv.push('--pull', 'never');
   argv.push('--name', spec.name, '--restart', spec.restart, '--network', spec.network);
   for (const [key, value] of spec.labels) argv.push('--label', `${key}=${value}`);
   for (const [key, value] of spec.userLabels) argv.push('--label', `${key}=${value}`);

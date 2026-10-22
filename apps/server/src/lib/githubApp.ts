@@ -156,6 +156,7 @@ export async function githubApi<T = unknown>(
   method: string,
   path: string,
   body?: unknown,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<GithubApiResponse<T>> {
   if (!path.startsWith('/')) throw new GithubAppError('GitHub API path must start with /', 'http');
   const url = `${apiBase(app)}${path}`;
@@ -172,7 +173,7 @@ export async function githubApi<T = unknown>(
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(API_TIMEOUT_MS)]) : AbortSignal.timeout(API_TIMEOUT_MS),
     });
   } catch (err) {
     throw new GithubAppError(`${label} unreachable: ${redactSecrets(err, [token])}`, 'unreachable');
@@ -211,14 +212,14 @@ export async function githubApiPages<T, R>(
   token: string,
   path: string,
   pick: (data: T) => R[],
-  opts: { perPage?: number; maxPages?: number } = {},
+  opts: { perPage?: number; maxPages?: number; signal?: AbortSignal } = {},
 ): Promise<{ rows: R[]; truncated: boolean }> {
   const perPage = opts.perPage ?? 100;
   const maxPages = opts.maxPages ?? 10;
   const sep = path.includes('?') ? '&' : '?';
   const rows: R[] = [];
   for (let page = 1; page <= maxPages; page++) {
-    const res = await githubApi<T>(app, token, 'GET', `${path}${sep}per_page=${perPage}&page=${page}`);
+    const res = await githubApi<T>(app, token, 'GET', `${path}${sep}per_page=${perPage}&page=${page}`, undefined, opts);
     rows.push(...pick(res.data));
     if (!hasNextPage(res.headers)) return { rows, truncated: false };
   }
@@ -280,6 +281,7 @@ export interface InstallationTokenOptions {
   fresh?: boolean;
   /** Clock override for tests. */
   now?: number;
+  signal?: AbortSignal;
 }
 
 function tokenCacheKey(inst: GithubInstallationRef, opts: InstallationTokenOptions): string {
@@ -358,7 +360,7 @@ export async function installationToken(
   const who = inst.accountLogin ? `${inst.accountLogin} (installation ${inst.installationId})` : `installation ${inst.installationId}`;
   let res: GithubApiResponse<{ token?: unknown; expires_at?: unknown }>;
   try {
-    res = await githubApi(app, jwt, 'POST', `/app/installations/${inst.installationId}/access_tokens`, body);
+    res = await githubApi(app, jwt, 'POST', `/app/installations/${inst.installationId}/access_tokens`, body, opts);
   } catch (err) {
     if (!(err instanceof GithubAppError)) throw new GithubAppError(redactSecrets(err, [jwt]), 'http');
     if (err.status === 404) {

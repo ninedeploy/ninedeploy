@@ -4,6 +4,7 @@ import {
   backups,
   configEntries,
   databases,
+  deploymentReleaseRecords,
   envVars,
   githubApps,
   logDrains,
@@ -38,6 +39,11 @@ import { activeKeyVersion, reencrypt } from './crypto.js';
  * (nullable columns) as-is so they are never passed through `reencrypt`.
  */
 const ENCRYPTED_COLUMNS = [
+  {
+    table: deploymentReleaseRecords,
+    select: { id: deploymentReleaseRecords.id, v: deploymentReleaseRecords.payloadEncrypted },
+    pick: (r: { id: number; v: string }) => ({ payloadEncrypted: reencrypt(r.v) }),
+  },
   {
     table: envVars,
     select: { id: envVars.id, v: envVars.valueEncrypted },

@@ -23,11 +23,13 @@ export function DeployQueueBadge() {
   if (!data || data.count === 0) return null;
 
   const { building, deploying, queued } = data.byStatus;
+  const ci = data.byStatus.awaiting_ci ?? 0;
   const live = building + deploying;
-  const label =
+  const activeLabel =
     live > 0
       ? `${live} live${queued > 0 ? ` · ${queued} queued` : ''}`
-      : `${queued} queued`;
+      : queued > 0 ? `${queued} queued` : '';
+  const label = [activeLabel, ci > 0 ? `${ci} waiting for CI` : ''].filter(Boolean).join(' · ');
 
   // The tone follows the most-urgent state in the queue: a live build
   // is the loudest signal, a queued line is the next one to watch.
@@ -40,7 +42,7 @@ export function DeployQueueBadge() {
     <Link
       to="/deploys"
       className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium ring-1 ring-inset transition ${tone}`}
-      title={`${building} building · ${deploying} deploying · ${queued} queued`}
+      title={`${building} building · ${deploying} deploying · ${queued} queued${ci > 0 ? ` · ${ci} waiting for CI` : ''}`}
     >
       {live > 0 ? <Loader2 size={12} className="animate-spin" /> : <Rocket size={12} />}
       <span>{label}</span>

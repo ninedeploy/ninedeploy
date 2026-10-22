@@ -2,7 +2,7 @@
  * End-to-end smoke for the deploy-queue surface.
  *
  * Exercises the full path the operator sees in production:
- *   SDK client → HTTP request → Fastify route → fake DB → response → SDK
+ *   SDK client → HTTP request → Fastify route → DB → response → SDK
  *
  * The Fastify `app.inject()` API runs the registered routes against a
  * synthetic request without binding a port; we point the SDK at it by
@@ -13,8 +13,11 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createClient } from '@ninedeploy/sdk';
+import { deployments, services } from '@ninedeploy/db';
+import { queueResponse } from '@ninedeploy/schemas';
 import { deploysRoutes } from '../src/modules/deploys.js';
-import { buildTestApp, createFakeDb, depRow, svcRow } from './helpers.js';
+import { asUser, buildTestApp, createFakeDb, depRow, svcRow } from './helpers.js';
+import { closeMigratedDb, migratedDb } from './lib/githubAppKit.js';
 
 const authMocks = vi.hoisted(() => ({
   resolveUser: vi.fn(async () => ({ id: 1, isOperator: true as const })),
@@ -66,46 +69,46 @@ beforeEach(() => {
 
 describe('SDK ↔ server queue end-to-end', () => {
   it('lists every in-flight deploy through the real route via the real SDK', async () => {
-    const app = await buildTestApp({
-      db: createFakeDb({
-        findMany: {
-          deployments: [
-            depRow({ id: 1, serviceId: 7, status: 'building' }),
-            depRow({ id: 2, serviceId: 7, status: 'queued' }),
-            depRow({ id: 3, serviceId: 8, status: 'queued' }),
-          ],
-          services: [
-            svcRow({ id: 7, name: 'api' }),
-            svcRow({ id: 8, name: 'web' }),
-          ],
-        },
-      }),
-    });
-    await app.register(deploysRoutes, { prefix: '/v1/services' });
-
-    const client = createClient({
-      baseUrl: 'http://in-process',
-      getToken: () => 'valid',
-      fetch: makeInProcessFetch(app),
-    });
-
-    const queue = await client.deploys.queue();
-
-    expect(queue.count).toBe(3);
-    expect(queue.byStatus).toEqual({ building: 1, queued: 2, deploying: 0 });
-    expect(queue.items).toHaveLength(3);
-    // The SDK schema and the server response agree on the item shape.
-    const item = queue.items[0]!;
-    expect(item).toMatchObject({
-      id: expect.any(Number),
-      serviceId: expect.any(Number),
-      serviceName: expect.any(String),
-      status: expect.stringMatching(/^(queued|building|deploying)$/),
-      createdAt: expect.any(String),
-    });
-    expect(['api', 'web']).toContain(item.serviceName);
-
-    await app.close();
+    const db = await migratedDb();
+    await db.insert(services).values([{ id: 7, name: 'api', slug: 'api' }, { id: 8, name: 'web', slug: 'web' }]);
+    await db.insert(deployments).values([
+      { id: 1, serviceId: 7, status: 'building' },
+      { id: 2, serviceId: 7, status: 'queued' },
+      { id: 3, serviceId: 8, status: 'queued' },
+      { id: 4, serviceId: 8, status: 'awaiting_ci' },
+    ]);
+    const app = await buildTestApp({ db });
+    try {
+      await app.register(deploysRoutes, { prefix: '/v1/services' });
+      const client = createClient({
+        baseUrl: 'http://in-process',
+        getToken: () => '1',
+        fetch: makeInProcessFetch(app),
+      });
+      const queue = await client.deploys.queue();
+      expect(queue.count).toBe(4);
+      expect(queue.byStatus).toEqual({ building: 1, queued: 2, deploying: 0, awaiting_ci: 1 });
+      expect(queue.items).toHaveLength(4);
+      expect(queue.items.find((item) => item.id === 4)).toMatchObject({ status: 'awaiting_ci', serviceName: 'web' });
+      expect(queueResponse.safeParse(queue).success).toBe(true);
+      // Older SDKs do not send includeCi, so they keep their original enum
+      // and exact counter shape even when the instance has a CI-waiting row.
+      const legacy = await app.inject({ method: 'GET', url: '/v1/services/queue', headers: asUser() });
+      expect(legacy.json()).toMatchObject({ count: 3, byStatus: { building: 1, queued: 2, deploying: 0 } });
+      expect(legacy.json().byStatus).not.toHaveProperty('awaiting_ci');
+      const item = queue.items[0]!;
+      expect(item).toMatchObject({
+        id: expect.any(Number),
+        serviceId: expect.any(Number),
+        serviceName: expect.any(String),
+        status: expect.stringMatching(/^(queued|building|deploying)$/),
+        createdAt: expect.any(String),
+      });
+      expect(['api', 'web']).toContain(item.serviceName);
+    } finally {
+      await app.close();
+      closeMigratedDb(db);
+    }
   });
 
   it('round-trips a typed success and a typed error on the same client', async () => {

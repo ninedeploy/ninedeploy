@@ -116,9 +116,24 @@ Migration never cuts anything off:
 |---|---|---|
 | Re-link, `enabled`, `tokenScope`, `watchPaths` | operator | `PUT /v1/services/:id/github`; Settings card (scope and enabled) |
 | Commit statuses, PR comments | service admin | `PATCH /v1/services/:id/github/feedback`; Settings card; `--status on\|off`, `--pr-comment on\|off` |
+| Required CI workflow paths | service admin | `PATCH /v1/services/:id/github/feedback` with `requiredWorkflows`; Settings card |
 | Read the link | any viewer of the service | `GET /v1/services/:id/github` (`{link}`; `link.active` says whether the App drives deploys) |
 
 PR previews follow their parent service's link; linking a preview directly is refused.
+
+### Required CI workflows (0.17.1)
+
+In the GitHub App card, enter up to ten exact paths such as `.github/workflows/ci.yml`, one per line. The API/SDK accepts `requiredWorkflows: [".github/workflows/ci.yml"]` on the feedback PATCH. An empty array disables the policy for future candidates. All existing links default to an empty array (additive migration 0094).
+
+The App installation needs **Actions: read** and **Contents: read**. Newly created App manifests request these permissions. For an existing App, add Actions read in GitHub and have the installation owner accept the permission update before enabling required CI. A missing permission holds deployment; it never counts as success.
+
+The worker captures the policy and repository identity, moves the candidate to `awaiting_ci`, and resolves a manual branch deployment to an exact commit once. Every selected workflow must finish with `success` for that commit. A newer run or rerun attempt supersedes an earlier success. Missing or pending workflows wait; completed failures, cancellations, skips and neutral results fail the candidate. Retry by rerunning CI and creating a new deployment. Workflow paths, not display names or arbitrary commit-status labels, identify the requirements.
+
+Normal deployments accept `push`, `workflow_dispatch` or `merge_group` workflow runs. PR previews inherit their parent's policy and require `pull_request` runs on the parent repository for the exact preview head SHA; `pull_request_target` is never accepted. Fork previews still need the existing human approval and receive no parent repository token. Workflows whose path/branch filters do not produce a run for this commit leave the candidate waiting. This is workflow-level gating, not branch-protection or per-job check enforcement.
+
+CI runs **before** lane approval. An early approval of a mutable branch is cleared when the candidate is pinned; the admin then reviews the actual SHA. After a long review, CI is checked again when its receipt is over a minute old. The checkout uses that SHA even if the branch advances. Changing the repository, branch or installation invalidates the candidate. Existing candidates retain their captured required paths; cancel and redeploy to adopt a changed policy. Disabling/suspending a linked App does not bypass an already captured CI requirement.
+
+Polling uses at most four concurrent checks, 30-second retries and a two-hour deadline, independently of build slots. Leases and results survive restarts; a request interrupted by shutdown is eligible again within a minute. GitHub errors, malformed or truncated results never permit deployment. Service/global deploy lists show waiting candidates; service history includes safe CI reasons and run/attempt receipts. The global queue includes CI waits only with `includeCi=true` (set automatically by the current SDK), preserving the original response for older clients. Cancellation and newer deployment replacement prevent late poll responses from reviving old work. CI evidence does not freeze build settings, environment values or built artifacts; immutable artifact promotion remains separate work.
 
 `tokenScope` is `repository` by default: the clone token covers only the linked repository. Set it to `installation` when the repository has **submodules in sibling repositories** of the same installation; the token then covers every repository the installation can see.
 

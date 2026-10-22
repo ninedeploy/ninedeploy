@@ -2,12 +2,13 @@ import { createReadStream } from 'node:fs';
 import { eq, inArray } from 'drizzle-orm';
 import { deployments, services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { capture, run } from '../lib/exec.js';
+import { capture } from '../lib/exec.js';
 import { checkForUpdate } from '../lib/updateCheck.js';
 import { getSelfUpdateStatus, startSelfUpdate } from '../lib/selfUpdate.js';
 import { selfUpdateStart } from '@ninedeploy/schemas';
 import { NETWORK } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
+import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 import { createSystemArchive, importSystemArchive } from '../lib/systemArchive.js';
 
 /** F869: docker CLI calls inherit capture()'s 30-minute default timeout; a
@@ -16,13 +17,6 @@ import { createSystemArchive, importSystemArchive } from '../lib/systemArchive.j
  * volume sizes, so it gets more room than the plain listings. */
 const DOCKER_LIST_TIMEOUT_MS = 10_000;
 const DOCKER_DF_TIMEOUT_MS = 20_000;
-/** F974: `docker image prune -f` deletes every dangling image's layers from
- * disk, which can legitimately take minutes on a large store or slow disk. It
- * gets 5 minutes, not a listing's 10 s. The 30-minute default held the admin
- * request and a docker child per click on a wedged daemon. Past the bound the
- * existing swallow applies: still `{ ok: true }` and audited, as for any prune
- * failure, and the next prune picks up the rest. */
-const DOCKER_PRUNE_TIMEOUT_MS = 5 * 60_000;
 
 function parseDf(line: string): Record<string, string> | null {
   try { return JSON.parse(line) as Record<string, string>; } catch { return null; }
@@ -103,8 +97,7 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/prune-images', async (req) => {
-    const log = (line: string) => req.log.info({ component: 'system' }, line);
-    await run('docker', ['image', 'prune', '-f'], { timeoutMs: DOCKER_PRUNE_TIMEOUT_MS }, log).catch(() => undefined);
+    await pruneReleaseImages(app.db, { danglingOnly: true });
     void audit(app.db, req.user?.id ?? null, 'system.prune_images');
     return { ok: true };
   });

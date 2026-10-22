@@ -117,6 +117,39 @@ describe('dockerBuilder.buildAndRun', () => {
     expect(runArgs.join(' ')).toContain('minio/minio server /data --console-address :9001');
   });
 
+  it.each([
+    { builtWithNixpacks: true, builtStatic: false, port: 3000 },
+    { builtWithNixpacks: false, builtStatic: true, port: 80 },
+  ])('runs the recorded image without build/pull and preserves pack conventions %j', async pack => {
+    const imageId = `sha256:${'a'.repeat(64)}`;
+    const env: Record<string, string> = { TARGET_VALUE: 'production' };
+    h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'network') return 'nd-svc-web';
+      if (args[1] === 'ninedeploy-traefik') return '{"nd-svc-web":{}}';
+      return imageId;
+    });
+    const ctx = makeCtx({ service: { id: 2, slug: 'web', port: null, healthPath: '/' }, env,
+      prebuiltImage: { tag: imageId, imageId, builtWithNixpacks: pack.builtWithNixpacks, builtStatic: pack.builtStatic } });
+    const runtime = await dockerBuilder.buildAndRun(ctx as never);
+    expect(runtime).toMatchObject({ imageDigest: imageId, port: pack.port, artifactBuild: { builtWithNixpacks: pack.builtWithNixpacks, builtStatic: pack.builtStatic } });
+    const args = h.run.mock.calls.find(([, argv]) => argv[0] === 'run')![1] as string[];
+    expect(args).toContain(imageId);
+    expect(args.slice(args.indexOf('--pull'), args.indexOf('--pull') + 2)).toEqual(['--pull', 'never']);
+    expect(h.run.mock.calls.some(([, argv]) => ['pull', 'build', 'buildx'].includes(String(argv[0])))).toBe(false);
+    expect(env.TARGET_VALUE).toBe('production');
+    expect(env.PORT).toBe(pack.builtWithNixpacks ? '3000' : undefined);
+  });
+
+  it('disables implicit image pulls for multiline runtime environment and replicas', async () => {
+    const imageId = `sha256:${'a'.repeat(64)}`;
+    const ctx = makeCtx({ service: { id: 2, slug: 'web', port: 3000, healthPath: '/', replicas: 2 },
+      env: { TARGET: 'first\nsecond' }, prebuiltImage: { tag: imageId, imageId } });
+    await dockerBuilder.buildAndRun(ctx as never);
+    const starts = h.run.mock.calls.filter(([, argv]) => argv[0] === 'compose' && argv.includes('up'));
+    expect(starts).toHaveLength(2);
+    for (const [, args] of starts) expect(args.slice(-3)).toEqual(['--no-build', '--pull', 'never']);
+  });
+
   it('honors a configurable restart policy from the build config', async () => {
     const ctx = makeCtx({ service: { slug: 'web', image: 'nginx', port: 3000, cpuShares: 0, memLimitMb: 0, healthPath: '/' }, buildConfig: { restartPolicy: 'on-failure:5' } });
     await dockerBuilder.buildAndRun(ctx as never);
@@ -198,7 +231,7 @@ describe('dockerBuilder.buildAndRun', () => {
     // No host port is published — Traefik routes over the network and the
     // healthcheck probes the container's network IP.
     expect(runArgs).not.toContain('-p');
-    expect(runtime).toEqual({ runtimeId: 'web-3', port: 3000, healthPath: '/health', imageDigest: expect.any(String), replicas: 1 });
+    expect(runtime).toEqual({ runtimeId: 'web-3', port: 3000, healthPath: '/health', imageDigest: expect.any(String), replicas: 1, artifactBuild: { builtWithNixpacks: false, builtStatic: false } });
   });
 
   it('r321: mounts the volume attachments next to the primary volume', async () => {
@@ -496,7 +529,7 @@ describe('dockerBuilder.buildAndRun', () => {
 
     const runtime = await dockerBuilder.buildAndRun(ctx as never);
 
-    expect(runtime).toEqual({ runtimeId: 'y-3', port: null, healthPath: '/', imageDigest: expect.any(String), replicas: 1 });
+    expect(runtime).toEqual({ runtimeId: 'y-3', port: null, healthPath: '/', imageDigest: expect.any(String), replicas: 1, artifactBuild: { builtWithNixpacks: false, builtStatic: false } });
   });
 
   it('does NOT stop the previous container (blue-green: old keeps serving until healthy)', async () => {
@@ -723,6 +756,8 @@ describe('dockerBuilder.isHealthy', () => {
   beforeEach(() => {
     h2.reset();
     h.capture.mockReset();
+    h.run.mockReset();
+    h.run.mockImplementation(async (_cmd, args, _opts, line) => { if (args[0] === 'exec') line?.('HTTP/1.1 200 OK'); });
     // Default: container is running with a network IP.
     h.capture.mockResolvedValue('running|172.17.0.2');
     vi.stubGlobal('fetch', fetchMock);
@@ -797,8 +832,8 @@ describe('dockerBuilder.isHealthy', () => {
   it('falls back to a sibling-container probe when direct IP probing fails (Docker Desktop)', async () => {
     // Direct fetch never succeeds (macOS-style unreachable container IP)…
     fetchMock.mockRejectedValue(new Error('unreachable'));
-    // …but after the direct grace window the busybox TCP sibling probe succeeds.
-    h.run.mockImplementation(async () => undefined);
+    // …but the same HTTP endpoint is ready from the runtime bridge.
+    h.run.mockImplementation(async (_cmd, args, _opts, line) => { if (args[0] === 'exec') line?.('HTTP/1.1 200 OK'); });
 
     await expect(
       dockerBuilder.isHealthy({ runtimeId: 'r', port: 3000, healthPath: '/x' }, 5_000, 100),
@@ -806,14 +841,15 @@ describe('dockerBuilder.isHealthy', () => {
 
     const siblingCall = h.run.mock.calls.find((c) => c[1][0] === 'exec' && c[1].includes('ninedeploy-prober'));
     expect(siblingCall).toBeDefined();
-    // TCP probe by the inspected IP, not the (DNS-flaky) container name.
-    expect(siblingCall![1].join(' ')).toContain('nc -w 3 172.17.0.2 3000');
+    // HTTP probe at the configured path and inspected IP, without following redirects.
+    expect(siblingCall![1].slice(-3)).toEqual(['/x', '172.17.0.2', '3000']);
+    expect(siblingCall![1].join(' ')).toContain('GET %s HTTP/1.0');
   });
 
   it('joins the probe container to the runtime bridge before sibling probing (Model B isolation)', async () => {
     fetchMock.mockRejectedValue(new Error('unreachable'));
     h.run.mockReset();
-    h.run.mockImplementation(async () => undefined);
+    h.run.mockImplementation(async (_cmd, args, _opts, line) => { if (args[0] === 'exec') line?.('HTTP/1.1 200 OK'); });
     h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
       const argv = args as string[];
       const format = argv.at(-1);
@@ -846,7 +882,7 @@ describe('dockerBuilder.isHealthy', () => {
   it('skips joining networks the probe container is already on', async () => {
     fetchMock.mockRejectedValue(new Error('unreachable'));
     h.run.mockReset();
-    h.run.mockImplementation(async () => undefined);
+    h.run.mockImplementation(async (_cmd, args, _opts, line) => { if (args[0] === 'exec') line?.('HTTP/1.1 200 OK'); });
     h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
       const argv = args as string[];
       const format = argv.at(-1);
@@ -904,8 +940,9 @@ describe('dockerBuilder.isHealthy', () => {
       args[3]?.includes('.Config.ExposedPorts')
         ? '{"5678/tcp":{}}'
         : 'running|172.18.0.4');
-    h.run.mockImplementation(async (_cmd: string, args: string[]) => {
+    h.run.mockImplementation(async (_cmd, args, _opts, line) => {
       if (args.at(-1) === '80') throw new Error('connection refused');
+      if (args[0] === 'exec') line?.('HTTP/1.1 200 OK');
     });
     const runtime = { runtimeId: 'n8n-1', port: 80, healthPath: '/' };
     const log = vi.fn();
@@ -1556,5 +1593,71 @@ describe('r666: which Dockerfile a local build uses with a base directory', () =
     repoHas('Dockerfile');
     await dockerBuilder.buildAndRun(makeCtx({ buildConfig: { buildPack: 'auto', baseDir: '/' } }) as never);
     expect(buildArgv()).toEqual(['build', '-t', 'ninedeploy/web:abcdef1', '-f', 'Dockerfile', '.']);
+  });
+});
+
+
+describe('ordinary HTTP readiness never degrades to an open port', () => {
+  const fetchMock = vi.fn();
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    h2.reset();
+    h.run.mockReset();
+    h.capture.mockReset();
+    h.sleep.mockImplementation(async (ms: number) => { vi.setSystemTime(Date.now() + ms); });
+    h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args.at(-1)?.includes('.Config.ExposedPorts')) return '{}';
+      if (args.at(-1) === '{{json .NetworkSettings.Networks}}') return '{"ninedeploy":{}}';
+      if (args[1] === 'ninedeploy-prober') return 'true|{"ninedeploy":{}}';
+      return 'running|172.17.0.2';
+    });
+    fetchMock.mockReset().mockResolvedValue({ status: 503 });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    h.sleep.mockImplementation(async () => undefined);
+    h.run.mockReset();
+    h.capture.mockReset();
+  });
+
+  it.each(['HTTP/1.1 503 Service Unavailable', 'HTTP/1.1 502 Bad Gateway', '', 'not HTTP'])('rejects a TCP-open candidate with response %j after the direct grace', async response => {
+    h.run.mockImplementation(async (_cmd, args, _opts, line) => {
+      if (args[0] === 'exec') line?.(response);
+    });
+    await expect(dockerBuilder.isHealthy({ runtimeId: 'new-7', port: 3000, healthPath: '/ready' }, 13_000, 10_000)).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalled();
+    expect(h.run.mock.calls.some(([, args]) => args[0] === 'exec')).toBe(true);
+  });
+
+  it('waits for the HTTP response to recover before accepting the candidate', async () => {
+    const replies = ['HTTP/1.1 503 Service Unavailable', 'HTTP/1.1 200 OK'];
+    h.run.mockImplementation(async (_cmd, args, _opts, line) => {
+      if (args[0] === 'exec') line?.(replies.shift()!);
+    });
+    await expect(dockerBuilder.isHealthy({ runtimeId: 'new-7', port: 3000, healthPath: '/ready?mode=deploy' }, 20_000, 10_000)).resolves.toBe(true);
+    const probes = h.run.mock.calls.filter(([, args]) => args[0] === 'exec');
+    expect(probes).toHaveLength(2);
+    expect(probes[0]![1].slice(-3)).toEqual(['/ready?mode=deploy', '172.17.0.2', '3000']);
+  });
+
+  it('does not repair the runtime port to an HTTP-unhealthy exposed port', async () => {
+    h.capture.mockImplementation(async (_cmd, args) => args.at(-1)?.includes('.Config.ExposedPorts') ? '{"5678/tcp":{}}' : 'running|172.17.0.2');
+    h.run.mockImplementation(async (_cmd, args, _opts, line) => {
+      if (args[0] !== 'exec') return;
+      if (args.at(-1) === '3000') throw new Error('connection refused');
+      line?.('HTTP/1.1 503 Service Unavailable');
+    });
+    const runtime = { runtimeId: 'new-7', port: 3000, healthPath: '/ready' };
+    await expect(dockerBuilder.isHealthy(runtime, 3000, 0)).resolves.toBe(false);
+    expect(runtime.port).toBe(3000);
+  });
+
+  it('does not follow a redirect to another server as proof of this candidate', async () => {
+    fetchMock.mockResolvedValue({ status: 302 });
+    await expect(dockerBuilder.isHealthy({ runtimeId: 'new-7', port: 3000, healthPath: '/ready' }, 1000)).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('http://172.17.0.2:3000/ready', expect.objectContaining({ redirect: 'manual' }));
   });
 });

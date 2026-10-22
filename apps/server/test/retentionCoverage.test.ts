@@ -25,6 +25,7 @@ type Retention = { swept: string } | { config: string };
 
 /** Every table added from 0.15 on, and how it stays bounded. */
 const RETENTION: Record<string, Retention> = {
+  deployment_release_records: { config: 'one immutable record per deployment (unique deployment_id); cascades when deployment history is pruned or deleted' },
   // 0.15 (migration 0071)
   terminal_sessions: { swept: 'terminal-sessions' },
   traffic_rollups: { swept: 'traffic-rollups' },

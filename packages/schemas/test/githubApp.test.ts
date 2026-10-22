@@ -263,6 +263,13 @@ describe('service link', () => {
     expect(serviceGithubFeedbackPatch.parse({ reportStatus: false, prComment: true })).toEqual({ reportStatus: false, prComment: true });
     expect(serviceGithubFeedbackPatch.safeParse({}).success).toBe(false);
     expect(serviceGithubFeedbackPatch.safeParse({ prComment: 'yes' }).success).toBe(false);
+    expect(serviceGithubFeedbackPatch.parse({ requiredWorkflows: [' .github/workflows/ci.yml ', '.github/workflows/security.yaml'] }))
+      .toEqual({ requiredWorkflows: ['.github/workflows/ci.yml', '.github/workflows/security.yaml'] });
+    expect(serviceGithubFeedbackPatch.parse({ requiredWorkflows: [] })).toEqual({ requiredWorkflows: [] });
+    for (const paths of [['CI'], ['.github/workflows/../ci.yml'], ['.github/workflows/ci.yml', ' .github/workflows/ci.yml '],
+      Array.from({ length: 11 }, (_, i) => `.github/workflows/ci-${i}.yml`)]) {
+      expect(serviceGithubFeedbackPatch.safeParse({ requiredWorkflows: paths }).success).toBe(false);
+    }
   });
 
   it('migrate takes a source id', () => {

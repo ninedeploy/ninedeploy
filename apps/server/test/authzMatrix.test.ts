@@ -817,6 +817,7 @@ export const MATRIX: Record<string, Rule> = {
     allow404: 'the seeded deployment may not exist; with one, no canary runs and the answer is 400 no_canary (test/canaryRoutes.test.ts)',
   }),
   'GET /v1/services/:id/deploys/:depId/diff': R('viewer'),
+  'GET /v1/services/:id/deploys/:depId/release': R('viewer'),
   'GET /v1/services/:id/deploys/:depId/logs/download': R('viewer'),
   'GET /v1/services/:id/domains': R('viewer'),
   'POST /v1/services/:id/domains': R('member', { body: (r) => ({ hostname: `${uniq(r, 'new')}.example.test` }) }),
