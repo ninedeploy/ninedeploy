@@ -114,7 +114,7 @@ try{
    // Read the nested archive from the live daemon namespace instead.
    const payload=docker(['exec',daemon,'sh','-c','set -eo pipefail; docker cp "$1:/tmp/r1-traffic.json" - | tar -xOf -','sh',c.client]).out;
    const records=JSON.parse(payload);writeFileSync(resolve(proof,c.name+'-traffic.json'),payload);
-   assert.ok(records.length>=20);assert.equal(records.filter(r=>r.error||(!allowBusiness&&r.status!==200)||r.status===502).length,0);
+   assert.ok(records.length>=20);assert.equal(records.filter(r=>r.error||(r.status!==200&&!(allowBusiness&&r.status===503&&r.body===c.name))).length,0);
    if(allowBusiness){assert.ok(records.some(r=>r.status===503&&r.body===c.name));assert.ok(records.some(r=>r.status===200&&r.body===c.oldLabel));}
    return {requests:records.length,errors:records.filter(r=>r.error||r.status!==200).length,intentionallyInjected5xx:allowBusiness};
  }
