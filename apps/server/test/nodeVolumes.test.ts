@@ -377,11 +377,11 @@ describe('runRemoteContainer on docker.runSpec (design §4.2, §1.6)', () => {
   }
   const input = (svc: never, over: Record<string, unknown> = {}) => ({ service: svc, deploymentId: 7, env: { A: '1' }, name: 'minio-7', image: 'minio/minio:latest', log: () => undefined, ...over });
 
-  it('the regression baseline: nothing new needed → docker.runEnv exactly as 0.15, no ping', async () => {
+  it('keeps the legacy docker.runEnv operation sequence with ownership metadata and no ping', async () => {
     const n = nodeAgent({ ping: CAPS_015 });
     await runRemoteContainer(n.agent, input(service({ volumeMount: '/data' })));
     expect(n.ops()).toEqual(['file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
-    expect(n.calls[1]!.params).toEqual({ name: 'minio-7', image: 'minio/minio:latest', envFile: '.agent-env/minio-7.env', volume: 'nd-svc-minio-data', mount: '/data' });
+    expect(n.calls[1]!.params).toEqual({ name: 'minio-7', image: 'minio/minio:latest', envFile: '.agent-env/minio-7.env', serviceId: 11, deploymentId: 7, volume: 'nd-svc-minio-data', mount: '/data' });
   });
 
   it('cmd + socket + attachments: capability check, volumes pre-created, then runSpec — which the agent accepts', async () => {

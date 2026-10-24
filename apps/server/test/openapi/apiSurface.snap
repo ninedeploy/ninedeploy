@@ -24,6 +24,7 @@ DELETE /v1/github-apps/:id operator -
 DELETE /v1/host-ips/:ip operator -
 DELETE /v1/labels/:id member -
 DELETE /v1/log-drains/:id operator -
+DELETE /v1/log-drains/:id/queue operator -
 DELETE /v1/monitors/:id operator -
 DELETE /v1/networks/:name operator -
 DELETE /v1/notifications/channels/:id operator nd://scope/write/notifications
@@ -31,6 +32,8 @@ DELETE /v1/projects/:id admin nd://scope/write/projects
 DELETE /v1/projects/:id/env/:varId member nd://scope/write/env
 DELETE /v1/scim/tokens/:id operator -
 DELETE /v1/servers/:id operator -
+DELETE /v1/servers/:serverId/containers/:container/files operator -
+DELETE /v1/servers/:serverId/volumes/:name/files operator -
 DELETE /v1/services/:id admin nd://scope/write/services
 DELETE /v1/services/:id/attachments/:attId member nd://scope/write/services
 DELETE /v1/services/:id/badge member nd://scope/write/services
@@ -131,6 +134,7 @@ GET /v1/invitations/:token token -
 GET /v1/labels authed -
 GET /v1/log-drains operator -
 GET /v1/log-drains/:id operator -
+GET /v1/log-drains/:id/queue operator -
 GET /v1/menus authed -
 GET /v1/metric-history authed -
 GET /v1/monitors authed -
@@ -154,6 +158,12 @@ GET /v1/scim/tokens operator -
 GET /v1/servers operator -
 GET /v1/servers/:id/bootstrap-logs operator -
 GET /v1/servers/:id/stats operator -
+GET /v1/servers/:serverId/containers/:container/compose operator -
+GET /v1/servers/:serverId/containers/:container/files operator -
+GET /v1/servers/:serverId/containers/:container/files/content operator -
+GET /v1/servers/:serverId/containers/:container/inspect operator -
+GET /v1/servers/:serverId/volumes/:name/files operator -
+GET /v1/servers/:serverId/volumes/:name/files/content operator -
 GET /v1/services authed nd://scope/read/services
 GET /v1/services/:id viewer nd://scope/read/services
 GET /v1/services/:id/attachments viewer nd://scope/read/services
@@ -184,10 +194,13 @@ GET /v1/services/:id/jobs/:jobId/runs viewer nd://scope/read/services
 GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
+GET /v1/services/:id/runtime-recovery viewer nd://scope/read/services
 GET /v1/services/:id/source viewer nd://scope/read/services
 GET /v1/services/:id/swarm viewer nd://scope/read/services
+GET /v1/services/:id/swarm/recovery viewer nd://scope/read/services
 GET /v1/services/:id/tags viewer nd://scope/read/services
 GET /v1/services/:id/targets viewer nd://scope/read/services
+GET /v1/services/:id/targets/recovery viewer nd://scope/read/services
 GET /v1/services/:id/volumes viewer nd://scope/read/volumes
 GET /v1/services/:id/webhooks viewer nd://scope/read/webhooks
 GET /v1/services/approvals authed nd://scope/read/services
@@ -209,6 +222,8 @@ GET /v1/sso/:name/callback authed nd://scope/read/sso
 GET /v1/sso/:name/login authed nd://scope/read/sso
 GET /v1/sso/providers operator nd://scope/read/sso
 GET /v1/stats authed -
+GET /v1/stats/observability operator -
+GET /v1/stats/prometheus operator -
 GET /v1/status-pages operator -
 GET /v1/status-pages/:id operator -
 GET /v1/status/:slug public -
@@ -273,6 +288,7 @@ PATCH /v1/services/:id/limits member nd://scope/write/services
 PATCH /v1/services/:id/targets operator nd://scope/write/services
 PATCH /v1/services/:id/volumes/:attId member nd://scope/write/volumes
 PATCH /v1/sources/:id operator -
+PATCH /v1/stats/observability operator -
 PATCH /v1/status-pages/:id operator -
 PATCH /v1/users/:id/operator operator nd://scope/write/users
 PATCH /v1/users/:id/password operator nd://scope/write/users
@@ -346,6 +362,7 @@ POST /v1/insights authed nd://scope/write/manifests
 POST /v1/invitations/:token/accept token -
 POST /v1/labels member -
 POST /v1/log-drains operator -
+POST /v1/log-drains/:id/queue/retry operator -
 POST /v1/log-drains/:id/test operator -
 POST /v1/log-drains/search member -
 POST /v1/metric-history/flush operator -
@@ -371,6 +388,8 @@ POST /v1/servers/:id/reject operator -
 POST /v1/servers/:id/swarm/join operator -
 POST /v1/servers/:id/swarm/leave operator -
 POST /v1/servers/:id/test operator -
+POST /v1/servers/:serverId/containers/:container/files/dir operator -
+POST /v1/servers/:serverId/volumes/:name/files/dir operator -
 POST /v1/servers/announce token -
 POST /v1/servers/ssh-bootstrap operator -
 POST /v1/servers/ssh-test operator -
@@ -399,11 +418,14 @@ POST /v1/services/:id/jobs/:jobId/run member nd://scope/write/services
 POST /v1/services/:id/manifest/apply operator nd://scope/write/services
 POST /v1/services/:id/promote member nd://scope/write/services
 POST /v1/services/:id/restart member nd://scope/write/services
+POST /v1/services/:id/runtime-recovery operator nd://scope/write/services
 POST /v1/services/:id/sleep member nd://scope/write/services
 POST /v1/services/:id/source member nd://scope/write/services
 POST /v1/services/:id/start member nd://scope/write/services
 POST /v1/services/:id/sticky-session admin nd://scope/write/services
 POST /v1/services/:id/stop member nd://scope/write/services
+POST /v1/services/:id/swarm/recovery operator nd://scope/write/services
+POST /v1/services/:id/targets/recovery operator nd://scope/write/services
 POST /v1/services/:id/volumes member nd://scope/write/volumes
 POST /v1/services/:id/volumes/config-repair member nd://scope/write/volumes
 POST /v1/services/:id/wake member nd://scope/write/services
@@ -422,6 +444,7 @@ POST /v1/sources operator -
 POST /v1/sources/:id/generate-deploy-key operator -
 POST /v1/sso/:name/saml-callback authed nd://scope/write/sso
 POST /v1/sso/providers operator nd://scope/write/sso
+POST /v1/stats/observability/test operator -
 POST /v1/status-pages operator -
 POST /v1/swarm/init operator -
 POST /v1/system/import operator nd://scope/write/health
@@ -459,6 +482,8 @@ PUT /v1/databases/:id/public-access operator nd://scope/write/databases
 PUT /v1/github-apps/:id/private-key operator -
 PUT /v1/host-ips/:ip operator -
 PUT /v1/onboarding/dismissed operator -
+PUT /v1/servers/:serverId/containers/:container/files operator -
+PUT /v1/servers/:serverId/volumes/:name/files operator -
 PUT /v1/services/:id/files member nd://scope/write/services
 PUT /v1/services/:id/github operator nd://scope/write/services
 PUT /v1/services/:id/placement operator nd://scope/write/services

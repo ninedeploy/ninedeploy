@@ -31,6 +31,92 @@ function client(reply: (url: string) => { status: number; body: unknown } = () =
 }
 
 describe('0.16 T8 route mapping', () => {
+  it('maps every volume file action to the selected node namespace with a helper-sized timeout', async () => {
+    const { api, calls } = client(), options = { serverId: 7 };
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      await api.volumes.listFiles('nd-svc-same', 'a b', options);
+      await api.volumes.readFile('nd-svc-same', 'a b/file', options);
+      await api.volumes.writeFile('nd-svc-same', { path: 'file', contentBase64: 'eA==' }, options);
+      await api.volumes.mkdir('nd-svc-same', { path: 'dir' }, options);
+      await api.volumes.deleteFile('nd-svc-same', 'dir/file', options);
+      expect(calls.map(c=>`${c.method} ${c.url}`)).toEqual([
+        'GET /v1/servers/7/volumes/nd-svc-same/files?path=a%20b',
+        'GET /v1/servers/7/volumes/nd-svc-same/files/content?path=a%20b%2Ffile',
+        'PUT /v1/servers/7/volumes/nd-svc-same/files',
+        'POST /v1/servers/7/volumes/nd-svc-same/files/dir',
+        'DELETE /v1/servers/7/volumes/nd-svc-same/files?path=dir%2Ffile',
+      ]);
+      expect(timeout.mock.calls.map(([ms])=>ms)).toEqual([150000,150000,150000,150000,150000]);
+    } finally { timeout.mockRestore(); }
+  });
+  it('never retries a node volume file operation against a same-named local volume on an older panel', async () => {
+    const { api, calls } = client(()=>({status:404,body:{error:{code:'not_found',message:'Unknown route'}}}));
+    await expect(api.volumes.readFile('nd-svc-same','file',{serverId:7})).rejects.toMatchObject({status:404});
+    expect(calls.map(c=>c.url)).toEqual(['/v1/servers/7/volumes/nd-svc-same/files/content?path=file']);
+  });
+  it.each([0,-1,NaN,1.5,Number.MAX_SAFE_INTEGER+1])('refuses invalid volume node id %s before HTTP', serverId => {
+    const { api, calls } = client();
+    expect(()=>api.volumes.listFiles('nd-svc-same','',{serverId})).toThrow('Invalid volume node id'); expect(calls).toEqual([]);
+  });
+  it('maps explicit node tools to a separate namespace and never retries on the local URI', async () => {
+    const { api, calls } = client(); const options = { serverId: 7 };
+    await api.containers.inspect('same-name', options); await api.containers.compose('same-name', options);
+    await api.containers.listFiles('same-name', '/tmp/a b', options); await api.containers.readFile('same-name', '/tmp/file', options);
+    await api.containers.writeFile('same-name', { path: '/tmp/file', contentBase64: 'eA==' }, options);
+    await api.containers.mkdir('same-name', { path: '/tmp/dir' }, options); await api.containers.deleteFile('same-name', '/tmp/file', options);
+    expect(calls.map(call => `${call.method} ${call.url}`)).toEqual([
+      'GET /v1/servers/7/containers/same-name/inspect', 'GET /v1/servers/7/containers/same-name/compose',
+      'GET /v1/servers/7/containers/same-name/files?path=%2Ftmp%2Fa%20b', 'GET /v1/servers/7/containers/same-name/files/content?path=%2Ftmp%2Ffile',
+      'PUT /v1/servers/7/containers/same-name/files', 'POST /v1/servers/7/containers/same-name/files/dir', 'DELETE /v1/servers/7/containers/same-name/files?path=%2Ftmp%2Ffile',
+    ]);
+    const old = client(() => ({ status: 404, body: { error: { code: 'not_found', message: 'Old panel' } } }));
+    await expect(old.api.containers.inspect('same-name', options)).rejects.toBeInstanceOf(NineDeployError);
+    expect(old.calls).toHaveLength(1); expect(old.calls[0]?.url).toContain('/servers/7/containers/');
+  });
+  it.each([0, -1, 1.5, Number.NaN])('refuses invalid node id %s before any HTTP request', id => {
+    const { api, calls } = client(); expect(() => api.containers.inspect('same-name', { serverId: id })).toThrow('Invalid container node id'); expect(calls).toHaveLength(0);
+  });
+  it('reads and retries Swarm recovery without shortening its native readiness deadline', async () => {
+    const entry = { id: 1, deploymentId: 9, phase: 'retained', interrupted: true, reason: 'Native spec changed', busy: false, attempts: 1, nextAttemptAt: '2026-10-23T00:00:00Z', updatedAt: '2026-10-23T00:00:00Z' };
+    const { api, calls } = client(() => ({ status: 200, body: { entry, recovered: 0, held: 1 } }));
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      expect(await api.services.swarmRecovery(4)).toEqual(entry);
+      expect(await api.services.retrySwarmRecovery(4)).toEqual({ entry, recovered: 0, held: 1 });
+      expect(calls.map(({ url, method }) => ({ url, method }))).toEqual([{ method: 'GET', url: '/v1/services/4/swarm/recovery' }, { method: 'POST', url: '/v1/services/4/swarm/recovery' }]);
+      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([30_000, 600_000]);
+    } finally { timeout.mockRestore(); }
+  });
+  it('reads and retries primary runtime recovery without shortening the readiness deadline', async () => {
+    const entry = { id: 1, serverId: null, deploymentId: 9, phase: 'routing', reason: 'Routing not confirmed', busy: false, previousRuntimeId: 'web-8', candidateRuntimeId: 'web-9', desiredRuntimeId: 'web-9', interrupted: true, attempts: 1, nextAttemptAt: '2026-10-23T00:00:00Z', updatedAt: '2026-10-22T23:00:00Z' };
+    const { api, calls } = client(() => ({ status: 200, body: { entry, recovered: 0, held: 1 } }));
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      expect(await api.services.runtimeRecovery(4)).toEqual(entry);
+      expect(await api.services.retryRuntimeRecovery(4)).toEqual({ entry, recovered: 0, held: 1 });
+      expect(calls.map(({ url, method }) => ({ url, method }))).toEqual([{ method: 'GET', url: '/v1/services/4/runtime-recovery' }, { method: 'POST', url: '/v1/services/4/runtime-recovery' }]);
+      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([30_000, 600_000]);
+    } finally { timeout.mockRestore(); }
+  });
+  it('reads and retries durable fan-out recovery through the service target routes', async () => {
+    const entry = { id: 1, serverId: 5, deploymentId: 9, phase: 'retained', reason: 'Routing not confirmed', busy: false, previousRuntimeId: 'web-8', candidateRuntimeId: 'web-9', attempts: 1, nextAttemptAt: '2026-10-23T00:00:00Z', updatedAt: '2026-10-22T23:00:00Z' };
+    const { api, calls } = client(() => ({ status: 200, body: { entries: [entry], recovered: 0, held: 1 } }));
+    expect(await api.fanout.recovery(4)).toEqual([entry]);
+    expect(await api.fanout.retryRecovery(4)).toEqual({ entries: [entry], recovered: 0, held: 1 });
+    expect(calls.map(({ url, method }) => ({ url, method }))).toEqual([
+      { method: 'GET', url: '/v1/services/4/targets/recovery' },
+      { method: 'POST', url: '/v1/services/4/targets/recovery' },
+    ]);
+  });
+  it('allows readiness, routing and retirement to complete beyond the normal HTTP timeout', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      const { api } = client(() => ({ status: 200, body: { entries: [], recovered: 0, held: 0 } }));
+      await api.fanout.recovery(4); await api.fanout.retryRecovery(4);
+      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([30_000, 600_000]);
+    } finally { timeout.mockRestore(); }
+  });
   it('maps placement, transfers, volumes, server roles and Swarm onto the shipped routes', async () => {
     const { api, calls } = client();
     const cases: Array<[() => Promise<unknown>, string, string, unknown]> = [

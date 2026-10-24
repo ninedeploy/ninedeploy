@@ -1,6 +1,7 @@
 export * from './common.js';
 export * from './auth.js';
 export * from './management.js';
+export * from './observability.js';
 export * from './ninedeployManifest.js';
 export type { AlertWhen } from './ninedeployManifest.js';
 export type { RestartPolicy } from './ninedeployManifest.js';
@@ -32,4 +33,6 @@ export * from './serviceFiles.js';
 export * from './dockerLabels.js';
 export * from './uptime.js';
 export * from './canary.js';
+export * from './proxyTraffic.js';
+export * from './containerReadiness.js';
 export * from './autoscale.js';

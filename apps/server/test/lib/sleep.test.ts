@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, type DB, deployments, domains, runMigrations, type Service, services, users } from '@ninedeploy/db';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDb, type DB, deployments, primaryTransitions, domains, runMigrations, type Service, services, users } from '@ninedeploy/db';
 import { markAwake, putToSleep, resetSleepState, servingContainers, sleepHoldReason, type SleepDeps, wakeService } from '../../src/lib/sleep.js';
 import { lastServiceRequestAt, recordServiceRequest, resetRequestRates } from '../../src/lib/requestRate.js';
 import { createSleeper } from '../../src/plugins/sleeper.js';
@@ -12,10 +12,12 @@ import { createSleeper } from '../../src/plugins/sleeper.js';
  */
 
 let db: DB;
+let connection: ReturnType<typeof createDb>;
+afterEach(() => connection?.client?.close());
 const MIN = 60_000;
 
 beforeEach(async () => {
-  ({ db } = createDb({ url: ':memory:' }));
+  connection = createDb({ url: ':memory:' }); db = connection.db;
   await runMigrations(db, fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url)));
   await db.insert(users).values({ id: 1, email: 'op@example.com', passwordHash: 'x', isInstanceOperator: true });
   await db.insert(services).values({
@@ -93,6 +95,11 @@ describe('sleepHoldReason', () => {
 });
 
 describe('putToSleep', () => {
+  it('does not sleep a runtime protected by pending primary recovery', async () => {
+    await db.insert(primaryTransitions).values({ serviceId: 5, deploymentId: 9, candidate: { runtimeId: 'web-10', port: 3000, healthPath: '/', healthCheck: null, replicas: 1, commitSha: null, containers: [] } });
+    const { deps } = fakeDeps(); expect(await putToSleep(deps, await row())).toBe(false);
+    expect(deps.docker).not.toHaveBeenCalled(); expect((await row()).asleepAt).toBeNull();
+  });
   it('routes the domains to the wake endpoint first, then stops the serving containers, and audits', async () => {
     const { deps, order } = fakeDeps();
     expect(await putToSleep(deps, await row())).toBe(true);

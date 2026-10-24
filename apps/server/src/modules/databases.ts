@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
 import { backups, databaseAttachments, databases, type DB, projects, servers, serviceTargets, users, type Database } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { createAttachment, createDatabase, setLimits } from '@ninedeploy/schemas';
+import { createAttachment, createDatabase, setLimits, DATABASE_STUDIO_ENGINES } from '@ninedeploy/schemas';
 import {
   adoptRetainedVolume,
   volumeExists,
@@ -39,11 +39,14 @@ import {
 import { studioCookieEpoch, studioCookieName, studioCookieSetHeader, studioProxyPathFor } from './studioProxy.js';
 import { badRequest, conflict, forbidden, HttpError, notFound, parseId as num, unauthorized, unprocessable } from '../lib/errors.js';
 import { slugify } from '../lib/slug.js';
+import { authCredentialOf } from '../lib/authCredential.js';
 // ── 0.16 T6 node databases ──
 import { databaseRuntime, isNodeDatabase } from '../lib/databaseRuntime.js';
 import { nodeAgentInfo } from '../lib/agentCapabilities.js';
 import { assertNodeAgentKnowsEngine, assertNodeDatabaseCapable, nodeDatabaseRuntime, nodeReachability } from '../lib/nodeDatabase.js';
 import { nodeVolumeExists } from '../lib/nodeVolumes.js';
+import { withNodeDatabaseLifecycle } from '../lib/nodeDatabaseLifecycle.js';
+import { nodeStudioState, clearNodeStudioForMutation, startNodeStudioForDatabase, stopNodeStudioForDatabase } from '../lib/nodeStudio.js';
 import { attachmentHostMismatch, fanoutDatabaseHostRefusal } from '../lib/remoteDatabaseRefusal.js';
 // ── end 0.16 T6 ──
 
@@ -116,6 +119,7 @@ function serialize(
     memLimitMb: d.memLimitMb,
     webGuiEnabled: Boolean(d.webGuiEnabled),
     webGuiPort: d.webGuiPort,
+    nodeStudioState: nodeStudioState(d),
     extensions: d.extensions,
     attachedServices,
     // 0.14 (M7): `{ enabled, port }` when public access was ever configured.
@@ -142,11 +146,26 @@ async function nodesOf(db: DB, rows: ReadonlyArray<{ serverId?: number | null }>
   return out;
 }
 
-/** Refuse a panel-host-only feature for a node database (design §5.7, §12). */
-function refuseOnNode(d: Database, feature: string): void {
-  if (isNodeDatabase(d)) {
-    throw unprocessable(`${feature} is not available for a database on a node yet; it runs on the panel host only.`, 'remote_database');
-  }
+/** Serialize node database mutations with Studio preparation and reload after
+ * admission. Local database operations keep their existing runtime path. */
+async function mutateDatabase<T>(db: DB, target: Database, action: (d: Database) => Promise<T>): Promise<T> {
+  if (!isNodeDatabase(target)) return action(target);
+  return withNodeDatabaseLifecycle(target.id, async () => {
+    const d = await db.query.databases.findFirst({ where: eq(databases.id, target.id) });
+    if (!d) throw notFound('Database not found');
+    if (d.serverId !== target.serverId || d.slug !== target.slug || d.engine !== target.engine) throw conflict('The database target changed; refresh the page');
+    return action(d);
+  });
+}
+function studioLaunchPath(d: Database): string {
+  const base = studioProxyPathFor(d.id);
+  if (!['postgres', 'mysql', 'mariadb'].includes(d.engine)) return base;
+  const cfg = ENGINES[d.engine];
+  const query = new URLSearchParams({
+    [d.engine === 'postgres' ? 'pgsql' : 'server']: isNodeDatabase(d) ? `nd-db-${d.slug}` : d.internalHost ?? d.containerName ?? `nd-db-${d.slug}`,
+    username: cfg?.username() ?? '', db: cfg?.dbName() ?? '',
+  });
+  return `${base}?${query}`;
 }
 // ── end 0.16 T6 ──
 
@@ -473,7 +492,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/studio', { preHandler: [app.requireAdmin] }, async (req, reply) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
-    refuseOnNode(d, 'Web Studio'); // 0.16 T6 (design §5.7)
+    if (!(DATABASE_STUDIO_ENGINES as readonly string[]).includes(d.engine)) throw unprocessable('Web Studio is not available for this database engine', 'studio_engine_unsupported');
     const bodyPort = (req.body as { port?: number } | undefined)?.port;
     if (bodyPort !== undefined && (!Number.isInteger(bodyPort) || bodyPort < 1024 || bodyPort > 65535)) {
       throw badRequest('port must be an integer between 1024 and 65535');
@@ -483,20 +502,33 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     // it before starting anything (logout / deactivation then end the cookie).
     const me = await app.db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
     if (!me) throw unauthorized();
+    if (isNodeDatabase(d)) {
+      if (bodyPort !== undefined) throw badRequest('A node Studio uses its private database network and has no host port');
+      const abort = new AbortController();
+      const disconnected = () => { if (!reply.raw.writableFinished) abort.abort(); };
+      req.raw.once('aborted', disconnected); reply.raw.once('close', disconnected);
+      try { await startNodeStudioForDatabase(app.db, id, abort.signal); }
+      finally { req.raw.off('aborted', disconnected); reply.raw.off('close', disconnected); }
+      void audit(app.db, req.user!.id, 'database.studio.start', d.name + ' on node #' + d.serverId);
+      reply.header('set-cookie', studioCookieSetHeader(id, me, req.protocol === 'https', undefined, await studioCookieEpoch(app.db), authCredentialOf(req.user!)));
+      return { ok: true, port: null, url: studioLaunchPath(d), serverId: d.serverId };
+    }
     await startDatabaseStudio(d, port, (line) => app.log.info({ component: 'database-studio' }, line));
     await app.db.update(databases).set({ webGuiEnabled: true, webGuiPort: port }).where(eq(databases.id, d.id));
     void audit(app.db, req.user!.id, 'database.studio.start', `${d.name} on :${port}`);
-    reply.header('set-cookie', studioCookieSetHeader(id, me, req.protocol === 'https', undefined, await studioCookieEpoch(app.db)));
-    return { ok: true, port, url: studioProxyPathFor(id) };
+    reply.header('set-cookie', studioCookieSetHeader(id, me, req.protocol === 'https', undefined, await studioCookieEpoch(app.db), authCredentialOf(req.user!)));
+    return { ok: true, port, url: studioLaunchPath(d) };
   });
 
   // Stop Web Studio for this database
   app.delete('/:id/studio', { preHandler: [app.requireAdmin] }, async (req, reply) => {
     const id = num((req.params as { id: string }).id);
     const d = await loadDatabaseForUser(app.db, id, req.user!);
-    // 0.16 T6: a node database never had a Studio (refused); nothing runs on the panel host for it.
-    if (!isNodeDatabase(d)) await stopDatabaseStudio(d, (line) => app.log.info({ component: 'database-studio' }, line));
-    await app.db.update(databases).set({ webGuiEnabled: false }).where(eq(databases.id, d.id));
+    if (isNodeDatabase(d)) await stopNodeStudioForDatabase(app.db, id);
+    else {
+      await stopDatabaseStudio(d, (line) => app.log.info({ component: 'database-studio' }, line));
+      await app.db.update(databases).set({ webGuiEnabled: false }).where(eq(databases.id, d.id));
+    }
     void audit(app.db, req.user!.id, 'database.studio.stop', d.name);
     reply.header('set-cookie', `${studioCookieName(id)}=; Path=/v1/databases/${id}/studio-proxy/; HttpOnly; SameSite=Strict; Max-Age=0`);
     return { ok: true };
@@ -507,204 +539,223 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     // Destroying a database is irreversible — resolve access before reading it.
     const target = await loadDatabaseForUser(app.db, id, req.user!);
     await assertDatabaseRole(app.db, target, req.user!, 'admin');
-    const d = await app.db.query.databases.findFirst({
-      where: eq(databases.id, id),
-      with: {
-        attachments: {
-          with: { service: true },
+    return mutateDatabase(app.db, target, async () => {
+      const d = await app.db.query.databases.findFirst({
+        where: eq(databases.id, id),
+        with: {
+          attachments: {
+            with: { service: true },
+          },
         },
-      },
-    });
-    if (!d) throw notFound('Database not found');
+      });
+      if (!d) throw notFound('Database not found');
 
-    const attachedServices =
-      d.attachments
-        ?.map((a) => (a.service ? { id: a.service.id, name: a.service.name, slug: a.service.slug } : null))
-        .filter((s): s is { id: number; name: string; slug: string } => s != null) ?? [];
-    const force = (req.query as { force?: string }).force === 'true';
+      const attachedServices =
+        d.attachments
+          ?.map((a) => (a.service ? { id: a.service.id, name: a.service.name, slug: a.service.slug } : null))
+          .filter((s): s is { id: number; name: string; slug: string } => s != null) ?? [];
+      const force = (req.query as { force?: string }).force === 'true';
 
-    // Guard against breaking connected services
-    if (attachedServices.length > 0 && !force) {
-      const names = attachedServices.map((s) => s.name).join(', ');
-      throw badRequest(
-        `Cannot delete database "${d.name}": It is locked and actively in use by ${attachedServices.length} service(s) (${names}). Detach these services first or pass ?force=true to override.`,
-      );
-    }
-
-    // r237: `database:before_delete` was declared as the plugin veto point and
-    // never called. A handler returning `allowOrAbort: false` stops the delete
-    // before anything is torn down.
-    const hooks = app.kernel?.hooks;
-    if (hooks?.hasListeners('database:before_delete')) {
-      const { attachments: _attachments, ...row } = d;
-      const verdict = await hooks.call('database:before_delete', { database: row, allowOrAbort: true });
-      if (verdict.allowOrAbort === false) {
-        throw conflict(`Deleting database "${d.name}" was refused by a plugin${verdict.reason ? `: ${verdict.reason}` : ''}`);
+      // Guard against breaking connected services
+      if (attachedServices.length > 0 && !force) {
+        const names = attachedServices.map((s) => s.name).join(', ');
+        throw badRequest(
+          `Cannot delete database "${d.name}": It is locked and actively in use by ${attachedServices.length} service(s) (${names}). Detach these services first or pass ?force=true to override.`,
+        );
       }
-    }
 
-    const dbLog = (line: string) => app.log.info({ component: 'database' }, line);
-    // ── 0.16 T6 node databases (design §5.4 "Delete") ──
-    // The container and its bridge go on the node; the volume (the data) only
-    // with ?purgeVolume=true. Studio, PgBouncer and public access never ran
-    // for a node database, so nothing runs on the panel host. An unreachable
-    // node keeps the row (502) unless ?force=true, which deletes the record
-    // and says what was left running on the node.
-    let orphanedOnNode: string | null = null;
-    if (isNodeDatabase(d)) {
-      const runtime = nodeDatabaseRuntime(app.db, d);
-      try {
-        await runtime.remove({ purgeVolume: (req.query as { purgeVolume?: string }).purgeVolume === 'true' }, dbLog);
-      } catch (err) {
-        const why = err instanceof Error ? err.message : String(err);
-        if (!force) {
-          throw new HttpError(
-            502,
-            'node_unreachable',
-            `Could not remove database "${d.name}" from node #${d.serverId}: ${why}. Retry when the node is back, or pass ?force=true to delete the record and leave ${runtime.container} and ${runtime.volume} on the node.`,
-          );
+      // r237: `database:before_delete` was declared as the plugin veto point and
+      // never called. A handler returning `allowOrAbort: false` stops the delete
+      // before anything is torn down.
+      const hooks = app.kernel?.hooks;
+      if (hooks?.hasListeners('database:before_delete')) {
+        const { attachments: _attachments, ...row } = d;
+        const verdict = await hooks.call('database:before_delete', { database: row, allowOrAbort: true });
+        if (verdict.allowOrAbort === false) {
+          throw conflict(`Deleting database "${d.name}" was refused by a plugin${verdict.reason ? `: ${verdict.reason}` : ''}`);
         }
-        orphanedOnNode = `${runtime.container} (volume ${runtime.volume}, network ${runtime.network}) may still run on node #${d.serverId}: remove it there with docker rm -f ${runtime.container}.`;
       }
-    } else {
-      await stopDatabase(d, dbLog);
-      // r183: the sidecars go with it. Only `nd-db-<slug>` used to be removed:
-      // the studio (which holds the credentials) and PgBouncer kept running
-      // with the old password, and a later database reusing the slug found
-      // `nd-studio-<slug>` "already running" and inherited the stale one.
-      await stopDatabaseStudio(d, dbLog);
-      await disablePgbouncer(app.db, d, dbLog).catch((err: unknown) =>
-        req.log.warn({ err }, 'failed to remove the PgBouncer sidecar after database delete'),
-      );
-      // 0.14 (M6): the public-access proxy goes before the row transaction (the
-      // FK cascade then drops its row). It never throws; a leftover container
-      // is an orphan the watchdog removes.
-      await removePublicAccessSidecar(app.db, d, dbLog);
-    }
-    // ── end 0.16 T6 ──
-    // Capture the dump paths BEFORE the transaction deletes the rows.
-    const backupRows = await app.db.query.backups.findMany({ where: eq(backups.databaseId, d.id) });
-    // Atomic row removal (attachments + backups + the database itself commit
-    // together) — a mid-delete failure must never leave live rows pointing at
-    // already-destroyed artifacts. The volume is intentionally kept = retained.
-    await app.db.transaction(async (tx) => {
-      await tx.delete(databaseAttachments).where(eq(databaseAttachments.databaseId, d.id));
-      await tx.delete(backups).where(eq(backups.databaseId, d.id));
-      await tx.delete(databases).where(eq(databases.id, d.id));
-    });
-    // Post-commit best-effort cleanup: unlink the dump files (dumps contain DB
-    // credentials, plaintext once decrypted). Files are not transactional — a
-    // failure here leaves an orphaned dump, which is logged, not silent.
-    for (const b of backupRows) {
-      try {
-        if (existsSync(b.path)) unlinkSync(b.path);
-      } catch (err) {
-        req.log.warn({ err, path: b.path }, 'failed to unlink backup file after database delete');
-      }
-      // r646: the off-site copy goes too. Only the local dump used to be
-      // removed, so every remote object of a deleted database stayed in the
-      // bucket forever with no row left to find (or prune) it by. Resolved
-      // against the destination the row RECORDS — never the active one, which
-      // may be another bucket. Best-effort: the rows are already gone.
-      if (b.remoteKey) {
+
+      const dbLog = (line: string) => app.log.info({ component: 'database' }, line);
+      // ── 0.16 T6 node databases (design §5.4 "Delete") ──
+      // The container and its bridge go on the node; the volume (the data) only
+      // with ?purgeVolume=true. Studio is confirmed removed on that same node;
+      // no local helper cleanup is attempted. An unreachable
+      // node keeps the row (502) unless ?force=true, which deletes the record
+      // and says what was left running on the node.
+      let orphanedOnNode: string | null = null;
+      if (isNodeDatabase(d)) {
+        const runtime = nodeDatabaseRuntime(app.db, d);
+        try { await clearNodeStudioForMutation(app.db, d); }
+        catch {
+          if (!force) throw new HttpError(502, 'node_studio_cleanup_unconfirmed', 'The node Studio could not be removed; the database record and data were retained. Retry, or pass ?force=true to delete the record and leave the Studio on the node.');
+          orphanedOnNode = 'Studio nd-node-studio-' + d.id + ' may still run on node #' + d.serverId + '; confirm and remove that managed helper on the node.';
+        }
         try {
-          const outcome = await deleteRemoteBackupForRetention(app.db, b);
-          if (outcome === 'unknown-destination') {
-            req.log.warn({ remoteKey: b.remoteKey }, 'remote backup of a deleted database left in place: its destination is unknown');
-          }
+          await runtime.remove({ purgeVolume: (req.query as { purgeVolume?: string }).purgeVolume === 'true' }, dbLog);
         } catch (err) {
-          req.log.warn({ err, remoteKey: b.remoteKey }, 'failed to delete remote backup after database delete');
+          const why = err instanceof Error ? err.message : String(err);
+          if (!force) {
+            throw new HttpError(
+              502,
+              'node_unreachable',
+              `Could not remove database "${d.name}" from node #${d.serverId}: ${why}. Retry when the node is back, or pass ?force=true to delete the record and leave ${runtime.container} and ${runtime.volume} on the node.`,
+            );
+          }
+          orphanedOnNode = (orphanedOnNode ? orphanedOnNode + ' ' : '') + `${runtime.container} (volume ${runtime.volume}, network ${runtime.network}) may still run on node #${d.serverId}: remove it there with docker rm -f ${runtime.container}.`;
+        }
+      } else {
+        await stopDatabase(d, dbLog);
+        // r183: the sidecars go with it. Only `nd-db-<slug>` used to be removed:
+        // the studio (which holds the credentials) and PgBouncer kept running
+        // with the old password, and a later database reusing the slug found
+        // `nd-studio-<slug>` "already running" and inherited the stale one.
+        await stopDatabaseStudio(d, dbLog);
+        await disablePgbouncer(app.db, d, dbLog).catch((err: unknown) =>
+          req.log.warn({ err }, 'failed to remove the PgBouncer sidecar after database delete'),
+        );
+        // 0.14 (M6): the public-access proxy goes before the row transaction (the
+        // FK cascade then drops its row). It never throws; a leftover container
+        // is an orphan the watchdog removes.
+        await removePublicAccessSidecar(app.db, d, dbLog);
+      }
+      // ── end 0.16 T6 ──
+      // Capture the dump paths BEFORE the transaction deletes the rows.
+      const backupRows = await app.db.query.backups.findMany({ where: eq(backups.databaseId, d.id) });
+      // Atomic row removal (attachments + backups + the database itself commit
+      // together) — a mid-delete failure must never leave live rows pointing at
+      // already-destroyed artifacts. The volume is intentionally kept = retained.
+      await app.db.transaction(async (tx) => {
+        await tx.delete(databaseAttachments).where(eq(databaseAttachments.databaseId, d.id));
+        await tx.delete(backups).where(eq(backups.databaseId, d.id));
+        await tx.delete(databases).where(eq(databases.id, d.id));
+      });
+      // Post-commit best-effort cleanup: unlink the dump files (dumps contain DB
+      // credentials, plaintext once decrypted). Files are not transactional — a
+      // failure here leaves an orphaned dump, which is logged, not silent.
+      for (const b of backupRows) {
+        try {
+          if (existsSync(b.path)) unlinkSync(b.path);
+        } catch (err) {
+          req.log.warn({ err, path: b.path }, 'failed to unlink backup file after database delete');
+        }
+        // r646: the off-site copy goes too. Only the local dump used to be
+        // removed, so every remote object of a deleted database stayed in the
+        // bucket forever with no row left to find (or prune) it by. Resolved
+        // against the destination the row RECORDS — never the active one, which
+        // may be another bucket. Best-effort: the rows are already gone.
+        if (b.remoteKey) {
+          try {
+            const outcome = await deleteRemoteBackupForRetention(app.db, b);
+            if (outcome === 'unknown-destination') {
+              req.log.warn({ remoteKey: b.remoteKey }, 'remote backup of a deleted database left in place: its destination is unknown');
+            }
+          } catch (err) {
+            req.log.warn({ err, remoteKey: b.remoteKey }, 'failed to delete remote backup after database delete');
+          }
         }
       }
-    }
-    void audit(app.db, req.user!.id, 'database.delete', d.name);
-    app.kernel?.events.emit('database.deleted', {
-      databaseId: d.id,
-      name: d.name,
-      volumeRetained: !(isNodeDatabase(d) && (req.query as { purgeVolume?: string }).purgeVolume === 'true' && orphanedOnNode === null),
+      void audit(app.db, req.user!.id, 'database.delete', d.name);
+      app.kernel?.events.emit('database.deleted', {
+        databaseId: d.id,
+        name: d.name,
+        volumeRetained: !(isNodeDatabase(d) && (req.query as { purgeVolume?: string }).purgeVolume === 'true' && orphanedOnNode === null),
+      });
+      return orphanedOnNode ? { ok: true, note: orphanedOnNode } : { ok: true };
     });
-    return orphanedOnNode ? { ok: true, note: orphanedOnNode } : { ok: true };
   });
 
   // Resource limits — recreates the container if running so they take effect.
   app.patch('/:id/limits', async (req) => {
-    const d = await loadDatabaseForUser(app.db, num((req.params as { id: string }).id), req.user!);
-    await assertDatabaseRole(app.db, d, req.user!, 'member');
-    const input = setLimits.parse(req.body);
-    const updateData: { cpuShares?: number; cpuLimitMilli?: number; memLimitMb?: number } = {};
-    if (input.cpuShares !== undefined) {
-      updateData.cpuShares = input.cpuShares ? Math.max(0, input.cpuShares) : 0;
-    }
-    if (input.cpuLimitMilli !== undefined) {
-      updateData.cpuLimitMilli = input.cpuLimitMilli ? Math.max(0, input.cpuLimitMilli) : 0;
-    }
-    if (input.memLimitMb !== undefined) {
-      updateData.memLimitMb = input.memLimitMb ? Math.max(0, input.memLimitMb) : 0;
-    }
-    const [updated] = await app.db.update(databases).set(updateData).where(eq(databases.id, d.id)).returning();
-    if (updated) {
-      void audit(app.db, req.user!.id, 'database.limits', `${updated.name}: cpu=${updated.cpuShares} cpus=${updated.cpuLimitMilli / 1000} mem=${updated.memLimitMb}MB`);
-    }
-    if (updated && updated.status === 'running') {
-      // 0.16 T6: through the runtime (the engine functions on the panel host, the agent on a node).
-      const runtime = databaseRuntime(app.db, updated);
-      await runtime.stop(() => undefined);
-      try {
-        await runtime.start((line) => app.log.info({ component: 'database' }, line));
-      } catch (err) {
-        // A failed restart must not leave the row claiming `running` with no
-        // container — every attached service's healthcheck would then fail
-        // against a database the panel insists is up.
-        await app.db.update(databases).set({ status: 'error' }).where(eq(databases.id, d.id));
-        throw err;
+    const target = await loadDatabaseForUser(app.db, num((req.params as { id: string }).id), req.user!);
+    await assertDatabaseRole(app.db, target, req.user!, 'member');
+    return mutateDatabase(app.db, target, async (d) => {
+      const input = setLimits.parse(req.body);
+      const updateData: { cpuShares?: number; cpuLimitMilli?: number; memLimitMb?: number } = {};
+      if (input.cpuShares !== undefined) {
+        updateData.cpuShares = input.cpuShares ? Math.max(0, input.cpuShares) : 0;
       }
-    }
-    return { cpuShares: updated!.cpuShares, cpuLimitMilli: updated!.cpuLimitMilli, memLimitMb: updated!.memLimitMb };
+      if (input.cpuLimitMilli !== undefined) {
+        updateData.cpuLimitMilli = input.cpuLimitMilli ? Math.max(0, input.cpuLimitMilli) : 0;
+      }
+      if (input.memLimitMb !== undefined) {
+        updateData.memLimitMb = input.memLimitMb ? Math.max(0, input.memLimitMb) : 0;
+      }
+      if (isNodeDatabase(d) && d.status === 'running') await clearNodeStudioForMutation(app.db, d);
+      const [updated] = await app.db.update(databases).set(updateData).where(eq(databases.id, d.id)).returning();
+      if (updated) {
+        void audit(app.db, req.user!.id, 'database.limits', `${updated.name}: cpu=${updated.cpuShares} cpus=${updated.cpuLimitMilli / 1000} mem=${updated.memLimitMb}MB`);
+      }
+      if (updated && updated.status === 'running') {
+        // 0.16 T6: through the runtime (the engine functions on the panel host, the agent on a node).
+        const runtime = databaseRuntime(app.db, updated);
+        await runtime.stop(() => undefined);
+        try {
+          await runtime.start((line) => app.log.info({ component: 'database' }, line));
+        } catch (err) {
+          // A failed restart must not leave the row claiming `running` with no
+          // container — every attached service's healthcheck would then fail
+          // against a database the panel insists is up.
+          await app.db.update(databases).set({ status: 'error' }).where(eq(databases.id, d.id));
+          throw err;
+        }
+      }
+      return { cpuShares: updated!.cpuShares, cpuLimitMilli: updated!.cpuLimitMilli, memLimitMb: updated!.memLimitMb };
+    });
   });
 
   app.post('/:id/restart', async (req) => {
     const id = num((req.params as { id: string }).id);
-    const d = await loadDatabaseForUser(app.db, id, req.user!);
-    await assertDatabaseRole(app.db, d, req.user!, 'member');
-    await databaseRuntime(app.db, d).restart((line) => app.log.info({ component: 'database' }, line));
-    await app.db.update(databases).set({ status: 'running' }).where(eq(databases.id, d.id));
-    void audit(app.db, req.user!.id, 'database.restart', d.name);
-    return { ok: true };
+    const target = await loadDatabaseForUser(app.db, id, req.user!);
+    await assertDatabaseRole(app.db, target, req.user!, 'member');
+    return mutateDatabase(app.db, target, async (d) => {
+      if (isNodeDatabase(d)) await clearNodeStudioForMutation(app.db, d);
+      await databaseRuntime(app.db, d).restart((line) => app.log.info({ component: 'database' }, line));
+      await app.db.update(databases).set({ status: 'running' }).where(eq(databases.id, d.id));
+      void audit(app.db, req.user!.id, 'database.restart', d.name);
+      return { ok: true };
+    });
   });
 
   app.post('/:id/stop', async (req) => {
     const id = num((req.params as { id: string }).id);
-    const d = await loadDatabaseForUser(app.db, id, req.user!);
-    await assertDatabaseRole(app.db, d, req.user!, 'member');
-    await databaseRuntime(app.db, d).stop((line) => app.log.info({ component: 'database' }, line));
-    await app.db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, d.id));
-    void audit(app.db, req.user!.id, 'database.stop', d.name);
-    app.kernel?.events.emit('database.stopped', {
-      databaseId: d.id,
+    const target = await loadDatabaseForUser(app.db, id, req.user!);
+    await assertDatabaseRole(app.db, target, req.user!, 'member');
+    return mutateDatabase(app.db, target, async (d) => {
+      if (isNodeDatabase(d)) await clearNodeStudioForMutation(app.db, d);
+      await databaseRuntime(app.db, d).stop((line) => app.log.info({ component: 'database' }, line));
+      await app.db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, d.id));
+      void audit(app.db, req.user!.id, 'database.stop', d.name);
+      app.kernel?.events.emit('database.stopped', {
+        databaseId: d.id,
+      });
+      return { ok: true };
     });
-    return { ok: true };
   });
 
   app.post('/:id/start', async (req) => {
     const id = num((req.params as { id: string }).id);
-    const d = await loadDatabaseForUser(app.db, id, req.user!);
-    await assertDatabaseRole(app.db, d, req.user!, 'member');
-    // A row can sit in 'error' with a NULL marker (failed first attempt) —
-    // starting it must clear the same retained-volume gate as a create/retry.
-    const runtime = databaseRuntime(app.db, d);
-    if (needsVolumeAdoption(d)) {
-      await runtime.adoptRetainedVolume((line) => app.log.info({ component: 'database' }, line));
-    }
-    await runtime.start((line) => app.log.info({ component: 'database' }, line));
-    await app.db
-      .update(databases)
-      .set({ status: 'running', initializedAt: d.initializedAt ?? new Date() })
-      .where(eq(databases.id, d.id));
-    void audit(app.db, req.user!.id, 'database.start', d.name);
-    app.kernel?.events.emit('database.started', {
-      databaseId: d.id,
+    const target = await loadDatabaseForUser(app.db, id, req.user!);
+    await assertDatabaseRole(app.db, target, req.user!, 'member');
+    return mutateDatabase(app.db, target, async (d) => {
+      if (isNodeDatabase(d)) await clearNodeStudioForMutation(app.db, d);
+      // A row can sit in 'error' with a NULL marker (failed first attempt) —
+      // starting it must clear the same retained-volume gate as a create/retry.
+      const runtime = databaseRuntime(app.db, d);
+      if (needsVolumeAdoption(d)) {
+        await runtime.adoptRetainedVolume((line) => app.log.info({ component: 'database' }, line));
+      }
+      await runtime.start((line) => app.log.info({ component: 'database' }, line));
+      await app.db
+        .update(databases)
+        .set({ status: 'running', initializedAt: d.initializedAt ?? new Date() })
+        .where(eq(databases.id, d.id));
+      void audit(app.db, req.user!.id, 'database.start', d.name);
+      app.kernel?.events.emit('database.started', {
+        databaseId: d.id,
+      });
+      return { ok: true };
     });
-    return { ok: true };
   });
 
   app.get('/:id/logs', async (req) => {

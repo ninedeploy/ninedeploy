@@ -3,6 +3,8 @@ import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, ty
 import { type AgentStreamSocket, attachStreamChannel } from './agentOps/stream.js';
 import { config } from './config.js';
 import { AGENT_STREAM_PATH } from './lib/agentStream.js';
+import { attachStudioChannel, type AgentStudioSocket } from './agentOps/studios.js';
+import { STUDIO_RELAY_PATH } from './lib/studioRelayProtocol.js';
 import rateLimitPlugin from './plugins/rateLimit.js';
 
 /**
@@ -85,5 +87,15 @@ export async function buildAgentApp() {
 export async function agentStreamRoute(app: FastifyInstance, opts: { tokenHash: string }): Promise<void> {
   app.get(AGENT_STREAM_PATH, { websocket: true, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (socket, req) => {
     attachStreamChannel(socket as unknown as AgentStreamSocket, req.headers['sec-websocket-protocol'], opts.tokenHash);
+  });
+}
+
+/** The sealed Studio reservation and encrypted first frame authenticate this request. */
+export async function agentStudioRoute(app: FastifyInstance, opts: { tokenHash: string }): Promise<void> {
+  // Each HTTP asset consumes one sealed ticket. Match the 120/min issuer
+  // budget; the 16-channel admission and first-frame authentication still
+  // bound live work, including failed or abandoned reservations.
+  app.get(STUDIO_RELAY_PATH, { websocket: true, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, (socket, req) => {
+    attachStudioChannel(socket as unknown as AgentStudioSocket, req.headers['sec-websocket-protocol'], opts.tokenHash);
   });
 }

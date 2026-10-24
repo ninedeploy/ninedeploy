@@ -6,7 +6,7 @@ import { renderWithProviders } from './helpers.js';
 
 const apiMock = vi.hoisted(() => ({
   api: {
-    stats: { snapshot: vi.fn(), metrics: vi.fn() },
+    stats: { snapshot: vi.fn(), metrics: vi.fn(), observability: { get: vi.fn().mockResolvedValue({ settings: { retentionDays: 1, prometheusEnabled: false, otlpEndpoint: '', logQueueMaxMb: 16, hasOtlpAuthorization: false }, exportStatus: { lastAttemptAt: null, lastSuccessAt: null, result: null } }) } },
     alerts: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     services: { list: vi.fn() },
     servers: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), test: vi.fn(), sshTest: vi.fn(), bootstrapLogs: vi.fn(), stats: vi.fn() },

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -19,7 +20,7 @@ import {
 import { useState } from 'react';
 import { api } from '../lib/api.js';
 import { useToast } from './Toast.js';
-import { Button, Card, Skeleton, cn } from './ui.js';
+import { Button, Card, ErrorCard, Skeleton, cn } from './ui.js';
 import { formatBytes } from '../lib/format.js';
 
 export type FileCategory = 'text' | 'image' | 'binary';
@@ -103,23 +104,29 @@ interface OpenFileState {
  * navigation, extension-aware safe viewing/editing, image preview, binary
  * protection, and mkdir/save/delete actions.
  */
-export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: () => void }) {
+interface VolumeBrowserProps { volume: string; serverId?: number; onClose: () => void }
+export function VolumeBrowser(props: VolumeBrowserProps) {
+  return <VolumeBrowserSession key={`${props.serverId ?? 'panel'}:${props.volume}`} {...props} />;
+}
+function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps) {
+  const hostArgs: [] | [{ serverId: number }] = serverId == null ? [] : [{ serverId }];
+  const fileKey = serverId == null ? ['volume-files', volume] : ['volume-files', serverId, volume];
   const qc = useQueryClient();
   const { toast } = useToast();
   const [cwd, setCwd] = useState('');
   const [editing, setEditing] = useState<OpenFileState | null>(null);
 
   const dir = useQuery({
-    queryKey: ['volume-files', volume, cwd],
-    queryFn: () => api.volumes.listFiles(volume, cwd),
+    queryKey: [...fileKey, cwd],
+    queryFn: () => api.volumes.listFiles(volume, cwd, ...hostArgs),
   });
 
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['volume-files', volume] });
+    qc.invalidateQueries({ queryKey: fileKey });
   };
 
   const del = useMutation({
-    mutationFn: (path: string) => api.volumes.deleteFile(volume, path),
+    mutationFn: (path: string) => api.volumes.deleteFile(volume, path, ...hostArgs),
     onSuccess: (_r, path) => {
       setEditing(null);
       refresh();
@@ -129,7 +136,7 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
   });
 
   const mkdir = useMutation({
-    mutationFn: (path: string) => api.volumes.mkdir(volume, { path }),
+    mutationFn: (path: string) => api.volumes.mkdir(volume, { path }, ...hostArgs),
     onSuccess: () => {
       refresh();
       toast('Folder created', 'success');
@@ -138,7 +145,7 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
   });
 
   const open = useMutation({
-    mutationFn: (path: string) => api.volumes.readFile(volume, path),
+    mutationFn: (path: string) => api.volumes.readFile(volume, path, ...hostArgs),
     onSuccess: (res, path) => {
       const category = getFileCategory(path);
       let text = '';
@@ -168,7 +175,7 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
       api.volumes.writeFile(volume, {
         path: v.path,
         contentBase64: btoa(unescape(encodeURIComponent(v.text))),
-      }),
+      }, ...hostArgs),
     onSuccess: (_res, v) => {
       setEditing((cur) => (cur && cur.path === v.path && cur.text === v.text ? { ...cur, dirty: false } : cur));
       refresh();
@@ -189,7 +196,7 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
     role: 'presentation' as const,
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" {...backdropProps}>
       <div
         role="dialog"
@@ -199,10 +206,11 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
         onKeyDown={(e) => e.stopPropagation()}
       >
         {/* header */}
-        <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3 border-b border-white/[0.06] px-4 py-3">
           <HardDrive size={15} className="text-amber-400" />
-          <span className="truncate font-mono text-xs text-slate-300">{volume}</span>
-          <div className="ml-auto flex items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300">{volume}</span>
+          {serverId != null && <span className="shrink-0 text-xs text-slate-400">Node #{serverId}</span>}
+          <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5">
             {editing ? (
               <>
                 <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>
@@ -260,7 +268,7 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
                         const res = String(reader.result ?? '');
                         const base64 = res.split(',')[1] || '';
                         const path = cwd ? `${cwd}/${file.name}` : file.name;
-                        api.volumes.writeFile(volume, { path, contentBase64: base64 }).then(() => {
+                        api.volumes.writeFile(volume, { path, contentBase64: base64 }, ...hostArgs).then(() => {
                           refresh();
                           toast(`Uploaded ${file.name}`, 'success');
                         }).catch(() => toast('Upload failed', 'error'));
@@ -269,7 +277,7 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
                     }}
                   />
                 </label>
-                <Button size="sm" variant="secondary" onClick={refresh} disabled={dir.isFetching}>
+                <Button size="sm" variant="secondary" aria-label="Refresh volume files" onClick={refresh} disabled={dir.isFetching}>
                   <RefreshCw size={13} className={dir.isFetching ? 'animate-spin' : undefined} />
                 </Button>
               </>
@@ -358,7 +366,7 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
         ) : dir.isLoading ? (
           <div className="flex-1 space-y-2 p-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-9 w-full" />)}</div>
         ) : dir.isError ? (
-          <div className="grid flex-1 place-items-center text-sm text-slate-500">Couldn't open the volume.</div>
+          <div className="flex-1 overflow-y-auto p-4"><ErrorCard title="Could not load volume files" error={dir.error} onRetry={() => void dir.refetch()} /></div>
         ) : entriesEmpty ? (
           <div className="grid flex-1 place-items-center text-sm text-slate-500">Empty directory</div>
         ) : (
@@ -411,6 +419,7 @@ export function VolumeBrowser({ volume, onClose }: { volume: string; onClose: ()
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

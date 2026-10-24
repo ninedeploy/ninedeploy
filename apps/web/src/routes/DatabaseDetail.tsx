@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { DatabaseDetail as IDatabaseDetail } from '@ninedeploy/sdk';
+import { DATABASE_STUDIO_ENGINES } from '@ninedeploy/schemas';
 import { api, authedFetch } from '../lib/api.js';
 import { apiUrl } from '../lib/apiUrl.js';
 import { useToast } from '../components/Toast.js';
@@ -136,7 +137,7 @@ export function DatabaseDetail() {
     mutationFn: () => api.databases.startStudio(id),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['database-detail', id] });
-      toast(`Web Studio ready on port ${data.port}`, 'success');
+      toast(data.port == null ? 'Web Studio ready on the database node' : `Web Studio ready on port ${data.port}`, 'success');
       // The server answers with its same-origin proxy path (the studio itself
       // is loopback-bound); resolve it against the API origin.
       const url = apiUrl(data.url);
@@ -147,7 +148,7 @@ export function DatabaseDetail() {
       // fresh sessionStorage and no handle back to this window.
       window.open(url, '_blank', 'noopener,noreferrer');
     },
-    onError: () => toast('Could not launch Web Studio', 'error'),
+    onError: (error) => { qc.invalidateQueries({ queryKey: ['database-detail', id] }); toast(error instanceof Error ? error.message : 'Could not launch Web Studio', 'error'); },
   });
 
   const stopStudioMutation = useMutation({
@@ -157,7 +158,7 @@ export function DatabaseDetail() {
       setStudioUrl(null);
       toast('Web Studio stopped', 'success');
     },
-    onError: () => toast('Could not stop Web Studio', 'error'),
+    onError: (error) => { qc.invalidateQueries({ queryKey: ['database-detail', id] }); toast(error instanceof Error ? error.message : 'Could not stop Web Studio', 'error'); },
   });
 
   const backupMutation = useMutation({
@@ -203,18 +204,18 @@ export function DatabaseDetail() {
           <ArrowLeft size={13} /> Back to databases
         </Link>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-500/15 text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-500/15 text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
               <Database size={22} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-white">{db.name}</h1>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="min-w-0 break-words text-xl font-bold tracking-tight text-white">{db.name}</h1>
                 <StatusBadge status={db.status} />
                 {/* Multi-node: the node and its reachability (the detail response carries them since 0.15.3). */}
                 <NodeDatabaseBadge db={db} />
               </div>
-              <p className="font-mono text-xs text-slate-400">
+              <p className="break-all font-mono text-xs text-slate-400">
                 {ENGINE_LABEL[db.engine] ?? db.engine}
                 {db.version ? ` v${db.version}` : ''} · {db.host}:{db.port}
               </p>
@@ -285,7 +286,7 @@ export function DatabaseDetail() {
         <TerminalPanel
           key={shell}
           target={{ kind: 'database', databaseId: db.id, mode: shell }}
-          title={`${db.name} · ${shell === 'client' ? 'client' : 'shell'}`}
+          title={`${db.serverId != null ? `Node #${db.serverId} · ` : ''}${db.name} · ${shell === 'client' ? 'client' : 'shell'}`}
           onClose={() => setShell(null)}
         />
       )}
@@ -318,7 +319,7 @@ export function DatabaseDetail() {
       {activeTab === 'topology' && <DatabaseTopologyTab db={db} />}
       {activeTab === 'manifest' && (
         <div className="mt-5">
-          <ManifestTab containerName={db.containerName ?? `nd-db-${db.slug}`} />
+          <ManifestTab serverId={db.serverId} containerName={db.containerName ?? `nd-db-${db.slug}`} />
         </div>
       )}
       {activeTab === 'files' && (
@@ -326,7 +327,7 @@ export function DatabaseDetail() {
           {/* Both arms render in the Files-tab tests; the instrumenter cannot
               see this fallback expression. */}
           {/* v8 ignore start */}
-          <ContainerFileBrowser container={db.containerName ?? `nd-db-${db.slug}`} />
+          <ContainerFileBrowser serverId={db.serverId} container={db.containerName ?? `nd-db-${db.slug}`} />
           {/* v8 ignore stop */}
         </div>
       )}
@@ -368,11 +369,18 @@ function OverviewPanel({
 
   // Live container stats for THIS database (polls only while the tab is open).
   const liveStats = useQuery({
-    queryKey: ['live-stats-snapshot'],
-    queryFn: () => api.stats.snapshot(),
+    queryKey: ['database-live-stats', db.id, db.serverId],
+    queryFn: () => api.stats.snapshot({ databaseId: db.id }),
+    enabled: db.status === 'running',
     refetchInterval: 3000,
   });
-  const live = liveStats.data?.containers.find((c) => c.kind === 'database' && c.refId === db.id);
+  const resource = liveStats.data?.resource;
+  const live = !liveStats.isError && resource?.state === 'live' && resource.id === db.id && resource.serverId === (db.serverId ?? null)
+    ? liveStats.data?.containers.find((c) => c.kind === 'database' && c.refId === db.id) : undefined;
+  const metricsMessage = liveStats.isError ? 'Live metrics could not be loaded. Retry the snapshot.'
+    : liveStats.isLoading || resource?.state === 'pending' ? 'Waiting for the first resource sample…'
+    : resource?.state === 'stale' ? 'The last resource sample is out of date. Waiting for a fresh sample…'
+    : 'Live metrics are unavailable. Waiting for the next collection.';
 
   const creds = credsQuery.data;
   const isRunning = db.status === 'running';
@@ -407,7 +415,7 @@ function OverviewPanel({
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">
-              Database is stopped. Start database to generate active connection string.
+              {isRunning ? 'Connection URI is unavailable for this account. Ask a database administrator for connection details.' : 'Database is stopped. Start database to generate active connection string.'}
             </div>
           )}
 
@@ -466,10 +474,11 @@ function OverviewPanel({
             <div className="flex items-center gap-2">
               <Activity size={16} className="text-emerald-400" />
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Live Resources</h2>
-              <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> live
+              <span className={`ml-auto inline-flex items-center gap-1.5 text-[10px] font-medium ${live ? 'text-emerald-300' : 'text-slate-500'}`}>
+                {live && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />}{live ? 'live' : liveStats.isLoading || resource?.state === 'pending' ? 'waiting' : resource?.state === 'stale' ? 'stale' : 'unavailable'}
               </span>
             </div>
+            {db.serverId != null && <p className="text-xs text-slate-500">Source: node #{db.serverId}{db.serverName ? ` · ${db.serverName}` : ''}</p>}
 
             {live ? (
               <div className="grid grid-cols-2 gap-3">
@@ -502,18 +511,22 @@ function OverviewPanel({
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">
-                {liveStats.isLoading ? 'Loading live stats…' : 'No live stats — start the database to see CPU and memory.'}
+                <p>{metricsMessage}</p>
+                {liveStats.isError && <Button size="sm" variant="secondary" className="mt-2" onClick={() => void liveStats.refetch()}>Retry metrics</Button>}
               </div>
             )}
           </Card>
         )}
 
-        {/* Web Studio (GUI) card. Multi-node: a node database has none (refused, `remote_database`). */}
-        {isNodeDatabase(db) ? (
-          <NodeUnavailableCard title="Database Web Studio" db={db} />
+        {/* The installed Studio images support these SQL/KV engines. */}
+        {!(DATABASE_STUDIO_ENGINES as readonly string[]).includes(db.engine) ? (
+          <Card className="p-5 space-y-2">
+            <h2 className="text-sm font-semibold text-slate-400">Database Web Studio</h2>
+            <p className="text-xs text-slate-400">Web Studio supports PostgreSQL, MySQL, MariaDB and Redis-compatible engines.</p>
+          </Card>
         ) : (
         <Card className="p-5 space-y-4">
-          <div className="flex items-center justify-between">
+<div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Compass size={16} className="text-amber-400" />
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Database Web Studio</h2>
@@ -526,13 +539,14 @@ function OverviewPanel({
                   : 'bg-slate-500/15 text-slate-400 ring-slate-500/20',
               )}
             >
-              {db.webGuiEnabled ? `Running on :${studioPort}` : 'Inactive'}
+              {db.nodeStudioState === 'preparing' ? 'Preparation pending' : db.nodeStudioState === 'cleanup_pending' ? 'Cleanup pending' : db.webGuiEnabled ? (isNodeDatabase(db) ? `Running on node #${db.serverId}` : `Running on :${studioPort}`) : 'Inactive'}
             </span>
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">
             One-click visual database browser (Adminer for SQL / Redis Commander for KV). Inspect tables, execute queries, and view records without leaving your browser.
           </p>
+          {isNodeDatabase(db) && <p className="text-xs text-slate-500">Runs on node #{db.serverId}{db.serverName ? ' · ' + db.serverName : ''}. Access uses the panel address; no host port is published.</p>}
           {/* r560: why it is a tab and not an embedded window. */}
           <p className="text-xs text-slate-500 leading-relaxed">
             The studio opens in its own browser tab, isolated from the panel. Its session is tied to your login —
@@ -555,14 +569,7 @@ function OverviewPanel({
                   <ExternalLink size={13} />
                   Open studio
                 </button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={onStopStudio}
-                  disabled={isStudioPending}
-                >
-                  Stop Studio
-                </Button>
+
               </>
             ) : (
               <Button
@@ -571,8 +578,11 @@ function OverviewPanel({
                 disabled={isStudioPending || !isRunning}
               >
                 <Play size={13} className="fill-current text-emerald-400" />
-                Launch Web Studio
+                {isStudioPending ? 'Preparing Studio…' : 'Launch Web Studio'}
               </Button>
+            )}
+            {(db.webGuiEnabled || db.nodeStudioState != null) && (
+              <Button variant="secondary" size="sm" onClick={onStopStudio} disabled={isStudioPending}>Stop Studio</Button>
             )}
           </div>
           {studioUrl && (

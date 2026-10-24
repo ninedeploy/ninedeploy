@@ -60,6 +60,9 @@ vi.mock('../src/plugins/worker.js', () => noop('ninedeploy-worker'));
 vi.mock('../src/plugins/traefik.js', () => noop('ninedeploy-traefik'));
 vi.mock('../src/plugins/backupScheduler.js', () => noop('authz-backups'));
 vi.mock('../src/plugins/runtimeState.js', () => noop('authz-runtime'));
+vi.mock('../src/plugins/primaryRecovery.js', () => noop('authz-primary-recovery'));
+vi.mock('../src/plugins/swarmRecovery.js', () => noop('authz-swarm-recovery'));
+vi.mock('../src/plugins/fanoutRecovery.js', () => noop('authz-fanout-recovery'));
 vi.mock('../src/plugins/autoUpdateScheduler.js', () => noop('authz-autoupdate'));
 vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
 vi.mock('../src/plugins/logShipper.js', () => noop('authz-logshipper'));
@@ -480,6 +483,9 @@ function paramValue(url: string, param: string, r: Res): string {
       return 'zz-name';
     case 'container':
       return `nd-app-${r.serviceSlug}`;
+    case 'serverId':
+      // No node is seeded; forbidden callers must be refused before lookup.
+      return '999999';
     case 'token':
       return at('/v1/invitations') ? r.inviteToken : r.transferToken;
     case 'slug':
@@ -773,6 +779,12 @@ export const MATRIX: Record<string, Rule> = {
     body: (r) => ({ workspaceIds: [r.ws], projectIds: [r.project], labelIds: [r.label] }),
   }),
   'GET /v1/services/:id/targets': R('viewer'),
+  'GET /v1/services/:id/runtime-recovery': R('viewer'),
+  'POST /v1/services/:id/runtime-recovery': R('operator'),
+  'GET /v1/services/:id/swarm/recovery': R('viewer'),
+  'POST /v1/services/:id/swarm/recovery': R('operator'),
+  'GET /v1/services/:id/targets/recovery': R('viewer'),
+  'POST /v1/services/:id/targets/recovery': R('operator'),
   'PATCH /v1/services/:id/targets': R('operator', { body: () => ({ serverIds: [] }) }),
   'POST /v1/services/:id/manifest/apply': OP,
   'GET /v1/services/:id/insights': R('viewer'),
@@ -938,6 +950,18 @@ export const MATRIX: Record<string, Rule> = {
   'DELETE /v1/config-presets/:id': OP,
   'PUT /v1/config-presets/:id/apply': OP,
   'GET /v1/containers/:container/inspect': OP,
+  'GET /v1/servers/:serverId/containers/:container/inspect': OP,
+  'GET /v1/servers/:serverId/volumes/:name/files': OP,
+  'GET /v1/servers/:serverId/volumes/:name/files/content': OP,
+  'PUT /v1/servers/:serverId/volumes/:name/files': OP,
+  'POST /v1/servers/:serverId/volumes/:name/files/dir': OP,
+  'DELETE /v1/servers/:serverId/volumes/:name/files': OP,
+  'GET /v1/servers/:serverId/containers/:container/compose': OP,
+  'GET /v1/servers/:serverId/containers/:container/files': OP,
+  'GET /v1/servers/:serverId/containers/:container/files/content': OP,
+  'PUT /v1/servers/:serverId/containers/:container/files': OP,
+  'POST /v1/servers/:serverId/containers/:container/files/dir': OP,
+  'DELETE /v1/servers/:serverId/containers/:container/files': OP,
   'GET /v1/containers/:container/compose': OP,
   'GET /v1/containers/:container/files': OP,
   'GET /v1/containers/:container/files/content': OP,
@@ -961,6 +985,13 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/housekeeping/prune': OP,
   'GET /v1/housekeeping/prune/config': OP,
   'PATCH /v1/housekeeping/prune/config': OP,
+  'GET /v1/stats/observability': OP,
+  'PATCH /v1/stats/observability': OP,
+  'POST /v1/stats/observability/test': OP,
+  'GET /v1/stats/prometheus': OP,
+  'GET /v1/log-drains/:id/queue': OP,
+  'POST /v1/log-drains/:id/queue/retry': OP,
+  'DELETE /v1/log-drains/:id/queue': OP,
   'GET /v1/log-drains': OP,
   'POST /v1/log-drains': OP,
   'GET /v1/log-drains/:id': OP,

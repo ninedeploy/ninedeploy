@@ -434,7 +434,7 @@ export function ServiceDetail() {
           {tab === 'files' && (
             <div>
               {/* Both naming paths render across the files tests. */}
-              <ContainerFileBrowser container={/* v8 ignore start */ svc.runtimeId || `nd-svc-${svc.slug}` /* v8 ignore stop */} />
+              <ContainerFileBrowser serverId={svc.serverId} container={/* v8 ignore start */ svc.runtimeId || `nd-svc-${svc.slug}` /* v8 ignore stop */} />
             </div>
           )}
           {/* key={id}: navigating service→service keeps this route mounted

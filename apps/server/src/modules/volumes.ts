@@ -265,7 +265,7 @@ export const volumeRoutes: FastifyPluginAsync = async (app) => {
       throw new HttpError(
         422,
         'node_volume_files_unsupported',
-        'Browsing and editing files is available for panel-host volumes only. For a node volume, open a terminal in a container on that node, or back the volume up and download the archive.',
+        'This local file URI is for panel-host volumes only. Use /v1/servers/:serverId/volumes/:name/files or the SDK node option for node volume files.',
       );
     }
     // ── end 0.16 T5 ──

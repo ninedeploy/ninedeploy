@@ -1,0 +1,36 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../lib/api.js';
+import { useAuth } from '../../lib/auth.js';
+import { useToast } from '../../components/Toast.js';
+import { Button, ErrorCard } from '../../components/ui.js';
+
+export function FanoutRecoveryCard({ serviceId }: { serviceId: number }) {
+  const qc = useQueryClient(), { user } = useAuth(), { toast } = useToast();
+  const queryKey = ['fanout-recovery', serviceId];
+  const state = useQuery({ queryKey, queryFn: () => api.fanout.recovery(serviceId),
+    refetchInterval: query => query.state.data?.length ? 5000 : 30000 });
+  const retry = useMutation({ mutationFn: () => api.fanout.retryRecovery(serviceId), onSuccess: result => {
+    qc.setQueryData(queryKey, result.entries);
+    void qc.invalidateQueries({ queryKey: ['fanout-targets', serviceId] });
+    toast(result.entries.length ? 'Recovery is still pending — see the reason below' : 'Fan-out recovery completed', result.entries.length ? 'info' : 'success');
+  }, onError: () => toast('Recovery could not be checked; retained runtimes remain protected', 'error') });
+  if (state.isError) return <ErrorCard title="Could not load fan-out recovery" error={state.error} onRetry={() => void state.refetch()} />;
+  if (!state.data?.length) return null;
+  return <section aria-label="Fan-out recovery" className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
+    <h3 className="text-sm font-medium text-amber-200">Fan-out recovery</h3>
+    <p className="mt-1 text-xs text-slate-400">Health and routing are checked before obsolete containers are removed. Automatic retries continue after a panel restart.</p>
+    <div className="mt-3 space-y-3">{state.data.map(entry => <div key={entry.id} className="rounded-lg border border-white/10 p-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-slate-200">Node #{entry.serverId}</span>
+        <span className="text-amber-300">{entry.busy ? 'Deployment or recovery in progress' : 'Recovery pending'}</span></div>
+      {entry.reason && <p className="mt-2 break-words text-slate-300">{entry.reason}</p>}
+      {!entry.busy && <p className="mt-1 text-slate-500">Next automatic check: {new Date(entry.nextAttemptAt).toLocaleTimeString()}</p>}
+      <details className="mt-2 text-slate-400"><summary className="cursor-pointer">Retained runtimes</summary>
+        <dl className="mt-2 space-y-1"><div><dt className="inline">Previous: </dt><dd className="inline break-all font-mono">{entry.previousRuntimeId ?? 'None'}</dd></div>
+          <div><dt className="inline">Candidate: </dt><dd className="inline break-all font-mono">{entry.candidateRuntimeId}</dd></div></dl>
+      </details>
+    </div>)}</div>
+    {user?.isOperator && <Button size="sm" variant="secondary" className="mt-3" disabled={retry.isPending || state.data.every(e => e.busy)} onClick={() => retry.mutate()}>
+      {retry.isPending ? 'Checking recovery…' : 'Retry recovery'}
+    </Button>}
+  </section>;
+}

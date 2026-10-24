@@ -8,19 +8,23 @@ import {
   envVars,
   githubApps,
   logDrains,
+  logDrainBatches,
   notificationChannels,
   oidcProviders,
   previewEnvVars,
+  primaryTransitions,
   secretProviders,
   servers,
   settings,
   sources,
+  swarmTransitions,
   ssoProviders,
   tlsCertificates,
   tunnels,
   users,
   webhooks,
   type DB,
+  type PrimaryRuntimeSnapshot,
 } from '@ninedeploy/db';
 import { activeKeyVersion, reencrypt } from './crypto.js';
 
@@ -39,6 +43,21 @@ import { activeKeyVersion, reencrypt } from './crypto.js';
  * (nullable columns) as-is so they are never passed through `reencrypt`.
  */
 const ENCRYPTED_COLUMNS = [
+  {
+    table: primaryTransitions,
+    select: { id: primaryTransitions.id, v: primaryTransitions.previous },
+    pick: (r: { id: number; v: PrimaryRuntimeSnapshot | null }) => r.v?.native ? { previous: { ...r.v, native: reencrypt(r.v.native) } } : {},
+  },
+  {
+    table: swarmTransitions,
+    select: { id: swarmTransitions.id, v: swarmTransitions.payloadEncrypted },
+    pick: (r: { id: number; v: string }) => ({ payloadEncrypted: reencrypt(r.v) }),
+  },
+  {
+    table: logDrainBatches,
+    select: { id: logDrainBatches.id, v: logDrainBatches.payloadEncrypted },
+    pick: (r: { id: number; v: string }) => ({ payloadEncrypted: reencrypt(r.v) }),
+  },
   {
     table: deploymentReleaseRecords,
     select: { id: deploymentReleaseRecords.id, v: deploymentReleaseRecords.payloadEncrypted },

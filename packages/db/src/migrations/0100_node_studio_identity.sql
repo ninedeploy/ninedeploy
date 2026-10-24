@@ -1,0 +1,1 @@
+ALTER TABLE `databases` ADD `node_studio_identity` text;

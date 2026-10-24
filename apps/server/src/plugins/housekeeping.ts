@@ -29,6 +29,8 @@ import { pruneImageTransfers } from '../lib/imageTransferRetention.js';
 import { pruneUptime } from '../lib/uptime.js';
 import { sweepOrphanPreviewCopies } from '../lib/previewDatabases.js';
 import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
+import { pruneServiceMetrics } from '../lib/serviceMetricHistory.js';
+import { pruneLogDrainCursors } from '../engine/logShipper.js';
 
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
 /** Export artifacts (secret-bearing archives + scratch files) older than this
@@ -244,11 +246,11 @@ async function pruneOldDeployments(db: import('@ninedeploy/db').DB, maxAgeMs: nu
   const doomed = await db
     .select({ id: deployments.id })
     .from(deployments)
-    .where(and(lt(deployments.createdAt, cutoff), notInArray(deployments.status, [...UNSWEEPABLE_STATUSES])));
+    .where(and(lt(deployments.createdAt, cutoff), notInArray(deployments.status, [...UNSWEEPABLE_STATUSES]), sql`NOT (${recoveryProtectsHistory()})`));
   if (doomed.length === 0) return 0;
   await db
     .delete(deployments)
-    .where(and(lt(deployments.createdAt, cutoff), notInArray(deployments.status, [...UNSWEEPABLE_STATUSES])));
+    .where(and(lt(deployments.createdAt, cutoff), notInArray(deployments.status, [...UNSWEEPABLE_STATUSES]), sql`NOT (${recoveryProtectsHistory()})`));
   for (const row of doomed) deleteLog(row.id);
   return doomed.length;
 }
@@ -259,11 +261,15 @@ async function pruneOldDeployments(db: import('@ninedeploy/db').DB, maxAgeMs: nu
  * `running` deployment stops writing its log once it is up, so after 30 days
  * the build log of the deploy currently serving traffic was deleted.
  */
+function recoveryProtectsHistory() {
+  return sql`EXISTS (SELECT 1 FROM swarm_transitions WHERE swarm_transitions.service_id = ${deployments.serviceId}) OR EXISTS (SELECT 1 FROM primary_transitions WHERE primary_transitions.service_id = ${deployments.serviceId})`;
+}
+
 export async function unsweepableDeploymentIds(db: import('@ninedeploy/db').DB): Promise<Set<number>> {
   const rows = await db
     .select({ id: deployments.id })
     .from(deployments)
-    .where(inArray(deployments.status, [...UNSWEEPABLE_STATUSES]));
+    .where(or(inArray(deployments.status, [...UNSWEEPABLE_STATUSES]), recoveryProtectsHistory()));
   return new Set(rows.map((r) => r.id));
 }
 
@@ -508,6 +514,8 @@ export default fp(
         await step('drill-leftovers', () => pruneDrillLeftovers([config.paths.backupsDir, tmpdir()], DRILL_LEFTOVER_MAX_AGE_MS));
         await step('export-leftovers', () => pruneExportLeftovers(EXPORT_LEFTOVER_MAX_AGE_MS));
         await step('metric-history', () => pruneMetricHistory(fastify));
+        await step('resource-metric-history', () => pruneServiceMetrics(fastify.db, new Date(now)));
+        await step('log-drain-cursors', () => pruneLogDrainCursors(fastify.db, new Date(now)));
         // 0.15 event tables (DESIGN §5). Every table added from 0.15 on needs a
         // sweep here or a `config:` reason in test/retentionCoverage.test.ts.
         await step('terminal-sessions', () => pruneTerminalSessions(fastify.db, now));

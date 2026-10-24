@@ -70,6 +70,7 @@ import { traefikCustomRoutes } from './traefikCustom.js';
 import { demoRoutes } from './demo.js';
 import { userRoutes } from './users.js';
 import { volumeRoutes } from './volumes.js';
+import { nodeVolumeFileRoutes } from './nodeVolumeFiles.js';
 import { volumeBackupRoutes } from './volumeBackups.js';
 import { containerRoutes } from './containers.js';
 import { logDrainRoutes } from './logDrains.js';
@@ -169,8 +170,10 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(configPresetsRoutes, { prefix: '/config-presets' });
   await app.register(networkRoutes, { prefix: '/networks' });
   await app.register(volumeRoutes, { prefix: '/volumes' });
+  await app.register(nodeVolumeFileRoutes, { prefix: '/servers/:serverId/volumes' });
   await app.register(volumeBackupRoutes, { prefix: '/volumes' });
   await app.register(containerRoutes, { prefix: '/containers' });
+  await app.register(containerRoutes, { prefix: '/servers/:serverId/containers', nodeRoute: true });
   // Interactive shells: sessions, the attach socket, history and settings
   // (0.15, DESIGN §1.6); operator only.
   await app.register(terminalRoutes, { prefix: '/terminals' });

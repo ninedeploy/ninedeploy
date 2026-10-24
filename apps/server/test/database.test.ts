@@ -1111,6 +1111,24 @@ describe('restoreDatabase', () => {
     expect(defaultPort('rabbitmq')).toBe(5672);
   });
 
+  it('reuses a running authenticated KV Studio only when its actual JSON configuration matches', async () => {
+    const {startDatabaseStudio}=await import('../src/engine/database.js');
+    const {redisStudioConfig}=await import('../src/lib/databaseStudioImages.js');
+    const password='fixture/@,:"\\value';
+    const config=redisStudioConfig('nd-db-owned',6379,password,'owned');
+    h.capture.mockResolvedValueOnce('running').mockResolvedValueOnce(JSON.stringify(['NODE_CONFIG='+config]));
+    await startDatabaseStudio(dbRow({slug:'owned',engine:'redis',internalHost:'nd-db-owned',passwordEncrypted:'v0:'+password}),18077,vi.fn());
+    expect(h.run).not.toHaveBeenCalled();expect(h.ensureDockerImage).not.toHaveBeenCalled();
+  });
+  it.each(['invalid-json', JSON.stringify(['REDIS_URL=ignored']), '{}'])('replaces a running KV helper whose configuration is unconfirmed: %s', async old => {
+    const {startDatabaseStudio}=await import('../src/engine/database.js');
+    h.capture.mockResolvedValueOnce('running').mockResolvedValueOnce(old);
+    const password='fixture/@,:value';
+    await startDatabaseStudio(dbRow({slug:'owned',engine:'redis',internalHost:'nd-db-owned',passwordEncrypted:'v0:'+password}),18077,vi.fn());
+    const call=h.run.mock.calls.find(call=>(call[1] as string[]).includes('run'))!;
+    expect(call[1]).toContain('NODE_CONFIG');expect((call[1] as string[]).join(' ')).not.toContain(password);
+    expect(JSON.parse((call[2] as {env:Record<string,string>}).env.NODE_CONFIG!)).toMatchObject({connections:[{host:'nd-db-owned',password}]});
+  });
   it('manages Web Studio containers (Adminer and Redis Commander)', async () => {
     const { studioImageForEngine, isDatabaseStudioRunning, startDatabaseStudio, stopDatabaseStudio } = await import(
       '../src/engine/database.js'
@@ -1144,9 +1162,7 @@ describe('restoreDatabase', () => {
       expect.any(Function),
     );
 
-    // A managed (password-protected) instance goes through REDIS_URL —
-    // REDIS_HOSTS cannot carry a password, so the studio would boot and list
-    // zero databases without this.
+    // Password-protected instances use node-config JSON through process Env.
     h.capture.mockResolvedValueOnce('exited');
     await startDatabaseStudio(
       dbRow({ slug: 'my-redis-sec', engine: 'redis', name: 'my-redis-sec', internalHost: 'my-redis', passwordEncrypted: 'v0:sekr3t' }),
@@ -1155,12 +1171,13 @@ describe('restoreDatabase', () => {
     );
     expect(h.run).toHaveBeenCalledWith(
       'docker',
-      expect.arrayContaining(['-e', 'REDIS_URL=redis://default:sekr3t@my-redis:6379/0']),
-      {},
+      expect.arrayContaining(['-e', 'NODE_CONFIG']),
+      {env:{NODE_CONFIG:JSON.stringify({noSave:true,noLogData:true,connections:[{label:'my-redis-sec',host:'my-redis',port:6379,dbIndex:0,username:'default',password:'sekr3t'}]})}},
       expect.any(Function),
     );
     const secArgs = h.run.mock.calls.find((c) => (c[1] as unknown[]).includes('nd-studio-my-redis-sec'))?.[1] as unknown[];
     expect(secArgs.join(' ')).not.toContain('REDIS_HOSTS');
+    expect(secArgs.join(' ')).not.toContain('sekr3t');
 
     // Starts Valkey studio container using containerName fallback
     h.capture.mockResolvedValueOnce('exited');

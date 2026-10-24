@@ -1,7 +1,7 @@
 # Remote nodes
 
 For the next release's opt-in HTTP/TCP readiness, node resource history, log
-drains and availability view, see [Node operations](NODE_OPERATIONS.md).
+drains, container inspection/file tools and availability view, see [Node operations](NODE_OPERATIONS.md).
 
 A node is another host that runs the NineDeploy **agent**: the same image as the panel, started with `NINEDEPLOY_AGENT=1`. The panel drives it through typed operations over an encrypted ("sealed") transport. A `docker` or `compose` service with a `serverId` deploys to that node, and each node runs its own Traefik proxy for the services on it.
 
@@ -51,6 +51,7 @@ The panel keeps the last answer in memory for up to 5 minutes, so after an agent
 | Railpack builds | `build.railpack` | 0.15.2 | `NINEDEPLOY_AGENT_BUILDS=off` |
 | PAT and deploy-key clones | `git.sshkey` | 0.15.2 | `NINEDEPLOY_AGENT_STATIC_CREDENTIALS=off` |
 | Managed databases | `db.manage`, `stream`, `docker.runSpec`, `volume.manage` | 0.15.3 | `NINEDEPLOY_AGENT_DATABASES=off` |
+| Database client terminals (unreleased) | `db.manage`, `db.client`, sealed terminal transport | 0.18.0 | `NINEDEPLOY_AGENT_DATABASES=off` or `NINEDEPLOY_AGENT_DATABASE_CLIENTS=off` |
 | Swarm join and leave | `swarm` | 0.15.4 | **opt-in:** `NINEDEPLOY_AGENT_SWARM_MANAGER=<host:port>` |
 | Port mappings (UDP, port ranges, a host IP) | `docker.runSpec` + `docker.ports` | 0.16.1 | — (the agent refuses 22, 80, 443 and its own port) |
 | Custom Docker labels | `docker.runSpec` + `docker.userLabels` | 0.16.4 | — (the agent refuses `ninedeploy.*`, `com.docker.*`, `traefik.*`) |
@@ -122,13 +123,13 @@ GitHub App repositories work on nodes since 0.13 without any toggle: [GITHUB_APP
 
 ## 7. Volumes and databases on a node
 
-**Volumes** live on the host of the service that uses them. Attachments, a container command and the Docker socket work for node docker services, missing managed volumes are created on the node first, and the volume routes take `?serverId=`. Details, backups and restore: [DATABASES_BACKUPS.md, "Volumes on nodes"](./DATABASES_BACKUPS.md).
+**Volumes** live on the host of the service that uses them. Unreleased 0.18.0 adds selected-node file browsing through an explicit host namespace and sealed capability; see [Node volume files](NODE_OPERATIONS.md#node-volume-files-unreleased-0180). Attachments, a container command and the Docker socket work for node docker services, missing managed volumes are created on the node first, and the volume routes take `?serverId=`. Details, backups and restore: [DATABASES_BACKUPS.md, "Volumes on nodes"](./DATABASES_BACKUPS.md).
 
 **Managed databases** can be placed on a node at create time (`serverId`, operator only, fixed for the database's life). Details: [DATABASES_BACKUPS.md, "Databases on nodes"](./DATABASES_BACKUPS.md). In short:
 
 - each one runs as `nd-db-<slug>` on its own `nd-dbnet-<slug>` network on the node; services on the **same node** that attach it are connected to that network at deploy;
 - backups, policies, off-site upload, restore, drills, imports and shell terminals work; the dump files land on the panel;
-- refused: attaching it to a service on another host (`409 attachment_host_mismatch`), fan-out targets of a service that uses it (`409 fanout_database_host`), Studio, PgBouncer and public access (`422 remote_database`), a client-mode terminal (`422 client_mode_unsupported`; open a shell and run the client there), adopting an existing volume, and moving it to another host;
+- refused: attaching it to a service on another host (`409 attachment_host_mismatch`), fan-out targets of a service that uses it (`409 fanout_database_host`), PgBouncer and public access (`422 remote_database`), adopting an existing volume, and moving it to another host. Published 0.17.1 also refuses a client-mode terminal (`422 client_mode_unsupported`); unreleased 0.18.0 adds sealed [node database client terminals](NODE_OPERATIONS.md#node-database-client-terminals-unreleased-0180);
 - a node that hosts databases cannot be deleted, even with `?force=true` (`409 server_hosts_databases`).
 
 ## 8. Swarm (0.15.4)
@@ -164,3 +165,9 @@ NineDeploy's overlays are always encrypted, so **encrypted overlays must work on
 What each 0.15.x rollback does to nodes, and the cleanup commands: [ROLLBACK.md, "0.15.x multi-node rollback runbook"](./ROLLBACK.md).
 
 `node scripts/smoke-multinode.mjs` runs a panel and a node (two Docker-in-Docker hosts and an agent) on throwaway containers: `--image=<candidate>` exercises every feature above; `--from=v0.15.1 --to=<tag> --to-image=<image>` upgrades a panel with an old agent and then updates the agent; `--from=<tag> --from-image=<image> --to=v0.15.1` rehearses the rollback. `--with-builds` adds Nixpacks and Railpack builds; `--no-swarm` skips Swarm on hosts without IPsec.
+
+
+For unreleased 0.18.0, Swarm preloading uses three bounded image slots per service rather than overwriting the serving generation's eligibility label. Current and rollback references across the manager are protected, and the legacy label survives an upgrade. Incomplete placement inventory stops preparation without changing eligibility. See [Swarm preload safety](DEPLOYMENTS.md#swarm-preload-placement-safety-unreleased-0180).
+
+
+Unreleased 0.18.0 implements sealed node Web Studio for the supported SQL/KV engines; see [node Studio operations](NODE_OPERATIONS.md#node-database-web-studio-unreleased-0180). Its full acceptance is tracked separately from published 0.17.1.

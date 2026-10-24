@@ -3,9 +3,11 @@ import {
   doctorFixRequest,
   logDrainCreate,
   logDrainUpdate,
+  observabilityPatch,
   panelBackupRestore,
   panelBackupSettingsPatch,
   selfUpdateStart,
+  statsSnapshotQuery,
 } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
@@ -165,8 +167,33 @@ export const operationsSpecs: RouteSpecMap = {
     floor: 'operator',
     responseType: "{ ok: boolean; backend: 'builtin'; deleted: number }",
   },
+  'GET /v1/stats/observability': {
+    summary: 'Resource-history and metrics-export settings (credentials masked)', tag: 'metrics', floor: 'operator', responseType: 'ObservabilityResponse',
+  },
+  'PATCH /v1/stats/observability': {
+    summary: 'Update resource history, metrics export and log queue limits', tag: 'metrics', floor: 'operator',
+    body: observabilityPatch, responseType: 'ObservabilityResponse', validation: 'zod',
+  },
+  'POST /v1/stats/observability/test': {
+    summary: 'Send a metrics export to the saved collector', tag: 'metrics', floor: 'operator', responseType: 'ObservabilityExportResult',
+  },
+  'GET /v1/stats/prometheus': {
+    summary: 'Prometheus text exposition of fresh service metrics (opt-in)', tag: 'metrics', floor: 'operator', sensitive: true,
+  },
+  'GET /v1/log-drains/:id/queue': {
+    summary: 'Delivery queue counts and backpressure for a log destination', tag: 'log-drains', floor: 'operator', responseType: 'LogQueueStatus',
+  },
+  'POST /v1/log-drains/:id/queue/retry': {
+    summary: 'Schedule pending log batches for retry', tag: 'log-drains', floor: 'operator', responseType: 'LogQueueStatus',
+  },
+  'DELETE /v1/log-drains/:id/queue': {
+    summary: 'Permanently discard queued log batches', tag: 'log-drains', floor: 'operator', responseType: '{ discardedBatches: number }',
+  },
   'GET /v1/stats': {
     summary: 'Live host and container resource snapshot',
+    query: statsSnapshotQuery,
+    validation: 'zod',
+    description: 'Without a filter, reports local-host resources. databaseId selects only the authorized database on its recorded host, with freshness state and no host metrics.',
     tag: 'metrics',
     floor: 'authed',
     responseType: 'StatsSnapshot',

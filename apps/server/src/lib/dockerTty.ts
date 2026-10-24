@@ -127,6 +127,8 @@ export function engineRequest(
   timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<EngineResponse> {
   return new Promise((resolve, reject) => {
+    let deadline: NodeJS.Timeout | undefined;
+    const fail = (error: Error) => { clearTimeout(deadline); reject(error); };
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const req = http.request({
       ...baseOptions(t),
@@ -138,7 +140,13 @@ export function engineRequest(
       },
     });
     req.setTimeout(timeoutMs, () => req.destroy(new Error(`Docker Engine API ${method} ${path} timed out`)));
-    req.on('error', reject);
+    if (timeoutMs > 0) {
+      // Socket inactivity is not a total budget: connect/headers can stall,
+      // or a peer can keep a request alive indefinitely with tiny chunks.
+      deadline = setTimeout(() => req.destroy(new Error(`Docker Engine API ${method} ${path} timed out`)), timeoutMs);
+      deadline.unref();
+    }
+    req.on('error', fail);
     req.on('response', (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
@@ -146,8 +154,8 @@ export function engineRequest(
         size += c.length;
         if (size <= MAX_RESPONSE_BYTES) chunks.push(c);
       });
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
-      res.on('error', reject);
+      res.on('end', () => { clearTimeout(deadline); resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }); });
+      res.on('error', fail);
     });
     req.end(payload);
   });

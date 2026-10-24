@@ -316,7 +316,8 @@ export async function servicesCompose(client: NineDeployClient, idStr: string): 
   try {
     const svc = await client.services.get(id);
     const container = svc.runtimeId || `nd-svc-${svc.slug}-1`;
-    const res = await spinner('Generating manifest', () => client.containers.compose(container));
+    const hostOptions: [] | [{ serverId: number }] = svc.serverId == null ? [] : [{ serverId: svc.serverId }];
+    const res = await spinner('Generating manifest', () => client.containers.compose(container, ...hostOptions));
     console.log(c.dim(`\n  # Container: ${container}\n`));
     console.log(res.yaml.split('\n').map((l) => `  ${c.cyan(l)}`).join('\n'));
     console.log();
@@ -331,7 +332,8 @@ export async function servicesInspect(client: NineDeployClient, idStr: string): 
   try {
     const svc = await client.services.get(id);
     const container = svc.runtimeId || `nd-svc-${svc.slug}-1`;
-    const data = await spinner('Inspecting container', () => client.containers.inspect(container));
+    const hostOptions: [] | [{ serverId: number }] = svc.serverId == null ? [] : [{ serverId: svc.serverId }];
+    const data = await spinner('Inspecting container', () => client.containers.inspect(container, ...hostOptions));
     kv('Container ID', data.id);
     kv('Name', data.name);
     kv('Image', data.image);

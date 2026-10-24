@@ -204,7 +204,11 @@ describe('Web Studio (Redis Commander)', () => {
       h.run.mockClear();
       h.capture.mockResolvedValueOnce('exited');
       await startDatabaseStudio(row(engine, { slug: `s-${engine}`, passwordEncrypted: 'v0:sekr3t' }), 18010, vi.fn());
-      expect(dockerCalls()[1]).toEqual(expect.arrayContaining(['-p', '127.0.0.1:18010:8081', '-e', 'REDIS_URL=redis://default:pw%3Av0%3Asekr3t@nd-db-x:6379/0']));
+      expect(dockerCalls()[1]).toEqual(expect.arrayContaining(['-p', '127.0.0.1:18010:8081', '-e', 'NODE_CONFIG']));
+      const started = h.run.mock.calls.find(call => call[1].includes('run'))!;
+      expect(started[1].join(' ')).not.toContain('pw:v0:sekr3t');
+      const configured = JSON.parse((started[2] as { env: Record<string, string> }).env.NODE_CONFIG!);
+      expect(configured.connections).toEqual([{ label: `s-${engine}`, host: 'nd-db-x', port: 6379, dbIndex: 0, username: 'default', password: 'pw:v0:sekr3t' }]);
     }
   });
 });

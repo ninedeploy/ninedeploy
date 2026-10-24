@@ -1,3 +1,5 @@
+import { databaseClientCommand, databaseClientInput, type PreparedDatabaseClient } from '../lib/databaseClient.js';
+import { prepareNodeDatabaseClient } from '../lib/nodeDatabaseClient.js';
 import { existsSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { and, desc, eq, inArray, isNotNull, lt } from 'drizzle-orm';
@@ -98,30 +100,12 @@ import {
 const err = (status: number, code: string, message: string) => new HttpError(status, code, message);
 
 /** Database clients: credentials travel in the exec's Env, never in argv (DESIGN §1.6). */
-function databaseClient(d: Database): { cmd: string[]; env: string[] } {
-  const cfg = ENGINES[d.engine];
-  const password = decrypt(d.passwordEncrypted);
-  switch (d.engine) {
-    case 'postgres':
-      return {
-        cmd: ['psql', '-U', d.username ?? cfg?.username() ?? 'nine', '-d', d.dbName ?? cfg?.dbName() ?? 'app'],
-        env: [`PGPASSWORD=${password}`],
-      };
-    case 'mysql':
-    case 'mariadb':
-      return { cmd: [d.engine, '-uroot'], env: [`MYSQL_PWD=${password}`] };
-    case 'redis':
-      return { cmd: ['redis-cli'], env: [`REDISCLI_AUTH=${password}`] };
-    case 'valkey':
-      return { cmd: ['valkey-cli'], env: [`REDISCLI_AUTH=${password}`, `VALKEYCLI_AUTH=${password}`] };
-    case 'keydb':
-      return { cmd: ['keydb-cli'], env: [`REDISCLI_AUTH=${password}`] };
-    case 'dragonfly':
-      // The Dragonfly image ships a real redis-cli; REDISCLI_AUTH is honoured like for Redis.
-      return { cmd: ['redis-cli'], env: [`REDISCLI_AUTH=${password}`] };
-    default:
-      throw err(422, 'client_mode_unsupported', `No interactive client for ${d.engine}: open a shell (mode "shell") instead.`);
-  }
+function databaseClientDetails(d: Database) {
+  const cfg=ENGINES[d.engine];
+  return {engine:d.engine,username:d.username??cfg?.username()??'nine',database:d.dbName??cfg?.dbName()??'app',password:decrypt(d.passwordEncrypted)};
+}
+function databaseClient(d: Database): {cmd:string[];env:string[]} {
+  return databaseClientCommand(databaseClientDetails(d));
 }
 
 /** True when `summary` is the container this panel runs in (a shell there would expose master.key and the database). */
@@ -248,24 +232,20 @@ export const terminalRoutes: FastifyPluginAsync = async (app) => {
       }
       case 'database': {
         const d = await loadDatabaseForUser(app.db, target.databaseId, user);
-        // ── 0.16 T6 node databases (design §5.4 "Terminal") ──
-        // A node database's shell opens through the node's agent (the 0.15
-        // node terminal: sealed `terminal.open` + the encrypted channel). The
-        // agent's container terminal runs a shell only — it carries no exec
-        // command or env — so the client mode stays panel-host only.
+        // Node clients prepare an immutable target without sending credentials, then attach over the sealed channel.
         if (d.serverId != null) {
-          const container = d.nodeContainerName ?? `nd-db-${d.slug}`;
-          if (d.status !== 'running') throw err(409, 'not_running', `Database "${d.name}" is not running.`);
-          if (target.mode === 'client') {
-            throw err(
-              422,
-              'client_mode_unsupported',
-              `Database "${d.name}" runs on a node, whose agent opens shells only: open a shell (mode "shell") and run the client there (the connection string is under Credentials).`,
-            );
+          const container=d.nodeContainerName??`nd-db-${d.slug}`;
+          if(d.status!=='running')throw err(409,'not_running',`Database "${d.name}" is not running.`);
+          let client: PreparedDatabaseClient | undefined;
+          if(target.mode==='client') {
+            if(!databaseClientInput.shape.engine.safeParse(d.engine).success)databaseClientCommand({engine:d.engine,username:'',database:'',password:''});
+            const prepared=await prepareNodeDatabaseClient(app.db,d.serverId,container,d.id);
+            client={databaseId:d.id,containerId:prepared.containerId,input:databaseClientInput.parse(databaseClientDetails(d))};
+          } else {
+            const node = await assertNodeTerminal(d.serverId, false);
+            await assertRunningOnNode(d.serverId,node.name,container);
           }
-          const node = await assertNodeTerminal(d.serverId, false);
-          await assertRunningOnNode(d.serverId, node.name, container);
-          return { ...base, kind: 'database', label: d.name, serverId: d.serverId, databaseId: d.id, containerName: container };
+          return {...base,kind:'database',label:client?`${d.name} (client)`:d.name,serverId:d.serverId,databaseId:d.id,containerName:container,...(client?{databaseClient:client}:{})};
         }
         // ── end 0.16 T6 ──
         if (!d.containerName || d.status !== 'running') throw err(409, 'not_running', `Database "${d.name}" is not running.`);

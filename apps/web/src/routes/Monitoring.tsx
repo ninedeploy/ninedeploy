@@ -38,6 +38,7 @@ import {
 } from '../components/ui.js';
 import { Sparkline } from '../components/Sparkline.js';
 import { UptimeSection } from '../components/uptime/UptimeSection.js';
+import { ObservabilityCard } from '../components/ObservabilityCard.js';
 import { formatBytes, formatRelative, toInt } from '../lib/format.js';
 
 export function Monitoring() {
@@ -134,6 +135,8 @@ export function Monitoring() {
           </div>
         )}
       </div>
+
+      {me?.isOperator && <ObservabilityCard />}
 
       {/* Cluster Nodes Bar (When multiple servers exist) */}
       {serverList.length > 0 && (

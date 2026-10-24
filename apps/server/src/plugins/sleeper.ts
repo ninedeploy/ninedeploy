@@ -67,7 +67,7 @@ export default fp(
       },
       inFlightDeploys: async () =>
         new Set(
-          (await fastify.db.select({ serviceId: deployments.serviceId }).from(deployments).where(inArray(deployments.status, ['queued', 'building']))).map(
+          (await fastify.db.select({ serviceId: deployments.serviceId }).from(deployments).where(inArray(deployments.status, ['queued', 'building', 'deploying']))).map(
             (r) => r.serviceId,
           ),
         ),

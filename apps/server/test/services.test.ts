@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
-import { createDb, services, users } from '@ninedeploy/db';
+import { createDb, deployments, services, users } from '@ninedeploy/db';
 import { servicesRoutes } from '../src/modules/services.js';
 import runtimeStatePlugin from '../src/plugins/runtimeState.js';
 import { getBundledTemplates } from '../src/templates/registry.js';
@@ -92,6 +92,17 @@ describe('services routes', () => {
     vi.clearAllMocks();
   });
 
+  it('exposes the configured orchestrator in list and detail responses', async () => {
+    const row = svcRow({ id: 1, name: 'swarm', orchestrator: 'swarm' });
+    const app = await buildTestApp({ db: createFakeDb({ findMany: { services: [row] }, findFirst: { services: row } }) });
+    await app.register(servicesRoutes);
+    try {
+      const list = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+      expect(list.statusCode).toBe(200); expect(list.json()[0].orchestrator).toBe('swarm');
+      const detail = await app.inject({ method: 'GET', url: '/1', headers: asUser() });
+      expect(detail.statusCode).toBe(200); expect(detail.json().orchestrator).toBe('swarm');
+    } finally { await app.close(); }
+  });
   it('lists services', async () => {
     const app = await buildTestApp({
       db: createFakeDb({ findMany: { services: [svcRow({ id: 1, name: 'web' })] } }),
@@ -1811,6 +1822,27 @@ describe('F888: stop vs the runtime reconcile (real SQLite, gated)', () => {
     return { promise, resolve };
   };
   const capture = execMocks.capture as unknown as ReturnType<typeof vi.fn>;
+
+  it('cancels a pending routing transition when stopping the live service', async () => {
+    const connection = createDb({ url: ':memory:' });
+    const { db } = connection;
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    const [user] = await db.insert(users).values({ email: 'stop-transition@example.test', passwordHash: 'h', isInstanceOperator: true }).returning();
+    const [svc] = await db.insert(services).values({ name: 'web', slug: 'web', ownerUserId: user!.id, type: 'docker', status: 'running', runtimeId: 'web-c1' }).returning();
+    await db.insert(deployments).values([
+      { id: 1, serviceId: svc!.id, status: 'deploying', createdAt: new Date(1000) },
+      { id: 2, serviceId: svc!.id, status: 'queued', createdAt: new Date(2000) },
+    ]);
+    const app = await buildTestApp({ db });
+    try {
+      await app.register(servicesRoutes);
+      const result = await app.inject({ method: 'POST', url: `/${svc!.id}/stop`, headers: asUser({ id: user!.id, isOperator: true }) });
+      expect(result.statusCode).toBe(200);
+      expect(await db.query.deployments.findFirst({ where: eq(deployments.id, 1) })).toMatchObject({ status: 'cancelled', finishedAt: expect.any(Date) });
+      expect(await db.query.deployments.findFirst({ where: eq(deployments.id, 2) })).toMatchObject({ status: 'queued' });
+      expect(await db.query.services.findFirst({ where: eq(services.id, svc!.id) })).toMatchObject({ status: 'stopped' });
+    } finally { await app.close(); connection.client?.close(); }
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();

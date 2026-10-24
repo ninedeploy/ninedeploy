@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
-import { deployments, servers, services } from '@ninedeploy/db';
+import { deployments, primaryTransitions, servers, services, swarmTransitions } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
@@ -280,6 +280,23 @@ export default fp(
             runtimeId: r.runtimeId ?? null,
             serviceType: r.serviceType ?? null,
           };
+          const [swarmJournal] = await fastify.db.select().from(swarmTransitions)
+            .where(and(eq(swarmTransitions.deploymentId, row.deploymentId), eq(swarmTransitions.serviceId, row.serviceId))).limit(1);
+          if (swarmJournal?.runtimeId && typeof swarmJournal.payloadEncrypted === 'string' && swarmJournal.deploymentId === row.deploymentId && swarmJournal.serviceId === row.serviceId) {
+            await fastify.db.update(swarmTransitions).set({ interrupted: true, reason: 'Panel restarted; waiting for native Swarm ownership and readiness checks', updatedAt: new Date() }).where(eq(swarmTransitions.id, swarmJournal.id));
+            settledAtBoot.add(row.deploymentId);
+            logBus.publish(row.deploymentId, 'Swarm transition retained for version-fenced native recovery after restart');
+            continue;
+          }
+          const [journal] = await fastify.db.select().from(primaryTransitions)
+            .where(and(eq(primaryTransitions.deploymentId, row.deploymentId), eq(primaryTransitions.serviceId, row.serviceId))).limit(1);
+          if (journal?.candidate?.runtimeId && journal.deploymentId === row.deploymentId && journal.serviceId === row.serviceId) {
+            await fastify.db.update(primaryTransitions).set({ interrupted: true, reason: 'Panel restarted; waiting for the previous lease and fresh routing checks', updatedAt: new Date() })
+              .where(eq(primaryTransitions.id, journal.id));
+            settledAtBoot.add(row.deploymentId);
+            logBus.publish(row.deploymentId, 'Primary transition retained for health and routing recovery after restart');
+            continue;
+          }
           if (row.serverId != null) {
             interruptedRemote.set(row.deploymentId, row);
             continue;
@@ -316,12 +333,16 @@ export default fp(
       await settleInterruptedRemote();
       const staleCutoff = new Date(Date.now() - STALE_BUILDING_MS);
       try {
-        const buildingRows = (await fastify.db.select().from(deployments).where(eq(deployments.status, 'building'))) as Array<{
+        const buildingRows = (await fastify.db.select().from(deployments).where(inArray(deployments.status, ['building', 'deploying']))) as Array<{
           id: number;
           message: string | null;
           startedAt: Date | null;
           createdAt: Date | null;
         }>;
+        const protectedRows = await fastify.db.select().from(primaryTransitions);
+        const protectedRuns = new Set(protectedRows.filter(r => r.candidate?.runtimeId).map(r => r.deploymentId));
+        const swarmProtected = await fastify.db.select().from(swarmTransitions);
+        for (const row of swarmProtected) if (row.runtimeId) protectedRuns.add(row.deploymentId);
         const stale = buildingRows
           .filter((r) => {
             // v0.2.34 let the browser own dependency provisioning and left this
@@ -329,6 +350,7 @@ export default fp(
             // running such a row, so migrate it immediately regardless of age.
             if (r.message?.startsWith('Provisioning template dependencies:')) return true;
             if (inFlight.has(r.id)) return false;
+            if (protectedRuns.has(r.id)) return false;
             // r524: owned by the boot recovery (failed, or a node row inside
             // its grace window) — never resumed behind the operator's back.
             if (settledAtBoot.has(r.id) || interruptedRemote.has(r.id)) return false;
@@ -370,13 +392,17 @@ export default fp(
       const buildingServices = fastify.db
         .select({ serviceId: deployments.serviceId })
         .from(deployments)
-        .where(eq(deployments.status, 'building'));
+        .where(and(inArray(deployments.status, ['building', 'deploying']), sql`NOT EXISTS (
+          SELECT 1 FROM primary_transitions AS recovery WHERE recovery.deployment_id = ${deployments.id} AND recovery.interrupted = 1 UNION ALL SELECT 1 FROM swarm_transitions AS swarm_recovery WHERE swarm_recovery.deployment_id = ${deployments.id} AND swarm_recovery.interrupted = 1
+        )`));
       // Build counts per partition (serverId; null → 0 = local).
       const buildingRows = await fastify.db
         .select({ serverId: services.serverId })
         .from(deployments)
         .innerJoin(services, eq(services.id, deployments.serviceId))
-        .where(eq(deployments.status, 'building'));
+        .where(and(inArray(deployments.status, ['building', 'deploying']), sql`NOT EXISTS (
+          SELECT 1 FROM primary_transitions AS recovery WHERE recovery.deployment_id = ${deployments.id} AND recovery.interrupted = 1 UNION ALL SELECT 1 FROM swarm_transitions AS swarm_recovery WHERE swarm_recovery.deployment_id = ${deployments.id} AND swarm_recovery.interrupted = 1
+        )`));
       const perPartition = new Map<string, number>();
       for (const r of buildingRows) {
         const key = String(r.serverId ?? 0);
@@ -397,7 +423,9 @@ export default fp(
         })
         .from(deployments)
         .innerJoin(services, eq(services.id, deployments.serviceId))
-        .where(and(eq(deployments.status, 'queued'), notInArray(deployments.serviceId, buildingServices)))
+        .where(and(eq(deployments.status, 'queued'), notInArray(deployments.serviceId, buildingServices), sql`NOT EXISTS (
+          SELECT 1 FROM primary_transitions AS recovery WHERE recovery.service_id = ${deployments.serviceId} UNION ALL SELECT 1 FROM swarm_transitions AS swarm_recovery WHERE swarm_recovery.service_id = ${deployments.serviceId}
+        )`))
         .orderBy(asc(deployments.createdAt));
       for (const row of queued) {
         if (inFlightServices.has(row.serviceId)) continue; // r272
@@ -478,13 +506,14 @@ export default fp(
             .where(and(
               eq(deployments.id, queued.id),
               eq(deployments.status, 'queued'),
+              sql`NOT EXISTS (SELECT 1 FROM primary_transitions AS recovery WHERE recovery.service_id = ${deployments.serviceId} UNION ALL SELECT 1 FROM swarm_transitions AS swarm_recovery WHERE swarm_recovery.service_id = ${deployments.serviceId})`,
               // Selection and update are separate statements. Re-check the
               // service invariant inside the atomic write so two slots that
               // selected different queued rows for one service cannot both win.
               sql`NOT EXISTS (
                 SELECT 1 FROM deployments AS active
                 WHERE active.service_id = ${deployments.serviceId}
-                  AND active.status = 'building'
+                  AND active.status IN ('building', 'deploying')
               )`,
               // A CI receipt may become queued just as a newer run starts.
               // Recheck under the atomic claim, including across processes.

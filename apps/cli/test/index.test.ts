@@ -87,6 +87,7 @@ const h = vi.hoisted(() => {
     envList: vi.fn(), envSet: vi.fn(), envRemove: vi.fn(),
     domainsList: vi.fn(), domainsAdd: vi.fn(), domainsRemove: vi.fn(), domainsVerify: vi.fn(),
     volumesList: vi.fn(), volumesRemove: vi.fn(),
+    volumeFilesList: vi.fn(), volumeFileRead: vi.fn(), volumeFileWrite: vi.fn(), volumeFileMkdir: vi.fn(), volumeFileDelete: vi.fn(),
     networksList: vi.fn(), networksCreate: vi.fn(), networksRemove: vi.fn(),
     sessionsList: vi.fn(), sessionsRevoke: vi.fn(),
     backupsList: vi.fn(), backupsCreate: vi.fn(), backupsRestore: vi.fn(),
@@ -171,6 +172,7 @@ vi.mock('commander', () => ({ Command: h.FakeCommand }));
 vi.mock('../src/client.js', () => ({ getClient: h.getClient }));
 vi.mock('../src/config.js', () => ({ loadConfig: h.loadConfig, saveConfig: h.saveConfig }));
 vi.mock('../src/commands/login.js', () => ({ loginAction: h.loginAction }));
+vi.mock('../src/commands/volumeFiles.js', () => ({ volumeFilesList:h.volumeFilesList,volumeFileRead:h.volumeFileRead,volumeFileWrite:h.volumeFileWrite,volumeFileMkdir:h.volumeFileMkdir,volumeFileDelete:h.volumeFileDelete }));
 vi.mock('../src/commands/setup.js', () => ({ setupAction: h.setupAction }));
 vi.mock('../src/commands/doctor.js', () => ({ doctorAction: h.doctorAction }));
 vi.mock('../src/commands/firewall.js', () => ({
@@ -389,7 +391,7 @@ describe('program registration', () => {
     expect(root.children.map((c) => c.cmdName)).toEqual([
       'init', 'setup', 'login', 'logout', 'whoami', 'config',
       'services', 'databases', 'templates', 'deploys', 'token', 'system',
-      'env', 'domains', 'config-preset', 'metrics', 'build-cache', 'branding',
+      'env', 'domains', 'config-preset', 'metrics', 'log-drains', 'build-cache', 'branding',
       'ips', 'egress', 'sso',
       'volumes', 'networks', 'sessions', 'backups', 'alerts',
       'notifications', 'users',
@@ -430,8 +432,8 @@ describe('program registration', () => {
     expect(findCommand('workspaces').children).toHaveLength(4);
     expect(findCommand('env').children).toHaveLength(3);
     expect(findCommand('domains').children).toHaveLength(9);
-    // 0.16 T8: + `volumes create <name>`.
-    expect(findCommand('volumes').children).toHaveLength(3);
+    // Inventory/create/remove and five explicit-host file commands.
+    expect(findCommand('volumes').children).toHaveLength(8);
     expect(findCommand('backups').children).toHaveLength(5);
     expect(findCommand('alerts').children).toHaveLength(3);
     expect(findCommand('plugins').children).toHaveLength(9);
@@ -440,7 +442,8 @@ describe('program registration', () => {
     expect(findCommand('firewall').children).toHaveLength(7);
     expect(findCommand('manifest').children).toHaveLength(4);
     expect(findCommand('config-preset').children).toHaveLength(5);
-    expect(findCommand('metrics').children).toHaveLength(2);
+    expect(findCommand('metrics').children).toHaveLength(4);
+    expect(findCommand('log-drains').children).toHaveLength(3);
     expect(findCommand('build-cache').children).toHaveLength(1);
     expect(findCommand('branding').children).toHaveLength(2);
     expect(findCommand('egress').children).toHaveLength(3);
@@ -460,7 +463,9 @@ describe('program registration', () => {
     // 0.16.14: + `previews forks`.
     // 0.16.15: + `logs analyze`.
     // 0.16.16: + `deploys diagnose`.
-    expect(h.FakeCommand.instances).toHaveLength(314);
+    // Resource monitoring: settings/configure plus log-drains and its three actions.
+    // Node volume files: list, read, write, mkdir, delete-file.
+    expect(h.FakeCommand.instances).toHaveLength(325);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);
@@ -915,6 +920,18 @@ describe('delegating actions', () => {
     expect(h.volumesRemove).toHaveBeenLastCalledWith(client, 'v', {});
     await sub('volumes', 'rm').actionFn!('v', { server: '2' });
     expect(h.volumesRemove).toHaveBeenLastCalledWith(client, 'v', { server: '2' });
+    await sub('volumes', 'files').actionFn!('nd-svc-data', undefined, {server:'2',json:true});
+    expect(h.volumeFilesList).toHaveBeenCalledWith(client,'nd-svc-data','',{server:'2',json:true});
+    await sub('volumes', 'files').actionFn!('nd-svc-data', 'dir', {});
+    expect(h.volumeFilesList).toHaveBeenLastCalledWith(client,'nd-svc-data','dir',{});
+    await sub('volumes', 'read').actionFn!('nd-svc-data','file',{server:'2',output:'out.bin'});
+    expect(h.volumeFileRead).toHaveBeenCalledWith(client,'nd-svc-data','file',{server:'2',output:'out.bin'});
+    await sub('volumes', 'write').actionFn!('nd-svc-data','file',{server:'2',file:'in.bin'});
+    expect(h.volumeFileWrite).toHaveBeenCalledWith(client,'nd-svc-data','file',{server:'2',file:'in.bin'});
+    await sub('volumes', 'mkdir').actionFn!('nd-svc-data','dir',{server:'2'});
+    expect(h.volumeFileMkdir).toHaveBeenCalledWith(client,'nd-svc-data','dir',{server:'2'});
+    await sub('volumes', 'delete-file').actionFn!('nd-svc-data','dir',{server:'2',yes:true});
+    expect(h.volumeFileDelete).toHaveBeenCalledWith(client,'nd-svc-data','dir',{server:'2',yes:true});
     await sub('backups', 'list').actionFn!('1');
     await sub('backups', 'create').actionFn!('1');
     await sub('backups', 'restore').actionFn!('1', '2');

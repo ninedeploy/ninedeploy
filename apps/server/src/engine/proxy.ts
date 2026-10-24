@@ -3,7 +3,7 @@ import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { domains, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
-import { redirectRegexProblem } from '@ninedeploy/schemas';
+import { httpPath, redirectRegexProblem } from '@ninedeploy/schemas';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
 import { capture, run, sleep } from '../lib/exec.js';
@@ -32,6 +32,7 @@ import {
 } from '../lib/customCertificates.js';
 import { canaryRouteFor } from './canaryState.js';
 import { panelWakeUpstream } from '../lib/panelUpstream.js';
+import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
 
 /** 0.16.11: the path prefix the wake endpoint answers under (modules/wake.ts). */
 export const WAKE_PREFIX = '/_nd/wake';
@@ -355,7 +356,7 @@ const acmePath = () => path.join(dir(), 'acme.json');
 // --env-file (0600) so the token never appears in `ps` argv or the config dir
 // mounts; docker injects the vars into the Traefik container at start.
 const dnsEnvPath = () => path.join(dir(), 'dns.env');
-const TRAEFIK_CONFIG_LABEL = 'ninedeploy.traefik.config-sha';
+export const TRAEFIK_CONFIG_LABEL = 'ninedeploy.traefik.config-sha';
 
 /** Render the docker --env-file content for the DNS-01 provider token. */
 function renderDnsEnvFile(dns: DnsConfig): string | null {
@@ -861,6 +862,13 @@ export interface DynamicConfigOptions {
    * had). Every other node's refresh stays best-effort.
    */
   requireNode?: number;
+  /** A fan-out transition must confirm the node's full generation, including route removals. */
+  confirmNodeRouting?: boolean;
+  /** Recovery confirms removals too, even when the last local domain disappeared. */
+  confirmLocalRouting?: boolean;
+  /** Service whose generated routes must be observed before retirement. */
+  confirmServiceId?: number;
+  signal?: AbortSignal;
 }
 
 export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Promise<void> {
@@ -870,20 +878,36 @@ export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Pro
 }
 
 async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): Promise<void> {
+  if (opts.signal?.aborted) throw new ProxyRoutingUnconfirmed();
   // The render refreshes the uploaded-certificate cache; the certificates
   // file is written from it FIRST, so a router that just switched to
   // `tls: {}` never appears before the certificate it relies on.
   const routes = await renderDynamicConfig(db, { serverId: null });
+  let confirm = opts.confirmLocalRouting === true;
+  let confirmNode: number | undefined = opts.confirmNodeRouting ? opts.requireNode : undefined;
+  if (opts.confirmServiceId != null) {
+    const svc = await db.query.services.findFirst({ where: eq(services.id, opts.confirmServiceId) });
+    if (svc?.port != null) {
+      const active = await db.select().from(domains).where(eq(domains.serviceId, svc.id));
+      if (active.some(d => d.status === 'active')) {
+        if (svc.serverId == null) confirm = true;
+        else if (svc.serverId === opts.requireNode) confirmNode = svc.serverId;
+      }
+    }
+  }
+  if (opts.signal?.aborted) throw new ProxyRoutingUnconfirmed();
   writeCertificatesFile(cachedCustomCertificates());
-  writeAtomic(generatedConfigPath(), routes);
+  const written = confirm ? withRoutingAck(routes) : routes;
+  writeAtomic(generatedConfigPath(), written);
   if (legacyMirror && existsSync(legacyDynamicPath())) {
     try {
-      writeAtomic(legacyDynamicPath(), routes);
+      writeAtomic(legacyDynamicPath(), written);
     } catch {
       /* the mirror is a courtesy to a container that may already be gone */
     }
   }
-  await refreshNodeProxies(db, opts.requireNode);
+  if (confirm) await confirmProxyRouting(routes, { signal: opts.signal });
+  await refreshNodeProxies(db, opts.requireNode, confirmNode);
 }
 
 /**
@@ -947,8 +971,8 @@ const lastNodeSyncAuditAt = new Map<number, number>();
  * `routingFlipped` true and the pipeline stop the still-routed previous
  * container on the node — an outage reported as a successful deploy.
  */
-async function refreshNodeProxies(db: DB, requireNode?: number): Promise<void> {
-  let results: Array<{ serverId: number; ok: boolean; reason?: string }> = [];
+async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number): Promise<void> {
+  let results: Array<{ serverId: number; ok: boolean; reason?: string; routingUnconfirmed?: boolean }> = [];
   try {
     // Ask which NODES exist, not which services are pinned: a node whose last
     // service was just deleted still needs its route table cleared, and a
@@ -959,7 +983,9 @@ async function refreshNodeProxies(db: DB, requireNode?: number): Promise<void> {
     }
     if (nodes.length === 0) return;
     const { syncAllNodeProxies } = await import('../lib/nodeProxy.js');
-    results = await syncAllNodeProxies(db, nodes.map((n) => n.id));
+    results = confirmNode === undefined
+      ? await syncAllNodeProxies(db, nodes.map((n) => n.id))
+      : await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode });
   } catch (err) {
     if (requireNode != null) {
       throw new Error(`the proxy on node #${requireNode} could not be updated: ${err instanceof Error ? err.message : String(err)}`);
@@ -968,6 +994,7 @@ async function refreshNodeProxies(db: DB, requireNode?: number): Promise<void> {
     return;
   }
   let requiredFailure: string | undefined;
+  let requiredUnconfirmed = false;
   for (const r of results) {
     if (r.ok) {
       lastNodeSyncAuditAt.delete(r.serverId);
@@ -976,6 +1003,7 @@ async function refreshNodeProxies(db: DB, requireNode?: number): Promise<void> {
     const reason = r.reason ?? 'unknown error';
     if (r.serverId === requireNode) {
       requiredFailure = reason;
+      requiredUnconfirmed = r.routingUnconfirmed === true;
       continue;
     }
     const now = Date.now();
@@ -987,6 +1015,7 @@ async function refreshNodeProxies(db: DB, requireNode?: number): Promise<void> {
     });
   }
   if (requiredFailure !== undefined) {
+    if (requiredUnconfirmed) throw new ProxyRoutingUnconfirmed(`The proxy routing on node #${requireNode} was not confirmed; keep both runtime generations running`);
     throw new Error(`the proxy on node #${requireNode} could not be updated: ${requiredFailure}`);
   }
 }
@@ -1022,6 +1051,7 @@ export async function renderDynamicConfig(
   );
   const servicesById = new Map(
     (await db.select().from(services))
+      .filter(s => s.status !== 'stopped')
       .filter((s) =>
         forNode
           ? s.serverId === opts.serverId || targetRuntimeByService.has(s.id)
@@ -1264,7 +1294,13 @@ export async function renderDynamicConfig(
       // next deploy — must not linger as an unresolvable 502 backend.
       const replicaCount =
         svc.type === 'docker' ? Math.max(1, Math.min(svc.runtimeReplicas ?? svc.replicas ?? 1, MAX_REPLICAS)) : 1;
-      const healthPath = String(svc.healthPath ?? '/').replace(PATH_RE, '') || '/';
+      // Health paths allow queries and percent encoding, unlike router paths.
+      // Keep the API-validated endpoint intact; retain legacy sanitization
+      // only for old rows that do not satisfy the current path contract.
+      const parsedHealthPath = httpPath.safeParse(svc.healthPath ?? '/');
+      const healthPath = parsedHealthPath.success
+        ? parsedHealthPath.data
+        : String(svc.healthPath ?? '/').replace(PATH_RE, '') || '/';
       const servers = replicaNames(upstreamHost, replicaCount)
         .map((n) => `          - url: "http://${n}:${svc.port}"`)
         .join('\n');
@@ -1287,20 +1323,31 @@ export async function renderDynamicConfig(
       const sticky = (await getStickyEnabledForService(db, svc.id))
         ? '        sticky:\n          cookie:\n            name: "ninedeploy_sticky"\n            httpOnly: true\n'
         : '';
-      // 0.16.9 canary in progress (panel host only): the domain's service
+      // A scoped canary belongs only to its primary host and stable runtime.
+      // Fan-out targets always retain their independently selected runtime.
+      // The domain's service
       // becomes a weighted split between two leaves, the release the row
       // names (`_stable`) and the new one (`_canary`). The access log names
       // the leaf that answered, which is how canary.ts measures each side.
-      const canary = !forNode && svc.type === 'docker' ? canaryRouteFor(svc.id) : null;
+      const primaryHost = forNode ? svc.serverId === opts.serverId : svc.serverId == null;
+      const canary = primaryHost && svc.type === 'docker'
+        ? canaryRouteFor(svc.id, { serverId: opts.serverId, stableRuntimeId: svc.runtimeId }) : null;
       if (canary) {
         const canaryReplicas = Math.max(1, Math.min(canary.replicas, MAX_REPLICAS));
         const canaryServers = replicaNames(canary.runtimeId, canaryReplicas)
           .map((n) => `          - url: "http://${n}:${canary.port ?? svc.port}"`)
           .join('\n');
-        const canaryHealth =
-          canaryReplicas > 1
-            ? `\n        healthCheck:\n          path: "${yamlDoubleQuoted(healthPath)}"\n          interval: "10s"\n          timeout: "5s"`
-            : '';
+        // A weighted parent must subscribe to both leaves' health changes.
+        // Explicit HTTP readiness protects single-container releases too;
+        // other readiness modes keep their existing replica probe behavior.
+        const strictCanaryHealth = svc.healthCheck === 'http-strict'
+          ? `\n        healthCheck:\n          path: "${yamlDoubleQuoted(healthPath)}"\n          interval: "5s"\n          timeout: "3s"\n          followRedirects: false`
+          : '';
+        const stableCanaryHealth = strictCanaryHealth || healthCheck;
+        const canaryHealth = strictCanaryHealth || (canaryReplicas > 1
+          ? `\n        healthCheck:\n          path: "${yamlDoubleQuoted(healthPath)}"\n          interval: "10s"\n          timeout: "5s"`
+          : '');
+        const weightedHealth = stableCanaryHealth && canaryHealth ? '        healthCheck: {}\n' : '';
         // Sticky sessions keep a visitor on one release as well as one replica.
         const weightedSticky = sticky
           ? '        sticky:\n          cookie:\n            name: "ninedeploy_release"\n            httpOnly: true\n'
@@ -1308,12 +1355,13 @@ export async function renderDynamicConfig(
         svcBlocks.push(
           `    svc_${key}:\n` +
             '      weighted:\n' +
+            weightedHealth +
             weightedSticky +
             '        services:\n' +
             `          - name: svc_${key}_stable\n            weight: ${100 - canary.weight}\n` +
             `          - name: svc_${key}_canary\n            weight: ${canary.weight}`,
-          `    svc_${key}_stable:\n` + '      loadBalancer:\n' + sticky + '        servers:\n' + servers + healthCheck,
-          `    svc_${key}_canary:\n` + '      loadBalancer:\n' + sticky + '        servers:\n' + canaryServers + canaryHealth,
+          `    svc_${key}_stable:\n      loadBalancer:\n${sticky}        servers:\n${servers}${stableCanaryHealth}`,
+          `    svc_${key}_canary:\n      loadBalancer:\n${sticky}        servers:\n${canaryServers}${canaryHealth}`,
         );
         continue;
       }

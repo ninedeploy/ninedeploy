@@ -1,13 +1,13 @@
 import path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, lt, ne } from 'drizzle-orm';
-import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, previewEnvVars, projects, services, serviceProjects, serviceVolumeAttachments, workspaceMembers } from '@ninedeploy/db';
+import { and, desc, eq, exists, inArray, isNotNull, lt, ne, type SQL } from 'drizzle-orm';
+import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, previewEnvVars, primaryTransitions, swarmTransitions, projects, services, serviceProjects, serviceVolumeAttachments, workspaceMembers } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { assertCiGateForBuild } from '../lib/ciGate.js';
-import { archiveDockerArtifact, artifactRuntimeService, assertArtifactAvailable, assertArtifactTarget, cacheNodeDockerArtifact, parseDockerArtifact, prepareArtifactImage, supportsDockerArtifact } from '../lib/dockerArtifact.js';
+import { archiveDockerArtifact, artifactRuntimeService, assertArtifactAvailable, assertArtifactImage, assertArtifactTarget, cacheNodeDockerArtifact, parseDockerArtifact, prepareArtifactImage, supportsDockerArtifact } from '../lib/dockerArtifact.js';
 import { withReleaseImageLock } from '../lib/releaseImageRetention.js';
 import { GithubAppError } from '../lib/githubApp.js';
 import { githubAppCloneHint, resolveCloneCreds } from '../lib/sourceCreds.js';
@@ -58,11 +58,14 @@ import { composeBuilder } from './builders/compose.js';
 import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
+import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
+import { beginPrimaryTransition, primaryRecoveryPending, PrimaryIdentityUnconfirmed, PrimaryRecoveryOwnershipLost, PrimaryRecoveryPending, type PrimaryRecoveryLease } from './primaryRecovery.js';
+import { beginSwarmTransition, swarmRecoveryPending, SwarmRecoveryPending, SwarmRecoveryOwnershipLost, type SwarmRecoveryLease } from './swarmRecovery.js';
 import { canaryConfig } from '@ninedeploy/schemas';
 import { canarySkipReason, runCanary } from './canary.js';
 import { ensurePreviewDatabaseCopies } from '../lib/previewDatabases.js';
-import { canaryActive, endCanary } from './canaryState.js';
-import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
+import { canaryActive, canaryOwnedBy, endCanary } from './canaryState.js';
+import { primaryCanaryTraffic } from './primaryCanaryTraffic.js';
 import { run, sleep } from '../lib/exec.js';
 import { hasVaultRef, resolveVaultRefs } from '../lib/vault.js';
 import { registryCredentialFor, registryCredentialForSourceBuild } from '../lib/registryBinding.js';
@@ -124,7 +127,11 @@ export async function reconcileDeploymentHistory(db: DB): Promise<number> {
     .select({ id: services.id, status: services.status })
     .from(services)
     .where(inArray(services.id, [...newestByService.keys()]));
-  const liveServices = new Set(svcRows.filter((s) => s.status === 'running').map((s) => s.id));
+  const recovering = new Set((await db.select({ serviceId: primaryTransitions.serviceId }).from(primaryTransitions)
+    .where(inArray(primaryTransitions.serviceId, [...newestByService.keys()]))).map(row => row.serviceId));
+  for (const row of await db.select({ serviceId: swarmTransitions.serviceId }).from(swarmTransitions)
+    .where(inArray(swarmTransitions.serviceId, [...newestByService.keys()]))) recovering.add(row.serviceId);
+  const liveServices = new Set(svcRows.filter(s => s.status === 'running' || (s.status === 'deploying' && recovering.has(s.id))).map(s => s.id));
 
   const supersededIds: number[] = [];
   for (const r of running) {
@@ -528,14 +535,14 @@ async function loadRegistryAuth(
  * error during failure handling must never propagate (it would leave the worker
  * tick in a broken state and the deployment stuck in `building`).
  */
-async function safeFail(db: DB, deploymentId: number, serviceId: number, runtimeId: string | null): Promise<void> {
+async function safeFail(db: DB, deploymentId: number, serviceId: number, runtimeId: string | null, fence?: SQL): Promise<void> {
   try {
-    await db.update(deployments).set({ status: 'failed', finishedAt: new Date() }).where(eq(deployments.id, deploymentId));
+    await db.update(deployments).set({ status: 'failed', finishedAt: new Date() }).where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['queued', 'building', 'deploying']), fence));
   } catch (err) {
     logBus.publish(deploymentId, `failed to mark deployment failed: ${msg(err)}`);
   }
   try {
-    await db.update(services).set({ status: 'error', runtimeId }).where(eq(services.id, serviceId));
+    await db.update(services).set({ status: 'error', runtimeId }).where(and(eq(services.id, serviceId), ne(services.status, 'stopped'), fence));
   } catch (err) {
     logBus.publish(deploymentId, `failed to mark service errored: ${msg(err)}`);
   }
@@ -647,6 +654,7 @@ type PipelineKernelCtx = {
 
 /** Run the full deploy pipeline for one deployment row. */
 export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx): Promise<void> {
+  let primaryRecovery: PrimaryRecoveryLease | SwarmRecoveryLease | undefined;
   const events = kernelCtx?.events;
   // F881: this run writes the deploy log until its final settle below (incl.
   // the proxy swap/revert and F861's failUnsettledDeployment line). Both
@@ -654,30 +662,43 @@ export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: Pi
   logBus.beginRun(deploymentId);
   if (events) await emitDeploying(db, deploymentId, events).catch(() => undefined);
   try {
-    await runDeploymentCore(db, deploymentId, kernelCtx);
+    await runDeploymentCore(db, deploymentId, kernelCtx, lease => { primaryRecovery = lease; });
   } catch (err) {
+    if (err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost || primaryRecovery && 'managerNodeId' in primaryRecovery.row) {
+      const reason = err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost ? err.message : 'Swarm transition remains unconfirmed; retained for recovery';
+      logBus.publish(deploymentId, reason); await primaryRecovery?.release(reason); return;
+    }
+    if (err instanceof PrimaryRecoveryOwnershipLost || err instanceof PrimaryRecoveryPending || primaryRecovery?.lost()) {
+      logBus.publish(deploymentId, err instanceof Error ? err.message : 'Primary recovery owns this transition');
+      return;
+    }
     // F861: an error the pipeline did not handle itself (a DB hiccup before
     // its try, or in an unwrapped status write) must not leave the row
     // `building` — that blocks every later deploy of the service and the
     // stale sweep silently re-runs it 45 minutes later.
-    await failUnsettledDeployment(db, deploymentId, err).catch(() => undefined);
+    await primaryRecovery?.check();
+    await failUnsettledDeployment(db, deploymentId, err, primaryRecovery?.fence()).catch(() => undefined);
     throw err;
   } finally {
-    if (kernelCtx?.hooks || events) await announceOutcome(db, deploymentId, kernelCtx).catch(() => undefined);
+    if (primaryRecovery) {
+      if (!primaryRecovery.lost()) await primaryRecovery.completeIfSafe().catch(() => {});
+      await primaryRecovery.release();
+    }
+    if (!primaryRecovery?.lost() && (kernelCtx?.hooks || events)) await announceOutcome(db, deploymentId, kernelCtx).catch(() => undefined);
     logBus.end(deploymentId);
   }
 }
 
 /**
  * F861: settle a row runDeploymentCore threw out of — only while it is still
- * `queued`/`building` (a cancel, a finalize or a handled failure wins), and
+ * `queued`/`building`/`deploying` (a cancel, a finalize or a handled failure wins), and
  * the service only while it is still `deploying` (this run's own mark).
  */
-async function failUnsettledDeployment(db: DB, deploymentId: number, err: unknown): Promise<void> {
+async function failUnsettledDeployment(db: DB, deploymentId: number, err: unknown, fence?: SQL): Promise<void> {
   const settled = await db
     .update(deployments)
     .set({ status: 'failed', finishedAt: new Date() })
-    .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['queued', 'building'])))
+    .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['queued', 'building', 'deploying']), fence))
     .returning({ id: deployments.id });
   if (settled.length === 0) return;
   logBus.publish(deploymentId, `✗ Deployment failed: ${msg(err)}`);
@@ -686,7 +707,7 @@ async function failUnsettledDeployment(db: DB, deploymentId: number, err: unknow
   await db
     .update(services)
     .set({ status: 'error' })
-    .where(and(eq(services.id, dep.serviceId), eq(services.status, 'deploying')));
+    .where(and(eq(services.id, dep.serviceId), eq(services.status, 'deploying'), fence));
   const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
   if (service) await auditOutcome(db, service, deploymentId, 'failed', msg(err));
 }
@@ -707,6 +728,7 @@ async function emitDeploying(db: DB, deploymentId: number, events: import('../ke
 async function announceOutcome(db: DB, deploymentId: number, kernelCtx: PipelineKernelCtx | undefined): Promise<void> {
   const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
   if (!dep) return;
+  if (!['running', 'failed', 'cancelled'].includes(dep.status)) return;
   const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
   if (!service) return;
   const success = dep.status === 'running';
@@ -731,11 +753,13 @@ async function announceOutcome(db: DB, deploymentId: number, kernelCtx: Pipeline
   }
 }
 
-async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx): Promise<void> {
+async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx, trackPrimary?: (lease: PrimaryRecoveryLease | SwarmRecoveryLease) => void): Promise<void> {
   const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
   if (!dep) return;
   const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
   if (!service) return;
+  if (await primaryRecoveryPending(db, service.id)) throw new PrimaryRecoveryPending();
+  if (await swarmRecoveryPending(db, service.id)) throw new SwarmRecoveryPending();
   const restore = dep.restoredFromDeploymentId != null ? await readReleaseRecord(db, deploymentId).catch(() => null) : null;
   await assertCiGateForBuild(db, dep, service);
   const artifact = dep.promotionSourceDeploymentId != null ? parseDockerArtifact(dep.artifact) : null;
@@ -780,7 +804,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['queued', 'building'])))
     .returning({ id: deployments.id });
   if (claimed.length > 0) {
-    await db.update(services).set({ status: 'deploying' }).where(eq(services.id, service.id));
+    await db.update(services).set({ status: 'deploying' }).where(and(eq(services.id, service.id),
+      exists(db.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'building'))))));
     log(`▶ Deployment #${deploymentId} for "${service.name}" (${service.type})`);
   }
 
@@ -943,8 +968,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       await auditOutcome(db, service, deploymentId, 'failed', serviceRefusal);
       return;
     }
-    const call =(op: string, params: Record<string, unknown>, sink: (line: string) => void) =>
-      agentOp(db, serverId, op, params, sink);
+    const call =(op: string, params: Record<string, unknown>, sink: (line: string) => void, options?: { timeoutMs?: number; signal?: AbortSignal }) =>
+      agentOp(db, serverId, op, params, sink, options);
     // r660: the node's name goes into the "update this agent" refusal.
     const label = await nodeLabel(db, serverId);
     // 0.13 (T5): a GitHub App repository is checked out on the node with a
@@ -981,8 +1006,22 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     : undefined;
 
   let runtime: DeployRuntime | undefined;
+  let primaryRecovery: PrimaryRecoveryLease | undefined;
+  let swarmRecovery: SwarmRecoveryLease | undefined;
+  const runtimeFence = () => and(primaryRecovery?.fence(), swarmRecovery?.fence());
+  const ensurePrimaryRecovery = async () => {
+    if (primaryRecovery || !builder || service.type !== 'docker' || service.orchestrator === 'swarm' || !runtime || runtime.port == null || runtime.runtimeId === previous?.runtimeId) return;
+    const active = await db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, service.id), eq(domains.status, 'active')));
+    if (!active.length) return;
+    primaryRecovery = await beginPrimaryTransition(db, service, deploymentId, runtime, previous, sha);
+    trackPrimary?.(primaryRecovery);
+    const nativeBuilder = builder;
+    builder = primaryRecovery.wrap(builder);
+    await primaryRecovery.verifyCandidate(nativeBuilder, runtime, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000, log);
+  };
   /** 0.16.9: a canary ran to the end and still holds its share of the traffic. */
   let canaryHeld = false;
+  let canaryOwner: symbol | undefined;
   // The resolved runtime env (lifted so the fan-out hook can push the same
   // secrets to every target node).
   let fanoutEnv: Record<string, string> = {};
@@ -1284,9 +1323,39 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       }
     }
 
+    let swarmArtifactRecorded = false;
+    const recordBuiltArtifact = async (image: { imageId: string; builtWithNixpacks: boolean; builtStatic: boolean }) => {
+      const originServerId = placed ? placed.buildHost : service.serverId;
+      let captured = parseDockerArtifact({ version: 1, imageId: image.imageId, repoUrl: service.repoUrl,
+        commitSha: sha, originDeploymentId: deploymentId, ...(originServerId != null ? { originServerId } : {}),
+        builtWithNixpacks: image.builtWithNixpacks, builtStatic: image.builtStatic });
+      await withReleaseImageLock(async () => {
+        await cacheNodeDockerArtifact(db, captured, service, deploymentId, log);
+        if (onSwarm) await assertArtifactImage(captured);
+        captured = await archiveDockerArtifact(db, captured, service, log);
+        await db.update(deployments).set({ artifact: captured }).where(eq(deployments.id, deploymentId));
+      });
+    };
     const ctx: BuildContext = {
+      ...(onSwarm ? { prepareSwarmTransition: async (stack: Parameters<NonNullable<BuildContext['prepareSwarmTransition']>>[0], candidate: DeployRuntime, auth?: { username: string; password: string; server?: string }) => {
+        const initialSnapshot = JSON.stringify({ ...JSON.parse(configSnapshot), port: candidate.port });
+        try { swarmRecovery = await beginSwarmTransition(db, service, deploymentId, stack, candidate, sha, auth, initialSnapshot); }
+        catch (error) {
+          if (await swarmRecoveryPending(db, service.id)) throw new SwarmRecoveryPending();
+          throw new Error(error instanceof SwarmRecoveryPending ? error.message : 'Swarm preparation failed before native submission');
+        }
+        trackPrimary?.(swarmRecovery);
+        builder = swarmRecovery.wrap(builder!);
+        return { submit: () => swarmRecovery!.submit() };
+      } } : {}),
       ...(!artifact && supportsDockerArtifact(service) && /^[a-f0-9]{40}$/i.test(sha) ? { recordDockerArtifact: true } : {}),
+      ...(!artifact && onSwarm ? { captureSwarmArtifact: async (image: { imageId: string; builtWithNixpacks: boolean; builtStatic: boolean }) => {
+        await recordBuiltArtifact(image);
+        swarmArtifactRecorded = true;
+        if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+      } } : {}),
       ...(artifact ? { prebuiltImage: { tag: artifact.imageId, imageId: artifact.imageId, builtWithNixpacks: artifact.builtWithNixpacks, builtStatic: artifact.builtStatic } } : {}),
+      ...(artifact && onSwarm ? { requireSwarmMembers: true } : {}),
       ...(restore ? { restoreComposeRelease: restore } : {}),
       deploymentId,
       service: serviceForBuild,
@@ -1373,16 +1442,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     if (ctx.recordDockerArtifact && (service.pushRegistrySourceId != null || service.pushRepository) && (!runtime.artifactBuild || !runtime.imageDigest)) {
       throw new Error('Registry archival is required but the source image could not be recorded; the candidate will not receive traffic');
     }
-    if (!artifact && supportsDockerArtifact(service) && runtime.artifactBuild && runtime.imageDigest && /^[a-f0-9]{40}$/i.test(sha)) {
+    if (onSwarm && ctx.recordDockerArtifact && !swarmArtifactRecorded) throw new Error('Swarm artifact was not retained before the update');
+    if (!artifact && !swarmArtifactRecorded && supportsDockerArtifact(service) && runtime.artifactBuild && runtime.imageDigest && /^[a-f0-9]{40}$/i.test(sha)) {
       try {
-        const originServerId = placed ? placed.buildHost : service.serverId;
-        let captured = parseDockerArtifact({ version: 1, imageId: runtime.imageDigest, repoUrl: service.repoUrl,
-          commitSha: sha, originDeploymentId: deploymentId, ...(originServerId != null ? { originServerId } : {}), ...runtime.artifactBuild });
-        await withReleaseImageLock(async () => {
-          await cacheNodeDockerArtifact(db, captured, service, deploymentId, log);
-          captured = await archiveDockerArtifact(db, captured, service, log);
-          await db.update(deployments).set({ artifact: captured }).where(eq(deployments.id, deploymentId));
-        });
+        await recordBuiltArtifact({ imageId: runtime.imageDigest, ...runtime.artifactBuild });
       } catch (err) {
         if (service.pushRegistrySourceId != null || service.pushRepository) throw err;
         log('Docker artifact record unavailable; this deployment cannot be promoted without rebuilding');
@@ -1444,6 +1507,26 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
 
     // ── 0.16.9 canary releases ──
+    // Auto-provision the service's automatic URL if one is configured and not
+    // already present: the env wildcard, or Settings → Automatic URLs (a base
+    // domain or a free sslip.io name — lib/autoUrl.ts).
+    // Isolated: a failure here must not affect the already-running container.
+    try {
+      const auto = await autoHostFor(db, service);
+      if (auto) {
+        const existing = await db.query.domains.findFirst({ where: and(eq(domains.serviceId, service.id), eq(domains.hostname, auto.hostname)) });
+        if (!existing) {
+          const ssl = auto.ssl === 'acme' ? !!(await getAcmeEmail(db)) : false;
+          await db.insert(domains).values({ serviceId: service.id, hostname: auto.hostname, path: '/', ssl, status: 'active' });
+          log(`🌐 Auto-assigned URL: ${ssl ? 'https' : 'http'}://${auto.hostname}`);
+        }
+      }
+    } catch (err) {
+      log(`warning: could not auto-assign the automatic URL: ${msg(err)}`);
+    }
+
+
+    await ensurePrimaryRecovery();
     // With a canary configuration the new release takes a growing share of
     // the traffic, step by step, before the switch below. A failed step
     // routes everything back and throws, so the catch below stops the new
@@ -1473,25 +1556,46 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       } else if (parsed.success) {
         const live = runtime;
         const liveBuilder = builder;
+        const probeTimeoutMs = Math.min(10_000, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000);
+        const checkpoint = async () => {
+          await primaryRecovery?.check(); await swarmRecovery?.check();
+          if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+          if (canaryOwner !== undefined && !canaryOwnedBy(service.id, deploymentId, canaryOwner)) throw new ProxyRoutingUnconfirmed('Canary ownership changed; traffic observation refused');
+        };
+        const traffic = await primaryCanaryTraffic(db, {
+          id: service.id, slug: service.slug, runtimeId: previous?.runtimeId ?? null,
+          serverId: service.serverId ?? null, orchestrator: service.orchestrator ?? null,
+        }, deploymentId, primaryRecovery, checkpoint);
         await runCanary({
+          ...traffic,
           serviceId: service.id,
           slug: service.slug,
           deploymentId,
+          serverId: service.serverId ?? null,
+          stableRuntimeId: previous?.runtimeId ?? null,
+          onOwner: owner => { canaryOwner = owner; },
           config: parsed.data,
           runtime: live,
           log,
-          writeConfig: () => writeDynamicConfig(db),
-          probe: () => liveBuilder.isHealthy(live, 5_000, 0),
-          checkpoint: async () => {
-            if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
-          },
-          measured: await trafficAnalyticsEnabled(db).catch(() => false),
+          probe: () => primaryRecovery
+            ? primaryRecovery.verifyCandidate(liveBuilder, live, probeTimeoutMs, log).then(() => true, err => { if (err instanceof PrimaryRecoveryOwnershipLost) throw err; return false; })
+            : liveBuilder.isHealthy(live, probeTimeoutMs, 0),
+          checkpoint,
         });
+        if (canaryOwner !== undefined && !canaryOwnedBy(service.id, deploymentId, canaryOwner)) throw new ProxyRoutingUnconfirmed('Canary ownership changed; runtime generations retained');
         canaryHeld = true;
+        if (primaryRecovery) await primaryRecovery.verifyCandidate(builder, live, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000, log);
       }
     }
     // ── end 0.16.9 ──
   } catch (err) {
+    if (swarmRecovery) {
+      if (err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost) throw err;
+      try { await swarmRecovery.fail(err instanceof DeploymentCancelled); }
+      catch { throw new SwarmRecoveryPending('Swarm failure or cancellation recovery is unconfirmed; service retained'); }
+      return;
+    }
+    await primaryRecovery?.check();
     const cancelled = err instanceof DeploymentCancelled;
     log(cancelled ? '⏹ Deployment cancelled' : `✗ Deployment failed: ${msg(err)}`);
     log('##[stage:ERROR:failed]');
@@ -1506,11 +1610,15 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // running app on a cancel or a slow healthcheck.
     // 0.16.9: a canary still holding a share of the traffic is routed back
     // first (runCanary does this itself when a step fails).
+    let retainCandidate = err instanceof ProxyRoutingUnconfirmed || err instanceof PrimaryIdentityUnconfirmed;
     if (canaryActive(service.id)) {
-      endCanary(service.id);
-      await writeDynamicConfig(db).catch((e: unknown) => log(`⚠ could not route the canary's traffic back: ${msg(e)}`));
+      if (!canaryOwnedBy(service.id, deploymentId, canaryOwner)) throw new ProxyRoutingUnconfirmed('A newer canary owns routing; old pipeline cleanup is refused');
+      endCanary(service.id, deploymentId, canaryOwner);
+      try { if (primaryRecovery) await primaryRecovery.confirm(); else await writeDynamicConfig(db, { confirmServiceId: service.id }); }
+      catch { retainCandidate = true; }
     }
-    if (runtime && runtime.runtimeId !== previous?.runtimeId) {
+    if (retainCandidate) log(`⚠ Routing rollback was not confirmed; both runtime generations are kept running (candidate ${runtime?.runtimeId ?? 'unknown'})`);
+    if (!retainCandidate && runtime && runtime.runtimeId !== previous?.runtimeId) {
       await builder.stop(runtime.runtimeId).catch(() => undefined);
     }
 
@@ -1531,18 +1639,19 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       log('↩ Previous runtime is still healthy — rolled back to it.');
       // The service keeps serving the old version (status: running); the
       // deployment itself still failed and is recorded as such.
-      await db.update(services).set({ status: 'running' }).where(eq(services.id, service.id));
-      await db.update(deployments).set({ status: cancelled ? 'cancelled' : 'failed', finishedAt: new Date() }).where(eq(deployments.id, deploymentId));
+      await db.update(services).set({ status: 'running' }).where(and(eq(services.id, service.id), ne(services.status, 'stopped'), runtimeFence()));
+      await db.update(deployments).set({ status: cancelled ? 'cancelled' : 'failed', finishedAt: new Date() }).where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['building', 'deploying']), runtimeFence()));
     } else if (cancelled) {
       // No previous runtime to fall back on — the service simply never came up.
-      await db.update(services).set({ status: 'idle' }).where(eq(services.id, service.id));
-      await db.update(deployments).set({ status: 'cancelled', finishedAt: new Date() }).where(eq(deployments.id, deploymentId));
+      await db.update(services).set({ status: 'idle' }).where(and(eq(services.id, service.id), ne(services.status, 'stopped'), runtimeFence()));
+      await db.update(deployments).set({ status: 'cancelled', finishedAt: new Date() }).where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['building', 'deploying']), runtimeFence()));
     } else {
       // r167: keep pointing at the previous runtime. A failed 3s probe does
       // not mean it is gone — `--restart unless-stopped` keeps it running and
       // Traefik keeps routing to it — and clearing the id orphaned it for good
       // (no later deploy or stop could ever find it again).
-      await safeFail(db, deploymentId, service.id, previous?.runtimeId ?? null);
+      await primaryRecovery?.check();
+      await safeFail(db, deploymentId, service.id, previous?.runtimeId ?? null, runtimeFence());
     }
     await auditOutcome(
       db,
@@ -1554,8 +1663,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     return;
   }
 
-  // ── SUCCESS PATH (outside the try, so a post-success hiccup can never kill
-  // the healthy new container). The status writes are not wrapped: a failure
+  // ── ROUTING TRANSITION (outside the try, so a later hiccup cannot kill
+  // the healthy new container blindly). The status writes are not wrapped: a failure
   // here propagates to the worker tick, which is correct — but the container is
   // already running. Only the post-success side-effects are best-effort. ──────
   const newRuntimeId = runtime!.runtimeId;
@@ -1622,36 +1731,44 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     finalizeSnapshot = JSON.stringify(base);
   }
 
+  await primaryRecovery?.intentCandidate(finalizeSnapshot); await swarmRecovery?.intentCandidate(finalizeSnapshot);
   const finalized = await db
     .update(deployments)
     .set({
-      status: 'running',
-      finishedAt: new Date(),
+      status: 'deploying',
+      finishedAt: null,
       imageDigest: runtime!.imageDigest ?? null,
-      ...(finalizeSnapshot !== undefined ? { configSnapshot: finalizeSnapshot } : {}),
     })
-    .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'building')))
+    .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'building'), runtimeFence()))
     .returning({ id: deployments.id });
   // 0.16.9: the canary is over either way. On success the routing flip below
   // goes from the split straight to the new release; on a late cancel the
   // split is written away before the new container stops.
-  if (canaryHeld) endCanary(service.id);
+  if (canaryHeld) {
+    if (canaryOwner !== undefined && !canaryOwnedBy(service.id, deploymentId, canaryOwner)) throw new ProxyRoutingUnconfirmed('Canary ownership changed before final routing; runtime generations retained');
+    endCanary(service.id, deploymentId, canaryOwner);
+  }
   if (finalized.length === 0) {
+    await primaryRecovery?.check(); await swarmRecovery?.check();
     if (!inPlaceRedeploy) {
-      log('⏹ Cancelled just before finalizing — retiring the new container, the previous stays live');
-      if (canaryHeld) await writeDynamicConfig(db).catch((e: unknown) => log(`⚠ could not route the canary's traffic back: ${msg(e)}`));
-      await builder.stop(newRuntimeId).catch(() => undefined);
+      log('⏹ Cancelled just before finalizing — restoring the previous routing before retiring the candidate');
+      let canRetire = true;
+      if (canaryHeld) {
+        try { await writeDynamicConfig(db, { confirmServiceId: service.id }); }
+        catch { canRetire = false; log(`⚠ Canary rollback was not confirmed; both runtime generations are kept running (candidate ${newRuntimeId})`); }
+      }
+      if (canRetire) await builder.stop(newRuntimeId).catch(() => undefined);
       if (previous) {
-        await db.update(services).set({ status: 'running', runtimeId: previous.runtimeId }).where(eq(services.id, service.id));
+        await db.update(services).set({ status: 'running', runtimeId: previous.runtimeId }).where(and(eq(services.id, service.id), ne(services.status, 'stopped'), runtimeFence()));
       } else {
         // First-ever deploy cancelled at the wire: nothing is running.
-        await db.update(services).set({ status: 'idle' }).where(eq(services.id, service.id));
+        await db.update(services).set({ status: 'idle' }).where(and(eq(services.id, service.id), ne(services.status, 'stopped'), runtimeFence()));
       }
     } else {
       // The swap already happened under a shared runtime id and cannot be
       // unwound — record reality instead of stopping the live instance.
       log('⏹ Cancelled just before finalizing — in-place redeploy already applied, live runtime stays up');
-      await db.update(services).set({ status: 'running', runtimeId: newRuntimeId }).where(eq(services.id, service.id));
+      await db.update(services).set({ status: 'running', runtimeId: newRuntimeId }).where(and(eq(services.id, service.id), ne(services.status, 'stopped'), runtimeFence()));
     }
     await auditOutcome(db, service, deploymentId, 'cancelled');
     return;
@@ -1669,40 +1786,15 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       // 0.16.11: a deploy ends a sleep; the new release is awake and routed.
       asleepAt: null,
     })
-    .where(eq(services.id, service.id))
+    .where(and(eq(services.id, service.id), ne(services.status, 'stopped'), runtimeFence()))
     .returning({ id: services.id });
   if (persisted.length === 0) {
+    await primaryRecovery?.check(); await swarmRecovery?.check();
     // The service was deleted while this deploy was building. Nothing tracks
     // the candidate any more — retire it so it cannot hold its port forever.
     log('Service row disappeared mid-deploy (deleted) — retiring the orphaned runtime');
     await builder.stop(newRuntimeId).catch(() => undefined);
     return;
-  }
-
-  // This build is now THE live one: demote every OLDER row still marked
-  // `running` for this service. Without this, the Deploys tab listed every
-  // past successful deploy as Running forever.
-  await db
-    .update(deployments)
-    .set({ status: 'superseded' })
-    .where(and(eq(deployments.serviceId, service.id), eq(deployments.status, 'running'), ne(deployments.id, deploymentId)));
-
-  // Auto-provision the service's automatic URL if one is configured and not
-  // already present: the env wildcard, or Settings → Automatic URLs (a base
-  // domain or a free sslip.io name — lib/autoUrl.ts).
-  // Isolated: a failure here must not affect the already-running container.
-  try {
-    const auto = await autoHostFor(db, service);
-    if (auto) {
-      const existing = await db.query.domains.findFirst({ where: and(eq(domains.serviceId, service.id), eq(domains.hostname, auto.hostname)) });
-      if (!existing) {
-        const ssl = auto.ssl === 'acme' ? !!(await getAcmeEmail(db)) : false;
-        await db.insert(domains).values({ serviceId: service.id, hostname: auto.hostname, path: '/', ssl, status: 'active' });
-        log(`🌐 Auto-assigned URL: ${ssl ? 'https' : 'http'}://${auto.hostname}`);
-      }
-    }
-  } catch (err) {
-    log(`warning: could not auto-assign the automatic URL: ${msg(err)}`);
   }
 
   // Flip routing to the NEW container first, then stop the old one (blue-green
@@ -1720,14 +1812,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   // always "succeeded" and CLEANUP stopped the previous container on the node
   // while the node still routed to it. Requiring the node makes that failure
   // take the same honest revert path as a panel-host write failure.
-  const flipRouting = (): Promise<void> =>
-    service.serverId != null ? writeDynamicConfig(db, { requireNode: service.serverId }) : writeDynamicConfig(db);
+  const flipRouting = (): Promise<void> => swarmRecovery ? swarmRecovery.confirm() : primaryRecovery ? primaryRecovery.confirm() :
+    service.serverId != null ? writeDynamicConfig(db, { requireNode: service.serverId, confirmServiceId: service.id }) : writeDynamicConfig(db, { confirmServiceId: service.id });
   log('##[stage:PROXY_SWAP:running] Updating Traefik dynamic router & shifting live traffic');
   try {
     await flipRouting();
     routingFlipped = true;
     log('##[stage:PROXY_SWAP:success]');
   } catch (firstErr) {
+    if (swarmRecovery) throw new SwarmRecoveryPending('Swarm routing acknowledgement is unconfirmed; retained for recovery');
+    await primaryRecovery?.check();
     log(`proxy warning: ${msg(firstErr)} — retrying once in 2s`);
     await sleep(2000);
     try {
@@ -1735,12 +1829,15 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       routingFlipped = true;
       log('##[stage:PROXY_SWAP:success] (second attempt)');
     } catch (err) {
+      await primaryRecovery?.check();
       log(`##[stage:PROXY_SWAP:failed] ${msg(err)}`);
-      log('✗ The Traefik config could not be written — the new version is NOT reachable. Reverting to the previous runtime.');
-      // The deployment row was finalized `running` a moment ago and the
-      // service row points at the new container; undo both. Traffic never
-      // moved: the previous container is still routed and healthy.
-      await db.update(deployments).set({ status: 'failed', finishedAt: new Date() }).where(eq(deployments.id, deploymentId));
+      const uncertain = firstErr instanceof ProxyRoutingUnconfirmed || err instanceof ProxyRoutingUnconfirmed;
+      log('✗ The requested routing could not be confirmed. Reverting to the previous runtime.');
+      // The service row points at the candidate, but the deployment is still
+      // in progress. A missing load
+      // acknowledgement means either generation may still receive traffic.
+      const outcome = await isCancelled(db, deploymentId) ? 'cancelled' : 'failed';
+      await db.update(deployments).set({ status: outcome, finishedAt: new Date() }).where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'deploying'), runtimeFence()));
       if (inPlaceRedeploy || service.type === 'pm2') {
         // Compose re-created the runtime under the SAME id, and a PM2 deploy
         // stops the previous process inside buildAndRun — in both the swap
@@ -1749,9 +1846,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         // version IS live while the routing file could not be updated (new
         // domains/labels apply on the next successful write).
         log('↩ The live runtime already carries the new version; only the routing write failed.');
-        await db.update(services).set({ status: 'running' }).where(eq(services.id, service.id));
+        await db.update(services).set({ status: 'running' })
+          .where(and(eq(services.id, service.id), eq(services.runtimeId, newRuntimeId), eq(services.status, 'running'), runtimeFence()));
       } else if (previous) {
-        await db
+        const restored = await db
           .update(services)
           .set({
             status: 'running',
@@ -1762,24 +1860,83 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
             commitSha: service.commitSha,
             runtimeReplicas: service.runtimeReplicas ?? 1,
           })
-          .where(eq(services.id, service.id));
-        await builder.stop(newRuntimeId).catch((stopErr) => log(`revert warning (new container stop): ${msg(stopErr)}`));
-        if (service.serverId != null) {
+          .where(and(eq(services.id, service.id), eq(services.runtimeId, newRuntimeId), eq(services.status, 'running'), runtimeFence()))
+          .returning({ id: services.id });
+        if (restored.length === 0) {
+          log('⏹ Service ownership changed during routing failure; leaving its current routing and runtime untouched');
+          await auditOutcome(db, service, deploymentId, outcome, `proxy config write failed: ${msg(err)}`);
+          return;
+        }
+        let canRetire = !uncertain;
+        if (uncertain) {
+          try { await flipRouting(); canRetire = true; }
+          catch { log(`⚠ Routing rollback was not confirmed; both runtime generations are kept running (candidate ${newRuntimeId})`); }
+        }
+        if (canRetire) await builder.stop(newRuntimeId).catch((stopErr) => log(`revert warning (new container stop): ${msg(stopErr)}`));
+        if (service.serverId != null && !uncertain) {
           // r521: a partial node sync may have pushed a route at the container
           // just stopped — re-render from the reverted row, best-effort (the
           // next routing write retries it anyway).
           await writeDynamicConfig(db).catch(() => undefined);
         }
+      } else if (uncertain) {
+        log(`⚠ Routing was not confirmed; the healthy first runtime is kept running (${newRuntimeId})`);
       } else {
         // First-ever deploy: nothing is serving, and the unrouted new
         // container must not leak.
-        await db.update(services).set({ status: 'error', runtimeId: null }).where(eq(services.id, service.id));
-        await builder.stop(newRuntimeId).catch(() => undefined);
+        const cleared = await db.update(services).set({ status: 'error', runtimeId: null })
+          .where(and(eq(services.id, service.id), eq(services.runtimeId, newRuntimeId), eq(services.status, 'running'), runtimeFence()))
+          .returning({ id: services.id });
+        if (cleared.length > 0) await builder.stop(newRuntimeId).catch(() => undefined);
       }
-      await auditOutcome(db, service, deploymentId, 'failed', `proxy config write failed: ${msg(err)}`);
+      await auditOutcome(db, service, deploymentId, outcome, `proxy config write failed: ${msg(err)}`);
       return;
     }
   }
+  // Commit terminal success only after the requested routing was loaded.
+  // Cancellation races this CAS instead of being overwritten by a late success.
+  const promoted = await db.update(deployments).set({ status: 'running', finishedAt: new Date(),
+    ...(finalizeSnapshot !== undefined ? { configSnapshot: finalizeSnapshot } : {}),
+  })
+    .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'deploying'), runtimeFence(),
+      exists(db.select({ id: services.id }).from(services).where(and(
+        eq(services.id, service.id), eq(services.runtimeId, newRuntimeId), eq(services.status, 'running'),
+      )))))
+    .returning({ id: deployments.id });
+  if (promoted.length === 0) {
+    await primaryRecovery?.check(); await swarmRecovery?.check();
+    await db.update(deployments).set({ status: 'cancelled', finishedAt: new Date() })
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'deploying')));
+    log('⏹ Cancelled during routing transition — restoring a healthy previous release before candidate retirement');
+    const canRestore = previous && !inPlaceRedeploy && service.type !== 'pm2'
+      && await builder.isHealthy(previous, 5_000, 0).catch(() => false);
+    if (canRestore) {
+      const restored = await db.update(services).set({ status: 'running', runtimeId: previous!.runtimeId,
+        port: previous!.port ?? null, commitSha: service.commitSha, runtimeReplicas: service.runtimeReplicas ?? 1,
+      }).where(and(eq(services.id, service.id), eq(services.runtimeId, newRuntimeId), eq(services.status, 'running'), runtimeFence()))
+        .returning({ id: services.id });
+      if (restored.length === 0) {
+        log('⏹ The service changed or was stopped during cancellation; its current owner controls routing and cleanup');
+        await auditOutcome(db, service, deploymentId, 'cancelled');
+        return;
+      }
+      try {
+        await flipRouting();
+        await builder.stop(newRuntimeId).catch(err => log(`cancel cleanup warning: ${msg(err)}`));
+      } catch {
+        log(`⚠ Cancellation rollback was not confirmed; both runtime generations are kept running (candidate ${newRuntimeId})`);
+      }
+    } else {
+      // A first or in-place runtime may already serve; never stop the only
+      // healthy app to honour a cancellation that landed after the route write.
+      log(`⚠ No healthy previous runtime can be reinstated; the live candidate is kept running (${newRuntimeId})`);
+    }
+    await auditOutcome(db, service, deploymentId, 'cancelled');
+    return;
+  }
+  await db.update(deployments).set({ status: 'superseded' })
+    .where(and(eq(deployments.serviceId, service.id), eq(deployments.status, 'running'), ne(deployments.id, deploymentId)));
+
   // 0.16.1 allow-listed port mappings: the port proxy follows the routing
   // flip to the new containers (and is removed once no mapping needs it).
   // Only on the panel host, and only for a service that has or had one, so
@@ -1818,9 +1975,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           log(`pre-stop warning: ${msg(err)}`),
         );
       }
-      // Give Traefik's file watcher a moment to apply the new config before
-      // retiring the old container — otherwise its reload latency could 502
-      // requests still routed to the previous version.
+      // Routed HTTP/TLS handlers were acknowledged above. Allow a short drain
+      // for in-flight requests before retiring the previous generation.
       await sleep(2000);
       await builder
         .stop(previous.runtimeId, { graceSeconds: buildConfig?.stopGraceSeconds })
@@ -1838,6 +1994,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   log('##[stage:COMPLETE:success] Service is live and healthy on production');
 
   // ── Multi-server fan-out ──────────────────────────────────────────────────
+  await primaryRecovery?.check(); await swarmRecovery?.check();
   // Docker releases are pushed to every extra target node AFTER the primary
   // is live — additive, best-effort, never blocking the success. An image
   // release is pulled on each node. A source build whose primary built a
@@ -1858,7 +2015,18 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   const extra = service.type === 'docker' && (service.image || sourceBuild) ? await targetsForService(db, service.id) : [];
   let buildableSource: FanoutContext['source'];
   let prebuilt: FanoutContext['prebuilt'];
-  if (sourceBuild && extra.length > 0) {
+  if (artifact && extra.length > 0) {
+    // A promotion must never re-enter source discovery or rebuild on a target.
+    // Use the retained panel copy or the record's bound registry digest, even
+    // when the current service's build placement or repository contents changed.
+    prebuilt = { ship: async (target, l) => {
+      await withReleaseImageLock(() => prepareArtifactImage(db, artifact, { ...service, serverId: target.serverId }, deploymentId, l));
+      return { tag: artifact.imageId, imageId: artifact.imageId };
+    } };
+    if (artifact.builtWithNixpacks && fanoutEnv.PORT === undefined && runtime!.port != null) {
+      fanoutEnv = { ...fanoutEnv, PORT: String(runtime!.port) };
+    }
+  } else if (sourceBuild && extra.length > 0) {
     const ids = { deploymentId, serviceId: service.id };
     if (placed) {
       const build = placed;
@@ -1916,7 +2084,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           slug: service.slug,
           type: service.type,
           image: service.image,
-          port: service.port,
+          port: runtime!.port ?? service.port,
           healthPath: service.healthPath,
           cpuShares: service.cpuShares,
           cpuLimitMilli: service.cpuLimitMilli,
@@ -1929,6 +2097,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           dockerLabels: service.dockerLabels,
           healthCheck: service.healthCheck,
           healthCommand: service.healthCommand,
+          healthTimeoutSeconds: service.healthTimeoutSeconds,
           runtimeOptions: service.runtimeOptions,
         },
         deploymentId,
@@ -1942,6 +2111,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
             ? await registryCredentialForSourceBuild(db, service, log)
             : undefined,
         primaryServerId: service.serverId ?? null,
+        primaryRuntimeId: newRuntimeId,
         source: buildableSource,
         gitCredential: buildableSource ? nodeGitCredentialSource(db, service) : undefined,
         prebuilt,

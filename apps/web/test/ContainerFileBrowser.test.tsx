@@ -1,5 +1,6 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { ContainerFileBrowser } from '../src/components/ContainerFileBrowser.js';
 import { api } from '../src/lib/api.js';
@@ -28,6 +29,24 @@ const mockFiles = {
 };
 
 describe('ContainerFileBrowser', () => {
+  it('discards an old node read and keeps edits on the selected host when container names match', async () => {
+    let release!: (value: { content: string; encoding: string }) => void;
+    mockOf(api.containers.readFile).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+      .mockResolvedValueOnce({ content: btoa('NODE_8'), encoding: 'base64' });
+    mockOf(api.containers.writeFile).mockResolvedValue({ ok: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const component = (serverId: number) => <QueryClientProvider client={queryClient}><ContainerFileBrowser container="same-name" serverId={serverId} /></QueryClientProvider>;
+    const view = render(component(7));
+    fireEvent.click(await screen.findByText('package.json'));
+    await waitFor(() => expect(api.containers.readFile).toHaveBeenCalledWith('same-name', '/package.json', { serverId: 7 }));
+    view.rerender(component(8)); release({ content: btoa('OLD_NODE_7'), encoding: 'base64' });
+    await waitFor(() => expect(api.containers.listFiles).toHaveBeenCalledWith('same-name', '/', { serverId: 8 }));
+    expect(screen.queryByLabelText('Container file editor')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByText('package.json'));
+    const editor = await screen.findByLabelText('Container file editor'); expect(editor).toHaveValue('NODE_8');
+    fireEvent.change(editor, { target: { value: 'NODE_8_EDIT' } }); fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+    await waitFor(() => expect(api.containers.writeFile).toHaveBeenCalledWith('same-name', { path: '/package.json', contentBase64: btoa('NODE_8_EDIT') }, { serverId: 8 }));
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     toastSpy.toast.mockClear();
@@ -403,8 +422,11 @@ describe('ContainerFileBrowser', () => {
 
     mockOf(api.containers.listFiles).mockRejectedValueOnce(new Error('unreachable'));
     renderWithProviders(<ContainerFileBrowser container="nd-svc-api-1" />);
-    expect(
-      await screen.findByText(/Container is not running or file system is inaccessible/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Could not load container files')).toBeInTheDocument();
+    expect(screen.getByText('unreachable')).toBeInTheDocument();
+    expect(screen.queryByText(/Empty directory/)).not.toBeInTheDocument();
+    mockOf(api.containers.listFiles).mockResolvedValueOnce(mockFiles as never);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('package.json')).toBeInTheDocument();
   });
 });

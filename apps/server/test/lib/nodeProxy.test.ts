@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 
 const h = vi.hoisted(() => ({
   agentOp: vi.fn(async () => ({ exitCode: 0, lines: [] as string[] })),
+  agentTransportSealed: vi.fn(async () => true),
   getAcmeEmail: vi.fn(async () => 'ops@example.com' as string | null),
   getDnsConfig: vi.fn(async () => ({ provider: null, token: null, wildcardApex: null })),
   renderStaticConfig: vi.fn(() => 'entryPoints: {}'),
   renderDynamicConfig: vi.fn(async () => 'http: {}'),
 }));
 
-vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: h.agentOp }));
+vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: h.agentOp, agentTransportSealed: h.agentTransportSealed }));
 vi.mock('../../src/engine/proxy.js', () => ({
   getAcmeEmail: h.getAcmeEmail,
   getDnsConfig: h.getDnsConfig,
@@ -174,5 +176,70 @@ describe('syncAllNodeProxies', () => {
     await syncAllNodeProxies(db, [0, -1, Number.NaN]);
 
     expect(h.agentOp).not.toHaveBeenCalled();
+  });
+});
+
+describe('confirmed node routing transitions', () => {
+  function currentAgent() {
+    h.agentOp.mockReset(); h.agentTransportSealed.mockResolvedValue(true);
+    h.agentOp.mockImplementation(async (_db: unknown, _id: unknown, op: string) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.17.2","caps":["proxy.routingAck"]}'] };
+      if (op === 'proxy.writeConfig') return { exitCode: 0, lines: ['proxy-config x unchanged'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|172.18.0.2'] };
+      if (op === 'proxy.confirmRouting') return { exitCode: 0, lines: [`ND-PROXY-ROUTING ${createHash('sha256').update('http: {}').digest('hex')}`] };
+      return { exitCode: 0, lines: [] };
+    });
+  }
+
+  it('requires a generation receipt after sending the augmented routing file', async () => {
+    currentAgent();
+    await expect(syncNodeProxy(db, 4, undefined, { confirmRouting: true } as never)).resolves.toEqual({ ok: true });
+    expect(opsIssued()).toEqual(['agent.ping', 'proxy.writeConfig', 'proxy.writeConfig', 'docker.inspect', 'proxy.confirmRouting']);
+    const dynamic = h.agentOp.mock.calls.filter(c => (c as unknown[])[2] === 'proxy.writeConfig')[1] as unknown[];
+    expect((dynamic[3] as { content: string }).content).toContain('nd_routing_ack_tls');
+    expect(h.agentOp).toHaveBeenCalledWith(db, 4, 'proxy.confirmRouting', { content: 'http: {}' }, expect.any(Function));
+  });
+
+  it('refuses an older agent before modifying its routing', async () => {
+    currentAgent();
+    h.agentOp.mockResolvedValue({ exitCode: 0, lines: ['ND-AGENT {"version":"0.17.1","caps":[]}'] });
+    const result = await syncNodeProxy(db, 4, undefined, { confirmRouting: true } as never);
+    expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/Update the node agent.*0\.18\.0/) });
+    expect(opsIssued()).toEqual(['agent.ping']);
+  });
+
+  it('never sends private routing confirmation content over plaintext', async () => {
+    currentAgent(); h.agentTransportSealed.mockResolvedValueOnce(false);
+    await expect(syncNodeProxy(db, 4, undefined, { confirmRouting: true } as never)).resolves.toMatchObject({ ok: false, reason: expect.stringMatching(/unencrypted|sealed/) });
+    expect(h.agentOp).not.toHaveBeenCalled();
+  });
+
+  it('marks a lost dynamic-write response as an unknown routing outcome', async () => {
+    currentAgent();
+    h.agentOp.mockImplementation(async (_db: unknown, _id: unknown, op: string, params: unknown) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"caps":["proxy.routingAck"]}'] };
+      if (op === 'proxy.writeConfig' && (params as { kind: string }).kind === 'dynamic') throw new Error('response lost after write');
+      return { exitCode: 0, lines: [] };
+    });
+    const lines: string[] = [];
+    await expect(syncNodeProxy(db, 4, s => lines.push(s), { confirmRouting: true } as never)).resolves.toMatchObject({ ok: false, routingUnconfirmed: true });
+    expect(lines.join('\n')).not.toContain('keeps serving its previous routing');
+  });
+
+  it('does not accept a stale receipt or empty success from the agent', async () => {
+    currentAgent();
+    h.agentOp.mockImplementation(async (_db: unknown, _id: unknown, op: string) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"caps":["proxy.routingAck"]}'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running'] };
+      return { exitCode: 0, lines: [] };
+    });
+    await expect(syncNodeProxy(db, 4, undefined, { confirmRouting: true } as never)).resolves.toMatchObject({ ok: false, routingUnconfirmed: true });
+  });
+
+  it('requires confirmation only from the selected node in a fleet refresh', async () => {
+    currentAgent();
+    await expect(syncAllNodeProxies(db, [3, 4], undefined, { confirmNode: 4 } as never)).resolves.toEqual([{ serverId: 3, ok: true }, { serverId: 4, ok: true }]);
+    const confirmed = h.agentOp.mock.calls.filter(c => (c as unknown[])[2] === 'proxy.confirmRouting');
+    expect(confirmed.map(c => (c as unknown[])[1])).toEqual([4]);
   });
 });

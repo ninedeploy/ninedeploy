@@ -28,6 +28,8 @@ const ENCRYPTED = 'overlay|{"encrypted":""}';
 
 const h = vi.hoisted(() => ({
   docker: [] as string[][],
+  imageId: 'sha256:' + 'a'.repeat(64),
+  spec: null as null | { services: Array<Record<string, any>> },
   /** `docker service ls` answers, consumed in order (the last one repeats). */
   replicas: [] as string[],
   exists: false,
@@ -52,7 +54,13 @@ vi.mock('../src/lib/exec.js', async (importOriginal) => ({
       if (h.network === null) throw new Error('No such network');
       return h.network;
     }
+    if (a === 'image' && b === 'inspect') return h.imageId + '|42';
+    if (a === 'service' && b === 'inspect' && args.some(x => x.includes('"version"'))) return JSON.stringify({ id: 'svc0000000000000000000001', version: 7, image: h.spec?.services[0]?.image, service: h.spec?.services[0]?.labels['ninedeploy.service'], deployment: h.spec?.services[0]?.labels['ninedeploy.deployment'] });
+    if (a === 'service' && b === 'ps' && args.includes('--quiet')) return Array.from({ length: h.spec?.services[0]?.replicas ?? 2 }, (_, n) => ('task' + n).padEnd(25, '0')).join('\n');
+    if (a === 'inspect' && args.includes('task')) return args.slice(5).map(id => JSON.stringify({ id, service: 'svc0000000000000000000001', node: MGR, desired: 'running', state: 'running', container: id[4]!.repeat(64) })).join('\n');
+    if (a === 'inspect' && args.includes('container')) return h.imageId;
     if (a === 'inspect') return '{"ninedeploy":{}}';
+    if (a === 'service' && b === 'ls' && args.includes('--quiet')) return '';
     if (a === 'service' && b === 'inspect') {
       if (args.includes('{{.ID}}')) {
         if (!h.exists) throw new Error('no such service');
@@ -88,6 +96,8 @@ const { dockerBuilder } = await import('../src/engine/builders/docker.js');
 let db: DB;
 beforeEach(async () => {
   h.docker = [];
+  h.imageId = 'sha256:' + 'a'.repeat(64);
+  h.spec = null;
   h.replicas = ['nd-web_web 2/2'];
   h.exists = false;
   h.updateState = '';
@@ -119,6 +129,7 @@ const fakeDriver = (status: { error?: string } = {}) => {
     driver: {
       deployStack: vi.fn(async (spec: Spec, o: ApplyOpts = {}) => {
         specs.push(spec);
+        h.spec = spec;
         opts.push(o);
         configLive.push(o.dockerConfig ? existsSync(o.dockerConfig) : false);
         const file = o.dockerConfig ? join(o.dockerConfig, 'config.json') : '';
@@ -286,15 +297,34 @@ describe('the Swarm builder (design §7.4)', () => {
     // Only NineDeploy nodes are sent anything; the foreign node is never shipped to.
     expect(ship).toHaveBeenCalledTimes(2);
     expect(ship.mock.calls[0]![1]).toMatchObject({ source: null, target: node!.id, tag: 'ninedeploy/web:abc1234-b9', imageId: `sha256:${'a'.repeat(64)}`, sizeBytes: 42, deploymentId: 9 });
-    expect(nodeUpdates()).toEqual([`--label-add nd.member=1 -- ${MGR}`, `--label-add nd.preload.web=aaaaaaaaaaaa -- ${MGR}`, `--label-add nd.preload.web=aaaaaaaaaaaa -- ${WRK1}`]);
+    expect(nodeUpdates()).toEqual([`--label-add nd.member=1 -- ${MGR}`, `--label-add nd.preload.web.g0=${'a'.repeat(64)} -- ${MGR}`, `--label-add nd.preload.web.g0=${'a'.repeat(64)} -- ${WRK1}`]);
     expect(specs[0]).toMatchObject({
       resolveImage: 'never',
-      services: [{ image: 'ninedeploy/web:abc1234-b9', constraints: ['node.labels.nd.member==1', 'node.labels.nd.preload.web==aaaaaaaaaaaa'], port: 3000 }],
+      services: [{ image: 'ninedeploy/web:abc1234-b9', constraints: ['node.labels.nd.member==1', 'node.labels.nd.preload.web.g0==' + 'a'.repeat(64)], port: 3000 }],
     });
     expect(specs[0]!.services[0]!.env.PORT).toBe('3000'); // Nixpacks' run convention, like the container builder
     expect(runtime).toMatchObject({ runtimeId: 'nd-web_web', port: 3000, imageDigest: `sha256:${'a'.repeat(64)}` });
     expect(lines(ctx as never)).toMatch(/node old will run no task.*Update the node agent/);
     expect(lines(ctx as never)).not.toMatch(/foreign/);
+  });
+
+  it('does not revoke the serving generation constraint while preparing another image', async () => {
+    const oldKey = 'nd.preload.web', oldValue = 'aaaaaaaaaaaa';
+    h.imageId = 'sha256:' + 'b'.repeat(64);
+    const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    const before = h.docker.length;
+    const buildOnPanel = vi.fn(async () => ({ buildHost: null, tag: 'ninedeploy/web:next-b9', imageId: 'sha256:' + 'b'.repeat(64), sizeBytes: 42, builtWithNixpacks: false, builtStatic: false }));
+    const { driver, specs } = fakeDriver();
+    await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc));
+    const mutations = h.docker.slice(before).filter(a => a[0] === 'node' && a[1] === 'update');
+    let oldConstraintStillSatisfied = true;
+    for (const args of mutations) {
+      const added = args[args.indexOf('--label-add') + 1];
+      if (args.includes('--label-add') && added?.startsWith(oldKey + '=') && added !== oldKey + '=' + oldValue) oldConstraintStillSatisfied = false;
+      if (args.includes('--label-rm') && args.includes(oldKey)) oldConstraintStillSatisfied = false;
+    }
+    expect(oldConstraintStillSatisfied).toBe(true);
+    expect(specs[0]?.services[0]?.constraints).toContain('node.labels.nd.preload.web.g0==' + 'b'.repeat(64));
   });
 
   it('a source build with a push registry: deployed by digest with the registry credential, no preload, only the member constraint', async () => {
@@ -318,6 +348,68 @@ describe('the Swarm builder (design §7.4)', () => {
     expect(configJson[0]!.body).toEqual({ auths: { 'reg.example.com': { auth: b64('ru:rp') } } });
     expect(opts[0]!.withRegistryAuth).toBe(true);
     expect(nodeUpdates()).toEqual([`--label-add nd.member=1 -- ${MGR}`]);
+  });
+
+  it('records the source image before any Swarm placement or stack mutation', async () => {
+    const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    const { driver } = fakeDriver();
+    const captureArtifact = vi.fn(async () => {
+      expect(nodeUpdates()).toEqual([]);
+      expect(driver.deployStack).not.toHaveBeenCalled();
+    });
+    const buildOnPanel = vi.fn(async () => ({ buildHost: null, tag: 'ninedeploy/web:source-b9', imageId: 'sha256:' + 'a'.repeat(64), sizeBytes: 42, builtWithNixpacks: true, builtStatic: false }));
+    await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc, { recordDockerArtifact: true, captureSwarmArtifact: captureArtifact }));
+    expect(captureArtifact).toHaveBeenCalledWith({ imageId: 'sha256:' + 'a'.repeat(64), builtWithNixpacks: true, builtStatic: false });
+  });
+
+  it('leaves the serving stack unchanged when required artifact capture fails', async () => {
+    h.exists = true;
+    const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    const { driver } = fakeDriver();
+    const buildOnPanel = vi.fn(async () => ({ buildHost: null, tag: 'ninedeploy/web:source-b9', imageId: 'sha256:' + 'a'.repeat(64), sizeBytes: 42, builtWithNixpacks: false, builtStatic: false }));
+    await expect(createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc, { recordDockerArtifact: true, captureSwarmArtifact: async () => { throw Error('archive unavailable'); } }))).rejects.toThrow('archive unavailable');
+    expect(driver.deployStack).not.toHaveBeenCalled();
+    expect(nodeUpdates()).toEqual([]);
+    expect(h.docker.some(a => a[0] === 'stack' || a[1] === 'rollback')).toBe(false);
+  });
+
+  it('gives a recorded image a verified deployment tag without source checkout or build', async () => {
+    const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git', port: null });
+    const { driver, specs } = fakeDriver();
+    const buildOnPanel = vi.fn(async () => { throw Error('must not build'); });
+    const imageId = 'sha256:' + 'a'.repeat(64);
+    const ctx = ctxFor(svc, { prebuiltImage: { tag: imageId, imageId, builtWithNixpacks: true, builtStatic: false }, env: { PORT: '9182', TARGET_ENV: 'production' } });
+    const runtime = await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctx);
+    expect(buildOnPanel).not.toHaveBeenCalled();
+    expect(h.docker).toContainEqual(['tag', imageId, 'ninedeploy/web:abc1234-b9']);
+    expect(specs[0]?.services[0]).toMatchObject({ image: 'ninedeploy/web:abc1234-b9', port: 3000, env: { PORT: '9182', TARGET_ENV: 'production' } });
+    expect(runtime).toMatchObject({ imageDigest: imageId, artifactBuild: { builtWithNixpacks: true, builtStatic: false } });
+  });
+  it('refuses a mismatched artifact tag before any stack or placement change', async () => {
+    h.exists = true; h.imageId = 'sha256:' + 'b'.repeat(64);
+    const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    const { driver } = fakeDriver(); const imageId = 'sha256:' + 'a'.repeat(64);
+    await expect(createSwarmBuilder(db, 'web', { driver }).buildAndRun(ctxFor(svc, { prebuiltImage: { tag: imageId, imageId } }))).rejects.toThrow('tag identity');
+    expect(driver.deployStack).not.toHaveBeenCalled(); expect(nodeUpdates()).toEqual([]);
+    expect(h.docker.some(a => a[0] === 'stack' || a[1] === 'rollback')).toBe(false);
+  });
+
+  it('retains a changed manager spec instead of rolling back an unknown owner', async () => {
+    h.exists = true;
+    const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    const { driver } = fakeDriver();
+    driver.deployStack.mockImplementationOnce(async spec => { h.spec = { services: [{ ...spec.services[0], labels: { 'ninedeploy.service': '1', 'ninedeploy.deployment': 'other' } }] }; return { name: spec.name, services: [], appliedAt: '' }; });
+    await expect(createSwarmBuilder(db, 'web', { driver }).buildAndRun(ctxFor(svc, { prebuiltImage: { tag: 'ninedeploy/web:built-b9', imageId: 'sha256:' + 'a'.repeat(64) } }))).rejects.toThrow('image identity is unconfirmed');
+    expect(h.docker.some(a => a[1] === 'rollback' || a[0] === 'stack' && a[1] === 'rm')).toBe(false);
+  });
+  it('rechecks actual task images after readiness and retains an unconfirmed runtime', async () => {
+    h.exists = true;
+    const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    const { driver } = fakeDriver(); const builder = createSwarmBuilder(db, 'web', { driver });
+    const runtime = await builder.buildAndRun(ctxFor(svc, { prebuiltImage: { tag: 'ninedeploy/web:built-b9', imageId: 'sha256:' + 'a'.repeat(64) } }));
+    h.imageId = 'sha256:' + 'b'.repeat(64);
+    expect(await builder.isHealthy(runtime, 1)).toBe(false);
+    expect(h.docker.some(a => a[1] === 'rollback')).toBe(false);
   });
 
   it('a first deploy that fails to converge leaves nothing behind and fails the deployment', async () => {

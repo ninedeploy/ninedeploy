@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Activity, Plus, Radio, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
+import { LogDrainQueue } from '../../components/LogDrainQueue.js';
 import { Button, Card, CardBody, Input, Modal, Select, cn } from '../../components/ui.js';
 import type { LogDrain, LogDrainCreateInput, LogDrainFormat, LogDrainType } from '@ninedeploy/sdk';
 
@@ -104,7 +105,7 @@ export function LogDrainsSection() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-medium text-slate-100">External Log Drains</h2>
-          <p className="text-xs text-slate-400">Stream container, service, and deploy logs to Grafana Loki, Datadog, Vector, or Syslog in real time.</p>
+          <p className="text-xs text-slate-400">Forward Docker and primary Compose container logs to external destinations. Captured batches are encrypted and retained for retry.</p>
         </div>
         <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
           <Plus size={15} /> Add Log Drain
@@ -128,7 +129,7 @@ export function LogDrainsSection() {
         <div className="space-y-3">
           {drainList.map((d) => (
             <Card key={d.id}>
-              <CardBody className="flex items-center justify-between gap-4 p-4">
+              <CardBody className="flex flex-col items-start justify-between gap-4 p-4 sm:flex-row sm:items-center">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                     <Radio size={18} />
@@ -195,6 +196,7 @@ export function LogDrainsSection() {
                   </button>
                 </div>
               </CardBody>
+              <LogDrainQueue id={d.id} enabled={d.enabled} />
             </Card>
           ))}
         </div>

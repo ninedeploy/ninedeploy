@@ -52,7 +52,7 @@ const fakes = vi.hoisted(() => {
     };
     return t;
   };
-  return { make, ttys: [] as Array<ReturnType<typeof make>>, openExec: vi.fn(), openHost: vi.fn() };
+  return { make, ttys: [] as Array<ReturnType<typeof make>>, inspect: vi.fn(), openExec: vi.fn(), openHost: vi.fn() };
 });
 vi.mock('../src/lib/notifier.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/notifier.js')>()),
@@ -61,7 +61,7 @@ vi.mock('../src/lib/notifier.js', async (importOriginal) => ({
 vi.mock('../src/lib/dockerTty.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/dockerTty.js')>()),
   dockerTransport: () => ({ kind: 'socket', socketPath: '/var/run/docker.sock' }),
-  inspectContainer: async () => ({ id: 'c', running: true, hostname: null, labels: {} }),
+  inspectContainer: (...a: unknown[]) => fakes.inspect(...a),
   probeHostShellImage: async () => ({ ok: true }),
   openExecTty: (...a: unknown[]) => fakes.openExec(...a),
   openHostShellTty: (...a: unknown[]) => fakes.openHost(...a),
@@ -137,6 +137,7 @@ beforeEach(async () => {
   bearer = await signAccessToken(1, 0, 'jti-op');
 
   fakes.ttys.length = 0;
+  fakes.inspect.mockReset().mockResolvedValue({id:'c',running:true,hostname:null,labels:{}});
   fakes.openExec.mockReset().mockImplementation(async () => {
     const t = fakes.make();
     fakes.ttys.push(t);
@@ -458,13 +459,14 @@ describe('T6: a database on a node opens its shell through the node agent', () =
         nodeContainerName: 'nd-db-orders',
         nodeVolumeName: 'nd-db-orders-data',
         internalHost: 'nd-db-orders',
-        passwordEncrypted: encrypt('pw'),
+        passwordEncrypted: encrypt('private-orders-client-secret'),
         ownerUserId: 1,
       })
       .returning();
     return d!.id;
   };
 
+  const managedNodeDatabase=(databaseId:number,id='d'.repeat(64))=>fakes.inspect.mockResolvedValue({id,running:true,hostname:null,labels:{'ninedeploy.managed':'database','ninedeploy.database.id':String(databaseId),'ninedeploy.database.slug':'orders'}});
   it('shell mode: 201 naming the node; attach opens the nd-db-* container on the node (never the panel host)', async () => {
     const databaseId = await nodeDatabase();
     const s = await create({ kind: 'database', databaseId });
@@ -482,11 +484,39 @@ describe('T6: a database on a node opens its shell through the node agent', () =
     await c.closed;
   });
 
-  it('client mode is refused on a node (the agent opens shells only); a stopped database is 409; a 0.14 agent 422', async () => {
+  it('a node client uses stored credentials through the real sealed agent and encrypted channel without persisting them',async()=>{
+    const id='d'.repeat(64);fakes.inspect.mockResolvedValue({id,running:true,hostname:null,labels:{'ninedeploy.managed':'database'}});
+    const databaseId=await nodeDatabase();managedNodeDatabase(databaseId);const s=await create({kind:'database',databaseId,mode:'client'});
+    expect(s.status).toBe(201);expect(s.body.session).toMatchObject({targetKind:'database',targetLabel:'orders (client)',serverId:ids.server});
+    expect(h.ops).toContain('db.client.prepare');expect(fakes.openExec).not.toHaveBeenCalled();
+    const c=attach(s.body as {attachPath:string;ticket:string});await waitFor(()=>c.texts.some(frame=>frame.t==='ready'));
+    expect(fakes.openExec).toHaveBeenCalledExactlyOnceWith(expect.anything(),expect.objectContaining({container:id,cmd:['psql','-U','nine','-d','app'],env:['PGPASSWORD=private-orders-client-secret']}));
+    c.ws.send(Buffer.from('SELECT 42;\r'));await waitFor(()=>fakes.ttys[0]!.written.includes('SELECT 42;\r'));
+    fakes.ttys[0]!.emit('remote client result');await waitFor(()=>c.binary.join('').includes('remote client result'));
+    const stopped=await fetch(`http://127.0.0.1:${panelPort}/v1/terminals/${s.body.session.id}`,{method:'DELETE',headers:headers()});expect(stopped.status).toBe(200);await c.closed;
+    expect(JSON.stringify(await db.select().from(terminalSessions))).not.toContain('private-orders-client-secret');
+    expect(JSON.stringify(await db.select().from(auditLog))).not.toContain('private-orders-client-secret');
+    expect(JSON.stringify(s.body)).not.toContain('private-orders-client-secret');
+  });
+  it('a name replacement between create and attach never opens the replacement database',async()=>{
+    const id='d'.repeat(64);fakes.inspect.mockResolvedValue({id,running:true,hostname:null,labels:{'ninedeploy.managed':'database'}});
+    const databaseId=await nodeDatabase();managedNodeDatabase(databaseId);const s=await create({kind:'database',databaseId,mode:'client'});expect(s.status).toBe(201);
+    managedNodeDatabase(databaseId,'e'.repeat(64));
+    const c=attach(s.body as {attachPath:string;ticket:string});await c.closed;expect(fakes.openExec).not.toHaveBeenCalled();
+    await waitFor(()=>S.liveTerminalCount()===0);expect((await row(s.body.session.id)).status).toBe('failed');
+  });
+  it('re-probes a changed agent before sending client credentials on attach',async()=>{
+    const id='d'.repeat(64);fakes.inspect.mockResolvedValue({id,running:true,hostname:null,labels:{'ninedeploy.managed':'database'}});
+    const databaseId=await nodeDatabase();managedNodeDatabase(databaseId);const s=await create({kind:'database',databaseId,mode:'client'});expect(s.status).toBe(201);
+    h.ops.length=0;scripted(CAPS_015);const c=attach(s.body as {attachPath:string;ticket:string});await c.closed;
+    expect(h.ops).toEqual(['agent.ping']);expect(fakes.openExec).not.toHaveBeenCalled();
+  });
+  it('an older node agent refuses client mode with an update hint; stopped DB and legacy shell controls remain', async () => {
+    scripted(CAPS_015);
     const databaseId = await nodeDatabase();
     const client = await create({ kind: 'database', databaseId, mode: 'client' });
-    expect([client.status, client.body.error.code]).toEqual([422, 'client_mode_unsupported']);
-    expect(client.body.error.message).toMatch(/runs on a node/);
+    expect([client.status, client.body.error.code]).toEqual([422, 'node_agent_outdated']);
+    expect(client.body.error.message).toMatch(/0\.18\.0/);
     scripted(CAPS_014);
     expect((await create({ kind: 'database', databaseId })).body.error.code).toBe('node_terminal_unsupported');
     const { databases } = await import('@ninedeploy/db');

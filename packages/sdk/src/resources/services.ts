@@ -14,6 +14,12 @@ import type {
   Environment,
   EnvironmentCreateInput,
   EnvironmentPatchInput,
+  PrimaryRecoveryEntry,
+  PrimaryRecoveryResult,
+  SwarmRecoveryEntry,
+  SwarmRecoveryResult,
+  FanoutRecoveryEntry,
+  FanoutRecoveryResult,
   ProjectEntry,
   ProjectPatchInput,
   Service,
@@ -175,6 +181,10 @@ export interface ServicesApi {
      * scaling event. The configuration itself is `autoscale` on the service
      * and is set with `update(id, { autoscale })` (`null` turns it off).
      */
+    runtimeRecovery: (id: number) => Promise<PrimaryRecoveryEntry | null>;
+    retryRuntimeRecovery: (id: number) => Promise<PrimaryRecoveryResult>;
+    swarmRecovery: (id: number) => Promise<SwarmRecoveryEntry | null>;
+    retrySwarmRecovery: (id: number) => Promise<SwarmRecoveryResult>;
     autoscale: (id: number) => Promise<AutoscaleStatusView>;
     // ── 0.16.11 scale to zero ──
     /**
@@ -228,6 +238,8 @@ export interface ServicesApi {
     remove: (id: number) => Promise<{ ok: boolean }>;
   };
   fanout: {
+    recovery: (serviceId: number) => Promise<FanoutRecoveryEntry[]>;
+    retryRecovery: (serviceId: number) => Promise<FanoutRecoveryResult>;
     /** The extra nodes an image/Dockerfile release is pushed to. */
     get: (serviceId: number) =>
       Promise<Array<{ serverId: number; runtimeId: string | null; status: string }>>;
@@ -309,6 +321,10 @@ export function servicesApi(t: Transport): ServicesApi {
       },
       imageTransfers: (id, query) => get<ImageTransfer[]>(apiGetUrl(`/v1/services/${id}/image-transfers`, { ...query })),
       swarm: (id) => get<ServiceSwarmStatus>(`/v1/services/${id}/swarm`),
+      runtimeRecovery: async id => (await get<{ entry: PrimaryRecoveryEntry | null }>(`/v1/services/${id}/runtime-recovery`)).entry,
+      retryRuntimeRecovery: id => request<PrimaryRecoveryResult>(`/v1/services/${id}/runtime-recovery`, { method: 'POST' }, 600_000),
+      swarmRecovery: async id => (await get<{ entry: SwarmRecoveryEntry | null }>(`/v1/services/${id}/swarm/recovery`)).entry,
+      retrySwarmRecovery: id => request<SwarmRecoveryResult>(`/v1/services/${id}/swarm/recovery`, { method: 'POST' }, 600_000),
       autoscale: (id) => get<AutoscaleStatusView>(`/v1/services/${id}/autoscale`),
       sleep: (id) => send<{ ok: boolean; asleep: boolean }>('POST', `/v1/services/${id}/sleep`),
       wake: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/wake`),
@@ -338,6 +354,8 @@ export function servicesApi(t: Transport): ServicesApi {
       remove: (id) => send<{ ok: boolean }>('DELETE', `/v1/projects/${id}`),
     },
     fanout: {
+      recovery: async serviceId => (await get<{ entries: FanoutRecoveryEntry[] }>(`/v1/services/${serviceId}/targets/recovery`)).entries,
+      retryRecovery: serviceId => request<FanoutRecoveryResult>(`/v1/services/${serviceId}/targets/recovery`, { method: 'POST' }, 600_000),
       // r201: the route answers `{ targets: [...] }` (like PATCH); the SDK
       // typed and returned it as a bare array, so the panel's fan-out card
       // called `.map` on an object and crashed whenever it rendered.

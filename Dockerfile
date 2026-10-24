@@ -203,11 +203,11 @@ ENV NODE_ENV=production \
 EXPOSE 3000
 VOLUME /data
 
-# The API exposes /health (liveness + DB readiness — a failed DB ping answers
-# 503, not 200), so the HEALTHCHECK gates on real readiness and orchestrators
-# (compose, k8s, Portainer) can use `depends_on: service_healthy` as-is.
+# The panel's /health includes DB readiness. The same image runs node agents,
+# whose public /agent/ping confirms the HTTP listener without credentials.
+# Probe the role's configured internal port, independently of published ports.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD ["node", "-e", "const agent=process.env.NINEDEPLOY_AGENT==='1';const port=Number(agent?(process.env.NINEDEPLOY_AGENT_PORT||4600):(process.env.NINEDEPLOY_PORT||3000));fetch('http://127.0.0.1:'+port+(agent?'/agent/ping':'/health'),{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "apps/server/dist/server.js"]

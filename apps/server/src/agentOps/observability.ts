@@ -9,7 +9,7 @@ export const observabilityOps: AgentOpModule = {
   ops: {
     'docker.probe': {
       cap: 'docker.probe', sealedOnly: true,
-      run: probeContainer,
+      run: (params, onLine) => probeContainer(params, onLine),
     },
     'docker.logsSince': {
       cap: 'docker.logsSince', sealedOnly: true,

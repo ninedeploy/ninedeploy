@@ -58,6 +58,11 @@ beforeEach(() => {
 });
 
 describe('docker builder replicas', () => {
+  it('marks every local candidate replica with the immutable recovery ownership labels', async () => {
+    await dockerBuilder.buildAndRun(ctx(3) as never);
+    expect(runCalls()).toHaveLength(3);
+    for (const args of runCalls()) expect(args).toEqual(expect.arrayContaining(['ninedeploy.managed=service', 'ninedeploy.service=1', 'ninedeploy.deployment=7']));
+  });
   it('clones the primary without the host port publishing and reports the achieved count', async () => {
     const runtime = await dockerBuilder.buildAndRun(ctx(3) as never);
 

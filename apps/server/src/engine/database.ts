@@ -16,6 +16,8 @@ import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../lib/crossProcessLock.js';
 import { conflict } from '../lib/errors.js';
 import { dumpCommands, isRedisFamily, redisCliArgv, saveReplyProblem } from '../lib/databaseCommands.js';
+import { redisStudioConfig, studioImageForEngine } from '../lib/databaseStudioImages.js';
+export { studioImageForEngine } from '../lib/databaseStudioImages.js';
 import { NETWORK } from './proxy.js';
 
 const swallow = () => {};
@@ -427,24 +429,6 @@ export const ENGINES: Record<string, EngineConfig> = {
   },
 };
 
-/** Studio image for the given database engine.
- *
- *  Privileged third-party images are pinned to IMMUTABLE references — a
- *  floating `:latest` let a registry-tag compromise swap the image every
- *  studio start runs through (Redis Commander additionally holds live
- *  database credentials). The redis-commander ref is digest-pinned because
- *  the project publishes no version tags to Docker Hub; bump the digest
- *  deliberately (registry-1.docker.io manifest of `latest` as of 2026-09). */
-export function studioImageForEngine(engine: string): { image: string; containerPort: number } {
-  if (isRedisFamily(engine)) {
-    return {
-      image: 'rediscommander/redis-commander@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a',
-      containerPort: 8081,
-    };
-  }
-  return { image: 'adminer:6.0.1', containerPort: 8080 };
-}
-
 /** Check if database studio container is running. */
 export async function isDatabaseStudioRunning(d: Database): Promise<boolean> {
   const name = `nd-studio-${d.slug}`;
@@ -453,40 +437,34 @@ export async function isDatabaseStudioRunning(d: Database): Promise<boolean> {
 
 /** Start database web studio container on shared network. */
 export async function startDatabaseStudio(d: Database, port: number, log: (line: string) => void): Promise<void> {
-  const name = `nd-studio-${d.slug}`;
-  if (await containerRunning(name)) return;
+  const name = 'nd-studio-' + d.slug;
+  const password = isRedisFamily(d.engine) && d.passwordEncrypted ? decrypt(d.passwordEncrypted) : '';
+  const host = d.internalHost || d.containerName || '';
+  const connectionConfig = password ? redisStudioConfig(host, defaultPort(d.engine), password, d.slug) : undefined;
+  if (await containerRunning(name)) {
+    if (!connectionConfig) return;
+    // Recreate older helpers that ignored REDIS_URL or carry stale credentials.
+    let configured = false;
+    try {
+      const env: unknown = JSON.parse(await capture('docker', ['inspect', name, '--format', '{{json .Config.Env}}']));
+      configured = Array.isArray(env) && env.includes('NODE_CONFIG=' + connectionConfig);
+    } catch { /* no confirmed configuration: replace the managed helper */ }
+    if (configured) return;
+  }
   await run('docker', ['rm', '-f', name], {}, swallow).catch(() => undefined);
   const studio = studioImageForEngine(d.engine);
-  log(`Preparing Web Studio image ${studio.image} …`);
+  log('Preparing Web Studio image ' + studio.image + ' …');
   await ensureDockerImage(studio.image, log);
-  const args = [
-    'run', '-d', '--name', name, '--network', NETWORK, '--restart', 'unless-stopped',
-    // Bind the Studio to LOOPBACK only. Adminer / Redis Commander speak plain
-    // HTTP with no NineDeploy authentication in front of them, and Redis
-    // Commander pre-holds the database's credentials — publishing them on all
-    // interfaces turned every host port into an unauthenticated, network-
-    // reachable database client. Loopback keeps the panel's iframe usable on
-    // the host while closing the exposure to the outside network.
-    '-p', `127.0.0.1:${port}:${studio.containerPort}`,
-  ];
+  const args = ['run', '-d', '--name', name, '--network', NETWORK, '--restart', 'unless-stopped',
+    '-p', '127.0.0.1:' + port + ':' + studio.containerPort];
+  const env: Record<string, string> = {};
   if (isRedisFamily(d.engine)) {
-    const host = d.internalHost || d.containerName || '';
-    const redisPort = defaultPort(d.engine);
-    // Managed Redis/Valkey always authenticates (a randomToken password on
-    // the `default` ACL user), and REDIS_HOSTS cannot carry a password — the
-    // studio would boot and list zero databases. Authenticated single
-    // connections go through REDIS_URL instead; a passwordless instance
-    // (local dev) keeps the simple host-list form.
-    const password = d.passwordEncrypted ? decrypt(d.passwordEncrypted) : '';
-    if (password) {
-      args.push('-e', `REDIS_URL=redis://default:${encodeURIComponent(password)}@${encodeURIComponent(host)}:${redisPort}/0`);
-    } else {
-      args.push('-e', `REDIS_HOSTS=local:${host}:${redisPort}`);
-    }
+    if (connectionConfig) { args.push('-e', 'NODE_CONFIG'); env.NODE_CONFIG = connectionConfig; }
+    else args.push('-e', 'REDIS_HOSTS=local:' + host + ':' + defaultPort(d.engine));
   }
   args.push(studio.image);
-  log(`Starting Web Studio for ${d.name} on :${port} …`);
-  await run('docker', args, {}, log);
+  log('Starting Web Studio for ' + d.name + ' on :' + port + ' …');
+  await run('docker', args, connectionConfig ? { env } : {}, log);
 }
 
 /** Stop database web studio container. */

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { id } from './common.js';
-import { volumeEntry } from './service.js';
+import { serviceOrchestrator, volumeEntry } from './service.js';
+export { serviceOrchestrator } from './service.js';
 
 // ── Multi-node (the 0.16 theme, shipped in the 0.15.x series) ──────────────
 // Contracts for remote nodes that match the panel host: build placement and
@@ -41,9 +42,43 @@ export const MULTI_NODE_CAPABILITIES = [
   'docker.runtimeOptions',
   'docker.probe',
   'docker.logsSince',
+  'proxy.routingAck',
+  'docker.recovery',
+  'docker.containerTools',
+  'volume.files',
+  'db.client',
+  'db.studio',
+  'proxy.traffic',
+  'docker.readiness',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;
+
+export const primaryRecoveryEntry = z.object({
+  id: z.number().int().positive(), serverId: z.number().int().positive().nullable(), deploymentId: z.number().int().positive(),
+  phase: z.enum(['ready', 'routing', 'retiring', 'retained']), previousRuntimeId: z.string().nullable(), candidateRuntimeId: z.string(),
+  desiredRuntimeId: z.string().nullable(), interrupted: z.boolean(), reason: z.string().nullable(), busy: z.boolean(),
+  attempts: z.number().int().nonnegative(), nextAttemptAt: z.string(), updatedAt: z.string(),
+});
+export type PrimaryRecoveryEntry = z.infer<typeof primaryRecoveryEntry>;
+export interface PrimaryRecoveryResult { recovered: number; held: number; entry: PrimaryRecoveryEntry | null }
+
+export const swarmRecoveryEntry = z.object({
+  id: z.number().int().positive(), deploymentId: z.number().int().positive(),
+  phase: z.enum(['prepared', 'submitted', 'ready', 'routing', 'retained']), interrupted: z.boolean(), reason: z.string().nullable(), busy: z.boolean(),
+  attempts: z.number().int().nonnegative(), nextAttemptAt: z.string(), updatedAt: z.string(),
+});
+export type SwarmRecoveryEntry = z.infer<typeof swarmRecoveryEntry>;
+export interface SwarmRecoveryResult { recovered: number; held: number; entry: SwarmRecoveryEntry | null }
+
+export const fanoutRecoveryEntry = z.object({
+  id: z.number().int().positive(), serverId: z.number().int().positive(), deploymentId: z.number().int().positive(),
+  phase: z.enum(['preparing', 'routing', 'retiring', 'retained', 'blocked']),
+  previousRuntimeId: z.string().nullable(), candidateRuntimeId: z.string(), reason: z.string().nullable(),
+  busy: z.boolean(), attempts: z.number().int().nonnegative(), nextAttemptAt: z.string(), updatedAt: z.string(),
+});
+export type FanoutRecoveryEntry = z.infer<typeof fanoutRecoveryEntry>;
+export interface FanoutRecoveryResult { recovered: number; held: number; entries: FanoutRecoveryEntry[] }
 
 /**
  * Error codes the multi-node routes answer with. `node_agent_outdated` (422)
@@ -119,6 +154,9 @@ export const serverTerminalCapability = z.object({
 
 /** `GET /v1/servers` → `features`: what the node can do today, and why not. */
 export const serverFeatures = z.object({
+  containerTools: z.boolean().optional(),
+  volumeFiles: z.boolean().optional(),
+  databaseClients: z.boolean().optional(),
   readinessProbe: z.boolean().optional(),
   logDrains: z.boolean().optional(),
   nixpacks: z.boolean(),
@@ -144,7 +182,6 @@ export const buildOn = z.enum(['target', 'panel', 'server']);
 export type BuildOn = z.infer<typeof buildOn>;
 
 /** Mirrors `serviceOrchestrator` in `@ninedeploy/db`. */
-export const serviceOrchestrator = z.enum(['container', 'swarm']);
 export type ServiceOrchestrator = z.infer<typeof serviceOrchestrator>;
 
 /** A registry repository path (`team/app`), no host and no tag. */

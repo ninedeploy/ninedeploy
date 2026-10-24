@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import { shipLogsOnce, type ShipperCursors } from '../engine/logShipper.js';
+import { shipLogsOnce } from '../engine/logShipper.js';
 
 /** How often new container output is forwarded to the configured drains. */
 export const LOG_SHIP_INTERVAL_MS = 10_000;
@@ -10,19 +10,21 @@ export const LOG_SHIP_INTERVAL_MS = 10_000;
  */
 export default fp(
   async (fastify) => {
-    const cursors: ShipperCursors = new Map();
+    const abort = new AbortController();
     let running = true;
     let timer: NodeJS.Timeout | undefined;
+    let cycle: Promise<void> | undefined;
+    const start = () => { cycle = tick().finally(() => { cycle = undefined; }); };
 
     const tick = async () => {
       try {
-        const { failed } = await shipLogsOnce(fastify.db, cursors);
+        const { failed } = await shipLogsOnce(fastify.db, undefined, AbortSignal.any([abort.signal, AbortSignal.timeout(45_000)]));
         if (failed > 0) fastify.log.warn({ failed }, 'log drain delivery failed for some lines');
       } catch (err) {
         fastify.log.error({ err }, 'log shipper failed');
       } finally {
         if (running) {
-          timer = setTimeout(() => void tick(), LOG_SHIP_INTERVAL_MS);
+          timer = setTimeout(start, LOG_SHIP_INTERVAL_MS);
           timer.unref();
         }
       }
@@ -30,10 +32,12 @@ export default fp(
 
     fastify.addHook('onClose', async () => {
       running = false;
+      abort.abort();
       clearTimeout(timer);
+      await cycle;
     });
 
-    timer = setTimeout(() => void tick(), LOG_SHIP_INTERVAL_MS);
+    timer = setTimeout(start, LOG_SHIP_INTERVAL_MS);
     timer.unref();
   },
   { name: 'ninedeploy-log-shipper' },

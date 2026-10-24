@@ -18,6 +18,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { recordCanaryHit } from '../engine/canaryState.js';
+import { CANARY_TRAFFIC_MAX_BYTES, hasCanaryTrafficWindow, invalidateCanaryTrafficWindows } from './canaryTrafficWindow.js';
 import { recordServiceRequest } from './requestRate.js';
 import { TRAEFIK_CONTAINER } from '../engine/dockerNames.js';
 import { audit } from './audit.js';
@@ -614,6 +615,7 @@ export class TrafficTailer {
         cursor = next;
       }
       if (fileId(this.livePath) || this.rotWaitTicks >= 3 || !rotate) {
+        invalidateCanaryTrafficWindows(this.rotatedPath);
         rmSync(this.rotatedPath, { force: true });
         this.rotWaitTicks = 0;
       } else {
@@ -650,12 +652,17 @@ export class TrafficTailer {
 
     // 3. Rotation, once the live file is large and nothing is left to drain.
     if (rotate && live.size > TRAFFIC_ROTATE_BYTES && !existsSync(this.rotatedPath) && this.now() >= this.rotateRetryAt) {
-      result.rotated = await this.rotate(cursor, live.size);
+      // A canary owns an independent descriptor/cursor. Hold normal rotation,
+      // but retain a hard disk bound even if windows continually overlap.
+      if (!hasCanaryTrafficWindow(this.livePath) || live.size > TRAFFIC_ROTATE_BYTES + CANARY_TRAFFIC_MAX_BYTES) {
+        result.rotated = await this.rotate(cursor, live.size);
+      }
     }
     return result;
   }
 
   private async rotate(cursor: TrafficCursor, size: number): Promise<boolean> {
+    invalidateCanaryTrafficWindows(this.livePath);
     renameSync(this.livePath, this.rotatedPath);
     try {
       await this.reopen();
@@ -666,6 +673,7 @@ export class TrafficTailer {
       this.log('traffic analytics: USR1 reopen failed; falling back to truncate-after-read', err);
       if (cursor.offset >= size) {
         try {
+          invalidateCanaryTrafficWindows(this.livePath);
           truncateSync(this.livePath, 0);
           await commitRollups(this.db, [], { ...cursor, offset: 0 });
           return true;
@@ -697,6 +705,8 @@ export class TrafficTailer {
       const r = await this.tick({ rotate: false });
       if (r.bytes === 0 && !fileId(this.rotatedPath)) break;
     }
+    invalidateCanaryTrafficWindows(this.livePath);
+    invalidateCanaryTrafficWindows(this.rotatedPath);
     rmSync(this.livePath, { force: true });
     rmSync(this.rotatedPath, { force: true });
     await commitRollups(this.db, [], null);

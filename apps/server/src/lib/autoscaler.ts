@@ -1,4 +1,4 @@
-import { type Service, services, type DB } from '@ninedeploy/db';
+import { deployments, primaryTransitions, type Service, services, type DB } from '@ninedeploy/db';
 import {
   autoscaleConfig,
   desiredReplicas,
@@ -6,7 +6,7 @@ import {
   type AutoscaleEvent,
   type AutoscaleStatusView,
 } from '@ninedeploy/schemas';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notExists, sql } from 'drizzle-orm';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import type { ContainerStat } from './stats.js';
 import { serviceRequestRate } from './requestRate.js';
@@ -31,6 +31,8 @@ import { serviceRequestRate } from './requestRate.js';
 export const AUTOSCALE_TICK_MS = 30_000;
 /** A started container has this long to pass its healthcheck before it is stopped again. */
 export const AUTOSCALE_PROBE_MS = 60_000;
+export const AUTOSCALE_STATS_MAX_AGE_MS = 90_000;
+export const AUTOSCALE_IN_FLIGHT = ['queued', 'building', 'deploying'] as const;
 
 interface ServiceState {
   history: Array<{ at: number; desired: number }>;
@@ -40,6 +42,7 @@ interface ServiceState {
   desired: number | null;
   holding: string | null;
   lastEvent: AutoscaleEvent | null;
+  routingConfirmed: boolean;
 }
 
 const states = new Map<number, ServiceState>();
@@ -47,7 +50,7 @@ const states = new Map<number, ServiceState>();
 function stateOf(serviceId: number): ServiceState {
   let s = states.get(serviceId);
   if (!s) {
-    s = { history: [], aboveSince: null, belowSince: null, value: null, desired: null, holding: null, lastEvent: null };
+    s = { history: [], aboveSince: null, belowSince: null, value: null, desired: null, holding: null, lastEvent: null, routingConfirmed: false };
     states.set(serviceId, s);
   }
   return s;
@@ -73,7 +76,7 @@ export function measure(
   svc: Pick<Service, 'id' | 'runtimeId' | 'runtimeReplicas' | 'cpuLimitMilli'>,
   cfg: AutoscaleConfig,
   containers: ReadonlyMap<string, ContainerStat>,
-  opts: { analyticsOn: boolean; now: number },
+  opts: { analyticsOn: boolean; now: number; sampledAt?: number | null },
 ): { value: number | null; holding: string | null } {
   const current = servingReplicas(svc);
   if (cfg.metric === 'rps') {
@@ -81,12 +84,22 @@ export function measure(
     const perContainer = serviceRequestRate(svc.id, 60_000, opts.now) / current;
     return { value: Math.round(perContainer * 100) / 100, holding: null };
   }
+  if (opts.sampledAt !== undefined && (opts.sampledAt === null || !Number.isFinite(opts.sampledAt)
+    || opts.sampledAt > opts.now || opts.now - opts.sampledAt > AUTOSCALE_STATS_MAX_AGE_MS)) {
+    return { value: null, holding: 'waiting for fresh container stats' };
+  }
   const stats = replicaNames(svc.runtimeId!, current)
     .map((n) => containers.get(n))
     .filter((s): s is ContainerStat => s !== undefined);
   if (stats.length === 0) return { value: null, holding: 'no container stats yet' };
+  if (stats.length !== current) return { value: null, holding: 'waiting for stats from every serving container' };
+  if (stats.some((s) => cfg.metric === 'memory'
+    ? !Number.isFinite(s.memBytes) || s.memBytes < 0 || !Number.isFinite(s.memLimitBytes) || s.memLimitBytes <= 0
+    : !Number.isFinite(s.cpuPct) || s.cpuPct < 0)) {
+    return { value: null, holding: cfg.metric === 'memory' ? 'waiting for valid memory usage and limits' : 'waiting for valid CPU stats' };
+  }
   const per = stats.map((s) => {
-    if (cfg.metric === 'memory') return s.memLimitBytes > 0 ? (s.memBytes / s.memLimitBytes) * 100 : 0;
+    if (cfg.metric === 'memory') return (s.memBytes / s.memLimitBytes) * 100;
     const cores = (svc.cpuLimitMilli ?? 0) > 0 ? svc.cpuLimitMilli! / 1000 : 1;
     return s.cpuPct / cores;
   });
@@ -128,14 +141,33 @@ export function decide(serviceId: number, current: number, value: number, cfg: A
 
 export interface AutoscaleDeps {
   db: DB;
+  signal?: AbortSignal;
   /** `docker <args>`; rejects on failure. */
   docker: (args: string[]) => Promise<void>;
   /** Whether a just-started container passes the service's healthcheck. */
   probe: (svc: Service, containerName: string) => Promise<boolean>;
-  writeConfig: () => Promise<void>;
+  writeConfig: (svc: Service, signal?: AbortSignal) => Promise<void>;
   audit: (action: string, entity: string, meta: Record<string, unknown>) => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   log: (line: string) => void;
+}
+
+/** A new deployment, host, configuration or controller generation owns subsequent work. */
+async function scalingSnapshotCurrent(db: Pick<DB, 'query' | 'select'>, svc: Service, expected: number): Promise<boolean> {
+  const fresh = await db.query.services.findFirst({ where: eq(services.id, svc.id) });
+  if (!fresh || fresh.runtimeId !== svc.runtimeId || fresh.serverId !== svc.serverId
+    || fresh.status !== 'running' || fresh.asleepAt != null || servingReplicas(fresh) !== expected
+    || JSON.stringify(fresh.autoscale) !== JSON.stringify(svc.autoscale)
+    || fresh.port !== svc.port || fresh.healthCheck !== svc.healthCheck
+    || fresh.healthPath !== svc.healthPath || fresh.healthCommand !== svc.healthCommand) return false;
+  const jobs = await db.select({ id: deployments.id }).from(deployments)
+    .where(and(eq(deployments.serviceId, svc.id), inArray(deployments.status, [...AUTOSCALE_IN_FLIGHT]))).limit(1);
+  const recovery = await db.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, svc.id)).limit(1);
+  return jobs.length === 0 && recovery.length === 0;
+}
+
+function resetWindow(st: ServiceState): void {
+  st.history = []; st.aboveSince = null; st.belowSince = null; st.desired = null;
 }
 
 /**
@@ -145,18 +177,52 @@ export interface AutoscaleDeps {
  * measured — a deploy that finished meanwhile wins.
  */
 export async function scaleService(deps: AutoscaleDeps, svc: Service, from: number, to: number, reason: string, now: number): Promise<number> {
+  const st = stateOf(svc.id);
+  const live = () => !deps.signal?.aborted && states.get(svc.id) === st;
+  const current = async (expected: number) => live() && await scalingSnapshotCurrent(deps.db, svc, expected) && live();
   const names = replicaNames(svc.runtimeId!, Math.max(from, to));
-  const setServing = async (n: number): Promise<boolean> => {
-    const updated = await deps.db
-      .update(services)
-      .set({ runtimeReplicas: n })
-      .where(and(eq(services.id, svc.id), eq(services.runtimeId, svc.runtimeId!)))
-      .returning({ id: services.id });
+  const setServing = async (n: number, expected: number): Promise<boolean> => {
+    if (!live()) return false;
+    // One conditional UPDATE makes the ownership check and write atomic,
+    // including a deploy queued during the readiness probe. No transaction
+    // connection is held while Docker or the proxy is being awaited.
+    const jobs = deps.db.select({ id: deployments.id }).from(deployments)
+      .where(and(eq(deployments.serviceId, svc.id), inArray(deployments.status, [...AUTOSCALE_IN_FLIGHT])));
+    const updated = await deps.db.update(services).set({ runtimeReplicas: n }).where(and(
+      eq(services.id, svc.id), eq(services.runtimeId, svc.runtimeId!),
+      svc.serverId == null ? isNull(services.serverId) : eq(services.serverId, svc.serverId),
+      eq(services.status, 'running'), isNull(services.asleepAt),
+      eq(sql`max(1, min(coalesce(${services.runtimeReplicas}, 1), ${MAX_REPLICAS}))`, expected),
+      svc.autoscale == null ? isNull(services.autoscale) : eq(services.autoscale, svc.autoscale),
+      svc.port == null ? isNull(services.port) : eq(services.port, svc.port),
+      svc.healthCheck == null ? isNull(services.healthCheck) : eq(services.healthCheck, svc.healthCheck),
+      svc.healthPath == null ? isNull(services.healthPath) : eq(services.healthPath, svc.healthPath),
+      svc.healthCommand == null ? isNull(services.healthCommand) : eq(services.healthCommand, svc.healthCommand),
+      notExists(jobs),
+      notExists(deps.db.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, svc.id))),
+    )).returning({ id: services.id });
     return updated.length > 0;
   };
+  const route = async (count: number) => {
+    try {
+      await deps.writeConfig(svc, deps.signal);
+      st.routingConfirmed = live();
+    } catch (err) {
+      // A failed config write is not permission to stop anything. Restore
+      // metadata only while we still own this runtime; the next tick must
+      // confirm routing before measuring or cleaning spare containers.
+      st.routingConfirmed = false;
+      st.holding = 'routing update failed; existing containers are kept running until routing is confirmed';
+      resetWindow(st);
+      await setServing(from, count);
+      throw err;
+    }
+  };
+  if (!await current(from)) return from;
   let reached = from;
   if (to > from) {
     for (let i = from; i < to; i++) {
+      if (!await current(from)) return from;
       const name = names[i]!;
       try {
         await deps.docker(['start', name]);
@@ -165,33 +231,36 @@ export async function scaleService(deps: AutoscaleDeps, svc: Service, from: numb
         stateOf(svc.id).holding = `${name} could not be started; the next deploy creates the containers autoscaling starts`;
         break;
       }
-      if (!(await deps.probe(svc, name))) {
+      const healthy = await deps.probe(svc, name);
+      if (!await current(from)) return from;
+      if (!healthy) {
         deps.log(`autoscale: ${svc.name}: ${name} failed its healthcheck; stopped again`);
-        stateOf(svc.id).holding = `${name} failed its healthcheck when started`;
+        st.holding = `${name} failed its healthcheck when started`;
         await deps.docker(['stop', '-t', '5', name]).catch(() => undefined);
         break;
       }
       reached = i + 1;
     }
     if (reached === from) return from;
-    if (!(await setServing(reached))) return from;
-    await deps.writeConfig();
+    if (!(await setServing(reached, from))) return from;
+    if (!await current(reached)) return from;
+    await route(reached);
   } else {
-    if (!(await setServing(to))) return from;
-    await deps.writeConfig();
+    if (!(await setServing(to, from))) return from;
+    if (!await current(to)) return from;
+    await route(to);
     // As a deploy's cleanup: let Traefik apply the route before the stop.
     await deps.sleep(2000);
+    if (!await current(to)) return from;
     await deps.docker(['stop', '-t', '10', ...names.slice(to, from)]).catch((err: unknown) =>
       deps.log(`autoscale: ${svc.name}: stopping ${names.slice(to, from).join(', ')} failed (${err instanceof Error ? err.message : String(err)})`),
     );
     reached = to;
   }
+  if (!await current(reached)) return reached;
   const event: AutoscaleEvent = { at: new Date(now).toISOString(), from, to: reached, reason };
-  const st = stateOf(svc.id);
   st.lastEvent = event;
-  st.history = [];
-  st.aboveSince = null;
-  st.belowSince = null;
+  resetWindow(st);
   await deps.audit('service.autoscale', `${svc.name}: ${from} → ${reached}`, { serviceId: svc.id, from, to: reached, reason });
   return reached;
 }
@@ -216,23 +285,40 @@ export async function autoscaleStep(
   deps: AutoscaleDeps,
   svc: Service,
   cfg: AutoscaleConfig,
-  ctx: { containers: ReadonlyMap<string, ContainerStat>; analyticsOn: boolean; inFlight: ReadonlySet<number>; canaryRunning: boolean; now: number },
+  ctx: { containers: ReadonlyMap<string, ContainerStat>; analyticsOn: boolean; inFlight: ReadonlySet<number>; canaryRunning: boolean; now: number; sampledAt?: number | null },
 ): Promise<number> {
   const st = stateOf(svc.id);
   const current = servingReplicas(svc);
   const hold = holdReason(svc, ctx.inFlight, ctx.canaryRunning);
   st.holding = hold;
   if (hold) {
-    st.aboveSince = null;
-    st.belowSince = null;
+    resetWindow(st); st.value = null;
     return current;
   }
+  const live = () => !deps.signal?.aborted && states.get(svc.id) === st;
+  if (!live() || !await scalingSnapshotCurrent(deps.db, svc, current)) return current;
   const strays = replicaNames(svc.runtimeId!, cfg.maxReplicas).slice(current).filter((n) => ctx.containers.has(n));
+  if (!st.routingConfirmed || strays.length > 0) {
+    try {
+      await deps.writeConfig(svc, deps.signal);
+      if (!live() || !await scalingSnapshotCurrent(deps.db, svc, current)) return current;
+      st.routingConfirmed = true;
+    } catch {
+      st.routingConfirmed = false;
+      st.holding = 'waiting for routing confirmation; existing containers are kept running';
+      st.value = null; resetWindow(st);
+      return current;
+    }
+  }
   if (strays.length > 0) {
+    await deps.sleep(2000);
+    if (!live() || !await scalingSnapshotCurrent(deps.db, svc, current)) return current;
     deps.log(`autoscale: ${svc.name}: stopping ${strays.join(', ')}, running but not routed`);
     await deps.docker(['stop', '-t', '10', ...strays]).catch(() => undefined);
   }
-  const m = measure(svc, cfg, ctx.containers, { analyticsOn: ctx.analyticsOn, now: ctx.now });
+  if (!live()) return current;
+  const m = measure(svc, cfg, ctx.containers, { analyticsOn: ctx.analyticsOn, now: ctx.now,
+    ...(ctx.sampledAt !== undefined ? { sampledAt: ctx.sampledAt } : {}) });
   st.value = m.value;
   st.holding = m.holding;
   // Outside the bounds (the configuration changed since the deploy): move inside first.
@@ -240,7 +326,7 @@ export async function autoscaleStep(
   if (bounded !== current) {
     return scaleService(deps, svc, current, bounded, `the configured bounds are ${cfg.minReplicas}–${cfg.maxReplicas}`, ctx.now);
   }
-  if (m.value == null) return current;
+  if (m.value == null) { resetWindow(st); return current; }
   const d = decide(svc.id, current, m.value, cfg, ctx.now);
   if (!d) return current;
   return scaleService(deps, svc, current, d.to, d.reason, ctx.now);

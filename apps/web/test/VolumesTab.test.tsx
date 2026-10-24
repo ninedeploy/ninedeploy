@@ -12,9 +12,9 @@ vi.mock('../src/lib/api.js', async () => {
 
 // The browser modal is covered by its own suite; stub it here to observe opens.
 vi.mock('../src/components/VolumeBrowser.js', () => ({
-  VolumeBrowser: ({ volume, onClose }: { volume: string; onClose: () => void }) => (
+  VolumeBrowser: ({ volume, serverId, onClose }: { volume: string; serverId?: number; onClose: () => void }) => (
     <div data-testid="volume-browser">
-      browsing:{volume}
+      browsing:{volume} host:{serverId ?? 'panel'}
       <button type="button" onClick={onClose}>close browser</button>
     </div>
   ),
@@ -138,12 +138,22 @@ describe('VolumesTab', () => {
     expect(await screen.findByTestId('volume-browser')).toHaveTextContent('browsing:nd-vol-api');
   });
 
-  it('falls back to the slug-derived volume name when the owner row is missing', async () => {
+  it('falls back to the builder volume name and opens that volume when inventory has no owner row', async () => {
     mockOf(api.volumes.list).mockResolvedValue([] as never);
     mockOf(api.attachments.list).mockResolvedValue([] as never);
     renderWithProviders(<VolumesTab serviceId={1} svc={svc()} />);
-
-    expect(await screen.findByText('nd-vol-api')).toBeInTheDocument();
+    expect(await screen.findByText('nd-svc-api-data')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:/Browse Files/i}));
+    expect(await screen.findByTestId('volume-browser')).toHaveTextContent('browsing:nd-svc-api-data host:panel');
+  });
+  it('reads inventory and opens the service primary volume only on its recorded node',async()=>{
+    mockOf(api.volumes.list).mockResolvedValue([] as never);
+    mockOf(api.attachments.list).mockResolvedValue([] as never);
+    renderWithProviders(<VolumesTab serviceId={1} svc={svc({serverId:7})} />);
+    await waitFor(()=>expect(api.volumes.list).toHaveBeenCalledWith({serverId:7}));
+    fireEvent.click(screen.getByRole('button',{name:/Browse Files/i}));
+    expect(await screen.findByTestId('volume-browser')).toHaveTextContent('browsing:nd-svc-api-data host:7');
+    expect(api.volumes.list).not.toHaveBeenCalledWith();
   });
   it('expands and collapses the backups panel of an attached volume', async () => {
     mockOf(api.volumes.list).mockResolvedValue([] as never);

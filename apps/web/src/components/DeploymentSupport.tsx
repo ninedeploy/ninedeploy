@@ -8,7 +8,8 @@ export function DeploymentSupport({ node }: { node?: ServerListEntry }) {
     ['Canary releases', !node],
     ['Autoscaling', !node],
     ['Scale to zero', !node],
-    ['Container file browser', !node],
+    ['Container file browser', node ? node.features?.containerTools : true],
+    ['Volume file browser', node ? node.features?.volumeFiles : true],
   ];
   return (
     <section className="mt-3 rounded-lg border border-white/10 p-3 text-xs" aria-label="Deployment support">
@@ -23,7 +24,7 @@ export function DeploymentSupport({ node }: { node?: ServerListEntry }) {
           </div>
         ))}
       </dl>
-      {node && <p className="mt-2 text-[11px] text-slate-500">Readiness and log drains require an updated agent. Canary, autoscaling, scale to zero and the file browser currently run on the panel host.</p>}
+      {node && <p className="mt-2 text-[11px] text-slate-500">Readiness, log drains and file tools require an updated agent. Canary, autoscaling and scale to zero currently run on the panel host.</p>}
     </section>
   );
 }

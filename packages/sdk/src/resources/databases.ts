@@ -35,7 +35,7 @@ export interface DatabasesApi {
     logs: (id: number, lines?: number) => Promise<{ logs: string[] }>;
     credentials: (id: number) => Promise<DatabaseCredentialsWithPublic>;
     setLimits: (id: number, input: SetLimitsInput) => Promise<{ cpuShares: number | null; memLimitMb: number | null }>;
-    startStudio: (id: number, port?: number) => Promise<{ ok: boolean; port: number; url: string }>;
+    startStudio: (id: number, port?: number) => Promise<{ ok: boolean; port: number | null; url: string; serverId?: number }>;
     stopStudio: (id: number) => Promise<{ ok: boolean }>;
     /**
      * PgBouncer sidecar (G-32). Returns the current sidecar
@@ -159,9 +159,10 @@ export function databasesApi(t: Transport): DatabasesApi {
       logs: (id, lines) => get<{ logs: string[] }>(`/v1/databases/${id}/logs${lines ? `?lines=${lines}` : ''}`),
       credentials: (id) => get<DatabaseCredentialsWithPublic>(`/v1/databases/${id}/credentials`),
       setLimits: (id, input) => send<{ cpuShares: number | null; cpuLimitMilli: number | null; memLimitMb: number | null }>('PATCH', `/v1/databases/${id}/limits`, input),
-      startStudio: (id, port) => send<{ ok: boolean; port: number; url: string }>('POST', `/v1/databases/${id}/studio`, { port }),
+      // Allow bounded image preparation and keep the path-scoped browser cookie.
+      startStudio: (id, port) => request<{ ok: boolean; port: number | null; url: string; serverId?: number }>(`/v1/databases/${id}/studio`, { method: 'POST', body: { port }, credentials: 'include' }, 240_000),
       stopStudio: async (id) => {
-        await request(`/v1/databases/${id}/studio`, { method: 'DELETE' });
+        await request(`/v1/databases/${id}/studio`, { method: 'DELETE', credentials: 'include' }, 270_000);
         return { ok: true };
       },
       drillBackup: (id, input) =>

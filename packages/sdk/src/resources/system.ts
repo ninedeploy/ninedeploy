@@ -11,6 +11,9 @@ import type {
   DemoSeedResult,
   DockerResources,
   MetricSeries,
+  ObservabilityResponse,
+  ObservabilityPatch,
+  ObservabilityExportResult,
   StatsSnapshot,
   TopologyGraph,
   UpdateCheckResult,
@@ -80,7 +83,13 @@ export interface SystemApi {
     }>;
   };
   stats: {
-    snapshot: () => Promise<StatsSnapshot>;
+    observability: {
+      get: () => Promise<ObservabilityResponse>;
+      update: (input: ObservabilityPatch) => Promise<ObservabilityResponse>;
+      test: () => Promise<ObservabilityExportResult>;
+    };
+    /** Omit the filter for local-host monitoring; databaseId returns only that authorized database on its recorded host. */
+    snapshot: (opts?: { databaseId?: number }) => Promise<StatsSnapshot>;
     metrics: (serviceId: number, opts?: { kind?: 'cpu' | 'memory'; minutes?: number }) => Promise<MetricSeries>;
   };
   topology: {
@@ -197,7 +206,19 @@ export function systemApi(t: Transport): SystemApi {
       get: () => get('/v1/dashboard'),
     },
     stats: {
-      snapshot: () => get<StatsSnapshot>('/v1/stats'),
+      observability: {
+        get: () => get<ObservabilityResponse>('/v1/stats/observability'),
+        update: (input) => send<ObservabilityResponse>('PATCH', '/v1/stats/observability', input),
+        test: () => send<ObservabilityExportResult>('POST', '/v1/stats/observability/test'),
+      },
+      snapshot: async (opts) => {
+        const result = await get<StatsSnapshot>('/v1/stats' + (opts?.databaseId === undefined ? '' : `?databaseId=${encodeURIComponent(opts.databaseId)}`));
+        if (opts?.databaseId !== undefined && (result?.resource?.kind !== 'database' || result.resource.id !== opts.databaseId || result.host !== null
+          || !Array.isArray(result.containers) || result.containers.some(entry => entry.kind !== 'database' || entry.refId !== opts.databaseId))) {
+          throw new Error('Database-scoped metrics were not confirmed by this panel; upgrade the panel to 0.18.0 or newer and retry');
+        }
+        return result;
+      },
       metrics: (serviceId, opts) =>
         get<MetricSeries>(
           `/v1/services/${serviceId}/metrics?kind=${opts?.kind ?? 'cpu'}&minutes=${opts?.minutes ?? 60}`,

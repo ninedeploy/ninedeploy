@@ -1,5 +1,5 @@
 ﻿import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildAgentApp } from '../../src/agentApp.js';
+import { buildAgentApp, agentStudioRoute } from '../../src/agentApp.js';
 import { config } from '../../src/config.js';
 
 afterEach(() => {
@@ -7,6 +7,14 @@ afterEach(() => {
 });
 
 describe('buildAgentApp', () => {
+  it('admits the sealed Studio ticket issue budget and retains a finite per-minute cap', async () => {
+    const app=await buildAgentApp();await app.register(agentStudioRoute,{tokenHash:'a'.repeat(64)});
+    try {
+      for(let index=0;index<120;index++)expect((await app.inject({method:'GET',url:'/agent/studio'})).statusCode,'request '+index).not.toBe(429);
+      expect((await app.inject({method:'GET',url:'/agent/studio'})).statusCode).toBe(429);
+    } finally {await app.close();}
+  });
+
   it('exposes only the registered agent routes (no API surface by default)', async () => {
     const app = await buildAgentApp();
     // No routes registered yet → 404 on any path.

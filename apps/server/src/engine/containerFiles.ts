@@ -24,7 +24,7 @@ function assertManagedContainer(container: string): void {
 /** Normalise a user-supplied path into a clean absolute container path (default '/'). */
 export function safeContainerPath(input: string): string | null {
   if (input.includes('\0') || input.includes('\n')) return null;
-  const raw = input.trim();
+  const raw = input;
   if (!raw || raw === '/') return '/';
   const parts: string[] = [];
   for (const seg of raw.split('/')) {
@@ -55,44 +55,50 @@ function dirname(p: string): string {
 }
 
 /** List a directory inside a running container. */
-export async function listContainerDir(container: string, path: string): Promise<ContainerFileEntry[]> {
+export async function listContainerDir(container: string, path: string, execute: typeof capture = capture): Promise<ContainerFileEntry[]> {
   assertManagedContainer(container);
   const target = safeContainerPath(path);
   if (!target) throw new Error('invalid path');
 
-  const out = await capture('docker', [
+  const statEntries = `for item in "$@"; do meta=$(stat -c '%f|%s|%a|%Y' -- "$item") || { printf 'ND_FILES_ERROR\\0'; exit 1; }; printf '%s\\0%s\\0' "$meta" "$item"; done`;
+  const out = await execute('docker', [
     'exec',
     container,
     'sh',
     '-c',
-    `cd ${shellQuote(target)} 2>/dev/null && find . -mindepth 1 -maxdepth 1 -exec stat -c '%F|%s|%a|%Y|%n' {} + 2>/dev/null | sort`,
+    `cd ${shellQuote(target)} && printf 'ND_FILES_V1\\0' && find . -mindepth 1 -maxdepth 1 -exec sh -c ${shellQuote(statEntries)} sh {} + && printf 'ND_FILES_END\\0'`,
   ]);
 
+  const records = out.split('\0');
+  if (records.shift() !== 'ND_FILES_V1' || records.pop() !== '' || records.pop() !== 'ND_FILES_END' || records.length % 2) throw new Error('Container directory listing is unconfirmed');
   const entries: ContainerFileEntry[] = [];
-  for (const line of out.split('\n')) {
-    if (!line.trim()) continue;
-    const [type, size, mode, mtime, ...nameParts] = line.split('|');
-    const name = nameParts.join('|').split('/').pop()!.trim();
-    if (!name) continue;
-    if (type === 'directory') {
+  for (let index = 0; index < records.length; index += 2) {
+    const fields = records[index]!.split('|');
+    const [nativeMode, size, mode, mtime] = fields;
+    const relative = records[index + 1]!;
+    if (fields.length !== 4 || !/^[a-fA-F0-9]{1,8}$/.test(nativeMode ?? '') || !/^\d+$/.test(size ?? '') || !Number.isSafeInteger(Number(size)) || !/^[0-7]{1,4}$/.test(mode ?? '') || !/^-?\d+$/.test(mtime ?? '') || !relative.startsWith('./')) throw new Error('Container directory metadata is unconfirmed');
+    const name = relative.slice(2);
+    if (!name || name.includes('/')) throw new Error('Container directory name is unconfirmed');
+    const kind = Number.parseInt(nativeMode!, 16) & 0o170000;
+    if (kind === 0o040000) {
       entries.push({
         name,
         type: 'dir',
         sizeBytes: Number(size) || 0,
-        mode: mode ? `0${mode}` : null,
+        mode: `0${mode!.padStart(3, '0')}`,
         modifiedAt: toIso(mtime),
       });
-    } else if (type === 'regular file' || type === 'symbolic link') {
+    } else if (kind === 0o100000 || kind === 0o120000) {
       entries.push({
         name,
         type: 'file',
         sizeBytes: Number(size) || 0,
-        mode: mode ? `0${mode}` : null,
+        mode: `0${mode!.padStart(3, '0')}`,
         modifiedAt: toIso(mtime),
       });
     }
   }
-  return entries;
+  return entries.sort((a, b) => a.type === b.type ? a.name < b.name ? -1 : a.name > b.name ? 1 : 0 : a.type === 'dir' ? -1 : 1);
 }
 
 /** Largest file the in-browser editor reads (and can therefore write back). */
@@ -110,18 +116,19 @@ export const CONTAINER_FILE_READ_CAP = 1024 * 1024;
 export async function readContainerFile(
   container: string,
   path: string,
+  execute: typeof capture = capture,
 ): Promise<{ content: string; encoding: 'utf8' | 'base64' }> {
   assertManagedContainer(container);
   const target = safeContainerPath(path);
   if (!target || target === '/') throw new Error('invalid path');
 
-  const out = await capture('docker', [
+  const out = await execute('docker', [
     'exec',
     container,
     'sh',
     '-c',
-    `test -f ${shellQuote(target)} && head -c ${CONTAINER_FILE_READ_CAP + 1} ${shellQuote(target)} | base64`,
-  ]);
+    `test -f ${shellQuote(target)} && head -c ${CONTAINER_FILE_READ_CAP + 1} ${shellQuote(target)}`,
+  ], { captureEncoding: 'base64', maxOutputBytes: CONTAINER_FILE_READ_CAP + 1 });
   const content = out.trim();
   if (Buffer.byteLength(content.replace(/\s+/g, ''), 'base64') > CONTAINER_FILE_READ_CAP) {
     throw new HttpError(
@@ -139,12 +146,13 @@ export async function writeContainerFile(
   path: string,
   base64: string,
   sink: (line: string) => void,
+  execute: typeof run = run,
 ): Promise<void> {
   assertManagedContainer(container);
   const target = safeContainerPath(path);
   if (!target || target === '/') throw new Error('invalid path');
 
-  await run(
+  await execute(
     'docker',
     [
       'exec',
@@ -161,12 +169,12 @@ export async function writeContainerFile(
 }
 
 /** Create a directory inside the container. */
-export async function makeContainerDir(container: string, path: string): Promise<void> {
+export async function makeContainerDir(container: string, path: string, execute: typeof capture = capture): Promise<void> {
   assertManagedContainer(container);
   const target = safeContainerPath(path);
   if (!target || target === '/') throw new Error('invalid path');
 
-  await capture('docker', ['exec', container, 'mkdir', '-p', '--', target]);
+  await execute('docker', ['exec', container, 'mkdir', '-p', '--', target]);
 }
 
 /** Delete a file or directory inside the container. */
@@ -174,12 +182,13 @@ export async function deleteContainerPath(
   container: string,
   path: string,
   sink: (line: string) => void,
+  execute: typeof run = run,
 ): Promise<void> {
   assertManagedContainer(container);
   const target = safeContainerPath(path);
   if (!target || target === '/') throw new Error('cannot delete root');
 
-  await run('docker', ['exec', container, 'rm', '-rf', '--', target], {}, sink);
+  await execute('docker', ['exec', container, 'rm', '-rf', '--', target], {}, sink);
 }
 
 export interface ContainerInspectResult {
@@ -211,9 +220,9 @@ export interface ContainerInspectResult {
 }
 
 /** Inspect container metadata and parsed labels/traefik tags. */
-export async function inspectContainer(container: string): Promise<ContainerInspectResult> {
+export async function inspectContainer(container: string, execute: typeof capture = capture): Promise<ContainerInspectResult> {
   assertManagedContainer(container);
-  const out = await capture('docker', ['inspect', container]);
+  const out = await execute('docker', ['inspect', container]);
   const parsed = JSON.parse(out);
   const data = parsed[0];
   if (!data) throw new Error('container inspect empty');
@@ -261,11 +270,11 @@ export async function inspectContainer(container: string): Promise<ContainerInsp
 }
 
 /** Generate runtime Docker Compose YAML and Traefik tags manifest for container. */
-export async function getContainerComposeManifest(container: string): Promise<{
+export async function getContainerComposeManifest(container: string, execute: typeof capture = capture): Promise<{
   yaml: string;
   inspect: ContainerInspectResult;
 }> {
-  const inspect = await inspectContainer(container);
+  const inspect = await inspectContainer(container, execute);
   const serviceName = inspect.name.replace(/[^a-zA-Z0-9_-]/g, '-');
 
   const lines: string[] = [

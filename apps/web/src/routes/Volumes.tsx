@@ -35,7 +35,7 @@ export function Volumes() {
   });
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [confirmPrune, setConfirmPrune] = useState(false);
-  const [browsing, setBrowsing] = useState<string | null>(null);
+  const [browsing, setBrowsing] = useState<{ name: string; serverId?: number } | null>(null);
   // Snapshot history for one volume, expanded under the grid. Volume
   // backups used to be reachable only from a service's Volumes tab, which
   // left every retained (owner-less) volume with no way to snapshot or
@@ -148,8 +148,7 @@ export function Volumes() {
       </div>
       {nodeId != null && (
         <p className="mb-3 text-xs text-slate-500">
-          Volumes on <span className="text-slate-300">{hostName}</span>, through its agent. The file browser and snapshots work on
-          panel-host volumes only.
+          Volumes on <span className="text-slate-300">{hostName}</span>, through its agent. Browse files on the selected node; volume snapshots are available on the panel host.
         </p>
       )}
       {list.isLoading ? (
@@ -221,16 +220,14 @@ export function Volumes() {
                   </div>
 
                   <div className="flex items-center gap-1.5">
-                    {nodeId == null && (
-                    <>
                     <button type="button"
-                      onClick={() => setBrowsing(v.name)}
+                      onClick={() => setBrowsing({ name: v.name, ...(nodeId == null ? {} : { serverId: nodeId }) })}
                       className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-[var(--nd-accent)]"
                       title="Browse files in this volume"
                     >
                       <FolderOpen size={14} />
                     </button>
-                    <button type="button"
+                    {nodeId == null && <button type="button"
                       onClick={() => setSnapshotting((cur) => (cur === v.name ? null : v.name))}
                       className={cn(
                         'rounded-lg p-1.5 transition hover:bg-white/5',
@@ -241,9 +238,7 @@ export function Volumes() {
                       aria-label={`Snapshots for ${v.name}`}
                     >
                       <Archive size={14} />
-                    </button>
-                    </>
-                    )}
+                    </button>}
                     {!v.inUse && (
                       <button type="button"
                         onClick={() => setPendingDelete(v.name)}
@@ -270,7 +265,7 @@ export function Volumes() {
           <VolumeBackupsPanel volumeName={snapshotting} />
         </div>
       )}
-      {browsing && <VolumeBrowser volume={browsing} onClose={() => setBrowsing(null)} />}
+      {browsing && <VolumeBrowser volume={browsing.name} serverId={browsing.serverId} onClose={() => setBrowsing(null)} />}
 
       <p className="mt-3 text-xs text-slate-600">
         Deleting a database keeps its volume (marked <span className="text-amber-400">retained</span>) so data survives — recreating the same database reuses it. Remove a volume here only to free disk. <Link to="/backups" className="text-indigo-400 hover:underline">Backups</Link>.

@@ -1153,7 +1153,7 @@ describe('service', () => {
       expect(ok(metricQuery, {})?.minutes).toBe(60);
       expect(ok(metricQuery, { minutes: '10' })?.minutes).toBe(10);
       expect(ok(metricQuery, { minutes: '0' })?.minutes).toBe(60);
-      expect(ok(metricQuery, { minutes: '99999' })?.minutes).toBe(1440);
+      expect(ok(metricQuery, { minutes: '999999' })?.minutes).toBe(129600);
       expect(ok(metricQuery, { minutes: 'abc' })?.minutes).toBe(60);
     });
   });

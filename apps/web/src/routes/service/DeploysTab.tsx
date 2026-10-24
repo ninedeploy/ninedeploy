@@ -302,6 +302,7 @@ function PromoteCard({
   const candidates = (candidatesQ.data ?? []).filter(
     (s) => s.id !== serviceId && !!s.repoUrl && s.repoUrl === repoUrl,
   );
+  const swarmTarget = candidates.find(s => s.id === confirmTarget?.target)?.orchestrator === 'swarm';
 
   const promote = useMutation({
     mutationFn: ({ target, sourceDeploymentId }: { target: number; sourceDeploymentId?: number }) => sourceDeploymentId != null
@@ -326,8 +327,9 @@ function PromoteCard({
       message={<div className="space-y-3">
         <p>Run the recorded image on {candidates.find(s => s.id === confirmTarget?.target)?.name ?? 'the target'}.</p>
         <p className="break-all font-mono text-xs text-slate-400">{confirmTarget?.imageId}</p>
-        <p>Target runtime environment, volumes, ports and health checks apply. Build-time values remain baked into the image.</p>
+        <p>{swarmTarget ? 'Target runtime environment, replica count, port and Swarm healthcheck apply.' : 'Target runtime environment, volumes, ports and health checks apply.'} Build-time values remain baked into the image.</p>
         <p>Required CI and lane approval still apply. No source checkout or build will run. The image is transferred to a node or restored from its pinned registry digest when needed.</p>
+        {swarmTarget ? <p>Swarm rolls the same image across its replicas. Command or image healthchecks gate the native update; HTTP/TCP readiness is not available for Swarm.</p> : <p>Configured additional nodes receive the same image. Each target must pass its health and routing checks; a failed target keeps its previous release and is reported separately.</p>}
       </div>}
       confirmLabel="Promote artifact" confirmDisabled={promote.isPending} onClose={() => setConfirmTarget(null)} onConfirm={() => confirmTarget != null && promote.mutate(confirmTarget)} />
     <Card>
@@ -339,7 +341,7 @@ function PromoteCard({
           <div>
             <div className="text-sm font-medium text-slate-200">{artifactMode ? 'Promote this artifact' : 'Promote this commit'}</div>
             <div className="mt-0.5 text-[11px] text-slate-500">
-              {artifactMode ? 'Run the same image without rebuilding on the panel or one node. Host hooks and multi-node fan-out are not supported.' : <>Re-deploy another service at <span className="font-mono">{running.commitSha?.slice(0, 7)}</span> — the staging → production hop.</>}
+              {artifactMode ? 'Run the same image without rebuilding on the primary, configured additional nodes or Swarm replicas. Host hooks are not supported.' : <>Re-deploy another service at <span className="font-mono">{running.commitSha?.slice(0, 7)}</span> — the staging → production hop.</>}
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { relations, sql } from 'drizzle-orm';
-import { type AnySQLiteColumn, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { type AnySQLiteColumn, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /**
  * NineDeploy — database schema (single source of truth).
@@ -1611,6 +1611,24 @@ export const metrics = sqliteTable(
   }),
 );
 
+export const metricRollups = sqliteTable(
+  'metric_rollups',
+  {
+    serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    bucketSeconds: integer('bucket_seconds').notNull(),
+    ts: ts('ts'),
+    sum: real('sum').notNull(),
+    samples: integer('samples').notNull(),
+    min: real('min').notNull(),
+    max: real('max').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.serviceId, t.kind, t.bucketSeconds, t.ts] }),
+    timeIdx: index('metric_rollups_ts_idx').on(t.ts),
+  }),
+);
+
 export const auditLog = sqliteTable(
   'audit_log',
   {
@@ -1753,6 +1771,104 @@ export const serviceTargets = sqliteTable(
 
 export type ServiceTarget = typeof serviceTargets.$inferSelect;
 
+/** Durable fan-out work; target deletion does not erase an unresolved generation. */
+export const fanoutTransitions = sqliteTable('fanout_transitions', {
+  id: id(),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  serverId: integer('server_id').notNull().references(() => servers.id, { onDelete: 'cascade' }),
+  targetId: integer('target_id').notNull(),
+  deploymentId: integer('deployment_id').notNull(),
+  primaryRuntimeId: text('primary_runtime_id').notNull(),
+  previousRuntimeId: text('previous_runtime_id'),
+  candidateRuntimeId: text('candidate_runtime_id').notNull(),
+  previousContainerId: text('previous_container_id'),
+  candidateContainerId: text('candidate_container_id'),
+  desiredRuntimeId: text('desired_runtime_id'),
+  port: integer('port').notNull(),
+  healthPath: text('health_path').notNull().default('/'),
+  healthCheck: text('health_check'),
+  phase: text('phase', { enum: ['preparing', 'routing', 'retiring', 'retained', 'blocked'] }).notNull().default('preparing'),
+  reason: text('reason'),
+  ownerToken: text('owner_token'),
+  leaseUntil: integer('lease_until', { mode: 'timestamp' }),
+  nextAttemptAt: ts('next_attempt_at'),
+  attempts: integer('attempts').notNull().default(0),
+  createdAt: ts('created_at'),
+  updatedAt: tsUpdatable('updated_at'),
+}, t => ({
+  targetIdx: uniqueIndex('fanout_transition_target_idx').on(t.serviceId, t.serverId),
+  retryIdx: index('fanout_transition_retry_idx').on(t.nextAttemptAt, t.leaseUntil),
+}));
+export type FanoutTransition = typeof fanoutTransitions.$inferSelect;
+
+export interface PrimaryContainerIdentity {
+  name: string;
+  id: string | null;
+  observed: boolean;
+}
+export interface PrimaryRuntimeSnapshot {
+  runtimeId: string;
+  port: number | null;
+  healthPath: string;
+  healthCheck: string | null;
+  replicas: number;
+  commitSha: string | null;
+  containers: PrimaryContainerIdentity[];
+  /** Stopped autoscale capacity: retained with the selected generation, never readiness backends. */
+  spares?: PrimaryContainerIdentity[];
+  /** Encrypted native service provenance and spec fingerprints; contains no secret-bearing Engine spec. */
+  native?: string;
+}
+export const primaryTransitions = sqliteTable('primary_transitions', {
+  id: id(),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  serverId: integer('server_id').references(() => servers.id, { onDelete: 'cascade' }),
+  deploymentId: integer('deployment_id').notNull(),
+  previous: text('previous', { mode: 'json' }).$type<PrimaryRuntimeSnapshot>(),
+  candidate: text('candidate', { mode: 'json' }).$type<PrimaryRuntimeSnapshot>().notNull(),
+  phase: text('phase', { enum: ['ready', 'routing', 'retiring', 'retained'] }).notNull().default('ready'),
+  desiredRuntimeId: text('desired_runtime_id'),
+  routingTouched: integer('routing_touched', { mode: 'boolean' }).notNull().default(false),
+  interrupted: integer('interrupted', { mode: 'boolean' }).notNull().default(false),
+  finalizeSnapshot: text('finalize_snapshot'),
+  imageDigest: text('image_digest'),
+  reason: text('reason'),
+  ownerToken: text('owner_token'),
+  leaseUntil: integer('lease_until', { mode: 'timestamp' }),
+  nextAttemptAt: ts('next_attempt_at'),
+  attempts: integer('attempts').notNull().default(0),
+  createdAt: ts('created_at'),
+  updatedAt: tsUpdatable('updated_at'),
+}, t => ({
+  serviceIdx: uniqueIndex('primary_transition_service_idx').on(t.serviceId),
+  retryIdx: index('primary_transition_retry_idx').on(t.nextAttemptAt, t.leaseUntil),
+}));
+export type PrimaryTransition = typeof primaryTransitions.$inferSelect;
+
+/** Single managed Swarm service update. Fingerprints and recovery metadata are encrypted together. */
+export const swarmTransitions = sqliteTable('swarm_transitions', {
+  id: id(),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  deploymentId: integer('deployment_id').notNull(),
+  managerNodeId: text('manager_node_id').notNull(),
+  runtimeId: text('runtime_id').notNull(),
+  payloadEncrypted: text('payload_encrypted').notNull(),
+  phase: text('phase', { enum: ['prepared', 'submitted', 'ready', 'routing', 'retained'] }).notNull().default('prepared'),
+  interrupted: integer('interrupted', { mode: 'boolean' }).notNull().default(false),
+  finalizeSnapshot: text('finalize_snapshot'),
+  reason: text('reason'),
+  ownerToken: text('owner_token'),
+  leaseUntil: integer('lease_until', { mode: 'timestamp' }),
+  nextAttemptAt: ts('next_attempt_at'),
+  attempts: integer('attempts').notNull().default(0),
+  createdAt: ts('created_at'),
+  updatedAt: tsUpdatable('updated_at'),
+}, t => ({
+  serviceIdx: uniqueIndex('swarm_transition_service_idx').on(t.serviceId),
+  retryIdx: index('swarm_transition_retry_idx').on(t.nextAttemptAt, t.leaseUntil),
+}));
+export type SwarmTransition = typeof swarmTransitions.$inferSelect;
+
 export const settings = sqliteTable(
   'settings',
   {
@@ -1795,6 +1911,9 @@ export const databases = sqliteTable(
     // Web Studio (GUI): Adminer / Redis Commander / pgweb container port & status
     webGuiEnabled: integer('web_gui_enabled', { mode: 'boolean' }).notNull().default(false),
     webGuiPort: integer('web_gui_port'),
+    // Node-only lifecycle receipt and immutable identities, validated on use.
+    // No credentials; node Studios never reuse the panel-host port field.
+    nodeStudioIdentity: text('node_studio_identity'),
     // Installed extensions (e.g. ['pgvector', 'postgis'] for PostgreSQL)
     extensions: text('extensions', { mode: 'json' })
       .$type<string[]>()
@@ -2324,6 +2443,47 @@ export const logDrains = sqliteTable(
   },
   (t) => ({
     serviceIdx: index('log_drains_service_idx').on(t.serviceId),
+  }),
+);
+
+export const logDrainCursors = sqliteTable(
+  'log_drain_cursors',
+  {
+    drainId: integer('drain_id').notNull().references(() => logDrains.id, { onDelete: 'cascade' }),
+    serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+    runtimeKey: text('runtime_key').notNull(),
+    binding: text('binding').notNull(),
+    lastTimestamp: text('last_timestamp').notNull(),
+    boundaryCount: integer('boundary_count').notNull().default(-1),
+    pausedReason: text('paused_reason'),
+    updatedAt: tsUpdatable('updated_at'),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.drainId, t.runtimeKey, t.binding] }),
+    timeIdx: index('log_drain_cursors_updated_idx').on(t.updatedAt),
+  }),
+);
+
+/** Captured payloads contain raw application logs, so encrypt them with the normal rotating keyring. */
+export const logDrainBatches = sqliteTable(
+  'log_drain_batches',
+  {
+    id: id(),
+    drainId: integer('drain_id').notNull().references(() => logDrains.id, { onDelete: 'cascade' }),
+    serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+    runtimeKey: text('runtime_key').notNull(),
+    binding: text('binding').notNull(),
+    payloadEncrypted: text('payload_encrypted').notNull(),
+    entryCount: integer('entry_count').notNull(),
+    payloadBytes: integer('payload_bytes').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: ts('next_attempt_at'),
+    lastError: text('last_error'),
+    createdAt: ts('created_at'),
+  },
+  (t) => ({
+    drainTimeIdx: index('log_drain_batches_drain_time_idx').on(t.drainId, t.nextAttemptAt, t.id),
+    serviceIdx: index('log_drain_batches_service_idx').on(t.serviceId),
   }),
 );
 

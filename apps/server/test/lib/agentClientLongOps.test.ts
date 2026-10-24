@@ -28,6 +28,7 @@ const SHARED = cryptoReal.sha256('raw-token');
 let reply: (op: string) => { status?: number; headers?: Record<string, string>; result?: { exitCode: number; lines: string[] } } =
   () => ({ result: { exitCode: 0, lines: [] } });
 const seen: string[] = [];
+const envelopes: string[] = [];
 
 let server: Server;
 let port = 0;
@@ -46,6 +47,7 @@ beforeAll(async () => {
     req.on('end', () => {
       const request = openSealed<{ op: string; nonce: string }>(SHARED, (JSON.parse(body) as { sealed: unknown }).sealed);
       seen.push(request.op);
+      envelopes.push(body);
       const r = reply(request.op);
       res.statusCode = r.status ?? 200;
       for (const [k, v] of Object.entries(r.headers ?? {})) res.setHeader(k, v);
@@ -63,6 +65,7 @@ afterAll(async () => {
 
 afterEach(() => {
   seen.length = 0;
+  envelopes.length = 0;
   reply = () => ({ result: { exitCode: 0, lines: [] } });
   _resetSealedSupportCache();
   vi.restoreAllMocks();
@@ -76,6 +79,12 @@ const db = () =>
   });
 
 describe('r526: long agent operations', () => {
+  it('honors a real HTTP Retry-After response on the long transport without changing the request envelope', async () => {
+    let attempts = 0;
+    reply = () => ++attempts === 1 ? { status: 429, headers: { 'retry-after': '1' } } : { result: { exitCode: 0, lines: ['built'] } };
+    await expect(agentOp(db(), 1, 'docker.build', {}, () => {}, { timeoutMs: 5000 })).resolves.toEqual({ exitCode: 0, lines: ['built'] });
+    expect(attempts).toBe(2); expect(envelopes).toHaveLength(2); expect(envelopes[0]).toBe(envelopes[1]);
+  });
   it('budgets build/bring-up ops like the panel host does, on both sides', () => {
     for (const op of ['docker.build', 'docker.composeUp', 'docker.composePull']) {
       expect(agentChildTimeoutMs(op)).toBe(30 * 60 * 1000);

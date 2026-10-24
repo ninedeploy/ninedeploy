@@ -11,6 +11,8 @@ const engineMocks = vi.hoisted(() => ({
   inspectContainer: vi.fn(),
   getContainerComposeManifest: vi.fn(),
 }));
+const nodeTools = vi.hoisted(() => ({ run: vi.fn() }));
+vi.mock('../src/lib/nodeContainerTools.js', () => ({ nodeContainerTool: nodeTools.run }));
 
 vi.mock('../src/engine/containerFiles.js', async () => {
   const actual = await vi.importActual<typeof import('../src/engine/containerFiles.js')>(
@@ -23,6 +25,66 @@ vi.mock('../src/engine/containerFiles.js', async () => {
 });
 
 describe('containerRoutes', () => {
+  it('refuses an ignored host query instead of inspecting the wrong panel container', async () => {
+    engineMocks.inspectContainer.mockResolvedValue({ id: 'local-container' });
+    nodeTools.run.mockResolvedValue({ id: 'node-container' });
+    const app = await buildTestApp({ db: createFakeDb() }); await app.register(containerRoutes);
+    try {
+      const response = await app.inject({ method: 'GET', url: '/same-name/inspect?serverId=7', headers: asUser({ isOperator: true }) });
+      expect(response.statusCode).toBe(400);
+      expect(engineMocks.inspectContainer).not.toHaveBeenCalled();
+      expect(nodeTools.run).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+  it.each([
+    { method: 'GET', suffix: '/inspect', action: 'inspect', result: { id: 'node-container' } },
+    { method: 'GET', suffix: '/compose', action: 'compose', result: { yaml: 'fixture' } },
+    { method: 'GET', suffix: '/files?path=/tmp', action: 'list', result: [] },
+    { method: 'GET', suffix: '/files/content?path=/tmp/file', action: 'read', result: { content: 'eA==', encoding: 'base64' } },
+    { method: 'PUT', suffix: '/files', action: 'write', body: { path: '/tmp/file', contentBase64: 'eA==' }, result: { ok: true } },
+    { method: 'POST', suffix: '/files/dir', action: 'mkdir', body: { path: '/tmp/new' }, result: { ok: true } },
+    { method: 'DELETE', suffix: '/files?path=/tmp/file', action: 'delete', result: { ok: true } },
+  ] as const)('routes $action through a node-specific URI with no local fallback', async fixture => {
+    nodeTools.run.mockResolvedValue(fixture.result);
+    const app = await buildTestApp({ db: createFakeDb() }); await app.register(containerRoutes, { prefix: '/servers/:serverId/containers', nodeRoute: true });
+    try {
+      const response = await app.inject({ method: fixture.method, url: '/servers/7/containers/same-name' + fixture.suffix, ...('body' in fixture ? { payload: fixture.body } : {}), headers: asUser({ isOperator: true }) });
+      expect(response.statusCode).toBe(200);
+      expect(nodeTools.run).toHaveBeenCalledWith(app.db, 7, 'same-name', fixture.action, ...(['inspect', 'compose'].includes(fixture.action) ? [] : [expect.objectContaining({ path: expect.any(String) })]));
+      expect(Object.values(engineMocks).every(mock => mock.mock.calls.length === 0)).toBe(true);
+    } finally { await app.close(); }
+  });
+  it.each(['0', '1e0', 'abc'])('refuses invalid node %s without local or remote execution', async id => {
+    const app = await buildTestApp({ db: createFakeDb() }); await app.register(containerRoutes, { prefix: '/servers/:serverId/containers', nodeRoute: true });
+    try {
+      expect((await app.inject({ url: `/servers/${id}/containers/same-name/inspect`, headers: asUser({ isOperator: true }) })).statusCode).toBe(400);
+      expect(nodeTools.run).not.toHaveBeenCalled(); expect(engineMocks.inspectContainer).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+  it('requires an instance operator before accessing any node container', async () => {
+    const app = await buildTestApp({ db: createFakeDb() }); await app.register(containerRoutes, { prefix: '/servers/:serverId/containers', nodeRoute: true });
+    try {
+      expect((await app.inject({ url: '/servers/7/containers/same-name/inspect', headers: asUser({ role: 'admin', isOperator: false }) })).statusCode).toBe(403);
+      expect(nodeTools.run).not.toHaveBeenCalled(); expect(engineMocks.inspectContainer).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+  it('refuses an oversized node write before an agent request or a local file change', async () => {
+    const app = await buildTestApp({ db: createFakeDb() }); await app.register(containerRoutes, { prefix: '/servers/:serverId/containers', nodeRoute: true });
+    try {
+      const response = await app.inject({ method: 'PUT', url: '/servers/7/containers/same-name/files', payload: { path: '/tmp/file', contentBase64: Buffer.alloc(1024 * 1024 + 1).toString('base64') }, headers: asUser({ isOperator: true }) });
+      expect(response.statusCode).toBe(413); expect(response.json().error.code).toBe('file_too_large');
+      expect(nodeTools.run).not.toHaveBeenCalled(); expect(engineMocks.writeContainerFile).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+  it('canonicalizes wrapped base64 before the bounded sealed node request', async () => {
+    const app = await buildTestApp({ db: createFakeDb() }); await app.register(containerRoutes, { prefix: '/servers/:serverId/containers', nodeRoute: true });
+    nodeTools.run.mockResolvedValue({ ok: true });
+    try {
+      const response = await app.inject({ method: 'PUT', url: '/servers/7/containers/same-name/files', payload: { path: '/tmp/file', contentBase64: 'eA==\n' }, headers: asUser({ isOperator: true }) });
+      expect(response.statusCode).toBe(200);
+      expect(nodeTools.run).toHaveBeenCalledWith(app.db, 7, 'same-name', 'write', { path: '/tmp/file', contentBase64: 'eA==' });
+    } finally { await app.close(); }
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });

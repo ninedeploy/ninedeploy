@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { volumeFilesList, volumeFileRead, volumeFileWrite, volumeFileMkdir, volumeFileDelete, type VolumeFileOptions } from './commands/volumeFiles.js';
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { getClient } from './client.js';
@@ -112,8 +113,9 @@ import {
   configPresetListAction, configPresetRegisterAction, configPresetRemoveAction,
 } from './commands/configPresets.js';
 import {
-  metricsFlushAction, metricsShowAction,
+  metricsFlushAction, metricsShowAction, resourceMetricsSettingsAction, resourceMetricsConfigureAction,
 } from './commands/metrics.js';
+import { logDrainQueueAction, logDrainRetryAction, logDrainDiscardAction } from './commands/logDrains.js';
 import {
   buildCacheStatsAction,
 } from './commands/buildCache.js';
@@ -594,9 +596,25 @@ configPresetsCmd.command('apply <id>')
 configPresetsCmd.command('remove <id>').description('Unregister a preset (does NOT undo the live apply)').action((id: string) => configPresetRemoveAction(getClient(), id));
 
 // ── Metrics (G-09) ────────────────────────────────────────────────────────
-const metricsCmd = program.command('metrics').description('Metric history plugin — archive kernel events to a pluggable backend (G-09)');
+const metricsCmd = program.command('metrics').description('Resource monitoring and kernel event history');
+metricsCmd.command('settings').description('Resource retention, Prometheus and collector settings').action(() => resourceMetricsSettingsAction(getClient()));
+metricsCmd.command('configure').description('Update resource monitoring settings')
+  .option('--retention-days <days>', 'Service history retention, 1–90 days')
+  .option('--prometheus <on|off>', 'Enable or disable authenticated Prometheus scraping')
+  .option('--otlp-endpoint <url>', 'OTLP/HTTP JSON metrics endpoint, empty disables export')
+  .option('--otlp-authorization-env <name>', 'Read collector Authorization from this environment variable')
+  .option('--clear-otlp-authorization', 'Remove the saved collector credential')
+  .option('--log-queue-mb <mb>', 'Encrypted log payload limit per destination, 1–256 MiB')
+  .action((opts) => resourceMetricsConfigureAction(getClient(), opts));
 metricsCmd.command('show').description('Show the active backend, events, and last flush marker').action(() => metricsShowAction(getClient()));
 metricsCmd.command('flush').description('Run the built-in backend retention sweep').action(() => metricsFlushAction(getClient()));
+
+const logDrainsCmd = program.command('log-drains').description('Inspect and recover durable log delivery');
+logDrainsCmd.command('queue <id>').description('Show pending, blocked and paused log delivery').action((id: string) => logDrainQueueAction(getClient(), id));
+logDrainsCmd.command('retry <id>').description('Schedule pending logs for the next delivery cycle').action((id: string) => logDrainRetryAction(getClient(), id));
+logDrainsCmd.command('discard <id>').description('Permanently discard pending logs')
+  .option('--yes', 'Confirm permanent removal of queued logs')
+  .action((id: string, opts) => logDrainDiscardAction(getClient(), id, opts));
 
 // ── Build Cache (G-01) ────────────────────────────────────────────────────
 const buildCacheCmd = program.command('build-cache').description('Build cache plugin — per-backend LRU stats (G-01)');
@@ -676,6 +694,23 @@ ssoCmd.command('remove <id>').description('Remove a provider by id').action((id:
 
 // ── Volumes ────────────────────────────────────────────────────────────────
 const volumesCmd = program.command('volumes').description('Manage Docker volumes');
+
+volumesCmd.command('files <name> [path]').description('List files inside a managed volume')
+  .option('--server <id>', 'Read this node instead of the panel host').option('--json', 'Print raw JSON')
+  .action((name:string,path:string|undefined,opts:VolumeFileOptions)=>volumeFilesList(getClient(),name,path??'',opts));
+volumesCmd.command('read <name> <path>').description('Read exact file bytes from a managed volume')
+  .option('--server <id>', 'Read this node instead of the panel host').option('--output <file>', 'Save to a local file instead of stdout').option('--force', 'Overwrite an existing output file')
+  .action((name:string,path:string,opts:VolumeFileOptions)=>volumeFileRead(getClient(),name,path,opts));
+volumesCmd.command('write <name> <path>').description('Write a local file into a managed volume (maximum 1 MiB)')
+  .requiredOption('--file <file>', 'Local input file').option('--server <id>', 'Write this node instead of the panel host')
+  .action((name:string,path:string,opts:VolumeFileOptions)=>volumeFileWrite(getClient(),name,path,opts));
+volumesCmd.command('mkdir <name> <path>').description('Create a directory inside a managed volume')
+  .option('--server <id>', 'Use this node instead of the panel host')
+  .action((name:string,path:string,opts:VolumeFileOptions)=>volumeFileMkdir(getClient(),name,path,opts));
+volumesCmd.command('delete-file <name> <path>').description('Delete a file or directory inside a volume, with confirmation')
+  .option('--server <id>', 'Use this node instead of the panel host').option('--yes', 'Confirm this exact path without prompting')
+  .action((name:string,path:string,opts:VolumeFileOptions)=>volumeFileDelete(getClient(),name,path,opts));
+
 
 volumesCmd.command('list')
   .description('List all volumes')

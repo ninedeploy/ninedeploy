@@ -20,7 +20,7 @@ import { useState } from 'react';
 import { api } from '../lib/api.js';
 import { formatBytes } from '../lib/format.js';
 import { useToast } from './Toast.js';
-import { Button, Card, Input, Skeleton, cn } from './ui.js';
+import { Button, Card, ErrorCard, Input, Skeleton, cn } from './ui.js';
 import { getFileCategory, type FileCategory } from './VolumeBrowser.js';
 
 function downloadBase64(filename: string, base64: string, category: FileCategory) {
@@ -48,31 +48,40 @@ interface OpenFileState {
   dirty: boolean;
 }
 
-export function ContainerFileBrowser({
-  container,
-  initialPath = '/',
-}: {
+interface ContainerFileBrowserProps {
   container: string;
   initialPath?: string;
-}) {
+  serverId?: number | null;
+}
+
+export function ContainerFileBrowser(props: ContainerFileBrowserProps) {
+  return <ContainerFileBrowserState key={`${props.serverId ?? 'local'}:${props.container}`} {...props} />;
+}
+
+function ContainerFileBrowserState({
+  container,
+  initialPath = '/',
+  serverId,
+}: ContainerFileBrowserProps) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [cwd, setCwd] = useState(initialPath.startsWith('/') ? initialPath : `/${initialPath}`);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<OpenFileState | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const hostOptions: [] | [{ serverId: number }] = serverId == null ? [] : [{ serverId }];
 
   const dir = useQuery({
-    queryKey: ['container-files', container, cwd],
-    queryFn: () => api.containers.listFiles(container, cwd),
+    queryKey: ['container-files', serverId ?? null, container, cwd],
+    queryFn: () => api.containers.listFiles(container, cwd, ...hostOptions),
   });
 
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['container-files', container] });
+    qc.invalidateQueries({ queryKey: ['container-files', serverId ?? null, container] });
   };
 
   const del = useMutation({
-    mutationFn: (path: string) => api.containers.deleteFile(container, path),
+    mutationFn: (path: string) => api.containers.deleteFile(container, path, ...hostOptions),
     onSuccess: (_r, path) => {
       setEditing(null);
       refresh();
@@ -82,7 +91,7 @@ export function ContainerFileBrowser({
   });
 
   const mkdir = useMutation({
-    mutationFn: (path: string) => api.containers.mkdir(container, { path }),
+    mutationFn: (path: string) => api.containers.mkdir(container, { path }, ...hostOptions),
     onSuccess: () => {
       refresh();
       toast('Folder created', 'success');
@@ -91,7 +100,7 @@ export function ContainerFileBrowser({
   });
 
   const open = useMutation({
-    mutationFn: (path: string) => api.containers.readFile(container, path),
+    mutationFn: (path: string) => api.containers.readFile(container, path, ...hostOptions),
     onSuccess: (res, path) => {
       const category = getFileCategory(path);
       let text = '';
@@ -121,7 +130,7 @@ export function ContainerFileBrowser({
       api.containers.writeFile(container, {
         path: v.path,
         contentBase64: btoa(unescape(encodeURIComponent(v.text))),
-      }),
+      }, ...hostOptions),
     onSuccess: (_res, v) => {
       setEditing((cur) => (cur && cur.path === v.path && cur.text === v.text ? { ...cur, dirty: false } : cur));
       refresh();
@@ -137,7 +146,7 @@ export function ContainerFileBrowser({
       const base64 = res.split(',')[1] || '';
       const fullPath = cwd === '/' ? `/${file.name}` : `${cwd}/${file.name}`;
       api.containers
-        .writeFile(container, { path: fullPath, contentBase64: base64 })
+        .writeFile(container, { path: fullPath, contentBase64: base64 }, ...hostOptions)
         .then(() => {
           refresh();
           toast(`Uploaded ${file.name}`, 'success');
@@ -159,6 +168,7 @@ export function ContainerFileBrowser({
         <div className="flex items-center gap-2 text-xs font-mono text-slate-300">
           <Box size={14} className="text-indigo-400" />
           <span className="font-semibold text-slate-200">{container}</span>
+          {serverId != null && <span className="text-slate-400">Node #{serverId}</span>}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -335,9 +345,7 @@ export function ContainerFileBrowser({
             ))}
           </div>
         ) : dir.isError ? (
-          <div className="grid flex-1 place-items-center text-sm text-slate-500">
-            Container is not running or file system is inaccessible.
-          </div>
+          <ErrorCard title="Could not load container files" error={dir.error} onRetry={() => void dir.refetch()} />
         ) : entries.length === 0 ? (
           <div className="grid flex-1 place-items-center text-sm text-slate-500">
             {query ? 'No matching files found' : 'Empty directory (drop files here to upload)'}

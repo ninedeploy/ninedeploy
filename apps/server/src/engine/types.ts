@@ -1,11 +1,17 @@
 import type { BuildConfig, Service, ServiceVolumeAttachment } from '@ninedeploy/db';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
-import type { IBuildCache } from '../kernel/types.js';
+import type { IBuildCache, StackSpec } from '../kernel/types.js';
 import type { ComposeRelease } from '../lib/composeRelease.js';
 
 export interface BuildContext {
   /** Normal source builds only: observe the actual node image for a retained artifact. */
   recordDockerArtifact?: boolean;
+  /** Swarm updates in place: retain its source image before submitting any new spec. */
+  captureSwarmArtifact?: (image: { imageId: string; builtWithNixpacks: boolean; builtStatic: boolean }) => Promise<void>;
+  /** Artifact runs prepare every ready/active managed Swarm member before changing the service. */
+  requireSwarmMembers?: boolean;
+  /** Pipeline-owned journal; the builder submits only its native, revision-fenced operation. */
+  prepareSwarmTransition?: (stack: StackSpec, runtime: DeployRuntime, registryAuth?: { username: string; password: string; server?: string }) => Promise<{ submit(): Promise<void> }>;
   /** Trusted encrypted release input, restored without pulling or rebuilding. */
   restoreComposeRelease?: ComposeRelease;
   deploymentId: number;

@@ -1,4 +1,5 @@
-import { metrics, type DB, type Service } from '@ninedeploy/db';
+import type { DB, Service } from '@ninedeploy/db';
+import { persistServiceMetrics } from './serviceMetricHistory.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { agentOp } from './agentClient.js';
 import { evaluateAlerts } from './alerting.js';
@@ -6,6 +7,8 @@ import type { ContainerStat } from './stats.js';
 
 /** Host identity is part of the key: two daemons can own the same name. */
 export type NodeContainerStats = Map<number, Map<string, ContainerStat>>;
+export type NodeMetricSamples = Map<number, { sampledAt: number | null; error: boolean }>;
+export const NODE_METRIC_MAX_AGE_MS = 90_000;
 const NODE_STATS_TIMEOUT_MS = 20_000;
 
 /** Parse only valid samples. Unknown/malformed metrics never become zeroes. */
@@ -39,9 +42,11 @@ export function nodeServiceStat(service: Pick<Service, 'runtimeId' | 'runtimeRep
 }
 
 /** Runs separately from local collection, with bounded concurrency and cancellation. */
-export async function collectNodeMetrics(db: DB, services: readonly Service[], cache: NodeContainerStats, signal: AbortSignal, onError: (err: unknown) => void): Promise<void> {
-  const ids = [...new Set(services.flatMap((s) => s.serverId == null ? [] : [s.serverId]))];
+export async function collectNodeMetrics(db: DB, services: readonly Service[], cache: NodeContainerStats, signal: AbortSignal, onError: (err: unknown) => void,
+  options: { serverIds?: readonly number[]; samples?: NodeMetricSamples } = {}): Promise<void> {
+  const ids = [...new Set([...services.flatMap((s) => s.serverId == null ? [] : [s.serverId]), ...(options.serverIds ?? [])])];
   for (const id of cache.keys()) if (!ids.includes(id)) cache.delete(id);
+  for (const id of options.samples?.keys() ?? []) if (!ids.includes(id)) options.samples!.delete(id);
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(4, ids.length) }, async () => {
     while (!signal.aborted && next < ids.length) {
@@ -52,6 +57,7 @@ export async function collectNodeMetrics(db: DB, services: readonly Service[], c
         if (response.exitCode !== 0) throw new Error(`Node #${id} stats exited with ${response.exitCode}`);
         const containers = parseNodeContainerStats(response.lines);
         cache.set(id, containers);
+        options.samples?.set(id, { sampledAt: Date.now(), error: false });
         const now = new Date();
         const rows: Array<{ serviceId: number; kind: string; value: number; ts: Date }> = [];
         for (const svc of services) {
@@ -62,11 +68,12 @@ export async function collectNodeMetrics(db: DB, services: readonly Service[], c
           rows.push({ serviceId: svc.id, kind: 'memory', value: stat.memBytes, ts: now });
         }
         if (rows.length) {
-          await db.insert(metrics).values(rows);
+          await persistServiceMetrics(db, rows);
           await evaluateAlerts(db, rows.map((r) => ({ serviceId: r.serviceId, kind: r.kind, value: r.kind === 'memory' ? Math.round(r.value / (1024 * 1024)) : r.value / 100 })));
         }
       } catch (err) {
         cache.delete(id);
+        options.samples?.set(id, { sampledAt: null, error: true });
         if (!signal.aborted) onError(err);
       }
     }

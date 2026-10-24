@@ -408,7 +408,7 @@ export interface StackServiceSpec {
   /** Optional Docker labels — used by the local driver for Traefik routing. */
   labels: Record<string, string>;
   // ── 0.16 multi-node T7 (Swarm): optional, every other driver ignores them ──
-  /** Swarm placement constraints (`node.labels.nd.preload.<slug>!=0`). */
+  /** Swarm placement constraints, including a verified image's bounded preload slot. */
   constraints?: string[];
   /** The container command (argv, no shell), when the service sets one. */
   command?: string[];

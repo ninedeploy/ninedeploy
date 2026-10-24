@@ -8,7 +8,7 @@ const PROBE_IMAGE = 'busybox:1.36';
 const HTTP_PROBE = 'printf "GET %s HTTP/1.0\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n" "$1" | nc -w 3 127.0.0.1 "$2" | head -n 1';
 
 /** A fixed, bounded probe inside a workload network namespace. */
-export async function probeContainer(params: Params, onLine: (line: string) => void): Promise<number> {
+export async function probeContainer(params: Params, onLine: (line: string) => void, options: { timeoutMs?: number } = {}): Promise<number> {
   const name = validated(str(params, 'name'), RE_NAME, 'container name');
   if (name.length > 128) throw new Error('Invalid container name');
   const port = intOperand(params['port'], 1, 65535, 'probe port');
@@ -31,7 +31,7 @@ export async function probeContainer(params: Params, onLine: (line: string) => v
     ], (line) => {
       const match = /^HTTP\/1\.[01] (\d{3})(?:\s|$)/.exec(line);
       if (match && status === undefined) status = Number(match[1]);
-    }, { timeoutMs: 10_000 });
+    }, { timeoutMs: Math.max(1, Math.min(10_000, options.timeoutMs ?? 10_000)) });
   } finally {
     // A killed docker CLI can leave its helper alive on the daemon.
     await spawnValidated('docker', ['rm', '-f', helper], () => undefined, { timeoutMs: 2000 }).catch(() => undefined);

@@ -2,6 +2,9 @@ import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   auditLog,
+  metrics,
+  metricRollups,
+  logDrainCursors,
   backupDrills,
   cacheRegistryBlobs,
   deployments,
@@ -65,10 +68,14 @@ function makeDb(expiredDeployments: Array<{ id: number }> = []) {
     deleted.push({ table });
     return { where: vi.fn(async () => undefined) };
   });
+  const selected: unknown[] = [];
   const select = vi.fn(() => ({
-    from: vi.fn(() => ({ where: vi.fn(async () => expiredDeployments) })),
+    from: vi.fn((table: unknown) => {
+      selected.push(table);
+      return { where: vi.fn(() => Object.assign(Promise.resolve(expiredDeployments), { limit: vi.fn(async () => expiredDeployments) })) };
+    }),
   }));
-  return { db: { delete: del, select, query: { deployments: { findMany: vi.fn(async () => []) }, deploymentReleaseRecords: { findMany: vi.fn(async () => []) } } } as never, deleted };
+  return { selected, db: { delete: del, select, query: { configEntries: { findFirst: vi.fn(async () => undefined) }, deployments: { findMany: vi.fn(async () => []) }, deploymentReleaseRecords: { findMany: vi.fn(async () => []) } } } as never, deleted };
 }
 
 async function buildApp(db: ReturnType<typeof makeDb>['db'], kernel?: unknown) {
@@ -80,6 +87,17 @@ async function buildApp(db: ReturnType<typeof makeDb>['db'], kernel?: unknown) {
 }
 
 describe('housekeeping plugin', () => {
+  it('protects terminal deployment logs while their Swarm recovery journal is unresolved', async () => {
+    const { observabilityDb } = await import('../fixtures/observability.js');
+    const { swarmTransitions } = await import('@ninedeploy/db');
+    const { unsweepableDeploymentIds } = await import('../../src/plugins/housekeeping.js');
+    const f = await observabilityDb();
+    try {
+      await f.db.insert(deployments).values([{ id: 7, serviceId: 1, status: 'superseded' }, { id: 9, serviceId: 1, status: 'cancelled' }]);
+      await f.db.insert(swarmTransitions).values({ serviceId: 1, deploymentId: 9, managerNodeId: 'm'.repeat(25), runtimeId: 'nd-web_web', payloadEncrypted: 'opaque-fixture' });
+      expect(await unsweepableDeploymentIds(f.db)).toEqual(new Set([7, 9]));
+    } finally { f.close(); }
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     execMock.capture.mockReset().mockResolvedValue('');
@@ -94,6 +112,16 @@ describe('housekeeping plugin', () => {
   });
   afterEach(async () => {
     vi.useRealTimers();
+  });
+
+  it('sweeps resource history and retired log cursors through the actual retention helpers', async () => {
+    const { db, deleted, selected } = makeDb();
+    const app = await buildApp(db);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(deleted.map((entry) => entry.table)).toContain(metrics);
+    expect(deleted.map((entry) => entry.table)).toContain(metricRollups);
+    expect(selected).toContain(logDrainCursors);
+    await app.close();
   });
 
   it('prunes old logs and deletes stale audit/notification rows on each tick', async () => {

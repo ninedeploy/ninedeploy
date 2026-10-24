@@ -7,7 +7,7 @@ import { mockOf, renderWithProviders } from './helpers.js';
 /**
  * Multi-node, Volumes page: the host switcher lists a node's managed volumes
  * through its agent (`?serverId=`), deletes and creates there, and hides the
- * panel-host-only actions (file browser, snapshots, prune). With no node
+ * panel-host-only snapshot/prune actions; node file browsing uses its explicit host. With no node
  * registered the page is exactly the 0.15 inventory.
  */
 
@@ -40,6 +40,7 @@ const nodeVolumes = [{ name: 'nd-svc-api-data', sizeBytes: 2048, owner: null, in
 describe('Volumes — host switcher', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOf(api.volumes.listFiles).mockResolvedValue({path:'',entries:[]} as never);
     mockOf(api.servers.list).mockResolvedValue(NODES as never);
     mockOf(api.volumes.list).mockImplementation((async (opts?: { serverId?: number }) => (opts?.serverId ? nodeVolumes : panelVolumes)) as never);
     mockOf(api.system.resources).mockResolvedValue({ network: 'nd', containers: 1, volumes: 1, imagesSummary: null } as never);
@@ -57,8 +58,12 @@ describe('Volumes — host switcher', () => {
     fireEvent.change(host, { target: { value: '3' } });
     await waitFor(() => expect(api.volumes.list).toHaveBeenCalledWith({ serverId: 3 }));
     expect(await screen.findByText(/Volumes on/)).toHaveTextContent('Volumes on edge-1, through its agent.');
-    // Node volumes: no file browser, no snapshots, no prune.
-    expect(screen.queryByTitle('Browse files in this volume')).toBeNull();
+    // Node file browsing is explicit; snapshots and pruning remain panel-only.
+    fireEvent.click(screen.getByTitle('Browse files in this volume'));
+    expect(await screen.findByRole('dialog',{name:'Files in nd-svc-api-data'})).toHaveTextContent('Node #3');
+    await waitFor(()=>expect(api.volumes.listFiles).toHaveBeenCalledWith('nd-svc-api-data','',{serverId:3}));
+    fireEvent.click(screen.getByLabelText('Close volume browser'));
+    await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.queryByLabelText(/Snapshots for/)).toBeNull();
     expect(screen.queryByRole('button', { name: /Prune retained/ })).toBeNull();
 

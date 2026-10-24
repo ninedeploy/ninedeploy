@@ -39,6 +39,8 @@ import { createCipheriv, createDecipheriv, hkdfSync } from 'node:crypto';
 export const FRAME_HKDF_INFO = 'ninedeploy-agent-terminal-v1';
 /** Multi-node: the stream channel's HKDF context string (never a terminal key). */
 export const STREAM_HKDF_INFO = 'ninedeploy-agent-stream-v1';
+/** Node Studio HTTP relays never reuse terminal or file-transfer keys. */
+export const STUDIO_HKDF_INFO = 'ninedeploy-agent-studio-v1';
 /** Salt length the agent generates per channel. */
 export const FRAME_SALT_BYTES = 32;
 
@@ -114,7 +116,7 @@ export class FrameCipherError extends Error {
 export function deriveFrameKey(sharedTokenHash: string, salt: Buffer, info: string = FRAME_HKDF_INFO): Buffer {
   if (!sharedTokenHash) throw new Error('Cannot derive a terminal key without the shared secret');
   if (salt.length !== FRAME_SALT_BYTES) throw new Error('Invalid terminal channel salt');
-  if (info !== FRAME_HKDF_INFO && info !== STREAM_HKDF_INFO) throw new Error('Unknown frame key domain');
+  if (info !== FRAME_HKDF_INFO && info !== STREAM_HKDF_INFO && info !== STUDIO_HKDF_INFO) throw new Error('Unknown frame key domain');
   return Buffer.from(hkdfSync('sha256', Buffer.from(sharedTokenHash, 'utf8'), salt, Buffer.from(info, 'utf8'), 32));
 }
 

@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { servers } from '@ninedeploy/db';
+import { domains, servers } from '@ninedeploy/db';
+import { ProxyRoutingUnconfirmed } from '../../src/lib/proxyRoutingAck.js';
 
 /**
  * r521: `writeDynamicConfig` refreshes every node's proxy and used to swallow
@@ -31,14 +32,14 @@ const { writeDynamicConfig } = await import('../../src/engine/proxy.js');
 afterAll(() => rmSync(base, { recursive: true, force: true }));
 
 /** Empty routing tables; `nodeIds` registered nodes. */
-const makeDb = (nodeIds: number[]) => ({
+const makeDb = (nodeIds: number[], service: { id: number; serverId: number; port: number | null } | null = null) => ({
   select: vi.fn(() => ({
     from: vi.fn((t: unknown) => {
-      const rows = t === servers ? nodeIds.map((id) => ({ id })) : [];
+      const rows = t === servers ? nodeIds.map((id) => ({ id })) : t === domains && service ? [{ serviceId: service.id, status: 'active' }] : [];
       return Object.assign(Promise.resolve(rows), { where: async () => rows });
     }),
   })),
-  query: { settings: { findFirst: async () => undefined } },
+  query: { settings: { findFirst: async () => undefined }, services: { findFirst: async () => service } },
 });
 
 /** Node `failing` answers its sync with an error; every other node is fine. */
@@ -53,6 +54,24 @@ describe('writeDynamicConfig node refresh (r521)', () => {
   beforeEach(() => {
     h.syncAllNodeProxies.mockReset();
     h.audit.mockClear();
+  });
+
+  it('preserves the unknown-routing error type required to retain both generations', async () => {
+    h.syncAllNodeProxies.mockResolvedValueOnce([{ serverId: 4, ok: false, routingUnconfirmed: true } as never]);
+    await expect(writeDynamicConfig(makeDb([4]) as never, { requireNode: 4 })).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+  });
+
+  it('requires loaded routing only for a routed service on the required node', async () => {
+    syncFails([]);
+    await writeDynamicConfig(makeDb([4], { id: 7, serverId: 4, port: 3000 }) as never, { requireNode: 4, confirmServiceId: 7 });
+    expect(h.syncAllNodeProxies).toHaveBeenLastCalledWith(expect.anything(), [4], undefined, { confirmNode: 4 });
+    await writeDynamicConfig(makeDb([4], { id: 7, serverId: 4, port: null }) as never, { requireNode: 4, confirmServiceId: 7 });
+    expect(h.syncAllNodeProxies).toHaveBeenLastCalledWith(expect.anything(), [4]);
+  });
+  it('confirms a fan-out generation even after its last domain was removed', async () => {
+    syncFails([]);
+    await writeDynamicConfig(makeDb([4]) as never, { requireNode: 4, confirmNodeRouting: true });
+    expect(h.syncAllNodeProxies).toHaveBeenLastCalledWith(expect.anything(), [4], undefined, { confirmNode: 4 });
   });
 
   it("throws when the REQUIRED node's proxy could not be updated", async () => {

@@ -1,5 +1,6 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { VolumeBrowser } from '../src/components/VolumeBrowser.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
@@ -8,6 +9,52 @@ vi.mock('../src/lib/api.js', async () => {
   // Must be './apiMock.js', not './helpers.js' — see the note in apiMock.ts.
   const { createFakeApiModule } = await import('./apiMock.js');
   return createFakeApiModule();
+});
+
+describe('node volume targeting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOf(api.volumes.listFiles).mockResolvedValue({ path: '', entries: [{ name: 'origin.txt', type: 'file', sizeBytes: 6, modifiedAt: null }] } as never);
+    mockOf(api.volumes.readFile).mockResolvedValue({ content: btoa('REMOTE'), encoding: 'base64' } as never);
+    mockOf(api.volumes.writeFile).mockResolvedValue({ ok: true } as never);
+  });
+  it('mounts the dialog outside the animated page stacking context', async () => {
+    const view=renderWithProviders(<VolumeBrowser volume="nd-svc-same" serverId={7} onClose={vi.fn()} />);
+    await screen.findByText('origin.txt');
+    const dialog=screen.getByRole('dialog');
+    expect(view.container.contains(dialog)).toBe(false);
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+  });
+  it('lists, reads and writes only through its explicit node', async () => {
+    renderWithProviders(<VolumeBrowser volume="nd-svc-same" serverId={7} onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByText('origin.txt'));
+    expect(await screen.findByRole('textbox', { name: 'File editor' })).toHaveValue('REMOTE');
+    expect(api.volumes.listFiles).toHaveBeenCalledWith('nd-svc-same', '', { serverId: 7 });
+    expect(api.volumes.readFile).toHaveBeenCalledWith('nd-svc-same', 'origin.txt', { serverId: 7 });
+    fireEvent.change(screen.getByRole('textbox', { name: 'File editor' }), { target: { value: 'REMOTE_CHANGED' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.volumes.writeFile).toHaveBeenCalledWith('nd-svc-same', { path: 'origin.txt', contentBase64: btoa('REMOTE_CHANGED') }, { serverId: 7 }));
+    expect(screen.getByText('Node #7')).toBeInTheDocument();
+  });
+  it('clears the editor when the same volume name changes hosts', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const component = (serverId: number) => <QueryClientProvider client={queryClient}><VolumeBrowser volume="nd-svc-same" serverId={serverId} onClose={vi.fn()} /></QueryClientProvider>;
+    const view = render(component(7));
+    fireEvent.click(await screen.findByText('origin.txt'));
+    expect(await screen.findByRole('textbox', { name: 'File editor' })).toHaveValue('REMOTE');
+    view.rerender(component(8));
+    await waitFor(() => expect(api.volumes.listFiles).toHaveBeenCalledWith('nd-svc-same', '', { serverId: 8 }));
+    expect(screen.queryByRole('textbox', { name: 'File editor' })).not.toBeInTheDocument();
+  });
+  it('shows an actual node refusal with retry instead of an empty directory', async () => {
+    mockOf(api.volumes.listFiles).mockRejectedValue(Error('Update the node agent for volume files'));
+    renderWithProviders(<VolumeBrowser volume="nd-svc-same" serverId={7} onClose={vi.fn()} />);
+    expect(await screen.findByText('Update the node agent for volume files')).toBeInTheDocument();
+    expect(screen.queryByText('Empty directory')).not.toBeInTheDocument();
+    mockOf(api.volumes.listFiles).mockResolvedValue({ path: '', entries: [] } as never);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Empty directory')).toBeInTheDocument();
+  });
 });
 
 const dir = {
@@ -174,7 +221,9 @@ describe('VolumeBrowser', () => {
 
     mockOf(api.volumes.listFiles).mockRejectedValue(new Error('docker down') as never);
     renderWithProviders(<VolumeBrowser volume="nd-svc-web-data" onClose={vi.fn()} />);
-    expect(await screen.findByText("Couldn't open the volume.")).toBeInTheDocument();
+    expect(await screen.findByText('Could not load volume files')).toBeInTheDocument();
+    expect(screen.getByText('docker down')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
   it('deletes a folder with the recursive warning', async () => {

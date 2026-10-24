@@ -221,7 +221,10 @@ interface TraefikTables {
  */
 async function getTraefikConfig(): Promise<TraefikTables & { custom: TraefikTables }> {
   const generated = existsSync(generatedConfigPath()) ? generatedConfigPath() : legacyDynamicPath();
-  return { ...(await parseGeneratedConfig(generated)), custom: parseCustomConfig(customConfigPath()) };
+  const tables = await parseGeneratedConfig(generated);
+  const internal = new Set(['nd_routing_ack', 'nd_routing_ack_tls', 'nd_routing_local', 'nd_routing_generation']);
+  return { ...tables, routers: tables.routers.filter(r => !internal.has(r.name)),
+    middlewares: tables.middlewares.filter(m => !internal.has(m.name)), custom: parseCustomConfig(customConfigPath()) };
 }
 
 /** Routers, services and middlewares the operator's custom file defines (`http` and `tcp`). */

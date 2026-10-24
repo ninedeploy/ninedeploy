@@ -71,6 +71,14 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.runtimeOptions': 'apply container options (GPUs, shared memory, init, ulimit, capabilities)',
   'docker.probe': 'probe application readiness',
   'docker.logsSince': 'tail runtime logs since a cursor',
+  'proxy.routingAck': 'confirm loaded HTTP/TLS routing',
+  'docker.recovery': 'reconcile container generations',
+  'docker.containerTools': 'inspect containers and manage their files',
+  'volume.files': 'browse and edit volume files',
+  'db.client': 'open database client terminals',
+  'db.studio': 'open database Web Studio',
+  'proxy.traffic': 'observe proxy traffic',
+  'docker.readiness': 'verify candidate replica readiness',
 };
 
 let db: DB;
@@ -198,12 +206,12 @@ describe('the queue-time check (assertNodeCapability) and the persisted cache (Â
     expect(serverAgentInfoSchema.parse(old)).toEqual({ version: '0.15.1', capabilities: CAPS_015_LIST, checkedAt: '1970-01-01T00:00:00.000Z' });
     const f = serverFeaturesSchema.parse(caps.serverFeatures(old));
     expect(f).toMatchObject({ nixpacks: false, railpack: false, privateClones: false, volumes: false, databases: false, imageTransfer: false, swarm: false });
-    expect(f).toMatchObject({ readinessProbe: false, logDrains: false });
-    // The newest missing features are the readiness and log-drain operations.
-    expect(f.reason).toMatch(/version 0\.15\.1\) cannot do HTTP\/TCP readiness probes, node log drains, Nixpacks builds, .*Swarm\. Update the node agent to v0\.17\.0 or newer/);
+    expect(f).toMatchObject({ containerTools: false, volumeFiles: false, databaseClients: false, readinessProbe: false, logDrains: false });
+    // The newest missing feature is the 0.18 container-tools operation.
+    expect(f.reason).toMatch(/version 0\.15\.1\) cannot do container inspection and files, volume files, database client terminals, HTTP\/TCP readiness probes, node log drains, Nixpacks builds, .*Swarm\. Update the node agent to v0\.18\.0 or newer/);
     expect(caps.serverFeatures(null).reason).toMatch(/not been reached/);
     const all = caps.serverFeatures({ version: '0.15.2', capabilities: [...MULTI_NODE_CAPABILITIES], checkedAt: null });
-    expect(all).toEqual({ readinessProbe: true, logDrains: true, nixpacks: true, railpack: true, privateClones: true, volumes: true, databases: true, imageTransfer: true, swarm: true });
+    expect(all).toEqual({ containerTools: true, volumeFiles: true, databaseClients: true, readinessProbe: true, logDrains: true, nixpacks: true, railpack: true, privateClones: true, volumes: true, databases: true, imageTransfer: true, swarm: true });
     expect(caps.serverFeatures({ version: '0.15.2', capabilities: ['stream', 'image.manage'], checkedAt: null })).toMatchObject({ imageTransfer: true, volumes: false });
   });
 
@@ -213,7 +221,7 @@ describe('the queue-time check (assertNodeCapability) and the persisted cache (Â
     await db.update(servers).set({ lastSeenAt: new Date() });
     const [first] = (await app.inject({ method: 'GET', url: '/servers', headers: asUser() })).json() as Array<Record<string, any>>;
     expect(first!.agent).toMatchObject({ version: '0.15.1', capabilities: CAPS_015_LIST });
-    expect(first!.features).toMatchObject({ readinessProbe: false, logDrains: false, imageTransfer: false, reason: expect.stringMatching(/v0\.17\.0/) });
+    expect(first!.features).toMatchObject({ readinessProbe: false, logDrains: false, imageTransfer: false, containerTools: false, reason: expect.stringMatching(/v0\.18\.0/) });
     expect(first!.terminal).toEqual({ host: true, container: true }); // the 0.15 field is unchanged
     // From the persisted columns once the in-memory answer is gone (an offline node is not asked).
     caps.resetNodeCapabilityCache();

@@ -3,11 +3,15 @@ import { request as loopbackRequest } from 'node:http';
 import { pipeline } from 'node:stream';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
-import { databases, users } from '@ninedeploy/db';
+import { databases, users, type Database } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { secretEquals } from '../lib/crypto.js';
-import { notFound, unauthorized } from '../lib/errors.js';
+import { HttpError, notFound, unauthorized } from '../lib/errors.js';
 import { getSettingString } from '../lib/settings.js';
+import { isRedisFamily } from '../lib/databaseCommands.js';
+import { openNodeStudioRelay } from '../lib/nodeStudio.js';
+import { studioRelayRequest, type StudioRelayHeaders } from '../lib/studioRelayProtocol.js';
+import { authCredentialIsLive, encodeAuthCredential, decodeAuthCredential, type AuthCredential } from '../lib/authCredential.js';
 
 /**
  * Same-origin reverse proxy for the database Web Studio (Adminer / Redis
@@ -93,22 +97,27 @@ export interface StudioCookieUser {
   tokenVersion: number;
 }
 
-function studioSignature(dbId: number, expiresAt: number, epoch: string, user: StudioCookieUser): string {
+function studioSignature(dbId: number, expiresAt: number, epoch: string, user: StudioCookieUser, credential?: AuthCredential): string {
   return createHmac('sha256', config.jwt.secret)
-    .update(`${dbId}:${expiresAt}:${epoch}:${user.id}:${user.tokenVersion}`)
+    .update(`studio-v2:${dbId}:${expiresAt}:${epoch}:${user.id}:${user.tokenVersion}:${credential ? encodeAuthCredential(credential) : '-'}`)
     .digest('hex');
 }
 
-/** Value shape: `<expiresAt>.<userId>.<hmac>` (r560 — the pre-0.10.36
+/** Value shape: `<expiresAt>.<userId>.[<credential-reference>.]<hmac>`.
+ *  The v2 signing domain invalidates prior unbound production cookies.
+ *  (r560 — the pre-0.10.36
  *  `<expiresAt>.<hmac>` shape carried no user and is refused). */
 export function studioCookieValue(
   dbId: number,
   user: StudioCookieUser,
   ttlS: number = COOKIE_TTL_S,
   epoch: string = DEFAULT_EPOCH,
+  credential?: AuthCredential,
 ): { value: string; maxAgeS: number } {
-  const expiresAt = Math.floor(Date.now() / 1000) + ttlS;
-  return { value: `${expiresAt}.${user.id}.${studioSignature(dbId, expiresAt, epoch, user)}`, maxAgeS: ttlS };
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = credential?.kind === 'legacy-access' ? Math.min(now + ttlS, credential.expiresAt) : now + ttlS;
+  const binding = credential ? `${encodeAuthCredential(credential)}.` : '';
+  return { value: `${expiresAt}.${user.id}.${binding}${studioSignature(dbId, expiresAt, epoch, user, credential)}`, maxAgeS: Math.max(0, expiresAt - now) };
 }
 
 export function studioCookieSetHeader(
@@ -117,8 +126,9 @@ export function studioCookieSetHeader(
   isHttps: boolean,
   ttlS: number = COOKIE_TTL_S,
   epoch: string = DEFAULT_EPOCH,
+  credential?: AuthCredential,
 ): string {
-  const { value, maxAgeS } = studioCookieValue(dbId, user, ttlS, epoch);
+  const { value, maxAgeS } = studioCookieValue(dbId, user, ttlS, epoch, credential);
   return `${studioCookieName(dbId)}=${value}; Path=/v1/databases/${dbId}/studio-proxy/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeS}${
     isHttps ? '; Secure' : ''
   }`;
@@ -130,7 +140,7 @@ export function parseStudioCookie(
   dbId: number,
   cookieHeader: string | undefined,
   now = Date.now(),
-): { expiresAt: number; userId: number; sig: string } | null {
+): { expiresAt: number; userId: number; sig: string; credential?: AuthCredential } | null {
   if (!cookieHeader) return null;
   const name = studioCookieName(dbId);
   const pair = cookieHeader
@@ -139,12 +149,14 @@ export function parseStudioCookie(
     .find((c) => c.startsWith(`${name}=`));
   if (!pair) return null;
   const parts = pair.slice(name.length + 1).split('.');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3 && parts.length !== 4) return null;
   const expiresAt = Number(parts[0]);
   const userId = Number(parts[1]);
   if (!Number.isSafeInteger(expiresAt) || expiresAt * 1000 < now) return null;
   if (!Number.isSafeInteger(userId) || userId < 1) return null;
-  return { expiresAt, userId, sig: parts[2] ?? '' };
+  const credential = parts.length === 4 ? decodeAuthCredential(parts[2]!) : undefined;
+  if (credential === null) return null;
+  return { expiresAt, userId, sig: parts.at(-1) ?? '', ...(credential ? { credential } : {}) };
 }
 
 /** Verify the cookie against the user it names (whose CURRENT tokenVersion
@@ -158,7 +170,7 @@ export function studioCookieValid(
 ): boolean {
   const parsed = parseStudioCookie(dbId, cookieHeader, now);
   if (!parsed || parsed.userId !== user.id) return false;
-  return secretEquals(studioSignature(dbId, parsed.expiresAt, epoch, user), parsed.sig);
+  return secretEquals(studioSignature(dbId, parsed.expiresAt, epoch, user, parsed.credential), parsed.sig);
 }
 
 /**
@@ -178,7 +190,8 @@ export async function studioSessionValid(
   if (!parsed) return false;
   const user = await db.query.users.findFirst({ where: eq(users.id, parsed.userId) });
   if (!user || user.deactivatedAt || user.isInstanceOperator !== true) return false;
-  return studioCookieValid(dbId, cookieHeader, user, now, epoch);
+  if (!studioCookieValid(dbId, cookieHeader, user, now, epoch)) return false;
+  return parsed.credential ? authCredentialIsLive(db, user.id, parsed.credential, now) : true;
 }
 
 /** Rewrite a Set-Cookie line so the studio session cookie stays scoped to
@@ -232,6 +245,59 @@ const STUDIO_SESSION_EXPIRED = 'Studio session expired — open the studio again
 
 type StudioRequest = FastifyRequest & { studioSessionOk?: boolean };
 
+function studioResponseHeaders(pairs: ReadonlyArray<readonly [string, string]>, cookiePath: string): Record<string, string | string[]> {
+  const output: Record<string, string | string[]> = {};
+  const nominated = new Set(pairs.filter(([name]) => name.toLowerCase() === 'connection').flatMap(([, value]) => value.split(',').map(token => token.trim().toLowerCase())));
+  for (const [name, raw] of pairs) {
+    const key = name.toLowerCase();
+    if (HOP_BY_HOP.has(key) || nominated.has(key) || STRIPPED_UPSTREAM.has(key)) continue;
+    const value = key === 'set-cookie' ? rewriteCookiePath(raw, cookiePath) : raw;
+    const old = output[key]; output[key] = old === undefined ? value : ([] as string[]).concat(old, value);
+  }
+  const csp = output['content-security-policy'];
+  output['content-security-policy'] = csp === undefined ? STUDIO_FRAME_CSP : ([] as string[]).concat(csp, STUDIO_FRAME_CSP);
+  output['x-frame-options'] = 'DENY';
+  return output;
+}
+
+async function proxyNodeStudio(app: FastifyInstance, d: Database, req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const cookiePath = '/v1/databases/' + d.id + '/studio-proxy';
+  const fullUrl = req.raw.url ?? '/', marker = '/studio-proxy', index = fullUrl.indexOf(marker);
+  let path = index < 0 ? '/' : fullUrl.slice(index + marker.length);
+  if (!path.startsWith('/')) path = '/' + path;
+  // Redis Commander is explicitly configured with URL_PREFIX; Adminer uses
+  // relative URLs and receives its own root/query instead.
+  if (isRedisFamily(d.engine)) path = cookiePath + path;
+  const body = Buffer.isBuffer(req.body) ? req.body : req.rawBody !== undefined ? Buffer.from(req.rawBody) : Buffer.alloc(0);
+  const headers: StudioRelayHeaders = Object.entries(req.headers).flatMap(([name, value]) => value === undefined ? [] : (Array.isArray(value) ? value : [value]).map(v => [name, String(v)] as [string, string]));
+  const input = studioRelayRequest.parse({ method: req.method, path, headers, bodyBytes: body.length });
+  const abort = new AbortController();
+  const disconnected = () => { if (!reply.raw.writableFinished) abort.abort(); };
+  req.raw.once('aborted', disconnected); req.raw.once('error', disconnected); reply.raw.once('close', disconnected);
+  // IncomingMessage can emit its ECONNRESET after the response pipeline's
+  // callback. Keep the once-only error listener for that late cancellation;
+  // removing it with the response listeners would make the reset uncaught.
+  const clean = () => { req.raw.off('aborted', disconnected); reply.raw.off('close', disconnected); };
+  let channel: Awaited<ReturnType<typeof openNodeStudioRelay>> | undefined;
+  try {
+    channel = await openNodeStudioRelay(app.db, d, input, abort.signal);
+    const selected = channel;
+    void channel.ready.then(() => { selected.writable.end(body); }, () => undefined);
+    const head = await channel.head;
+    abort.signal.throwIfAborted();
+    reply.hijack();
+    reply.raw.writeHead(head.status, studioResponseHeaders(head.headers, cookiePath));
+    pipeline(channel.readable, reply.raw, error => {
+      clean();
+      if (error) { selected.abort(); app.log.debug({ dbId: d.id }, 'node Studio proxy stream ended early'); }
+    });
+  } catch (error) {
+    channel?.abort(); clean();
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(502, 'node_studio_unconfirmed', 'The node Studio connection could not be confirmed; retry from the database page');
+  }
+}
+
 const proxyHandler = async (
   app: FastifyInstance,
   req: FastifyRequest,
@@ -252,6 +318,7 @@ const proxyHandler = async (
     }
   }
   const d = await app.db.query.databases.findFirst({ where: eq(databases.id, id) });
+  if (d?.serverId != null) return proxyNodeStudio(app, d, req, reply);
   const port = d?.webGuiEnabled === true ? d.webGuiPort : null;
   const upstream =
     port !== null && Number.isSafeInteger(port) && port >= 1024 && port <= 65535
@@ -296,27 +363,9 @@ const proxyHandler = async (
   const upstreamReq = loopbackRequest(
     { host: upstream.host, port: upstream.port, method: req.method, path: `${upstreamPath}${query}`, headers },
     (ures) => {
-      // Copy raw headers pair-wise so multiple Set-Cookie lines survive, with
-      // every cookie path scoped to this database's proxy prefix.
-      const responseHeaders: Record<string, string | string[]> = {};
-      for (let i = 0; i < ures.rawHeaders.length; i += 2) {
-        const key = ures.rawHeaders[i]!;
-        const value = ures.rawHeaders[i + 1] ?? '';
-        const lower = key.toLowerCase();
-        if (HOP_BY_HOP.has(lower) || STRIPPED_UPSTREAM.has(lower)) continue;
-        if (lower === 'set-cookie') {
-          const existing = responseHeaders[key];
-          responseHeaders[key] = existing === undefined ? rewriteCookiePath(value, cookiePath) : ([] as string[]).concat(existing, rewriteCookiePath(value, cookiePath));
-          continue;
-        }
-        const existing = responseHeaders[key];
-        responseHeaders[key] = existing === undefined ? value : ([] as string[]).concat(existing, value);
-      }
-      // r560: never frameable — not by the panel, not by anyone.
-      const cspKey = Object.keys(responseHeaders).find((k) => k.toLowerCase() === 'content-security-policy') ?? 'content-security-policy';
-      const upstreamCsp = responseHeaders[cspKey];
-      responseHeaders[cspKey] = upstreamCsp === undefined ? STUDIO_FRAME_CSP : ([] as string[]).concat(upstreamCsp, STUDIO_FRAME_CSP);
-      responseHeaders['x-frame-options'] = 'DENY';
+      const pairs: StudioRelayHeaders = [];
+      for (let i = 0; i < ures.rawHeaders.length; i += 2) pairs.push([ures.rawHeaders[i]!, ures.rawHeaders[i + 1] ?? '']);
+      const responseHeaders = studioResponseHeaders(pairs, cookiePath);
       reply.raw.writeHead(ures.statusCode ?? 502, responseHeaders);
       // F173: pipeline, not pipe — a studio that dies mid-response must reset
       // the browser's response instead of leaving it open forever.

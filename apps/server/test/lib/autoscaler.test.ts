@@ -85,10 +85,11 @@ describe('measure', () => {
     expect(measure({ ...svc, cpuLimitMilli: 500 }, cfg, containers, { analyticsOn: false, now: 0 }).value).toBe(120);
   });
 
-  it('memory is the percent of the limit; a missing limit reads 0', async () => {
+  it('memory is the percent of the limit; a missing limit holds scaling', async () => {
     const svc = await row();
     const mem = { ...cfg, metric: 'memory' as const };
-    expect(measure(svc, mem, new Map([['web-9', stat('web-9', 0, 300, 1000)], ['web-9-r2', stat('web-9-r2', 0, 100, 0)]]), { analyticsOn: false, now: 0 }).value).toBe(15);
+    expect(measure(svc, mem, new Map([['web-9', stat('web-9', 0, 300, 1000)], ['web-9-r2', stat('web-9-r2', 0, 100, 0)]]), { analyticsOn: false, now: 0 }).value).toBeNull();
+    expect(measure(svc, mem, new Map([['web-9', stat('web-9', 0, 300, 1000)], ['web-9-r2', stat('web-9-r2', 0, 100, 1000)]]), { analyticsOn: false, now: 0 }).value).toBe(20);
   });
 
   it('holds without stats, and rps needs traffic analytics', async () => {
@@ -301,6 +302,7 @@ describe('createAutoscaler', () => {
     expect(await scaler.tick()).toBe(1);
     // The stray stop is still pending: the service is busy.
     expect(await scaler.tick()).toBe(0);
+    await vi.waitFor(() => expect(docker).toHaveBeenCalled());
     release();
     await vi.waitFor(() => expect(scaler.busy.size).toBe(0));
     expect(errors).toEqual([]);

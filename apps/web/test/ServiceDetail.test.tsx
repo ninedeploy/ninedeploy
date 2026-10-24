@@ -402,7 +402,7 @@ describe('ServiceDetail', () => {
     expect(screen.getByRole('button', { name: /Runtime logs/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Exec' })).toBeInTheDocument();
     // metrics + runtime info on the overview tab
-    expect(await screen.findByText('Live Resource Telemetry')).toBeInTheDocument();
+    expect(await screen.findByText('Resource Telemetry')).toBeInTheDocument();
     expect(screen.getByText('Runtime Container')).toBeInTheDocument();
     // The attached Git credential is surfaced by name on the runtime info card.
     expect(screen.getAllByText('github-app').length).toBeGreaterThan(0);
@@ -1950,14 +1950,41 @@ describe('ServiceDetail', () => {
     expect(await screen.findByText('Saving…')).toBeInTheDocument();
   });
 
-  it('shows zero live usage for an online service without container stats', async () => {
+  it('shows missing measurements without inventing zero usage or history', async () => {
     mockOf(api.stats.snapshot).mockResolvedValue({ host: null, containers: [] } as never);
     mockOf(api.stats.metrics).mockResolvedValue({ kind: 'cpu', points: [] } as never);
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
-    // Online but unmeasured: the live chips fall back to zeros (the memory
-    // chip pairs the zero with the configured limit).
+    expect(await screen.findAllByText('No data')).toHaveLength(2);
+    expect(screen.getByText('No CPU history yet')).toBeInTheDocument();
+    expect(screen.getByText('No memory history yet')).toBeInTheDocument();
+    expect(screen.queryByText('0.0%')).not.toBeInTheDocument();
+    expect(screen.queryByText('0.0 / 512 MiB')).not.toBeInTheDocument();
+  });
+
+  it('keeps an actual zero measurement distinct from an unavailable sample', async () => {
+    mockOf(api.stats.snapshot).mockResolvedValue({ host: null, containers: [
+      { kind: 'service', refId: 1, refName: 'api', name: 'nd-api', cpuPct: 0, memMb: 0, memLimitMb: 512 },
+    ] } as never);
+    mockOf(api.stats.metrics).mockResolvedValue({ kind: 'cpu', points: [] } as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     expect(await screen.findByText('0.0%')).toBeInTheDocument();
     expect(screen.getByText('0.0 / 512 MiB')).toBeInTheDocument();
+    expect(screen.queryByText('No data')).not.toBeInTheDocument();
+  });
+
+  it('labels a historical fallback instead of calling it a live measurement', async () => {
+    mockOf(api.stats.snapshot).mockResolvedValue({ host: null, containers: [] } as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    expect(await screen.findAllByText('Last recorded sample')).toHaveLength(2);
+    expect(screen.getByText('No live sample')).toBeInTheDocument();
+  });
+
+  it('keeps a failed live snapshot visible while showing recorded history', async () => {
+    mockOf(api.stats.snapshot).mockRejectedValue(new Error('sample unavailable'));
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    expect(await screen.findByText('Live resource sample is unavailable. Recorded history may still be available below.')).toBeInTheDocument();
+    expect(await screen.findAllByText('Last recorded sample')).toHaveLength(2);
+    expect(screen.getByText('Snapshot unavailable')).toBeInTheDocument();
   });
 
   it('mounts the volumes tab from the service page', async () => {

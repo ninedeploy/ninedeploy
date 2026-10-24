@@ -34,8 +34,36 @@ function renderTab(service = mockService) {
 }
 
 describe('ManifestTab', () => {
+  it('keeps same-named metadata separate when switching node hosts', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['container-compose', null, 'same-name'], { yaml: 'LOCAL_ONLY_SECRET' });
+    const inspect = { id: 'node', name: 'same-name', state: { status: 'running', running: true }, traefikTags: {}, raw: {} };
+    apiMock.api.containers.compose.mockImplementation(async (_name, options) => ({ yaml: `services: node-${options.serverId}`, inspect }));
+    apiMock.api.containers.inspect.mockResolvedValue(inspect);
+    const component = (serverId: number) => <QueryClientProvider client={queryClient}><ManifestTab service={{ ...mockService, runtimeId: 'same-name', serverId }} /></QueryClientProvider>;
+    const view = render(component(7));
+    expect(await screen.findByText('services: node-7')).toBeInTheDocument();
+    expect(apiMock.api.containers.inspect).toHaveBeenCalledWith('same-name', { serverId: 7 });
+    expect(screen.queryByText('LOCAL_ONLY_SECRET')).not.toBeInTheDocument();
+    view.rerender(component(8));
+    expect(await screen.findByText('services: node-8')).toBeInTheDocument();
+    expect(apiMock.api.containers.compose).toHaveBeenCalledWith('same-name', { serverId: 8 });
+    expect(screen.queryByText('services: node-7')).not.toBeInTheDocument();
+  });
+  it('shows a retryable metadata failure instead of calling a failed request an absent manifest', async () => {
+    apiMock.api.containers.compose.mockRejectedValue(new Error('Node agent needs an update'));
+    apiMock.api.containers.inspect.mockRejectedValue(new Error('Node agent needs an update'));
+    renderTab({ ...mockService, serverId: 7 });
+    expect(await screen.findByText('Could not load container metadata', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText('# No runtime compose manifest available for container.')).not.toBeInTheDocument();
+    const retry = screen.getByRole('button', { name: /Try again/ });
+    const inspect = { id: 'node', name: 'same-name', state: { status: 'running', running: true }, traefikTags: {}, raw: {} };
+    apiMock.api.containers.compose.mockResolvedValue({ yaml: 'RECOVERED_NODE', inspect }); apiMock.api.containers.inspect.mockResolvedValue(inspect);
+    fireEvent.click(retry); expect(await screen.findByText('RECOVERED_NODE')).toBeInTheDocument();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    apiMock.api.containers.compose.mockReset(); apiMock.api.containers.inspect.mockReset();
     Object.assign(navigator, {
       clipboard: {
         writeText: vi.fn().mockResolvedValue(undefined),

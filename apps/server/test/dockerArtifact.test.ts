@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { auditLog, buildConfigs, deployments, environments, servers, services, serviceWorkspaces, users, workspaceMembers, workspaces, type DB, type DeploymentArtifact } from '@ninedeploy/db';
+import { auditLog, buildConfigs, deployments, environments, servers, services, serviceTargets, serviceWorkspaces, users, workspaceMembers, workspaces, type DB, type DeploymentArtifact } from '@ninedeploy/db';
 import { mapAuditToDomainEvent } from '../src/kernel/auditBridge.js';
 import { deploysRoutes } from '../src/modules/deploys.js';
 import { assertArtifactImage, parseDockerArtifact } from '../src/lib/dockerArtifact.js';
@@ -32,6 +32,28 @@ async function promote(body: Record<string, unknown> = {}, headers = asUser()) {
   finally { await app.close(); }
 }
 describe('immutable Docker artifact promotion', () => {
+  it.each(['promote', 'rollback'])('queues the exact recorded image with configured fan-out targets for %s', async action => {
+    const serviceId = action === 'promote' ? 2 : 1;
+    await db.insert(servers).values({ id: 5, name: 'edge', host: 'edge.example.test', tokenEncrypted: 'fixture-only' });
+    await db.insert(serviceTargets).values({ serviceId, serverId: 5, runtimeId: 'previous-edge', status: 'running' });
+    const app = await buildTestApp({ db }); await app.register(deploysRoutes, { prefix: '/services' });
+    try {
+      const response = await app.inject({ method: 'POST', url: action === 'promote' ? '/services/1/promote' : '/services/1/deploys/1/rollback', headers: asUser(), payload: action === 'promote' ? { targetServiceId: 2, mode: 'artifact', sourceDeploymentId: 1 } : {} });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(await db.query.deployments.findFirst({ where: eq(deployments.id, response.json().deploymentId) })).toMatchObject({ serviceId, artifact: ARTIFACT, commitSha: SHA, status: 'queued' });
+      expect(await db.query.serviceTargets.findFirst({ where: eq(serviceTargets.serviceId, serviceId) })).toMatchObject({ runtimeId: 'previous-edge', status: 'running' });
+    } finally { await app.close(); }
+  });
+  it.each(['promote', 'rollback'])('queues the immutable image for a Swarm target: %s', async action => {
+    const id = action === 'promote' ? 2 : 1;
+    await db.update(services).set({ orchestrator: 'swarm' }).where(eq(services.id, id));
+    const app = await buildTestApp({ db }); await app.register(deploysRoutes, { prefix: '/services' });
+    try {
+      const result = await app.inject({ method: 'POST', url: action === 'promote' ? '/services/1/promote' : '/services/1/deploys/1/rollback', headers: asUser(), payload: action === 'promote' ? { targetServiceId: 2, mode: 'artifact', sourceDeploymentId: 1 } : {} });
+      expect(result.statusCode, result.body).toBe(200);
+      expect(await db.query.deployments.findFirst({ where: eq(deployments.id, result.json().deploymentId) })).toMatchObject({ serviceId: id, artifact: ARTIFACT, commitSha: SHA, status: 'queued' });
+    } finally { await app.close(); }
+  });
   it('promotes a retained node-built artifact after its origin node and source history are removed', async () => {
     await db.insert(servers).values({ id: 4, name: 'old origin', host: 'old.example.test', tokenEncrypted: 'fixture-only' });
     await db.update(services).set({ serverId: 4 }).where(eq(services.id, 1));
@@ -118,7 +140,7 @@ describe('immutable Docker artifact promotion', () => {
     expect((await promote({}, asUser({ id: 8, isOperator: false }))).statusCode).toBe(404);
     expect(h.capture).not.toHaveBeenCalled();
   });
-  it.each([{ orchestrator: 'swarm' }, { type: 'compose' }, { repoUrl: 'https://github.com/other/repo.git' }, { image: 'nginx:latest' }])('refuses incompatible target %j', async patch => {
+  it.each([{ type: 'compose' }, { repoUrl: 'https://github.com/other/repo.git' }, { image: 'nginx:latest' }])('refuses incompatible target %j', async patch => {
     await db.update(services).set(patch).where(eq(services.id, 2));
     expect((await promote()).statusCode).toBe(400);
     expect(h.capture).not.toHaveBeenCalled();

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /** 0.16.10: the live autoscale status on the service Overview. */
@@ -69,7 +69,7 @@ describe('AutoscalePanel', () => {
 
   it('shows the containers serving, the value against the target, the desired count and the last change', async () => {
     renderPanel();
-    expect(await screen.findByText('Autoscaling')).toBeInTheDocument();
+    expect(await screen.findByText('3 of 1–4')).toBeInTheDocument();
     expect(status).toHaveBeenCalledWith(1);
     expect(screen.getByText('3 of 1–4')).toBeInTheDocument();
     expect(screen.getByText('cpu per container')).toBeInTheDocument();
@@ -108,18 +108,23 @@ describe('AutoscalePanel', () => {
     }
   });
 
-  it('renders nothing when autoscaling is off, or the status cannot be read', async () => {
+  it('renders nothing when autoscaling is off', async () => {
     status.mockResolvedValue({ enabled: false, replicas: 1 });
     const { unmount } = renderPanel();
     await waitFor(() => expect(status).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 0));
     expect(panelShown()).toBe(false);
     unmount();
+  });
 
-    status.mockRejectedValue(new Error('down'));
+  it('keeps a visible error and retries the status instead of hiding the panel', async () => {
+    status.mockRejectedValueOnce(new Error('down')).mockResolvedValue(ON);
     renderPanel();
-    await waitFor(() => expect(status).toHaveBeenCalledTimes(2));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(panelShown()).toBe(false);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Autoscaling status is unavailable');
+    expect(screen.queryByText('Live 15s')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry status' }));
+    expect(await screen.findByText('3 of 1–4')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(status).toHaveBeenCalledTimes(2);
   });
 });

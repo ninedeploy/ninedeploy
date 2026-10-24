@@ -32,31 +32,31 @@ export interface VolumesApi {
     create: (input: VolumeCreateInput) => Promise<VolumeCreateResult>;
     prune: () => Promise<{ ok: boolean; deleted: number; freedBytes: number }>;
     /** File manager: list a directory inside the volume. */
-    listFiles: (name: string, path?: string) => Promise<{ path: string; entries: VolumeFileEntry[] }>;
+    listFiles: (name: string, path?: string, options?: { serverId?: number }) => Promise<{ path: string; entries: VolumeFileEntry[] }>;
     /** File manager: read a file (base64 content). */
-    readFile: (name: string, path: string) => Promise<{ content: string; encoding: 'utf8' | 'base64' }>;
+    readFile: (name: string, path: string, options?: { serverId?: number }) => Promise<{ content: string; encoding: 'utf8' | 'base64' }>;
     /** File manager: write/overwrite a file (base64 content). */
-    writeFile: (name: string, input: VolumeFileWriteInput) => Promise<{ ok: boolean }>;
+    writeFile: (name: string, input: VolumeFileWriteInput, options?: { serverId?: number }) => Promise<{ ok: boolean }>;
     /** File manager: create a directory. */
-    mkdir: (name: string, input: VolumePathCreateInput) => Promise<{ ok: boolean }>;
+    mkdir: (name: string, input: VolumePathCreateInput, options?: { serverId?: number }) => Promise<{ ok: boolean }>;
     /** File manager: delete a file or directory (recursive). */
-    deleteFile: (name: string, path: string) => Promise<void>;
+    deleteFile: (name: string, path: string, options?: { serverId?: number }) => Promise<void>;
   };
   containers: {
-    inspect: (container: string) => Promise<ContainerInspectData>;
-    compose: (container: string) => Promise<ContainerComposeData>;
+    inspect: (container: string, options?: { serverId?: number }) => Promise<ContainerInspectData>;
+    compose: (container: string, options?: { serverId?: number }) => Promise<ContainerComposeData>;
     /** File manager: list a directory inside the container. */
-    listFiles: (container: string, path?: string) => Promise<{ path: string; entries: VolumeFileEntry[] }>;
+    listFiles: (container: string, path?: string, options?: { serverId?: number }) => Promise<{ path: string; entries: VolumeFileEntry[] }>;
     /** File manager: read a file (base64 content). */
-    readFile: (container: string, path: string) => Promise<{ content: string; encoding: 'utf8' | 'base64' }>;
+    readFile: (container: string, path: string, options?: { serverId?: number }) => Promise<{ content: string; encoding: 'utf8' | 'base64' }>;
     /** File manager: write/overwrite a file (base64 content). */
-    writeFile: (container: string, input: VolumeFileWriteInput) => Promise<{ ok: boolean }>;
+    writeFile: (container: string, input: VolumeFileWriteInput, options?: { serverId?: number }) => Promise<{ ok: boolean }>;
     /** File manager: create a directory. */
-    mkdir: (container: string, input: VolumePathCreateInput) => Promise<{ ok: boolean }>;
-    makeDir: (container: string, input: VolumePathCreateInput) => Promise<{ ok: boolean }>;
+    mkdir: (container: string, input: VolumePathCreateInput, options?: { serverId?: number }) => Promise<{ ok: boolean }>;
+    makeDir: (container: string, input: VolumePathCreateInput, options?: { serverId?: number }) => Promise<{ ok: boolean }>;
     /** File manager: delete a file or directory (recursive). */
-    deleteFile: (container: string, path: string) => Promise<void>;
-    deletePath: (container: string, path: string) => Promise<void>;
+    deleteFile: (container: string, path: string, options?: { serverId?: number }) => Promise<void>;
+    deletePath: (container: string, path: string, options?: { serverId?: number }) => Promise<void>;
   };
   /** Per-service additional volume attachments. Distinct from the instance-wide
    * `volumes` namespace (which lists every Docker volume on the host). The
@@ -82,18 +82,32 @@ export interface VolumesApi {
 
 export function volumesApi(t: Transport): VolumesApi {
   const { get, send, request } = t;
+  const volumePath = (name: string, suffix: string, options?: { serverId?: number }) => {
+    const id = options?.serverId;
+    if (id != null && (!Number.isSafeInteger(id) || id < 1)) throw new TypeError('Invalid volume node id');
+    const prefix = id == null ? '/v1/volumes' : `/v1/servers/${id}/volumes`;
+    return `${prefix}/${encodeURIComponent(name)}${suffix}`;
+  };
+  const containerPath = (container: string, suffix: string, options?: { serverId?: number }) => {
+    const id = options?.serverId;
+    if (id != null && (!Number.isSafeInteger(id) || id < 1)) throw new TypeError('Invalid container node id');
+    // An older panel returns 404 for this namespace instead of ignoring a host
+    // query and accidentally editing a same-named local container.
+    const prefix = id == null ? '/v1/containers' : `/v1/servers/${id}/containers`;
+    return `${prefix}/${encodeURIComponent(container)}${suffix}`;
+  };
   return {
     volumes: {
       list: (options) => get<VolumeListEntry[]>(apiGetUrl('/v1/volumes', { serverId: options?.serverId })),
       create: (input) => send<VolumeCreateResult>('POST', '/v1/volumes', input),
-      listFiles: (name, path = '') =>
-        get<{ path: string; entries: VolumeFileEntry[] }>(`/v1/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path)}`),
-      readFile: (name, path) =>
-        get<{ content: string; encoding: 'utf8' | 'base64' }>(`/v1/volumes/${encodeURIComponent(name)}/files/content?path=${encodeURIComponent(path)}`),
-      writeFile: (name, input) => send<{ ok: boolean }>('PUT', `/v1/volumes/${encodeURIComponent(name)}/files`, input),
-      mkdir: (name, input) => send<{ ok: boolean }>('POST', `/v1/volumes/${encodeURIComponent(name)}/files/dir`, input),
-      deleteFile: async (name, path) => {
-        await request(`/v1/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      listFiles: (name, path = '', options) =>
+        request<{ path: string; entries: VolumeFileEntry[] }>(`${volumePath(name, '/files', options)}?path=${encodeURIComponent(path)}`, {}, 150_000),
+      readFile: (name, path, options) =>
+        request<{ content: string; encoding: 'utf8' | 'base64' }>(`${volumePath(name, '/files/content', options)}?path=${encodeURIComponent(path)}`, {}, 150_000),
+      writeFile: (name, input, options) => request<{ ok: boolean }>(volumePath(name, '/files', options), { method: 'PUT', body: input }, 150_000),
+      mkdir: (name, input, options) => request<{ ok: boolean }>(volumePath(name, '/files/dir', options), { method: 'POST', body: input }, 150_000),
+      deleteFile: async (name, path, options) => {
+        await request(`${volumePath(name, '/files', options)}?path=${encodeURIComponent(path)}`, { method: 'DELETE' }, 150_000);
       },
       remove: async (name, options) => {
         const node = options?.serverId === undefined ? '' : `?serverId=${options.serverId}`;
@@ -102,20 +116,20 @@ export function volumesApi(t: Transport): VolumesApi {
       prune: () => send<{ ok: boolean; deleted: number; freedBytes: number }>('POST', '/v1/volumes/prune'),
     },
     containers: {
-      inspect: (container) => get<ContainerInspectData>(`/v1/containers/${encodeURIComponent(container)}/inspect`),
-      compose: (container) => get<ContainerComposeData>(`/v1/containers/${encodeURIComponent(container)}/compose`),
-      listFiles: (container, path = '/') =>
-        get<{ path: string; entries: VolumeFileEntry[] }>(`/v1/containers/${encodeURIComponent(container)}/files?path=${encodeURIComponent(path)}`),
-      readFile: (container, path) =>
-        get<{ content: string; encoding: 'utf8' | 'base64' }>(`/v1/containers/${encodeURIComponent(container)}/files/content?path=${encodeURIComponent(path)}`),
-      writeFile: (container, input) => send<{ ok: boolean }>('PUT', `/v1/containers/${encodeURIComponent(container)}/files`, input),
-      mkdir: (container, input) => send<{ ok: boolean }>('POST', `/v1/containers/${encodeURIComponent(container)}/files/dir`, input),
-      makeDir: (container, input) => send<{ ok: boolean }>('POST', `/v1/containers/${encodeURIComponent(container)}/files/dir`, input),
-      deleteFile: async (container, path) => {
-        await request(`/v1/containers/${encodeURIComponent(container)}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      inspect: (container, options) => get<ContainerInspectData>(containerPath(container, '/inspect', options)),
+      compose: (container, options) => get<ContainerComposeData>(containerPath(container, '/compose', options)),
+      listFiles: (container, path = '/', options) =>
+        get<{ path: string; entries: VolumeFileEntry[] }>(`${containerPath(container, '/files', options)}?path=${encodeURIComponent(path)}`),
+      readFile: (container, path, options) =>
+        get<{ content: string; encoding: 'utf8' | 'base64' }>(`${containerPath(container, '/files/content', options)}?path=${encodeURIComponent(path)}`),
+      writeFile: (container, input, options) => send<{ ok: boolean }>('PUT', containerPath(container, '/files', options), input),
+      mkdir: (container, input, options) => send<{ ok: boolean }>('POST', containerPath(container, '/files/dir', options), input),
+      makeDir: (container, input, options) => send<{ ok: boolean }>('POST', containerPath(container, '/files/dir', options), input),
+      deleteFile: async (container, path, options) => {
+        await request(`${containerPath(container, '/files', options)}?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
       },
-      deletePath: async (container, path) => {
-        await request(`/v1/containers/${encodeURIComponent(container)}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      deletePath: async (container, path, options) => {
+        await request(`${containerPath(container, '/files', options)}?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
       },
     },
     serviceVolumes: {

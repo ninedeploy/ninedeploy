@@ -372,12 +372,11 @@ describe('lifecycle routes on a node database: every action reaches the node, no
     expect(h.local).toEqual([]);
   });
 
-  it('Studio, PgBouncer and public access answer 422 remote_database and touch nothing', async () => {
+  it('panel-only features refuse node IO; Studio requires the current sealed agent capability', async () => {
     const d = await nodeRow();
     const app = await appWith([databasesRoutes, '/databases'], [pgbouncerRoutes, '/databases'], [databasePublicAccessRoutes, '/databases']);
     h.ops = [];
     for (const [method, url, payload] of [
-      ['POST', 'studio', {}],
       ['POST', 'pgbouncer/enable', {}],
       ['PUT', 'public-access', { enabled: true, port: 25432, ipAllowlist: ['203.0.113.0/24'], tlsMode: 'none' }],
     ] as const) {
@@ -386,6 +385,10 @@ describe('lifecycle routes on a node database: every action reaches the node, no
     }
     expect((await app.inject({ method: 'DELETE', url: `/databases/${d.id}/studio`, headers: asUser() })).statusCode).toBe(200);
     expect(h.ops).toEqual([]);
+    h.ping = 'ND-AGENT ' + JSON.stringify({ version: '0.17.1', caps: MULTI_NODE_CAPABILITIES.filter(cap => cap !== 'db.studio') });
+    const studio = await app.inject({ method: 'POST', url: '/databases/' + d.id + '/studio', headers: asUser(), payload: {} });
+    expect([studio.statusCode, studio.json().error.code]).toEqual([422, 'node_agent_outdated']);
+    expect(h.ops.map(entry => entry.op)).toEqual(['agent.ping']);
     expect(h.local).toEqual([]);
   });
 

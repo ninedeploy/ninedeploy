@@ -6,7 +6,7 @@
  * changes, the disable drain-and-purge, retention and the summary queries —
  * against a real migrated SQLite and a real temp directory.
  */
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -251,6 +251,39 @@ describe('commitRollups', () => {
 });
 
 describe('TrafficTailer', () => {
+  it('holds ordinary rotation for an active observation and resumes after close', async () => {
+    const W = await import('../../src/lib/canaryTrafficWindow.js');
+    writeFileSync(live(), ''); truncateSync(live(), T.TRAFFIC_ROTATE_BYTES + 1); appendFileSync(live(), '\n');
+    const window = await W.openFileCanaryTraffic({ file: live(), slug: 'web', identity: async () => 'proxy1' });
+    const reopen = vi.fn(async () => undefined); const t = tailer({ reopen });
+    try {
+      expect(await t.tick({ cap: 1 })).toMatchObject({ rotated: false });
+      expect(reopen).not.toHaveBeenCalled();
+    } finally { await window.close(); }
+    expect(await t.tick({ cap: 1 })).toMatchObject({ rotated: true });
+    expect(reopen).toHaveBeenCalledOnce();
+  });
+
+  it('enforces the disk bound by invalidating observations before forced rotation', async () => {
+    const W = await import('../../src/lib/canaryTrafficWindow.js');
+    writeFileSync(live(), ''); truncateSync(live(), T.TRAFFIC_ROTATE_BYTES + W.CANARY_TRAFFIC_MAX_BYTES + 1); appendFileSync(live(), '\n');
+    const window = await W.openFileCanaryTraffic({ file: live(), slug: 'web', identity: async () => 'proxy1' });
+    try {
+      expect(await tailer().tick({ cap: 1 })).toMatchObject({ rotated: true });
+      await expect(window.finish()).rejects.toThrow(/closed/);
+    } finally { await window.close(); }
+  });
+
+  it('invalidates active observations when analytics is drained and purged', async () => {
+    const W = await import('../../src/lib/canaryTrafficWindow.js');
+    writeFileSync(live(), line());
+    const window = await W.openFileCanaryTraffic({ file: live(), slug: 'web', identity: async () => 'proxy1' });
+    try {
+      await tailer().drainAndPurge();
+      await expect(window.finish()).rejects.toThrow(/closed/);
+    } finally { await window.close(); }
+  });
+
   it('0.16.9: feeds each line to a canary in progress, by the weighted leaf that answered', async () => {
     const C = await import('../../src/engine/canaryState.js');
     const R = await import('../../src/lib/requestRate.js');

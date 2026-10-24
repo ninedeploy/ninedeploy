@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { deployments, services } from '@ninedeploy/db';
+import { deployments, primaryTransitions, swarmTransitions, services, eq } from '@ninedeploy/db';
 import { reconcileDeploymentHistory } from '../src/engine/pipeline.js';
 
 /**
@@ -43,6 +43,26 @@ function makeDb(runningRows: Array<{ id: number; serviceId: number }>, serviceSt
 }
 
 describe('reconcileDeploymentHistory', () => {
+  it('preserves the serving Swarm deployment until its native recovery settles', async () => {
+    const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
+    try {
+      await f.db.update(services).set({ status: 'deploying', orchestrator: 'swarm' }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values([{ id: 7, serviceId: 1, status: 'running' }, { id: 9, serviceId: 1, status: 'building' }]);
+      await f.db.insert(swarmTransitions).values({ serviceId: 1, deploymentId: 9, managerNodeId: 'm'.repeat(25), runtimeId: 'nd-web_web', payloadEncrypted: 'opaque-fixture' });
+      expect(await reconcileDeploymentHistory(f.db)).toBe(0);
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 7) }))?.status).toBe('running');
+    } finally { f.close(); }
+  });
+  it('preserves the previous serving deployment while a journalled transition awaits recovery', async () => {
+    const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
+    try {
+      await f.db.update(services).set({ status: 'deploying' }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values([{ id: 7, serviceId: 1, status: 'running' }, { id: 9, serviceId: 1, status: 'building' }]);
+      await f.db.insert(primaryTransitions).values({ serviceId: 1, deploymentId: 9, candidate: { runtimeId: 'web-9', port: 8080, healthPath: '/', healthCheck: null, replicas: 1, commitSha: null, containers: [] } });
+      expect(await reconcileDeploymentHistory(f.db)).toBe(0);
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 7) }))?.status).toBe('running');
+    } finally { f.close(); }
+  });
   it('bounds history scans linearly when every live row belongs to a different service', async () => {
     const size = 512;
     let serviceReads = 0;

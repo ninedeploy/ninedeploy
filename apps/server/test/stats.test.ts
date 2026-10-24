@@ -249,7 +249,7 @@ describe('metric routes', () => {
   it('clamps minutes to the allowed range', async () => {
     const app = await buildTestApp({ db: createFakeDb({ findMany: { metrics: [] }, findFirst: { services: svcRow({ id: 1 }) } }) });
     await app.register(metricRoutes);
-    const res = await app.inject({ method: 'GET', url: '/1/metrics?minutes=99999', headers: asUser() });
+    const res = await app.inject({ method: 'GET', url: '/1/metrics?minutes=999999', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json().points).toEqual([]);
   });

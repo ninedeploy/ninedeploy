@@ -4,6 +4,7 @@ import { apiTokens, sessions, users } from '@ninedeploy/db';
 import type { AuthUser } from '../plugins/auth.js';
 import { sha256 } from './crypto.js';
 import { verifyJwt, type AppJwtPayload } from './jwt.js';
+import { bindAuthCredential } from './authCredential.js';
 
 /**
  * Narrow an API-token-authed user in place: only an explicit `operator` scope
@@ -72,7 +73,8 @@ export async function resolveUser(db: DB, token: string): Promise<AuthUser | nul
     if (payload.ver === undefined || payload.ver !== baseUser.tokenVersion) return null;
     // Interactive sessions are never scope-restricted; scopes are an
     // API-token concept.
-    return { id: baseUser.id, isOperator: baseUser.isInstanceOperator, tokenScopes: null, viaApiToken: false };
+    return bindAuthCredential({ id: baseUser.id, isOperator: baseUser.isInstanceOperator, tokenScopes: null, viaApiToken: false },
+      payload.jti ? { kind: 'session', jti: payload.jti } : { kind: 'legacy-access', expiresAt: payload.exp ?? Math.floor(Date.now() / 1000) });
   }
 
   // Opaque API token — compare by sha256 hash. Revoked by row deletion.
@@ -85,12 +87,12 @@ export async function resolveUser(db: DB, token: string): Promise<AuthUser | nul
   // HTTP method; this function does not). An empty list means unrestricted —
   // see `apiTokenScope` in @ninedeploy/schemas for why.
   const scopes = Array.isArray(row.scopes) ? row.scopes : [];
-  return {
+  return bindAuthCredential({
     id: baseUser.id,
     isOperator: baseUser.isInstanceOperator,
     tokenScopes: scopes.length > 0 ? scopes : null,
     viaApiToken: true,
-  };
+  }, { kind: 'api-token', hash: sha256(token) });
 }
 
 interface LoadedUser {

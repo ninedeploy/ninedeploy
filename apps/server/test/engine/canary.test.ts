@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canaryConfig } from '@ninedeploy/schemas';
 import { CanaryAborted, canarySkipReason, runCanary, type RunCanaryDeps } from '../../src/engine/canary.js';
+import { ProxyRoutingUnconfirmed } from '../../src/lib/proxyRoutingAck.js';
 import {
   CANARY_SAMPLE_CAP,
   canaryActive,
@@ -16,7 +17,8 @@ import {
   setCanaryStep,
 } from '../../src/engine/canaryState.js';
 
-afterEach(() => resetCanaryState());
+const fixtureHits: Array<{ kind: 'canary' | 'stable'; status: number; ms: number }> = [];
+afterEach(() => { resetCanaryState(); fixtureHits.length = 0; });
 
 const runtime = { runtimeId: 'web-new', port: 3000, healthPath: '/', replicas: 1 };
 
@@ -41,6 +43,20 @@ function harness(over: Partial<RunCanaryDeps> & { onTick?: (t: number) => void }
     probe: vi.fn(async () => true),
     checkpoint: vi.fn(async () => undefined),
     measured: true,
+    openTraffic: async () => {
+      fixtureHits.length = 0;
+      const snapshot = (complete: boolean) => {
+        const stats = (kind: 'canary' | 'stable') => {
+          const rows = fixtureHits.filter(x => x.kind === kind);
+          const durations = rows.map(x => x.ms).sort((a, b) => a - b);
+          const errors = rows.filter(x => x.status >= 500).length;
+          return { requests: rows.length, errors, errorRate: rows.length ? Math.round(errors / rows.length * 100) : null,
+            p95Ms: durations.length ? durations[Math.ceil(durations.length * 0.95) - 1]! : null };
+        };
+        return { canary: stats('canary'), stable: stats('stable'), complete };
+      };
+      return { sample: async () => snapshot(false), finish: async () => snapshot(true), close: async () => undefined };
+    },
     now: () => t,
     sleep: async (ms) => {
       t += ms;
@@ -52,10 +68,174 @@ function harness(over: Partial<RunCanaryDeps> & { onTick?: (t: number) => void }
 }
 
 const hits = (kind: 'canary' | 'stable', n: number, status: number, ms: number, at: number) => {
-  for (let i = 0; i < n; i++) recordCanaryHit(`svc_web_4_${kind}@file`, status, ms, at);
+  for (let i = 0; i < n; i++) {
+    fixtureHits.push({ kind, status, ms });
+    recordCanaryHit(`svc_web_4_${kind}@file`, status, ms, at);
+  }
 };
 
 describe('runCanary', () => {
+  it('does not repeat an already completed end-of-step probe and consume the remote window reserve', async () => {
+    const h = harness({ serverId: 2, stableRuntimeId: 'web-old', config: canaryConfig.parse({ steps: [50], stepSeconds: 30 }), probeEveryMs: 5000 });
+    const probe = vi.fn(async () => { await h.deps.sleep!(9000); return true; }); h.deps.probe = probe;
+    const start = h.now(); await expect(runCanary(h.deps)).resolves.toBe('completed');
+    expect(probe).toHaveBeenCalledTimes(3); expect(h.now() - start).toBe(42_000);
+  });
+  it.each([false, true])('refuses a stale success when closing the last window loses ownership (promote=%s)', async promote => {
+    const h = harness({ config: canaryConfig.parse({ steps: [50], stepSeconds: 30 }), onTick: () => { if (promote) requestCanaryPromote(1, 7); } });
+    const open = h.deps.openTraffic!;
+    h.deps.openTraffic = async step => ({ ...await open(step), close: async () => {
+      beginCanary(1, 'web', 999, 1, true);
+      setCanaryStep(1, 1, { runtimeId: 'newer-owner', replicas: 1, port: 3000, weight: 25 }, 0, 100);
+    } });
+    await expect(runCanary(h.deps)).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(canaryRouteFor(1)?.runtimeId).toBe('newer-owner'); expect(h.routes).toEqual([50]);
+  });
+  it('waits for a measured node step before promotion and skips only the remaining steps', async () => {
+    const h = harness({ serverId: 2, stableRuntimeId: 'web-old', onTick: () => requestCanaryPromote(1, 7) });
+    const start = h.now();
+    await expect(runCanary(h.deps)).resolves.toBe('promoted');
+    expect(h.now() - start).toBe(30_000); expect(h.routes).toEqual([10]);
+    expect(h.lines.filter(line => line.includes('waits for the current measured step'))).toHaveLength(1);
+  });
+
+  it('does not promote a node step whose completed measurement fails', async () => {
+    const h = harness({ serverId: 2, stableRuntimeId: 'web-old', onTick: t => { requestCanaryPromote(1, 7); hits('canary', 30, 503, 1, t); } });
+    await expect(runCanary(h.deps)).rejects.toThrow(/requests failed/);
+    expect(h.lines).not.toContain('##[stage:CANARY:success] Promoted');
+  });
+
+  it('passes immutable node placement and step identity when opening each observation', async () => {
+    const h = harness({ serverId: 2, stableRuntimeId: 'web-old' });
+    const contexts: unknown[] = [], open = h.deps.openTraffic!;
+    h.deps.openTraffic = async context => { contexts.push(context); return open(context); };
+    await expect(runCanary(h.deps)).resolves.toBe('completed');
+    expect(contexts).toEqual([10, 50].map((weight, i) => ({ deploymentId: 7, serverId: 2, stableRuntimeId: 'web-old', step: i + 1, weight, durationMs: 30_000 })));
+  });
+  it('refuses a lost deployment checkpoint before starting a canary or writing routes', async () => {
+    const lost = Error('lease lost'), h = harness({ checkpoint: async () => { throw lost; } });
+    await expect(runCanary(h.deps)).rejects.toBe(lost);
+    expect(canaryActive(1)).toBe(false); expect(h.routes).toEqual([]);
+  });
+  it('keeps the newer owner after routing acknowledgement returns late', async () => {
+    const h = harness();
+    const open = vi.fn(h.deps.openTraffic!); h.deps.openTraffic = open;
+    h.deps.writeConfig = vi.fn(async () => {
+      beginCanary(1, 'web', 999, 1, true);
+      setCanaryStep(1, 1, { runtimeId: 'newer-owner', replicas: 1, port: 3000, weight: 25 }, 0, 100);
+    });
+    await expect(runCanary(h.deps)).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(canaryRouteFor(1)?.runtimeId).toBe('newer-owner');
+    expect(open).not.toHaveBeenCalled(); expect(h.deps.writeConfig).toHaveBeenCalledOnce();
+  });
+
+  it.each([999, 7])('keeps a replacement owner after opening a source returns late, including retry of deployment %s', async replacement => {
+    const close = vi.fn(async () => undefined), h = harness();
+    h.deps.openTraffic = async () => {
+      beginCanary(1, 'web', replacement, 1, true);
+      setCanaryStep(1, 1, { runtimeId: 'newer-owner', replicas: 1, port: 3000, weight: 25 }, 0, 100);
+      return { sample: async () => { throw Error('old source must not be sampled'); }, finish: async () => { throw Error('old source must not finish'); }, close };
+    };
+    await expect(runCanary(h.deps)).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(canaryRouteFor(1)?.runtimeId).toBe('newer-owner'); expect(close).toHaveBeenCalledOnce();
+    expect(h.routes).toEqual([10]);
+  });
+
+  it('does not finish an observation after a final probe loses ownership', async () => {
+    const h = harness({ config: canaryConfig.parse({ steps: [50], stepSeconds: 30 }), probeEveryMs: 1_000_000 });
+    const base = h.deps.openTraffic!, finish = vi.fn();
+    h.deps.openTraffic = async step => { const window = await base(step); return { ...window, finish }; };
+    h.deps.probe = async () => { beginCanary(1, 'web', 999, 1, true); return true; };
+    await expect(runCanary(h.deps)).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(finish).not.toHaveBeenCalled();
+  });
+
+  it('does not retry an old rollback after another owner appears during its retry wait', async () => {
+    let rollingBack = false;
+    const h = harness({ probe: async () => false, onTick: () => {
+      if (rollingBack) { beginCanary(1, 'web', 999, 1, true); setCanaryStep(1, 1, { runtimeId: 'newer-owner', replicas: 1, port: 3000, weight: 25 }, 0, 100); }
+    } });
+    h.deps.writeConfig = vi.fn(async () => { if (!canaryActive(1)) { rollingBack = true; throw Error('load outcome unknown'); } });
+    await expect(runCanary(h.deps)).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(h.deps.writeConfig).toHaveBeenCalledTimes(2); expect(canaryRouteFor(1)?.runtimeId).toBe('newer-owner');
+    expect(h.lines).not.toContain('All traffic is back on the previous release.');
+  });
+  it('requires an observation source when measurement is enabled', async () => {
+    const h = harness({ openTraffic: undefined });
+    await expect(runCanary(h.deps)).rejects.toThrow(/observation is unavailable/);
+    expect(h.routes).toEqual([]);
+  });
+
+  it('closes a failed observation and confirms routing back before failing', async () => {
+    const close = vi.fn(async () => undefined);
+    const h = harness({ openTraffic: async () => ({ sample: async () => { throw new Error('source unavailable'); },
+      finish: async () => { throw new Error('must not finish'); }, close }) });
+    await expect(runCanary(h.deps)).rejects.toThrow('source unavailable');
+    expect(close).toHaveBeenCalledOnce(); expect(h.routes).toEqual([10, null]);
+  });
+
+  it('does not clear a newer owner or write an old rollback after an observation arrives late', async () => {
+    const empty = { requests: 0, errors: 0, errorRate: null, p95Ms: null };
+    const h = harness({ openTraffic: async () => ({
+      sample: async () => {
+        beginCanary(1, 'web', 999, 1, true);
+        setCanaryStep(1, 1, { runtimeId: 'newer-owner', replicas: 1, port: 3000, weight: 25 }, 0, 100);
+        return { canary: empty, stable: empty, complete: false };
+      },
+      finish: async () => ({ canary: empty, stable: empty, complete: true }), close: async () => undefined,
+    }) });
+    await expect(runCanary(h.deps)).rejects.toThrow();
+    expect(canaryStatus(1)).toMatchObject({ active: true, deploymentId: 999 });
+    expect(canaryRouteFor(1)?.runtimeId).toBe('newer-owner');
+    expect(h.routes).toEqual([10]);
+  });
+  it('observes a full step after opening a delayed source window', async () => {
+    const h = harness();
+    const open = h.deps.openTraffic!;
+    h.deps.openTraffic = async step => { await h.deps.sleep!(10_000); return open(step); };
+    const started = h.now();
+    await expect(runCanary(h.deps)).resolves.toBe('completed');
+    expect(h.now() - started).toBe(80_000);
+  });
+  it('drains the final traffic observation before accepting an otherwise healthy step', async () => {
+    const empty = { requests: 0, errors: 0, errorRate: null, p95Ms: null };
+    const h = harness({
+      config: canaryConfig.parse({ steps: [50], stepSeconds: 30, minRequests: 20 }),
+      openTraffic: async () => ({
+        sample: async () => ({ canary: empty, stable: empty, complete: false }),
+        finish: async () => ({ canary: { requests: 30, errors: 30, errorRate: 100, p95Ms: 10 }, stable: empty, complete: true }),
+        close: async () => undefined,
+      }),
+    });
+    await expect(runCanary(h.deps)).rejects.toThrow('100% of 30 requests failed');
+    expect(h.routes).toEqual([50, null]);
+  });
+
+  it('refuses an incomplete final observation instead of treating it as zero requests', async () => {
+    const empty = { requests: 0, errors: 0, errorRate: null, p95Ms: null };
+    const h = harness({
+      config: canaryConfig.parse({ steps: [50], stepSeconds: 30 }),
+      openTraffic: async () => ({
+        sample: async () => ({ canary: empty, stable: empty, complete: false }),
+        finish: async () => ({ canary: empty, stable: empty, complete: false }),
+        close: async () => undefined,
+      }),
+    });
+    await expect(runCanary(h.deps)).rejects.toThrow(/observation.*incomplete/i);
+    expect(h.lines.join('\n')).not.toContain('Every step passed');
+  });
+  it('reports an unconfirmed rollback when both route-back attempts fail', async () => {
+    const h = harness({ writeConfig: vi.fn(async () => { throw new Error('unavailable'); }) });
+    await expect(runCanary(h.deps)).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(h.lines.join('\n')).not.toContain('All traffic is back on the previous release');
+  });
+
+  it('observes each full step window after a delayed routing acknowledgement', async () => {
+    const h = harness({ writeConfig: async () => { await h.deps.sleep!(10_000); } });
+    const started = h.now();
+    await expect(runCanary(h.deps)).resolves.toBe('completed');
+    expect(h.now() - started).toBe(80_000); // two 10s writes plus two 30s observation windows
+  });
   it('walks every step, keeps the last split for the switch, and logs the stages', async () => {
     const h = harness();
     await expect(runCanary(h.deps)).resolves.toBe('completed');
@@ -73,7 +253,7 @@ describe('runCanary', () => {
     const err = await runCanary(h.deps).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CanaryAborted);
     expect((err as Error).message).toBe(
-      'Canary aborted: at 10%, 100% of 60 requests failed with a 5xx (the limit is 5%). All traffic is back on the previous release.',
+      'Canary aborted: at 10%, 100% of 60 requests failed with a 5xx (the limit is 5%)',
     );
     expect(h.routes).toEqual([10, null]);
     expect(canaryActive(1)).toBe(false);
@@ -131,7 +311,7 @@ describe('runCanary', () => {
 
   it('a cancel routes everything back and rethrows the checkpoint error', async () => {
     const cancelled = new Error('Deployment cancelled');
-    const h = harness({ checkpoint: vi.fn(async () => Promise.reject(cancelled)) });
+    const h = harness({ checkpoint: vi.fn(async () => { if (h.now() > 1_000_000) throw cancelled; }) });
     await expect(runCanary(h.deps)).rejects.toBe(cancelled);
     expect(h.routes).toEqual([10, null]);
   });
@@ -150,12 +330,33 @@ describe('runCanary', () => {
 
   it('logs a write back that keeps failing', async () => {
     const h = harness({ writeConfig: vi.fn(async () => Promise.reject('down')) });
-    await expect(runCanary(h.deps)).rejects.toThrow('could not be written (down)');
-    expect(h.lines).toContain('⚠ could not route the traffic back: down');
+    await expect(runCanary(h.deps)).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(h.lines).toContain('⚠ Canary rollback was not confirmed; both runtime generations are kept running');
   });
 });
 
 describe('canary state', () => {
+  it('requires an anchored node placement before replacing any existing owner', () => {
+    beginCanary(1, 'web', 7, 1, false);
+    for (const serverId of [0, Number.NaN, 2]) {
+      expect(() => beginCanary(1, 'web', 8, 1, true, true, { serverId })).toThrow(/valid node and stable runtime/);
+      expect(canaryStatus(1)).toMatchObject({ active: true, deploymentId: 7 });
+    }
+  });
+
+  it('refuses cleanup by another deployment or an older incarnation of the same deployment', () => {
+    const first = beginCanary(1, 'web', 7, 1, true);
+    const second = beginCanary(1, 'web', 7, 1, true);
+    endCanary(1, 999); expect(canaryActive(1)).toBe(true);
+    endCanary(1, 7, first); expect(canaryActive(1)).toBe(true);
+    endCanary(1, 7, second); expect(canaryActive(1)).toBe(false);
+  });
+
+  it('requires measured traffic when running with a node placement', async () => {
+    const h = harness({ serverId: 2, stableRuntimeId: 'web-old', measured: false });
+    await expect(runCanary(h.deps)).rejects.toThrow(/node canary requires measured traffic/);
+    expect(h.routes).toEqual([]); expect(canaryActive(1)).toBe(false);
+  });
   it('counts hits per release from the step start, only for a watched service', () => {
     recordCanaryHit('svc_web_4_canary@file', 500, 10, 5);
     beginCanary(1, 'web', 7, 2, true);

@@ -108,6 +108,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const s of sockets.splice(0)) s.close();
   await app.close();
   agent._resetAgentTerminals();
@@ -542,5 +543,59 @@ describe('D5 (node side): Traefik log rotation on the node proxy', () => {
     expect(agent.nodeProxyLogOptArgs('json-file')).toEqual(['--log-opt', 'max-size=20m', '--log-opt', 'max-file=3']);
     expect(agent.nodeProxyLogOptArgs('syslog')).toEqual([]);
     expect(agent.nodeProxyLogOptArgs(null)).toEqual([]);
+  });
+});
+
+
+const DATABASE_ID='d'.repeat(64);
+const DATABASE_CLIENT={engine:'postgres',username:'nine',database:'app',password:'private-node-client-secret'};
+const DATABASE_PARAMS={kind:'database',databaseId:7,container:'nd-db-owned',containerId:DATABASE_ID,client:DATABASE_CLIENT,cols:100,rows:30,sessionId:17};
+const managedDatabase=()=>fakes.inspect.mockResolvedValue({id:DATABASE_ID,running:true,hostname:null,labels:{'ninedeploy.managed':'database','ninedeploy.database.id':'7','ninedeploy.database.slug':'owned'}});
+describe('sealed database client terminals',()=>{
+  it('prepares a full managed ID without a credential and opens only that ID with fixed argv and exec Env',async()=>{
+    managedDatabase();
+    const prepared=await sealedOp('db.client.prepare',{container:'nd-db-owned',databaseId:7});
+    expect(prepared.status).toBe(200);expect(prepared.lines).toEqual(['ND-DB-CLIENT '+JSON.stringify({container:'nd-db-owned',containerId:DATABASE_ID,databaseId:7})]);
+    const opened=await sealedOp('terminal.open',DATABASE_PARAMS);expect(opened.status).toBe(200);
+    expect(parseTerminalChannel(opened.lines)).not.toBeNull();expect(JSON.stringify(opened)).not.toContain(DATABASE_CLIENT.password);
+    expect(fakes.openExec).toHaveBeenCalledExactlyOnceWith(expect.anything(),{container:DATABASE_ID,cmd:['psql','-U','nine','-d','app'],env:['PGPASSWORD='+DATABASE_CLIENT.password],cols:100,rows:30});
+    expect(JSON.stringify(fakes.openExec.mock.calls[0]![1].cmd)).not.toContain(DATABASE_CLIENT.password);
+  });
+  it('keeps real per-channel encryption, resize, data and termination for a client process',async()=>{
+    managedDatabase();const ch=await openChannel(DATABASE_PARAMS),connection=connect(ch.channel);expect(await connection.opened).toBe(true);
+    const tty=new AgentChannelTty(connection.ws,deriveFrameKey(TOKEN_HASH,ch.salt),'container'),out:Buffer[]=[];tty.onData(data=>out.push(data));tty.start(100,30);
+    await waitFor(()=>fakes.ttys[0]!.resizes.length>0);tty.write(Buffer.from('SELECT 42;\r'));
+    await waitFor(()=>fakes.ttys[0]!.written.includes('SELECT 42;\r'));fakes.ttys[0]!.emit('node-client-result');
+    await waitFor(()=>Buffer.concat(out).toString().includes('node-client-result'));
+    expect(connection.frames.every(frame=>!frame.includes(Buffer.from('node-client-result')))).toBe(true);
+    await tty.kill();await waitFor(()=>fakes.ttys[0]!.killed>0);expect(agent.terminalChannelCount()).toBe(0);
+  });
+  it.each(['NINEDEPLOY_AGENT_DATABASES','NINEDEPLOY_AGENT_DATABASE_CLIENTS'])('owner switch %s removes the capability and refuses both preparation and opening',async key=>{
+    vi.stubEnv(key,'off');managedDatabase();
+    expect(agent.agentCapabilities()).not.toContain('db.client');
+    expect((await sealedOp('db.client.prepare',{container:'nd-db-owned',databaseId:7})).status).not.toBe(200);
+    expect((await sealedOp('terminal.open',DATABASE_PARAMS)).status).not.toBe(200);
+    expect(fakes.inspect).not.toHaveBeenCalled();expect(fakes.openExec).not.toHaveBeenCalled();
+  });
+  it('refuses a name reused between ticket preparation and attach',async()=>{
+    managedDatabase();expect((await sealedOp('db.client.prepare',{container:'nd-db-owned',databaseId:7})).status).toBe(200);
+    fakes.inspect.mockResolvedValue({id:'e'.repeat(64),running:true,labels:{'ninedeploy.managed':'database','ninedeploy.database.id':'7','ninedeploy.database.slug':'owned'}});
+    const result=await sealedOp('terminal.open',DATABASE_PARAMS);expect(result.status).not.toBe(200);expect(result.error?.message).toMatch(/changed/);expect(fakes.openExec).not.toHaveBeenCalled();
+  });
+  it.each([null,{id:DATABASE_ID,running:false,labels:{'ninedeploy.managed':'database','ninedeploy.database.id':'7','ninedeploy.database.slug':'owned'}},{id:DATABASE_ID,running:true,labels:{'ninedeploy.managed':'service'}},{id:DATABASE_ID,running:true,labels:{}}])('refuses missing, stopped or unconfirmed database identity',async summary=>{
+    fakes.inspect.mockResolvedValue(summary);expect((await sealedOp('terminal.open',DATABASE_PARAMS)).status).not.toBe(200);expect(fakes.openExec).not.toHaveBeenCalled();
+  });
+  it.each([{containerId:'short'},{container:'web-12'},{client:{...DATABASE_CLIENT,engine:'sh'}},{client:{...DATABASE_CLIENT,cmd:['sh']}},{client:{...DATABASE_CLIENT,env:['OTHER=secret']}},{client:{...DATABASE_CLIENT,password:'bad\0secret'}},{cmd:['sh']}])('refuses caller execution operands before opening a TTY',async patch=>{
+    managedDatabase();expect((await sealedOp('terminal.open',{...DATABASE_PARAMS,...patch})).status).not.toBe(200);expect(fakes.openExec).not.toHaveBeenCalled();expect(agent.terminalChannelCount()).toBe(0);
+  });
+  it('never echoes credential-bearing Docker startup diagnostics',async()=>{
+    managedDatabase();fakes.openExec.mockRejectedValueOnce(Error('Docker failed with '+DATABASE_CLIENT.password));
+    const result=await sealedOp('terminal.open',DATABASE_PARAMS);expect(result.status).not.toBe(200);expect(JSON.stringify(result)).not.toContain(DATABASE_CLIENT.password);expect(agent.terminalChannelCount()).toBe(0);
+  });
+  it('does not prepare or open clients over cleartext',async()=>{
+    managedDatabase();
+    await expect(agent.runOp('db.client.prepare',{container:'nd-db-owned',databaseId:7},()=>undefined)).rejects.toThrow(/sealed/i);
+    await expect(agent.runOp('terminal.open',DATABASE_PARAMS,()=>undefined)).rejects.toThrow(/sealed/i);
+    expect(fakes.inspect).not.toHaveBeenCalled();expect(fakes.openExec).not.toHaveBeenCalled();
   });
 });

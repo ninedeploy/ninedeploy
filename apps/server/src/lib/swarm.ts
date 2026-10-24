@@ -48,14 +48,16 @@ export const swarmServiceName = (slug: string): string => `${swarmStackName(slug
 /** Its attachable overlay network, which Traefik joins. */
 export const swarmNetworkName = (slug: string): string => `nd-swarm-${slug}`;
 /**
- * The node label that marks a node holding this service's preloaded image:
- * `nd.preload.<slug>=<image id prefix>` on the nodes that received it, and a
- * constraint that requires it (security review M1d: positive, so a node the
- * panel never sent the image to can never qualify).
+ * Base of this service's bounded preload slots. The unsuffixed legacy key
+ * remains untouched so existing services and rollback specs keep placement.
  */
 export const swarmPreloadLabel = (slug: string): string => `nd.preload.${slug}`;
-/** The label value of one image: the first 12 hex of its id or digest. */
-export const swarmImageTag = (imageIdOrDigest: string): string => imageIdOrDigest.replace(/^.*sha256:/, '').slice(0, 12);
+/** Full content address, without the prefix, used as the placement value. */
+export function swarmImageTag(imageIdOrDigest: string): string {
+  const id = imageIdOrDigest.replace(/^.*sha256:/, '');
+  if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Swarm preload image identity is unconfirmed');
+  return id;
+}
 /**
  * Security review M1c: the panel's own node (at init) and every node joined
  * through the panel carry `nd.member=1`, and every Swarm service requires it,

@@ -77,6 +77,15 @@ function renderTab(over: Record<string, unknown> = {}) {
 const TIMEOUT = 30_000;
 
 describe('SettingsTab target node', () => {
+  it.each([{ orchestrator: 'swarm' }, { placement: { orchestrator: 'swarm' } }])('explains native Swarm placement without offering incompatible host or fan-out edits: %j', async over => {
+    renderTab(over);
+    await screen.findByText('Target node');
+    expect(screen.queryByLabelText('Runs on')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Save target/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Run on additional nodes')).not.toBeInTheDocument();
+    expect(screen.getByText(/Swarm schedules replicas across its eligible nodes/)).toBeInTheDocument();
+    expect(apiMock.api.services.update).not.toHaveBeenCalled();
+  });
   afterEach(cleanup);
 
   beforeEach(() => {

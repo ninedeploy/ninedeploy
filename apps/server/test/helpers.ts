@@ -241,6 +241,7 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
       chain.innerJoin = vi.fn(() => chain);
       chain.limit = vi.fn(() => chain);
       chain.orderBy = vi.fn(() => chain);
+      chain.groupBy = vi.fn(() => chain);
       return chain;
     },
   });

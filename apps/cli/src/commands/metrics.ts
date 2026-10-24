@@ -13,6 +13,7 @@
  *     of `metric.archived` rows trimmed.
  */
 import type { NineDeployClient } from '../client.js';
+import { observabilityPatch, type ObservabilityPatch } from '@ninedeploy/schemas';
 import { error, header, info, success } from '../lib/format.js';
 
 export interface MetricHistoryStatus {
@@ -66,4 +67,43 @@ export async function metricsFlushAction(client: NineDeployClient): Promise<void
     return;
   }
   success(`Flushed built-in backend — ${result.deleted} row(s) trimmed`);
+}
+
+/** Infrastructure resource settings are separate from the kernel event archive above. */
+export async function resourceMetricsSettingsAction(client: NineDeployClient): Promise<void> {
+  try {
+    const { settings, exportStatus } = await client.stats.observability.get();
+    header('Resource history and metrics export');
+    info('History: ' + settings.retentionDays + ' day(s)');
+    info('Prometheus: ' + (settings.prometheusEnabled ? '/v1/stats/prometheus (operator bearer required)' : 'disabled'));
+    info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+    info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+    info('Log queue: ' + settings.logQueueMaxMb + ' MiB per destination');
+    info('Last export: ' + (exportStatus.lastAttemptAt ?? 'never'));
+  } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+}
+
+export async function resourceMetricsConfigureAction(client: NineDeployClient, opts: {
+  retentionDays?: string; prometheus?: string; otlpEndpoint?: string; otlpAuthorizationEnv?: string; clearOtlpAuthorization?: boolean; logQueueMb?: string;
+}): Promise<void> {
+  try {
+    if (opts.prometheus !== undefined && !['on', 'off'].includes(opts.prometheus)) throw new Error('--prometheus must be on or off');
+    const patch: ObservabilityPatch = {};
+    if (opts.retentionDays !== undefined) patch.retentionDays = Number(opts.retentionDays);
+    if (opts.prometheus !== undefined) patch.prometheusEnabled = opts.prometheus === 'on';
+    if (opts.otlpEndpoint !== undefined) patch.otlpEndpoint = opts.otlpEndpoint;
+    if (opts.logQueueMb !== undefined) patch.logQueueMaxMb = Number(opts.logQueueMb);
+    if (opts.clearOtlpAuthorization) patch.otlpAuthorization = '';
+    if (opts.otlpAuthorizationEnv) {
+      if (opts.clearOtlpAuthorization) throw new Error('Choose a credential environment variable or clear the saved credential');
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(opts.otlpAuthorizationEnv)) throw new Error('Invalid credential environment-variable name');
+      const value = process.env[opts.otlpAuthorizationEnv];
+      if (!value) throw new Error('The selected credential environment variable is empty');
+      patch.otlpAuthorization = value;
+    }
+    const parsed = observabilityPatch.safeParse(patch);
+    if (!parsed.success) throw new Error('Invalid monitoring settings: ' + parsed.error.issues.map((issue) => issue.path.join('.') + ': ' + issue.message).join('; '));
+    await client.stats.observability.update(parsed.data);
+    success('Monitoring settings saved');
+  } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
 }

@@ -14,8 +14,14 @@ import {
 
 const execMocks = vi.hoisted(() => ({ capture: vi.fn(), run: vi.fn() }));
 vi.mock('../../src/lib/exec.js', () => execMocks);
+const directoryListing = (...entries: Array<[string, string]>) => ['ND_FILES_V1', ...entries.flat(), 'ND_FILES_END', ''].join('\0');
 
 describe('containerFiles helpers (pure)', () => {
+  it('preserves meaningful leading and trailing filename whitespace instead of aliasing another file', () => {
+    expect(safeContainerPath('/tmp/trailing ')).toBe('/tmp/trailing ');
+    expect(safeContainerPath(' leading ')).toBe('/ leading ');
+    expect(safeContainerPath('/tmp/\r')).toBe('/tmp/\r');
+  });
   it('isManagedContainer validates container identifiers', () => {
     expect(isManagedContainer('nd-svc-web-1')).toBe(true);
     expect(isManagedContainer('nd-db-postgres-1')).toBe(true);
@@ -43,7 +49,7 @@ describe('containerFiles helpers (pure)', () => {
 describe('containerFiles operations (docker exec)', () => {
   it('lists directory contents with metadata (stat format)', async () => {
     execMocks.capture.mockResolvedValueOnce(
-      'directory|4096|755|1786886400|./config\nregular file|1024|644|1786886401|./app.js\nsymbolic link|12|777|1786886402|./link.js\n',
+      directoryListing(['41ed|4096|755|1786886400', './config'], ['81a4|1024|644|1786886401', './app.js'], ['a1ff|12|777|1786886402', './link.js']),
     );
     const entries = await listContainerDir('nd-svc-web-1', '/app');
     expect(execMocks.capture).toHaveBeenCalledWith('docker', [
@@ -78,16 +84,22 @@ describe('containerFiles operations (docker exec)', () => {
     ]);
   });
 
-  it('skips malformed output lines in listContainerDir and handles missing modes and names', async () => {
-    execMocks.capture.mockResolvedValueOnce(
-      'socket|0|777|0|./sock\ndirectory||||./nodirmode\ndirectory|4096|755|0|/\nregular file||||./badsize\nregular file|500||0|./nomode\n\n',
-    );
+  it.each(['', 'ND_FILES_V1\0', 'ND_FILES_V1\0regular file||||\0./badsize\0ND_FILES_END\0', 'ND_FILES_V1\0ND_FILES_ERROR\0ND_FILES_END\0'])('refuses incomplete directory metadata instead of fabricating an empty result: %j', async raw => {
+    execMocks.capture.mockResolvedValueOnce(raw);
+    await expect(listContainerDir('nd-svc-web-1', '/')).rejects.toThrow(/unconfirmed/);
+  });
+
+  it('lists empty files and preserves whitespace and delimiter characters in exact names', async () => {
+    execMocks.capture.mockResolvedValueOnce(directoryListing(['81a4|0|644|1786886400', './empty'], ['81a4|5|644|1786886400', './ trailing|name ']));
     const entries = await listContainerDir('nd-svc-web-1', '/');
-    expect(entries).toEqual([
-      { name: 'nodirmode', type: 'dir', sizeBytes: 0, mode: null, modifiedAt: null },
-      { name: 'badsize', type: 'file', sizeBytes: 0, mode: null, modifiedAt: null },
-      { name: 'nomode', type: 'file', sizeBytes: 500, mode: null, modifiedAt: null },
-    ]);
+    expect(entries.map(entry => [entry.name, entry.sizeBytes])).toEqual([[' trailing|name ', 5], ['empty', 0]]);
+  });
+
+  it('returns a confirmed empty directory and omits unsupported special-file kinds', async () => {
+    execMocks.capture.mockResolvedValueOnce('ND_FILES_V1\0c1ff|0|777|0\0./sock\0ND_FILES_END\0');
+    expect(await listContainerDir('nd-svc-web-1', '/')).toEqual([]);
+    execMocks.capture.mockResolvedValueOnce('ND_FILES_V1\0ND_FILES_END\0');
+    expect(await listContainerDir('nd-svc-web-1', '/')).toEqual([]);
   });
 
   it('reads container file content with base64 encoding', async () => {
@@ -100,7 +112,7 @@ describe('containerFiles operations (docker exec)', () => {
       'sh',
       '-c',
       expect.stringContaining("head -c 1048577 '/app/index.js'"),
-    ]);
+    ], expect.objectContaining({ captureEncoding: 'base64', maxOutputBytes: 1048577 }));
   });
 
   // r275: `tail -c 1048576` silently returned the LAST MiB of a larger file,

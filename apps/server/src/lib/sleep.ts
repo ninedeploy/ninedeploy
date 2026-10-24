@@ -1,5 +1,5 @@
-import { type DB, type Service, services } from '@ninedeploy/db';
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { type DB, type Service, primaryTransitions, services } from '@ninedeploy/db';
+import { and, eq, isNotNull, isNull, notExists } from 'drizzle-orm';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { lastServiceRequestAt } from './requestRate.js';
 
@@ -88,7 +88,8 @@ export async function putToSleep(deps: SleepDeps, svc: Service): Promise<boolean
   const marked = await deps.db
     .update(services)
     .set({ asleepAt: new Date(now) })
-    .where(and(eq(services.id, svc.id), eq(services.runtimeId, svc.runtimeId!), eq(services.status, 'running'), isNull(services.asleepAt)))
+    .where(and(eq(services.id, svc.id), eq(services.runtimeId, svc.runtimeId!), eq(services.status, 'running'), isNull(services.asleepAt),
+      notExists(deps.db.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, svc.id)))))
     .returning({ id: services.id });
   if (marked.length === 0) return false;
   try {

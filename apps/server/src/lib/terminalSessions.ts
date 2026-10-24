@@ -1,3 +1,4 @@
+import type { PreparedDatabaseClient } from './databaseClient.js';
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 import { type DB, type TerminalSession as TerminalSessionRow, terminalSessions, users } from '@ninedeploy/db';
@@ -215,6 +216,7 @@ export interface ResolvedTerminalTarget {
   /** null = the interactive shell (`SHELL_CMD`). */
   cmd: readonly string[] | null;
   env: string[];
+  databaseClient?: PreparedDatabaseClient;
 }
 
 export interface PendingTerminal {

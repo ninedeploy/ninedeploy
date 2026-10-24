@@ -158,6 +158,30 @@ export const servicesSpecs: RouteSpecMap = {
     floor: 'viewer',
     responseType: '{ targets: Array<{ serverId: number; runtimeId: string | null; status: string }> }',
   },
+  'GET /v1/services/:id/runtime-recovery': {
+    summary: 'Pending primary Docker runtime recovery', tag: 'services', floor: 'viewer',
+    responseType: '{ entry: PrimaryRecoveryEntry | null }',
+  },
+  'GET /v1/services/:id/swarm/recovery': {
+    summary: 'Pending managed Swarm update recovery', tag: 'services', floor: 'viewer',
+    responseType: '{ entry: SwarmRecoveryEntry | null }',
+  },
+  'POST /v1/services/:id/swarm/recovery': {
+    summary: 'Retry version-fenced Swarm update recovery', tag: 'services', floor: 'operator',
+    responseType: 'SwarmRecoveryResult',
+  },
+  'POST /v1/services/:id/runtime-recovery': {
+    summary: 'Retry safe primary Docker runtime recovery', tag: 'services', floor: 'operator',
+    responseType: 'PrimaryRecoveryResult',
+  },
+  'GET /v1/services/:id/targets/recovery': {
+    summary: 'Pending fan-out runtime recovery', tag: 'services', floor: 'viewer',
+    responseType: '{ entries: FanoutRecoveryEntry[] }',
+  },
+  'POST /v1/services/:id/targets/recovery': {
+    summary: 'Retry safe fan-out runtime recovery', tag: 'services', floor: 'operator',
+    responseType: 'FanoutRecoveryResult',
+  },
   'PATCH /v1/services/:id/targets': {
     summary: "Set a service's fan-out server targets",
     tag: 'services',

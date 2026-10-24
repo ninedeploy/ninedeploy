@@ -1,3 +1,5 @@
+import type { PreparedDatabaseClient } from './databaseClient.js';
+import { assertNodeDatabaseClientSupport } from './nodeDatabaseClient.js';
 import { isIPv6 } from 'node:net';
 import { eq } from 'drizzle-orm';
 import { type DB, servers } from '@ninedeploy/db';
@@ -234,6 +236,7 @@ export interface NodeTerminalTarget {
   kind: 'service' | 'host' | 'database' | 'container';
   serverId: number | null;
   containerName: string | null;
+  databaseClient?: PreparedDatabaseClient;
 }
 
 /**
@@ -249,7 +252,7 @@ export async function openNodeTerminalTty(
 ): Promise<TtyProcess> {
   const serverId = target.serverId;
   if (serverId === null) throw new Error('not a node target');
-  // 0.16 T6: a database on a node opens as the agent's container shell (its `nd-db-*` container).
+  // Database shells retain the original path; prepared clients use their own sealed capability.
   if (target.kind !== 'service' && target.kind !== 'host' && target.kind !== 'database') throw new Error(`${target.kind} targets do not run on nodes`);
   const row = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
   if (!row) throw new Error(`node #${serverId} no longer exists`);
@@ -258,13 +261,20 @@ export async function openNodeTerminalTty(
   if (!(await agentTransportSealed(db, serverId))) {
     throw new Error(`the panel reaches node "${row.name}" only over the unencrypted transport`);
   }
-  const kind = target.kind === 'host' ? 'host' : 'container';
+  const client = target.databaseClient;
+  if (client && target.kind !== 'database') throw new Error('A database client needs a database target');
+  if (client) await assertNodeDatabaseClientSupport(db,serverId);
+  const kind = target.kind === 'host' ? 'host' : client ? 'database' : 'container';
   const params: Record<string, unknown> = { kind, cols: opts.cols, rows: opts.rows, sessionId: opts.sessionId };
-  if (kind === 'container') {
+  if (kind !== 'host') {
     if (!target.containerName) throw new Error('the target has no container');
     params['container'] = target.containerName;
   }
-  const res = await agentOp(db, serverId, 'terminal.open', params, () => undefined);
+  if (client) {params['databaseId']=client.databaseId;params['containerId']=client.containerId;params['client']=client.input;}
+  const res = client
+    ? await agentOp(db,serverId,'terminal.open',params,()=>undefined,{timeoutMs:60_000})
+    : await agentOp(db,serverId,'terminal.open',params,()=>undefined);
+  if (client && res.exitCode !== 0) throw new Error('The node did not open the database client channel');
   const channel = parseTerminalChannel(res.lines);
   if (!channel) throw new Error(`the agent on node "${row.name}" answered terminal.open without a channel`);
   const key = deriveFrameKey(sha256(decrypt(row.tokenEncrypted)), channel.salt);
@@ -294,7 +304,7 @@ export async function openNodeTerminalTty(
     socket.addEventListener('error', () => done(new Error(`could not connect to the terminal channel on node "${row.name}"`)));
     socket.addEventListener('close', () => done(new Error(`the agent on node "${row.name}" refused the terminal channel`)));
   });
-  const tty = new AgentChannelTty(socket, key, kind);
+  const tty = new AgentChannelTty(socket, key, kind === 'host' ? 'host' : 'container');
   tty.start(opts.cols, opts.rows);
   return tty;
 }

@@ -25,6 +25,12 @@ type Retention = { swept: string } | { config: string };
 
 /** Every table added from 0.15 on, and how it stays bounded. */
 const RETENTION: Record<string, Retention> = {
+  swarm_transitions: { config: 'one unresolved transition per service; encrypted spec and recovery lease retained until confirmed settlement, cascading with service deletion; never age-evicted' },
+  primary_transitions: { config: 'one unresolved transition per service; deleted after confirmed cleanup and cascading with service/node; pending safety records are never age-evicted' },
+  fanout_transitions: { config: 'at most one unresolved transition per service/node (unique service_id,server_id); deleted after confirmed cleanup and cascading with service/node; pending safety records are never age-evicted' },
+  metric_rollups: { swept: 'resource-metric-history' },
+  log_drain_cursors: { swept: 'log-drain-cursors' },
+  log_drain_batches: { config: 'encrypted payload capped per drain (1–256 MiB and 10000 batches); retained until acknowledgement or explicit operator discard, cascading with drain/service' },
   deployment_release_records: { config: 'one immutable record per deployment (unique deployment_id); cascades when deployment history is pruned or deleted' },
   // 0.15 (migration 0071)
   terminal_sessions: { swept: 'terminal-sessions' },

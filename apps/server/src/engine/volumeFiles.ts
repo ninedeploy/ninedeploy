@@ -88,7 +88,7 @@ export async function listVolumeDir(
     const name = nameParts.join('|').split('/').pop()!;
     if (!name) continue;
     if (type === 'directory') entries.push({ name, type: 'dir', sizeBytes: Number(size) || 0, modifiedAt: toIso(mtime) });
-    else if (type === 'regular file') entries.push({ name, type: 'file', sizeBytes: Number(size) || 0, modifiedAt: toIso(mtime) });
+    else if (type === 'regular file' || type === 'regular empty file') entries.push({ name, type: 'file', sizeBytes: Number(size) || 0, modifiedAt: toIso(mtime) });
     // other kinds (sockets, devices…) are skipped
   }
   return entries;

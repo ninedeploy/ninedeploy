@@ -1,9 +1,10 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { and, inArray, isNotNull, eq } from 'drizzle-orm';
 import { serviceTargets, services } from '@ninedeploy/db';
 import { containerFileWrite, containerPathCreate } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { badRequest } from '../lib/errors.js';
+import { badRequest, forbidden, HttpError, parseId } from '../lib/errors.js';
+import { nodeContainerTool } from '../lib/nodeContainerTools.js';
 import {
   deleteContainerPath,
   getContainerComposeManifest,
@@ -16,7 +17,7 @@ import {
   writeContainerFile,
 } from '../engine/containerFiles.js';
 
-export const containerRoutes: FastifyPluginAsync = async (app) => {
+export const containerRoutes: FastifyPluginAsync<{ nodeRoute?: boolean }> = async (app, options) => {
   app.addHook('onRequest', app.authenticate);
 
   const guardContainer = (container: string): string => {
@@ -54,69 +55,90 @@ export const containerRoutes: FastifyPluginAsync = async (app) => {
     return safe;
   };
 
+  const resolveContainer = async (req: FastifyRequest) => {
+    const query = req.query as Record<string, unknown>;
+    // A separate URI for node tools fails closed on older panels. Never let an
+    // ignored host query silently turn a node operation into a local one.
+    if (Object.keys(query).some(key => key !== 'path')) throw badRequest('Use the node container endpoint for an explicit node; unknown query parameter');
+    const params = req.params as { container: string; serverId?: string };
+    if (options.nodeRoute) {
+      if (!req.user?.isOperator) throw forbidden('Only instance operators may use node container tools');
+      return { container: guardContainer(params.container), serverId: parseId(params.serverId!, 'Invalid node id') };
+    }
+    return { container: await guardLocalContainer(params.container), serverId: undefined };
+  };
+  const auditIdentity = (container: string, serverId: number | undefined) => serverId == null ? container : `node #${serverId} ${container}`;
+
   // ── Get detailed inspect metadata and Traefik tags ────────────────────────
   // Admin-only: the inspect payload includes the container's full env (injected
   // DATABASE_URL/REDIS_URL credentials) — same power as the exec terminal.
   app.get('/:container/inspect', { preHandler: [app.requireAdmin] }, async (req) => {
-    const container = await guardLocalContainer((req.params as { container: string }).container);
-    return inspectContainer(container);
+    const { container, serverId } = await resolveContainer(req);
+    return serverId == null ? inspectContainer(container) : nodeContainerTool(app.db, serverId, container, 'inspect');
   });
 
   // ── Get runtime generated Docker Compose YAML manifest ───────────────────
   // Admin-only: the manifest renders every env var of the container.
   app.get('/:container/compose', { preHandler: [app.requireAdmin] }, async (req) => {
-    const container = await guardLocalContainer((req.params as { container: string }).container);
-    return getContainerComposeManifest(container);
+    const { container, serverId } = await resolveContainer(req);
+    return serverId == null ? getContainerComposeManifest(container) : nodeContainerTool(app.db, serverId, container, 'compose');
   });
 
   // ── List directory contents inside container ──────────────────────────────
   app.get('/:container/files', { preHandler: [app.requireAdmin] }, async (req) => {
-    const container = await guardLocalContainer((req.params as { container: string }).container);
+    const { container, serverId } = await resolveContainer(req);
     const target = guardPath((req.query as { path?: string }).path);
-    const entries = await listContainerDir(container, target);
+    const entries = serverId == null ? await listContainerDir(container, target) : await nodeContainerTool(app.db, serverId, container, 'list', { path: target });
     return { path: target, entries };
   });
 
   // ── Read file content (base64) ───────────────────────────────────────────
   app.get('/:container/files/content', { preHandler: [app.requireAdmin] }, async (req, reply) => {
-    const container = await guardLocalContainer((req.params as { container: string }).container);
+    const { container, serverId } = await resolveContainer(req);
     const target = guardPath((req.query as { path?: string }).path);
     if (target === '/') throw badRequest('invalid file path');
-    void audit(app.db, req.user!.id, 'container.file.read', `${container}:${target}`);
-    const file = await readContainerFile(container, target);
+    void audit(app.db, req.user!.id, 'container.file.read', `${auditIdentity(container, serverId)}:${target}`);
+    const file = serverId == null ? await readContainerFile(container, target) : await nodeContainerTool(app.db, serverId, container, 'read', { path: target });
     reply.header('content-type', 'application/json');
     return file;
   });
 
   // ── Write / overwrite file (base64) ──────────────────────────────────────
-  app.put('/:container/files', { preHandler: [app.requireAdmin] }, async (req) => {
-    const container = await guardLocalContainer((req.params as { container: string }).container);
+  app.put('/:container/files', { preHandler: [app.requireAdmin], bodyLimit: 2 * 1024 * 1024 }, async (req) => {
+    const { container, serverId } = await resolveContainer(req);
     const input = containerFileWrite.parse(req.body);
     const target = guardPath(input.path);
     if (target === '/') throw badRequest('invalid file path');
-    void audit(app.db, req.user!.id, 'container.file.write', `${container}:${target}`);
-    await writeContainerFile(container, target, input.contentBase64, (line) => req.log.info(line));
+    const nodeContentBase64 = input.contentBase64.replace(/\s/g, '');
+    if (serverId != null && Buffer.byteLength(nodeContentBase64, 'base64') > 1024 * 1024) {
+      throw new HttpError(413, 'file_too_large', 'Node file writes are limited to 1 MiB; no file was changed');
+    }
+    void audit(app.db, req.user!.id, 'container.file.write', `${auditIdentity(container, serverId)}:${target}`);
+    if (serverId == null) await writeContainerFile(container, target, input.contentBase64, (line) => req.log.info(line));
+    else await nodeContainerTool(app.db, serverId, container, 'write', { path: target, contentBase64: nodeContentBase64 });
     return { ok: true };
   });
 
   // ── Create directory (mkdir -p) ──────────────────────────────────────────
   app.post('/:container/files/dir', { preHandler: [app.requireAdmin] }, async (req) => {
-    const container = await guardLocalContainer((req.params as { container: string }).container);
+    const { container, serverId } = await resolveContainer(req);
     const input = containerPathCreate.parse(req.body);
     const target = guardPath(input.path);
     if (target === '/') throw badRequest('invalid directory path');
-    void audit(app.db, req.user!.id, 'container.file.mkdir', `${container}:${target}`);
-    await makeContainerDir(container, target);
+    void audit(app.db, req.user!.id, 'container.file.mkdir', `${auditIdentity(container, serverId)}:${target}`);
+    if (serverId == null) await makeContainerDir(container, target);
+    else await nodeContainerTool(app.db, serverId, container, 'mkdir', { path: target });
     return { ok: true };
   });
 
   // ── Delete file or directory (rm -rf) ────────────────────────────────────
   app.delete('/:container/files', { preHandler: [app.requireAdmin] }, async (req) => {
-    const container = await guardLocalContainer((req.params as { container: string }).container);
+    const { container, serverId } = await resolveContainer(req);
     const target = guardPath((req.query as { path?: string }).path);
     if (target === '/') throw badRequest('cannot delete root directory');
-    void audit(app.db, req.user!.id, 'container.file.delete', `${container}:${target}`);
-    await deleteContainerPath(container, target, (line) => req.log.info(line));
+    void audit(app.db, req.user!.id, 'container.file.delete', `${auditIdentity(container, serverId)}:${target}`);
+    if (serverId == null) await deleteContainerPath(container, target, (line) => req.log.info(line));
+    else await nodeContainerTool(app.db, serverId, container, 'delete', { path: target });
     return { ok: true };
   });
 };

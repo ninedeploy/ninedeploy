@@ -1210,7 +1210,7 @@ export const dockerBuilder: Builder = {
     // boot. Replicas clone `args`, so they carry the same labels.
     // 0.16.3: then the service's own labels (reserved prefixes are refused
     // at save, so they never shadow the recovery labels).
-    const labels = [...deploymentLabels(deploymentId, service.id), ...userDockerLabels(service.dockerLabels)];
+    const labels: Array<[string, string]> = [['ninedeploy.managed', 'service'], ...deploymentLabels(deploymentId, service.id), ...userDockerLabels(service.dockerLabels)];
     for (const [k, v] of labels) args.push('--label', `${k}=${v}`);
     // NOTE: no `-p` host port is published at all. Public traffic enters
     // exclusively through Traefik, which reaches the container by name over the

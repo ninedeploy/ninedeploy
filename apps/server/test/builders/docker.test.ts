@@ -220,7 +220,7 @@ describe('dockerBuilder.buildAndRun', () => {
     expect(runArgs).toEqual(
       [
         'run', '-d', '--name', 'web-3', '--restart', 'unless-stopped', '--network', 'nd-svc-web',
-        '--label', 'ninedeploy.deployment=3',
+        '--label', 'ninedeploy.managed=service', '--label', 'ninedeploy.deployment=3',
         '--cpu-shares', '512', '--cpus', '0.5',
         '--memory', '256m', '--memory-swap', '256m',
         '-v', 'nd-svc-web-data:/data',
@@ -382,7 +382,7 @@ describe('dockerBuilder.buildAndRun', () => {
     const runArgs = h.run.mock.calls.at(-1)![1] as unknown[];
     expect(runArgs).toEqual([
       'run', '-d', '--name', 'x-3', '--restart', 'unless-stopped', '--network', 'nd-svc-x',
-      '--label', 'ninedeploy.deployment=3', 'ninedeploy/x:abc',
+      '--label', 'ninedeploy.managed=service', '--label', 'ninedeploy.deployment=3', 'ninedeploy/x:abc',
     ]);
   });
 

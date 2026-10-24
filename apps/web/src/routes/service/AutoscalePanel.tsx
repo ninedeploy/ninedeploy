@@ -3,7 +3,7 @@ import { Gauge } from 'lucide-react';
 import type { AutoscaleEvent, AutoscaleMetric } from '@ninedeploy/schemas';
 import { autoscaleApi, autoscaleKeys } from '../../lib/autoscaleApi.js';
 import { formatRelative } from '../../lib/format.js';
-import { Card, CardBody } from '../../components/ui.js';
+import { Button, Card, CardBody } from '../../components/ui.js';
 
 /** "62.5%" / "12 req/s"; a dash when the value could not be read. */
 export function autoscaleValue(value: number | null | undefined, metric: AutoscaleMetric | undefined): string {
@@ -28,7 +28,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 /**
  * 0.16.10: what the autoscaler sees and did last, polled every 15 s while
  * `enabled` (the Overview is open and the service has autoscaling on).
- * Renders nothing when autoscaling is off or the status cannot be read.
+ * Keeps an unavailable status visible; cached figures are hidden on error.
  */
 export function AutoscalePanel({ serviceId, enabled }: { serviceId: number; enabled: boolean }) {
   const q = useQuery({
@@ -38,8 +38,8 @@ export function AutoscalePanel({ serviceId, enabled }: { serviceId: number; enab
     refetchInterval: enabled ? 15_000 : false,
     retry: false,
   });
-  const view = enabled && !q.isError && q.data?.enabled ? q.data : null;
-  if (!view) return null;
+  if (!enabled || (!q.isError && q.data?.enabled === false)) return null;
+  const view = !q.isError && q.data?.enabled ? q.data : null;
 
   return (
     <Card>
@@ -49,9 +49,15 @@ export function AutoscalePanel({ serviceId, enabled }: { serviceId: number; enab
             <Gauge size={16} className="text-indigo-200" />
             <span className="text-sm font-semibold text-slate-100">Autoscaling</span>
           </div>
-          <span className="whitespace-nowrap rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400">Live 15s</span>
+          <span className="whitespace-nowrap rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400">{q.isError ? 'Unavailable' : 'Updates every 15s'}</span>
         </div>
 
+        {q.isError ? (
+          <div role="alert" className="space-y-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200">
+            <p>Autoscaling status is unavailable. Current measurements and decisions could not be confirmed.</p>
+            <Button size="sm" variant="secondary" disabled={q.isFetching} onClick={() => void q.refetch()}>Retry status</Button>
+          </div>
+        ) : !view ? <p role="status" className="text-xs text-slate-400">Loading autoscaling status…</p> : <>
         <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
           <Stat label="Containers serving" value={`${view.replicas} of ${view.minReplicas}–${view.maxReplicas}`} />
           <Stat
@@ -61,11 +67,12 @@ export function AutoscalePanel({ serviceId, enabled }: { serviceId: number; enab
           <Stat label="Desired" value={view.desired != null ? String(view.desired) : '—'} />
         </dl>
 
-        {view.holding && <p className="text-xs text-slate-500">Holding: {view.holding}.</p>}
+        {view.holding && <p role="status" className="break-words rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200">Holding: {view.holding}.</p>}
         <p className="break-words text-xs text-slate-400">
           <span className="text-slate-500">Last change: </span>
           {view.lastEvent ? autoscaleEventLine(view.lastEvent) : 'none yet'}
         </p>
+        </>}
       </CardBody>
     </Card>
   );

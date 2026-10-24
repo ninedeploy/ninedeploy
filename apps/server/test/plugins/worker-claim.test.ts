@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { and, asc, eq, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { fileURLToPath } from 'node:url';
 import { createDb, deployments, services } from '@ninedeploy/db';
@@ -34,7 +34,7 @@ describe('deploy worker claim semantics (real SQLite)', () => {
     const building = db
       .select({ serviceId: deployments.serviceId })
       .from(deployments)
-      .where(eq(deployments.status, 'building'));
+      .where(inArray(deployments.status, ['building', 'deploying']));
     const [claimed] = await db
       .select({ id: deployments.id })
       .from(deployments)
@@ -51,7 +51,7 @@ describe('deploy worker claim semantics (real SQLite)', () => {
     const building2 = db
       .select({ serviceId: deployments.serviceId })
       .from(deployments)
-      .where(eq(deployments.status, 'building'));
+      .where(inArray(deployments.status, ['building', 'deploying']));
     const [next] = await db
       .select({ id: deployments.id })
       .from(deployments)
@@ -76,7 +76,7 @@ describe('deploy worker claim semantics (real SQLite)', () => {
     const building = db
       .select({ serviceId: deployments.serviceId })
       .from(deployments)
-      .where(eq(deployments.status, 'building'));
+      .where(inArray(deployments.status, ['building', 'deploying']));
     const [claimed] = await db
       .select({ id: deployments.id })
       .from(deployments)
@@ -98,7 +98,7 @@ describe('deploy worker claim semantics (real SQLite)', () => {
     const claim = (id: number) => db.update(deployments).set({ status: 'building' }).where(and(
       eq(deployments.id, id),
       eq(deployments.status, 'queued'),
-      sql`NOT EXISTS (SELECT 1 FROM deployments AS active WHERE active.service_id = ${deployments.serviceId} AND active.status = 'building')`,
+      sql`NOT EXISTS (SELECT 1 FROM deployments AS active WHERE active.service_id = ${deployments.serviceId} AND active.status IN ('building', 'deploying'))`,
     ));
     const first = await claim(1);
     const second = await claim(2);

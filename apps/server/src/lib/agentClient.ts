@@ -59,7 +59,18 @@ export function agentChildTimeoutMs(op: string): number | undefined {
 
 /** How long the panel waits for `op`'s answer. */
 export function agentRequestTimeoutMs(op: string): number {
+  if (op === 'db.studio.start') return 205_000;
+  // Clear can wait for an outstanding preparation plus both cleanup passes.
+  if (op === 'db.studio.clear') return 240_000;
+  if (op === 'db.studio.stop') return 25_000;
+  if (op === 'db.studio.open') return 20_000;
+  if (op === 'volume.fileTool') return 145_000;
+  if (op === 'docker.containerTool') return 45_000;
+  if (op === 'docker.identity') return 15_000;
+  if (op === 'docker.retire') return 35_000;
+  if (op === 'proxy.confirmRouting') return 25_000;
   if (op === 'docker.probe') return 15_000;
+  if (op === 'docker.readiness') return 15_000;
   if (op === 'docker.logsSince') return 20_000;
   return LONG_AGENT_OPS.has(op) ? AGENT_LONG_OP_TIMEOUT_MS + 30_000 : SHORT_OP_REQUEST_MS;
 }
@@ -68,12 +79,30 @@ export function agentRequestTimeoutMs(op: string): number {
 interface ExecResponse {
   ok: boolean;
   status: number;
+  headers?: { get(name: string): string | null };
   text(): Promise<string>;
   json(): Promise<unknown>;
 }
 
 /** Thrown when the panel gave up waiting for an agent's answer. */
 class AgentRequestTimeout extends Error {}
+
+/** A rate-limit refusal can precede execution. Retry only sealed requests:
+ * keeping their exact envelope/nonce lets the agent's replay fence prevent
+ * duplicate execution even if the refusal followed a reserved request. */
+function rateLimitDelay(response: ExecResponse): number | undefined {
+  if (response.status !== 429) return undefined;
+  const value = response.headers?.get('retry-after');
+  return value && /^(?:[1-9]|[1-5][0-9]|60)$/.test(value) ? Number(value) * 1000 : undefined;
+}
+function waitForAgentCapacity(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 /**
  * r526: POST for a long op. Node's built-in fetch cannot wait for one: its
@@ -105,6 +134,7 @@ function postWithoutHeadersTimeout(
           resolve({
             ok: status >= 200 && status < 300,
             status,
+            headers: { get(name) { const value = res.headers[name.toLowerCase()]; return typeof value === 'string' ? value : null; } },
             text: async () => text,
             json: async () => JSON.parse(text) as unknown,
           });
@@ -207,8 +237,8 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
  * refuses them too, but the panel must not send the join token in clear in
  * the first place.
  */
-export const SEALED_ONLY_AGENT_OPS: ReadonlySet<string> = new Set(['swarm.info', 'swarm.join', 'swarm.leave', 'docker.probe', 'docker.logsSince']);
-export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op.startsWith('swarm.');
+export const SEALED_ONLY_AGENT_OPS: ReadonlySet<string> = new Set(['swarm.info', 'swarm.join', 'swarm.leave', 'docker.probe', 'docker.readiness', 'docker.logsSince', 'proxy.confirmRouting', 'docker.identity', 'docker.retire', 'docker.containerTool', 'volume.fileTool', 'db.client.prepare', 'terminal.open']);
+export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op.startsWith('swarm.') || op.startsWith('db.studio.') || op.startsWith('proxy.traffic.');
 
 /**
  * 0.13 (T5): whether operations to this node travel inside the sealed
@@ -294,11 +324,17 @@ export async function agentOp(
   const requestBody = JSON.stringify(sealedOk ? { sealed: seal(shared, { op, params, nonce }) } : { op, params });
   opts?.signal?.throwIfAborted();
   const budgetMs = Math.min(agentRequestTimeoutMs(op), opts?.timeoutMs ?? Number.POSITIVE_INFINITY);
+  const deadline = Date.now() + budgetMs;
+  const signal = opts?.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(budgetMs)]) : AbortSignal.timeout(budgetMs);
   let res: ExecResponse;
   try {
-    res = LONG_AGENT_OPS.has(op)
-      ? await postWithoutHeadersTimeout(url, headers, requestBody, budgetMs, opts?.signal)
-      : await fetch(url, {
+    for (let attempt = 0; ; attempt++) {
+      signal.throwIfAborted();
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new AgentRequestTimeout();
+      res = LONG_AGENT_OPS.has(op)
+        ? await postWithoutHeadersTimeout(url, headers, requestBody, remaining, opts?.signal)
+        : await fetch(url, {
           method: 'POST',
           // r526: an agent endpoint never redirects; following one would
           // re-send a sealed op (or, on the opt-in cleartext path, the agent
@@ -306,10 +342,16 @@ export async function agentOp(
           redirect: 'error',
           headers,
           body: requestBody,
-          signal: opts?.signal
-            ? AbortSignal.any([opts.signal, AbortSignal.timeout(budgetMs)])
-            : AbortSignal.timeout(budgetMs),
+          signal,
         });
+      const delay = sealedOk && attempt < 2 ? rateLimitDelay(res) : undefined;
+      if (delay === undefined) break;
+      // Release the response connection before waiting. The original deadline
+      // covers all attempts and waits; a short caller never gets extended.
+      await res.text().catch(() => '');
+      if (delay >= deadline - Date.now()) throw new AgentRequestTimeout();
+      await waitForAgentCapacity(delay, signal);
+    }
   } catch (err) {
     if (isTimeoutError(err)) {
       throw new Error(

@@ -18,6 +18,8 @@ export interface ExecOptions {
   /** r667: {@link capture} only — stdout bytes kept before the child is
    *  stopped and the call rejects. Default {@link DEFAULT_CAPTURE_MAX_BYTES}. */
   maxOutputBytes?: number;
+  /** capture only: encode stdout bytes without passing binary data through UTF-8. */
+  captureEncoding?: 'utf8' | 'base64';
 }
 
 /**
@@ -397,7 +399,7 @@ export function capture(cmd: string, args: string[], opts: ExecOptions = {}, inp
     }
 
     // Same rule as makeLineSplitter: decode bytes across chunks, not per chunk.
-    const outDecoder = new StringDecoder('utf8');
+    const outDecoder = new StringDecoder(opts.captureEncoding ?? 'utf8');
     const errDecoder = new StringDecoder('utf8');
 
     let out = '';

@@ -4,14 +4,16 @@ import { Check, Code2, Copy, ExternalLink, FileCode, RefreshCw, Shield, Terminal
 import { api } from '../../lib/api.js';
 import { copyText } from '../../lib/format.js';
 import type { Service } from '@ninedeploy/sdk';
-import { Button, Card, CardBody, Skeleton } from '../../components/ui.js';
+import { Button, Card, CardBody, ErrorCard, Skeleton } from '../../components/ui.js';
 
 export function ManifestTab({
   service,
   containerName: customContainerName,
+  serverId: explicitServerId,
 }: {
   service?: Service;
   containerName?: string;
+  serverId?: number | null;
 }) {
   // Both naming paths render across the service and database tests; the
   // instrumenter cannot see this chain.
@@ -21,17 +23,19 @@ export function ManifestTab({
   const [copiedYaml, setCopiedYaml] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'compose' | 'traefik' | 'inspect'>('compose');
+  const serverId = explicitServerId ?? service?.serverId ?? null;
+  const hostOptions: [] | [{ serverId: number }] = serverId == null ? [] : [{ serverId }];
 
   const composeQuery = useQuery({
-    queryKey: ['container-compose', containerName],
-    queryFn: () => api.containers.compose(containerName),
+    queryKey: ['container-compose', serverId, containerName],
+    queryFn: () => api.containers.compose(containerName, ...hostOptions),
     enabled: Boolean(containerName),
     retry: 1,
   });
 
   const inspectQuery = useQuery({
-    queryKey: ['container-inspect', containerName],
-    queryFn: () => api.containers.inspect(containerName),
+    queryKey: ['container-inspect', serverId, containerName],
+    queryFn: () => api.containers.inspect(containerName, ...hostOptions),
     enabled: Boolean(containerName),
     retry: 1,
   });
@@ -68,6 +72,10 @@ export function ManifestTab({
         <Skeleton className="h-80 w-full" />
       </div>
     );
+  }
+
+  if (composeQuery.isError || inspectQuery.isError && !composeData?.inspect) {
+    return <ErrorCard title="Could not load container metadata" error={composeQuery.error ?? inspectQuery.error} onRetry={() => { void composeQuery.refetch(); void inspectQuery.refetch(); }} />;
   }
 
   return (

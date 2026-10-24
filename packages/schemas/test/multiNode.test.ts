@@ -54,6 +54,14 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'docker.runtimeOptions',
       'docker.probe',
       'docker.logsSince',
+      'proxy.routingAck',
+      'docker.recovery',
+      'docker.containerTools',
+      'volume.files',
+      'db.client',
+      'db.studio',
+      'proxy.traffic',
+      'docker.readiness',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     // A 0.15 capability is not one of them.
@@ -100,6 +108,8 @@ describe('agent capabilities (multi-node §1.1)', () => {
     ).toBe(true);
     const off = { nixpacks: false, railpack: false, privateClones: false, volumes: false, databases: false, imageTransfer: false, swarm: false };
     expect(serverFeatures.parse(off)).toEqual(off);
+    expect(serverFeatures.parse({ ...off, containerTools: true }).containerTools).toBe(true);
+    expect(serverFeatures.safeParse({ ...off, containerTools: 'yes' }).success).toBe(false);
     expect(serverFeatures.parse({ ...off, reason: 'Update the node agent' }).reason).toBe('Update the node agent');
     expect(serverFeatures.safeParse({ ...off, swarm: 'yes' }).success).toBe(false);
   });

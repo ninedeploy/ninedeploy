@@ -55,6 +55,8 @@ describe('databases table — schema/migration drift guard', () => {
       'mem_limit_mb',
       'web_gui_enabled',
       'web_gui_port',
+      // 0.18 (0100): durable private node Studio lifecycle receipt.
+      'node_studio_identity',
       'extensions',
       'pgbouncer_enabled',
       'pgbouncer_container_name',

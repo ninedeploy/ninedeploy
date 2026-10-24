@@ -374,7 +374,15 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.fileMounts': AGENT_FILE_MOUNTS_VERSION,
   'docker.runtimeOptions': AGENT_RUNTIME_OPTIONS_VERSION,
   'docker.probe': '0.17.0',
+  'docker.readiness': '0.18.0',
   'docker.logsSince': '0.17.0',
+  'proxy.routingAck': '0.18.0',
+  'docker.recovery': '0.18.0',
+  'docker.containerTools': '0.18.0',
+  'volume.files': '0.18.0',
+  'db.client': '0.18.0',
+  'db.studio': '0.18.0',
+  'proxy.traffic': '0.18.0',
 };
 
 /**
@@ -384,6 +392,11 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
  * switched off by the node's owner, not left outdated.
  */
 export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, string>>> = {
+  'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
+  'docker.containerTools': 'NINEDEPLOY_AGENT_CONTAINER_TOOLS',
+  'volume.files': 'NINEDEPLOY_AGENT_VOLUME_FILES',
+  'db.client': 'NINEDEPLOY_AGENT_DATABASE_CLIENTS',
+  'db.studio': 'NINEDEPLOY_AGENT_DATABASE_STUDIOS',
   'build.nixpacks': 'NINEDEPLOY_AGENT_BUILDS',
   'build.railpack': 'NINEDEPLOY_AGENT_BUILDS',
   'git.sshkey': 'NINEDEPLOY_AGENT_STATIC_CREDENTIALS',
@@ -395,7 +408,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
 };
 
 /** Switches that are opt-in variables (off while unset), mirrored from agentOps/index.ts `AGENT_OPT_IN`. */
-export const CAPABILITY_OPT_IN: ReadonlySet<string> = new Set(['NINEDEPLOY_AGENT_SWARM_MANAGER']);
+export const CAPABILITY_OPT_IN: ReadonlySet<string> = new Set(['NINEDEPLOY_AGENT_SWARM_MANAGER', 'NINEDEPLOY_AGENT_PROXY_TRAFFIC']);
 
 /** Why a multi-node feature cannot run on a node: the status and code the route answers. */
 export interface CapabilityRefusal {
@@ -584,6 +597,9 @@ type FeatureName = Exclude<keyof ServerFeatures, 'reason'>;
 
 /** The capabilities each `features` flag needs. */
 export const FEATURE_CAPABILITIES: Readonly<Record<FeatureName, readonly MultiNodeCapability[]>> = {
+  containerTools: ['docker.containerTools'],
+  volumeFiles: ['volume.files'],
+  databaseClients: ['db.manage', 'db.client'],
   readinessProbe: ['docker.probe'],
   logDrains: ['docker.logsSince'],
   nixpacks: ['build.nixpacks'],
@@ -595,6 +611,9 @@ export const FEATURE_CAPABILITIES: Readonly<Record<FeatureName, readonly MultiNo
   swarm: ['swarm'],
 };
 const FEATURE_LABEL: Readonly<Record<FeatureName, string>> = {
+  containerTools: 'container inspection and files',
+  volumeFiles: 'volume files',
+  databaseClients: 'database client terminals',
   readinessProbe: 'HTTP/TCP readiness probes',
   logDrains: 'node log drains',
   nixpacks: 'Nixpacks builds',

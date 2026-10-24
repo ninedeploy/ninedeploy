@@ -513,7 +513,7 @@ export async function handlePush(
       where: and(
         eq(deployments.serviceId, serviceId),
         eq(deployments.commitSha, push.sha),
-        inArray(deployments.status, ['queued', 'building', 'running', 'awaiting_approval', 'awaiting_ci']),
+        inArray(deployments.status, ['queued', 'building', 'deploying', 'running', 'awaiting_approval', 'awaiting_ci']),
       ),
     });
     if (existing) return { ok: 'skipped', reason: 'duplicate', deploymentId: existing.id };
@@ -538,7 +538,7 @@ export async function handlePush(
       where: and(
         eq(deployments.serviceId, serviceId),
         eq(deployments.commitSha, push.sha),
-        inArray(deployments.status, ['queued', 'building', 'running', 'awaiting_approval', 'awaiting_ci']),
+        inArray(deployments.status, ['queued', 'building', 'deploying', 'running', 'awaiting_approval', 'awaiting_ci']),
       ),
     });
     const other = dups.filter((d) => d.id !== dep.id).sort((a, b) => a.id - b.id)[0];

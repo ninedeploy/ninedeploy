@@ -1,5 +1,6 @@
 ﻿import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { databases } from '@ninedeploy/db';
 import type { ContainerStat, HostStat } from '../../src/lib/stats.js';
 
 const statsMock = vi.hoisted(() => ({
@@ -35,11 +36,11 @@ const host: HostStat = {
   diskUsedBytes: 1000,
 };
 
-function makeDb(services: Array<{ id: number; runtimeId: string | null }>) {
-  const select = vi.fn(() => ({ from: vi.fn(async () => services) }));
+function makeDb(services: Array<{ id: number; runtimeId: string | null }>, databaseRows: Array<{ serverId: number | null; status: string }> = []) {
+  const select = vi.fn(() => ({ from: vi.fn(async table => table === databases ? databaseRows : services) }));
   const insert = vi.fn(() => ({ values: vi.fn(async () => undefined) }));
   const del = vi.fn(() => ({ where: vi.fn(async () => undefined) }));
-  return { db: { select, insert, delete: del } as never, insert, del };
+  return { db: { select, insert, delete: del, query: { configEntries: { findFirst: async () => undefined } } } as never, insert, del };
 }
 
 async function buildApp(db: ReturnType<typeof makeDb>['db']) {
@@ -60,6 +61,20 @@ afterEach(() => {
 });
 
 describe('collector plugin', () => {
+  it('samples a node hosting only a running database and records its collection timestamp', async () => {
+    vi.useFakeTimers();
+    statsMock.collectContainerStats.mockResolvedValue(new Map()); statsMock.collectHostStats.mockResolvedValue(host);
+    nodeMock.agentOp.mockResolvedValue({ exitCode: 0, lines: ['nd-db-orders|12.5%|4MiB / 16MiB'] });
+    const { db, insert } = makeDb([], [{ serverId: 8, status: 'running' }, { serverId: 8, status: 'running' }, { serverId: 9, status: 'stopped' }]);
+    const app = await buildApp(db);
+    try {
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(nodeMock.agentOp).toHaveBeenCalledTimes(1); expect(nodeMock.agentOp.mock.calls[0]![1]).toBe(8);
+      expect(app.stats.raw().nodeContainers?.get(8)?.get('nd-db-orders')?.cpuPct).toBe(12.5);
+      expect(app.stats.raw().nodeSamples?.get(8)).toEqual({ sampledAt: Date.now(), error: false });
+      expect(insert).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
   it('persists node metrics from that node, never from an identically named local container', async () => {
     vi.useFakeTimers();
     statsMock.collectContainerStats.mockResolvedValue(new Map([['web-7', { ...containerA, name: 'web-7', cpuPct: 99 }]]));
@@ -100,7 +115,7 @@ describe('collector plugin', () => {
       { serviceId: 1, kind: 'cpu', value: 250, ts: expect.any(Date) },
       { serviceId: 1, kind: 'memory', value: 100, ts: expect.any(Date) },
     ]);
-    expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledTimes(3);
 
     const cache = (app.stats as { raw: () => unknown }).raw() as {
       containers: Map<string, ContainerStat>;
@@ -123,7 +138,7 @@ describe('collector plugin', () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(insert).not.toHaveBeenCalled();
-    expect(del).toHaveBeenCalledTimes(1); // retention delete still runs
+    expect(del).toHaveBeenCalledTimes(3); // retention delete still runs
     await app.close();
   });
 
@@ -259,7 +274,7 @@ describe('collector plugin', () => {
 
     expect(warnSpy).toHaveBeenCalledWith({ err: expect.objectContaining({ message: 'probe broke' }) }, 'node health probe failed');
     expect(alertingMock.evaluateAlerts).toHaveBeenCalledTimes(1);
-    expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledTimes(3);
     await app.close();
   });
 

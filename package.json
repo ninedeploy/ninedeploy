@@ -31,7 +31,10 @@
     "packages:publish": "pnpm -r --filter \"./packages/*\" --filter \"./apps/cli\" publish --access public",
     "smoke:user-journey": "node scripts/smoke-user-journey.mjs",
     "smoke:upgrade": "node scripts/smoke-upgrade.mjs",
-    "smoke:multinode": "node scripts/smoke-multinode.mjs"
+    "smoke:multinode": "node scripts/smoke-multinode.mjs",
+    "smoke:container-readiness": "node scripts/smoke-container-readiness.mjs",
+    "smoke:volume-files": "node scripts/smoke-volume-file-helper.mjs",
+    "smoke:database-clients": "node scripts/smoke-database-clients.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

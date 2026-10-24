@@ -1,5 +1,5 @@
-import { and, eq } from 'drizzle-orm';
-import { serviceTargets, servers, type DB, type ServiceRuntimeOptions } from '@ninedeploy/db';
+import { and, eq, exists, isNull } from 'drizzle-orm';
+import { domains, services, serviceTargets, servers, type DB, type ServiceRuntimeOptions } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
 import { assertAgentGuardsBuildPaths, capabilityRefusal, nodeLabel } from '../lib/agentCapabilities.js';
 import { agentTransportSealed } from '../lib/agentClient.js';
@@ -21,6 +21,8 @@ import { assertCloneTargetAllowed } from '../lib/gitEgress.js';
 import type { NodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { createRemoteDockerBuilder, envForAgent } from './builders/remoteDocker.js';
 import { runSpecParams } from './builders/remoteRun.js';
+import { writeDynamicConfig } from './proxy.js';
+import { beginFanoutTransition, type FanoutRecoveryLease } from './fanoutRecovery.js';
 
 /**
  * Multi-server fan-out: push a docker release to additional nodes after the
@@ -65,9 +67,11 @@ export type AgentCaller = (
   op: string,
   params: Record<string, unknown>,
   sink: (line: string) => void,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
 ) => Promise<{ exitCode: number; lines: string[] }>;
 
 export interface FanoutTarget {
+  id?: number;
   serverId: number;
   runtimeId: string | null;
 }
@@ -92,11 +96,14 @@ export async function targetsForService(db: DB, serviceId: number): Promise<Fano
 async function waitRunning(
   agent: AgentCaller,
   name: string,
+  service: FanoutContext['service'],
   log: (line: string) => void,
 ): Promise<boolean> {
   return createRemoteDockerBuilder(agent, { pollMs: HEALTH_POLL_MS }).isHealthy(
-    { runtimeId: name, port: null, healthPath: '/' },
-    HEALTH_TIMEOUT_MS,
+    { runtimeId: name, port: service.port, healthPath: service.healthPath ?? '/',
+      ...(service.healthCheck === 'http-strict' || service.healthCheck === 'tcp' ? { healthCheck: service.healthCheck } : {}),
+    },
+    service.healthTimeoutSeconds != null ? service.healthTimeoutSeconds * 1000 : HEALTH_TIMEOUT_MS,
     undefined,
     log,
   );
@@ -124,6 +131,7 @@ export interface FanoutContext {
     dockerLabels?: Record<string, string> | null;
     healthCheck?: string | null;
     healthCommand?: string | null;
+    healthTimeoutSeconds?: number | null;
     // 0.16.6: applied on a target whose agent can (docker.runtimeOptions); otherwise warned about.
     runtimeOptions?: ServiceRuntimeOptions | null;
   };
@@ -146,6 +154,8 @@ export interface FanoutContext {
   registryAuth?: { username: string; password: string; server?: string };
   /** The PRIMARY placement — targets equal to it are skipped. */
   primaryServerId: number | null;
+  /** Generation that owns this fan-out; stale work must not publish over another deployment. */
+  primaryRuntimeId?: string;
   /** Source builds (phase 2) whose primary built a Dockerfile: each target
    * node builds the SAME commit itself through git.* + docker.build. Any other
    * pack is shipped instead (`prebuilt`, D2). */
@@ -172,6 +182,74 @@ export interface FanoutContext {
   targetRefusal?: (target: FanoutTarget) => Promise<string | null>;
 }
 
+interface FanoutResult {
+  serverId: number;
+  runtimeId: string | null;
+  ok: boolean;
+  error?: string;
+  /** Routed outcomes are persisted with ownership guards during the transition. */
+  recorded?: boolean;
+}
+
+async function promoteRoutedTarget(
+  db: DB, ctx: FanoutContext, target: FanoutTarget, name: string, primaryRuntimeId: string,
+  retire: (name: string) => Promise<void>, log: (line: string) => void,
+  recovery: FanoutRecoveryLease,
+): Promise<FanoutResult> {
+  await recovery.check();
+  const owner = exists(db.select({ id: services.id }).from(services).where(and(
+    eq(services.id, ctx.service.id), eq(services.status, 'running'), eq(services.runtimeId, primaryRuntimeId),
+  )));
+  const owned = (runtimeId: string | null) => and(
+    eq(serviceTargets.id, target.id!), eq(serviceTargets.serviceId, ctx.service.id), eq(serviceTargets.serverId, target.serverId),
+    runtimeId == null ? isNull(serviceTargets.runtimeId) : eq(serviceTargets.runtimeId, runtimeId), owner, recovery.fence(),
+  );
+  const failed = (error: string): FanoutResult => ({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error, recorded: true });
+  const stillOwned = async (runtimeId: string | null) => (await db.select({ id: serviceTargets.id }).from(serviceTargets).where(owned(runtimeId)).limit(1)).length > 0;
+  const claimed = await db.update(serviceTargets).set({ runtimeId: name, status: 'idle', updatedAt: new Date() })
+    .where(owned(target.runtimeId)).returning({ id: serviceTargets.id });
+  if (claimed.length === 0) {
+    if (name !== target.runtimeId) await retire(name);
+    return failed('Target or service ownership changed before routing; candidate was not promoted');
+  }
+  // Confirm removals as well: a concurrent domain edit can leave no active routes.
+  const sync = () => writeDynamicConfig(db, { requireNode: target.serverId, confirmNodeRouting: true });
+  try {
+    await recovery.patch({ phase: 'routing' });
+    await sync();
+    await recovery.check();
+    const finalized = await db.update(serviceTargets).set({ status: 'running', updatedAt: new Date() })
+      .where(owned(name)).returning({ id: serviceTargets.id });
+    if (finalized.length === 0) throw new Error('Target or service ownership changed during routing confirmation');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    try { await recovery.check(); } catch { return failed('Recovery ownership changed; runtime generations retained'); }
+    const restored = await db.update(serviceTargets).set({ runtimeId: target.runtimeId, status: 'error', updatedAt: new Date() })
+      .where(owned(name)).returning({ id: serviceTargets.id });
+    if (restored.length === 0) {
+      log(`⚠ target node #${target.serverId}: ownership changed; keep runtime generations ${target.runtimeId ?? '(none)'} and ${name} until routing is reconciled`);
+      return failed(message);
+    }
+    try {
+      await sync();
+      // Let requests already using the rejected generation drain after rollback.
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (name !== target.runtimeId && await stillOwned(target.runtimeId)) {
+        await recovery.patch({ phase: 'retiring', desiredRuntimeId: target.runtimeId });
+        await retire(name);
+      }
+    } catch {
+      log(`⚠ target node #${target.serverId}: rollback was not confirmed; both runtime generations are kept running (previous ${target.runtimeId ?? '(none)'}, candidate ${name})`);
+    }
+    return failed(message);
+  }
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  if (!await stillOwned(name)) return failed('Target or service ownership changed during request drain; previous runtime retained');
+  await recovery.patch({ phase: 'retiring', desiredRuntimeId: name });
+  if (target.runtimeId && target.runtimeId !== name) await retire(target.runtimeId);
+  return { serverId: target.serverId, runtimeId: name, ok: true, recorded: true };
+}
+
 /**
  * Push the release to every extra target node. Best-effort per node; returns
  * the per-target outcome so the caller can persist `service_targets`.
@@ -180,25 +258,45 @@ export async function deployToTargets(
   db: DB,
   ctx: FanoutContext,
   log: (line: string) => void,
-): Promise<Array<{ serverId: number; runtimeId: string | null; ok: boolean; error?: string }>> {
+): Promise<FanoutResult[]> {
   const rows = await db
-    .select({ serverId: serviceTargets.serverId, runtimeId: serviceTargets.runtimeId })
+    .select({ id: serviceTargets.id, serverId: serviceTargets.serverId, runtimeId: serviceTargets.runtimeId })
     .from(serviceTargets)
     .where(eq(serviceTargets.serviceId, ctx.service.id));
-  const results: Array<{ serverId: number; runtimeId: string | null; ok: boolean; error?: string }> = [];
+  const results: FanoutResult[] = [];
+  const routed = ctx.service.port != null && (await db.select({ id: domains.id }).from(domains)
+    .where(and(eq(domains.serviceId, ctx.service.id), eq(domains.status, 'active')))).length > 0;
+  const primaryRuntimeId = routed
+    ? ctx.primaryRuntimeId ?? (await db.query.services.findFirst({ where: eq(services.id, ctx.service.id) }))?.runtimeId ?? undefined
+    : undefined;
 
   for (const target of rows) {
     if (ctx.primaryServerId !== null && target.serverId === ctx.primaryServerId) continue;
+    const fail = async (error: string) => {
+      if (routed && primaryRuntimeId && target.id != null) {
+        // A failed preparation must not overwrite a target changed while it awaited I/O.
+        await db.update(serviceTargets).set({ status: 'error', updatedAt: new Date() }).where(and(
+          eq(serviceTargets.id, target.id),
+          target.runtimeId == null ? isNull(serviceTargets.runtimeId) : eq(serviceTargets.runtimeId, target.runtimeId),
+          exists(db.select({ id: services.id }).from(services).where(and(
+            eq(services.id, ctx.service.id), eq(services.status, 'running'), eq(services.runtimeId, primaryRuntimeId),
+          ))),
+        ));
+      }
+      results.push({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error, ...(routed ? { recorded: true } : {}) });
+    };
     // ── 0.16 T4 per-target refusal (M5, D1) ──
     const refusal = ctx.targetRefusal ? await ctx.targetRefusal(target) : null;
     if (refusal) {
-      results.push({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error: refusal });
+      await fail(refusal);
       log(`✗ target node #${target.serverId}: ${refusal} — the primary release is unaffected`);
       continue;
     }
     // ── end 0.16 T4 ──
     const name = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;
-    const agent: AgentCaller = (op, params, sink) => agentOp(db, target.serverId, op, params, sink);
+    let recovery: FanoutRecoveryLease | undefined;
+    let recoveryReason: string | undefined;
+    const agent: AgentCaller = (op, params, sink, options) => agentOp(db, target.serverId, op, params, sink, options);
     // ── 0.16 T4 run shape (D1) ──
     // A command, the Docker socket or volume attachments need the target's
     // `docker.runSpec` (sealed); asked before anything is sent, never dropped.
@@ -226,13 +324,30 @@ export async function deployToTargets(
         if (why) break;
       }
       if (why) {
-        results.push({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error: why.message });
+        await fail(why.message);
         log(`✗ target node #${target.serverId}: ${why.message} — the primary release is unaffected`);
         continue;
       }
     }
     // ── end 0.16 T4 ──
     try {
+      if (routed) {
+        if (!primaryRuntimeId || target.id == null) throw new Error('Cannot establish ownership of this routed target');
+        const refusal = await capabilityRefusal(agent, await nodeLabel(db, target.serverId), await agentTransportSealed(db, target.serverId),
+          { cap: 'proxy.routingAck', feature: 'confirm loaded HTTP/TLS routing', sealedRequired: true });
+        if (refusal) throw new Error(refusal.message);
+        const recoveryRefusal = await capabilityRefusal(agent, await nodeLabel(db, target.serverId), await agentTransportSealed(db, target.serverId),
+          { cap: 'docker.recovery', feature: 'reconcile container generations', sealedRequired: true });
+        if (recoveryRefusal) throw new Error(recoveryRefusal.message);
+        if (ctx.service.publishedPort) throw new Error('Routed fan-out cannot safely replace a container with a published host port; remove the published port before deploying this target');
+      }
+      if (ctx.service.healthCheck === 'http-strict' || ctx.service.healthCheck === 'tcp') {
+        if (!ctx.service.port) throw new Error('HTTP/TCP readiness needs a container port.');
+        const refusal = await capabilityRefusal(agent, await nodeLabel(db, target.serverId), await agentTransportSealed(db, target.serverId),
+          { cap: 'docker.probe', feature: 'probe application readiness', sealedRequired: true });
+        if (refusal) throw new Error(refusal.message);
+      }
+      if (routed) recovery = await beginFanoutTransition(db, { ...ctx, primaryRuntimeId }, target, name);
       let release: string;
       if (!ctx.image && !ctx.source && !ctx.prebuilt) {
         throw new Error('fan-out context has neither an image nor a buildable source');
@@ -320,6 +435,7 @@ export async function deployToTargets(
       // pointed at the container just removed. Only a host-port publish
       // forces the old one out first (both cannot bind the port).
       const retire = async (runtimeId: string) => {
+        if (recovery) { await recovery.retire(runtimeId); return; }
         await agent('docker.stop', { name: runtimeId }, () => undefined).catch(() => undefined);
         await agent('docker.rm', { name: runtimeId }, () => undefined).catch(() => undefined);
       };
@@ -333,6 +449,7 @@ export async function deployToTargets(
       const wrote = await agent('file.writeEnv', { name: envName, env: envForAgent(ctx.env) }, log);
       const envFile = wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? `.agent-env/${envName}.env`;
       const runParams: Record<string, unknown> = { name, image: release, envFile };
+      if (recovery) Object.assign(runParams, { serviceId: ctx.service.id, deploymentId: ctx.deploymentId });
       if (ctx.service.cpuShares > 0) runParams['cpuShares'] = String(ctx.service.cpuShares);
       if (ctx.service.cpuLimitMilli > 0) runParams['cpuLimitMilli'] = String(ctx.service.cpuLimitMilli);
       if (ctx.service.memLimitMb > 0) runParams['memLimitMb'] = String(ctx.service.memLimitMb);
@@ -387,12 +504,30 @@ export async function deployToTargets(
         // container under this name, and the catch below records the OLD
         // runtime — nothing would ever reference (or remove) it again. Same
         // cleanup as the primary (remoteDocker r264); never the tracked one.
-        if (name !== target.runtimeId) await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
+        if (name !== target.runtimeId) {
+          if (recovery) await recovery.retire(name).catch(() => undefined);
+          else await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
+        }
         throw err;
       } finally {
         await agent('file.deleteEnv', { name: envName }, log).catch(() => undefined);
       }
-      const ok = await waitRunning(agent, name, log);
+      if (recovery) await recovery.captureCandidate();
+      const ok = await waitRunning(agent, name, ctx.service, log);
+      if (ok && routed) {
+        const result = await promoteRoutedTarget(db, ctx, target, name, primaryRuntimeId!, retire, log, recovery!);
+        recoveryReason = result.error;
+        if (result.ok) await recovery!.complete();
+        results.push(result);
+        log(result.ok ? `✓ target node #${target.serverId} is serving ${name} after routing confirmation` : `✗ target node #${target.serverId}: ${result.error}`);
+        continue;
+      }
+      if (!ok && routed) {
+        if (name !== target.runtimeId) await retire(name);
+        await fail('container did not pass its readiness check');
+        log(`✗ target node #${target.serverId}: ${name} failed readiness; previous routing is unchanged`);
+        continue;
+      }
       if (ok && target.runtimeId && !sequential) await retire(target.runtimeId);
       if (!ok && target.runtimeId && !sequential) {
         // The new generation is not trusted: drop it, keep the proven one.
@@ -405,8 +540,11 @@ export async function deployToTargets(
       log(ok ? `✓ target node #${target.serverId} is serving ${name}` : `✗ target node #${target.serverId}: ${name} failed its container-state check`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      results.push({ serverId: target.serverId, runtimeId: target.runtimeId, ok: false, error: message });
+      recoveryReason = message;
+      await fail(message);
       log(`✗ target node #${target.serverId}: ${message} — the primary release is unaffected`);
+    } finally {
+      if (recovery) await recovery.release(recoveryReason);
     }
   }
   return results;
@@ -451,7 +589,7 @@ export async function teardownTargets(
   const rows = knownRows ?? (await targetsForService(db, serviceId));
   for (const target of rows) {
     if (!target.runtimeId) continue;
-    const agent: AgentCaller = (op, params, sink) => agentOp(db, target.serverId, op, params, sink);
+    const agent: AgentCaller = (op, params, sink, options) => agentOp(db, target.serverId, op, params, sink, options);
     await agent('docker.stop', { name: target.runtimeId }, () => undefined).catch(() => undefined);
     await agent('docker.rm', { name: target.runtimeId }, () => undefined).catch(() => undefined);
     log(`target node #${target.serverId}: removed ${target.runtimeId}`);
@@ -463,9 +601,10 @@ export async function teardownTargets(
 export async function recordFanoutResults(
   db: DB,
   serviceId: number,
-  results: Array<{ serverId: number; runtimeId: string | null; ok: boolean; error?: string }>,
+  results: FanoutResult[],
 ): Promise<void> {
   for (const r of results) {
+    if (r.recorded) continue;
     const [existing] = await db
       .select({ id: serviceTargets.id })
       .from(serviceTargets)

@@ -417,14 +417,14 @@ export type JobPatch = z.infer<typeof jobPatch>;
 // ── Metrics query ──────────────────────────────────────────────────────────
 /**
  * Query params arrive as strings: any `kind` other than "memory" reads as
- * "cpu", and an unusable `minutes` falls back to 60 (clamped to 1..1440).
+ * "cpu", and an unusable `minutes` falls back to 60 (clamped to 1..129600 (90 days)).
  */
 export const metricQuery = z.object({
   kind: z.string().optional().transform((k) => (k === 'memory' ? 'memory' : 'cpu')),
   minutes: z
     .unknown()
     .optional()
-    .transform((v) => Math.min(Math.max(Number(v ?? 60) || 60, 1), 1440)),
+    .transform((v) => Math.min(Math.max(Number(v ?? 60) || 60, 1), 129600)),
 });
 export type MetricQuery = z.infer<typeof metricQuery>;
 
@@ -574,6 +574,7 @@ export interface DatabaseDetail {
   memLimitMb?: number | null;
   webGuiEnabled?: boolean | null;
   webGuiPort?: number | null;
+  nodeStudioState?: 'preparing' | 'ready' | 'cleanup_pending' | null;
   extensions?: string[];
   attachedServices: Array<{ id: number; name: string; slug: string }>;
   /** 0.15.3: the node this database runs on; null or absent means the panel host. */

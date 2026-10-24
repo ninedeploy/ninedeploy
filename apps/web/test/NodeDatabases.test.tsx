@@ -9,8 +9,8 @@ import { mockOf, renderRoute, renderWithProviders } from './helpers.js';
 /**
  * Multi-node databases: the wizard's host select (panel host, or nodes whose
  * agent can host databases), the node badge with the reachability state on
- * the list and the detail page, and the Studio / PgBouncer / public-access
- * cards shown disabled with the reason for a node database.
+ * the list and the detail page, with node Studio controls; PgBouncer / public-access
+ * cards remain disabled with the reason for a node database.
  */
 
 vi.mock('../src/lib/api.js', async () => {
@@ -159,15 +159,15 @@ describe('DatabaseDetail — node database', () => {
     mockOf(api.databases.credentials).mockReturnValue(new Promise(() => {}) as never);
   });
 
-  it('shows the node badge and a disabled Web Studio card with the reason', async () => {
+  it('shows node Studio controls and the recorded node without a fabricated host port', async () => {
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/7' });
     expect(await screen.findByText('edge-1')).toBeInTheDocument();
     expect(screen.getByText('unreachable')).toBeInTheDocument();
-    const card = screen.getByTestId('node-unavailable');
-    expect(card).toHaveAttribute('aria-disabled', 'true');
-    expect(within(card).getByText('Database Web Studio')).toBeInTheDocument();
-    expect(within(card).getByText(/Not available for a database on a node \(edge-1\)/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Launch Web Studio/ })).toBeNull();
+    expect(screen.getByText('Database Web Studio')).toBeInTheDocument();
+    expect(screen.getByText(/Runs on node #3/)).toBeInTheDocument();
+    expect(screen.getByText(/no host port is published/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Launch Web Studio/ })).toBeEnabled();
+    expect(screen.queryByTestId('node-unavailable')).toBeNull();
   });
 
   it('settings: public access and PgBouncer are disabled with the reason, and the public-access status is never asked', async () => {

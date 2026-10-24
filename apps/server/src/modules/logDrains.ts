@@ -1,10 +1,11 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { logDrains, services } from '@ninedeploy/db';
+import { logDrains, logDrainBatches, logDrainCursors, services } from '@ninedeploy/db';
+import { logQueueStatus } from '../engine/logShipper.js';
 import { logDrainCreate, logDrainUpdate } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { notFound, unprocessable } from '../lib/errors.js';
+import { notFound, unprocessable, parseId as num } from '../lib/errors.js';
 import { testLogDrainConnection } from '../engine/logDrainManager.js';
 
 /**
@@ -34,6 +35,33 @@ export const logDrainRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const [svc] = await app.db.select({ id: services.id }).from(services).where(eq(services.id, serviceId));
     if (!svc) throw notFound('Service not found');
   };
+
+
+  const loadDrain = async (raw: string) => {
+    const id = num(raw);
+    const row = await app.db.query.logDrains.findFirst({ where: eq(logDrains.id, id) });
+    if (!row) throw notFound('Log drain not found');
+    return row;
+  };
+  app.get<{ Params: { id: string } }>('/:id/queue', { preHandler: [app.requireOperator] }, async (req) => {
+    return logQueueStatus(app.db, await loadDrain(req.params.id));
+  });
+  app.post<{ Params: { id: string } }>('/:id/queue/retry', { preHandler: [app.requireOperator] }, async (req) => {
+    const drain = await loadDrain(req.params.id);
+    await app.db.update(logDrainBatches).set({ nextAttemptAt: new Date() }).where(eq(logDrainBatches.drainId, drain.id));
+    void audit(app.db, req.user!.id, 'log_drain.queue_retry', 'Requested queued log retry for drain #' + drain.id);
+    return logQueueStatus(app.db, drain);
+  });
+  app.delete<{ Params: { id: string } }>('/:id/queue', { preHandler: [app.requireOperator] }, async (req) => {
+    const drain = await loadDrain(req.params.id);
+    const discarded = await app.db.transaction(async (tx) => {
+      const rows = await tx.delete(logDrainBatches).where(eq(logDrainBatches.drainId, drain.id)).returning({ id: logDrainBatches.id });
+      await tx.update(logDrainCursors).set({ pausedReason: null }).where(eq(logDrainCursors.drainId, drain.id));
+      return rows.length;
+    });
+    void audit(app.db, req.user!.id, 'log_drain.queue_discarded', 'Discarded ' + discarded + ' queued batches for drain #' + drain.id);
+    return { discardedBatches: discarded };
+  });
 
   // List log drains (optionally filtered by serviceId)
   app.get('/', async (req) => {

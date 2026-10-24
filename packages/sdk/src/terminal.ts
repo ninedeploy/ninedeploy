@@ -103,7 +103,7 @@ export interface TerminalReady {
 }
 
 export interface TerminalHandlers {
-  /** The shell runs; input typed before this was held and is flushed now. */
+  /** The terminal transport is ready; buffered input is flushed now. Scripted interactive clients must also wait for their CLI prompt and each command's response. */
   onReady?: (ready: TerminalReady) => void;
   /** Shell output. */
   onData?: (bytes: Uint8Array) => void;

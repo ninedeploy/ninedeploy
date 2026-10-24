@@ -77,7 +77,7 @@ Re-running the same command is the upgrade path; it snapshots `.data` before tou
 
 > **Where `main` stands:** the default channel installs the newest release tag (**0.17.1**).
 > Work lands on `main` before it is tagged — see [`CHANGELOG.md`](./CHANGELOG.md) under *Unreleased*
-> (empty right now), or run `--channel main` to get it today.
+> for changes awaiting a release), or run `--channel main` to get it today.
 
 ### Docker
 

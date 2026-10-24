@@ -5,7 +5,8 @@ import type { Service } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { Sparkline } from '../../components/Sparkline.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, StatusBadge } from '../../components/ui.js';
+import { Button, Card, CardBody, Select, StatusBadge } from '../../components/ui.js';
+import { useState } from 'react';
 import { PluginSlot } from '../../components/PluginSlot.js';
 import { ServiceUptimeCard } from '../../components/uptime/ServiceUptimeCard.js';
 import { AutoscalePanel } from './AutoscalePanel.js';
@@ -154,6 +155,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 // ── Metrics (CPU / memory sparklines) ─────────────────────────────────────
 function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
   const isOnline = svc.status === 'running';
+  const [historyMinutes, setHistoryMinutes] = useState(60);
 
   const snapshot = useQuery({
     queryKey: ['live-stats-snapshot'],
@@ -163,56 +165,59 @@ function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
   });
 
   const cpu = useQuery({
-    queryKey: ['svc-metrics', serviceId, 'cpu'],
-    queryFn: () => api.stats.metrics(serviceId, { kind: 'cpu', minutes: 60 }),
+    queryKey: ['svc-metrics', serviceId, 'cpu', historyMinutes],
+    queryFn: () => api.stats.metrics(serviceId, { kind: 'cpu', minutes: historyMinutes }),
     refetchInterval: 5000,
   });
   const mem = useQuery({
-    queryKey: ['svc-metrics', serviceId, 'memory'],
-    queryFn: () => api.stats.metrics(serviceId, { kind: 'memory', minutes: 60 }),
+    queryKey: ['svc-metrics', serviceId, 'memory', historyMinutes],
+    queryFn: () => api.stats.metrics(serviceId, { kind: 'memory', minutes: historyMinutes }),
     refetchInterval: 5000,
   });
 
-  const liveStat = snapshot.data?.containers.find((c) => c.refId === serviceId && c.kind === 'service');
+  const liveStat = !snapshot.isError ? snapshot.data?.containers.find((c) => c.refId === serviceId && c.kind === 'service') : undefined;
   const latest = (series: typeof cpu.data) => series?.points.at(-1)?.value ?? null;
   const cpuPoints = (cpu.data?.points ?? []).map((p) => p.value);
   const memPoints = (mem.data?.points ?? []).map((p) => p.value);
 
-  const currentCpu = liveStat?.cpuPct ?? latest(cpu.data) ?? (isOnline ? 0 : null);
-  const currentMem = liveStat?.memMb ?? latest(mem.data) ?? (isOnline ? 0 : null);
+  const currentCpu = liveStat?.cpuPct ?? latest(cpu.data);
+  const currentMem = liveStat?.memMb ?? latest(mem.data);
   // The limit chain resolves from the live stat, the service config or zero
   // across the overview tests; the instrumenter cannot see it.
   /* v8 ignore start */
   const memLimit = liveStat?.memLimitMb || svc.memLimitMb || 0;
   /* v8 ignore stop */
 
-  // The '0.0%'/'0.0 MiB' arms are structurally unreachable: an online
-  // service always falls back to a zero reading (never null), and the live
-  // value renders through the outer arm.
-  /* v8 ignore start */
-  const displayCpu = currentCpu != null ? `${currentCpu.toFixed(1)}%` : isOnline ? '0.0%' : 'Offline';
+  const displayCpu = currentCpu != null ? `${currentCpu.toFixed(1)}%` : isOnline ? 'No data' : 'Offline';
   const displayMem = currentMem != null
     ? memLimit > 0
       ? `${currentMem.toFixed(1)} / ${memLimit} MiB`
       : `${currentMem.toFixed(1)} MiB`
     : isOnline
-      ? '0.0 MiB'
+      ? 'No data'
       : 'Offline';
-  /* v8 ignore stop */
 
   return (
     <Card>
       <CardBody className="space-y-4">
-        <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <Activity size={16} className="text-indigo-400" />
-            <span className="text-sm font-semibold text-slate-100">Live Resource Telemetry</span>
+            <span className="text-sm font-semibold text-slate-100">Resource Telemetry</span>
           </div>
           <span className="whitespace-nowrap rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400">
-            {isOnline ? 'Live 5s' : 'Container Offline'}
+            {!isOnline ? 'Container Offline' : snapshot.isError ? 'Snapshot unavailable' : liveStat ? 'Updates every 3s' : 'No live sample'}
           </span>
         </div>
 
+        {isOnline && snapshot.isError && <p role="alert" className="text-xs text-amber-200">Live resource sample is unavailable. Recorded history may still be available below.</p>}
+
+        <label className="flex flex-wrap items-center gap-2 text-xs text-slate-400">History range
+          <Select aria-label="Service metric history range" value={String(historyMinutes)} onChange={(e) => setHistoryMinutes(Number(e.target.value))}>
+            <option value="60">1 hour</option><option value="1440">24 hours</option><option value="10080">7 days</option><option value="43200">30 days</option><option value="129600">90 days</option>
+          </Select>
+          <span>Available history follows the instance retention setting.</span>
+        </label>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
             {/* Label over value: side by side the value broke onto two lines ("4.5 / MiB"). */}
@@ -220,13 +225,14 @@ function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
               <Cpu size={13} className="text-indigo-400" /> CPU Load
             </span>
             <span className="block whitespace-nowrap font-mono text-lg font-semibold tabular-nums text-slate-100">{displayCpu}</span>
+            {!liveStat && currentCpu != null && <p className="text-[10px] text-slate-400">Last recorded sample{cpu.isError ? ' · history refresh failed' : ''}</p>}
             <div className="overflow-hidden rounded-lg">
-              <Sparkline
-                points={cpuPoints.length > 0 ? cpuPoints : [0, 0]}
+              {cpuPoints.length > 0 ? <Sparkline
+                points={cpuPoints}
                 color="#818cf8"
                 width={220}
                 height={44}
-              />
+              /> : <p className="flex h-11 items-center text-[10px] text-slate-500">{cpu.isError ? 'CPU history unavailable' : 'No CPU history yet'}</p>}
             </div>
           </div>
 
@@ -235,13 +241,14 @@ function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
               <MemoryStick size={13} className="text-emerald-400" /> Memory Usage
             </span>
             <span className="block whitespace-nowrap font-mono text-lg font-semibold tabular-nums text-slate-100">{displayMem}</span>
+            {!liveStat && currentMem != null && <p className="text-[10px] text-slate-400">Last recorded sample{mem.isError ? ' · history refresh failed' : ''}</p>}
             <div className="overflow-hidden rounded-lg">
-              <Sparkline
-                points={memPoints.length > 0 ? memPoints : [0, 0]}
+              {memPoints.length > 0 ? <Sparkline
+                points={memPoints}
                 color="#34d399"
                 width={220}
                 height={44}
-              />
+              /> : <p className="flex h-11 items-center text-[10px] text-slate-500">{mem.isError ? 'Memory history unavailable' : 'No memory history yet'}</p>}
             </div>
           </div>
         </div>

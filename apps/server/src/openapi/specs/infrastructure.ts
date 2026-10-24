@@ -20,6 +20,26 @@ import type { RouteSpecMap } from '../types.js';
  * cross-checks every entry); bodies name the zod schema the handler parses.
  */
 export const infrastructureSpecs: RouteSpecMap = {
+  'GET /v1/servers/:serverId/volumes/:name/files': {
+    summary: 'List a directory in a node volume', tag: 'volumes', floor: 'operator', queryType: '{ path?: string }',
+    responseType: '{ path: string; entries: VolumeFileEntry[] }', validation: 'handler',
+  },
+  'GET /v1/servers/:serverId/volumes/:name/files/content': {
+    summary: 'Read a file in a node volume', tag: 'volumes', floor: 'operator', queryType: '{ path?: string }',
+    responseType: "{ content: string; encoding: 'base64' }", validation: 'handler', sensitive: true,
+  },
+  'PUT /v1/servers/:serverId/volumes/:name/files': {
+    summary: 'Write a file in a node volume', tag: 'volumes', floor: 'operator', body: volumeFileWrite,
+    responseType: '{ ok: boolean }', validation: 'zod',
+  },
+  'POST /v1/servers/:serverId/volumes/:name/files/dir': {
+    summary: 'Create a directory in a node volume', tag: 'volumes', floor: 'operator', body: volumePathCreate,
+    responseType: '{ ok: boolean }', validation: 'zod',
+  },
+  'DELETE /v1/servers/:serverId/volumes/:name/files': {
+    summary: 'Delete a path in a node volume', tag: 'volumes', floor: 'operator', queryType: '{ path: string }',
+    responseType: '{ ok: boolean }', validation: 'handler',
+  },
   'GET /v1/servers': {
     summary: 'List server nodes',
     tag: 'servers',
@@ -254,6 +274,27 @@ export const infrastructureSpecs: RouteSpecMap = {
     tag: 'containers',
     floor: 'operator',
     responseType: 'ContainerInspectData',
+  },
+  'GET /v1/servers/:serverId/containers/:container/inspect': {
+    summary: 'Inspect a container on an explicit node through its sealed agent', tag: 'containers', floor: 'operator', responseType: 'ContainerInspectData', sensitive: true,
+  },
+  'GET /v1/servers/:serverId/containers/:container/compose': {
+    summary: 'Generate runtime compose YAML for a node container', tag: 'containers', floor: 'operator', responseType: 'ContainerComposeData', sensitive: true,
+  },
+  'GET /v1/servers/:serverId/containers/:container/files': {
+    summary: 'List a directory on a node container', tag: 'containers', floor: 'operator', queryType: '{ path?: string }', responseType: '{ path: string; entries: VolumeFileEntry[] }', validation: 'handler',
+  },
+  'GET /v1/servers/:serverId/containers/:container/files/content': {
+    summary: 'Read up to 1 MiB from a node container', tag: 'containers', floor: 'operator', queryType: '{ path?: string }', responseType: "{ content: string; encoding: 'base64' }", validation: 'handler', sensitive: true,
+  },
+  'PUT /v1/servers/:serverId/containers/:container/files': {
+    summary: 'Write up to 1 MiB to a node container', tag: 'containers', floor: 'operator', body: containerFileWrite, responseType: '{ ok: boolean }', validation: 'zod',
+  },
+  'POST /v1/servers/:serverId/containers/:container/files/dir': {
+    summary: 'Create a directory on a node container', tag: 'containers', floor: 'operator', body: containerPathCreate, responseType: '{ ok: boolean }', validation: 'zod',
+  },
+  'DELETE /v1/servers/:serverId/containers/:container/files': {
+    summary: 'Delete a file or directory on a node container', tag: 'containers', floor: 'operator', queryType: '{ path?: string }', validation: 'handler',
   },
   'GET /v1/containers/:container/compose': {
     summary: 'Generated compose YAML of a container',

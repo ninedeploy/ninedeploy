@@ -236,6 +236,31 @@ describe('TerminalPanel', () => {
     await settleFrame();
   });
 
+  it('refits after container layout changes and stops observing on unmount', async () => {
+    let resized: ResizeObserverCallback | undefined;
+    const observe = vi.fn(), disconnect = vi.fn();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { resized = callback; }
+      observe = observe;
+      disconnect = disconnect;
+    });
+    const view = render(<TerminalPanel target={{ kind: 'service', serviceId: 1 }} title="web" />);
+    await settleFrame();
+    const node = term().open.mock.calls[0]?.[0] as HTMLDivElement;
+    expect(observe).toHaveBeenCalledWith(node);
+    const fit = xtermMock.fitAddons[0] as { fit: ReturnType<typeof vi.fn> };
+    fit.fit.mockClear();
+    act(() => resized!([], {} as ResizeObserver));
+    await settleFrame();
+    expect(fit.fit).toHaveBeenCalled();
+    view.unmount();
+    expect(disconnect).toHaveBeenCalledOnce();
+    fit.fit.mockClear();
+    act(() => resized!([], {} as ResizeObserver));
+    await settleFrame();
+    expect(fit.fit).not.toHaveBeenCalled();
+  });
+
   it('clear targets the latest terminal; close calls back', async () => {
     const onClose = vi.fn();
     render(<TerminalPanel target={{ kind: 'service', serviceId: 1 }} title="web" onClose={onClose} />);

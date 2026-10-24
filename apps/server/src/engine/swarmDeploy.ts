@@ -4,7 +4,7 @@ import { MAX_REPLICAS, TRAEFIK_CONTAINER } from './dockerNames.js';
 import { SwarmOrchestrator, STACK_DEPLOY_TIMEOUT_MS } from '../kernel/drivers/swarmOrchestrator.js';
 import type { StackSpec } from '../kernel/types.js';
 import { capture, run, sleep } from '../lib/exec.js';
-import { resolvePushTarget, shipImageByStream } from '../lib/imageTransfer.js';
+import { buildTag, panelImageInfo, resolvePushTarget, shipImageByStream } from '../lib/imageTransfer.js';
 import { safeProbePath } from '../lib/probeUrl.js';
 import {
   ensureSwarmNetwork,
@@ -15,7 +15,6 @@ import {
   SWARM_MEMBER_LABEL,
   swarmClusterRefusal,
   swarmImageTag,
-  swarmPreloadLabel,
   swarmServiceName,
   swarmStackName,
   updateNodeLabel,
@@ -25,6 +24,10 @@ import { buildElsewhere, recordBuildHost } from './buildPlacement.js';
 import { dockerBuilder, userDockerLabels } from './builders/docker.js';
 import { pullableReleaseRef } from './fanout.js';
 import type { BuildContext, Builder, DeployRuntime } from './types.js';
+import { unusedSwarmPreloadLabel } from './swarmPreload.js';
+import { verifySwarmTaskImages } from './swarmArtifact.js';
+import { SwarmRecoveryPending } from './swarmRecovery.js';
+import { pinSwarmImage } from './swarmImage.js';
 
 /**
  * Swarm deploy flow (multi-node, design §7.4; owner decisions O4, O12): build
@@ -109,6 +112,7 @@ interface SwarmImage {
   /** Only on the panel host (and wherever it was preloaded): deployed with `--resolve-image never`. */
   local: boolean;
   imageId?: string;
+  artifactBuild?: NonNullable<DeployRuntime['artifactBuild']>;
   sizeBytes?: number;
   auth?: { username: string; password: string; server?: string };
 }
@@ -138,6 +142,8 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
   const own = swarmServiceName(slug);
   /** Set when this deploy updated an existing Swarm service in place: its previous spec is what a failed probe rolls back to. */
   let rollbackTarget: string | null = null;
+  let expectedTaskImage: Parameters<typeof verifySwarmTaskImages>[1] | null = null;
+  let journalled = false;
 
   return {
     async buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime> {
@@ -148,6 +154,10 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
       log(`Swarm: deploying "${service.name}" as the Swarm service ${runtimeId} (${clampReplicas(service.replicas)} replica${clampReplicas(service.replicas) === 1 ? '' : 's'})`);
 
       const image = await resolveImage(db, ctx, deps);
+      if (ctx.recordDockerArtifact) {
+        if (!image.imageId || !image.artifactBuild || !ctx.captureSwarmArtifact) throw new Error('Swarm source artifact capture is required before stack submission');
+        await ctx.captureSwarmArtifact({ imageId: image.imageId, ...image.artifactBuild });
+      }
       // M1c: the panel's own node is a member (labelled at init; re-asserted here, idempotent).
       const info = await localSwarmInfo();
       if (info.nodeId) await updateNodeLabel(info.nodeId, '--label-add', `${SWARM_MEMBER_LABEL}=1`);
@@ -194,26 +204,45 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
       };
       if ((ctx.service.cpuShares ?? 0) > 0) log('note: CPU shares have no Swarm equivalent; the CPU and memory limits apply.');
 
+      const transition = ctx.prepareSwarmTransition ? await ctx.prepareSwarmTransition(spec, {
+        runtimeId, port: ctx.service.port ?? null, healthPath: ctx.service.healthPath ?? '/',
+        ...(image.imageId ? { imageDigest: image.imageId } : {}),
+        ...(service.healthCheck === 'command' && service.healthCommand?.trim() ? { healthCheck: 'command' as const, healthCommand: service.healthCommand.trim() } : {}),
+      }, image.auth) : undefined;
+      if (!transition && !deps.driver) throw new SwarmRecoveryPending('Managed Swarm deployment requires a durable transition journal');
+      journalled = transition !== undefined;
+
       const existed = await serviceExists(runtimeId);
       const driver = deps.driver ?? new SwarmOrchestrator(db);
-      log(`Swarm: docker stack deploy ${spec.name} (rolling, start-first; waits up to ${STACK_DEPLOY_TIMEOUT_MS / 60_000} minutes for convergence)`);
+      log(`Swarm: ${transition ? `applying journalled native service ${runtimeId}` : `docker stack deploy ${spec.name}`} (rolling, start-first; waits up to ${STACK_DEPLOY_TIMEOUT_MS / 60_000} minutes for convergence)`);
       let error: string | undefined;
+      let imageUnconfirmed = false;
       const submittedAt = Date.now();
       try {
         // M4: a private client config per deploy, logged in only for a
         // registry service, forwarded only then, and gone once the spec is
         // submitted — the convergence wait runs without it.
         const status = await withDeployDockerConfig(image.auth, log, (dockerConfig) =>
-          driver.deployStack(spec, { log, timeoutMs: STACK_DEPLOY_TIMEOUT_MS, wait: false, dockerConfig, withRegistryAuth: image.auth !== undefined }),
+          driver.deployStack(spec, { log, timeoutMs: STACK_DEPLOY_TIMEOUT_MS, wait: false, dockerConfig, withRegistryAuth: image.auth !== undefined, ...(transition ? { nativeApply: () => transition.submit() } : {}) }),
         );
         error = status.error;
       } catch (err) {
         error = msg(err);
       }
       if (!error) error = (await waitForConvergence(runtimeId, submittedAt, STACK_DEPLOY_TIMEOUT_MS, log)) ?? undefined;
+      if (!error && image.imageId) {
+        try {
+          const expected = { runtimeId, imageRef: image.ref, imageId: image.imageId, replicas: clampReplicas(service.replicas), serviceId: service.id, deploymentId: ctx.deploymentId, panelNodeId: info.nodeId };
+          await verifySwarmTaskImages(db, expected);
+          expectedTaskImage = expected;
+        } catch (err) { error = msg(err); imageUnconfirmed = true; }
+      }
       if (error) {
         await logTaskErrors(runtimeId, log);
-        if (existed) {
+        if (transition) throw new SwarmRecoveryPending(`Swarm transition needs reconciliation: ${error}`);
+        if (imageUnconfirmed) {
+          log(`Swarm: image identity could not be confirmed; ${runtimeId} is retained for review without an automatic spec change`);
+        } else if (existed) {
           await ensureRolledBack(runtimeId, log);
         } else {
           // A first deploy that never converged leaves nothing behind.
@@ -222,7 +251,7 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
         throw new Error(`Swarm deploy failed: ${error}`);
       }
       rollbackTarget = existed ? runtimeId : null;
-      const imageDigest = image.local ? image.imageId : await deployedImageRef(runtimeId);
+      const imageDigest = image.imageId ?? await deployedImageRef(runtimeId);
       return {
         runtimeId,
         port: ctx.service.port ?? null,
@@ -230,6 +259,7 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
         // The VIP balances across the tasks: Traefik needs one backend.
         replicas: 1,
         ...(imageDigest ? { imageDigest } : {}),
+        ...(image.artifactBuild ? { artifactBuild: image.artifactBuild } : {}),
         // 0.16.4: Swarm gated each task on the command; no HTTP probe after it.
         ...(service.healthCheck === 'command' && service.healthCommand?.trim() ? { healthCheck: 'command' as const, healthCommand: service.healthCommand.trim() } : {}),
       };
@@ -238,7 +268,16 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
     async isHealthy(runtime, timeoutMs = 300_000, directGraceMs = 10_000, log: (line: string) => void = () => undefined) {
       if (runtime.runtimeId !== own) return local.isHealthy(runtime, timeoutMs, directGraceMs, log);
       const healthy = await swarmHealthy(runtime, timeoutMs, log);
-      if (!healthy && rollbackTarget === runtime.runtimeId) {
+      if (healthy && expectedTaskImage) {
+        try { await verifySwarmTaskImages(db, expectedTaskImage); }
+        catch {
+          rollbackTarget = null;
+          if (journalled) throw new SwarmRecoveryPending('Swarm task image identity changed during readiness; service retained');
+          log('Swarm task image identity changed during readiness; current service retained for review');
+          return false;
+        }
+      }
+      if (!healthy && !journalled && rollbackTarget === runtime.runtimeId) {
         rollbackTarget = null;
         log('↩ Swarm: the new spec is not healthy — rolling the service back to its previous spec');
         await rollbackSwarmService(runtime.runtimeId, log);
@@ -283,18 +322,29 @@ async function resolveImage(db: DB, ctx: BuildContext, deps: SwarmBuilderDeps): 
   const { service, log } = ctx;
   if (service.image) {
     // A rollback pins the digest the earlier deploy ran.
-    const ref = await pullableReleaseRef(service.image, ctx.imageDigest);
+    let ref = await pullableReleaseRef(service.image, ctx.imageDigest);
+    if (ctx.prepareSwarmTransition) {
+      if (ctx.imageDigest && !ref.includes('@sha256:')) throw new Error('Swarm rollback digest is unavailable; no mutable image tag will be pulled');
+      ref = await pinSwarmImage(ref, ctx.registryAuth, log);
+    }
     return { ref, local: false, ...(ctx.registryAuth ? { auth: ctx.registryAuth } : {}) };
   }
   if (ctx.prebuiltImage) {
     // Built on a build server and shipped here (0.16 T4): by registry (a
     // pullable `repo@sha256` reference) or by stream relay (a local tag).
     applyPackPorts(ctx, ctx.prebuiltImage.builtWithNixpacks === true, ctx.prebuiltImage.builtStatic === true);
+    const artifactBuild = { builtWithNixpacks: ctx.prebuiltImage.builtWithNixpacks === true, builtStatic: ctx.prebuiltImage.builtStatic === true };
     if (ctx.prebuiltImage.tag.includes('@sha256:')) {
       const target = await resolvePushTarget(db, service);
-      return { ref: ctx.prebuiltImage.tag, local: false, ...(target ? { auth: { username: target.username, password: target.password, server: target.server } } : {}) };
+      return { ref: ctx.prebuiltImage.tag, imageId: ctx.prebuiltImage.imageId, artifactBuild, local: false, ...(target ? { auth: { username: target.username, password: target.password, server: target.server } } : {}) };
     }
-    return { ref: ctx.prebuiltImage.tag, local: true, imageId: ctx.prebuiltImage.imageId };
+    let ref = ctx.prebuiltImage.tag;
+    if (ref === ctx.prebuiltImage.imageId) {
+      ref = buildTag(service.slug, ctx.commitSha, ctx.deploymentId);
+      await run('docker', ['tag', ctx.prebuiltImage.imageId, ref], { timeoutMs: READ_TIMEOUT_MS }, log);
+      if ((await panelImageInfo(ref)).id !== ctx.prebuiltImage.imageId) throw new Error('Swarm artifact tag identity does not match the recorded image');
+    }
+    return { ref, local: true, imageId: ctx.prebuiltImage.imageId, artifactBuild };
   }
   log('Swarm: building on the panel host (a Swarm service builds on the panel or on a build server, never on the tasks’ nodes)');
   const placed = await (deps.buildOnPanel ?? buildElsewhere)(db, { kind: 'panel' }, ctx);
@@ -302,9 +352,9 @@ async function resolveImage(db: DB, ctx: BuildContext, deps: SwarmBuilderDeps): 
   applyPackPorts(ctx, placed.builtWithNixpacks, placed.builtStatic);
   if (placed.registry) {
     const t = placed.registry.target;
-    return { ref: `${t.repository}@${placed.registry.digest}`, local: false, auth: { username: t.username, password: t.password, ...(t.server ? { server: t.server } : {}) } };
+    return { ref: `${t.repository}@${placed.registry.digest}`, imageId: placed.imageId, artifactBuild: { builtWithNixpacks: placed.builtWithNixpacks, builtStatic: placed.builtStatic }, local: false, auth: { username: t.username, password: t.password, ...(t.server ? { server: t.server } : {}) } };
   }
-  return { ref: placed.tag, local: true, imageId: placed.imageId, sizeBytes: placed.sizeBytes };
+  return { ref: placed.tag, local: true, imageId: placed.imageId, sizeBytes: placed.sizeBytes, artifactBuild: { builtWithNixpacks: placed.builtWithNixpacks, builtStatic: placed.builtStatic } };
 }
 
 /** The run conventions of the pack that built the image (the local docker builder applies the same). */
@@ -321,14 +371,14 @@ function applyPackPorts(ctx: BuildContext, nixpacks: boolean, staticPack: boolea
  * Design §7.4 step 3 (fixes D7f), without a registry: preload the image onto
  * every member node the panel can send it to (stream relay, like build
  * placement), and label exactly the nodes that hold it —
- * `nd.preload.<slug>=<image id prefix>`, the panel host included — with a
+ * a free `nd.preload.<slug>.gN=<full image id>` slot, the panel host included — with a
  * constraint that requires that value (security review M1d: positive, so a
  * node the image never reached can never qualify, and a stale label from an
  * earlier image does not match the new one).
  */
 async function preloadImage(db: DB, ctx: BuildContext, image: SwarmImage, deps: SwarmBuilderDeps, panelNodeId: string | null): Promise<string[]> {
   const { service, log } = ctx;
-  const label = swarmPreloadLabel(service.slug);
+  const label = await unusedSwarmPreloadLabel(service.slug);
   const tag = swarmImageTag(image.imageId ?? image.ref);
   if (panelNodeId) await updateNodeLabel(panelNodeId, '--label-add', `${label}=${tag}`);
   const nodes = await listSwarmNodes(db);
@@ -361,6 +411,9 @@ async function preloadImage(db: DB, ctx: BuildContext, image: SwarmImage, deps: 
       } catch (err) {
         reason = msg(err);
       }
+    }
+    if (ctx.requireSwarmMembers && node.state === 'ready' && node.availability === 'active') {
+      throw new Error(`Swarm artifact preparation failed for ${node.hostname || node.id}: ${reason}; the current service spec is unchanged`);
     }
     log(`⚠ Swarm: node ${node.hostname || node.id} will run no task of this service: ${reason}. Set a push registry (Service → Settings → Build) to let every node pull the image.`);
   }
@@ -457,7 +510,7 @@ async function probeViaTraefik(runtimeId: string, port: number, path: string): P
  * already gated each new task on its own healthcheck, if the image has one),
  * and the service answers on its port through Traefik.
  */
-async function swarmHealthy(runtime: DeployRuntime, timeoutMs: number, log: (line: string) => void): Promise<boolean> {
+export async function swarmHealthy(runtime: DeployRuntime, timeoutMs: number, log: (line: string) => void): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   const path = safeProbePath(runtime.healthPath);
   let noted = '';

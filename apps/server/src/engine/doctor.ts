@@ -301,7 +301,7 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
     db.select().from(serviceVolumeAttachments),
     db.select().from(deployments),
   ]);
-  const activeDeployRows = activeDeploys.filter((d) => d.status === 'queued' || d.status === 'building');
+  const activeDeployRows = activeDeploys.filter((d) => d.status === 'queued' || d.status === 'building' || d.status === 'deploying');
   const runtimeIds = new Set(svcs.map((s) => s.runtimeId).filter((r): r is string => Boolean(r)));
   const dbContainerNames = new Set(dbs.map((d) => d.containerName).filter(Boolean) as string[]);
   // F529: a compose runtimeId names only the stack's MAIN container; its

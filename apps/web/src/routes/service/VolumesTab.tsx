@@ -34,8 +34,8 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
   // absence rendered as invented zeros: their numbers come from the
   // per-service endpoints below (r472).
   const volumes = useQuery({
-    queryKey: ['volumes'],
-    queryFn: () => api.volumes.list(),
+    queryKey: svc.serverId == null ? ['volumes'] : ['volumes', 'node', svc.serverId],
+    queryFn: () => svc.serverId == null ? api.volumes.list() : api.volumes.list({ serverId: svc.serverId }),
     enabled: isOperator,
   });
 
@@ -57,7 +57,7 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
 
   // The service's primary volume (the legacy `volumeMount` field). Found by
   // matching inventory owner.id === serviceId. Falls back to the implicit
-  // `nd-vol-<slug>` name when the inventory list is still loading or the
+  // `nd-svc-<slug>-data` name when the inventory list is still loading or the
   // volume has not yet been provisioned.
   const serviceVolume = allVols.find((v) => v.owner?.kind === 'service' && v.owner.id === serviceId);
 
@@ -145,7 +145,7 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-100">{serviceVolume?.name ?? `nd-vol-${svc.slug}`}</span>
+                    <span className="font-semibold text-slate-100">{serviceVolume?.name ?? `nd-svc-${svc.slug}-data`}</span>
                     <span className="rounded bg-indigo-500/15 px-2 py-0.5 font-mono text-[10px] font-medium text-indigo-300">
                       Primary Mount
                     </span>
@@ -170,13 +170,13 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => setBrowsingVolume(/* v8 ignore start */ serviceVolume?.name ?? `nd-vol-${svc.slug}` /* v8 ignore stop */)}
+                  onClick={() => setBrowsingVolume(/* v8 ignore start */ serviceVolume?.name ?? `nd-svc-${svc.slug}-data` /* v8 ignore stop */)}
                   className="text-xs"
                 >
                   <FolderOpen size={14} /> Browse Files
                 </Button>
                 {hostsOneTimeConfig(svc, svc.volumeMount ?? '/var/www/html') && (
-                  <RepairConfigButton serviceId={serviceId} volumeName={serviceVolume?.name ?? `nd-vol-${svc.slug}`} />
+                  <RepairConfigButton serviceId={serviceId} volumeName={serviceVolume?.name ?? `nd-svc-${svc.slug}-data`} />
                 )}
               </div>
             </div>
@@ -386,7 +386,7 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
 
       {/* Interactive Volume File Browser Modal */}
       {browsingVolume && (
-        <VolumeBrowser volume={browsingVolume} onClose={() => setBrowsingVolume(null)} />
+        <VolumeBrowser volume={browsingVolume} serverId={svc.serverId ?? undefined} onClose={() => setBrowsingVolume(null)} />
       )}
 
       {/* 0.16.3: files mounted read-only in the container. */}

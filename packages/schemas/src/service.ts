@@ -9,6 +9,7 @@ import { dockerLabels } from './dockerLabels.js';
 import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, providerBaseUrl, repoBaseDir, repoRelativePath, slug } from './common.js';
 
 export const serviceType = z.enum(['pm2', 'docker', 'compose']);
+export const serviceOrchestrator = z.enum(['container', 'swarm']);
 export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'railpack', 'static']);
 
 /**
@@ -492,6 +493,8 @@ export const service = z.object({
   composeContent: z.string().nullable().optional(),
   commitSha: z.string().nullable(),
   runtimeId: z.string().nullable(),
+  /** Additive in 0.18.0; absent/null on older panel responses. */
+  orchestrator: serviceOrchestrator.nullable().optional(),
   healthPath: z.string(),
   /** Healthcheck deadline in seconds; null = the 300 s default (0.16.1). */
   healthTimeoutSeconds: z.number().int().nullable().optional(),
@@ -873,6 +876,8 @@ export const createDatabase = z.object({
 });
 export type CreateDatabaseInput = z.input<typeof createDatabase>;
 
+export const DATABASE_STUDIO_ENGINES = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb', 'dragonfly'] as const;
+
 export const managedDatabase = z.object({
   id: z.number().int(),
   projectId: z.number().int().nullable(),
@@ -888,6 +893,8 @@ export const managedDatabase = z.object({
   connectionString: z.string().nullable(),
   webGuiEnabled: z.boolean().optional().default(false),
   webGuiPort: z.number().int().nullable().optional(),
+  /** Node Studio lifecycle; no private container identity or credentials. */
+  nodeStudioState: z.enum(['preparing', 'ready', 'cleanup_pending']).nullable().optional(),
   extensions: z.array(z.string()).optional().default([]),
   attachedServices: z.array(z.object({ id: z.number().int(), name: z.string(), slug: z.string() })).optional().default([]),
   // ── 0.16 T8 surfaces: the node fields the 0.15.3 routes return (additive) ──
@@ -1041,8 +1048,14 @@ export type ContainerStat = z.infer<typeof containerStat>;
 export const statsSnapshot = z.object({
   host: hostStat.nullable(),
   containers: z.array(containerStat),
+  /** Present only for a single authorized database snapshot. Default monitoring remains local-only. */
+  resource: z.object({
+    kind: z.literal('database'), id: z.number().int().positive(), serverId: z.number().int().positive().nullable(),
+    state: z.enum(['live', 'pending', 'unavailable', 'stale', 'stopped']), sampledAt: z.number().finite().nullable(),
+  }).optional(),
 });
 export type StatsSnapshot = z.infer<typeof statsSnapshot>;
+export const statsSnapshotQuery = z.object({ databaseId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() });
 
 export const metricSeries = z.object({
   kind: z.string(),

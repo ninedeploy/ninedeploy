@@ -394,6 +394,13 @@ describe('run — timeout & tree-kill', () => {
 });
 
 describe('capture', () => {
+  it('captures binary bytes as base64 across chunk boundaries without UTF-8 replacement', async () => {
+    const child = makeChild(); mockSpawn.mockReturnValue(child);
+    const bytes = Buffer.from([0, 255, 128, 10, 0, 254, 13]);
+    const pending = capture('binary-fixture', [], { captureEncoding: 'base64', maxOutputBytes: bytes.length });
+    child.stdout.emit('data', bytes.subarray(0, 1)); child.stdout.emit('data', bytes.subarray(1, 4)); child.stdout.emit('data', bytes.subarray(4)); emitClose(child, 0);
+    expect(await pending).toBe(bytes.toString('base64'));
+  });
   beforeEach(() => {
     mockSpawn.mockReset();
   });

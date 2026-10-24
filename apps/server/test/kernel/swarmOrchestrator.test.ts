@@ -116,6 +116,15 @@ const state = (name: string, serviceNames: string[], extra: Record<string, unkno
   JSON.stringify({ name, networks: [], secrets: [], configs: [], serviceNames, appliedAt: '2026-01-01T00:00:00.000Z', ...extra });
 
 describe('SwarmOrchestrator', () => {
+  it('applies a journalled native service without persisting plaintext environment files', async () => {
+    const nativeApply = vi.fn().mockResolvedValue(undefined);
+    await newOrchestrator().deployStack(stack({ services: [svc({ env: { SECRET: 'fixture-native-secret' } })] }), { nativeApply });
+    expect(nativeApply).toHaveBeenCalledTimes(1);
+    expect(calls('stack deploy')).toEqual([]);
+    expect(h.files.has(stackPath('demo', 'stack.json'))).toBe(true);
+    expect([...h.files.values()].some(value => value.data?.includes('fixture-native-secret'))).toBe(false);
+  });
+
   it('exposes the stable "swarm" name', () => {
     expect(newOrchestrator().name).toBe('swarm');
   });

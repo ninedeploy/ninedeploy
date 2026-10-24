@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { buildConfigs, serviceTargets, type DB, type DeploymentArtifact, type Service } from '@ninedeploy/db';
+import { buildConfigs, type DB, type DeploymentArtifact, type Service } from '@ninedeploy/db';
 import { capture } from './exec.js';
 import { pushRepository } from '@ninedeploy/schemas';
 
@@ -24,7 +24,7 @@ export function artifactSummary(value: DeploymentArtifact | null | undefined, pr
 }
 
 export function supportsDockerArtifact(service: Pick<Service, 'type' | 'serverId' | 'orchestrator' | 'repoUrl' | 'image' | 'composeContent'>): boolean {
-  return service.type === 'docker' && service.orchestrator !== 'swarm' && !!service.repoUrl && !service.image && !service.composeContent;
+  return service.type === 'docker' && !!service.repoUrl && !service.image && !service.composeContent;
 }
 
 /** Rechecked by the worker before hooks, checkout, or any runtime changes. */
@@ -36,9 +36,6 @@ export async function assertArtifactTarget(db: DB, artifact: DeploymentArtifact,
   const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
   if (build?.preDeployCmd || build?.postDeployCmd || build?.preStopCmd) {
     throw new Error('Artifact promotion does not check out source; remove host deploy hooks or use commit promotion');
-  }
-  if (await db.query.serviceTargets.findFirst({ where: eq(serviceTargets.serviceId, service.id) })) {
-    throw new Error('Artifact promotion supports a single target; multi-node fan-out is not supported');
   }
 }
 

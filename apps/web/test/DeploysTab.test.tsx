@@ -280,11 +280,31 @@ describe('DeploysTab (per-service)', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent(imageId);
     expect(screen.getByRole('dialog')).toHaveTextContent('Build-time values remain baked');
     expect(screen.getByRole('dialog')).toHaveTextContent('pinned registry digest');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Configured additional nodes receive the same image');
+    expect(screen.getByRole('dialog')).toHaveTextContent('a failed target keeps its previous release');
     await user.click(screen.getByRole('button', { name: 'Promote artifact' }));
     await waitFor(() => expect(promote).toHaveBeenCalledWith(1, 2, { mode: 'artifact', sourceDeploymentId: 7 }));
     expect(screen.getByText('Immutable Docker artifact')).toBeInTheDocument();
     expect(screen.getByText(`Registry archive: ${registryRef}`)).toBeInTheDocument();
     expect(screen.getByText(/Built on node #4/)).toHaveTextContent('Recoverable image copy retained on the panel');
+  });
+
+  it('explains native Swarm rollout and pins the artifact request for a Swarm target', async () => {
+    const repoUrl = 'https://github.com/acme/web.git', imageId = 'sha256:' + 'a'.repeat(64);
+    mockOf(api.services.list).mockResolvedValue([{ id: 2, name: 'swarm production', repoUrl, orchestrator: 'swarm' }] as never);
+    const promote = vi.fn().mockResolvedValue({ ok: true, deploymentId: 30, commitSha: 'abcdef12345', promotedFrom: 'staging' });
+    mockOf(api.deploys.promote).mockImplementation(promote);
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={repoUrl} deploys={[baseDeploy({ id: 7, status: 'running', artifact: { imageId, originDeploymentId: 7, promotionSourceDeploymentId: null } })]} loading={false} activeId={7} onSelect={() => {}} />);
+    const user = userEvent.setup(); await screen.findByText('Promote this artifact');
+    await user.selectOptions(screen.getByLabelText('Promotion target service'), '2');
+    await user.click(screen.getByRole('button', { name: 'Promote' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(imageId); expect(dialog).toHaveTextContent('replica count');
+    expect(dialog).toHaveTextContent('Swarm rolls the same image across its replicas');
+    expect(dialog).toHaveTextContent('HTTP/TCP readiness is not available for Swarm');
+    expect(dialog).not.toHaveTextContent('Configured additional nodes');
+    await user.click(screen.getByRole('button', { name: 'Promote artifact' }));
+    await waitFor(() => expect(promote).toHaveBeenCalledWith(1, 2, { mode: 'artifact', sourceDeploymentId: 7 }));
   });
 
   it('allows an explicit commit rebuild even when an artifact exists', async () => {

@@ -53,7 +53,7 @@ async function boot(opts: { stats?: boolean; deploying?: boolean } = {}) {
   const app = Fastify();
   app.decorate('db', db);
   if (opts.stats !== false) {
-    app.decorate('stats', { raw: () => ({ containers: new Map([['web-9', { name: 'web-9', cpuPct: 150, memBytes: 1, memLimitBytes: 2 }]]), host: null }) });
+    app.decorate('stats', { raw: () => ({ containers: new Map([['web-9', { name: 'web-9', cpuPct: 150, memBytes: 1, memLimitBytes: 2 }]]), host: null, sampledAt: Date.now() }) });
   }
   await app.register(autoscalerPlugin);
   await app.ready();
@@ -66,14 +66,14 @@ describe('autoscaler plugin', () => {
     const { app, db } = await boot();
     await vi.advanceTimersByTimeAsync(40_000); // first look: the need starts
     await vi.advanceTimersByTimeAsync(30_000); // the window has passed
-    await vi.waitFor(() => expect(h.run).toHaveBeenCalledWith('docker', ['start', 'web-9-r2'], {}, expect.any(Function)));
+    await vi.waitFor(() => expect(h.run).toHaveBeenCalledWith('docker', ['start', 'web-9-r2'], { timeoutMs: 15_000 }, expect.any(Function)));
     expect(h.isHealthy).toHaveBeenCalledWith(
       { runtimeId: 'web-9-r2', port: 3000, healthPath: '/', healthCheck: 'command', healthCommand: 'true' },
       60_000,
       0,
     );
     await vi.waitFor(() => expect(h.audit).toHaveBeenCalledWith(db, null, 'service.autoscale', expect.stringMatching(/^web: 1 → [23]$/), expect.anything()));
-    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db);
+    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, expect.objectContaining({ confirmServiceId: 5 }));
     expect((await db.query.services.findFirst())?.runtimeReplicas).toBeGreaterThan(1);
     await app.close();
   });

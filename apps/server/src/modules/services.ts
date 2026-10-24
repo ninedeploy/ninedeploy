@@ -29,6 +29,9 @@ const setTargets = z.object({ serverIds: z.array(z.number().int().positive()).ma
 import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { targetsForService, teardownTargets, type FanoutTarget } from '../engine/fanout.js';
+import { listFanoutRecovery, reconcileFanoutTransitions } from '../engine/fanoutRecovery.js';
+import { listPrimaryRecovery, reconcilePrimaryTransitions } from '../engine/primaryRecovery.js';
+import { listSwarmRecovery, reconcileSwarmTransitions } from '../engine/swarmRecovery.js';
 import { audit } from '../lib/audit.js';
 import { agentOp } from '../lib/agentClient.js';
 import { removeNodeWorkspace } from '../lib/agentCapabilities.js';
@@ -142,6 +145,7 @@ function serialize(s: Service, sourceName: string | null = null, tags: TagIds = 
     composeService: s.composeService,
     commitSha: s.commitSha,
     runtimeId: s.runtimeId,
+    orchestrator: s.orchestrator ?? null,
     serverId: s.serverId ?? null,
     healthPath: s.healthPath,
     healthTimeoutSeconds: s.healthTimeoutSeconds ?? null,
@@ -1119,7 +1123,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // mid-flight build's runtime — refuse until the pipeline settles; the user
     // can cancel first.
     const activeDeploy = await app.db.query.deployments.findFirst({
-      where: and(eq(deployments.serviceId, id), inArray(deployments.status, ['queued', 'building', 'awaiting_ci'])),
+      where: and(eq(deployments.serviceId, id), inArray(deployments.status, ['queued', 'building', 'deploying', 'awaiting_ci'])),
     });
     if (activeDeploy) {
       throw conflict('A deployment is queued or building — cancel it or wait for it to finish before deleting');
@@ -1376,6 +1380,51 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     return { targets: rows.map((t) => ({ serverId: t.serverId, runtimeId: t.runtimeId, status: t.status })) };
   });
 
+  app.get('/:id/runtime-recovery', async req => {
+    const id = num((req.params as { id: string }).id);
+    await loadServiceForUser(app.db, id, req.user!);
+    return { entry: await listPrimaryRecovery(app.db, id) };
+  });
+
+  app.get('/:id/swarm/recovery', async req => {
+    const id = num((req.params as { id: string }).id);
+    await loadServiceForUser(app.db, id, req.user!);
+    return { entry: await listSwarmRecovery(app.db, id) };
+  });
+  app.post('/:id/swarm/recovery', async req => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    if (!req.user!.isOperator) throw forbidden('Only operators may retry Swarm runtime recovery');
+    const result = await reconcileSwarmTransitions(app.db, { serviceId: id, force: true, log: line => req.log.warn(line) });
+    void audit(app.db, req.user!.id, 'service.swarm_recovery_retry', svc.name, { serviceId: id, ...result });
+    return { ...result, entry: await listSwarmRecovery(app.db, id) };
+  });
+  app.post('/:id/runtime-recovery', async req => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    if (!req.user!.isOperator) throw forbidden('Only operators may retry primary runtime recovery');
+    const result = await reconcilePrimaryTransitions(app.db, { serviceId: id, force: true, log: line => req.log.warn(line) });
+    void audit(app.db, req.user!.id, 'service.primary_recovery_retry', svc.name, { serviceId: id, ...result });
+    return { ...result, entry: await listPrimaryRecovery(app.db, id) };
+  });
+
+  app.get('/:id/targets/recovery', async req => {
+    const id = num((req.params as { id: string }).id);
+    await loadServiceForUser(app.db, id, req.user!);
+    return { entries: await listFanoutRecovery(app.db, id) };
+  });
+  app.post('/:id/targets/recovery', async req => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    if (!req.user!.isOperator) throw forbidden('Only operators may retry fan-out recovery');
+    const result = await reconcileFanoutTransitions(app.db, { serviceId: id, force: true, log: line => req.log.warn(line) });
+    void audit(app.db, req.user!.id, 'service.fanout_recovery_retry', svc.name, { serviceId: id, ...result });
+    return { ...result, entries: await listFanoutRecovery(app.db, id) };
+  });
+
   // G-28: per-service sticky-session toggle. The setting lives in the
   // settings table at `sticky_session:<id>:enabled` (string `"true"` /
   // `"1"`); `engine/proxy.ts:writeDynamicConfig` reads it on every domain
@@ -1462,6 +1511,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // 0.16.11: a stop ends a sleep too.
     await app.db.update(services).set({ status: 'stopped', asleepAt: null }).where(eq(services.id, svc.id));
     try {
+      // A pending routing transition must not subsequently publish success
+      // or reinstate the previous runtime after an explicit stop.
+      await app.db.update(deployments).set({ status: 'cancelled', finishedAt: new Date() })
+        .where(and(eq(deployments.serviceId, svc.id), inArray(deployments.status, ['building', 'deploying'])));
       // ── 0.16 T7 swarm ── stop = scale to 0 tasks (the stack and its spec stay).
       const swarmRuntime = swarmRuntimeOf(svc);
       if (swarmRuntime) {

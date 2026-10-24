@@ -666,6 +666,41 @@
       "when": 1792621894260,
       "tag": "0095_docker_artifact_promotion",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "6",
+      "when": 1792683610601,
+      "tag": "0096_observability_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "6",
+      "when": 1792710250800,
+      "tag": "0097_fanout_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "6",
+      "when": 1792742010208,
+      "tag": "0098_primary_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "6",
+      "when": 1792759471039,
+      "tag": "0099_swarm_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "6",
+      "when": 1792794082902,
+      "tag": "0100_node_studio_identity",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,10 @@
 import type { DB } from '@ninedeploy/db';
-import { agentOp } from './agentClient.js';
+import { createHash } from 'node:crypto';
+import { agentOp, agentTransportSealed } from './agentClient.js';
+import { capabilityRefusal } from './agentCapabilities.js';
 import { getAcmeEmail, getDnsConfig, renderDynamicConfig, renderStaticConfig } from '../engine/proxy.js';
 import { NODE_DYNAMIC_WARN_BYTES } from './customCertificates.js';
+import { withRoutingAck } from './proxyRoutingAck.js';
 
 /**
  * Keep a node's own reverse proxy in step with the panel's model of it.
@@ -23,12 +26,10 @@ import { NODE_DYNAMIC_WARN_BYTES } from './customCertificates.js';
  * network, so a config that named another machine's containers would answer
  * 502 for every one of them.
  *
- * Every function here is best-effort and never throws: a node whose proxy
- * could not be refreshed keeps serving its previous config, and the result
- * says so. r521: the CALLER decides what a failure means — a deploy to that
- * very node fails its PROXY_SWAP and keeps the previous runtime (the new
- * container is unrouted there), while a refresh of any other node is audited
- * and retried by the next routing write.
+ * Functions return per-node results instead of throwing. A failed transport
+ * response after a dynamic write does not prove which routing is loaded.
+ * The caller preserves both generations in that case; a background refresh
+ * is audited and retried by the next routing write.
  */
 
 /** Result of one sync attempt, for the caller's log line. */
@@ -36,6 +37,8 @@ export interface NodeProxySyncResult {
   ok: boolean;
   /** Populated when `ok` is false. */
   reason?: string;
+  /** The write may have landed even if its transport response was lost. */
+  routingUnconfirmed?: boolean;
 }
 
 /**
@@ -50,18 +53,26 @@ export async function syncNodeProxy(
   db: DB,
   serverId: number,
   log: (line: string) => void = () => undefined,
-  opts: { ensureContainer?: boolean } = {},
+  opts: { ensureContainer?: boolean; confirmRouting?: boolean } = {},
 ): Promise<NodeProxySyncResult> {
   let ensureStarted = false;
+  let routingMayHaveChanged = false;
   try {
+    if (opts.confirmRouting) {
+      const sealed = await agentTransportSealed(db, serverId);
+      const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, serverId, op, params, sink), `#${serverId}`, sealed,
+        { cap: 'proxy.routingAck', feature: 'confirm loaded HTTP/TLS routing', sealedRequired: true });
+      if (refusal) throw new Error(refusal.message);
+    }
     const [acmeEmail, dns] = await Promise.all([getAcmeEmail(db), getDnsConfig(db)]);
     const staticConfig = renderStaticConfig(acmeEmail, dns);
     const dynamicConfig = await renderDynamicConfig(db, { serverId });
+    const writtenDynamic = opts.confirmRouting ? withRoutingAck(dynamicConfig) : dynamicConfig;
 
     const sink = (line: string) => log(`  node proxy: ${line}`);
     // 0.14: uploaded certificates are inlined into the node's single dynamic
     // file, and the agent refuses one above 1 MiB. Say so well before that.
-    const bytes = Buffer.byteLength(dynamicConfig, 'utf8');
+    const bytes = Buffer.byteLength(writtenDynamic, 'utf8');
     if (bytes > NODE_DYNAMIC_WARN_BYTES) {
       log(
         `⚠ node proxy: the dynamic config for node #${serverId} is ${Math.round(bytes / 1024)} KiB ` +
@@ -71,7 +82,8 @@ export async function syncNodeProxy(
     const wroteStatic = await agentOp(
       db, serverId, 'proxy.writeConfig', { kind: 'static', content: staticConfig }, sink,
     );
-    await agentOp(db, serverId, 'proxy.writeConfig', { kind: 'dynamic', content: dynamicConfig }, sink);
+    routingMayHaveChanged = true;
+    await agentOp(db, serverId, 'proxy.writeConfig', { kind: 'dynamic', content: writtenDynamic }, sink);
 
     // Traefik reads the DYNAMIC file through a watcher but the STATIC one only
     // at start-up, so the container has to be recreated when the static config
@@ -92,20 +104,24 @@ export async function syncNodeProxy(
       ensureStarted = true;
       await agentOp(db, serverId, 'proxy.ensure', {}, sink);
     }
+    if (opts.confirmRouting) {
+      const receipt = await agentOp(db, serverId, 'proxy.confirmRouting', { content: dynamicConfig }, () => undefined);
+      const expected = `ND-PROXY-ROUTING ${createHash('sha256').update(dynamicConfig).digest('hex')}`;
+      if (!receipt.lines.includes(expected)) throw new Error('The node did not confirm the requested routing generation');
+    }
     return { ok: true };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    // r416: the failure honestly depends on WHERE it happened. `proxy.ensure`
-    // recreates the proxy with rm+run — if THAT op failed, the node's only
-    // proxy is down and every domain on the node is dark until the next
-    // successful sync (the old "keeps serving its previous routing" message
-    // was a lie in exactly this case).
+    // After a dynamic write or ensure, an error cannot establish which
+    // generation is serving (or whether the proxy is running at all).
     log(
       ensureStarted
-        ? `⚠ node proxy sync failed: ${reason}. THE NODE'S PROXY IS DOWN — every domain on this node answers nothing until the next successful sync. Retry from Settings or re-run a deploy.`
-        : `⚠ node proxy sync failed: ${reason}. The config write failed before the proxy was touched; the node keeps serving its previous routing.`,
+        ? `⚠ node proxy sync failed: ${reason}. THE NODE'S PROXY IS DOWN OR ITS ROUTING IS UNCONFIRMED — retry from Settings or re-run a deploy; keep both runtime generations running.`
+        : routingMayHaveChanged
+          ? `⚠ node proxy sync failed: ${reason}. Routing may already have changed; keep both runtime generations running until the loaded configuration is confirmed.`
+          : `⚠ node proxy sync failed: ${reason}. The config write failed before the proxy was touched; the node keeps serving its previous routing.`,
     );
-    return { ok: false, reason };
+    return { ok: false, reason, ...(routingMayHaveChanged ? { routingUnconfirmed: true } : {}) };
   }
 }
 
@@ -138,6 +154,7 @@ export async function syncAllNodeProxies(
   db: DB,
   serverIds: number[],
   log: (line: string) => void = () => undefined,
+  opts: { confirmNode?: number } = {},
 ): Promise<Array<NodeProxySyncResult & { serverId: number }>> {
   const unique = [...new Set(serverIds.filter((id) => Number.isInteger(id) && id > 0))];
   // r521: per-node outcomes go back to the caller — writeDynamicConfig fails
@@ -147,7 +164,7 @@ export async function syncAllNodeProxies(
     // Sequential on purpose: a fleet refresh is not latency-critical and a
     // burst of parallel agent calls is a good way to trip an agent's rate
     // limit (120/min) during a mass domain change.
-    results.push({ serverId: id, ...(await syncNodeProxy(db, id, log)) });
+    results.push({ serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id })) });
   }
   return results;
 }

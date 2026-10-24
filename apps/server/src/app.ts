@@ -17,6 +17,7 @@ import authPlugin from './plugins/auth.js';
 import backupSchedulerPlugin from './plugins/backupScheduler.js';
 import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import collectorPlugin from './plugins/collector.js';
+import observabilityPlugin from './plugins/observability.js';
 import uptimePlugin from './plugins/uptime.js';
 import autoscalerPlugin from './plugins/autoscaler.js';
 import sleeperPlugin from './plugins/sleeper.js';
@@ -31,6 +32,9 @@ import githubFeedbackPlugin from './plugins/githubFeedback.js';
 import rateLimitPlugin from './plugins/rateLimit.js';
 import rawBodyPlugin from './plugins/rawBody.js';
 import runtimeStatePlugin from './plugins/runtimeState.js';
+import fanoutRecoveryPlugin from './plugins/fanoutRecovery.js';
+import primaryRecoveryPlugin from './plugins/primaryRecovery.js';
+import swarmRecoveryPlugin from './plugins/swarmRecovery.js';
 import securityHeadersPlugin from './plugins/securityHeaders.js';
 import staticFilesPlugin from './plugins/staticFiles.js';
 import traefikPlugin from './plugins/traefik.js';
@@ -152,8 +156,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(nodeDatabasesPlugin);
   // Runtime-state reconciliation (panel status vs live containers/processes)
   await app.register(runtimeStatePlugin);
+  await app.register(fanoutRecoveryPlugin);
+  await app.register(primaryRecoveryPlugin);
+  await app.register(swarmRecoveryPlugin);
   // Resource metrics collector
   await app.register(collectorPlugin);
+  await app.register(observabilityPlugin);
   // Uptime monitors (0.16.8): idle until an operator creates one
   await app.register(uptimePlugin);
   // Autoscaling (0.16.10): idle until a service has an autoscale configuration

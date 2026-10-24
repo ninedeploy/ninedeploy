@@ -1,6 +1,7 @@
 ﻿import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { auditLog, deploymentReleaseRecords, deployments, domains, serviceFiles, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { createComposeRelease } from '../src/lib/composeRelease.js';
@@ -8,6 +9,7 @@ import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
 import { GithubAppError } from '../src/lib/githubApp.js';
 import { githubAppCloneHint } from '../src/lib/sourceCreds.js';
+import { ProxyRoutingUnconfirmed } from '../src/lib/proxyRoutingAck.js';
 
 const h = vi.hoisted(() => {
   // Loose `...args: any[]` signatures: individual tests install impls with
@@ -58,6 +60,16 @@ const execMock = vi.hoisted(() => ({
 }));
 const sleepMock = execMock;
 vi.mock('../src/lib/exec.js', () => execMock);
+const primaryIo = vi.hoisted(() => ({ containers: new Map<string, { id: string; name: string }>(), retired: vi.fn() }));
+vi.mock('../src/lib/spawnValidated.js', () => ({ spawnValidated: async (_bin: string, args: string[], sink: (line: string) => void) => {
+  const name = args.at(-1)!;
+  const item = primaryIo.containers.get(name) ?? [...primaryIo.containers.values()].find(c => c.name === name);
+  if (args[0] === 'inspect') {
+    if (!item) { sink('No such container'); return 1; }
+    sink(args.includes('{{.Name}}') ? `/${item.name}` : JSON.stringify({ ...item, name: `/${item.name}`, managed: 'service', serviceId: '5', deploymentId: '1' }));
+  } else if (args[0] === 'rm') { primaryIo.containers.delete(name); primaryIo.retired(item?.name); }
+  return 0;
+} }));
 vi.mock('../src/lib/crypto.js', () => ({ decrypt: h.decrypt, encrypt: (value: string) => `sealed:${value}` }));
 vi.mock('../src/lib/git.js', () => ({ checkoutCommit: h.checkoutCommit }));
 // 0.16.1: the uploaded-source extraction is stubbed; which service takes it is the real rule.
@@ -275,6 +287,45 @@ function baseSetup(db: FakeDb, over: Record<string, unknown> = {}) {
   db.query.databaseAttachments.findMany.mockResolvedValue([]);
 }
 
+describe('explicit Stop during primary readiness', () => {
+  const originalBuild = h.builder.buildAndRun.getMockImplementation()!;
+  const originalHealth = h.builder.isHealthy.getMockImplementation()!;
+  afterEach(() => { h.builder.buildAndRun.mockReset().mockImplementation(originalBuild); h.builder.isHealthy.mockReset().mockImplementation(originalHealth); });
+  it('preserves Stop that commits immediately after the queued deployment claim', async () => {
+    const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
+    h.builder.buildAndRun.mockClear(); h.builder.isHealthy.mockReset().mockResolvedValue(true);
+    try {
+      await f.db.update(services).set({ image: 'fixture:1', port: 8080 }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+      await f.client!.execute("CREATE TRIGGER stop_after_claim AFTER UPDATE OF status ON deployments WHEN NEW.id=9 AND NEW.status='building' AND OLD.status='queued' BEGIN UPDATE services SET status='stopped' WHERE id=1; UPDATE deployments SET status='cancelled' WHERE id=NEW.id; END");
+      await runDeployment(f.db, 9);
+      expect((await f.db.query.services.findFirst({ where: eq(services.id, 1) }))?.status).toBe('stopped');
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('cancelled');
+      expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+    } finally { f.close(); }
+  });
+  it('does not restore running after Stop won while the healthcheck was pending', async () => {
+    const { observabilityDb } = await import('./fixtures/observability.js');
+    const f = await observabilityDb();
+    let reached = false, release!: () => void;
+    const gate = new Promise<boolean>(resolve => { release = () => resolve(true); });
+    h.builder.buildAndRun.mockReset().mockResolvedValue({ runtimeId: 'candidate', port: 8080, healthPath: '/' });
+    h.builder.isHealthy.mockReset().mockImplementationOnce(async () => { reached = true; return gate; }).mockResolvedValue(true);
+    await f.db.update(services).set({ image: 'fixture:1', port: 8080 }).where(eq(services.id, 1));
+    await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+    const task = runDeployment(f.db, 9);
+    try {
+      for (let i = 0; i < 2000 && !reached; i++) await new Promise<void>(resolve => setImmediate(resolve));
+      expect(reached).toBe(true);
+      await f.db.update(services).set({ status: 'stopped' }).where(eq(services.id, 1));
+      await f.db.update(deployments).set({ status: 'cancelled', finishedAt: new Date() }).where(eq(deployments.id, 9));
+      release(); await task;
+      expect((await f.db.query.services.findFirst({ where: eq(services.id, 1) }))?.status).toBe('stopped');
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('cancelled');
+    } finally { release(); await task; f.close(); }
+  });
+});
+
 describe('artifact promotion pipeline', () => {
   const imageId = `sha256:${'a'.repeat(64)}`;
   const sha = 'c'.repeat(40);
@@ -286,6 +337,60 @@ describe('artifact promotion pipeline', () => {
     state.db.query.deployments.findFirst.mockResolvedValue({ ...dep, commitSha: sha, artifact, promotionSourceDeploymentId: 99 });
     return state;
   }
+  describe('recorded-image fan-out', () => {
+    const originalAgent = h.agentOp.getMockImplementation()!;
+    const originalShip = h.shipImageByStream.getMockImplementation()!;
+    const originalBuild = h.builder.buildAndRun.getMockImplementation()!;
+    beforeEach(() => {
+      h.builder.buildAndRun.mockReset().mockResolvedValue({ runtimeId: 'candidate', port: 3000, healthPath: '/', imageDigest: imageId } as never);
+    });
+    afterEach(() => {
+      h.agentOp.mockReset().mockImplementation(originalAgent);
+      h.shipImageByStream.mockReset().mockImplementation(originalShip);
+      h.builder.buildAndRun.mockReset().mockImplementation(originalBuild);
+    });
+    function withTarget() {
+      const state = setup({ sourceId: 7 });
+      state.db.query.serviceTargets.findFirst.mockResolvedValue({ id: 9, serverId: 9, runtimeId: 'old-edge' });
+      (state.db.query as unknown as Record<string, unknown>)['servers'] = { findFirst: vi.fn(async () => ({ id: 9, name: 'edge' })) };
+      state.db.query.sources.findFirst.mockResolvedValue({ id: 7, type: 'github', tokenEncrypted: 'panel-only', allowOnNodes: false });
+      state.db.select.mockImplementation(() => ({ from: (table: unknown) => {
+        const rows = table === serviceTargets ? [{ id: 9, serverId: 9, runtimeId: 'old-edge' }] : [];
+        return Object.assign(Promise.resolve(rows), { where: () => Object.assign(Promise.resolve(rows), { limit: async () => rows }), leftJoin: async () => [], innerJoin: async () => [], orderBy: async () => [] });
+      } }));
+      h.agentOp.mockImplementation(async (_db, _server, op, params) => ({ exitCode: 0, lines:
+        op === 'agent.ping' ? ['ND-AGENT {"version":"0.18.0","caps":["stream","image.manage","build-path-guard"]}']
+          : op === 'docker.imageInspect' ? [`${imageId}|123`]
+            : op === 'docker.inspect' ? [params.format === 'image' ? imageId : 'running|none|0|0']
+              : op === 'file.writeEnv' ? [`wrote .agent-env/${params.name}.env`] : [],
+      }));
+      return state;
+    }
+    it.each([{ port: undefined, primary: null }, { port: '9182', primary: null }, { port: undefined, primary: 4 }])('runs the recorded image and target env on an extra node without Git (%j)', async ({ port, primary }) => {
+      const { db, updates } = withTarget();
+      db.query.services.findFirst.mockResolvedValue({ ...service, sourceId: 7, serverId: primary });
+      db.query.envVars.findMany.mockResolvedValue([{ key: 'TARGET_ENV', valueEncrypted: 'production', isSecret: false }, ...(port ? [{ key: 'PORT', valueEncrypted: port, isSecret: false }] : [])]);
+      await runDeployment(db as never, 1);
+      expect(h.shipImageByStream).toHaveBeenCalledWith(db, expect.objectContaining({ source: null, target: 9, imageId, deploymentId: 1 }), expect.any(Function));
+      expect(h.agentOp.mock.calls.find(c => c[1] === 9 && c[2] === 'docker.runEnv')?.[3]).toMatchObject({ image: imageId });
+      expect(h.agentOp.mock.calls.find(c => c[1] === 9 && c[2] === 'file.writeEnv')?.[3]).toMatchObject({ env: { TARGET_ENV: 'dec:production', PORT: port ? `dec:${port}` : '3000' } });
+      expect(h.checkoutCommit).not.toHaveBeenCalled(); expect(h.buildSourceImage).not.toHaveBeenCalled();
+      expect(h.agentOp.mock.calls.map(c => c[2])).not.toContain('git.ensure');
+      expect(h.agentOp.mock.calls.map(c => c[2])).not.toContain('docker.build');
+      expect(updates.some(u => u.table === deployments && u.values.status === 'running')).toBe(true);
+    });
+    it.each(['unsupported agent', 'transfer failure', 'wrong image'])('keeps the primary and previous target when artifact preparation fails: %s', async failure => {
+      const { db, updates } = withTarget(); const original = h.agentOp.getMockImplementation()!;
+      if (failure === 'unsupported agent') h.agentOp.mockImplementation(async (...args) => args[2] === 'agent.ping' ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.0","caps":[]}'] } : original(...args));
+      if (failure === 'transfer failure') h.shipImageByStream.mockRejectedValueOnce(new Error('fixture transfer failed'));
+      if (failure === 'wrong image') h.agentOp.mockImplementation(async (...args) => args[2] === 'docker.imageInspect' ? { exitCode: 0, lines: [`sha256:${'b'.repeat(64)}|123`] } : original(...args));
+      await runDeployment(db as never, 1);
+      expect(h.agentOp.mock.calls.map(c => c[2])).not.toContain('docker.runEnv');
+      expect(h.agentOp.mock.calls.map(c => c[2])).not.toContain('docker.stop');
+      expect(updates.some(u => u.table === deployments && u.values.status === 'running')).toBe(true);
+      expect(updates).toContainEqual({ table: serviceTargets, values: expect.objectContaining({ runtimeId: 'old-edge', status: 'error' }) });
+    });
+  });
   it('ships a recorded panel image to a node and runs it without Git credentials or a node build', async () => {
     const { db, updates } = setup({ serverId: 4, sourceId: 9, port: null });
     db.query.sources.findFirst.mockResolvedValue({ type: 'github', tokenEncrypted: 'panel-only', allowOnNodes: false });
@@ -326,7 +431,7 @@ describe('artifact promotion pipeline', () => {
     expect(h.checkoutCommit).not.toHaveBeenCalled();
     expect(updates.some(u => u.table === deployments && u.values.status === 'failed')).toBe(true);
   });
-  it.each([{ repoUrl: 'https://other.test/repo' }, { orchestrator: 'swarm' }])('rechecks queued target changes %j', async change => {
+  it.each([{ repoUrl: 'https://other.test/repo' }, { composeContent: 'services: {}' }])('rechecks queued target changes %j', async change => {
     const { db } = setup(change);
     await expect(runDeployment(db as never, 1)).rejects.toThrow('Artifact promotion requires');
     expect(h.builder.buildAndRun).not.toHaveBeenCalled();
@@ -829,7 +934,7 @@ describe('runDeployment', () => {
     expect(svcUpdate?.values).toMatchObject({ runtimeId: 'c-1', port: null, commitSha: '', runtimeReplicas: 1 });
     const depUpdate = updates.find((u) => u.table === deployments && u.values.status === 'running');
     expect(depUpdate?.values.finishedAt).toBeInstanceOf(Date);
-    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db);
+    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, { confirmServiceId: 5 });
     expect(db.query.domains.findFirst).not.toHaveBeenCalled();
   });
 
@@ -1105,7 +1210,7 @@ describe('runDeployment', () => {
     expect(lines).toContain('✓ Deployment successful');
     // Routing flipped to the new container first, a grace period let Traefik
     // reload, and only then was the old container stopped.
-    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db);
+    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, { confirmServiceId: 5 });
     expect(sleepMock.sleep).toHaveBeenCalledWith(2000);
     expect(h.builder.stop).toHaveBeenCalledWith('old-c', { graceSeconds: undefined });
   });
@@ -1148,6 +1253,44 @@ describe('runDeployment', () => {
     expect(h.writeDynamicConfig).toHaveBeenCalledTimes(2);
     expect(lines).toContain('✓ Deployment successful');
     expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(false);
+  });
+
+  it('keeps both generations when neither the new routing nor the rollback can be confirmed', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c', port: 8080 });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-2', port: 3000, healthPath: '/' });
+    h.writeDynamicConfig.mockRejectedValue(new ProxyRoutingUnconfirmed());
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(h.builder.stop).not.toHaveBeenCalled();
+    expect(updates.some(u => u.table === deployments && u.values.status === 'failed')).toBe(true);
+    expect(lines.join('\n')).toContain('both runtime generations are kept running');
+    expect(lines).not.toContain('✓ Deployment successful');
+  });
+
+  it('retires the candidate only after the reverted routing is confirmed', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c', port: 8080 });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-2', port: 3000, healthPath: '/' });
+    const order: string[] = [];
+    h.writeDynamicConfig.mockRejectedValueOnce(new ProxyRoutingUnconfirmed()).mockRejectedValueOnce(new ProxyRoutingUnconfirmed()).mockImplementationOnce(async () => {
+      expect(updates.some(u => u.table === services && u.values.runtimeId === 'old-c')).toBe(true);
+      order.push('rollback confirmed');
+    });
+    h.builder.stop.mockImplementation(async () => { order.push('candidate stopped'); });
+    await runDeployment(db as never, 1);
+    expect(order).toEqual(['rollback confirmed', 'candidate stopped']);
+  });
+
+  it('keeps a healthy first runtime when its routing outcome is unknown', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: null });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-9', port: 3000, healthPath: '/' });
+    h.writeDynamicConfig.mockRejectedValue(new ProxyRoutingUnconfirmed());
+    await runDeployment(db as never, 1);
+    expect(h.builder.stop).not.toHaveBeenCalled();
+    expect(updates.some(u => u.table === services && u.values.runtimeId === null)).toBe(false);
+    expect(updates.some(u => u.table === deployments && u.values.status === 'failed')).toBe(true);
   });
 
   it('r398: a first-ever deploy whose proxy write fails marks the service errored and stops the container', async () => {
@@ -1744,7 +1887,7 @@ describe('runDeployment', () => {
     const { db } = makeDb();
     baseSetup(db, { image: 'nginx:latest', runtimeId: 'old-c' });
     db.query.deployments.findFirst.mockResolvedValue(dep);
-    // …but the conditional finalize update (status running + imageDigest set)
+    // …but the conditional transition update (deploying + imageDigest set)
     // returns no rows — as if the cancel flipped the row between checkpoint and write.
     const dbAny = db as unknown as {
       update: (t: unknown) => { set: (v: Record<string, unknown>) => { where: () => { returning: () => Promise<unknown[]> } } };
@@ -1755,7 +1898,7 @@ describe('runDeployment', () => {
       return {
         set: (values: Record<string, unknown>) => {
           const inner = builder.set(values);
-          if (values.status === 'running' && 'imageDigest' in values) {
+          if (values.status === 'deploying' && 'imageDigest' in values) {
             return { where: () => ({ returning: () => Promise.resolve([]) }) };
           }
           return inner;
@@ -1822,7 +1965,7 @@ describe('runDeployment', () => {
       return {
         set: (values: Record<string, unknown>) => {
           const inner = builder.set(values);
-          if (values.status === 'running' && 'imageDigest' in values) {
+          if (values.status === 'deploying' && 'imageDigest' in values) {
             return { where: () => ({ returning: () => Promise.resolve([]) }) };
           }
           return inner;
@@ -2618,7 +2761,7 @@ describe('runDeployment on a remote-server target', () => {
     await runDeployment(db as never, 1);
 
     // The routing write is told which node MUST take it (and retried once).
-    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, { requireNode: 4 });
+    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, { requireNode: 4, confirmServiceId: 5 });
     expect(h.writeDynamicConfig.mock.calls.filter((c) => (c as unknown[])[1] !== undefined)).toHaveLength(2);
     expect(updates.some((u) => u.table === deployments && u.values.status === 'failed')).toBe(true);
     const revert = updates.find((u) => u.table === services && u.values.runtimeId === 'web-old');
@@ -2634,6 +2777,42 @@ describe('runDeployment on a remote-server target', () => {
     h.writeDynamicConfig.mockImplementation(async () => undefined);
   });
 
+  it('keeps both node runtimes when the transition and rollback acknowledgements are lost', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4, runtimeId: 'web-old', commitSha: 'oldsha1' });
+    agentAnswersRunning();
+    h.writeDynamicConfig.mockRejectedValueOnce(new ProxyRoutingUnconfirmed())
+      .mockRejectedValueOnce(new ProxyRoutingUnconfirmed()).mockRejectedValueOnce(new ProxyRoutingUnconfirmed());
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    const stops = h.agentOp.mock.calls.filter(c => (c as unknown[])[2] === 'docker.stop');
+    expect(stops).toEqual([]);
+    expect(h.writeDynamicConfig).toHaveBeenCalledTimes(3);
+    expect(h.writeDynamicConfig).toHaveBeenLastCalledWith(db, { requireNode: 4, confirmServiceId: 5 });
+    expect(updates.some(u => u.table === services && u.values.runtimeId === 'web-old')).toBe(true);
+    expect(lines.join('\n')).toContain('both runtime generations are kept running');
+    expect(lines).not.toContain('✓ Deployment successful');
+  });
+
+  it('retires a node candidate only after the previous routing generation is acknowledged', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4, runtimeId: 'web-old' });
+    agentAnswersRunning();
+    const order: string[] = [];
+    h.writeDynamicConfig.mockRejectedValueOnce(new ProxyRoutingUnconfirmed()).mockRejectedValueOnce(new ProxyRoutingUnconfirmed()).mockImplementationOnce(async () => {
+      expect(updates.some(u => u.table === services && u.values.runtimeId === 'web-old')).toBe(true);
+      order.push('previous routing confirmed');
+    });
+    const agent = h.agentOp.getMockImplementation()!;
+    h.agentOp.mockImplementation(async (...args: unknown[]) => {
+      if (args[2] === 'docker.stop') order.push(`stop ${(args[3] as { name: string }).name}`);
+      return agent(...args);
+    });
+    await runDeployment(db as never, 1);
+    expect(order).toEqual(['previous routing confirmed', 'stop web-1']);
+    expect(h.writeDynamicConfig).toHaveBeenCalledTimes(3);
+  });
+
   it('r521: a node proxy that took the route retires the previous runtime as before', async () => {
     const { db } = makeDb();
     baseSetup(db, { image: 'nginx:latest', serverId: 4, runtimeId: 'web-old' });
@@ -2642,7 +2821,7 @@ describe('runDeployment on a remote-server target', () => {
 
     await runDeployment(db as never, 1);
 
-    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, { requireNode: 4 });
+    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db, { requireNode: 4, confirmServiceId: 5 });
     expect(lines).toContain('✓ Deployment successful');
     const stops = h.agentOp.mock.calls
       .filter((c) => (c as unknown[])[2] === 'docker.stop')
@@ -2811,13 +2990,15 @@ describe('r237: kernel deploy hooks', () => {
   it('calls deploy:before and deploy:after around a deployment', async () => {
     const { db } = makeDb();
     baseSetup(db, { image: 'nginx:latest' });
+    db.query.deployments.findFirst.mockResolvedValueOnce(dep).mockResolvedValue({ ...dep, status: 'running' });
     const hooks = { call: vi.fn(async (_n: string, p: unknown) => p), hasListeners: vi.fn(() => true) };
     await runDeployment(db as never, 1, { useBuildKit: false, hooks: hooks as never });
     const names = hooks.call.mock.calls.map((c) => c[0]);
     expect(names[0]).toBe('deploy:before');
     expect(names).toContain('deploy:after');
-    const after = hooks.call.mock.calls.find((c) => c[0] === 'deploy:after')![1] as { deployId: number };
+    const after = hooks.call.mock.calls.find((c) => c[0] === 'deploy:after')![1] as { deployId: number; success: boolean };
     expect(after.deployId).toBe(1);
+    expect(after.success).toBe(true);
   });
 
   it('fires deploy:after with success=false when the deploy fails', async () => {
@@ -2937,6 +3118,26 @@ describe('r353: source fan-out and Git credentials', () => {
     expect(lines.some((l) => l.startsWith('Fan-out skipped'))).toBe(false);
     expect(nodeOps()).toContain('git.ensure');
     expect(nodeOps()).toContain('docker.build');
+  });
+
+  it('passes the resolved source port to explicit readiness on fan-out targets', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { sourceId: 7, port: null, healthCheck: 'http-strict', healthPath: '/ready', healthTimeoutSeconds: 8 });
+    db.query.sources.findFirst.mockResolvedValue({ id: 7, type: 'custom', tokenEncrypted: null, deployKeyEncrypted: null });
+    withTarget(db);
+    h.agentOp.mockImplementation(async (...args: unknown[]) =>
+      args[2] === 'agent.ping'
+        ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.17.2","caps":["build-path-guard","workspace.remove","docker.probe"]}'] }
+        : args[2] === 'docker.inspect'
+          ? { exitCode: 0, lines: ['running|none|0|0'] }
+          : args[2] === 'docker.probe'
+            ? { exitCode: 0, lines: ['ND-PROBE {"ready":true}'] }
+            : { exitCode: 0, lines: [] },
+    );
+    await runDeployment(db as never, 1);
+    expect(h.agentOp.mock.calls.filter(c => c[2] === 'docker.probe').map(c => c[3])).toContainEqual({
+      name: `${service.slug}-t9-1`, port: 3000, protocol: 'http', path: '/ready',
+    });
   });
 
   // r592: the fan-out resolved its registry credential from the service IMAGE,
@@ -3115,7 +3316,73 @@ describe('F881: the run signals end-of-log only after its final settle', () => {
     h.writeDynamicConfig.mockImplementation(async () => undefined);
   });
 
-  it('a proxy swap that fails after the row was finalized `running` still writes its lines before the end signal', async () => {
+  it('publishes a terminal success only after routing acknowledgement', async () => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c', port: 8080 });
+    const observed: unknown[] = [];
+    h.writeDynamicConfig.mockImplementation(async () => {
+      observed.push({
+        phase: updates.filter(u => u.table === deployments && u.values.status === 'deploying').at(-1)?.values,
+        terminal: updates.some(u => u.table === deployments && (u.values.status === 'running' || u.values.status === 'superseded')),
+      });
+    });
+    await runDeployment(db as never, 1);
+    expect(observed).toEqual([{ phase: expect.objectContaining({ status: 'deploying', finishedAt: null }), terminal: false }]);
+    expect(updates.some(u => u.table === deployments && u.values.status === 'running' && u.values.finishedAt instanceof Date)).toBe(true);
+    expect(updates.some(u => u.table === deployments && u.values.status === 'superseded')).toBe(true);
+  });
+
+  it.each([false, true])('handles cancellation after routing without retiring a possibly routed candidate (rollback failure %s)', async failRollback => {
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'old-c', port: 8080, commitSha: 'oldsha1' });
+    const original = db.update.getMockImplementation()!;
+    db.update.mockImplementation((table: unknown) => {
+      const statement = original(table);
+      return { set: (values: Record<string, unknown>) => {
+        const chain = statement.set(values);
+        if (table === deployments && values.status === 'running' && !('imageDigest' in values)) {
+          return { where: () => ({ returning: async () => [] }) };
+        }
+        return chain;
+      } };
+    });
+    const order: string[] = [];
+    h.writeDynamicConfig.mockImplementation(async () => {
+      const restoring = updates.some(u => u.table === services && u.values.runtimeId === 'old-c');
+      order.push(restoring ? 'rollback' : 'candidate');
+      if (restoring && failRollback) throw new ProxyRoutingUnconfirmed();
+    });
+    h.builder.stop.mockImplementation(async (id: string) => { order.push(`stop ${id}`); });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(order).toEqual(failRollback ? ['candidate', 'rollback'] : ['candidate', 'rollback', 'stop c-1']);
+    expect(lines).not.toContain('✓ Deployment successful');
+    expect(updates.some(u => u.table === deployments && u.values.status === 'superseded')).toBe(false);
+    if (failRollback) expect(lines.join('\n')).toContain('both runtime generations are kept running');
+  });
+
+  it.each(['first', 'unhealthy previous', 'in-place'] as const)('preserves the only safe live runtime on a late cancellation: %s', async kind => {
+    const { db } = makeDb();
+    baseSetup(db, { runtimeId: kind === 'first' ? null : 'old-c', port: 8080 });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: kind === 'in-place' ? 'old-c' : 'c-1', port: 3000, healthPath: '/' });
+    h.builder.isHealthy.mockImplementation(async runtime => kind !== 'unhealthy previous' || runtime.runtimeId !== 'old-c');
+    const original = db.update.getMockImplementation()!;
+    db.update.mockImplementation((table: unknown) => {
+      const statement = original(table);
+      return { set: (values: Record<string, unknown>) => {
+        const chain = statement.set(values);
+        if (table === deployments && values.status === 'running' && !('imageDigest' in values)) return { where: () => ({ returning: async () => [] }) };
+        return chain;
+      } };
+    });
+    const lines = collectLogs(1);
+    await runDeployment(db as never, 1);
+    expect(h.builder.stop).not.toHaveBeenCalled();
+    expect(lines).not.toContain('✓ Deployment successful');
+    expect(lines.join('\n')).toContain('the live candidate is kept running');
+  });
+
+  it('keeps a failed proxy swap nonterminal until its final log settlement', async () => {
     const { db, updates } = makeDb();
     baseSetup(db, { runtimeId: 'old-c', port: 8080, commitSha: 'oldsha1' });
     h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'c-2', port: 3000, healthPath: '/' });
@@ -3136,10 +3403,10 @@ describe('F881: the run signals end-of-log only after its final settle', () => {
 
     await runDeployment(db as never, 1);
 
-    // The row was already `running` while the swap ran — and the log was still being written.
+    // A route write is not a successful deployment; keep the writer active.
     expect(duringSwap).toEqual([
-      { finalized: true, writing: true },
-      { finalized: true, writing: true },
+      { finalized: false, writing: true },
+      { finalized: false, writing: true },
     ]);
     expect(seen.filter((l) => l === '<END>')).toHaveLength(1);
     expect(seen.at(-1)).toBe('<END>');
@@ -3914,110 +4181,149 @@ describe('0.16 T6: attached databases are reachable from the service (D4, O7)', 
 // ── 0.16.9 canary releases ──
 describe('0.16.9 canary releases in the pipeline', () => {
   const canary = { steps: [10, 50], stepSeconds: 30, maxErrorRate: 5, maxP95Ms: null, minRequests: 20 };
-
-  /** A db whose domain count for the service is `routed`. */
-  function canaryDb(routed: number) {
-    const made = makeDb();
-    made.db.select = vi.fn(() => ({
-      from: vi.fn((t: unknown) => ({
-        where: vi.fn(() => Promise.resolve(t === domains ? Array.from({ length: routed }, (_, i) => ({ id: i + 1 })) : [])),
-        leftJoin: vi.fn(() => Promise.resolve([])),
-        innerJoin: vi.fn(() => Promise.resolve([])),
-        orderBy: vi.fn(() => Promise.resolve([])),
-        // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB query result must be awaitable by the code under test.
-        then: (ok: (v: unknown) => unknown) => ok([]),
-      })),
-    }));
-    return made;
+  const fixtures: Array<{ close: () => void }> = [];
+  async function canaryDb(routed: number, over: Record<string, unknown> = {}, depOver: Record<string, unknown> = {}) {
+    const { observabilityDb } = await import('./fixtures/observability.js');
+    const f = await observabilityDb(); fixtures.push(f);
+    await f.db.delete(services).where(eq(services.id, 1));
+    await f.db.insert(services).values({ id: 5, ownerUserId: 1, name: 'Web', slug: 'web', type: 'docker', image: 'nginx:latest', runtimeId: 'web-old', status: 'running', port: 3000, canary, ...over });
+    await f.db.insert(deployments).values({ id: 1, serviceId: 5, status: 'queued', ...depOver });
+    if (routed) await f.db.insert(domains).values({ serviceId: 5, hostname: 'canary.test', status: 'active', ssl: false });
+    return { db: f.db, row: () => f.db.query.services.findFirst({ where: eq(services.id, 5) }), job: () => f.db.query.deployments.findFirst({ where: eq(deployments.id, 1) }) };
   }
-
   beforeEach(async () => {
-    vi.clearAllMocks();
-    logBus.removeAllListeners();
+    vi.clearAllMocks(); logBus.removeAllListeners();
     (await import('../src/engine/canaryState.js')).resetCanaryState();
     h.builder.buildAndRun.mockImplementation(async () => ({ runtimeId: 'web-new', port: 3000, healthPath: '/' }));
-    h.builder.isHealthy.mockImplementation(async () => true);
-    h.builder.stop.mockImplementation(async () => undefined);
-    h.writeDynamicConfig.mockImplementation(async () => undefined);
-    canaryMock.runCanary.mockImplementation(async () => 'completed');
+    h.builder.isHealthy.mockImplementation(async () => true); h.builder.stop.mockImplementation(async () => undefined);
+    h.writeDynamicConfig.mockImplementation(async () => undefined); canaryMock.runCanary.mockImplementation(async () => 'completed');
+    primaryIo.containers.clear(); primaryIo.containers.set('a'.repeat(64), { id: 'a'.repeat(64), name: 'web-old' });
+    primaryIo.containers.set('b'.repeat(64), { id: 'b'.repeat(64), name: 'web-new' });
   });
-
-  it('runs the canary after the healthcheck, then switches all traffic as usual', async () => {
+  afterEach(() => { for (const f of fixtures.splice(0)) f.close(); primaryIo.containers.clear(); });
+  it.each([undefined, 7, 5])('uses a bounded periodic canary readiness budget after initial qualification (configured=%s)', async seconds => {
     const S = await import('../src/engine/canaryState.js');
-    const { db, updates } = canaryDb(1);
-    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary });
-    // The canary ends still holding its last split, as runCanary does.
-    canaryMock.runCanary.mockImplementation(async (deps: { serviceId: number }) => {
-      S.beginCanary(deps.serviceId, 'web', 1, 2, false);
-      S.setCanaryStep(deps.serviceId, 2, { runtimeId: 'web-new', replicas: 1, port: 3000, weight: 50 }, 0, 1);
+    const { db } = await canaryDb(1, seconds === undefined ? {} : { healthTimeoutSeconds: seconds });
+    let probing = false, ready: boolean | undefined; const budgets: number[] = [];
+    h.builder.isHealthy.mockImplementation(async (_runtime: unknown, timeout: number) => {
+      if (!probing) return true;
+      budgets.push(timeout); return timeout >= 6000; // the real replay needed its stable samples plus node round trips
+    });
+    canaryMock.runCanary.mockImplementation(async (deps: any) => {
+      S.beginCanary(5, 'web', 1, 1, false); S.setCanaryStep(5, 1, { runtimeId: 'web-new', replicas: 1, port: 3000, weight: 50 }, 0, 1);
+      probing = true; try { ready = await deps.probe(); } finally { probing = false; }
       return 'completed';
     });
-    const lines = collectLogs(1);
-    await runDeployment(db as never, 1);
-    const deps = canaryMock.runCanary.mock.calls[0]![0] as Record<string, any>;
-    expect(deps).toMatchObject({ serviceId: 5, slug: 'web', deploymentId: 1, config: canary, runtime: { runtimeId: 'web-new' } });
-    // Its probe and config writer are the pipeline's own.
-    await deps.writeConfig();
-    expect(h.writeDynamicConfig).toHaveBeenCalledWith(db);
-    await expect(deps.probe()).resolves.toBe(true);
-    expect(h.builder.isHealthy).toHaveBeenLastCalledWith(expect.objectContaining({ runtimeId: 'web-new' }), 5000, 0);
-    await expect(deps.checkpoint()).resolves.toBeUndefined();
-    // The split is gone by the time the routing flips to the new release.
-    expect(S.canaryActive(5)).toBe(false);
-    expect(updates.find((u) => u.table === services && u.values.status === 'running')?.values).toMatchObject({ runtimeId: 'web-new' });
-    expect(h.builder.stop).toHaveBeenCalledWith('web-old', expect.anything());
-    expect(lines).toContain('✓ Deployment successful');
+    await runDeployment(db, 1);
+    expect(ready).toBe(seconds !== 5);
+    expect(budgets).toHaveLength(1); expect(budgets[0]).toBeLessThanOrEqual((seconds ?? 10) * 1000);
+  });
+  it.each([999, 1])('retains another canary incarnation during failed pipeline cleanup for deployment %s', async replacement => {
+    const S = await import('../src/engine/canaryState.js');
+    const { db } = await canaryDb(1);
+    canaryMock.runCanary.mockImplementation(async (deps: any) => {
+      const owner = S.beginCanary(5, 'web', 1, 1, true);
+      deps.onOwner?.(owner);
+      S.beginCanary(5, 'web', replacement, 1, true);
+      S.setCanaryStep(5, 1, { runtimeId: 'newer-owner', replicas: 1, port: 3000, weight: 25 }, 0, 100);
+      throw new ProxyRoutingUnconfirmed('Old canary lost ownership');
+    });
+    const outcome = await runDeployment(db, 1).catch(error => error);
+    expect(S.canaryStatus(5)).toMatchObject({ active: true, deploymentId: replacement });
+    expect(S.canaryRouteFor(5)?.runtimeId).toBe('newer-owner');
+    expect(primaryIo.containers.has('a'.repeat(64))).toBe(true);
+    expect(primaryIo.containers.has('b'.repeat(64))).toBe(true);
+    expect(outcome).toBeInstanceOf(ProxyRoutingUnconfirmed);
+  });
+  it('fails a canary when the analytics setting cannot be read instead of silently disabling measurement', async () => {
+    const traffic = await import('../src/lib/trafficAnalytics.js');
+    const read = vi.spyOn(traffic, 'trafficAnalyticsEnabled').mockRejectedValueOnce(new Error('analytics setting unavailable'));
+    try {
+      const { db, row, job } = await canaryDb(1);
+      await runDeployment(db, 1);
+      expect(canaryMock.runCanary).not.toHaveBeenCalled();
+      expect((await job())?.status).toBe('failed');
+      expect((await row())?.runtimeId).toBe('web-old');
+      expect(primaryIo.containers.has('a'.repeat(64))).toBe(true);
+    } finally { read.mockRestore(); }
   });
 
+  it('journals replicas before canary traffic, probes inside the stage, then retires only the previous ID', async () => {
+    const S = await import('../src/engine/canaryState.js');
+    const { primaryTransitions } = await import('@ninedeploy/db');
+    const { db, row, job } = await canaryDb(1);
+    canaryMock.runCanary.mockImplementation(async (deps: any) => {
+      expect((await db.select().from(primaryTransitions))[0]).toMatchObject({ phase: 'ready', candidate: { containers: [{ id: 'b'.repeat(64), name: 'web-new', observed: true }] } });
+      expect(deps).toMatchObject({ serviceId: 5, slug: 'web', deploymentId: 1, config: canary, runtime: { runtimeId: 'web-new' } });
+      S.beginCanary(5, 'web', 1, 2, false); S.setCanaryStep(5, 2, { runtimeId: 'web-new', replicas: 1, port: 3000, weight: 50 }, 0, 1);
+      await deps.writeConfig(); await expect(deps.probe()).resolves.toBe(true); await expect(deps.checkpoint()).resolves.toBeUndefined();
+      expect((await db.select().from(primaryTransitions))[0]).toMatchObject({ phase: 'routing', desiredRuntimeId: 'web-old' });
+      return 'completed';
+    });
+    const lines = collectLogs(1); await runDeployment(db, 1);
+    expect(S.canaryActive(5)).toBe(false); expect((await row())?.runtimeId).toBe('web-new'); expect((await job())?.status).toBe('running');
+    expect(primaryIo.retired).toHaveBeenCalledWith('web-old'); expect(primaryIo.containers.has('b'.repeat(64))).toBe(true);
+    expect(await db.select().from(primaryTransitions)).toEqual([]); expect(lines).toContain('✓ Deployment successful');
+  });
+  it('rechecks every candidate replica after canary observation before the full cutover', async () => {
+    const S = await import('../src/engine/canaryState.js'); const { db, row, job } = await canaryDb(1);
+    primaryIo.containers.set('c'.repeat(64), { id: 'c'.repeat(64), name: 'web-new-r2' });
+    h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'web-new', port: 3000, healthPath: '/', replicas: 2 } as never);
+    let canaryFinished = false;
+    h.builder.isHealthy.mockImplementation(async runtime => !canaryFinished || runtime.runtimeId !== 'c'.repeat(64));
+    canaryMock.runCanary.mockImplementation(async (deps: any) => {
+      S.beginCanary(5, 'web', 1, 1, false); S.setCanaryStep(5, 1, { runtimeId: 'web-new', replicas: 2, port: 3000, weight: 10 }, 0, 1);
+      await deps.writeConfig(); canaryFinished = true; return 'completed';
+    });
+    await runDeployment(db, 1); expect((await job())?.status).toBe('failed'); expect((await row())?.runtimeId).toBe('web-old');
+    expect(primaryIo.containers.has('a'.repeat(64))).toBe(true); expect(primaryIo.retired).not.toHaveBeenCalledWith('web-old');
+  });
   it("a cancel inside the canary surfaces as the pipeline's own cancellation", async () => {
-    const { db } = canaryDb(1);
-    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary });
-    let checkpoint: (() => Promise<void>) | undefined;
-    canaryMock.runCanary.mockImplementation(async (deps: { checkpoint: () => Promise<void> }) => {
-      checkpoint = deps.checkpoint;
-      return 'completed';
+    const { db, job, row } = await canaryDb(1);
+    canaryMock.runCanary.mockImplementation(async (deps: any) => {
+      await db.update(deployments).set({ status: 'cancelled' }).where(eq(deployments.id, 1));
+      await deps.checkpoint(); return 'completed';
     });
-    await runDeployment(db as never, 1);
-    db.query.deployments.findFirst.mockResolvedValue({ ...dep, status: 'cancelled' });
-    await expect(checkpoint!()).rejects.toThrow('Deployment cancelled');
+    await runDeployment(db, 1); expect((await job())?.status).toBe('cancelled'); expect((await row())?.runtimeId).toBe('web-old');
+    expect(primaryIo.retired).toHaveBeenCalledWith('web-new'); expect(primaryIo.containers.has('a'.repeat(64))).toBe(true);
   });
-
   it('an aborted canary fails the deploy and stops the new container; the previous keeps serving', async () => {
     const { CanaryAborted } = await import('../src/engine/canary.js');
-    const { db, updates } = canaryDb(1);
-    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary });
+    const { db, row, job } = await canaryDb(1);
     canaryMock.runCanary.mockRejectedValue(new CanaryAborted('at 10%, 40% of 50 requests failed with a 5xx (the limit is 5%)'));
-    const lines = collectLogs(1);
-    await runDeployment(db as never, 1);
-    expect(lines).toContain(
-      '✗ Deployment failed: Canary aborted: at 10%, 40% of 50 requests failed with a 5xx (the limit is 5%). All traffic is back on the previous release.',
-    );
-    expect(h.builder.stop).toHaveBeenCalledWith('web-new');
-    expect(h.builder.stop).not.toHaveBeenCalledWith('web-old');
-    expect(updates.some((u) => u.table === services && u.values.runtimeId === 'web-new')).toBe(false);
+    const lines = collectLogs(1); await runDeployment(db, 1);
+    expect(lines).toContain('✗ Deployment failed: Canary aborted: at 10%, 40% of 50 requests failed with a 5xx (the limit is 5%)');
+    expect(primaryIo.retired).toHaveBeenCalledWith('web-new'); expect(primaryIo.containers.has('a'.repeat(64))).toBe(true);
+    expect((await row())?.runtimeId).toBe('web-old'); expect((await job())?.status).toBe('failed');
   });
-
-  it('a failure that leaves a split in place is routed back before the new container stops', async () => {
-    const S = await import('../src/engine/canaryState.js');
-    const { db } = canaryDb(1);
-    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary });
-    const order: string[] = [];
-    h.writeDynamicConfig.mockImplementation(async () => {
-      order.push(`write:${S.canaryRouteFor(5)?.weight ?? 'none'}`);
-    });
-    h.builder.stop.mockImplementation(async (id: string) => {
-      order.push(`stop:${id}`);
-    });
-    canaryMock.runCanary.mockImplementation(async (deps: { serviceId: number }) => {
-      S.beginCanary(deps.serviceId, 'web', 1, 1, false);
-      S.setCanaryStep(deps.serviceId, 1, { runtimeId: 'web-new', replicas: 1, port: 3000, weight: 10 }, 0, 1);
+  it('confirms the canary rollback in the primary journal before retiring the rejected candidate', async () => {
+    const { runCanary: actualRunCanary } = await vi.importActual<typeof import('../src/engine/canary.js')>('../src/engine/canary.js');
+    const { primaryTransitions } = await import('@ninedeploy/db');
+    const { db, row, job } = await canaryDb(1);
+    let clock = 0;
+    canaryMock.runCanary.mockImplementation(deps => actualRunCanary({ ...deps,
+      measured: false, now: () => clock, sleep: async ms => { clock += ms; }, probe: async () => false,
+    }));
+    const lines = collectLogs(1); await runDeployment(db, 1);
+    expect(lines.join('\n')).toContain('the new release failed its healthcheck at 10%');
+    expect((await row())?.runtimeId).toBe('web-old'); expect((await job())?.status).toBe('failed');
+    expect(primaryIo.containers.has('a'.repeat(64))).toBe(true);
+    expect(primaryIo.containers.has('b'.repeat(64))).toBe(false);
+    const { reconcilePrimaryTransitions } = await import('../src/engine/primaryRecovery.js');
+    await reconcilePrimaryTransitions(db, { force: true });
+    expect(await db.select().from(primaryTransitions)).toEqual([]);
+  });
+  it('a failure that leaves a split in place confirms rollback before the new container is removed', async () => {
+    const S = await import('../src/engine/canaryState.js'); const { db, row } = await canaryDb(1); const order: string[] = [];
+    h.writeDynamicConfig.mockImplementation(async () => { order.push('write:' + (S.canaryRouteFor(5)?.weight ?? 'none')); });
+    primaryIo.retired.mockImplementation((name: string) => { order.push('remove:' + name); });
+    canaryMock.runCanary.mockImplementation(async () => {
+      S.beginCanary(5, 'web', 1, 1, false); S.setCanaryStep(5, 1, { runtimeId: 'web-new', replicas: 1, port: 3000, weight: 10 }, 0, 1);
       throw new Error('unexpected');
     });
-    await runDeployment(db as never, 1);
-    expect(order.slice(0, 2)).toEqual(['write:none', 'stop:web-new']);
-    expect(S.canaryActive(5)).toBe(false);
+    await runDeployment(db, 1); expect(order.slice(0, 2)).toEqual(['write:none', 'remove:web-new']);
+    expect(S.canaryActive(5)).toBe(false); expect((await row())?.runtimeId).toBe('web-old');
   });
-
   it('names why a deploy switches all at once: no domain, a rollback, invalid stored settings, no previous release', async () => {
     const cases: Array<[number, Record<string, unknown>, Record<string, unknown>, string]> = [
       [0, {}, {}, 'no domain routes traffic to the service'],
@@ -4026,29 +4332,18 @@ describe('0.16.9 canary releases in the pipeline', () => {
       [1, { runtimeId: null }, {}, 'there is no previous release to split traffic with'],
     ];
     for (const [routed, over, depOver, reason] of cases) {
-      canaryMock.runCanary.mockClear();
-      const { db, updates } = canaryDb(routed);
-      baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old', canary, ...over });
-      db.query.deployments.findFirst.mockResolvedValue({ ...dep, ...depOver });
-      const lines = collectLogs(1);
-      await runDeployment(db as never, 1);
-      expect(lines.join('\n')).toContain(`Canary release skipped: ${reason}. All traffic switches at once.`);
-      expect(canaryMock.runCanary).not.toHaveBeenCalled();
-      expect(updates.find((u) => u.table === services && u.values.status === 'running')?.values).toMatchObject({ runtimeId: 'web-new' });
+      canaryMock.runCanary.mockClear(); primaryIo.containers.set('a'.repeat(64), { id: 'a'.repeat(64), name: 'web-old' });
+      const { db, row, job } = await canaryDb(routed, over, depOver); const lines = collectLogs(1); await runDeployment(db, 1);
+      expect(lines.join('\n')).toContain('Canary release skipped: ' + reason + '. All traffic switches at once.');
+      expect(canaryMock.runCanary).not.toHaveBeenCalled(); expect((await row())?.runtimeId).toBe('web-new'); expect((await job())?.status).toBe('running');
       logBus.removeAllListeners();
     }
   });
-
   it('control: a service without a canary never reaches the stage', async () => {
-    const { db } = canaryDb(1);
-    baseSetup(db, { image: 'nginx:latest', runtimeId: 'web-old' });
-    const lines = collectLogs(1);
-    await runDeployment(db as never, 1);
-    expect(canaryMock.runCanary).not.toHaveBeenCalled();
-    expect(lines.some((l) => l.startsWith('Canary release'))).toBe(false);
+    const { db } = await canaryDb(1, { canary: null }); const lines = collectLogs(1); await runDeployment(db, 1);
+    expect(canaryMock.runCanary).not.toHaveBeenCalled(); expect(lines.some(l => l.startsWith('Canary release'))).toBe(false);
   });
 });
-// ── end 0.16.9 ──
 
 // ── 0.16.12 preview database copies ──
 describe('0.16.12 preview database copies in the pipeline', () => {

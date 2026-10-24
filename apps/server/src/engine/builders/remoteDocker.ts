@@ -75,6 +75,7 @@ export type AgentCall = (
   op: string,
   params: Record<string, unknown>,
   sink: (line: string) => void,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
 ) => Promise<{ exitCode: number; lines: string[] }>;
 
 /**
@@ -544,6 +545,17 @@ export function createRemoteDockerBuilder(
       log: (line: string) => void = () => undefined,
     ): Promise<boolean> {
       const deadline = Date.now() + timeoutMs;
+      const healthCall = async (op: string, params: Record<string, unknown>, sink: (line: string) => void = () => undefined) => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error('Node readiness deadline exceeded');
+        const result = await agent(op, params, sink, { timeoutMs: remaining });
+        if (Date.now() >= deadline) throw new Error('Node readiness deadline exceeded');
+        return result;
+      };
+      const wait = async () => {
+        const remaining = deadline - Date.now();
+        if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(pollMs, remaining)));
+      };
       // r265: the first `running` sample used to be the verdict and
       // `restarting` just kept the poll going — under `--restart
       // unless-stopped` a crash-looping container is `running` between
@@ -560,7 +572,7 @@ export function createRemoteDockerBuilder(
         log(why);
         // Pull the container's own output so the failure is diagnosable
         // from the deploy log rather than only from the node.
-        await agent('docker.logs', { name: runtime.runtimeId }, log).catch(() => undefined);
+        await healthCall('docker.logs', { name: runtime.runtimeId }, log).catch(() => undefined);
         return false;
       };
       let stable = 0;
@@ -568,10 +580,9 @@ export function createRemoteDockerBuilder(
       let lastRestarts: number | undefined;
       while (Date.now() < deadline) {
         try {
-          const res = await agent(
+          const res = await healthCall(
             'docker.inspect',
             { name: runtime.runtimeId, format: 'health' },
-            () => undefined,
           );
           const { status, health, failingStreak, restarts } = parseHealth(res.lines);
           if (TERMINAL_BAD.has(status)) {
@@ -592,10 +603,10 @@ export function createRemoteDockerBuilder(
           if (status === 'running' && (health === 'none' || health === 'healthy')) {
             if (runtime.healthCheck === 'http-strict' || runtime.healthCheck === 'tcp') {
               if (!runtime.port) return failWithLogs('HTTP/TCP readiness needs a container port.');
-              const result = await agent('docker.probe', {
+              const result = await healthCall('docker.probe', {
                 name: runtime.runtimeId, port: runtime.port,
                 protocol: runtime.healthCheck === 'tcp' ? 'tcp' : 'http', path: runtime.healthPath,
-              }, () => undefined);
+              });
               let ready = false;
               for (const line of result.lines) {
                 if (!line.startsWith('ND-PROBE ')) continue;
@@ -603,7 +614,7 @@ export function createRemoteDockerBuilder(
               }
               if (!ready) {
                 stable = 0;
-                await new Promise((resolve) => setTimeout(resolve, pollMs));
+                await wait();
                 continue;
               }
             }
@@ -636,7 +647,7 @@ export function createRemoteDockerBuilder(
           stable = 0;
           log(`waiting for ${runtime.runtimeId}: ${err instanceof Error ? err.message : String(err)}`);
         }
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
+        await wait();
       }
       log(`${runtime.runtimeId} did not reach a running state on the node within ${Math.round(timeoutMs / 1000)}s`);
       return false;

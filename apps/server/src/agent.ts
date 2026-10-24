@@ -1,11 +1,16 @@
+import { inspectDatabaseClientTarget, databaseClientTarget } from './agentOps/databaseClient.js';
+import { databaseClientInput, databaseClientCommand } from './lib/databaseClient.js';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join as joinPath, relative as relativePath, resolve as resolvePath, sep as pathSep } from 'node:path';
-import { agentStreamRoute, agentWebsocketOptions, buildAgentApp } from './agentApp.js';
+import { agentStreamRoute, agentStudioRoute, agentWebsocketOptions, buildAgentApp } from './agentApp.js';
+import { closeAllStudioChannels } from './agentOps/studios.js';
+import { nodeProxyTraffic } from './lib/nodeProxyTraffic.js';
 import { advertisedCapabilities, AGENT_OPS, registeredCapabilities, runRegisteredOp } from './agentOps/index.js';
 import { gitCredentialEnv } from './agentOps/gitCredential.js';
 import {
   GIT_EGRESS_FLAGS,
+  intOperand,
   isRepoUrl,
   NODE_PROXY_IMAGE,
   type Params,
@@ -285,6 +290,11 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
     exe: 'docker',
     build: (p) => {
       const argv = ['run', '-d', '--name', validated(str(p, 'name'), RE_NAME, 'name'), '--restart', 'unless-stopped', '--network', 'ninedeploy'];
+      if (p['serviceId'] !== undefined || p['deploymentId'] !== undefined) {
+        const serviceId = intOperand(p['serviceId'], 1, 2 ** 31 - 1, 'serviceId');
+        const deploymentId = intOperand(p['deploymentId'], 1, 2 ** 31 - 1, 'deploymentId');
+        argv.push('--label', 'ninedeploy.managed=service', '--label', `ninedeploy.service=${serviceId}`, '--label', `ninedeploy.deployment=${deploymentId}`);
+      }
       if (/^sha256:[a-f0-9]{64}$/.test(str(p, 'image') ?? '')) argv.push('--pull', 'never');
       argv.push(...resourceArgs(p));
       const vol = str(p, 'volume');
@@ -960,14 +970,14 @@ async function terminalOpenOp(params: Params, onLine: (l: string) => void, seale
     throw new Error('Refusing to open a terminal over the unencrypted transport: terminal.open is accepted only inside a sealed request');
   }
   const kind = str(params, 'kind');
-  if (kind !== 'container' && kind !== 'host') throw new Error('Invalid terminal kind');
+  if (kind !== 'container' && kind !== 'host' && kind !== 'database') throw new Error('Invalid terminal kind');
   const cols = intParam(params, 'cols', 10, 500);
   const rows = intParam(params, 'rows', 5, 200);
   const sessionId = intParam(params, 'sessionId', 1, 2 ** 31 - 1);
   if (kind === 'host' && nodeHostTerminalForbidden()) {
     throw new Error('Host shells are disabled on this node (NINEDEPLOY_AGENT_HOST_TERMINAL=off)');
   }
-  const container = kind === 'container' ? validated(str(params, 'container'), RE_NAME, 'container name') : null;
+  const container = kind !== 'host' ? validated(str(params, 'container'), RE_NAME, 'container name') : null;
   if (container !== null && container.length > 128) throw new Error('Invalid container name');
   if (terminalChannels.size >= TERMINAL_MAX_CHANNELS) {
     throw new Error(`Too many open terminals on this node (at most ${TERMINAL_MAX_CHANNELS})`);
@@ -993,6 +1003,16 @@ async function terminalOpenOp(params: Params, onLine: (l: string) => void, seale
     ownTerminalHelpers.add(helperId);
     ensureHelperSweep();
     proc = helper;
+  } else if (kind === 'database') {
+    // Credentials only enter this explicit new kind; old agents cannot silently open a shell.
+    const keys=['kind','databaseId','container','containerId','client','cols','rows','sessionId'];
+    if(Object.keys(params).some(key=>!keys.includes(key)))throw new Error('Invalid database terminal parameter');
+    const selected=databaseClientTarget.parse({container,containerId:params['containerId'],databaseId:params['databaseId']});
+    const input=databaseClientInput.parse(params['client']);
+    const target=await inspectDatabaseClientTarget(selected.container,selected.databaseId,selected.containerId);
+    const client=databaseClientCommand(input);
+    try {proc=await tty.openExecTty(target.transport,{container:target.containerId,cmd:client.cmd,env:client.env,cols,rows});}
+    catch {throw new Error('The database client process could not be opened on the node');}
   } else {
     const name = container as string;
     const summary = await tty.inspectContainer(t, name);
@@ -1008,7 +1028,7 @@ async function terminalOpenOp(params: Params, onLine: (l: string) => void, seale
     id: randomBytes(16).toString('hex'),
     salt: randomBytes(FRAME_SALT_BYTES),
     tty: proc,
-    kind,
+    kind: kind === 'database' ? 'container' : kind,
     sessionId,
     helperId,
     state: 'pending',
@@ -1595,7 +1615,7 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
   if (nonceFile !== undefined) loadSeenNonces(nonceFile, seenNonces);
   let appendedSinceCompact = 0;
 
-  app.post('/agent/exec', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post('/agent/exec', { bodyLimit: 2 * 1024 * 1024, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
     const raw = (req.body ?? {}) as { sealed?: unknown; op?: unknown; params?: unknown };
 
     // Sealed transport (preferred). The envelope is authenticated with a key
@@ -1744,6 +1764,8 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
   app.addHook('onClose', async () => {
     await closeAllTerminalChannels();
     await closeAllStreamChannels();
+    closeAllStudioChannels();
+    nodeProxyTraffic.closeAll();
   });
   app.get(AGENT_TERMINAL_PATH, { websocket: true, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (socket, req) => {
     const id = agentTerminalChannelId(req.headers['sec-websocket-protocol']);
@@ -1773,6 +1795,7 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
   // model as the terminal channel above: single use, 30 s to attach, every
   // frame encrypted under a per-channel key (stream-domain HKDF info).
   await agentStreamRoute(app, { tokenHash });
+  await agentStudioRoute(app, { tokenHash });
 };
 
 // Boot when the agent flag is set. Tests set NINEDEPLOY_AGENT=1 explicitly

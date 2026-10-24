@@ -82,7 +82,9 @@ export function terminalsApi(t: Transport): TerminalsApi {
     // ── end 0.15 T4 ──
     // ── 0.15 T6 surfaces ──
     terminals: {
-      create: (input) => send<TerminalSessionCreated>('POST', '/v1/terminals', input),
+      create: (input) => input.target.kind === 'database' && input.target.mode === 'client'
+        ? t.request<TerminalSessionCreated>('/v1/terminals', {method:'POST',body:input},60_000)
+        : send<TerminalSessionCreated>('POST', '/v1/terminals', input),
       list: (query) => get<TerminalSessionList>(apiGetUrl('/v1/terminals', { ...query })),
       get: (id) => get<TerminalSession>(`/v1/terminals/${id}`),
       terminate: (id) => send<TerminalTerminateResult>('DELETE', `/v1/terminals/${id}`),

@@ -2,6 +2,7 @@
 import { asUser, buildTestApp } from '../helpers.js';
 import { traefikRoutes } from '../../src/modules/traefik.js';
 import * as exec from '../../src/lib/exec.js';
+import { withRoutingAck } from '../../src/lib/proxyRoutingAck.js';
 
 const fsMocks = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
@@ -51,6 +52,18 @@ vi.mock('../../src/engine/proxy.js', async () => {
 const EMPTY_TABLES = { routers: [], services: [], middlewares: [] };
 
 describe('traefik module', () => {
+  it('keeps internal routing acknowledgements out of application routing tables', async () => {
+    const app = await makeTraefikApp();
+    const generated = withRoutingAck('http:\n  routers:\n    web_1:\n      rule: "Host(`web.example.test`)"\n      service: svc_web\n');
+    fsMocks.existsSync.mockImplementation(file => String(file).endsWith('ninedeploy.yml'));
+    fsMocks.readFileSync.mockReturnValue(generated);
+    vi.mocked(exec.capture).mockResolvedValue('');
+    const result = await app.inject({ method: 'GET', url: '/traefik/config', headers: asUser() });
+    expect(result.statusCode).toBe(200);
+    expect(result.json().routers.map((r: { name: string }) => r.name)).toEqual(['web_1']);
+    expect(result.json().middlewares).toEqual([]);
+    await app.close();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     fsMocks.existsSync.mockReturnValue(false);

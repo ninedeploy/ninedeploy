@@ -18,6 +18,9 @@ import { AutoscaleCard } from './AutoscaleCard.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
+import { PrimaryRecoveryCard } from './PrimaryRecoveryCard.js';
+import { SwarmRecoveryCard } from './SwarmRecoveryCard.js';
+import { FanoutRecoveryCard } from './FanoutRecoveryCard.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
 export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: ServiceDetail }) {
@@ -28,6 +31,9 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <TagsCard serviceId={serviceId} svc={svc} />
       <PreviewEnvironmentsCard svc={svc} />
       <TargetNodeCard svc={svc} />
+      {svc.type === 'docker' && <PrimaryRecoveryCard serviceId={serviceId} />}
+      {svc.type === 'docker' && <SwarmRecoveryCard serviceId={serviceId} />}
+      {svc.type === 'docker' && <FanoutRecoveryCard serviceId={serviceId} />}
       {/* Multi-node: Build → placement and image transfers; Runtime → Swarm. Both hide on an older panel. */}
       <BuildPlacementCard svc={svc} />
       <OrchestratorCard svc={svc} />
@@ -659,14 +665,15 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
  * host process the agent has no operation for. For PM2 the card explains the
  * limit instead of offering a choice that would only fail at deploy time.
  */
-function TargetNodeCard({ svc }: { svc: Service }) {
+function TargetNodeCard({ svc }: { svc: ServiceDetail }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
   const isOperator = user?.isOperator === true;
   // Docker and Compose both run on a node. PM2 is a host process the agent has
   // no operation for, so offering the choice would only fail at deploy time.
-  const remotable = svc.type === 'docker' || svc.type === 'compose';
+  const swarm = svc.orchestrator === 'swarm' || svc.placement?.orchestrator === 'swarm';
+  const remotable = !swarm && (svc.type === 'docker' || svc.type === 'compose');
 
   // Nodes are an operator-only listing; a member sees the current target as
   // read-only text rather than a select that would 403 on load.
@@ -702,7 +709,12 @@ function TargetNodeCard({ svc }: { svc: Service }) {
           <Server size={15} className="text-slate-500" /> Target node
         </div>
 
-        {!remotable ? (
+        {swarm ? (
+          <p className="text-xs text-slate-500">
+            Swarm schedules replicas across its eligible nodes. Change the runtime in the Swarm card;
+            a separate target host or additional-node fan-out does not apply to this service.
+          </p>
+        ) : !remotable ? (
           <p className="text-xs text-slate-500">
             PM2 services run on this panel host. They are host processes and the node agent has no
             operation for them, so a deploy pinned to a node would be refused. Remote nodes run{' '}
@@ -754,7 +766,7 @@ function TargetNodeCard({ svc }: { svc: Service }) {
           </p>
         ) : null}
 
-        {isOperator && svc.type === 'docker' && (svc.image || svc.repoUrl) ? (
+        {isOperator && !swarm && svc.type === 'docker' && (svc.image || svc.repoUrl) ? (
           <FanoutTargetsCard svc={svc} />
         ) : null}
       </CardBody>

@@ -109,6 +109,14 @@ describe('agent typed-op argv templates', () => {
     expect(argv).toContain('.agent-env/w.env');
   });
 
+  it('labels recovery candidates with validated service and deployment ownership', async () => {
+    const argv = await argvOf('docker.runEnv', { name: 'w', image: 'i', envFile: '.agent-env/w.env', serviceId: 7, deploymentId: 9 });
+    expect(argv).toEqual(expect.arrayContaining(['ninedeploy.managed=service', 'ninedeploy.service=7', 'ninedeploy.deployment=9']));
+    spawnMock.mockClear();
+    await expect(runOp('docker.runEnv', { name: 'w', image: 'i', envFile: '.agent-env/w.env', serviceId: 7, deploymentId: '9;rm' }, () => {})).rejects.toThrow(/Invalid/);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
   it('r526: docker.stop honours the panel-sent grace, clamped to the schema range', async () => {
     expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: '45' })).toEqual(['stop', '-t', '45', 'c1']);
     expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: '0' })).toEqual(['stop', '-t', '0', 'c1']);

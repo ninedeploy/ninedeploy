@@ -1,16 +1,15 @@
-import { lt } from 'drizzle-orm';
 import { cpus } from 'node:os';
-import { metrics, services } from '@ninedeploy/db';
+import { databases, services } from '@ninedeploy/db';
+import { persistServiceMetrics, pruneServiceMetrics } from '../lib/serviceMetricHistory.js';
 import fp from 'fastify-plugin';
 import { collectContainerStats, collectHostStats, type ContainerStat, type HostStat } from '../lib/stats.js';
 import { evaluateAlerts, type MetricSnapshot } from '../lib/alerting.js';
 import { createNodeHealthWatch } from '../lib/nodeHealth.js';
 import { readCertificates } from '../engine/proxy.js';
 import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
-import { collectNodeMetrics, type NodeContainerStats } from '../lib/nodeMetrics.js';
+import { collectNodeMetrics, type NodeContainerStats, type NodeMetricSamples } from '../lib/nodeMetrics.js';
 
 const INTERVAL_MS = 30_000;
-const RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /** Host CPU % between two os.cpus() samples (null on the first tick — no delta yet). */
 export function cpuDeltaPct(prev: ReturnType<typeof cpus> | null, now: ReturnType<typeof cpus>): number | null {
@@ -31,8 +30,10 @@ export function cpuDeltaPct(prev: ReturnType<typeof cpus> | null, now: ReturnTyp
 
 export interface StatsCache {
   containers: Map<string, ContainerStat>;
+  sampledAt?: number;
   host: HostStat | null;
   nodeContainers?: NodeContainerStats;
+  nodeSamples?: NodeMetricSamples;
 }
 
 declare module 'fastify' {
@@ -49,6 +50,7 @@ export default fp(
     let timer: NodeJS.Timeout | undefined;
     let prevCpu: ReturnType<typeof cpus> | null = null;
     const nodeContainers: NodeContainerStats = new Map();
+    const nodeSamples: NodeMetricSamples = new Map();
     const nodeAbort = new AbortController();
     let nodeCycle: Promise<void> | undefined;
     const nodeHealth = createNodeHealthWatch();
@@ -56,12 +58,16 @@ export default fp(
     const tick = async () => {
       try {
         const containers = await collectContainerStats();
-        cache = { containers, host: await collectHostStats(), nodeContainers };
+        const sampledAt = Date.now();
+        cache = { containers, sampledAt, host: await collectHostStats(), nodeContainers, nodeSamples };
 
         const all = await fastify.db.select().from(services);
         if (!nodeCycle && running) {
+          const databaseRows = await fastify.db.select({ serverId: databases.serverId, status: databases.status }).from(databases);
           nodeCycle = collectNodeMetrics(fastify.db, all, nodeContainers, nodeAbort.signal,
-            (err) => fastify.log.warn({ err }, 'node metrics collection failed'))
+            (err) => fastify.log.warn({ err }, 'node metrics collection failed'), {
+              serverIds: databaseRows.flatMap(row => row.serverId != null && row.status === 'running' ? [row.serverId] : []), samples: nodeSamples,
+            })
             .catch((err) => fastify.log.warn({ err }, 'node metrics collection failed'))
             .finally(() => { nodeCycle = undefined; });
         }
@@ -78,7 +84,7 @@ export default fp(
           rows.push({ serviceId: s.id, kind: 'cpu', value: Math.round(st.cpuPct * 100), ts: now });
           rows.push({ serviceId: s.id, kind: 'memory', value: st.memBytes, ts: now });
         }
-        if (rows.length) await fastify.db.insert(metrics).values(rows);
+        if (rows.length) await persistServiceMetrics(fastify.db, rows);
 
         // Feed the alert evaluator in rule units (cpu %, memory MiB; null = host).
         const snapshots: MetricSnapshot[] = rows.map((r) => ({
@@ -116,7 +122,7 @@ export default fp(
 
         await evaluateAlerts(fastify.db, snapshots);
 
-        await fastify.db.delete(metrics).where(lt(metrics.ts, new Date(Date.now() - RETENTION_MS)));
+        await pruneServiceMetrics(fastify.db);
       } catch (err) {
         fastify.log.error({ err }, 'metrics collection failed');
       } finally {

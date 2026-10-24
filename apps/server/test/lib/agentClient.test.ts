@@ -114,6 +114,90 @@ describe('agentOp', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('waits for a sealed rate-limit refusal and retries the identical envelope once capacity returns', async () => {
+    vi.useFakeTimers();
+    const bodies: string[] = [], sink = vi.fn();
+    fetchMock.mockImplementation(async (url, init) => {
+      if (String(url).endsWith('/agent/ping')) return { ok: true, json: async () => ({ sealed: true }) };
+      bodies.push(String(init.body));
+      if (bodies.length === 1) return { ok: false, status: 429, headers: new Headers({ 'retry-after': '1' }), text: async () => 'Rate limit exceeded' };
+      const request = openSealed<{ nonce: string }>(SHARED, JSON.parse(String(init.body)).sealed);
+      return { ok: true, status: 200, json: async () => ({ sealed: seal(SHARED, { nonce: request.nonce, exitCode: 0, lines: ['removed'] }) }) };
+    });
+    try {
+      const result = agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.rm', { name: 'app-3' }, sink, { timeoutMs: 5000 });
+      void result.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(999); expect(bodies).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(result).resolves.toEqual({ exitCode: 0, lines: ['removed'] });
+      expect(bodies).toHaveLength(2); expect(bodies[1]).toBe(bodies[0]); expect(sink.mock.calls).toEqual([['removed']]);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('cancels a pending rate-limit wait without resending a mutating operation', async () => {
+    vi.useFakeTimers(); const controller = new AbortController(); let calls = 0;
+    fetchMock.mockImplementation(async url => {
+      if (String(url).endsWith('/agent/ping')) return { ok: true, json: async () => ({ sealed: true }) };
+      calls++;
+      return { ok: false, status: 429, headers: new Headers({ 'retry-after': '1' }), text: async () => 'limited' };
+    });
+    try {
+      const result = agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.rm', { name: 'app-3' }, () => {}, { signal: controller.signal, timeoutMs: 5000 });
+      void result.catch(() => undefined); await vi.advanceTimersByTimeAsync(0);
+      controller.abort(new Error('deployment stopped'));
+      await expect(result).rejects.toThrow('deployment stopped'); await vi.advanceTimersByTimeAsync(5000);
+      expect(calls).toBe(1); expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('never extends the original deadline to accommodate a rate-limit wait', async () => {
+    fetchMock.mockImplementation(async url => String(url).endsWith('/agent/ping') ? { ok: true, json: async () => ({ sealed: true }) }
+      : { ok: false, status: 429, headers: new Headers({ 'retry-after': '1' }), text: async () => 'limited' });
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.rm', { name: 'app-3' }, () => {}, { timeoutMs: 500 })).rejects.toThrow(/timeout/i);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/agent/exec'))).toHaveLength(1);
+  });
+
+  it.each([[429, undefined], [429, 'invalid'], [429, '61'], [500, '1']] as const)('does not retry status %s with unsupported Retry-After %s', async (status, retry) => {
+    fetchMock.mockImplementation(async url => String(url).endsWith('/agent/ping') ? { ok: true, json: async () => ({ sealed: true }) }
+      : { ok: false, status, headers: new Headers(retry ? { 'retry-after': retry } : {}), text: async () => 'refused' });
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.rm', {}, () => {})).rejects.toThrow(`failed (${status})`);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/agent/exec'))).toHaveLength(1);
+  });
+
+  it('does not automatically retry an opt-in legacy plaintext operation', async () => {
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
+    fetchMock.mockImplementation(async url => String(url).endsWith('/agent/ping') ? { ok: true, json: async () => ({ sealed: false }) }
+      : { ok: false, status: 429, headers: new Headers({ 'retry-after': '1' }), text: async () => 'limited' });
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.rm', {}, () => {})).rejects.toThrow('failed (429)');
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/agent/exec'))).toHaveLength(1);
+  });
+
+  it('caps repeated rate-limit refusals and never replaces the sealed nonce', async () => {
+    vi.useFakeTimers(); const bodies: string[] = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      if (String(url).endsWith('/agent/ping')) return { ok: true, json: async () => ({ sealed: true }) };
+      bodies.push(String(init.body)); return { ok: false, status: 429, headers: new Headers({ 'retry-after': '1' }), text: async () => 'limited' };
+    });
+    try {
+      const result = agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.rm', {}, () => {}, { timeoutMs: 5000 });
+      void result.catch(() => undefined); await vi.advanceTimersByTimeAsync(3000);
+      await expect(result).rejects.toThrow('failed (429)'); expect(bodies).toHaveLength(3); expect(new Set(bodies).size).toBe(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('propagates a replay refusal without minting a new mutation nonce', async () => {
+    vi.useFakeTimers(); const bodies: string[] = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      if (String(url).endsWith('/agent/ping')) return { ok: true, json: async () => ({ sealed: true }) };
+      bodies.push(String(init.body)); return { ok: false, status: bodies.length === 1 ? 429 : 409, headers: new Headers({ 'retry-after': '1' }), text: async () => 'request already reserved' };
+    });
+    try {
+      const result = agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.rm', {}, () => {}, { timeoutMs: 5000 });
+      void result.catch(() => undefined); await vi.advanceTimersByTimeAsync(1000);
+      await expect(result).rejects.toThrow('failed (409)'); expect(bodies).toHaveLength(2); expect(bodies[0]).toBe(bodies[1]);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('falls back to the legacy transport only when the operator opted in, and says so out loud', async () => {
     process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     routeFetch({ sealed: false, exec: { lines: ['a'], exitCode: 0 } });
@@ -152,7 +236,32 @@ describe('agentOp', () => {
     ).resolves.toMatchObject({ exitCode: 0 });
   });
 
-  it('0.16 T7 (review L4): never sends a swarm.* op in clear, even with the cleartext fallback opted in', async () => {
+  it('never sends a database terminal credential in clear even when legacy fallback is explicitly enabled',async()=>{
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT']='1';
+    routeFetch({sealed:false,exec:{lines:[],exitCode:0}});
+    const params={kind:'database',databaseId:7,container:'nd-db-owned',containerId:'d'.repeat(64),client:{engine:'postgres',username:'nine',database:'app',password:'private-terminal-fixture'},cols:80,rows:24,sessionId:1};
+    let refusal: unknown;try{await agentOp(createFakeDb({findFirst:{servers:serverRow}}),1,'terminal.open',params,()=>undefined);}catch(error){refusal=error;}
+    const exec=fetchMock.mock.calls.filter(([url])=>String(url).endsWith('/agent/exec'));
+    expect({refused:refusal instanceof Error,execRequests:exec.length,plaintextCredentialRequests:exec.filter(([,init])=>String(init?.body).includes('private-terminal-fixture')).length}).toEqual({refused:true,execRequests:0,plaintextCredentialRequests:0});
+    await expect(agentOp(createFakeDb({findFirst:{servers:serverRow}}),1,'docker.pull',{image:'nginx'},()=>undefined)).resolves.toMatchObject({exitCode:0});
+    _resetSealedSupportCache();honestSealedAgent();
+    await expect(agentOp(createFakeDb({findFirst:{servers:serverRow}}),1,'terminal.open',params,()=>undefined)).resolves.toMatchObject({exitCode:0});
+    const [,init]=fetchMock.mock.calls.at(-1)!;expect(String(init.body)).not.toContain('private-terminal-fixture');
+    expect(openSealed<{params:{client:{password:string}}}>(SHARED,JSON.parse(String(init.body)).sealed).params.client.password).toBe('private-terminal-fixture');
+  });
+  it.each(['db.studio.start', 'db.studio.stop', 'db.studio.open', 'proxy.traffic.open', 'proxy.traffic.sample', 'proxy.traffic.finish', 'proxy.traffic.close', 'proxy.traffic.future', 'docker.readiness'])('never sends %s metadata or credentials through legacy plaintext fallback', async op => {
+    process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
+    routeFetch({ sealed: false, exec: { lines: [], exitCode: 0 } });
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, op, { password: 'private-studio-fixture' }, () => undefined)).rejects.toThrow();
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/agent/exec'))).toHaveLength(0);
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.pull', { image: 'nginx' }, () => undefined)).resolves.toMatchObject({ exitCode: 0 });
+    _resetSealedSupportCache(); honestSealedAgent();
+    await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, op, { password: 'private-studio-fixture' }, () => undefined)).resolves.toMatchObject({ exitCode: 0 });
+    const [, init] = fetchMock.mock.calls.at(-1)!;
+    expect(String(init.body)).not.toContain('private-studio-fixture');
+    expect(openSealed<{ params: { password: string } }>(SHARED, JSON.parse(String(init.body)).sealed).params.password).toBe('private-studio-fixture');
+  });
+  it('never sends membership or container-tool operands in clear, even with the cleartext fallback opted in', async () => {
     process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     routeFetch({ sealed: false, exec: { lines: [], exitCode: 0 } });
     const token = `SWMTKN-1-${'a1'.repeat(25)}-${'b2'.repeat(12)}z`;
@@ -161,6 +270,7 @@ describe('agentOp', () => {
       ['swarm.leave', {}],
       ['swarm.info', {}],
       ['swarm.future', {}],
+      ['docker.containerTool', { action: 'write', container: 'same-name', path: '/tmp/file', contentBase64: 'c2VjcmV0LWZpeHR1cmU=' }],
     ] as const) {
       await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, op, params, () => {}), op).rejects.toThrow(
         /refusing to send it over the unencrypted transport; it is sealed only/,

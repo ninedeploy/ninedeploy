@@ -187,6 +187,8 @@ export function stackDeployArgs(
 const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export interface DeployStackOptions {
+  /** Managed services submit a journalled, version-fenced Engine request instead of the stack CLI. */
+  nativeApply?: () => Promise<void>;
   log?: (line: string) => void;
   timeoutMs?: number;
   /**
@@ -290,15 +292,18 @@ export class SwarmOrchestrator implements IOrchestrator {
     const file = join(dir, 'stack.yml');
     let error: string | undefined;
     try {
-      for (const svc of stack.services) {
+      for (const svc of opts.nativeApply ? [] : stack.services) {
         const body = renderEnvFile(svc.env);
         if (!body) continue;
         const path = join(dir, `${svc.name}.env`);
         writePrivateFile(path, body);
         envFiles[svc.name] = path;
       }
-      writeFileSync(file, renderStackFile(stack, { envFiles, secrets: secretNames, configs: configNames }), { mode: 0o600 });
-      await applyStack(stack, file, opts, log);
+      if (opts.nativeApply) await opts.nativeApply();
+      else {
+        writeFileSync(file, renderStackFile(stack, { envFiles, secrets: secretNames, configs: configNames }), { mode: 0o600 });
+        await applyStack(stack, file, opts, log);
+      }
     } catch (err) {
       error = msg(err);
     } finally {

@@ -571,6 +571,14 @@ describe('servicesExport', () => {
 });
 
 describe('servicesCompose', () => {
+  it('keeps compose and inspect on the service node when a local container has the same name', async () => {
+    const get = vi.fn().mockResolvedValue({ slug: 'web', runtimeId: 'same-name', serverId: 7 });
+    const compose = vi.fn().mockResolvedValue({ yaml: 'services: remote', inspect: {} });
+    const inspect = vi.fn().mockResolvedValue({ id: 'remote', name: 'same-name', image: 'fixture', state: { status: 'running', running: true }, resources: { memoryLimitBytes: 0, cpuShares: 0, restartPolicy: 'no' }, traefikTags: {} });
+    const client = makeClient({ services: { get }, containers: { compose, inspect } });
+    await servicesCompose(client, '3'); await servicesInspect(client, '3');
+    expect(compose).toHaveBeenCalledWith('same-name', { serverId: 7 }); expect(inspect).toHaveBeenCalledWith('same-name', { serverId: 7 });
+  });
   it('guards against invalid id', async () => {
     const client = makeClient();
     await servicesCompose(client, 'abc');

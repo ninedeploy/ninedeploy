@@ -76,6 +76,8 @@ export function createFakeApiModule() {
       acceptInvitation: vi.fn(),
     },
     fanout: {
+      recovery: vi.fn().mockResolvedValue([]),
+      retryRecovery: vi.fn().mockResolvedValue({ recovered: 0, held: 0, entries: [] }),
       get: vi.fn().mockResolvedValue([]),
       set: vi.fn(),
     },
@@ -85,6 +87,10 @@ export function createFakeApiModule() {
       revokeToken: vi.fn(),
     },
     services: {
+      runtimeRecovery: vi.fn().mockResolvedValue(null),
+      retryRuntimeRecovery: vi.fn(),
+      swarmRecovery: vi.fn().mockResolvedValue(null),
+      retrySwarmRecovery: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
       create: vi.fn(),
@@ -275,6 +281,10 @@ export function createFakeApiModule() {
     env: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     projectEnv: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     stats: {
+      observability: {
+        get: vi.fn().mockResolvedValue({ settings: { retentionDays: 1, prometheusEnabled: false, otlpEndpoint: '', logQueueMaxMb: 16, hasOtlpAuthorization: false }, exportStatus: { lastAttemptAt: null, lastSuccessAt: null, result: null } }),
+        update: vi.fn(), test: vi.fn(),
+      },
       // Defaults keep react-query v5 happy ("query data cannot be undefined")
       // for every page that renders live stats without an explicit mock.
       snapshot: vi.fn().mockResolvedValue({
@@ -334,6 +344,8 @@ export function createFakeApiModule() {
     plugins: { list: vi.fn(), marketplace: vi.fn(), install: vi.fn(), enable: vi.fn(), disable: vi.fn(), reload: vi.fn(), inspect: vi.fn(), uninstall: vi.fn() },
     menus: { list: vi.fn() },
     logDrains: {
+      queue: vi.fn().mockResolvedValue({ pendingBatches: 0, pendingEntries: 0, payloadBytes: 0, blockedBatches: 0, pausedSources: 0, oldestAt: null }),
+      retryQueue: vi.fn(), discardQueue: vi.fn(),
       list: vi.fn(),
       get: vi.fn(),
       create: vi.fn(),

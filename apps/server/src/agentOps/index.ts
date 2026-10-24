@@ -1,3 +1,7 @@
+import { databaseClientOps } from './databaseClient.js';
+import { studioOps } from './studios.js';
+import { proxyTrafficOps } from './proxyTraffic.js';
+import { containerReadinessOps } from './containerReadiness.js';
 import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability } from '@ninedeploy/schemas';
 import { buildOps } from './builds.js';
 import { observabilityOps } from './observability.js';
@@ -11,6 +15,10 @@ import { runSpecOps } from './runSpec.js';
 import { streamOps } from './stream.js';
 import { swarmOps } from './swarm.js';
 import { nodeVolumeOps, volumeOps } from './volumes.js';
+import { proxyRoutingOps } from './proxyRouting.js';
+import { containerIdentityOps } from './containerIdentity.js';
+import { containerToolOps } from './containerTools.js';
+import { volumeFileOps } from './volumeFiles.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -53,6 +61,14 @@ export interface AgentOpModule {
 }
 
 export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
+  containerReadinessOps,
+  proxyTrafficOps,
+  studioOps,
+  databaseClientOps,
+  volumeFileOps,
+  containerToolOps,
+  containerIdentityOps,
+  proxyRoutingOps,
   observabilityOps,
   // ── 0.16 T2 agent transport ──
   streamOps,
@@ -85,6 +101,11 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
  * only socket mounts and is enforced in agentOps/runSpec.ts.
  */
 export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, readonly string[]>>> = {
+  'proxy.traffic': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
+  'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],
+  'db.client': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_CLIENTS'],
+  'volume.files': ['NINEDEPLOY_AGENT_VOLUME_FILES'],
+  'docker.containerTools': ['NINEDEPLOY_AGENT_CONTAINER_TOOLS'],
   'build.nixpacks': ['NINEDEPLOY_AGENT_BUILDS'],
   'build.railpack': ['NINEDEPLOY_AGENT_BUILDS'],
   'git.sshkey': ['NINEDEPLOY_AGENT_STATIC_CREDENTIALS'],
@@ -99,6 +120,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
  * names the one manager the node may join (agentOps/swarm.ts enforces it).
  */
 export const AGENT_OPT_IN: Readonly<Partial<Record<MultiNodeCapability, string>>> = {
+  'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
 };
 

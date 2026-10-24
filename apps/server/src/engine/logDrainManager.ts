@@ -149,6 +149,7 @@ async function postToDrain(
   drain: { url: string; type: LogDrainType; apiKey?: string | null; headers?: Record<string, string> | null },
   { body, contentType }: { body: string; contentType: string },
   fetchImpl: FetchLike,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; status: number; error?: string }> {
   const headers: Record<string, string> = {
     'Content-Type': contentType,
@@ -169,7 +170,7 @@ async function postToDrain(
       method: 'POST',
       headers,
       body,
-      signal: AbortSignal.timeout(6000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000),
     });
     // Release the connection: an unread body keeps the socket busy.
     await res.body?.cancel().catch(() => undefined);
@@ -191,8 +192,9 @@ export async function dispatchLogBatch(
   },
   entries: LogPayloadEntry[],
   fetchImpl: FetchLike = guardedFetch,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; status: number; error?: string }> {
-  return postToDrain(drain, formatLogBatch(drain.type, drain.format, entries), fetchImpl);
+  return postToDrain(drain, formatLogBatch(drain.type, drain.format, entries), fetchImpl, signal);
 }
 
 export async function testLogDrainConnection(

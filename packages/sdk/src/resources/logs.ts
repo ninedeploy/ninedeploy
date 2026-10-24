@@ -6,12 +6,16 @@ import type {
   LogDrainCreateInput,
   LogDrainUpdateInput,
   LogDrainTestResult,
+  LogQueueStatus,
 } from '@ninedeploy/schemas';
 import type { LogSearchInput, LogSearchResult } from '../types.js';
 import type { Transport } from '../transport.js';
 
 export interface LogsApi {
   logDrains: {
+    queue: (id: number) => Promise<LogQueueStatus>;
+    retryQueue: (id: number) => Promise<LogQueueStatus>;
+    discardQueue: (id: number) => Promise<{ discardedBatches: number }>;
     list: (query?: { serviceId?: number }) => Promise<LogDrain[]>;
     get: (id: number) => Promise<LogDrain>;
     create: (input: LogDrainCreateInput) => Promise<LogDrain>;
@@ -33,6 +37,9 @@ export function logsApi(t: Transport): LogsApi {
   const { get, send } = t;
   return {
     logDrains: {
+      queue: (id) => get<LogQueueStatus>('/v1/log-drains/' + id + '/queue'),
+      retryQueue: (id) => send<LogQueueStatus>('POST', '/v1/log-drains/' + id + '/queue/retry'),
+      discardQueue: (id) => send<{ discardedBatches: number }>('DELETE', '/v1/log-drains/' + id + '/queue'),
       list: (query) => {
         const qs = query?.serviceId !== undefined ? `?serviceId=${encodeURIComponent(String(query.serviceId))}` : '';
         return get<LogDrain[]>(`/v1/log-drains${qs}`);
