@@ -8,7 +8,8 @@ import { openNodeProxyTraffic } from '../lib/nodeProxyTrafficClient.js';
 import { proxyTrafficUnavailable } from '../lib/proxyTrafficCounter.js';
 import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
 import type { RunCanaryDeps } from './canary.js';
-import { canaryRouteFor, canaryStatus } from './canaryState.js';
+import { canaryActive, canaryRouteFor, canaryStatus } from './canaryState.js';
+import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
 import type { PrimaryRecoveryLease } from './primaryRecovery.js';
 import { renderDynamicConfig, writeDynamicConfig } from './proxy.js';
 
@@ -18,7 +19,7 @@ type Step = Parameters<NonNullable<RunCanaryDeps['openTraffic']>>[0];
 
 /** Bind a worker's traffic source to its primary transition, never a fan-out or panel substitute. */
 export async function primaryCanaryTraffic(db: DB, source: Source, deploymentId: number, recovery: Recovery | undefined,
-  checkpoint: () => Promise<void>): Promise<Pick<RunCanaryDeps, 'measured' | 'writeConfig' | 'openTraffic'>> {
+  checkpoint: () => Promise<void>): Promise<Pick<RunCanaryDeps, 'measured' | 'prepare' | 'writeConfig' | 'openTraffic'>> {
   const writeConfig = async () => {
     await recovery?.beforeCanaryRouting();
     // confirm() requires the selected node's loaded HTTP/TLS generation, including rollback removals.
@@ -72,6 +73,21 @@ export async function primaryCanaryTraffic(db: DB, source: Source, deploymentId:
   };
   return {
     measured: true,
+    prepare: async () => {
+      const stableOnly = async () => {
+        await current();
+        if (canaryActive(source.id)) throw new ProxyRoutingUnconfirmed('A canary already owns routing; stable-source preparation refused');
+      };
+      await stableOnly();
+      await recovery!.confirm();
+      await stableOnly();
+      const routingConfig = await renderDynamicConfig(db, { serverId: nodeId });
+      await stableOnly();
+      const window = await openNodeProxyTraffic(db, { requestId: randomBytes(16).toString('hex'), nodeId, serviceId: source.id, deploymentId, step: 1,
+        slug: source.slug, durationMs: 1000, routingConfig, stable, canary }, { checkpoint: stableOnly });
+      try { await stableOnly(); } finally { await window.close(); }
+      await stableOnly();
+    },
     writeConfig: async () => { await recovery!.check(); bound(); await writeConfig(); },
     openTraffic: async step => {
       await stepCurrent(step);

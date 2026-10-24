@@ -75,6 +75,38 @@ const hits = (kind: 'canary' | 'stable', n: number, status: number, ms: number, 
 };
 
 describe('runCanary', () => {
+  it('finishes source preparation before creating a split or opening measurement', async () => {
+    const events: string[] = [];
+    const h = harness({ prepare: async () => {
+      expect(canaryActive(1)).toBe(false); events.push('prepared');
+    } });
+    const write = h.deps.writeConfig, open = h.deps.openTraffic!;
+    h.deps.writeConfig = async () => { events.push('split'); await write(); };
+    h.deps.openTraffic = async step => { events.push('observing'); return open(step); };
+    await expect(runCanary(h.deps)).resolves.toBe('completed');
+    expect(events).toEqual(['prepared', 'split', 'observing', 'split', 'observing']);
+  });
+  it('does not start a canary after preparation fails', async () => {
+    const unavailable = new Error('Source unavailable'), owner = vi.fn();
+    const h = harness({ prepare: async () => { throw unavailable; }, onOwner: owner });
+    await expect(runCanary(h.deps)).rejects.toBe(unavailable);
+    expect(canaryActive(1)).toBe(false); expect(owner).not.toHaveBeenCalled(); expect(h.routes).toEqual([]);
+  });
+  it('rechecks cancellation after preparation before creating a split', async () => {
+    let prepared = false;
+    const cancelled = new Error('Deployment cancelled');
+    const h = harness({ prepare: async () => { prepared = true; }, checkpoint: async () => { if (prepared) throw cancelled; } });
+    await expect(runCanary(h.deps)).rejects.toBe(cancelled);
+    expect(canaryActive(1)).toBe(false); expect(h.routes).toEqual([]);
+  });
+  it('does not replace a successor appearing in the checkpoint after preparation', async () => {
+    let prepared = false;
+    const h = harness({ prepare: async () => { prepared = true; }, checkpoint: async () => {
+      if (prepared && !canaryActive(1)) beginCanary(1, 'web', 999, 1, true);
+    } });
+    await expect(runCanary(h.deps)).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(canaryStatus(1).deploymentId).toBe(999); expect(h.routes).toEqual([]);
+  });
   it('does not repeat an already completed end-of-step probe and consume the remote window reserve', async () => {
     const h = harness({ serverId: 2, stableRuntimeId: 'web-old', config: canaryConfig.parse({ steps: [50], stepSeconds: 30 }), probeEveryMs: 5000 });
     const probe = vi.fn(async () => { await h.deps.sleep!(9000); return true; }); h.deps.probe = probe;
@@ -439,6 +471,7 @@ describe('canarySkipReason', () => {
   it('names why it does not', () => {
     expect(canarySkipReason({ ...base, type: 'compose' })).toBe('canary releases apply to docker services only');
     expect(canarySkipReason({ ...base, serverId: 3 })).toMatch(/panel host only/);
+    expect(canarySkipReason({ ...base, previousServing: false })).toMatch(/no serving previous release/);
     expect(canarySkipReason({ ...base, orchestrator: 'swarm' })).toMatch(/Swarm/);
     expect(canarySkipReason({ ...base, previous: undefined })).toBe('there is no previous release to split traffic with');
     expect(canarySkipReason({ ...base, previous: { ...base.previous, runtimeId: 'web-new' } })).toMatch(/no previous release/);

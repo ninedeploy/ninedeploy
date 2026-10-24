@@ -4,7 +4,7 @@ import { proxyTrafficOpen, type ProxyTrafficOpen, type ProxyTrafficSnapshot } fr
 import { observabilityDb } from '../fixtures/observability.js';
 import { primaryCanaryTraffic } from '../../src/engine/primaryCanaryTraffic.js';
 import { beginPrimaryTransition, type PrimaryRecoveryLease } from '../../src/engine/primaryRecovery.js';
-import { beginCanary, canaryOwnedBy, endCanary, resetCanaryState, setCanaryStep } from '../../src/engine/canaryState.js';
+import { beginCanary, canaryActive, canaryOwnedBy, endCanary, resetCanaryState, setCanaryStep } from '../../src/engine/canaryState.js';
 import { runCanary } from '../../src/engine/canary.js';
 import { proxyTrafficRoutingGeneration, proxyTrafficTargetHash } from '../../src/lib/proxyTrafficCounter.js';
 import { ProxyRoutingUnconfirmed } from '../../src/lib/proxyRoutingAck.js';
@@ -72,26 +72,56 @@ async function stage(overrides: Partial<Parameters<typeof runCanary>[0]> = {}) {
 describe('primary canary worker traffic binding', () => {
   it('runs the engine with real primary recovery, scoped rendering and sealed node receipts', async () => {
     await expect(stage()).resolves.toBe('completed');
-    expect(opened).toHaveLength(1);
-    expect(opened[0]).toMatchObject({ nodeId: 2, serviceId: 1, deploymentId: 4, step: 1, durationMs: 30_000,
+    expect(opened).toHaveLength(2);
+    expect(opened[0]).toMatchObject({ nodeId: 2, serviceId: 1, deploymentId: 4, step: 1, durationMs: 1000 });
+    expect(opened[0]!.routingConfig).toContain('web-old:3000');
+    expect(opened[0]!.routingConfig).not.toContain('web-new:3000');
+    expect(opened[1]).toMatchObject({ nodeId: 2, serviceId: 1, deploymentId: 4, step: 1, durationMs: 30_000,
       stable: [{ name: 'web-old', id: 'a'.repeat(64), port: 3000 }], canary: [{ name: 'web-new', id: 'b'.repeat(64), port: 3000 }] });
-    expect(opened[0]!.routingConfig).toContain('web-old:3000'); expect(opened[0]!.routingConfig).toContain('web-new:3000');
-    expect(opened[0]!.routingConfig).toContain('/ready?db=1');
+    expect(opened[1]!.routingConfig).toContain('web-old:3000'); expect(opened[1]!.routingConfig).toContain('web-new:3000');
+    expect(opened[1]!.routingConfig).toContain('/ready?db=1');
+    expect(opened[0]!.requestId).not.toBe(opened[1]!.requestId);
+    const operations = io.agent.mock.calls.map(call => call[2]);
+    expect(operations.indexOf('proxy.traffic.close')).toBeLessThan(operations.lastIndexOf('proxy.traffic.open'));
     expect(io.write).toHaveBeenCalledWith(connection.db, { requireNode: 2, confirmNodeRouting: true });
     expect((await connection.db.select().from(primaryTransitions))[0]).toMatchObject({ phase: 'routing', desiredRuntimeId: 'web-old' });
     expect(io.local).not.toHaveBeenCalled();
   });
   it('rejects measured 5xx and confirms rollback on the same node before reporting failure', async () => {
     requestErrors = 30; await expect(stage()).rejects.toThrow(/requests failed/);
-    expect(io.write).toHaveBeenCalledTimes(2);
+    expect(io.write).toHaveBeenCalledTimes(3);
     expect(io.write.mock.calls.every(call => call[1].requireNode === 2 && call[1].confirmNodeRouting === true)).toBe(true);
-    expect(io.agent.mock.calls.filter(call => call[2] === 'proxy.traffic.close')).toHaveLength(1);
+    expect(io.agent.mock.calls.filter(call => call[2] === 'proxy.traffic.close')).toHaveLength(2);
     expect(io.local).not.toHaveBeenCalled();
   });
   it('does not open measurement before the required routing acknowledgement succeeds', async () => {
     io.write.mockRejectedValue(new ProxyRoutingUnconfirmed());
     await expect(stage()).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
     expect(opened).toEqual([]); expect(io.local).not.toHaveBeenCalled();
+  });
+  it('does not split traffic when the stable source cannot open a reservation', async () => {
+    const external = io.agent.getMockImplementation()!;
+    io.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'proxy.traffic.open') throw new Error('Traffic source unavailable');
+      return external(...args);
+    });
+    await expect(stage()).rejects.toThrow(/Traffic source unavailable/);
+    expect(canaryActive(1)).toBe(false);
+    expect(io.write).toHaveBeenCalledOnce();
+    expect(opened).toEqual([]); expect(io.local).not.toHaveBeenCalled();
+  });
+  it('keeps a successor that starts while the stable reservation is closing', async () => {
+    const external = io.agent.getMockImplementation()!;
+    io.agent.mockImplementation(async (...args) => {
+      const result = await external(...args);
+      if (args[2] === 'proxy.traffic.close') beginCanary(1, 'web', 5, 1, true, true, { serverId: 2, stableRuntimeId: 'web-old' });
+      return result;
+    });
+    await expect(stage()).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
+    expect(canaryOwnedBy(1, 5)).toBe(true);
+    expect(opened).toHaveLength(1);
+    expect(opened[0]!.routingConfig).not.toContain('web-new:3000');
+    expect(io.write).toHaveBeenCalledOnce();
   });
   it.each(['proxy.traffic', 'proxy.routingAck'])('refuses an owner-disabled capability before touching routing: %s', async cap => {
     caps = caps.filter(value => value !== cap);
@@ -126,8 +156,8 @@ describe('primary canary worker traffic binding', () => {
       now += ms;
       if (!cancelled) { cancelled = true; await connection.db.update(deployments).set({ status: 'cancelled' }).where(eq(deployments.id, 4)); }
     } })).rejects.toThrow('Deployment cancelled');
-    expect(io.agent.mock.calls.filter(call => call[2] === 'proxy.traffic.close')).toHaveLength(1);
-    expect(io.write).toHaveBeenCalledTimes(2); expect(io.local).not.toHaveBeenCalled();
+    expect(io.agent.mock.calls.filter(call => call[2] === 'proxy.traffic.close')).toHaveLength(2);
+    expect(io.write).toHaveBeenCalledTimes(3); expect(io.local).not.toHaveBeenCalled();
   });
   it('refuses a saved step after the canary incarnation is replaced, without closing its successor', async () => {
     const traffic = await primaryCanaryTraffic(connection.db, source, 4, lease, checkpoint);
@@ -154,15 +184,15 @@ describe('primary canary worker traffic binding', () => {
   });
   it('rejects a changed immutable identity during polling and closes its reservation', async () => {
     await expect(stage({ sleep: async ms => { now += ms; lease!.row.candidate.containers[0]!.id = 'c'.repeat(64); } })).rejects.toThrow(/identities were not confirmed/);
-    expect(io.agent.mock.calls.filter(call => call[2] === 'proxy.traffic.close')).toHaveLength(1);
+    expect(io.agent.mock.calls.filter(call => call[2] === 'proxy.traffic.close')).toHaveLength(2);
     expect(io.local).not.toHaveBeenCalled();
   });
   it('retains the journal when the worker lease is replaced during a step', async () => {
     await expect(stage({ sleep: async ms => {
       now += ms; await connection.db.update(primaryTransitions).set({ ownerToken: 'another-worker' }).where(eq(primaryTransitions.serviceId, 1));
     } })).rejects.toBeInstanceOf(ProxyRoutingUnconfirmed);
-    expect(io.agent.mock.calls.filter(call => call[2] === 'proxy.traffic.close')).toHaveLength(1);
-    expect(io.write).toHaveBeenCalledTimes(1);
+    expect(io.agent.mock.calls.filter(call => call[2] === 'proxy.traffic.close')).toHaveLength(2);
+    expect(io.write).toHaveBeenCalledTimes(2);
     expect((await connection.db.select().from(primaryTransitions))[0]?.ownerToken).toBe('another-worker');
   });
 });

@@ -33,6 +33,7 @@ export function canarySkipReason(input: {
   serverId: number | null;
   orchestrator: string | null;
   previous: DeployRuntime | undefined;
+  previousServing?: boolean;
   runtime: DeployRuntime;
   rollback: boolean;
   hostPorts: boolean;
@@ -42,6 +43,7 @@ export function canarySkipReason(input: {
   if (input.type !== 'docker') return 'canary releases apply to docker services only';
   if (input.serverId != null) return 'canary releases run on the panel host only for now; this service runs on a node';
   if (input.orchestrator === 'swarm') return 'canary releases do not apply to Swarm services';
+  if (input.previousServing === false) return 'there is no serving previous release to split traffic with';
   if (!input.previous || input.previous.runtimeId === input.runtime.runtimeId) return 'there is no previous release to split traffic with';
   if (input.hostPorts) return 'the service publishes host ports, so the previous release was stopped before the new one started';
   if (input.rollback) return 'a rollback switches all traffic at once';
@@ -76,6 +78,8 @@ export interface RunCanaryDeps {
   checkpoint: () => Promise<void>;
   /** Whether traffic analytics is on, so the steps can be measured. */
   measured: boolean;
+  /** Confirm the stable route and traffic source before creating any split. */
+  prepare?: () => Promise<void>;
   /** Open an independent source-bound window after routing acknowledgement. */
   openTraffic?: (step: Readonly<{ deploymentId: number; serverId: number | null; stableRuntimeId: string | null; step: number; weight: number; durationMs: number }>) => Promise<CanaryTrafficObservation>;
   now?: () => number;
@@ -100,6 +104,9 @@ export async function runCanary(deps: RunCanaryDeps): Promise<'completed' | 'pro
   if (deps.measured && !deps.openTraffic) throw new CanaryAborted('traffic observation is unavailable');
   if (deps.serverId != null && !deps.measured) throw new CanaryAborted('node canary requires measured traffic');
   await deps.checkpoint();
+  await deps.prepare?.();
+  await deps.checkpoint();
+  if (canaryActive(deps.serviceId)) throw new ProxyRoutingUnconfirmed('A canary already owns routing; the new split was refused');
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const tickMs = deps.tickMs ?? 5_000;
