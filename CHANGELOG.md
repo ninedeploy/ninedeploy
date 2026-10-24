@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve sealed routing-generation confirmation during ordinary node proxy refreshes while an internal canary split is active. Refuse disabled confirmation support, plaintext transport and stale receipts; public node canary eligibility remains closed pending API/worker acceptance.
 - Verify immutable node candidate groups through a sealed, bounded readiness batch when supported by the agent. Preserve three consecutive samples for every replica, recheck Docker health/restarts after application probes, keep older agents on their negotiated path, and refuse protocol loss without downgrade.
 - Handle images without Docker HEALTHCHECK in batched readiness instead of failing on a missing State.Health field. Add a real Docker smoke for images with and without HEALTHCHECK and wire it into the release workflow.
 - Bind primary canary traffic to the durable transition lease and record confirmed rollback routing before candidate retirement. The worker uses a shared local/node source adapter with immutable journal identities, mandatory node HTTP/TLS acknowledgement and no panel-traffic fallback. The public node canary guard remains closed pending full API/worker lifecycle and capacity acceptance.

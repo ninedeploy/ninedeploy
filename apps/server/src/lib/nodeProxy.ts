@@ -5,6 +5,7 @@ import { capabilityRefusal } from './agentCapabilities.js';
 import { getAcmeEmail, getDnsConfig, renderDynamicConfig, renderStaticConfig } from '../engine/proxy.js';
 import { NODE_DYNAMIC_WARN_BYTES } from './customCertificates.js';
 import { withRoutingAck } from './proxyRoutingAck.js';
+import { nodeCanaryRoutingActive } from '../engine/canaryState.js';
 
 /**
  * Keep a node's own reverse proxy in step with the panel's model of it.
@@ -57,8 +58,9 @@ export async function syncNodeProxy(
 ): Promise<NodeProxySyncResult> {
   let ensureStarted = false;
   let routingMayHaveChanged = false;
+  const confirmRouting = opts.confirmRouting === true || nodeCanaryRoutingActive(serverId);
   try {
-    if (opts.confirmRouting) {
+    if (confirmRouting) {
       const sealed = await agentTransportSealed(db, serverId);
       const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, serverId, op, params, sink), `#${serverId}`, sealed,
         { cap: 'proxy.routingAck', feature: 'confirm loaded HTTP/TLS routing', sealedRequired: true });
@@ -67,7 +69,7 @@ export async function syncNodeProxy(
     const [acmeEmail, dns] = await Promise.all([getAcmeEmail(db), getDnsConfig(db)]);
     const staticConfig = renderStaticConfig(acmeEmail, dns);
     const dynamicConfig = await renderDynamicConfig(db, { serverId });
-    const writtenDynamic = opts.confirmRouting ? withRoutingAck(dynamicConfig) : dynamicConfig;
+    const writtenDynamic = confirmRouting ? withRoutingAck(dynamicConfig) : dynamicConfig;
 
     const sink = (line: string) => log(`  node proxy: ${line}`);
     // 0.14: uploaded certificates are inlined into the node's single dynamic
@@ -104,7 +106,7 @@ export async function syncNodeProxy(
       ensureStarted = true;
       await agentOp(db, serverId, 'proxy.ensure', {}, sink);
     }
-    if (opts.confirmRouting) {
+    if (confirmRouting) {
       const receipt = await agentOp(db, serverId, 'proxy.confirmRouting', { content: dynamicConfig }, () => undefined);
       const expected = `ND-PROXY-ROUTING ${createHash('sha256').update(dynamicConfig).digest('hex')}`;
       if (!receipt.lines.includes(expected)) throw new Error('The node did not confirm the requested routing generation');

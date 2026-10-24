@@ -124,6 +124,11 @@ export function canaryActive(serviceId: number): boolean {
   return active.has(serviceId);
 }
 
+/** A fleet/domain refresh must preserve confirmation for a node's active split. */
+export function nodeCanaryRoutingActive(serverId: number): boolean {
+  return [...active.values()].some(canary => canary.serverId === serverId && canary.route !== null);
+}
+
 export function canaryOwnedBy(serviceId: number, deploymentId: number, owner?: symbol): boolean {
   const c = active.get(serviceId);
   return c?.deploymentId === deploymentId && (owner === undefined || c.owner === owner);
