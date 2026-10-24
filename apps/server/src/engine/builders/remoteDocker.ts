@@ -543,16 +543,25 @@ export function createRemoteDockerBuilder(
       timeoutMs = 300_000,
       directGraceMs = 10_000,
       log: (line: string) => void = () => undefined,
+      options: { checkpoint?: () => Promise<void> } = {},
     ): Promise<boolean> {
       const deadline = Date.now() + timeoutMs;
+      let interruption: { reason: unknown } | undefined;
+      const checkpoint = async () => {
+        try { await options.checkpoint?.(); }
+        catch (reason) { interruption = { reason }; throw reason; }
+      };
       const healthCall = async (op: string, params: Record<string, unknown>, sink: (line: string) => void = () => undefined) => {
+        await checkpoint();
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw new Error('Node readiness deadline exceeded');
-        const result = await agent(op, params, sink, { timeoutMs: remaining });
+        const result = await agent(op, params, sink, { timeoutMs: options.checkpoint ? Math.min(15_000, remaining) : remaining });
+        await checkpoint();
         if (Date.now() >= deadline) throw new Error('Node readiness deadline exceeded');
         return result;
       };
       const wait = async () => {
+        await checkpoint();
         const remaining = deadline - Date.now();
         if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(pollMs, remaining)));
       };
@@ -572,7 +581,7 @@ export function createRemoteDockerBuilder(
         log(why);
         // Pull the container's own output so the failure is diagnosable
         // from the deploy log rather than only from the node.
-        await healthCall('docker.logs', { name: runtime.runtimeId }, log).catch(() => undefined);
+        await healthCall('docker.logs', { name: runtime.runtimeId }, log).catch(() => { if (interruption) throw interruption.reason; });
         return false;
       };
       let stable = 0;
@@ -641,6 +650,7 @@ export function createRemoteDockerBuilder(
             }
           }
         } catch (err) {
+          if (interruption) throw interruption.reason;
           // Inspect fails while the container is still being created, and also
           // when the node is briefly unreachable. Both are worth retrying
           // inside the deadline; the last failure is reported on timeout.
@@ -649,6 +659,7 @@ export function createRemoteDockerBuilder(
         }
         await wait();
       }
+      await checkpoint();
       log(`${runtime.runtimeId} did not reach a running state on the node within ${Math.round(timeoutMs / 1000)}s`);
       return false;
     },

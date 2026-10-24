@@ -77,6 +77,19 @@ async function pump(run: Promise<unknown>, pending = false) {
 async function finish<T>(run: Promise<T>) { await pump(run); return run; }
 
 describe('primary recovery through SQLite and the real routing writer', () => {
+  it.each([false, true])('honors the caller cancellation checkpoint before any candidate probe (batch=%s)', async batch => {
+    if (batch) caps.push('docker.readiness');
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/' };
+    const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { ...runtime, runtimeId: old }, null);
+    const builder = { buildAndRun: async () => runtime, stop: async () => undefined, isHealthy: vi.fn(async () => true) };
+    const cancelled = new Error('Deployment cancelled');
+    try {
+      const settled = lease.verifyCandidate(builder, runtime, 100, () => undefined, async () => { throw cancelled; }).then(() => null, error => error);
+      expect(await finish(settled)).toBe(cancelled);
+      expect(builder.isHealthy).not.toHaveBeenCalled();
+      expect(h.agent.mock.calls.filter(args => args[2] === 'docker.readiness')).toEqual([]);
+    } finally { await lease.release(); }
+  });
   it.each([true, false])('qualifies every immutable candidate replica through the advertised batch protocol (last ready=%s)', async lastReady => {
     caps.push('docker.readiness');
     const original = h.agent.getMockImplementation()!;

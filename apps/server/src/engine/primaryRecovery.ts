@@ -216,10 +216,11 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, batchRe
     completed = true; stopped = true; return true;
   };
   return { row, check, patch, current, captureIdentities, confirm, retire, completeIfSafe,
-    async verifyCandidate(builder: Builder, runtime: DeployRuntime, timeoutMs: number, log: (line: string) => void) {
+    async verifyCandidate(builder: Builder, runtime: DeployRuntime, timeoutMs: number, log: (line: string) => void, checkpoint: () => Promise<void> = async () => undefined) {
       const deadline = Date.now() + timeoutMs;
+      const readinessCheckpoint = async () => { await check(); await checkpoint(); await check(); };
       if (batchReadiness && row.serverId != null) {
-        await check();
+        await readinessCheckpoint();
         const group = row.candidate;
         validateSnapshot(group);
         if (group.native || group.port !== runtime.port || group.containers.some(item => !item.observed || !item.id)) throw new Error('Candidate readiness identities are unconfirmed');
@@ -228,17 +229,20 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, batchRe
           targets: group.containers.map(item => ({ id: item.id!, name: item.name })),
           mode: mode === 'http-strict' || mode === 'tcp' || mode === 'running' || mode === 'command' ? mode : 'auto',
           port: runtime.port, path: runtime.healthPath,
-        }, timeoutMs, check, log);
-        await check();
+        }, timeoutMs, readinessCheckpoint, log);
+        await readinessCheckpoint();
         if (!ready) throw new Error('Candidate replicas did not pass node readiness');
         return;
       }
       await mapFour(row.candidate.containers, async item => {
-        await check();
+        await readinessCheckpoint();
         if (!item.id) throw new Error(`Candidate ${item.name} is missing`);
         const probe = { ...runtime, runtimeId: item.id };
-        if (!await builder.isHealthy(probe, Math.max(1, deadline - Date.now()), 10_000, log) || probe.port !== runtime.port) throw new Error(`Candidate ${item.name} did not pass readiness`);
-        await check();
+        const remaining = Math.max(1, deadline - Date.now());
+        const healthy = row.serverId == null ? await builder.isHealthy(probe, remaining, 10_000, log)
+          : await builder.isHealthy(probe, remaining, 10_000, log, { checkpoint: readinessCheckpoint });
+        await readinessCheckpoint();
+        if (!healthy || probe.port !== runtime.port) throw new Error(`Candidate ${item.name} did not pass readiness`);
       });
     },
     fence: () => completed ? sql`1` : and(exists(db.select({ id: primaryTransitions.id }).from(primaryTransitions).where(held())),

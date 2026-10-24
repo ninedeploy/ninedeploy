@@ -3,6 +3,19 @@ import { createRemoteDockerBuilder } from '../../src/engine/builders/remoteDocke
 
 const runtime = { runtimeId: 'web-7', port: 3000, healthCheck: 'http-strict' as const, healthPath: '/ready' };
 describe('remote readiness deadline', () => {
+  it.each(['before', 'after-inspect'])('propagates cancellation %s instead of probing or accepting a candidate', async phase => {
+    let inspected = false;
+    const cancelled = new Error('Deployment cancelled');
+    const call = vi.fn(async (op: string) => {
+      if (op === 'docker.inspect') inspected = true;
+      return { exitCode: 0, lines: [op === 'docker.inspect' ? 'running|none|0|0' : 'ND-PROBE {"ready":true}'] };
+    });
+    const settled = await createRemoteDockerBuilder(call).isHealthy(runtime, 500, 0, () => undefined, {
+      checkpoint: async () => { if (phase === 'before' || inspected) throw cancelled; },
+    }).then(value => ({ value, error: null }), error => ({ value: undefined, error }));
+    expect(settled.error).toBe(cancelled);
+    expect(call.mock.calls.map(args => args[0])).toEqual(phase === 'before' ? [] : ['docker.inspect']);
+  });
   it.each(['container', 'http'] as const)('rejects a successful %s reply arriving after the deadline', async mode => {
     vi.useFakeTimers();
     const call = vi.fn(async (op: string) => {

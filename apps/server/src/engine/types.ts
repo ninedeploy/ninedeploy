@@ -152,6 +152,6 @@ export interface DeployRuntime {
 /** A runtime backend (Docker / PM2). Implementations live in ./builders. */
 export interface Builder {
   buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime>;
-  isHealthy(runtime: DeployRuntime, timeoutMs?: number, directGraceMs?: number, log?: (line: string) => void): Promise<boolean>;
+  isHealthy(runtime: DeployRuntime, timeoutMs?: number, directGraceMs?: number, log?: (line: string) => void, options?: { checkpoint?: () => Promise<void> }): Promise<boolean>;
   stop(runtimeId: string, opts?: { graceSeconds?: number }): Promise<void>;
 }
