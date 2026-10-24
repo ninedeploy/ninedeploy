@@ -44,7 +44,7 @@ export function ServerNodePanel({
   swarmWarnings?: readonly string[];
 }) {
   return (
-    <div className="grid gap-3 text-xs md:grid-cols-2" data-testid={`node-panel-${server.id}`}>
+    <div className="grid min-w-0 w-[calc(100cqw-2.5rem)] max-w-full grid-cols-1 gap-3 break-words text-xs md:grid-cols-2" data-testid={`node-panel-${server.id}`}>
       <AgentRow server={server} />
       <DeploymentSupport node={server} />
       {server.isBuildServer !== undefined && <BuildServerRow server={server} />}

@@ -765,7 +765,7 @@ export function Servers() {
       ) : registeredServers.length === 0 ? (
         <Card><EmptyState icon={<HardDrive size={26} />} title="No remote servers" hint="Everything deploys on this host. Use SSH Onboarding or run the auto-join command on a node." /></Card>
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="@container overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
