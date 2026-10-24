@@ -30,7 +30,7 @@ replacement/deletion and a stopped or newer primary generation prevent stale
 promotion. A target failure remains independent of primary success; inspect the
 fan-out outcome lines and per-target status. Published host ports prevent safe
 overlap, so routed fan-out with a published port is refused before retirement.
-This does not add node canary/autoscaling. The unreleased 0.18.0 artifact increment also uses these guards for recorded-image fan-out promotion.
+This does not add node canary/autoscaling. The 0.18.0 artifact increment also uses these guards for recorded-image fan-out promotion.
 
 ### Canary releases (0.16.9)
 
@@ -47,7 +47,7 @@ With a canary configuration (**Service → Settings → Canary releases**, or `c
 
 A failed step sends all traffic back to the previous release, stops the new container and fails the deploy with the reason, for example `Canary aborted: at 10%, 12% of 240 requests failed with a 5xx (the limit is 5%)`. Notifications and alert subscriptions get it as a failed deploy.
 
-Unreleased 0.18.0 also configures Traefik health checks on both canary releases when `http-strict` readiness is selected, including single-container releases: a 5-second interval, 3-second timeout and no redirect following. Their weighted parent follows health changes, so an unhealthy release leaves rotation even while the panel control loop is delayed. Traffic during the health-detection interval can still fail. Other readiness modes keep their existing replica probe behavior; a weighted parent subscribes only when both leaves have probes. Accepted health query strings and percent encoding are preserved on canary and ordinary replica backends. See [Traefik v3.1 health checks](https://doc.traefik.io/traefik/v3.1/routing/services/#health-check).
+0.18.0 also configures Traefik health checks on both canary releases when `http-strict` readiness is selected, including single-container releases: a 5-second interval, 3-second timeout and no redirect following. Their weighted parent follows health changes, so an unhealthy release leaves rotation even while the panel control loop is delayed. Traffic during the health-detection interval can still fail. Other readiness modes keep their existing replica probe behavior; a weighted parent subscribes only when both leaves have probes. Accepted health query strings and percent encoding are preserved on canary and ordinary replica backends. See [Traefik v3.1 health checks](https://doc.traefik.io/traefik/v3.1/routing/services/#health-check).
 
 While a canary runs:
 - **Promote** (`POST /v1/services/:id/deploys/:depId/canary/promote`) switches a panel-host canary early. A node canary first finishes and passes its current full measured step, then skips the remaining steps. Abort remains available while that node promotion waits.
@@ -61,7 +61,9 @@ A panel-host deploy switches all traffic at once, and its log names why, when:
 - it publishes host ports (the previous release is stopped before the new one starts);
 - it runs on Swarm, whose native rolling-update behavior applies. Additional-node fan-out targets receive the new release after the primary canary has finished; they do not share its weighted observation.
 
-#### Node canary (unreleased 0.18.0)
+<a id="node-canary-unreleased-0180"></a>
+
+#### Node canary (0.18.0)
 
 Node canary uses the same service configuration and promote/cancel routes. It currently supports a plain Docker service with one desired/serving replica, explicit `http-strict` readiness, an active domain or automatic URL, and no published port or port mappings. The selected node must provide sealed `proxy.traffic`, `proxy.routingAck`, `docker.recovery`, `docker.probe` and `docker.readiness`. Update both panel and agent, and set `NINEDEPLOY_AGENT_PROXY_TRAFFIC=on` on that agent to opt in. The panel's local traffic-analytics toggle does not enable or disable node measurement.
 
@@ -71,17 +73,19 @@ After candidate qualification, the worker confirms stable-only routing and verif
 
 Failure/cancellation confirms stable routing before retiring the candidate by immutable identity. An unknown routing outcome keeps both generations for durable recovery. A hard panel restart does not replay an in-memory canary or its measurements: recovery uses the persisted stable intent. Explicit Stop remains authoritative. Readiness/observation RPCs and rollback confirmation can delay cancellation; it is checked at bounded operation boundaries.
 
-This is the R1 candidate behavior; real API/worker and browser acceptance plus final release certification remain required before publication. Node multi-replica canary, autoscaling/sleep and Swarm canary are outside this increment.
+R1 has local API/worker and browser acceptance; final artifact certification and publication are tracked separately. Node multi-replica canary, autoscaling/sleep and Swarm canary are outside this increment.
 
 `pnpm smoke:node-canary --image=<candidate>` exercises the public API/worker against isolated panel/node Docker daemons and the standard bridge agent bootstrap. It covers readiness holding, healthy rollout, measured 5xx rollback, full-step promotion, concurrent domain refreshes, source loss, cancellation, Stop, owner-disabled refusal and hard panel restart. It retains proof files under `.temp_files` (or `--proof=<directory>`) and removes resources only after checking their ownership labels. The release workflow repeats this gate on the pushed version image before promotion/publication. Its Host-header fixtures do not certify public DNS or TLS termination for an operator's domain.
 
-Unreleased 0.18.0 measured local steps use their own access-log window, independent of the analytics tailer's 10-second poll. The full step timer starts after routing acknowledgement and source opening. Completed JSON records are counted by byte position, with a final drain before the verdict. The selected local service, proxy identity/restart, static-config fingerprint and writable log mount are rechecked. File replacement/truncation, malformed or incomplete records, source errors and unreadable analytics settings fail the step and request a confirmed rollback instead of manufacturing zero traffic. Complete windows below `minRequests` retain the healthcheck-only policy above.
+0.18.0 measured local steps use their own access-log window, independent of the analytics tailer's 10-second poll. The full step timer starts after routing acknowledgement and source opening. Completed JSON records are counted by byte position, with a final drain before the verdict. The selected local service, proxy identity/restart, static-config fingerprint and writable log mount are rechecked. File replacement/truncation, malformed or incomplete records, source errors and unreadable analytics settings fail the step and request a confirmed rollback instead of manufacturing zero traffic. Complete windows below `minRequests` retain the healthcheck-only policy above.
 
 A window is limited to 32 MiB, 100,000 records and 16 KiB per record, with at most 16 concurrent windows. Crossing a limit fails observation. Normal owner rotation is deferred during a window; above the existing 64 MiB trigger plus a 32 MiB allowance, windows are invalidated before forced rotation. This is a rotation trigger, not a filesystem quota. Disabling/purging analytics invalidates active windows. A completed local file window describes logged responses; producer-level loss detection for these local windows is unfinished. The separate node protocol below adds request-sequence coverage for eligible node canaries.
 
 Local canary state remains in memory: a panel restart ends that canary and clears its split. The primary Docker transition journal controls interrupted-runtime reconciliation where applicable; see the primary recovery section below. Each run has an opaque owner distinct from its deployment number. Routing/source/probe/close continuations recheck ownership, and parent cleanup cannot end a newer incarnation of the same deployment. A failed initial deployment checkpoint writes no canary state or routing. Periodic verification is capped at ten seconds and the deployment’s configured health timeout; remote initial qualification and its three stable samples are unchanged. A successful probe completed after the step boundary is reused before the final observation drain.
 
-### Node traffic observations (unreleased 0.18.0; internal)
+<a id="node-traffic-observations-unreleased-0180-internal"></a>
+
+### Node traffic observations (0.18.0; internal)
 
 The internal controller adapter reserves, polls, finishes and closes node observations through sealed `proxy.traffic.open`, `.sample`, `.finish` and `.close` operations. Eligible node canary workers consume this transport through the existing service deploy/canary controls. The node owner must add `NINEDEPLOY_AGENT_PROXY_TRAFFIC=on` to the agent environment; unset or off means no advertised capability and no operation admission. The panel refuses plaintext fallback for this entire operation family, including when legacy fallback was explicitly allowed. Raw observation operations have no public panel endpoint.
 
@@ -580,7 +584,7 @@ Swarm on its own.
    a member, still receiving tasks and their secrets.
 5. `PUT /v1/services/:id/placement` with `{orchestrator: "swarm"}`, then deploy.
 
-**0.17.1 lifecycle (superseded by the unreleased 0.18.0 flow below):** one stack `nd-<slug>` with one service
+**0.17.1 lifecycle (superseded by the 0.18.0 flow below):** one stack `nd-<slug>` with one service
 `nd-<slug>_web`, applied with `docker stack deploy` on every deploy (env,
 replicas and limits all apply). Updates roll one task at a time, start-first,
 and Swarm rolls a failed update back; if the panel's probe through Traefik fails
@@ -686,9 +690,9 @@ Artifact mode copies the record into the target deployment. It survives source h
 
 Target runtime environment, attached databases, files, volumes, ports, command, resource limits, restart policy and health checks apply. Source build-time variables, dependencies and files stay baked into the image; changing target build settings cannot rewrite them. Configure target routes and dependencies in the panel: source manifests are not replayed during promotion. Database/volume contents are never copied or restored.
 
-The source build may run on the panel, target node or a separate build node; a promotion can run on the panel or one Docker node. Nodes need a sealed transport and `image.manage`; stream transfers also need `stream`. Runtime capability, database and file/volume guards still apply, while Git credential and build-pack requirements are skipped because no node build occurs. Host pre-deploy/post-deploy/pre-stop hooks remain unsupported. Swarm support is added by the unreleased 0.18.0 flow below. Node capture requires sealed transport, image.manage and stream when the panel does not already hold the exact image. Missing capabilities or a failed observation/cache leave an ordinary deployment working without an artifact record; configure a push registry when successful archival must be required before traffic changes.
+The source build may run on the panel, target node or a separate build node; a promotion can run on the panel or one Docker node. Nodes need a sealed transport and `image.manage`; stream transfers also need `stream`. Runtime capability, database and file/volume guards still apply, while Git credential and build-pack requirements are skipped because no node build occurs. Host pre-deploy/post-deploy/pre-stop hooks remain unsupported. Swarm support is added by the 0.18.0 flow below. Node capture requires sealed transport, image.manage and stream when the panel does not already hold the exact image. Missing capabilities or a failed observation/cache leave an ordinary deployment working without an artifact record; configure a push registry when successful archival must be required before traffic changes.
 
-The unreleased 0.18.0 increment adds configured fan-out targets to artifact promotion and artifact rollback. Each target receives the exact recorded image ID from the retained panel copy or its recorded registry digest; it never checks out the repository, discovers a buildpack or rebuilds source. Current target-service environment, runtime options and resolved port apply. Nixpacks images receive the resolved `PORT` default unless the target environment explicitly provides one. Routed targets require sealed `proxy.routingAck` and `docker.recovery`, then use the same readiness, guarded routing, drain and durable recovery flow as an ordinary fan-out deploy. Target failures preserve the previous runtime and appear in per-target status/logs while the primary remains live. These fan-out transitions do not restore volume/database data. Swarm uses the separate native flow below.
+The 0.18.0 increment adds configured fan-out targets to artifact promotion and artifact rollback. Each target receives the exact recorded image ID from the retained panel copy or its recorded registry digest; it never checks out the repository, discovers a buildpack or rebuilds source. Current target-service environment, runtime options and resolved port apply. Nixpacks images receive the resolved `PORT` default unless the target environment explicitly provides one. Routed targets require sealed `proxy.routingAck` and `docker.recovery`, then use the same readiness, guarded routing, drain and durable recovery flow as an ordinary fan-out deploy. Target failures preserve the previous runtime and appear in per-target status/logs while the primary remains live. These fan-out transitions do not restore volume/database data. Swarm uses the separate native flow below.
 
 For a registry archive, an operator selects **Push registry** and **Repository** in the source service's Build placement settings, then deploys it on the panel or a capable node. The source's registry credential must be bound to exactly one host. The successful push records the manifest digest separately from the image ID, and Deploys shows the immutable registry reference. A push or archive-record failure fails the candidate before routing changes. The existing secret-export policy refuses Nixpacks images containing secret environment variables and Dockerfile builds using secret build arguments. Existing historical artifacts are not uploaded retroactively.
 
@@ -697,7 +701,9 @@ An archived artifact can restore a missing local image or reach a target node ev
 Without an archive, keep the image on the panel: all NineDeploy image cleanup paths protect it while any source or copied deployment record is retained. Deleting the last retained record releases that protection; external Docker cleanup can still remove the image. Node caches can be repopulated from the panel or archive. A corrupted artifact record stops NineDeploy image cleanup until that history is repaired or removed.
 
 
-## Primary Docker transition recovery (unreleased 0.18.0)
+<a id="primary-docker-transition-recovery-unreleased-0180"></a>
+
+## Primary Docker transition recovery (0.18.0)
 
 Routed plain Docker replacements persist a primary transition after candidate readiness and lifecycle preparation, before canary or full traffic publication. Migration 0098 permits one unresolved transition per service. The journal captures every serving replica's immutable container ID, separately records owned stopped autoscale capacity, and retains previous/candidate routing metadata and a renewable ownership lease. Stopped capacity never counts as a readiness backend. It stays with the selected generation; obsolete owned capacity is removed by immutable ID after routing confirmation. Unrelated containers at possible spare names are never adopted. Node candidates carry managed service/deployment labels and require sealed `docker.recovery` plus `proxy.routingAck` before traffic changes; explicit HTTP/TCP readiness also requires `docker.probe`. Default node readiness remains container-state based unless HTTP/TCP is selected.
 
@@ -708,14 +714,18 @@ Recovery repeats the configured readiness for all captured serving replicas, con
 Unknown or renamed identities, changed placement/runtime/replica ownership, missing deployment history, unavailable readiness/routing acknowledgement and restricted TCP sidecar routing retain the generations for review. Restricted TCP port proxies need separate loaded-routing confirmation; this HTTP/TLS recovery must not retire their possible backend automatically. Direct published host ports still cannot overlap safely and have no zero-downtime guarantee. Recovery does not replay builds, lifecycle hooks, canary observation or additional-node fan-out; inspect per-target status before another rollout. Compose, Swarm, unjournalled historical containers, database/volume restore and arbitrary manual Docker changes are outside this recovery flow. Deleting a service/node cascades its transition record; it is not an orphan-container cleanup operation.
 
 
-## Swarm preload placement safety (unreleased 0.18.0)
+<a id="swarm-preload-placement-safety-unreleased-0180"></a>
+
+## Swarm preload placement safety (0.18.0)
 
 Preparing a new source image must not change a node label referenced by the currently serving Swarm spec: Swarm can evict that task before the new spec is submitted. Preloaded images now use one of three fixed `nd.preload.<slug>.g0/g1/g2` slots, with the full image content address as the value. The manager reads every service's current and previous placement constraints and chooses an unreferenced slot. This also protects a different service referencing the same key. The legacy unsuffixed label is left unchanged, preserving upgrades and native rollback. Three slots plus an existing legacy key keep this metadata bounded per service/node.
 
 An unavailable manager, incomplete metadata or three referenced slots fails preparation before a preload label is changed. The operator must restore a complete manager inventory or review the extra references; the deploy does not guess. Nodes that cannot receive the new image are still excluded from the new placement. Registry-based deployment retains its digest-based path. This change protects the preparation window; native rolling-update availability still depends on the image/command healthcheck, and it does not add HTTP/TCP readiness, artifact promotion or durable interrupted-update recovery to Swarm.
 
 
-### Swarm recorded artifacts and interrupted updates (unreleased 0.18.0)
+<a id="swarm-recorded-artifacts-and-interrupted-updates-unreleased-0180"></a>
+
+### Swarm recorded artifacts and interrupted updates (0.18.0)
 
 Managed Swarm applications submit version-fenced Docker Engine service specs through the configured Docker context. A source build saves its immutable artifact before native submission. Artifact promotion and rollback use that image and the target environment, replica count, port and healthcheck; no Git checkout, build or host lifecycle hooks run. Required managed members must receive the image before an artifact update is submitted. Full task/container image IDs are checked through the manager and sealed node agents after convergence and readiness. Image releases resolve mutable tags to a matching repository manifest digest; an unconfirmed pin never falls back to a tag.
 
@@ -727,7 +737,9 @@ Settings → Swarm runtime recovery shows the pending reason and an operator ret
 
 This checkpoint covers new/native Swarm services and existing owned Swarm updates. Cross-orchestrator migration/upgrade compatibility and historical unjournalled-runtime adoption are not accepted by it and remain separate release work. Swarm readiness uses native image/command healthchecks and the existing proxy probe; explicit HTTP/TCP readiness, node/Swarm canary and autoscaling are separate capabilities. No general availability guarantee is implied.
 
-### Docker and Swarm migration (unreleased 0.18.0)
+<a id="docker-and-swarm-migration-unreleased-0180"></a>
+
+### Docker and Swarm migration (0.18.0)
 
 Changing a panel-host Docker service's placement between containers and Swarm keeps its previous runtime until the candidate passes readiness and the loaded HTTP/TLS routing is confirmed. Swarm placement still requires an enabled manager and a supported configuration. Configure command or image healthchecks before moving to Swarm; explicit HTTP/TCP readiness and published host ports remain refused there. This moves the application runtime, not database data or volumes between hosts; application/schema compatibility and concurrent access to shared data still need operator review.
 

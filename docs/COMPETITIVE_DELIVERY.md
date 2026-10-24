@@ -11,7 +11,7 @@ Across the multi-release program, one of six feature packages is locally validat
 | Package | Current state | Release allocation | Required next acceptance |
 | --- | --- | --- | --- |
 | Observability and completed runtime/node increments | Locally validated; unpublished | 0.18.0 | Final upgrade and release verification |
-| Public node canary (R1) | In progress | 0.18.0 | Actual API/worker lifecycle, concurrent proxy changes and panel support controls |
+| Public node canary (R1) | Locally accepted; unpublished | 0.18.0 | Final release-candidate and publication verification |
 | Remaining runtime support (R2) | Pending | 0.19.0 target | Node autoscaling/sleep and remaining Swarm acceptance |
 | Recovery (R3) | Pending | 0.20.0 target | Isolated real restore/query/RTO and PostgreSQL PITR |
 | Remote MCP (R4) | Pending | 0.21.0 target | HTTP transport, OAuth, revocation and resource authorization with real clients |
@@ -25,7 +25,7 @@ Latest full local certification: 14,574 tests in 870 files, all 11 tasks uncache
 
 Source review baseline: `39830616`, version 0.17.1. R1–R6 remain the agreed delivery program, split into independently accepted releases. The versions after 0.18.0 are planning targets, not publication dates or reasons to hold an already accepted release. Release 0.18.x patches may ship between feature milestones for validated fixes, compatibility and maintenance. R2 introduces new runtime features and targets 0.19.0.
 
-The current R1 candidate integrates guarded node-canary worker eligibility and panel controls; lifecycle/browser acceptance and release certification are still in progress, with no publication. The earlier closed-guard checkpoint passed 230 focused Linux tests in 12 files with typecheck; Node 22.23.4 and 24.22.1 each passed 88 tests in four files. Its working-tree pipeline passed 234 tests with the agent boundary mocked. Those checkpoint results do not certify the later R1 candidate or substitute for the real public API/worker acceptance below.
+R1 now has local public API/worker and browser acceptance. The candidate version is 0.18.0; R7 certification/publication remains open. The real lifecycle covers healthy readiness holding, measured business-5xx rollback, full-step promotion, changed generations, unconfirmed rollback, lost source, cancellation during readiness and observation, owner-disabled refusal, hard panel restart and explicit Stop. The 11 scenarios were accepted across two runs against the same immutable backend image; the registered full smoke must still repeat against the final versioned artifact. Real browser checks at 1280px/375px saved settings, observed pending promotion and aborted it successfully with no console/runtime errors. A responsive-layout mutation reproduced clipped availability before the fix and verified its visible right edge after restoration. Node 22.23.4 and 24.22.1 each passed 102 focused tests. These checks do not replace the final uncached matrix or hosted/published-artifact gates. Evidence: `.temp_files/r1-release-20261024-ad6bffb9/`.
 
 The acceptance criteria below apply to each package's own release. The initial effort estimates describe package work, not time remaining until 0.18.0.
 
@@ -39,7 +39,7 @@ The acceptance criteria below apply to each package's own release. The initial e
 | R6 | Packaged desktop | Pending; no desktop app package exists in this checkout | Deliver an installable client using the existing API, explicit instance selection, OS credential storage, restricted navigation/IPC and credential cleanup. Build and exercise installers on the declared supported platforms; browser-only behavior is insufficient. | 5–8 developer-days |
 | R7 | Recurring release certification and publication | Pending for 0.18.0; repeated per release | Freeze the release's code; run exact uncached `TURBO_FORCE=true pnpm release:check` with unchanged floors. Exercise upgrade from the previous supported release, migrations, mixed agent versions and promotion/rollback on candidate artifacts. Pass required hosted jobs, verify packaged assets/checksums/tag identity, publish the accepted version and smoke the published artifact. The first application is 0.17.1 → 0.18.0. | Estimate separately for each release; initial 0.18.0 planning range 2–4 developer-days |
 
-The former **27–46 developer-day** estimate covered the entire program with one final certification pass. It is not a 0.18.0 estimate. The current release has R1 and its release certification left, including compatibility checks for all already completed Unreleased work. Re-estimate from those gates as their real-system results arrive; do not convert development-day estimates into an autonomous-session duration or promise a publication date.
+The former **27–46 developer-day** estimate covered the entire program with one final certification pass. It is not a 0.18.0 estimate. R1 is locally accepted; the current release has R7 certification/publication left, including compatibility checks for all already completed work. Re-estimate from those gates as their real-system results arrive; do not convert development-day estimates into an autonomous-session duration or promise a publication date.
 
 Execution rules:
 
@@ -49,7 +49,7 @@ Execution rules:
 4. Run the full uncached release matrix at each release's code freeze. Any subsequent code change invalidates the relevant frozen certification and requires a fresh final matrix. Retain all existing coverage floors.
 5. Report the current release, completed gate IDs, remaining current-release gates, commit IDs and actual blockers. Show the later backlog separately. Distinguish focused checks, full local certification, hosted checks and published/live proof; do not substitute test counts for delivery progress.
 
-The immediate next action is R1's real API/worker replay, followed by its support controls and commit. R1 is not complete while only component tests pass. Release 0.18.0 requires R1 and R7, including final upgrade verification of the completed observability/runtime/node increments. R2–R6 are subsequent releases and do not delay this publication.
+The immediate next action is R7: freeze the 0.18.0 candidate, run its full uncached checks and artifact/upgrade acceptance, then publish through the guarded workflow. Release 0.18.0 requires the accepted R1 and final upgrade verification of the completed observability/runtime/node increments. R2–R6 are subsequent releases and do not delay this publication.
 
 ## Program backlog and accepted foundations
 

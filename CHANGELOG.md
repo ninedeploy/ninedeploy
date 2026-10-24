@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-25
+
 ### Added
 
 - Guarded single-replica node canary for plain Docker services with explicit HTTP readiness, domain routing and no published host ports. Validate the selected agent before candidate startup, verify the stable traffic source before splitting, and keep measured promotion, cancellation, Stop and durable recovery authoritative. Panel and CLI distinguish a promotion request from completion.

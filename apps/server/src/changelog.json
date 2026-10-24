@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.18.0",
+    "date": "2026-10-25",
+    "title": "Measured node canaries and recoverable operations",
+    "changes": [
+      "Add single-replica node canary with explicit HTTP readiness, owner-enabled sealed traffic observations and loaded HTTP/TLS routing acknowledgement. Validate support before candidate launch; keep cancellation, Stop and crash recovery authoritative.",
+      "Node promotion completes the current measured step before skipping the remaining steps. Panel controls expose actual node requirements and keep Abort usable while promotion waits.",
+      "Add durable primary Docker, fan-out and native Swarm transition recovery with immutable runtime identities, confirmed rollback and safe retained-generation reconciliation.",
+      "Promote and roll back recorded immutable artifacts across configured fan-out nodes and Swarm without rebuilding. Preserve current/rollback placement during bounded Swarm image preloading.",
+      "Add explicit-host container inspection, Compose manifests, container/volume file tools, private database client terminals and sealed Web Studios on supported node database engines.",
+      "Add configurable metric history/rollups, authenticated Prometheus and OTLP export, and encrypted durable per-destination log queues with retries, backpressure and operator queue controls.",
+      "Batch node readiness by immutable identity, preserve consecutive samples and recheck health/restarts. Handle images without Docker HEALTHCHECK and keep negotiated older-agent behavior without protocol downgrade.",
+      "Include additive migrations 0096–0100. Update panel and agents together for routed node recovery and explicitly opt in to node proxy traffic observations for node canary.",
+      "Gate publication on public API/worker canary lifecycle, upgrade and user-journey smokes against the pushed version image."
+    ]
+  },
+  {
     "version": "0.17.1",
     "date": "2026-10-22",
     "title": "Readiness fixes and recoverable releases",

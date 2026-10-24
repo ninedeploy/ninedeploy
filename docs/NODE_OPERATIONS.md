@@ -155,7 +155,7 @@ canary, autoscaling, scale to zero and file browser availability for the selecte
 host. Fields omitted by an older panel are shown as unknown. This is a capability
 view; the deploy API revalidates the target when the job runs.
 
-For unreleased 0.18.0, node canary availability requires all five sealed-agent capabilities described in [Node canary](DEPLOYMENTS.md#node-canary-unreleased-0180), including owner-enabled proxy traffic observations. Per-service requirements are one replica, HTTP readiness, domain routing and no published host ports. Node autoscaling and scale to zero remain later R2 work. The live worker rechecks support before candidate launch; a cached availability indicator does not authorize deployment.
+For 0.18.0, node canary availability requires all five sealed-agent capabilities described in [Node canary](DEPLOYMENTS.md#node-canary-unreleased-0180), including owner-enabled proxy traffic observations. Per-service requirements are one replica, HTTP readiness, domain routing and no published host ports. Node autoscaling and scale to zero remain later R2 work. The live worker rechecks support before candidate launch; a cached availability indicator does not authorize deployment.
 
 ## Validation
 
@@ -195,10 +195,12 @@ build packs and Swarm are outside this focused command.
 These remain planned work, not capabilities delivered by this increment.
 
 
-Unreleased 0.18.0 also journals routed plain-Docker **primary** node transitions (migration 0098). The same sealed recovery/routing capabilities and immutable-ID safety rules apply. The worker preserves journalled candidates across panel restart, and Settings exposes Primary runtime recovery with a lease-safe retry. Fresh readiness and loaded routing precede retirement; Stop, cancellation and changed placement remain authoritative. Recovery does not replay node builds, hooks or additional-node deployments. See [Deployments](DEPLOYMENTS.md#primary-docker-transition-recovery-unreleased-0180) for state choices and exclusions.
+0.18.0 also journals routed plain-Docker **primary** node transitions (migration 0098). The same sealed recovery/routing capabilities and immutable-ID safety rules apply. The worker preserves journalled candidates across panel restart, and Settings exposes Primary runtime recovery with a lease-safe retry. Fresh readiness and loaded routing precede retirement; Stop, cancellation and changed placement remain authoritative. Recovery does not replay node builds, hooks or additional-node deployments. See [Deployments](DEPLOYMENTS.md#primary-docker-transition-recovery-unreleased-0180) for state choices and exclusions.
 
 
-## Node container inspection and files (unreleased 0.18.0)
+<a id="node-container-inspection-and-files-unreleased-0180"></a>
+
+## Node container inspection and files (0.18.0)
 
 Service and database Manifest/Files views target their recorded node explicitly. Instance operators can inspect a container, generate its runtime Compose manifest and list/read/write/create/delete files through the sealed `docker.containerTools` capability. The agent resolves the container name once and uses its immutable Docker ID for the operation. Missing capabilities, unsealed transport, an unknown node or an unconfirmed response never fall back to the panel daemon.
 
@@ -209,7 +211,9 @@ SDK container methods take an optional final `{ serverId }` argument. For exampl
 The node owner can disable these operations with `NINEDEPLOY_AGENT_CONTAINER_TOOLS=off`; the capability disappears from the sealed ping and the agent refuses the operation too. The Servers/wizard support view reports `features.containerTools`; an older panel omitting the flag remains unknown. Node-volume files and database Web Studio use the separate capabilities below. Node canary uses the separate [R1 requirements](DEPLOYMENTS.md#node-canary-unreleased-0180); node autoscaling and Swarm task file selection remain later runtime-parity work.
 
 
-### Node volume files (unreleased 0.18.0)
+<a id="node-volume-files-unreleased-0180"></a>
+
+### Node volume files (0.18.0)
 
 Instance operators can browse, read, write, create directories and delete paths on a selected node through sealed `volume.files` / `volume.fileTool`. Routes use `/v1/servers/:serverId/volumes/:name/files`, with `/content` and `/dir` suffixes. The legacy panel-host file routes reject `?serverId`; an older panel returns 404 for the new namespace. There is no local fallback. The node owner can disable this capability with `NINEDEPLOY_AGENT_VOLUME_FILES=off`. Support views expose `features.volumeFiles`; update the agent to 0.18.0 when unavailable.
 
@@ -229,7 +233,9 @@ ninedeploy volumes delete-file nd-svc-app-data archive --server 7
 
 CLI reads preserve exact binary stdout; `--output` refuses an existing local file unless `--force` is supplied. Delete prompts for the exact path unless `--yes` is explicit. `pnpm smoke:volume-files --image=<built-candidate>` runs the actual helper CRUD/binary/limit/symlink/missing-volume controls on an owned Docker-in-Docker daemon. Public API, two-daemon isolation, CLI and browser acceptance are separate checks.
 
-### Node database client terminals (unreleased 0.18.0)
+<a id="node-database-client-terminals-unreleased-0180"></a>
+
+### Node database client terminals (0.18.0)
 
 The database Client action uses the recorded database ID and node. Operators can open PostgreSQL, MySQL, MariaDB, Redis, Valkey, KeyDB and Dragonfly clients through `POST /v1/terminals` with `target: {kind: 'database', databaseId, mode: 'client'}`. The node needs `db.manage`, `db.client`, sealed terminal transport and its Docker Engine API. Support views expose `features.databaseClients`. Missing support returns a refusal before creating a client; there is no panel-host fallback. Unsupported engines retain the separate container Shell action.
 
@@ -242,7 +248,9 @@ SDK `terminals.create` allows at least 60 seconds for database client creation; 
 `pnpm smoke:database-clients --image=<built-candidate>` runs actual API and SDK queries against all seven default engine images on owned Docker-in-Docker hosts, including password refusal, same-name local/node isolation, old-agent refusal, owner switches, single-use tickets and container replacement controls. `--case=postgres` or `--case=engines --engine=keydb` narrows the run. This smoke does not certify every engine version, browser behavior or the full release matrix.
 
 
-## Node database Web Studio (unreleased 0.18.0)
+<a id="node-database-web-studio-unreleased-0180"></a>
+
+## Node database Web Studio (0.18.0)
 
 An operator can launch Adminer for PostgreSQL/MySQL/MariaDB or Redis Commander for Redis/Valkey/KeyDB/Dragonfly from the database page. Both the panel and node agent must support sealed `db.studio`; an old or owner-disabled agent is refused with an actionable message. `NINEDEPLOY_AGENT_DATABASE_STUDIOS=off` disables Studio on that node; `NINEDEPLOY_AGENT_DATABASES=off` disables it with other database operations.
 
@@ -257,11 +265,15 @@ SDK `databases.startStudio` permits at least 240 seconds and returns `port: null
 All seven supported engines passed real default-bootstrap browser data workflows and the uncached local matrix. An earlier opaque browser exception remains unreproduced; vendor Studio pages retain their narrow-screen layout limitations. Final release certification remains open; see [Competitive delivery](COMPETITIVE_DELIVERY.md).
 
 
-## Database resource telemetry (unreleased 0.18.0)
+<a id="database-resource-telemetry-unreleased-0180"></a>
+
+## Database resource telemetry (0.18.0)
 
 The database page requests `/v1/stats?databaseId=<id>`. The response is access-scoped, excludes host metrics and other containers, and identifies the database and its recorded node. Database-only nodes are collected too. Samples older than 90 seconds, failed or missing samples, and stopped databases are never displayed as live zero metrics. The panel distinguishes waiting, unavailable, stale and stopped states and can retry. The SDK requires the scoped resource receipt; an older panel that ignores the filter must be upgraded. The unfiltered stats endpoint retains its panel-host behavior.
 
-## Agent capacity and readiness budgets (unreleased 0.18.0)
+<a id="agent-capacity-and-readiness-budgets-unreleased-0180"></a>
+
+## Agent capacity and readiness budgets (0.18.0)
 
 Sealed agent calls honor a canonical positive Retry-After of 1–60 seconds on HTTP 429, with at most two retries and one original request deadline. The encrypted request and nonce are reused; already-executed requests remain protected by replay refusal. Unsupported headers, other HTTP failures, transport errors and legacy plaintext calls are not retried. Cancellation also stops a capacity wait. Rate-limit ceilings are unchanged.
 
