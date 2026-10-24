@@ -2,6 +2,24 @@
 
 This plan was drawn up on 2026-10-08 from a feature-gap analysis against Dokploy v0.30.0 and Coolify v4.4.x. Every gap listed here was checked against the NineDeploy source code.
 
+## Current release sequence — updated 2026-10-24
+
+Ship independently accepted increments regularly. The owner replaced the single large 0.18.0 scope with the sequence below. The next release includes the completed Unreleased work and R1; later packages do not block it.
+
+| Release | Scope | Release condition |
+| --- | --- | --- |
+| **0.18.0** | Completed observability/runtime/node work plus **R1: public node canary** | Real API/worker healthy/readiness/rollback/promote/cancel/Stop/restart and concurrent-proxy acceptance; panel support controls; full release and upgrade verification |
+| **0.18.x**, when needed | Validated fixes, compatibility and maintenance | Focused regressions and the current patch's release/upgrade gates; ship without waiting for R2 |
+| **0.19.0 target** | **R2:** node autoscaling/sleep and remaining Swarm support acceptance | Runtime support matrix and real scaling/wake/restart/rollback checks, followed by release verification |
+| **0.20.0 target** | **R3:** isolated restore verification and PostgreSQL PITR | Actual restore/query/recovery-time and point-in-time recovery evidence, followed by release verification |
+| **0.21.0 target** | **R4:** remote MCP over HTTP/OAuth | Real-client authorization, expiry/revocation and stdio compatibility, followed by release verification |
+| **0.22.0 target** | **R5:** durable CI and isolated runners | Actual execution, isolation, approvals and restart recovery, followed by release verification |
+| **0.23.0 target** | **R6:** packaged desktop | Secure credentials/IPC/navigation and supported-platform installer acceptance, followed by release verification |
+
+Versions after 0.18.0 are planning targets, not publication dates. Smaller validated patches may ship between feature milestones. R7 is the recurring certification/publication gate for **every** release, not a final milestone after R6. Complete R1 and publish 0.18.0 before starting R2 feature implementation. See the detailed [incremental release plan](COMPETITIVE_DELIVERY.md#incremental-release-plan--2026-10-24) for acceptance criteria and current evidence.
+
+Earlier dated sections and acceptance records describe their original scope. This sequence supersedes statements that all six packages must be completed before 0.18.0. Existing additive migration, compatibility, verification and publication requirements remain in force.
+
 ## Competitive follow-up — 2026-10-21
 
 The current implementation sequence is: required CI for a pinned commit; immutable release/artifact promotion across lanes and nodes; longer metrics retention with Prometheus/OTLP export and durable log delivery; real database restore drills with measured recovery; HTTP MCP/OAuth; and remaining node management parity. These are separate acceptance packages, not a claim of overall competitor parity.
@@ -10,7 +28,7 @@ The required GitHub workflow gate and Docker artifact promotion from the panel a
 
 ## Delivery in progress — 2026-10-23
 
-The six-package acceptance sequence is tracked in [Competitive delivery](COMPETITIVE_DELIVERY.md), targeting **0.18.0 after the remaining work and release checks**. Observability, routed primary/fan-out Docker recovery, recorded artifact fan-out/Swarm promotion and rollback, Swarm preload placement safety and durable native Swarm update recovery are implemented and locally validated; see [Observability](OBSERVABILITY.md) and [Deployments](DEPLOYMENTS.md) for limits. These increments remain unpublished; the checkout version is still 0.17.1. Explicit-host node container inspect/Compose/files are also implemented and locally validated (13,716-test frozen Linux checkpoint). Docker ↔ Swarm migration, active-runtime upgrade from published 0.17.1 and durable cross-runtime recovery are also locally validated (13,744-test frozen Linux checkpoint). Node volume file tools are also locally validated (13,857 tests in the frozen Linux checkpoint, real API/SDK/CLI and desktop/mobile browser flows). Node database client terminals are also locally validated in their own frozen checkpoint (13,943 tests, 837 files, all tasks uncached), with actual seven-engine API/SDK and desktop/mobile panel controls. Subsequent Studio work is outside that checkpoint; node Studio/canary/autoscaling, recovery/PITR, remote MCP, a runner engine, desktop and final release gates remain open.
+The multi-release acceptance sequence is tracked in [Competitive delivery](COMPETITIVE_DELIVERY.md). Under the revised plan, **0.18.0 closes after R1 and its release checks**; R2–R6 follow in separate releases. Observability, routed primary/fan-out Docker recovery, recorded artifact fan-out/Swarm promotion and rollback, Swarm preload placement safety and durable native Swarm update recovery are implemented and locally validated; see [Observability](OBSERVABILITY.md) and [Deployments](DEPLOYMENTS.md) for limits. These increments remain unpublished; the checkout version is still 0.17.1. Explicit-host node container inspect/Compose/files are also implemented and locally validated (13,716-test frozen Linux checkpoint). Docker ↔ Swarm migration, active-runtime upgrade from published 0.17.1 and durable cross-runtime recovery are also locally validated (13,744-test frozen Linux checkpoint). Node volume file tools are also locally validated (13,857 tests in the frozen Linux checkpoint, real API/SDK/CLI and desktop/mobile browser flows). Node database client terminals are also locally validated in their own frozen checkpoint (13,943 tests, 837 files, all tasks uncached), with actual seven-engine API/SDK and desktop/mobile panel controls. Subsequent Studio work is outside that historical checkpoint; its later acceptance is recorded in the tracker. Node canary and the 0.18.0 release checks remain current-release work; autoscaling, recovery/PITR, remote MCP, runners and desktop belong to the later release sequence above.
 
 ## The rule every release follows
 

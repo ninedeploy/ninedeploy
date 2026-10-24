@@ -2,29 +2,32 @@
 
 Baseline: NineDeploy 0.17.1, main abf5a39a. This is an implementation and acceptance tracker, not a statement of competitor parity.
 
-Release target: **0.18.0**. Keep completed increments under Unreleased until the requested work and final release checks are complete; do not publish an intermediate 0.17.2. Release version bump, tag and publication follow implementation acceptance, real upgrade/promotion smokes and final artifact verification. Earlier acceptance records below retain their historical version targets.
+Next release: **0.18.0 = the completed Unreleased increments plus R1 (public node canary)**. The owner revised the scope on 2026-10-24: publish accepted increments regularly instead of waiting for the entire competitive backlog. R2–R6 do not block 0.18.0. Version bump, tag and publication still require the current release's implementation acceptance, upgrade/promotion smokes and artifact verification. Earlier acceptance records below retain their historical scope and version targets; this release plan supersedes their statements that all remaining packages must precede 0.18.0.
 
 ## Release gate snapshot
 
-One of six feature packages is locally validated, one is in progress and four remain pending. This counts packages, not equal units of effort or a weighted completion percentage. Final publication gates are separate.
+Across the multi-release program, one of six feature packages is locally validated, one is in progress and four remain pending. This is a backlog inventory, not a 0.18.0 completion percentage. Only R1, compatibility of the already completed increments and the recurring release gates block 0.18.0.
 
-| Package | Current state | Required next acceptance |
-| --- | --- | --- |
-| Observability | Locally validated; unpublished | Final upgrade and release verification |
-| Runtime parity | In progress | Primary-node canary worker enablement/recovery, autoscaling/sleep and remaining Swarm parity |
-| Recovery | Pending | Isolated real restore/query/RTO and PostgreSQL PITR |
-| Remote MCP | Pending | HTTP transport, OAuth, revocation and resource authorization with real clients |
-| CI/runners | Pending | Durable execution, enrollment/isolation, secrets, approvals and recovery |
-| Packaged desktop | Pending | Secure credentials/IPC/navigation and platform installers |
-| Final release gates | Pending | Upgrade/promotion smokes, hosted checks, exact assets/digests/tag identity and publication |
+| Package | Current state | Release allocation | Required next acceptance |
+| --- | --- | --- | --- |
+| Observability and completed runtime/node increments | Locally validated; unpublished | 0.18.0 | Final upgrade and release verification |
+| Public node canary (R1) | In progress | 0.18.0 | Actual API/worker lifecycle, concurrent proxy changes and panel support controls |
+| Remaining runtime support (R2) | Pending | 0.19.0 target | Node autoscaling/sleep and remaining Swarm acceptance |
+| Recovery (R3) | Pending | 0.20.0 target | Isolated real restore/query/RTO and PostgreSQL PITR |
+| Remote MCP (R4) | Pending | 0.21.0 target | HTTP transport, OAuth, revocation and resource authorization with real clients |
+| CI/runners (R5) | Pending | 0.22.0 target | Durable execution, enrollment/isolation, secrets, approvals and recovery |
+| Packaged desktop (R6) | Pending | 0.23.0 target | Secure credentials/IPC/navigation and platform installers |
+| Release certification (R7) | Pending for 0.18.0; repeated per release | Every release | Upgrade/promotion smokes, hosted checks, exact assets/digests/tag identity and publication |
 
 Latest full local certification: 14,574 tests in 870 files, all 11 tasks uncached, for the source checkpoint recorded in `a22f936d`. Later commits have focused verification; that earlier full result does not certify their changes or the final release.
 
-## Fixed execution plan — 2026-10-24
+## Incremental release plan — 2026-10-24
 
-Source review baseline: `39830616`, version 0.17.1. The six feature packages above remain the agreed 0.18.0 scope. One is locally validated, one is in progress and four are pending; package counts are not a completion percentage. This plan separates the unfinished runtime package into two executable steps and adds the final release step.
+Source review baseline: `39830616`, version 0.17.1. R1–R6 remain the agreed delivery program, split into independently accepted releases. The versions after 0.18.0 are planning targets, not publication dates or reasons to hold an already accepted release. Release 0.18.x patches may ship between feature milestones for validated fixes, compatibility and maintenance. R2 introduces new runtime features and targets 0.19.0.
 
 The current working tree contains four uncommitted node-canary wiring/test files. Committed code still closes public node-canary eligibility. The latest focused Linux checkpoint passed 230 tests in 12 files with typecheck; Node 22.23.4 and 24.22.1 each passed 88 tests in four files. The working-tree pipeline passed 234 tests, with the agent boundary mocked. These results do not substitute for the real public API/worker acceptance below.
+
+The acceptance criteria below apply to each package's own release. The initial effort estimates describe package work, not time remaining until 0.18.0.
 
 | Order | Deliverable | Current state | Completion evidence | Initial effort estimate |
 | --- | --- | --- | --- | --- |
@@ -34,21 +37,23 @@ The current working tree contains four uncommitted node-canary wiring/test files
 | R4 | Remote MCP | Existing transport is stdio; HTTP/OAuth acceptance pending | Real Streamable HTTP client flow with OAuth grants, resource authorization on each call, token expiration, immediate revocation, session isolation and retained stdio compatibility. Include operator/user controls and failure tests. | 3–5 developer-days |
 | R5 | Durable CI and isolated runners | Pending; external CI gating is not a runner execution engine | Persist job and attempt state; enroll/revoke runners; isolate executions and secrets; stream authorized logs; enforce approvals/capacity; recover from panel/runner loss without duplicate successful execution or orphaned work. Exercise the actual workflow in the panel. | 7–12 developer-days |
 | R6 | Packaged desktop | Pending; no desktop app package exists in this checkout | Deliver an installable client using the existing API, explicit instance selection, OS credential storage, restricted navigation/IPC and credential cleanup. Build and exercise installers on the declared supported platforms; browser-only behavior is insufficient. | 5–8 developer-days |
-| R7 | Release certification and publication | Pending | Freeze code; run exact uncached `TURBO_FORCE=true pnpm release:check` with unchanged floors. Exercise 0.17.1 upgrade, migrations, mixed agent versions and promotion/rollback on candidate artifacts. Pass required hosted jobs, verify packaged assets/checksums/tag identity, publish 0.18.0 and smoke the published artifact. | 2–4 developer-days |
+| R7 | Recurring release certification and publication | Pending for 0.18.0; repeated per release | Freeze the release's code; run exact uncached `TURBO_FORCE=true pnpm release:check` with unchanged floors. Exercise upgrade from the previous supported release, migrations, mixed agent versions and promotion/rollback on candidate artifacts. Pass required hosted jobs, verify packaged assets/checksums/tag identity, publish the accepted version and smoke the published artifact. The first application is 0.17.1 → 0.18.0. | Estimate separately for each release; initial 0.18.0 planning range 2–4 developer-days |
 
-The initial total is **27–46 developer-days**, approximately **6–10 working weeks for one sequential engineering track**. This is an effort estimate from the current acceptance backlog, not measured remaining work, an autonomous-session duration or a promised release date. CI/runners and desktop are the least certain estimates because their implementation is pending. Re-estimate at package boundaries using completed acceptance evidence.
+The former **27–46 developer-day** estimate covered the entire program with one final certification pass. It is not a 0.18.0 estimate. The current release has R1 and its release certification left, including compatibility checks for all already completed Unreleased work. Re-estimate from those gates as their real-system results arrive; do not convert development-day estimates into an autonomous-session duration or promise a publication date.
 
 Execution rules:
 
-1. Complete R1 and R2 before starting another feature package; proceed through R3–R7 in order.
-2. Keep this scope fixed. Put additional feature ideas in the post-0.18.0 backlog. Reproduced defects that invalidate an acceptance criterion remain blockers for that package.
+1. Complete R1, run R7 for the 0.18.0 candidate and publish 0.18.0 before starting R2 feature implementation. Then deliver R2–R6 in order, with R7 and publication after each accepted increment.
+2. Keep each release's scope fixed. Unfinished later packages do not block the current release. Reproduced defects that invalidate current-release acceptance remain blockers; validated maintenance fixes may ship as interim patches.
 3. Finish each coherent increment with focused regression/behavior checks and a commit. Close a package only with its API/UI, applicable SDK/CLI, documentation, migration and real-system evidence.
-4. Run the full uncached release matrix at final code freeze. Any subsequent code change invalidates the relevant frozen certification and requires a fresh final matrix. Retain all existing coverage floors.
-5. Report completed gate IDs, current gate, remaining gate IDs, commit IDs and actual blockers. Distinguish focused checks, full local certification, hosted checks and published/live proof; do not substitute test counts for delivery progress.
+4. Run the full uncached release matrix at each release's code freeze. Any subsequent code change invalidates the relevant frozen certification and requires a fresh final matrix. Retain all existing coverage floors.
+5. Report the current release, completed gate IDs, remaining current-release gates, commit IDs and actual blockers. Show the later backlog separately. Distinguish focused checks, full local certification, hosted checks and published/live proof; do not substitute test counts for delivery progress.
 
-The immediate next action is R1's real API/worker replay, followed by its support controls and commit. R1 is not complete while only component tests pass. The release remains blocked until all seven steps and the observability package's final upgrade checks are accepted.
+The immediate next action is R1's real API/worker replay, followed by its support controls and commit. R1 is not complete while only component tests pass. Release 0.18.0 requires R1 and R7, including final upgrade verification of the completed observability/runtime/node increments. R2–R6 are subsequent releases and do not delay this publication.
 
-## Delivery order
+## Program backlog and accepted foundations
+
+The package descriptions below span multiple releases. Their release allocation is defined above; pending future features are not prerequisites for 0.18.0. All dated acceptance entries that follow are historical evidence, not current scope decisions.
 
 1. **Observability — implemented and locally validated; unpublished.** Configurable resource-history retention with bounded chart queries and rollups; authenticated Prometheus exposition and OTLP/HTTP JSON metrics; encrypted per-destination log queues, persisted cursors, bounded backpressure and operator queue visibility. Verify restart/retry, destination changes, tenant boundaries and real collector delivery.
 2. **Runtime parity — in progress.** Existing autoscaler safety, truthful telemetry/error states, panel-host and routed primary-node HTTP/TLS routing-load acknowledgement, a nonterminal deployment phase until routing confirmation, per-target fan-out readiness/confirmed routing transitions and durable routed fan-out transition recovery are implemented and locally validated; unpublished. Recorded Docker artifact promotion and rollback to fan-out targets are now locally validated. Durable HTTP/TLS primary Docker recovery is now locally validated, including stopped autoscale capacity and authoritative Stop/cancellation. Swarm preload preparation now preserves current and rollback placement and is locally validated. Recorded source artifacts, immutable promotion/rollback on Swarm and durable native Swarm update recovery are now locally validated. Explicit-host node container inspection, Compose manifests and file operations are now locally validated. Docker ↔ Swarm migration, published-0.17.1 runtime compatibility and crash recovery are now locally validated. Explicit-host node-volume file tools are now locally validated. Node database client terminals, seven-engine private Node Studio and database-scoped node telemetry are locally validated. Agent backpressure, readiness deadlines, canary proxy health propagation and independent measured local-canary file windows are locally validated too. Sealed bounded node traffic reservations with request-sequence coverage and expected HTTP/TLS generation checks are locally validated; opaque run ownership, primary-node scoped rendering and measured node-mode promotion are locally validated too; shared primary worker traffic binding, confirmed rollback retirement and batched node readiness are locally validated; public node canary enablement remains gated. Node canary/autoscaling/sleep and remaining Swarm parity are still pending. Default node readiness remains container-state based; application HTTP readiness requires explicit configuration. Keep capability checks and application/data compatibility constraints explicit.
