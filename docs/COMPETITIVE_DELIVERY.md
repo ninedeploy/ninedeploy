@@ -18,7 +18,35 @@ One of six feature packages is locally validated, one is in progress and four re
 | Packaged desktop | Pending | Secure credentials/IPC/navigation and platform installers |
 | Final release gates | Pending | Upgrade/promotion smokes, hosted checks, exact assets/digests/tag identity and publication |
 
-Latest accepted local checkpoint: 14,574 tests in 870 files, all 11 tasks uncached; this is not a release candidate or production-host certification.
+Latest full local certification: 14,574 tests in 870 files, all 11 tasks uncached, for the source checkpoint recorded in `a22f936d`. Later commits have focused verification; that earlier full result does not certify their changes or the final release.
+
+## Fixed execution plan — 2026-10-24
+
+Source review baseline: `39830616`, version 0.17.1. The six feature packages above remain the agreed 0.18.0 scope. One is locally validated, one is in progress and four are pending; package counts are not a completion percentage. This plan separates the unfinished runtime package into two executable steps and adds the final release step.
+
+The current working tree contains four uncommitted node-canary wiring/test files. Committed code still closes public node-canary eligibility. The latest focused Linux checkpoint passed 230 tests in 12 files with typecheck; Node 22.23.4 and 24.22.1 each passed 88 tests in four files. The working-tree pipeline passed 234 tests, with the agent boundary mocked. These results do not substitute for the real public API/worker acceptance below.
+
+| Order | Deliverable | Current state | Completion evidence | Initial effort estimate |
+| --- | --- | --- | --- | --- |
+| R1 | Public node canary | Foundations committed; enablement unaccepted | Real panel/node API and worker: healthy rollout, held HTTP-503 readiness, measured business-5xx rollback, early promotion, cancellation, Stop, hard restart, missing capability/source, and concurrent proxy generation changes. Supported settings and refusals are visible in the panel and verified at desktop/mobile widths. Healthy controls have no unintended 502 responses; deliberate failure controls must be detected and rolled back. | 2–4 developer-days |
+| R2 | Remaining runtime support | Node autoscaling/sleep and Swarm acceptance remain open | Close a concrete Docker/node/Swarm support matrix first. Prove node scale-up/down by immutable identity, fresh node metrics, concurrent wake/scale-to-zero behavior, and the supported Swarm readiness/metric/log flows. Cover old agents, disabled capabilities, restart and rollback; expose accurate support limits in UI/API/SDK/CLI. | 3–5 developer-days |
+| R3 | Restore verification and PostgreSQL PITR | Pending; existing drills inspect dumps without restoring them | Restore supported-engine backups into isolated real databases, query known data, record recovery duration and clean helpers without modifying the source. For PostgreSQL, archive WAL and recover to specified points before/after known transactions; prove retention and missing/corrupt-WAL refusal. | 5–8 developer-days |
+| R4 | Remote MCP | Existing transport is stdio; HTTP/OAuth acceptance pending | Real Streamable HTTP client flow with OAuth grants, resource authorization on each call, token expiration, immediate revocation, session isolation and retained stdio compatibility. Include operator/user controls and failure tests. | 3–5 developer-days |
+| R5 | Durable CI and isolated runners | Pending; external CI gating is not a runner execution engine | Persist job and attempt state; enroll/revoke runners; isolate executions and secrets; stream authorized logs; enforce approvals/capacity; recover from panel/runner loss without duplicate successful execution or orphaned work. Exercise the actual workflow in the panel. | 7–12 developer-days |
+| R6 | Packaged desktop | Pending; no desktop app package exists in this checkout | Deliver an installable client using the existing API, explicit instance selection, OS credential storage, restricted navigation/IPC and credential cleanup. Build and exercise installers on the declared supported platforms; browser-only behavior is insufficient. | 5–8 developer-days |
+| R7 | Release certification and publication | Pending | Freeze code; run exact uncached `TURBO_FORCE=true pnpm release:check` with unchanged floors. Exercise 0.17.1 upgrade, migrations, mixed agent versions and promotion/rollback on candidate artifacts. Pass required hosted jobs, verify packaged assets/checksums/tag identity, publish 0.18.0 and smoke the published artifact. | 2–4 developer-days |
+
+The initial total is **27–46 developer-days**, approximately **6–10 working weeks for one sequential engineering track**. This is an effort estimate from the current acceptance backlog, not measured remaining work, an autonomous-session duration or a promised release date. CI/runners and desktop are the least certain estimates because their implementation is pending. Re-estimate at package boundaries using completed acceptance evidence.
+
+Execution rules:
+
+1. Complete R1 and R2 before starting another feature package; proceed through R3–R7 in order.
+2. Keep this scope fixed. Put additional feature ideas in the post-0.18.0 backlog. Reproduced defects that invalidate an acceptance criterion remain blockers for that package.
+3. Finish each coherent increment with focused regression/behavior checks and a commit. Close a package only with its API/UI, applicable SDK/CLI, documentation, migration and real-system evidence.
+4. Run the full uncached release matrix at final code freeze. Any subsequent code change invalidates the relevant frozen certification and requires a fresh final matrix. Retain all existing coverage floors.
+5. Report completed gate IDs, current gate, remaining gate IDs, commit IDs and actual blockers. Distinguish focused checks, full local certification, hosted checks and published/live proof; do not substitute test counts for delivery progress.
+
+The immediate next action is R1's real API/worker replay, followed by its support controls and commit. R1 is not complete while only component tests pass. The release remains blocked until all seven steps and the observability package's final upgrade checks are accepted.
 
 ## Delivery order
 
