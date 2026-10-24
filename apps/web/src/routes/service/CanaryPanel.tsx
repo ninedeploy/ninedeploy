@@ -42,11 +42,12 @@ function ReleaseStats({ label, stats }: { label: string; stats: CanaryReleaseSta
 /**
  * 0.16.9: the canary of the deploy in progress, polled every 5 s while
  * `enabled`. Renders nothing when no canary runs or the status cannot be
- * read. Promote switches all traffic now; Abort cancels the deployment, which
+ * read. Node promotion waits for the current measured step; Abort cancels the deployment, which
  * routes everything back to the previous release. Any seat on the service may
  * use both (the server checks the member floor).
  */
-export function CanaryPanel({ serviceId, enabled }: { serviceId: number; enabled: boolean }) {
+export function CanaryPanel({ serviceId, enabled, serverId }: { serviceId: number; enabled: boolean; serverId?: number | null }) {
+  const node = serverId != null;
   const qc = useQueryClient();
   const { toast } = useToast();
   const [confirmAbort, setConfirmAbort] = useState(false);
@@ -76,7 +77,7 @@ export function CanaryPanel({ serviceId, enabled }: { serviceId: number; enabled
     mutationFn: (deploymentId: number) => canaryApi.promote(serviceId, deploymentId),
     onSuccess: () => {
       refresh();
-      toast('Promoting: all traffic switches to the new release', 'success');
+      toast(node ? 'Promotion requested: waiting for this measured step to finish and pass' : 'Promoting: all traffic switches to the new release', 'success');
     },
     onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not promote the canary', 'error'),
   });
@@ -93,7 +94,7 @@ export function CanaryPanel({ serviceId, enabled }: { serviceId: number; enabled
   const depId = view.deploymentId;
   const weight = Math.max(0, Math.min(100, view.weight ?? 0));
   const left = canaryTimeLeft(view.stepEndsAt, now);
-  const busy = promote.isPending || abort.isPending || view.promoting === true;
+  const busy = promote.isPending || abort.isPending;
 
   return (
     <Card className="mt-5">
@@ -107,16 +108,16 @@ export function CanaryPanel({ serviceId, enabled }: { serviceId: number; enabled
               <div className="text-sm font-medium text-slate-200">Canary release · deployment #{depId}</div>
               <div className="mt-0.5 text-[11px] text-slate-500">
                 {view.promoting
-                  ? 'Switching all traffic to the new release…'
+                  ? node ? 'Waiting for this measured step to finish and pass…' : 'Switching all traffic to the new release…'
                   : `Step ${view.step ?? 1} of ${view.steps ?? 1}${left ? ` · ${left} left in this step` : ''}`}
               </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => promote.mutate(depId)} disabled={busy} title="Skip the remaining steps and switch all traffic now">
+            <Button size="sm" onClick={() => promote.mutate(depId)} disabled={busy || view.promoting === true} title={node ? 'Finish and pass this measured step, then skip the remaining steps' : 'Skip the remaining steps and switch all traffic now'}>
               {promote.isPending || view.promoting ? <Spinner className="h-3 w-3" /> : null} Promote
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => setConfirmAbort(true)} disabled={busy}>
+            <Button size="sm" variant="secondary" onClick={() => setConfirmAbort(true)} disabled={busy || (!node && view.promoting === true)}>
               Abort
             </Button>
           </div>

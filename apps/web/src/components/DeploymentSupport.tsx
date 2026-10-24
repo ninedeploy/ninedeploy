@@ -1,11 +1,12 @@
 import type { ServerListEntry } from '@ninedeploy/sdk';
+import { NODE_CANARY_CAPABILITIES } from '@ninedeploy/schemas';
 
 /** Availability for plain Docker workloads; Compose and Swarm differ. */
 export function DeploymentSupport({ node }: { node?: ServerListEntry }) {
   const features: Array<[string, boolean | undefined]> = [
     ['HTTP/TCP readiness', node ? node.features?.readinessProbe : true],
     ['Log drains', node ? node.features?.logDrains : true],
-    ['Canary releases', !node],
+    ['Canary releases', node ? node.agent == null ? undefined : NODE_CANARY_CAPABILITIES.every(cap => node.agent!.capabilities.includes(cap)) : true],
     ['Autoscaling', !node],
     ['Scale to zero', !node],
     ['Container file browser', node ? node.features?.containerTools : true],
@@ -24,7 +25,7 @@ export function DeploymentSupport({ node }: { node?: ServerListEntry }) {
           </div>
         ))}
       </dl>
-      {node && <p className="mt-2 text-[11px] text-slate-500">Readiness, log drains and file tools require an updated agent. Canary, autoscaling and scale to zero currently run on the panel host.</p>}
+      {node && <p className="mt-2 text-[11px] text-slate-500">Node canary requires one replica, HTTP readiness, a domain and no published host ports, with traffic observations enabled by the node owner. Deploys recheck support. Autoscaling and scale to zero currently run on the panel host.</p>}
     </section>
   );
 }

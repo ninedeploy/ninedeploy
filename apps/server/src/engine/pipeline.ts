@@ -66,6 +66,7 @@ import { canarySkipReason, runCanary } from './canary.js';
 import { ensurePreviewDatabaseCopies } from '../lib/previewDatabases.js';
 import { canaryActive, canaryOwnedBy, endCanary } from './canaryState.js';
 import { primaryCanaryTraffic } from './primaryCanaryTraffic.js';
+import { preflightNodeCanary } from './nodeCanaryPreflight.js';
 import { run, sleep } from '../lib/exec.js';
 import { hasVaultRef, resolveVaultRefs } from '../lib/vault.js';
 import { registryCredentialFor, registryCredentialForSourceBuild } from '../lib/registryBinding.js';
@@ -1008,6 +1009,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   let runtime: DeployRuntime | undefined;
   let primaryRecovery: PrimaryRecoveryLease | undefined;
   let swarmRecovery: SwarmRecoveryLease | undefined;
+  const candidateCheckpoint = async () => { if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled(); };
   const runtimeFence = () => and(primaryRecovery?.fence(), swarmRecovery?.fence());
   const ensurePrimaryRecovery = async () => {
     if (primaryRecovery || !builder || service.type !== 'docker' || service.orchestrator === 'swarm' || !runtime || runtime.port == null || runtime.runtimeId === previous?.runtimeId) return;
@@ -1017,11 +1019,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     trackPrimary?.(primaryRecovery);
     const nativeBuilder = builder;
     builder = primaryRecovery.wrap(builder);
-    await primaryRecovery.verifyCandidate(nativeBuilder, runtime, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000, log);
+    await primaryRecovery.verifyCandidate(nativeBuilder, runtime, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000, log, candidateCheckpoint);
   };
   /** 0.16.9: a canary ran to the end and still holds its share of the traffic. */
   let canaryHeld = false;
   let canaryOwner: symbol | undefined;
+  let canaryStarted = false;
   // The resolved runtime env (lifted so the fan-out hook can push the same
   // secrets to every target node).
   let fanoutEnv: Record<string, string> = {};
@@ -1045,6 +1048,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
   try {
     // Cancel checkpoint: the route may have flipped the row between claim and here.
     if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+    await preflightNodeCanary(db, service, /^Rollback to #/.test(dep.message ?? ''), async () => {
+      if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+    });
 
     // r520/r582: a railpack build that cannot run here (no Railpack CLI, or
     // no BuildKit daemon via BUILDKIT_HOST) is refused before the checkout,
@@ -1400,6 +1406,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       // ── end 0.16 T6 ──
     };
 
+    await preflightNodeCanary(db, ctx.service, /^Rollback to #/.test(dep.message ?? ''), async () => {
+      if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+    });
+
     if (buildConfig?.preDeployCmd) {
       log(`▶ Running Pre-Deploy Hook: ${buildConfig.preDeployCmd} …`);
       await runHook(buildConfig.preDeployCmd, workDir, ctx.env, log);
@@ -1485,7 +1495,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     // unset keeps the 5 minutes every deploy had before.
     const healthTimeoutS = service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S;
     if (service.healthTimeoutSeconds != null) log(`Healthcheck timeout: ${healthTimeoutS}s`);
-    const healthy = await builder.isHealthy(runtime, healthTimeoutS * 1000, 10_000, log);
+    const healthy = service.serverId == null ? await builder.isHealthy(runtime, healthTimeoutS * 1000, 10_000, log)
+      : await builder.isHealthy(runtime, healthTimeoutS * 1000, 10_000, log, { checkpoint: candidateCheckpoint });
+    await candidateCheckpoint();
     if (!healthy) {
       throw new Error(
         `Healthcheck failed — service did not become ready within ${healthTimeoutS}s. ` +
@@ -1544,6 +1556,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
             serverId: service.serverId ?? null,
             orchestrator: service.orchestrator ?? null,
             previous,
+            previousServing: service.status !== 'stopped' && (service.runtimeReplicas ?? 1) > 0,
             runtime,
             rollback: /^Rollback to #/.test(dep.message ?? ''),
             // As the docker builder decides: a direct port or a mapping without an allow list (those the port proxy holds).
@@ -1554,13 +1567,14 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       if (skip) {
         log(`Canary release skipped: ${skip}. All traffic switches at once.`);
       } else if (parsed.success) {
+        if (service.serverId != null) canaryOwner = Symbol('unstarted node canary');
         const live = runtime;
         const liveBuilder = builder;
         const probeTimeoutMs = Math.min(10_000, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000);
         const checkpoint = async () => {
           await primaryRecovery?.check(); await swarmRecovery?.check();
           if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
-          if (canaryOwner !== undefined && !canaryOwnedBy(service.id, deploymentId, canaryOwner)) throw new ProxyRoutingUnconfirmed('Canary ownership changed; traffic observation refused');
+          if (canaryStarted && canaryOwner !== undefined && !canaryOwnedBy(service.id, deploymentId, canaryOwner)) throw new ProxyRoutingUnconfirmed('Canary ownership changed; traffic observation refused');
         };
         const traffic = await primaryCanaryTraffic(db, {
           id: service.id, slug: service.slug, runtimeId: previous?.runtimeId ?? null,
@@ -1573,18 +1587,18 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
           deploymentId,
           serverId: service.serverId ?? null,
           stableRuntimeId: previous?.runtimeId ?? null,
-          onOwner: owner => { canaryOwner = owner; },
+          onOwner: owner => { canaryOwner = owner; canaryStarted = true; },
           config: parsed.data,
           runtime: live,
           log,
           probe: () => primaryRecovery
-            ? primaryRecovery.verifyCandidate(liveBuilder, live, probeTimeoutMs, log).then(() => true, err => { if (err instanceof PrimaryRecoveryOwnershipLost) throw err; return false; })
+            ? primaryRecovery.verifyCandidate(liveBuilder, live, probeTimeoutMs, log, checkpoint).then(() => true, err => { if (err instanceof PrimaryRecoveryOwnershipLost || err instanceof DeploymentCancelled || err instanceof ProxyRoutingUnconfirmed) throw err; return false; })
             : liveBuilder.isHealthy(live, probeTimeoutMs, 0),
           checkpoint,
         });
         if (canaryOwner !== undefined && !canaryOwnedBy(service.id, deploymentId, canaryOwner)) throw new ProxyRoutingUnconfirmed('Canary ownership changed; runtime generations retained');
         canaryHeld = true;
-        if (primaryRecovery) await primaryRecovery.verifyCandidate(builder, live, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000, log);
+        if (primaryRecovery) await primaryRecovery.verifyCandidate(builder, live, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000, log, checkpoint);
       }
     }
     // ── end 0.16.9 ──

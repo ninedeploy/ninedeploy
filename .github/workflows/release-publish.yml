@@ -395,6 +395,10 @@ jobs:
       - name: Verify node readiness with and without image HEALTHCHECK
         run: node scripts/smoke-container-readiness.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
+      - name: Public node canary lifecycle smoke on the pushed image
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+
       - name: Recorded Compose release restore smoke on the pushed image
         timeout-minutes: 10
         run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only

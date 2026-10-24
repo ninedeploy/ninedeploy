@@ -714,9 +714,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     if (patch.sleepAfterMinutes != null && (patch.type ?? existing.type) !== 'docker') {
       throw badRequest('Scale to zero applies to docker services only');
     }
-    // 0.16.9 canary releases: docker services only. Saved on a node or a
-    // Swarm service too, where a deploy logs why it switches all at once
-    // (engine/canary.ts canarySkipReason), so a later move needs no re-save.
+    // Canary settings are stored for Docker services. Node deploys validate
+    // support before candidate launch; Swarm logs its native rolling-update skip.
     if (patch.canary != null && (patch.type ?? existing.type) !== 'docker') {
       throw badRequest('Canary releases apply to docker services only');
     }

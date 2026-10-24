@@ -168,8 +168,11 @@ describe('CanaryCard', () => {
     expect(await screen.findByRole('button', { name: 'Saving…' })).toBeDisabled();
   });
 
-  it('says a service on a node switches at once', () => {
+  it('explains node readiness and observation requirements without the panel analytics toggle', () => {
     renderCard(serviceWith({ serverId: 2 }));
-    expect(screen.getByText(/runs on a node, so its deploys switch all traffic at once/)).toBeInTheDocument();
+    expect(screen.getByText(/Node canary requires one replica, HTTP readiness, a domain and no published host ports/)).toBeInTheDocument();
+    expect(screen.getByText(/traffic observations enabled by its owner/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Traefik → Traffic' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/runs on a node, so its deploys switch all traffic at once/)).not.toBeInTheDocument();
   });
 });

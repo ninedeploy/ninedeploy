@@ -25,7 +25,7 @@ Latest full local certification: 14,574 tests in 870 files, all 11 tasks uncache
 
 Source review baseline: `39830616`, version 0.17.1. R1–R6 remain the agreed delivery program, split into independently accepted releases. The versions after 0.18.0 are planning targets, not publication dates or reasons to hold an already accepted release. Release 0.18.x patches may ship between feature milestones for validated fixes, compatibility and maintenance. R2 introduces new runtime features and targets 0.19.0.
 
-The current working tree contains four uncommitted node-canary wiring/test files. Committed code still closes public node-canary eligibility. The latest focused Linux checkpoint passed 230 tests in 12 files with typecheck; Node 22.23.4 and 24.22.1 each passed 88 tests in four files. The working-tree pipeline passed 234 tests, with the agent boundary mocked. These results do not substitute for the real public API/worker acceptance below.
+The current R1 candidate integrates guarded node-canary worker eligibility and panel controls; lifecycle/browser acceptance and release certification are still in progress, with no publication. The earlier closed-guard checkpoint passed 230 focused Linux tests in 12 files with typecheck; Node 22.23.4 and 24.22.1 each passed 88 tests in four files. Its working-tree pipeline passed 234 tests with the agent boundary mocked. Those checkpoint results do not certify the later R1 candidate or substitute for the real public API/worker acceptance below.
 
 The acceptance criteria below apply to each package's own release. The initial effort estimates describe package work, not time remaining until 0.18.0.
 

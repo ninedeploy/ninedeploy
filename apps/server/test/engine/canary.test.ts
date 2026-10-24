@@ -470,7 +470,7 @@ describe('canarySkipReason', () => {
 
   it('names why it does not', () => {
     expect(canarySkipReason({ ...base, type: 'compose' })).toBe('canary releases apply to docker services only');
-    expect(canarySkipReason({ ...base, serverId: 3 })).toMatch(/panel host only/);
+    expect(canarySkipReason({ ...base, serverId: 3 })).toBeNull();
     expect(canarySkipReason({ ...base, previousServing: false })).toMatch(/no serving previous release/);
     expect(canarySkipReason({ ...base, orchestrator: 'swarm' })).toMatch(/Swarm/);
     expect(canarySkipReason({ ...base, previous: undefined })).toBe('there is no previous release to split traffic with');

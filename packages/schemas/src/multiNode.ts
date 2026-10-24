@@ -54,6 +54,9 @@ export const MULTI_NODE_CAPABILITIES = [
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;
 
+/** Required together for a public single-replica node canary; rechecked live before deployment. */
+export const NODE_CANARY_CAPABILITIES = ['proxy.traffic', 'proxy.routingAck', 'docker.recovery', 'docker.probe', 'docker.readiness'] as const satisfies readonly MultiNodeCapability[];
+
 export const primaryRecoveryEntry = z.object({
   id: z.number().int().positive(), serverId: z.number().int().positive().nullable(), deploymentId: z.number().int().positive(),
   phase: z.enum(['ready', 'routing', 'retiring', 'retained']), previousRuntimeId: z.string().nullable(), candidateRuntimeId: z.string(),

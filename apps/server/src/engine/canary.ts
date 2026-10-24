@@ -41,7 +41,6 @@ export function canarySkipReason(input: {
 }): string | null {
   if (!input.config) return null;
   if (input.type !== 'docker') return 'canary releases apply to docker services only';
-  if (input.serverId != null) return 'canary releases run on the panel host only for now; this service runs on a node';
   if (input.orchestrator === 'swarm') return 'canary releases do not apply to Swarm services';
   if (input.previousServing === false) return 'there is no serving previous release to split traffic with';
   if (!input.previous || input.previous.runtimeId === input.runtime.runtimeId) return 'there is no previous release to split traffic with';

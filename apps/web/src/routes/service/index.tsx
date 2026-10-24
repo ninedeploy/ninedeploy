@@ -329,6 +329,7 @@ export function ServiceDetail() {
           canary settings for a docker service. */}
       <CanaryPanel
         serviceId={id}
+        serverId={svc.serverId}
         enabled={svc.type === 'docker' && svc.canary !== undefined && (deploys.data ?? []).some((d) => IN_FLIGHT.includes(d.status))}
       />
 

@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { domains, type DB, type Service } from '@ninedeploy/db';
-import { canaryConfig } from '@ninedeploy/schemas';
+import { canaryConfig, NODE_CANARY_CAPABILITIES } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
 import { capabilityRefusal } from '../lib/agentCapabilities.js';
 import { autoHostFor } from '../lib/autoUrl.js';
@@ -18,7 +18,7 @@ export async function preflightNodeCanary(db: DB, service: Service, rollback: bo
   const active = await db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, service.id), eq(domains.status, 'active'))).limit(1);
   if (!active.length && !await autoHostFor(db, service)) throw new Error('Node canary requires an active domain or a configured automatic URL.');
   const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, service.serverId!, op, params, sink, { timeoutMs: 5000 }), `#${service.serverId}`,
-    await agentTransportSealed(db, service.serverId), { cap: ['proxy.traffic', 'proxy.routingAck', 'docker.recovery', 'docker.probe', 'docker.readiness'],
+    await agentTransportSealed(db, service.serverId), { cap: NODE_CANARY_CAPABILITIES,
       feature: 'deploy node canary releases', sealedRequired: true });
   if (refusal) throw new Error(refusal.message);
   await checkpoint();

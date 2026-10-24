@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deploymentReleaseRecords, deployments, domains, serviceFiles, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { auditLog, deploymentReleaseRecords, deployments, domains, servers, serviceFiles, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { createComposeRelease } from '../src/lib/composeRelease.js';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
@@ -4201,6 +4201,54 @@ describe('0.16.9 canary releases in the pipeline', () => {
     primaryIo.containers.set('b'.repeat(64), { id: 'b'.repeat(64), name: 'web-new' });
   });
   afterEach(() => { for (const f of fixtures.splice(0)) f.close(); primaryIo.containers.clear(); });
+  describe('node canary prelaunch refusal', () => {
+    const required = ['proxy.traffic', 'proxy.routingAck', 'docker.recovery', 'docker.probe', 'docker.readiness'];
+    let originalAgent: ReturnType<typeof h.agentOp.getMockImplementation>;
+    beforeEach(() => { originalAgent = h.agentOp.getMockImplementation(); h.agentTransportSealed.mockResolvedValue(true); });
+    afterEach(() => { h.agentOp.mockReset(); if (originalAgent) h.agentOp.mockImplementation(originalAgent); });
+    async function nodeService() {
+      const state = await canaryDb(1, { healthCheck: 'http-strict' });
+      await state.db.insert(servers).values({ id: 2, name: 'Node', host: 'node.test', port: 4600, tokenEncrypted: 'fixture' });
+      await state.db.update(services).set({ serverId: 2 }).where(eq(services.id, 5));
+      return state;
+    }
+    function expectPreviousOnly() {
+      expect(h.agentOp).toHaveBeenCalled();
+      for (const call of h.agentOp.mock.calls) {
+        expect(call[1]).toBe(2);
+        if (call[2] === 'docker.inspect') expect(call[3]).toMatchObject({ name: 'web-old' });
+        else expect(call[2]).toBe('agent.ping');
+      }
+    }
+    it.each(required)('refuses missing %s before any candidate operation', async missing => {
+      const { db, row, job } = await nodeService();
+      h.agentOp.mockImplementation(async (_db, _node, op, params) => {
+        if (op === 'docker.inspect' && params.name === 'web-old') return { exitCode: 0, lines: ['running|healthy|0|0'] };
+        if (op !== 'agent.ping') throw new Error(`Unexpected candidate operation: ${op}`);
+        return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.18.0', caps: required.filter(cap => cap !== missing) })}`] };
+      });
+      const lines = collectLogs(1); await runDeployment(db, 1);
+      expect((await job())?.status).toBe('failed'); expect((await row())?.runtimeId).toBe('web-old');
+      expect(lines.join('\n')).toContain(missing === 'docker.probe' ? 'cannot probe application readiness' : 'deploy node canary releases');
+      expect(h.builder.buildAndRun).not.toHaveBeenCalled(); expect(canaryMock.runCanary).not.toHaveBeenCalled();
+      expectPreviousOnly();
+    });
+    it('preserves Stop committed during the capability handshake without starting a candidate', async () => {
+      const { db, row, job } = await nodeService();
+      h.agentOp.mockImplementation(async (_db, _node, op, params) => {
+        if (op === 'docker.inspect' && params.name === 'web-old') return { exitCode: 0, lines: ['running|healthy|0|0'] };
+        if (op !== 'agent.ping') throw new Error(`Unexpected candidate operation: ${op}`);
+        await db.update(services).set({ status: 'stopped' }).where(eq(services.id, 5));
+        await db.update(deployments).set({ status: 'cancelled' }).where(eq(deployments.id, 1));
+        return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.18.0', caps: required })}`] };
+      });
+      await runDeployment(db, 1);
+      expect(await job()).toMatchObject({ status: 'cancelled' });
+      expect(await row()).toMatchObject({ runtimeId: 'web-old', status: 'stopped' });
+      expect(h.builder.buildAndRun).not.toHaveBeenCalled(); expect(canaryMock.runCanary).not.toHaveBeenCalled();
+      expectPreviousOnly();
+    });
+  });
   it.each([undefined, 7, 5])('uses a bounded periodic canary readiness budget after initial qualification (configured=%s)', async seconds => {
     const S = await import('../src/engine/canaryState.js');
     const { db } = await canaryDb(1, seconds === undefined ? {} : { healthTimeoutSeconds: seconds });

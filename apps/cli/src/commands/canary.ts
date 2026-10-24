@@ -237,8 +237,8 @@ export async function canaryPromote(client: NineDeployClient, ref: string, opts:
       depId = status.deploymentId;
     }
     const target = depId;
-    await spinner('Promoting the canary', () => client.deploys.promoteCanary(id, target));
-    success(`Deployment #${target}: all traffic is switching to the new release.`);
+    await spinner('Requesting canary promotion', () => client.deploys.promoteCanary(id, target));
+    success(`Deployment #${target}: promotion requested. A node finishes its current measured step before switching; follow canary status for completion.`);
   } catch (err) {
     error(message(err));
   }

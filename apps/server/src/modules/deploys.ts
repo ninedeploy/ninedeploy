@@ -541,7 +541,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     const dep = await app.db.query.deployments.findFirst({ where: eq(deployments.id, depId) });
     if (!dep || dep.serviceId !== id) throw notFound('Deployment not found');
     if (!requestCanaryPromote(id, depId)) throw badRequest('This deployment has no canary in progress', 'no_canary');
-    logBus.publish(depId, '⏩ Promote requested — switching all traffic to the new release');
+    logBus.publish(depId, target.serverId != null
+      ? '⏩ Promote requested — waiting for the current measured step to finish and pass'
+      : '⏩ Promote requested — switching all traffic to the new release');
     void audit(app.db, req.user!.id, 'deploy.canary_promote', `${target.name} #${depId}`, { serviceId: id });
     return { ok: true };
   });

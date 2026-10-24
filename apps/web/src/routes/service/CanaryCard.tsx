@@ -112,17 +112,18 @@ export function CanaryCard({ svc }: { svc: Service }) {
         <p className="text-xs leading-relaxed text-slate-500">
           After the new container passes its healthcheck, it gets a growing share of the requests, step by step, and all of
           them after the last step. A step that fails sends every request back to the previous release and fails the
-          deploy. For docker services on the panel host with a domain; rollbacks, and services on a node or on Swarm,
-          switch all traffic at once.
+          deploy. Available for eligible Docker services with a domain. First deploys and rollbacks switch all traffic
+          at once; Swarm deploys use their native rolling update.
         </p>
         <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
-          The 5xx and p95 limits need traffic analytics (an operator turns it on in{' '}
+          {svc.serverId != null ? 'Node canary measures traffic on the selected node and waits for the full current step before promotion.' : <>The 5xx and p95 limits need traffic analytics (an operator turns it on in{' '}
           <Link to="/traefik" className="text-indigo-200 underline-offset-2 hover:underline">Traefik → Traffic</Link>); without it,
-          each step is judged on the healthcheck only.
+          each step is judged on the healthcheck only.</>}
         </p>
         {svc.serverId != null && (
           <p className="mt-1.5 text-xs text-amber-300">
-            This service runs on a node, so its deploys switch all traffic at once for now.
+            Node canary requires one replica, HTTP readiness, a domain and no published host ports. The agent must be
+            updated, with traffic observations enabled by its owner. Unsupported settings fail before a candidate starts.
           </p>
         )}
         <form

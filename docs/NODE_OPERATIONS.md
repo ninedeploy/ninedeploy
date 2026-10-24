@@ -155,6 +155,8 @@ canary, autoscaling, scale to zero and file browser availability for the selecte
 host. Fields omitted by an older panel are shown as unknown. This is a capability
 view; the deploy API revalidates the target when the job runs.
 
+For unreleased 0.18.0, node canary availability requires all five sealed-agent capabilities described in [Node canary](DEPLOYMENTS.md#node-canary-unreleased-0180), including owner-enabled proxy traffic observations. Per-service requirements are one replica, HTTP readiness, domain routing and no published host ports. Node autoscaling and scale to zero remain later R2 work. The live worker rechecks support before candidate launch; a cached availability indicator does not authorize deployment.
+
 ## Validation
 
 Run the normal workspace checks. The real-Docker smoke uses the current compiled
@@ -204,7 +206,7 @@ Node routes use `/v1/servers/:serverId/containers/:container`, with `/inspect`, 
 
 SDK container methods take an optional final `{ serverId }` argument. For example, `containers.inspect(name, { serverId: 7 })`, `containers.readFile(name, path, { serverId: 7 })` and `containers.writeFile(name, input, { serverId: 7 })`. CLI `services inspect <id>` and `services compose <id>` automatically use the service's host. Panel caches and editor state are separated by host, so identically named containers do not share file content.
 
-The node owner can disable these operations with `NINEDEPLOY_AGENT_CONTAINER_TOOLS=off`; the capability disappears from the sealed ping and the agent refuses the operation too. The Servers/wizard support view reports `features.containerTools`; an older panel omitting the flag remains unknown. Node-volume files and database Web Studio use the separate capabilities below. Node canary/autoscaling and Swarm task file selection remain separate runtime-parity work.
+The node owner can disable these operations with `NINEDEPLOY_AGENT_CONTAINER_TOOLS=off`; the capability disappears from the sealed ping and the agent refuses the operation too. The Servers/wizard support view reports `features.containerTools`; an older panel omitting the flag remains unknown. Node-volume files and database Web Studio use the separate capabilities below. Node canary uses the separate [R1 requirements](DEPLOYMENTS.md#node-canary-unreleased-0180); node autoscaling and Swarm task file selection remain later runtime-parity work.
 
 
 ### Node volume files (unreleased 0.18.0)

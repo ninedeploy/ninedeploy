@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, type DB, deployments, runMigrations, services, users } from '@ninedeploy/db';
+import { createDb, type DB, deployments, runMigrations, servers, services, users, eq } from '@ninedeploy/db';
+import { logBus } from '../src/engine/logs.js';
 
 /**
  * 0.16.9 canary routes against a real migrated SQLite: the status of a
@@ -63,6 +64,15 @@ describe('GET /v1/services/:id/canary', () => {
 });
 
 describe('POST /v1/services/:id/deploys/:depId/canary/promote', () => {
+  it('reports a pending measured step when promoting a node release', async () => {
+    await db.insert(servers).values({ id: 9, name: 'Node', host: 'node.test', port: 4600, tokenEncrypted: 'fixture' });
+    await db.update(services).set({ serverId: 9, runtimeId: 'web-old' }).where(eq(services.id, 5));
+    beginCanary(5, 'web', 40, 2, true, true, { serverId: 9, stableRuntimeId: 'web-old' });
+    const res = await app.inject({ method: 'POST', url: '/v1/services/5/deploys/40/canary/promote', headers: OWNER });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(logBus.read(40).trim().split('\n').at(-1)).toMatch(/waiting for the current measured step to finish and pass/);
+    expect((await app.inject({ url: '/v1/services/5/canary', headers: OWNER })).json().promoting).toBe(true);
+  });
   it('asks the canary to finish and audits it', async () => {
     beginCanary(5, 'web', 40, 2, true);
     const res = await app.inject({ method: 'POST', url: '/v1/services/5/deploys/40/canary/promote', headers: OWNER });

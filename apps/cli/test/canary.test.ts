@@ -263,7 +263,8 @@ describe('canary promote', () => {
     client.deploys.promoteCanary.mockResolvedValue({ ok: true });
     await canaryPromote(asClient(client), '4');
     expect(client.deploys.promoteCanary).toHaveBeenCalledWith(4, 9);
-    expect(out()).toContain('Deployment #9: all traffic is switching');
+    expect(out()).toContain('Deployment #9: promotion requested');
+    expect(out()).toContain('current measured step');
   });
 
   it('promotes the deployment given, without asking for the status', async () => {

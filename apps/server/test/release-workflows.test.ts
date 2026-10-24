@@ -326,6 +326,13 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect(steps[nodeOps]!.if).toBeUndefined();
     expect(steps[nodeOps]!['timeout-minutes']).toBeGreaterThan(0);
     const composeRestore = steps.findIndex((s) => s.run?.includes('--compose-release-only'));
+    const nodeCanary = steps.findIndex((s) => s.run?.includes('scripts/smoke-node-canary.mjs'));
+    expect(nodeCanary).toBeGreaterThan(nodeOps);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Match the workflow's literal shell variable.
+    expect(steps[nodeCanary]!.run).toBe('node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"');
+    expect(steps[nodeCanary]!.if).toBeUndefined();
+    expect(steps[nodeCanary]!['timeout-minutes']).toBeGreaterThan(0);
+    expect((steps[nodeCanary] as Record<string, unknown>)['continue-on-error']).not.toBe(true);
     expect(composeRestore).toBeGreaterThan(nodeOps);
     expect(steps[composeRestore]!.run).toBe('node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only');
     expect(steps[composeRestore]!.if).toBeUndefined();

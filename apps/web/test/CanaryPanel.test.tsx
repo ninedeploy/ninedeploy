@@ -33,13 +33,13 @@ const ACTIVE = {
   promoting: false,
 };
 
-function renderPanel(enabled = true) {
+function renderPanel(enabled = true, serverId: number | null = null) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <ToastProvider>
-          <CanaryPanel serviceId={1} enabled={enabled} />
+          <CanaryPanel serviceId={1} enabled={enabled} serverId={serverId} />
         </ToastProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -143,6 +143,23 @@ describe('CanaryPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Promote' }));
     await waitFor(() => expect(promote).toHaveBeenCalledWith(1, 7));
     expect(await screen.findByText('Promoting: all traffic switches to the new release')).toBeInTheDocument();
+  });
+  it('explains that a node promotion waits for its measured step', async () => {
+    renderPanel(true, 2);
+    const button = await screen.findByRole('button', { name: 'Promote' });
+    expect(button).toHaveAttribute('title', 'Finish and pass this measured step, then skip the remaining steps');
+    fireEvent.click(button);
+    expect(await screen.findByText('Promotion requested: waiting for this measured step to finish and pass')).toBeInTheDocument();
+    await waitFor(() => expect(promote).toHaveBeenCalledWith(1, 7));
+  });
+  it('keeps Abort usable while a node promotion waits for measurement', async () => {
+    status.mockResolvedValue({ ...ACTIVE, promoting: true });
+    renderPanel(true, 2);
+    expect(await screen.findByText('Waiting for this measured step to finish and pass…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Promote$/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Abort' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Abort canary' }));
+    await waitFor(() => expect(apiMock.api.deploys.cancel).toHaveBeenCalledWith(1, 7));
   });
 
   it("shows the server's message when a promote is refused, and a fallback without one", async () => {

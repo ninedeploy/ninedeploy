@@ -70,7 +70,9 @@ export interface DeploysApi {
      */
     canary: (serviceId: number) => Promise<CanaryStatusView>;
     /**
-     * Send all traffic to the canary release now and finish the deploy.
+     * Request canary promotion. A node first finishes and passes its current
+     * measured step, then skips the remaining steps; panel-host promotion is early.
+     * Resolves when accepted; poll canary/deployment status for completion.
      * Fails with `400 no_canary` when that deployment has no canary in
      * progress. To stop a canary instead, `cancel` the deployment.
      */
