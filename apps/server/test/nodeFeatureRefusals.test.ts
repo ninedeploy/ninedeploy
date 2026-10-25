@@ -79,6 +79,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'db.studio': 'open database Web Studio',
   'proxy.traffic': 'observe proxy traffic',
   'docker.readiness': 'verify candidate replica readiness',
+  'docker.metrics': 'measure immutable container resources',
 };
 
 let db: DB;

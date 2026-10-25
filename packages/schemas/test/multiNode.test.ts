@@ -62,6 +62,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'db.studio',
       'proxy.traffic',
       'docker.readiness',
+      'docker.metrics',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     // A 0.15 capability is not one of them.

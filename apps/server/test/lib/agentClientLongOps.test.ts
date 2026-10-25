@@ -93,6 +93,7 @@ describe('r526: long agent operations', () => {
     // r417: a node pull stays a fast-failing short op.
     expect(agentChildTimeoutMs('docker.pull')).toBeUndefined();
     expect(agentRequestTimeoutMs('docker.stop')).toBe(600_000);
+    expect(agentRequestTimeoutMs('docker.metrics')).toBe(15_000);
   });
 
   it('sends a long op over node:http (no fetch header cap) and a short one over fetch', async () => {

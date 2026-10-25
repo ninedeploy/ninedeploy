@@ -35,4 +35,5 @@ export * from './uptime.js';
 export * from './canary.js';
 export * from './proxyTraffic.js';
 export * from './containerReadiness.js';
+export * from './containerMetrics.js';
 export * from './autoscale.js';

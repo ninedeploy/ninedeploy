@@ -129,6 +129,33 @@ increment adds opt-in 1–90 day history with rollups; see
 [resource history and export](OBSERVABILITY.md). Remote Swarm task aggregation,
 fan-out destination history and node-only database history remain separate work.
 
+## Immutable controller resource samples (0.19.0 development)
+
+The development agent adds sealed `docker.metrics` for CPU/memory controller
+decisions. This is separate from the existing `agent.stats` history path and is
+not available in the published 0.18.2 agent. Requests bind an explicit node,
+service/deployment and up to ten full Docker IDs with expected names. The agent
+checks managed labels, running state, restart counts and configured resource
+limits before and after one bounded sample. CPU limits use NanoCPUs or the
+quota/period configuration; memory limits use HostConfig.Memory. An unlimited
+memory container reports a zero limit, never the host RAM as its allocation.
+
+The node owner can disable this read-only operation with
+`NINEDEPLOY_AGENT_CONTAINER_METRICS=off`. The capability disappears from the ping
+and the operation refuses execution. Older agents receive an update hint;
+current agents with the operation disabled receive an owner-disabled hint.
+Missing, duplicate, replaced, malformed or late samples remain unavailable.
+There is no fallback to panel-host statistics or names alone. Sampling uses
+one deadline, at most two concurrent samplers and at most 64 KiB per command.
+
+Run `pnpm smoke:container-metrics --image=ninedeploy-local:YOUR_LOCAL_BUILD`
+against a current built image. This creates an isolated Docker daemon with no
+host socket, a same-name panel decoy and disposable node workloads; it verifies
+configured limits and refusal after stop, generation mismatch and same-name
+replacement. All owned containers and their volumes are removed afterward.
+Node autoscaling and scale to zero remain unavailable until their fenced
+runtime, readiness, routing and recovery acceptance is complete.
+
 ## Log drains
 
 Node Docker/Compose primary runtimes and their named replicas are tailed through

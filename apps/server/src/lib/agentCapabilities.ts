@@ -375,6 +375,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.runtimeOptions': AGENT_RUNTIME_OPTIONS_VERSION,
   'docker.probe': '0.17.0',
   'docker.readiness': '0.18.0',
+  'docker.metrics': '0.19.0',
   'docker.logsSince': '0.17.0',
   'proxy.routingAck': '0.18.0',
   'docker.recovery': '0.18.0',
@@ -392,6 +393,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
  * switched off by the node's owner, not left outdated.
  */
 export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, string>>> = {
+  'docker.metrics': 'NINEDEPLOY_AGENT_CONTAINER_METRICS',
   'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'docker.containerTools': 'NINEDEPLOY_AGENT_CONTAINER_TOOLS',
   'volume.files': 'NINEDEPLOY_AGENT_VOLUME_FILES',

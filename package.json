@@ -33,6 +33,7 @@
     "smoke:upgrade": "node scripts/smoke-upgrade.mjs",
     "smoke:multinode": "node scripts/smoke-multinode.mjs",
     "smoke:container-readiness": "node scripts/smoke-container-readiness.mjs",
+    "smoke:container-metrics": "node scripts/smoke-container-metrics.mjs",
     "smoke:node-canary": "node scripts/smoke-node-canary.mjs",
     "smoke:volume-files": "node scripts/smoke-volume-file-helper.mjs",
     "smoke:database-clients": "node scripts/smoke-database-clients.mjs"

@@ -71,6 +71,7 @@ export function agentRequestTimeoutMs(op: string): number {
   if (op === 'proxy.confirmRouting') return 25_000;
   if (op === 'docker.probe') return 15_000;
   if (op === 'docker.readiness') return 15_000;
+  if (op === 'docker.metrics') return 15_000;
   if (op === 'docker.logsSince') return 20_000;
   return LONG_AGENT_OPS.has(op) ? AGENT_LONG_OP_TIMEOUT_MS + 30_000 : SHORT_OP_REQUEST_MS;
 }
