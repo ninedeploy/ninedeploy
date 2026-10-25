@@ -617,6 +617,17 @@ async function nodeOperationsChecks(ctx) {
   };
   await patch({ healthCheck: 'http-strict', healthPath: '/', healthTimeoutSeconds: 20 });
   await deploy(ctx.imgId, 'node HTTP 200 readiness');
+  // A running row means routing is live; primary retirement can still be
+  // finishing. Changing the next probe during that cleanup invalidates its
+  // ownership fingerprint and correctly retains the recovery journal.
+  if (candidateHas('0.18.0')) {
+    const settled = await until(async () => {
+      const recovery = await api(`/v1/services/${ctx.imgId}/runtime-recovery`);
+      if (recovery.status !== 200) fail(`node rollout settlement: ${short(recovery)}`);
+      return recovery.json?.entry === null;
+    }, { ms: 60_000, every: 250 });
+    if (!settled) fail('node HTTP 200 rollout did not settle before the next readiness case');
+  }
   const before = await serviceRow(ctx.imgId);
   await patch({ healthPath: '/not-ready-node-operations', healthTimeoutSeconds: 10 });
   await deploy(ctx.imgId, 'node HTTP 404 stays unready', { expect: 'failed', ms: 90_000 });
