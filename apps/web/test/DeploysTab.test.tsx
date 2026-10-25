@@ -32,10 +32,11 @@ vi.mock('../src/lib/mode.js', async () => {
   return createModeMock();
 });
 
+const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('../src/components/Toast.js', async () => {
   const React = await import('react');
   return {
-    useToast: () => ({ toast: vi.fn() }),
+    useToast: () => ({ toast: toastSpy }),
     ToastProvider: ({ children }: { children?: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
   };
@@ -183,14 +184,40 @@ describe('DeploysTab (per-service)', () => {
       baseDeploy({ id: 32, status: 'cancelled' }),
       baseDeploy({ id: 31, status: 'failed' }),
     ];
+    const onSelect = vi.fn();
     renderWithProviders(
-      <DeploysTab serviceId={1} repoUrl={null} deploys={deploys} loading={false} activeId={null} onSelect={() => {}} />,
+      <DeploysTab serviceId={1} repoUrl={null} deploys={deploys} loading={false} activeId={31} onSelect={onSelect} />,
     );
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /Remove failed & cancelled \(2\)/ }));
     expect(removeMany).not.toHaveBeenCalled(); // confirm first
     await user.click(await screen.findByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(removeMany).toHaveBeenCalledWith(1, { statuses: ['failed', 'cancelled'] }));
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith(null));
+    expect(toastSpy).toHaveBeenCalledWith('Removed 2 deployment(s) and 1 leftover container(s)', 'info');
+  });
+
+  it('cancels bulk removal without deleting history or clearing the selected deployment', async () => {
+    const onSelect = vi.fn();
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 31, status: 'failed' })]} loading={false} activeId={31} onSelect={onSelect} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Remove failed & cancelled/ }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText('Remove failed and cancelled deployments?')).not.toBeInTheDocument();
+    expect(api.deploys.removeMany).not.toHaveBeenCalled(); expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByText('#31')).toBeInTheDocument();
+  });
+
+  it('retains the selected log and shows the server refusal when bulk removal fails', async () => {
+    mockOf(api.deploys.removeMany).mockRejectedValueOnce(new Error('Admin access required'));
+    const onSelect = vi.fn();
+    renderWithProviders(<DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 31, status: 'failed' })]} loading={false} activeId={31} onSelect={onSelect} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Remove failed & cancelled/ }));
+    await user.click(await screen.findByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(toastSpy).toHaveBeenCalledWith('Admin access required', 'error'));
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByText('#31')).toBeInTheDocument();
   });
 
   it('offers no bulk removal when nothing failed or was cancelled', async () => {
