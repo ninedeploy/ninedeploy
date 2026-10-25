@@ -3,6 +3,7 @@ import { studioOps } from './studios.js';
 import { proxyTrafficOps } from './proxyTraffic.js';
 import { containerReadinessOps } from './containerReadiness.js';
 import { containerMetricsOps } from './containerMetrics.js';
+import { containerLifecycleOps } from './containerLifecycle.js';
 import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability } from '@ninedeploy/schemas';
 import { buildOps } from './builds.js';
 import { observabilityOps } from './observability.js';
@@ -62,6 +63,7 @@ export interface AgentOpModule {
 }
 
 export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
+  containerLifecycleOps,
   containerMetricsOps,
   containerReadinessOps,
   proxyTrafficOps,
@@ -103,6 +105,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
  * only socket mounts and is enforced in agentOps/runSpec.ts.
  */
 export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, readonly string[]>>> = {
+  'docker.lifecycle': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
   'docker.metrics': ['NINEDEPLOY_AGENT_CONTAINER_METRICS'],
   'proxy.traffic': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
   'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],

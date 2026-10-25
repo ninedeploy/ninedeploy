@@ -80,6 +80,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'proxy.traffic': 'observe proxy traffic',
   'docker.readiness': 'verify candidate replica readiness',
   'docker.metrics': 'measure immutable container resources',
+  'docker.lifecycle': 'control immutable container state',
 };
 
 let db: DB;

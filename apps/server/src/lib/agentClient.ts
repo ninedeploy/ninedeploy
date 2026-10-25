@@ -59,6 +59,7 @@ export function agentChildTimeoutMs(op: string): number | undefined {
 
 /** How long the panel waits for `op`'s answer. */
 export function agentRequestTimeoutMs(op: string): number {
+  if (op === 'docker.lifecycle') return 35_000;
   if (op === 'db.studio.start') return 205_000;
   // Clear can wait for an outstanding preparation plus both cleanup passes.
   if (op === 'db.studio.clear') return 240_000;

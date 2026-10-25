@@ -51,6 +51,7 @@ export const MULTI_NODE_CAPABILITIES = [
   'proxy.traffic',
   'docker.readiness',
   'docker.metrics',
+  'docker.lifecycle',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

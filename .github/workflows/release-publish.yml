@@ -399,6 +399,10 @@ jobs:
         timeout-minutes: 10
         run: node scripts/smoke-container-metrics.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
+      - name: Verify durable node lifecycle ordering and hard-crash recovery
+        timeout-minutes: 10
+        run: node scripts/smoke-container-lifecycle.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+
       - name: Public node canary lifecycle smoke on the pushed image
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"

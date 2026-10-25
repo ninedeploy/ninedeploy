@@ -156,6 +156,46 @@ replacement. All owned containers and their volumes are removed afterward.
 Node autoscaling and scale to zero remain unavailable until their fenced
 runtime, readiness, routing and recovery acceptance is complete.
 
+## Ordered container lifecycle (0.19.0 development)
+
+The development agent adds the sealed `docker.lifecycle` operation for managed
+plain Docker containers. A command binds a service/deployment, an increasing
+revision, a request ID and up to ten full container IDs with expected names.
+The fixed actions are Start and Stop. The agent verifies ownership labels and
+the complete target set before any effect, addresses Docker by immutable ID,
+then verifies the result before returning its receipt. Application readiness
+and loaded routing remain separate controller steps.
+
+The accepted revision and semantic intent are committed before Docker runs.
+Each service has a private SQLite journal under the agent working directory:
+`.agent-work/.lifecycle/service-<id>.sqlite`. The generated agent command mounts
+that working directory at `/var/lib/ninedeploy-agent` on both host and container.
+Preserve it when replacing the agent. The image's anonymous `/data` volume does
+not hold this ordering state. A newer accepted revision refuses older requests
+after restart; a conflicting reuse of a revision is refused. An exact retry
+returns the original receipt, which records completed work rather than a fresh
+readiness observation. An interrupted effect retains its accepted intent for
+the same retry or a newer command. Corrupt or unavailable storage is an error.
+
+SQLite write transactions serialize effects across agent processes sharing the
+same state directory. Other services have independent journals. One deadline
+includes queueing, storage and Docker calls. Pending work is bounded to 16;
+timed-out work holds its queue position until an already-started child drains.
+The node owner can disable the capability and operation with
+`NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE=off`.
+
+`pnpm smoke:container-lifecycle --image=ninedeploy-local:YOUR_LOCAL_BUILD`
+uses the generated agent command's persistent working-directory layout, an
+isolated Docker daemon and independent agent processes. It exercises delayed
+Start after Stop, exact retry, concurrent Start/Stop, hard crash after a Docker
+effect, same-name replacement and owner-disabled refusal, then removes its
+owned containers and volumes.
+
+Current manual node lifecycle paths still use their existing operations.
+Panel command persistence, revision allocation and conversion of competing
+deploy/Stop/scale/wake callers remain R2 work. Node autoscaling and sleep stay
+unavailable until that integration, routing and recovery acceptance is complete.
+
 ## Log drains
 
 Node Docker/Compose primary runtimes and their named replicas are tailed through

@@ -36,4 +36,5 @@ export * from './canary.js';
 export * from './proxyTraffic.js';
 export * from './containerReadiness.js';
 export * from './containerMetrics.js';
+export * from './containerLifecycle.js';
 export * from './autoscale.js';
