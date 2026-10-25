@@ -6,6 +6,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentRoutes, loadSeenNonces, runOp } from '../src/agent.js';
 import { MAX_SKEW_MS, open as openSealed, seal } from '../src/lib/agentSeal.js';
 import { buildTestApp } from './helpers.js';
+import { legacyDockerStub, LEGACY_DOCKER_ID } from './fixtures/legacyDocker.js';
 
 const spawnMock = vi.hoisted(() => vi.fn(async () => 0));
 vi.mock('../src/lib/spawnValidated.js', () => ({ spawnValidated: spawnMock }));
@@ -28,7 +29,7 @@ describe('agent /agent/exec route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     spawnMock.mockReset();
-    spawnMock.mockResolvedValue(0);
+    spawnMock.mockImplementation(legacyDockerStub());
   });
 
   it('rejects a bad token', async () => {
@@ -53,10 +54,7 @@ describe('agent /agent/exec route', () => {
   });
 
   it('executes a typed operation and returns its lines', async () => {
-    spawnMock.mockImplementation(async (_exe, _argv, onLine) => {
-      onLine?.('stopping web-3');
-      return 0;
-    });
+    spawnMock.mockImplementation(legacyDockerStub('stopping web-3'));
     const app = await appWith();
     const res = await app.inject({
       method: 'POST', url: '/agent/exec',
@@ -69,7 +67,7 @@ describe('agent /agent/exec route', () => {
     expect(res.json().envFile).toBeNull();
     // The 4th argument carries the confined cwd. A host-level op like `stop`
     // names no workspace, so it runs in the agent's own directory.
-    expect(spawnMock).toHaveBeenCalledWith('docker', ['stop', '-t', '5', 'web-3'], expect.any(Function), {});
+    expect(spawnMock).toHaveBeenCalledWith('docker', ['stop', '-t', '5', LEGACY_DOCKER_ID], expect.any(Function), { timeoutMs: expect.any(Number) });
   });
 
   it('surfaces operand validation failures as 400', async () => {
@@ -216,7 +214,7 @@ describe('agent /agent/exec sealed transport', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     spawnMock.mockReset();
-    spawnMock.mockResolvedValue(0);
+    spawnMock.mockImplementation(legacyDockerStub());
   });
 
   it('answers an authenticated ping without touching Docker or the filesystem', async () => {
@@ -237,10 +235,7 @@ describe('agent /agent/exec sealed transport', () => {
   });
 
   it('executes a sealed request with no token header at all', async () => {
-    spawnMock.mockImplementation(async (_exe, _argv, onLine) => {
-      onLine?.('stopping web-3');
-      return 0;
-    });
+    spawnMock.mockImplementation(legacyDockerStub('stopping web-3'));
     const app = await appWith();
     const res = await app.inject({
       method: 'POST', url: '/agent/exec',
@@ -295,9 +290,11 @@ describe('agent /agent/exec sealed transport', () => {
     const envelope = seal(TOKEN_HASH, { op: 'docker.stop', params: { name: 'web-3' }, nonce: 'a1b2c3d4e5f60718' });
     const first = await app.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } });
     expect(first.statusCode).toBe(200);
+    const callsBeforeReplay = spawnMock.mock.calls.length;
     const replay = await app.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } });
     expect(replay.statusCode).toBe(401);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(callsBeforeReplay);
+    expect(spawnMock.mock.calls.filter(call => (call[1] as string[])[0] === 'stop')).toHaveLength(1);
     // A fresh nonce (a genuinely new request) still runs.
     const fresh = seal(TOKEN_HASH, { op: 'docker.stop', params: { name: 'web-3' }, nonce: 'ffeeddccbbaa9988' });
     expect((await app.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: fresh } })).statusCode).toBe(200);

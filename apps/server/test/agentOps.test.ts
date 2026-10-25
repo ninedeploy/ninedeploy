@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveWorkspace, runOp } from '../src/agent.js';
+import { legacyDockerStub, LEGACY_DOCKER_ID } from './fixtures/legacyDocker.js';
 
 const spawnMock = vi.hoisted(() => vi.fn(async () => 0));
 vi.mock('../src/lib/spawnValidated.js', () => ({ spawnValidated: spawnMock }));
@@ -16,13 +17,15 @@ const EGRESS = ['-c', 'http.followRedirects=false', '-c', 'protocol.file.allow=n
 async function argvOf(op: string, params: Record<string, unknown>): Promise<string[]> {
   const code = await runOp(op, params, () => {});
   expect(code).toBe(0);
-  return (spawnMock.mock.calls.at(-1) as unknown[])[1] as string[];
+  const call = op === 'docker.start' || op === 'docker.stop'
+    ? [...spawnMock.mock.calls].reverse().find(call => (call[1] as string[])[0] === op.slice(7)) : spawnMock.mock.calls.at(-1);
+  return (call as unknown[])[1] as string[];
 }
 
 describe('agent typed-op argv templates', () => {
   beforeEach(() => {
     spawnMock.mockReset();
-    spawnMock.mockResolvedValue(0);
+    spawnMock.mockImplementation(legacyDockerStub());
   });
 
   it('docker.pull runs through the validated spawn layer (r417)', async () => {
@@ -118,11 +121,11 @@ describe('agent typed-op argv templates', () => {
   });
 
   it('r526: docker.stop honours the panel-sent grace, clamped to the schema range', async () => {
-    expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: '45' })).toEqual(['stop', '-t', '45', 'c1']);
-    expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: '0' })).toEqual(['stop', '-t', '0', 'c1']);
+    expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: '45' })).toEqual(['stop', '-t', '45', LEGACY_DOCKER_ID]);
+    expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: '0' })).toEqual(['stop', '-t', '0', LEGACY_DOCKER_ID]);
     // Off-range or off-format operands degrade to the old pinned 5 s, never to argv.
     for (const bad of ['301', '-1', '5; rm -rf /', '1e3', 45]) {
-      expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: bad })).toEqual(['stop', '-t', '5', 'c1']);
+      expect(await argvOf('docker.stop', { name: 'c1', graceSeconds: bad })).toEqual(['stop', '-t', '5', LEGACY_DOCKER_ID]);
     }
   });
 
@@ -132,11 +135,11 @@ describe('agent typed-op argv templates', () => {
     await runOp('docker.composeUp', { project: 'p', file: 'docker-compose.yml' }, () => {});
     expect(spawnMock.mock.calls.at(-1)?.[3]).toEqual({ timeoutMs: 30 * 60 * 1000 });
     await runOp('docker.stop', { name: 'c1' }, () => {});
-    expect(spawnMock.mock.calls.at(-1)?.[3]).toEqual({});
+    expect(spawnMock.mock.calls.at(-1)?.[3]).toEqual({ timeoutMs: expect.any(Number) });
   });
 
   it('docker.stop / rm / logs / inspect', async () => {
-    expect(await argvOf('docker.stop', { name: 'c1' })).toEqual(['stop', '-t', '5', 'c1']);
+    expect(await argvOf('docker.stop', { name: 'c1' })).toEqual(['stop', '-t', '5', LEGACY_DOCKER_ID]);
     expect(await argvOf('docker.rm', { name: 'c1' })).toEqual(['rm', '-f', 'c1']);
     expect(await argvOf('docker.logs', { name: 'c1' })).toEqual(['logs', '--tail', '300', '--timestamps', 'c1']);
     // 0.16.3 `tail`: re-validated on the agent; anything off-format is the old 300.

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { legacyDockerStub, LEGACY_DOCKER_ID } from './fixtures/legacyDocker.js';
 
 /**
  * 0.15 (T2b): node terminals, agent side (DESIGN §1.5) — the sealed
@@ -470,15 +471,12 @@ describe('a 0.14 panel talking to a 0.15 agent sees no behaviour change', () => 
   });
 
   it('an existing op answers the same shape on both transports', async () => {
-    spawnMock.mockImplementation(async (_e: unknown, _a: unknown, onLine: unknown) => {
-      (onLine as (l: string) => void)('stopping web-3');
-      return 0;
-    });
+    spawnMock.mockImplementation(legacyDockerStub('stopping web-3'));
     const plain = await app.inject({ method: 'POST', url: '/agent/exec', headers: { 'x-agent-token': TOKEN }, payload: { op: 'docker.stop', params: { name: 'web-3' } } });
     expect(plain.json()).toEqual({ lines: ['stopping web-3'], exitCode: 0, envFile: null });
     const sealed = await sealedOp('docker.stop', { name: 'web-3' });
     expect(sealed).toMatchObject({ status: 200, lines: ['stopping web-3'], exitCode: 0 });
-    expect(spawnMock).toHaveBeenCalledWith('docker', ['stop', '-t', '5', 'web-3'], expect.any(Function), {});
+    expect(spawnMock).toHaveBeenCalledWith('docker', ['stop', '-t', '5', LEGACY_DOCKER_ID], expect.any(Function), { timeoutMs: expect.any(Number) });
   });
 
   it("the ping still advertises every 0.14 capability first, so a 0.14 panel's checks pass unchanged", async () => {

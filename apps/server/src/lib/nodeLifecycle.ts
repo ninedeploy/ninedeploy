@@ -8,7 +8,93 @@ import { spawnValidated } from './spawnValidated.js';
 
 const queue = createKeyedOperationGuard<string>();
 let active = 0;
-const INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"status":{{json .State.Status}},"running":{{json .State.Running}}}';
+const INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"composeProject":{{json (index .Config.Labels "com.docker.compose.project")}},"status":{{json .State.Status}},"running":{{json .State.Running}}}';
+const JOURNAL_SCHEMA = 'PRAGMA busy_timeout=100; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS lifecycle_head (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, intent TEXT NOT NULL, receipt TEXT)';
+
+/** Compatibility entry point; ordered commands must also fence old agent callers. */
+export async function runLegacyNodeLifecycle(root: string, action: 'start' | 'stop', name: string, graceSeconds: number,
+  onLine: (line: string) => void): Promise<number> {
+  if (!['start', 'stop'].includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(name) ||
+    !Number.isInteger(graceSeconds) || graceSeconds < 0 || graceSeconds > 300) throw new Error('Invalid legacy lifecycle operands');
+  if (active >= 16) throw new Error('Node lifecycle capacity is busy');
+  active++;
+  const deadline = performance.now() + (action === 'stop' ? Math.max(30_000, (graceSeconds + 10) * 1000) : 30_000);
+  const remaining = () => Math.max(0, Math.floor(deadline - performance.now()));
+  const current = () => { if (!remaining()) throw new Error('Node lifecycle deadline exceeded'); };
+  const inspect = async (reference: string) => {
+    current(); const lines: string[] = []; let bytes = 0;
+    const code = await spawnValidated('docker', ['inspect', '--type', 'container', '--format', INSPECT, reference], line => {
+      bytes += Buffer.byteLength(line); if (bytes <= 64 * 1024) lines.push(line);
+    }, { timeoutMs: remaining() });
+    current();
+    if (bytes > 64 * 1024) throw new Error('Legacy lifecycle identity unavailable');
+    if (code !== 0) {
+      if (lines.some(line => /No such (object|container)/i.test(line))) return null;
+      throw new Error('Legacy lifecycle identity unavailable');
+    }
+    if (lines.length !== 1) throw new Error('Legacy lifecycle identity unavailable');
+    const value: unknown = JSON.parse(lines[0]!);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Legacy lifecycle identity unavailable');
+    const row = value as Record<string, unknown>;
+    if (typeof row.id !== 'string' || !/^[a-f0-9]{64}$/.test(row.id) || typeof row.name !== 'string' || row.name.replace(/^\//, '') !== name ||
+      typeof row.running !== 'boolean' || typeof row.status !== 'string') throw new Error('Legacy lifecycle identity changed');
+    return row;
+  };
+  const work = (async () => {
+    const target = await inspect(name);
+    if (!target) { onLine(`Error: No such container: ${name}`); return 1; }
+    const effect = async () => {
+      const before = await inspect(String(target.id));
+      if (!before || before.id !== target.id || ['managed', 'serviceId', 'deploymentId'].some(key => before[key] !== target[key])) throw new Error('Legacy lifecycle identity changed');
+      current();
+      const result = await spawnValidated('docker', action === 'start' ? ['start', String(target.id)] : ['stop', '-t', String(graceSeconds), String(target.id)], onLine, { timeoutMs: remaining() });
+      current(); if (result !== 0) return result;
+      const after = await inspect(String(target.id));
+      if (!after || after.id !== target.id || ['managed', 'serviceId', 'deploymentId'].some(key => after[key] !== target[key]) ||
+        (action === 'start' ? after.status !== 'running' || !after.running : after.running || !['created', 'exited', 'dead'].includes(String(after.status)))) throw new Error('Legacy lifecycle Docker state is unconfirmed');
+      return result;
+    };
+    // Compose and other non-service runtimes retain their compatibility path,
+    // but their effects still use the inspected ID rather than a reusable name.
+    if (target.serviceId == null && target.managed !== 'service' || typeof target.composeProject === 'string' && /^ndcmp-[A-Za-z0-9_.-]+$/.test(target.composeProject)) return effect();
+    if (typeof target.serviceId !== 'string' || !/^[1-9]\d*$/.test(target.serviceId) || !Number.isSafeInteger(Number(target.serviceId))) throw new Error('Legacy lifecycle ownership is unconfirmed');
+    const directory = resolve(root), file = join(directory, `service-${target.serviceId}.sqlite`);
+    return queue(file, async () => {
+      current(); mkdirSync(directory, { recursive: true, mode: 0o700 });
+      if (lstatSync(directory).isSymbolicLink() || existsSync(file) && lstatSync(file).isSymbolicLink()) throw new Error('Invalid node lifecycle journal path');
+      const database = new DatabaseSync(file);
+      try {
+        database.exec(JOURNAL_SCHEMA); current(); chmodSync(file, 0o600);
+        for (;;) {
+          current(); let begun = false;
+          try {
+            database.exec('BEGIN IMMEDIATE'); begun = true; current();
+            const head = database.prepare('SELECT intent FROM lifecycle_head WHERE id=1').get();
+            if (head) {
+              const intent: unknown = JSON.parse(String(head.intent));
+              if (!intent || typeof intent !== 'object' || !('deploymentId' in intent) || typeof intent.deploymentId !== 'number' ||
+                action === 'start' || String(intent.deploymentId) === target.deploymentId || typeof target.deploymentId !== 'string' || !/^[1-9]\d*$/.test(target.deploymentId)) {
+                throw new Error('Legacy Docker lifecycle is fenced by ordered lifecycle; update the panel to use docker.lifecycle');
+              }
+            }
+            const result = await effect(); current();
+            database.exec('COMMIT'); begun = false; current(); return result;
+          } catch (error) {
+            if (begun) database.exec('ROLLBACK');
+            if (((error as { errcode?: number }).errcode ?? 0) % 256 !== 5) throw error;
+            current(); await new Promise(resolve => setTimeout(resolve, Math.min(25, remaining())));
+          }
+        }
+      } finally { database.close(); }
+    });
+  })().finally(() => { active--; });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Node lifecycle deadline exceeded')), Math.max(1, remaining()));
+    })]);
+  } finally { clearTimeout(timer); }
+}
 
 /** The committed head is never rolled back with a failed or interrupted Docker effect. */
 export function createNodeLifecycle(root: string) {
@@ -46,7 +132,7 @@ export function createNodeLifecycle(root: string) {
           }
         };
         try {
-          database.exec('PRAGMA busy_timeout=100; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS lifecycle_head (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, intent TEXT NOT NULL, receipt TEXT)');
+          database.exec(JOURNAL_SCHEMA);
           current(); chmodSync(file, 0o600);
           const { timeoutMs: _timeout, ...intent } = input;
           const payload = JSON.stringify(intent), hash = createHash('sha256').update(payload).digest('hex');
