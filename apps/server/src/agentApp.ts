@@ -55,7 +55,9 @@ export async function buildAgentApp() {
     },
   });
 
-  await app.register(rateLimitPlugin);
+  // Failed authentication/validation keeps the original 120/minute IP cap.
+  // Successful control operations need room for readiness and measured traffic.
+  await app.register(rateLimitPlugin, { rejectionCap: 120 });
   // 0.15 (T2b): after the rate limiter, so the upgrade request is limited too.
   await app.register(websocket, agentWebsocketOptions);
 

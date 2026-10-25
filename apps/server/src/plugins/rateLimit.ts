@@ -22,8 +22,8 @@ import fp from 'fastify-plugin';
  * hijacks the socket in the route handler, not at onRequest, as an earlier
  * comment wrongly claimed.
  */
-export default fp(
-  async (fastify) => {
+export default fp<{ rejectionCap?: number }>(
+  async (fastify, options) => {
     await fastify.register(rateLimit, {
       global: true,
       max: 1000,
@@ -45,7 +45,7 @@ export default fp(
     // same 1000/min ceiling. Successful traffic is never counted at IP level
     // (the principal limiter owns it), so the owner-throttle fix is intact.
     const REJECTION_WINDOW_MS = 60_000;
-    const REJECTION_CAP = 1000;
+    const REJECTION_CAP = options.rejectionCap ?? 1000;
     // r480: the map is keyed by source IP and every distinct IP that ever
     // produces one rejection leaves an entry — background scanning grows it
     // monotonically (~250 B/entry; an IPv6 /64 can mint unlimited keys at one
@@ -57,14 +57,21 @@ export default fp(
     const PRE_HANDLER_DEATH = new Set([400, 401, 403]);
     const rejections = new Map<string, number[]>();
 
-    fastify.addHook('onResponse', async (req, reply) => {
-      if (!PRE_HANDLER_DEATH.has(reply.statusCode)) return;
+    // Count before sending: concurrent rejected requests can all pass
+    // onRequest before the first response finishes. Bound their responses too.
+    fastify.addHook('onSend', async (req, reply, payload) => {
+      if (!PRE_HANDLER_DEATH.has(reply.statusCode)) return payload;
       const key = req.ip;
       const now = Date.now();
       const stamps = (rejections.get(key) ?? []).filter((t) => now - t < REJECTION_WINDOW_MS);
+      if (stamps.length >= REJECTION_CAP) {
+        const retryAfter = Math.max(1, Math.ceil((REJECTION_WINDOW_MS - (now - stamps[0]!)) / 1000));
+        reply.code(429).header('retry-after', String(retryAfter)).type('application/json; charset=utf-8');
+        return JSON.stringify({ error: { code: 'rate_limited', message: `Rate limit exceeded, retry in ${retryAfter} seconds` } });
+      }
       stamps.push(now);
       rejections.set(key, stamps);
-      if (rejections.size <= REJECTION_MAP_SOFT_CAP) return;
+      if (rejections.size <= REJECTION_MAP_SOFT_CAP) return payload;
       for (const [k, v] of rejections) {
         if (now - (v[v.length - 1] ?? 0) >= REJECTION_WINDOW_MS) rejections.delete(k);
       }
@@ -74,6 +81,7 @@ export default fp(
         rejections.delete(k);
         over--;
       }
+      return payload;
     });
 
     fastify.addHook('onRequest', async (req, reply) => {

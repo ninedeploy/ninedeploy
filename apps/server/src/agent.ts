@@ -1615,7 +1615,7 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
   if (nonceFile !== undefined) loadSeenNonces(nonceFile, seenNonces);
   let appendedSinceCompact = 0;
 
-  app.post('/agent/exec', { bodyLimit: 2 * 1024 * 1024, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post('/agent/exec', { bodyLimit: 2 * 1024 * 1024, config: { rateLimit: { max: 1000, timeWindow: '1 minute' } } }, async (req, reply) => {
     const raw = (req.body ?? {}) as { sealed?: unknown; op?: unknown; params?: unknown };
 
     // Sealed transport (preferred). The envelope is authenticated with a key
@@ -1665,7 +1665,7 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
       if (seenNonces.has(input.nonce)) {
         return reply.code(401).send({ error: { code: 'replayed', message: 'Replayed agent request' } });
       }
-      // A bounded table: the route's rate limit already caps it near 1200.
+      // A bounded table: 1000 requests/minute fill at most 10,000 live entries.
       if (seenNonces.size >= MAX_SEEN_NONCES) {
         return reply.code(429).send({ error: { code: 'busy', message: 'Too many agent requests in the replay window' } });
       }
