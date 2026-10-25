@@ -27,6 +27,7 @@ Supersedes the unpublished v0.18.0 candidate. Its acceptance gate held publicati
 
 ### Fixed
 
+- Close and await encrypted node volume/database backup writers before removing failed partial files. Integrity failures that arrive during a pending file open no longer leave orphan `.part` files.
 - Wait for primary-node retirement to settle before changing the next readiness case in the release smoke. Preserve the existing HTTP failure, previous-runtime, metric-history and log-delivery assertions.
 - Preserve sealed routing-generation confirmation during ordinary node proxy refreshes while a node canary split is active. Refuse disabled confirmation support, plaintext transport and stale receipts.
 - Verify immutable node candidate groups through a sealed, bounded readiness batch when supported by the agent. Preserve three consecutive samples for every replica, recheck Docker health/restarts after application probes, keep older agents on their negotiated path, and refuse protocol loss without downgrade.

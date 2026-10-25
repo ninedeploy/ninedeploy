@@ -4,6 +4,7 @@
     "date": "2026-10-25",
     "title": "Measured node canaries and recoverable operations",
     "changes": [
+      "Close encrypted node volume and database backup writers before cleaning failed partial files, including integrity failures while the output file is still opening.",
       "Add single-replica node canary with explicit HTTP readiness, owner-enabled sealed traffic observations and loaded HTTP/TLS routing acknowledgement. Validate support before candidate launch; keep cancellation, Stop and crash recovery authoritative.",
       "Node promotion completes the current measured step before skipping the remaining steps. Panel controls expose actual node requirements and keep Abort usable while promotion waits.",
       "Add durable primary Docker, fan-out and native Swarm transition recovery with immutable runtime identities, confirmed rollback and safe retained-generation reconciliation.",

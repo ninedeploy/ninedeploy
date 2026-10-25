@@ -146,10 +146,17 @@ async function writeEncrypted(readable: Readable, done: Promise<unknown>, destFi
       callback();
     },
   });
+  const storage = new AbortController();
+  let writing: Promise<void> | undefined;
   try {
-    await Promise.all([pipeline(readable, cipher, envelope, createWriteStream(tmp, { mode: 0o600 })), done]);
+    writing = pipeline(readable, cipher, envelope, createWriteStream(tmp, { mode: 0o600 }), { signal: storage.signal });
+    await Promise.all([writing, done]);
     renameSync(tmp, destFile);
   } catch (err) {
+    storage.abort();
+    // The end check can reject before the output file opens. Finish closing
+    // that writer before cleanup, including any pending filesystem open.
+    await writing?.catch(() => undefined);
     try {
       unlinkSync(tmp);
     } catch {

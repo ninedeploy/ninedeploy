@@ -260,13 +260,20 @@ export function backupNodeVolume(
         callback();
       },
     });
+    const storage = new AbortController();
+    let writing: Promise<void> | undefined;
     try {
-      const [, result] = await Promise.all([pipeline(handle.readable, cipher, envelope, createWriteStream(tmp, { mode: 0o600 })), done]);
+      writing = pipeline(handle.readable, cipher, envelope, createWriteStream(tmp, { mode: 0o600 }), { signal: storage.signal });
+      const [, result] = await Promise.all([writing, done]);
       renameSync(tmp, destFile);
       log(`Snapshot of ${name} on node #${serverId} written to ${destFile} (${result.bytes} bytes streamed)`);
       return result;
     } catch (err) {
       handle.abort('the panel could not store the backup');
+      storage.abort();
+      // A rejected end check can beat WriteStream's lazy open. Wait for its
+      // close before unlinking, so it cannot recreate the partial afterwards.
+      await writing?.catch(() => undefined);
       try {
         unlinkSync(tmp);
       } catch {
