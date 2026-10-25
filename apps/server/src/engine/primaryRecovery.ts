@@ -5,7 +5,7 @@ import { deployments, primaryTransitions, services, serviceTargets, type DB, typ
 import { containerIdentityOps } from '../agentOps/containerIdentity.js';
 import { observabilityOps } from '../agentOps/observability.js';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
-import { capabilityRefusal, parseAgentCapabilities } from '../lib/agentCapabilities.js';
+import { agentVersionAtLeast, capabilityRefusal, parseAgentCapabilities } from '../lib/agentCapabilities.js';
 import { verifyNodeReadiness } from '../lib/nodeReadiness.js';
 import { capture, run, sleep } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
@@ -62,18 +62,22 @@ async function identity(db: DB, serverId: number | null, name: string): Promise<
   return value;
 }
 async function requireCapabilities(db: DB, serverId: number | null, probe = false) {
-  if (serverId == null) return false;
-  let batchReadiness = false;
+  const features = { batchReadiness: false, retirementGrace: false };
+  if (serverId == null) return features;
   const agent = caller(db, serverId);
   const why = await capabilityRefusal(async (op, params, sink) => {
     const result = await agent(op, params, sink);
-    if (op === 'agent.ping') batchReadiness = parseAgentCapabilities(result.lines).caps.has('docker.readiness');
+    if (op === 'agent.ping') {
+      const info = parseAgentCapabilities(result.lines);
+      features.batchReadiness = info.caps.has('docker.readiness');
+      features.retirementGrace = info.caps.has('docker.lifecycle') || agentVersionAtLeast(info.version, '0.19.0');
+    }
     return result;
   }, `#${serverId}`, await agentTransportSealed(db, serverId), {
     cap: ['docker.recovery', 'proxy.routingAck', ...(probe ? ['docker.probe' as const] : [])], feature: 'recover primary runtime transitions', sealedRequired: true,
   });
   if (why) throw new Error(why.message);
-  return batchReadiness;
+  return features;
 }
 async function mapFour<T>(values: T[], fn: (value: T) => Promise<void>) {
   let next = 0;
@@ -98,7 +102,7 @@ function validateSnapshot(value: PrimaryRuntimeSnapshot) {
   if (value.spares !== undefined && (!Array.isArray(value.spares) || value.spares.length > spareNames.length || value.spares.some((c, i) => c.name !== spareNames[i] || typeof c.observed !== 'boolean' || (c.id !== null && !/^[a-f0-9]{64}$/.test(c.id))))) throw new Error('Invalid spare identities; review required');
 }
 
-function primaryLease(db: DB, initial: PrimaryTransition, token: string, batchReadiness = false) {
+function primaryLease(db: DB, initial: PrimaryTransition, token: string, features = { batchReadiness: false, retirementGrace: false }) {
   const row = { ...initial };
   let lost = false, stopped = false, completed = false, renewal: Promise<unknown> | undefined;
   let loaded: string | null | undefined;
@@ -191,8 +195,14 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, batchRe
       const actual = await identity(db, row.serverId, item.id);
       if (!actual) continue;
       if (actual.name !== item.name) throw new Error('Container was renamed; retained for review');
-      await current(); await stopId(item.id, grace); await current();
-      const reply = await caller(db, row.serverId)('docker.retire', { id: item.id, name: item.name }, () => {});
+      await current();
+      // New agents retire the generation atomically by ID; their legacy Stop is deliberately fenced.
+      // Older agents retain the separate Stop so a configured grace is still honored.
+      if (!features.retirementGrace) { await stopId(item.id, grace); await current(); }
+      const reply = features.retirementGrace
+        ? await caller(db, row.serverId)('docker.retire', { id: item.id, name: item.name, graceSeconds: String(grace) }, () => {}, { timeoutMs: Math.max(35_000, (grace + 30) * 1000) })
+        : await caller(db, row.serverId)('docker.retire', { id: item.id, name: item.name }, () => {});
+      await current();
       if (!reply.lines.includes(`ND-RETIRED ${item.id}`)) throw new Error('Container retirement was not confirmed');
     }
   };
@@ -219,7 +229,7 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, batchRe
     async verifyCandidate(builder: Builder, runtime: DeployRuntime, timeoutMs: number, log: (line: string) => void, checkpoint: () => Promise<void> = async () => undefined) {
       const deadline = Date.now() + timeoutMs;
       const readinessCheckpoint = async () => { await check(); await checkpoint(); await check(); };
-      if (batchReadiness && row.serverId != null) {
+      if (features.batchReadiness && row.serverId != null) {
         await readinessCheckpoint();
         const group = row.candidate;
         validateSnapshot(group);
@@ -268,7 +278,7 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, batchRe
 export type PrimaryRecoveryLease = ReturnType<typeof primaryLease>;
 
 export async function beginPrimaryTransition(db: DB, service: Service, deploymentId: number, candidate: DeployRuntime, previous: DeployRuntime | undefined, commitSha: string | null) {
-  const batchReadiness = await requireCapabilities(db, service.serverId ?? null, candidate.healthCheck === 'http-strict' || candidate.healthCheck === 'tcp');
+  const features = await requireCapabilities(db, service.serverId ?? null, candidate.healthCheck === 'http-strict' || candidate.healthCheck === 'tcp');
   const token = randomUUID();
   const prior = previous ? snapshot({ ...previous, replicas: service.runtimeReplicas ?? 1 }, service.commitSha) : null;
   if (prior) {
@@ -284,7 +294,7 @@ export async function beginPrimaryTransition(db: DB, service: Service, deploymen
     ownerToken: token, leaseUntil: new Date(Date.now() + LEASE_MS),
   }).onConflictDoNothing().returning();
   if (!row) throw new Error('Primary runtime recovery is pending; resolve it before another deployment');
-  const lease = primaryLease(db, row, token, batchReadiness);
+  const lease = primaryLease(db, row, token, features);
   try { await lease.captureIdentities(); return lease; }
   catch { await lease.release('Container identities could not be captured'); throw new PrimaryIdentityUnconfirmed(); }
 }
@@ -338,11 +348,12 @@ export async function reconcilePrimaryTransitions(db: DB, opts: { serviceId?: nu
       .where(and(eq(primaryTransitions.id, pending.id), or(isNull(primaryTransitions.leaseUntil), lte(primaryTransitions.leaseUntil, new Date())))).returning();
     if (!claimed) continue;
     const entry = claimed;
-    const lease = primaryLease(db, claimed, token);
+    const features = { batchReadiness: false, retirementGrace: false };
+    const lease = primaryLease(db, claimed, token, features);
     try {
       const check = async () => { if (opts.signal?.aborted) throw new Error('Recovery stopped; generations retained'); await lease.check(); };
       await check();
-      await requireCapabilities(db, entry.serverId, [entry.previous, entry.candidate].some(g => g?.healthCheck === 'http-strict' || g?.healthCheck === 'tcp'));
+      Object.assign(features, await requireCapabilities(db, entry.serverId, [entry.previous, entry.candidate].some(g => g?.healthCheck === 'http-strict' || g?.healthCheck === 'tcp')));
       let svc = await lease.current();
       const observedService = fingerprint(svc);
       const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, entry.deploymentId) });

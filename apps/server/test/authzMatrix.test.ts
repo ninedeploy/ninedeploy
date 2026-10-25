@@ -61,6 +61,7 @@ vi.mock('../src/plugins/traefik.js', () => noop('ninedeploy-traefik'));
 vi.mock('../src/plugins/backupScheduler.js', () => noop('authz-backups'));
 vi.mock('../src/plugins/runtimeState.js', () => noop('authz-runtime'));
 vi.mock('../src/plugins/primaryRecovery.js', () => noop('authz-primary-recovery'));
+vi.mock('../src/plugins/nodeLifecycle.js', () => noop('authz-node-lifecycle'));
 vi.mock('../src/plugins/swarmRecovery.js', () => noop('authz-swarm-recovery'));
 vi.mock('../src/plugins/fanoutRecovery.js', () => noop('authz-fanout-recovery'));
 vi.mock('../src/plugins/autoUpdateScheduler.js', () => noop('authz-autoupdate'));
@@ -770,6 +771,8 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/services/:id/start': R('member'),
   'POST /v1/services/:id/stop': R('member'),
   'POST /v1/services/:id/restart': R('member'),
+  'GET /v1/services/:id/lifecycle': R('viewer'),
+  'POST /v1/services/:id/lifecycle/retry': R('member'),
   'GET /v1/services/:id/logs': R('viewer'),
   'POST /v1/log-drains/search': R('member', { body: (r) => ({ query: 'error', serviceId: r.service }) }),
   'GET /v1/services/:id/metrics': R('viewer'),

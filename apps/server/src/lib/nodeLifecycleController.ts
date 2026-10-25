@@ -58,7 +58,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 16 * 1024) throw new Error('Node lifecycle identity unavailable');
       const found = identity.nullable().parse(JSON.parse(frames[0]!.slice(13)));
       if (!found) {
-        if (intent.action === 'start') throw new Error(`Node lifecycle serving replica ${name} is missing`);
+        if (intent.action !== 'stop' && replicaNames(intent.runtimeId, intent.snapshot.serving).includes(name)) throw new Error(`Node lifecycle serving replica ${name} is missing`);
         continue;
       }
       if (found.name !== name || found.managed !== 'service' || found.serviceId !== String(intent.serviceId) || found.deploymentId !== String(intent.deploymentId)) {
@@ -69,12 +69,19 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     if (new Set(targets.map(target => target.id)).size !== targets.length) throw new Error('Duplicate node lifecycle identity');
     return targets;
   };
-  const apply = async (fence: boolean) => {
+  const servingTargets = () => {
+    const names = replicaNames(intent.runtimeId, intent.snapshot.serving);
+    const selected = names.map(name => intent.targets?.find(t => t.name === name));
+    if (selected.some(target => !target)) throw new Error('Node lifecycle serving targets are unavailable');
+    return selected.map(target => target!);
+  };
+  const apply = async (fence: boolean, restarting = false) => {
     if (!fence && intent.targets === null) throw new Error('Node lifecycle immutable targets are unavailable');
     const request = containerLifecycleRequest.parse({ requestId: fence
       ? createHash('sha256').update(`${intent.requestId}:fence`).digest('hex').slice(0, 32) : intent.requestId,
-    serviceId: intent.serviceId, deploymentId: intent.deploymentId, revision: nodeLifecycleRevision(intent.id, fence ? 'fence' : 'effect'),
-    action: fence ? 'stop' : intent.action, targets: fence ? [] : intent.targets, timeoutMs: 30_000 });
+    serviceId: intent.serviceId, deploymentId: intent.deploymentId, revision: nodeLifecycleRevision(intent.id, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
+    action: !fence && (intent.action === 'start' || restarting) ? 'start' : 'stop',
+    targets: fence ? [] : restarting ? servingTargets() : intent.targets, timeoutMs: 30_000 });
     const result = await call('docker.lifecycle', request, 35_000);
     const frames = result.lines.filter(line => line.startsWith('ND-LIFECYCLE '));
     if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 64 * 1024) throw new Error('Node lifecycle receipt unavailable');
@@ -89,7 +96,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
   const readiness = async () => {
     const mode = intent.snapshot.healthCheck;
     const spec: Omit<ContainerReadinessRequest, 'requestId' | 'timeoutMs'> = {
-      targets: intent.targets ?? [], port: intent.snapshot.port, path: intent.snapshot.healthPath || '/',
+      targets: servingTargets(), port: intent.snapshot.port, path: intent.snapshot.healthPath || '/',
       mode: mode === 'running' || mode === 'command' || mode === 'http-strict' || mode === 'tcp' ? mode : 'auto',
     };
     const ready = await verifyNodeReadiness((op, params, _sink, options) => call(op, params, Math.min(15_000, options?.timeoutMs ?? 15_000)),
@@ -123,14 +130,20 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
         const targets = await discover();
         intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'start' ? 'applying' : 'routing', { targets });
       } else if (intent.phase === 'applying') {
-        if (intent.action === 'stop' && !routingRemovedThisRun) await removeRouting();
+        if (intent.action !== 'start' && !routingRemovedThisRun) await removeRouting();
         await apply(false);
-        intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'start' ? 'readiness' : 'completed');
+        intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'restart' ? 'starting' : intent.action === 'start' ? 'readiness' : 'completed');
+      } else if (intent.phase === 'starting') {
+        await apply(false, true);
+        intent = await advanceNodeLifecycleIntent(db, intent, 'warming');
+      } else if (intent.phase === 'warming') {
+        await readiness(); readyThisRun = true;
+        intent = await advanceNodeLifecycleIntent(db, intent, 'publishing', { serviceStatus: 'deploying' });
       } else if (intent.phase === 'readiness') {
         await readiness(); readyThisRun = true;
         intent = await advanceNodeLifecycleIntent(db, intent, 'routing', { serviceStatus: 'deploying' });
-      } else if (intent.phase === 'routing') {
-        if (intent.action === 'stop') {
+      } else if (intent.phase === 'routing' || intent.phase === 'publishing') {
+        if (intent.phase === 'routing' && intent.action !== 'start') {
           await removeRouting(); routingRemovedThisRun = true;
           intent = await advanceNodeLifecycleIntent(db, intent, 'applying');
         } else {

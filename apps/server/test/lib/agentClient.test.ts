@@ -77,6 +77,15 @@ function honestSealedAgent(
 }
 
 describe('agentOp', () => {
+  it.each([[5, 35_000], [37, 67_000], [300, 330_000], [999, 35_000]])('bounds retirement transport around requested grace %i', async (graceSeconds, budget) => {
+    honestSealedAgent();
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      await agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'docker.retire', { id: 'a'.repeat(64), name: 'web-9', graceSeconds: String(graceSeconds) }, () => {}, { timeoutMs: 400_000 });
+      expect(timeout).toHaveBeenCalledWith(budget);
+    } finally { timeout.mockRestore(); }
+  });
+
   beforeEach(() => {
     fetchMock.mockReset();
     _resetSealedSupportCache();

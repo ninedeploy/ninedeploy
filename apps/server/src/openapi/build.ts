@@ -223,7 +223,12 @@ function operationFor(
       content: { 'application/json': { schema: describedObject(`Read by the handler as ${spec.bodyType} (not validated by a schema).`) } },
     };
   }
-  if (spec?.response) op.responses = { 200: { description: 'OK', content: { 'application/json': { schema: components.use(spec.response, 'output') } } } };
+  if (spec?.response) {
+    const schema = components.use(spec.response, 'output');
+    op.responses = Object.fromEntries((spec.successStatuses ?? [200]).map(status => [status, {
+      description: status === 202 ? 'Accepted; execution is pending' : 'OK', content: { 'application/json': { schema } },
+    }]));
+  }
   if (spec?.responseType) op['x-ninedeploy-response-type'] = spec.responseType;
   if (spec?.localBody) op['x-ninedeploy-body-schema'] = spec.localBody;
   if (spec?.localQuery) op['x-ninedeploy-query-schema'] = spec.localQuery;

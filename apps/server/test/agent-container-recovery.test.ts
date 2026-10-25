@@ -5,6 +5,16 @@ const { runRegisteredOp } = await import('../src/agentOps/index.js');
 const id = 'a'.repeat(64);
 afterEach(() => io.spawn.mockReset());
 describe('sealed immutable container recovery operations', () => {
+  it('honors the requested stop grace with a matching child timeout before removing the immutable ID', async () => {
+    io.spawn.mockImplementation(async (_e, args, sink) => { if (args[0] === 'inspect') sink('/web-9'); return 0; });
+    await runRegisteredOp('docker.retire', { id, name: 'web-9', graceSeconds: '37' }, () => {}, { sealed: true });
+    expect(io.spawn.mock.calls[1][1]).toEqual(['stop', '-t', '37', id]);
+    expect(io.spawn.mock.calls[1][3].timeoutMs).toBeGreaterThanOrEqual(42_000);
+  });
+  it.each(['-1', '301', '1.5', '', 'forever'])('refuses invalid retirement grace %j before inspecting or changing Docker', async graceSeconds => {
+    await expect(runRegisteredOp('docker.retire', { id, name: 'web-9', graceSeconds }, () => {}, { sealed: true })).rejects.toThrow(/grace/i);
+    expect(io.spawn).not.toHaveBeenCalled();
+  });
   it('returns only fixed identity fields and ignores caller-selected formats', async () => {
     io.spawn.mockImplementation(async (_exe, _args, sink) => { sink(JSON.stringify({ id, name: '/web-9', managed: 'service', serviceId: '1', deploymentId: '9' })); return 0; });
     const out: string[] = [];

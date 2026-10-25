@@ -29,6 +29,8 @@ export interface RouteSpec {
   body?: z.ZodType;
   query?: z.ZodType;
   response?: z.ZodType;
+  /** Successful HTTP codes when a command can acknowledge durable acceptance. */
+  successStatuses?: readonly (200 | 201 | 202 | 204)[];
   /** TS type name when no zod response exists (documented as x-ninedeploy-response-type). */
   responseType?: string;
   /**

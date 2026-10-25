@@ -38,6 +38,9 @@ import type {
   ServiceFile,
   ServiceFileEntry,
   ServiceFilePut,
+  ServiceLifecycleResult,
+  ServiceLifecycleView,
+  ServiceLifecycleRetry,
 } from '@ninedeploy/schemas';
 import { apiGetUrl } from '../apiPath.js';
 import type { ApplyManifestResult, ApplyManifestInput, ServiceDetail } from '../types.js';
@@ -71,9 +74,11 @@ export interface ServicesApi {
      */
     composePreview: (input: ComposePreviewRequestInput) => Promise<ComposePreviewResponse>;
     remove: (id: number) => Promise<void>;
-    stop: (id: number) => Promise<{ ok: boolean; status: string }>;
-    start: (id: number) => Promise<{ ok: boolean; status: string }>;
-    restart: (id: number) => Promise<{ ok: boolean; status: string }>;
+    stop: (id: number) => Promise<ServiceLifecycleResult>;
+    start: (id: number) => Promise<ServiceLifecycleResult>;
+    restart: (id: number) => Promise<ServiceLifecycleResult>;
+    lifecycle: (id: number) => Promise<ServiceLifecycleView>;
+    retryLifecycle: (id: number) => Promise<ServiceLifecycleRetry>;
     /** The last `tail` runtime-log lines (default 300, at most 5000; 0.16.3). */
     logs: (id: number, opts?: { tail?: number }) => Promise<{ lines: string }>;
     clone: (id: number, input?: { name?: string; slug?: string }) => Promise<Service>;
@@ -270,9 +275,11 @@ export function servicesApi(t: Transport): ServicesApi {
       remove: async (id) => {
         await request(`/v1/services/${id}`, { method: 'DELETE' });
       },
-      stop: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/stop`),
-      start: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/start`),
-      restart: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/restart`),
+      stop: (id) => send<ServiceLifecycleResult>('POST', `/v1/services/${id}/stop`),
+      start: (id) => send<ServiceLifecycleResult>('POST', `/v1/services/${id}/start`),
+      restart: (id) => send<ServiceLifecycleResult>('POST', `/v1/services/${id}/restart`),
+      lifecycle: id => get<ServiceLifecycleView>(`/v1/services/${id}/lifecycle`),
+      retryLifecycle: id => send<ServiceLifecycleRetry>('POST', `/v1/services/${id}/lifecycle/retry`),
       logs: (id, opts) => get<{ lines: string }>(`/v1/services/${id}/logs${opts?.tail ? `?tail=${opts.tail}` : ''}`),
       clone: (id, input) => send<Service>('POST', `/v1/services/${id}/clone`, input ?? {}),
       exportUrl: (id) => `/v1/services/${id}/export`,

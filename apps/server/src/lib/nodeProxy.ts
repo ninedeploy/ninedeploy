@@ -54,15 +54,25 @@ export async function syncNodeProxy(
   db: DB,
   serverId: number,
   log: (line: string) => void = () => undefined,
-  opts: { ensureContainer?: boolean; confirmRouting?: boolean } = {},
+  opts: { ensureContainer?: boolean; confirmRouting?: boolean; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<NodeProxySyncResult> {
   let ensureStarted = false;
   let routingMayHaveChanged = false;
   const confirmRouting = opts.confirmRouting === true || nodeCanaryRoutingActive(serverId);
+  const call = async (op: string, params: Record<string, unknown>, sink: (line: string) => void) => {
+    opts.signal?.throwIfAborted();
+    const result = opts.signal || opts.timeoutMs != null
+      ? await agentOp(db, serverId, op, params, sink, { signal: opts.signal, timeoutMs: opts.timeoutMs ?? 15_000 })
+      : await agentOp(db, serverId, op, params, sink);
+    opts.signal?.throwIfAborted();
+    if (result.exitCode !== 0) throw new Error(`Node proxy operation ${op} failed`);
+    return result;
+  };
   try {
+    opts.signal?.throwIfAborted();
     if (confirmRouting) {
       const sealed = await agentTransportSealed(db, serverId);
-      const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, serverId, op, params, sink), `#${serverId}`, sealed,
+      const refusal = await capabilityRefusal(call, `#${serverId}`, sealed,
         { cap: 'proxy.routingAck', feature: 'confirm loaded HTTP/TLS routing', sealedRequired: true });
       if (refusal) throw new Error(refusal.message);
     }
@@ -81,11 +91,11 @@ export async function syncNodeProxy(
           '(uploaded certificates are inlined); the agent refuses anything above 1 MiB.',
       );
     }
-    const wroteStatic = await agentOp(
-      db, serverId, 'proxy.writeConfig', { kind: 'static', content: staticConfig }, sink,
+    const wroteStatic = await call(
+      'proxy.writeConfig', { kind: 'static', content: staticConfig }, sink,
     );
     routingMayHaveChanged = true;
-    await agentOp(db, serverId, 'proxy.writeConfig', { kind: 'dynamic', content: writtenDynamic }, sink);
+    await call('proxy.writeConfig', { kind: 'dynamic', content: writtenDynamic }, sink);
 
     // Traefik reads the DYNAMIC file through a watcher but the STATIC one only
     // at start-up, so the container has to be recreated when the static config
@@ -96,7 +106,8 @@ export async function syncNodeProxy(
     const staticChanged = wroteStatic.lines.some(
       (l) => l.startsWith('proxy-config ') && l.trim().split(/\s+/).at(-1) === 'changed',
     );
-    const running = await nodeProxyRunning(db, serverId);
+    const running = await nodeProxyRunning(call);
+    opts.signal?.throwIfAborted();
     if (opts.ensureContainer === true || staticChanged || !running) {
       log(
         running
@@ -104,10 +115,10 @@ export async function syncNodeProxy(
           : '  node proxy: not running on the node — starting it',
       );
       ensureStarted = true;
-      await agentOp(db, serverId, 'proxy.ensure', {}, sink);
+      await call('proxy.ensure', {}, sink);
     }
     if (confirmRouting) {
-      const receipt = await agentOp(db, serverId, 'proxy.confirmRouting', { content: dynamicConfig }, () => undefined);
+      const receipt = await call('proxy.confirmRouting', { content: dynamicConfig }, () => undefined);
       const expected = `ND-PROXY-ROUTING ${createHash('sha256').update(dynamicConfig).digest('hex')}`;
       if (!receipt.lines.includes(expected)) throw new Error('The node did not confirm the requested routing generation');
     }
@@ -134,9 +145,9 @@ export async function syncNodeProxy(
  * healthy costs a second of ingress on that node, while never starting one
  * leaves every domain on it dark.
  */
-async function nodeProxyRunning(db: DB, serverId: number): Promise<boolean> {
+async function nodeProxyRunning(call: (op: string, params: Record<string, unknown>, sink: (line: string) => void) => Promise<{ lines: string[] }>): Promise<boolean> {
   try {
-    const res = await agentOp(db, serverId, 'docker.inspect', { name: 'ninedeploy-proxy', format: 'state' }, () => undefined);
+    const res = await call('docker.inspect', { name: 'ninedeploy-proxy', format: 'state' }, () => undefined);
     return res.lines.some((l) => l.trim().startsWith('running'));
   } catch {
     return false;
@@ -156,17 +167,19 @@ export async function syncAllNodeProxies(
   db: DB,
   serverIds: number[],
   log: (line: string) => void = () => undefined,
-  opts: { confirmNode?: number } = {},
+  opts: { confirmNode?: number; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<Array<NodeProxySyncResult & { serverId: number }>> {
   const unique = [...new Set(serverIds.filter((id) => Number.isInteger(id) && id > 0))];
   // r521: per-node outcomes go back to the caller — writeDynamicConfig fails
   // a deploy whose OWN node could not be updated, and audits the rest.
   const results: Array<NodeProxySyncResult & { serverId: number }> = [];
   for (const id of unique) {
+    opts.signal?.throwIfAborted();
     // Sequential on purpose: a fleet refresh is not latency-critical and a
     // burst of parallel agent calls is a good way to trip an agent's rate
     // limit (120/min) during a mass domain change.
-    results.push({ serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id })) });
+    results.push({ serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id,
+      ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.timeoutMs != null ? { timeoutMs: opts.timeoutMs } : {}) })) });
   }
   return results;
 }

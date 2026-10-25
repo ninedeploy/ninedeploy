@@ -348,12 +348,10 @@ describe('r525: node-pinned docker services are patrolled through their agent', 
     );
   });
 
-  it('revives a stopped node container instead of judging it', async () => {
+  it('does not send a legacy Start when fresh node ownership cannot be confirmed', async () => {
     agentReplies([{ exitCode: 0, lines: ['exited|'] }, { exitCode: 0, lines: ['running|10.0.0.2'] }]);
     const { updates } = await reconcileOnce(remoteRow());
-    expect(agentMocks.agentOp).toHaveBeenCalledWith(
-      expect.anything(), 4, 'docker.start', { name: 'edge-api-9' }, expect.any(Function), { tolerateExit: true },
-    );
+    expect(agentMocks.agentOp.mock.calls.some(call => call[2] === 'docker.start')).toBe(false);
     expect(updates).toEqual([]);
   });
 

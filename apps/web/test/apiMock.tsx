@@ -87,6 +87,8 @@ export function createFakeApiModule() {
       revokeToken: vi.fn(),
     },
     services: {
+      lifecycle: vi.fn().mockResolvedValue({ command: null }),
+      retryLifecycle: vi.fn(),
       runtimeRecovery: vi.fn().mockResolvedValue(null),
       retryRuntimeRecovery: vi.fn(),
       swarmRecovery: vi.fn().mockResolvedValue(null),

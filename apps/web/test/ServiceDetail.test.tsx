@@ -153,6 +153,7 @@ describe('ServiceDetail', () => {
       configurable: true,
     });
     mockOf(api.services.get).mockResolvedValue(service as never);
+    mockOf(api.services.lifecycle).mockReset().mockResolvedValue({ command: null });
     mockOf(api.deploys.list).mockResolvedValue(deploys as never);
     mockOf(api.domains.list).mockResolvedValue(domains as never);
     mockOf(api.webhooks.list).mockResolvedValue(webhooks as never);
@@ -504,7 +505,38 @@ describe('ServiceDetail', () => {
     mockOf(api.services.restart).mockRejectedValue(new Error('nope'));
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     fireEvent.click(await screen.findByRole('button', { name: /Restart/ }));
-    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Action failed', 'error'));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('nope', 'error'));
+  });
+
+  it('shows a queued node Start as pending and keeps Stop available during readiness', async () => {
+    mockOf(api.services.get).mockResolvedValue({ ...service, status: 'stopped', serverId: 4 } as never);
+    const command = { id: 7, action: 'start', phase: 'preparing', current: true, busy: false, retryable: false,
+      attempts: 0, reason: null, createdAt: '2026-10-25T12:00:00Z', updatedAt: '2026-10-25T12:00:00Z', nextAttemptAt: '2026-10-25T12:00:00Z' };
+    let current: typeof command | null = null;
+    mockOf(api.services.lifecycle).mockImplementation(async () => ({ command: current }) as never);
+    mockOf(api.services.start).mockImplementation(async () => { current = command; return { ok: true, status: 'stopped', pending: true, lifecycle: command } as never; });
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Start requested; runtime verification is pending', 'info'));
+    expect(screen.getByRole('region', { name: 'Runtime command' })).toHaveTextContent('Start requested');
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled();
+    expect(toastSpy.toast).not.toHaveBeenCalledWith('Service started', 'success');
+  });
+
+  it('does not attach a delayed lifecycle receipt to another service after navigation', async () => {
+    let answer!: (value: unknown) => void;
+    mockOf(api.services.get).mockImplementation(async id => ({ ...service, id, status: 'stopped', serverId: 4 }) as never);
+    mockOf(api.services.start).mockReturnValue(new Promise(resolve => { answer = resolve; }) as never);
+    function Probe() { return <Link to="/services/2">other service</Link>; }
+    renderWithProviders(<><Probe /><Routes><Route path="/services/:id" element={<ServiceDetail />} /></Routes></>, { initialEntries: ['/services/1'] });
+    fireEvent.click(await screen.findByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(api.services.start).toHaveBeenCalledWith(1));
+    fireEvent.click(screen.getByRole('link', { name: 'other service' }));
+    await waitFor(() => expect(api.services.get).toHaveBeenCalledWith(2));
+    await act(async () => answer({ ok: true, status: 'stopped', pending: true, lifecycle: { id: 7, action: 'start', phase: 'preparing', current: true, busy: false, retryable: false,
+      attempts: 0, reason: null, createdAt: '2026-10-25T12:00:00Z', updatedAt: '2026-10-25T12:00:00Z', nextAttemptAt: '2026-10-25T12:00:00Z' } }));
+    expect(screen.queryByRole('region', { name: 'Runtime command' })).not.toBeInTheDocument();
+    expect(toastSpy.toast).not.toHaveBeenCalledWith('Start requested; runtime verification is pending', 'info');
   });
 
   it('toggles runtime logs and shows their content', async () => {

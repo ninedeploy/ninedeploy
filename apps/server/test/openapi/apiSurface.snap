@@ -191,6 +191,7 @@ GET /v1/services/:id/image-transfers viewer nd://scope/read/services
 GET /v1/services/:id/insights viewer nd://scope/read/manifests
 GET /v1/services/:id/jobs viewer nd://scope/read/services
 GET /v1/services/:id/jobs/:jobId/runs viewer nd://scope/read/services
+GET /v1/services/:id/lifecycle viewer nd://scope/read/services
 GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
@@ -415,6 +416,7 @@ POST /v1/services/:id/github/migrate operator nd://scope/write/services
 POST /v1/services/:id/insights/refresh member nd://scope/write/manifests
 POST /v1/services/:id/jobs member nd://scope/write/services
 POST /v1/services/:id/jobs/:jobId/run member nd://scope/write/services
+POST /v1/services/:id/lifecycle/retry member nd://scope/write/services
 POST /v1/services/:id/manifest/apply operator nd://scope/write/services
 POST /v1/services/:id/promote member nd://scope/write/services
 POST /v1/services/:id/restart member nd://scope/write/services

@@ -35,6 +35,9 @@ export const containerIdentityOps: AgentOpModule = {
       async run(params, onLine) {
         const id = str(params, 'id'), name = str(params, 'name');
         if (!id || !/^[a-f0-9]{64}$/.test(id) || !name || name.length > 128 || !RE_NAME.test(name)) throw new Error('Invalid container generation');
+        const supplied = params['graceSeconds'];
+        const grace = supplied === undefined ? 5 : typeof supplied === 'string' && /^\d+$/.test(supplied) ? Number(supplied) : typeof supplied === 'number' ? supplied : NaN;
+        if (!Number.isInteger(grace) || grace < 0 || grace > 300) throw new Error('Invalid retirement grace');
         let actual = '';
         const found = await spawnValidated('docker', ['inspect', '--type', 'container', '--format', '{{.Name}}', id], line => { if (actual.length < 1024) actual += line; }, { timeoutMs: 10_000 });
         if (found !== 0) {
@@ -42,9 +45,9 @@ export const containerIdentityOps: AgentOpModule = {
           throw new Error('Container generation unavailable');
         }
         if (actual.trim().replace(/^\//, '') !== name) throw new Error('Container generation changed; retained');
-        for (const args of [['stop', '-t', '5', id], ['rm', '-f', id]]) {
+        for (const args of [['stop', '-t', String(grace), id], ['rm', '-f', id]]) {
           let error = '';
-          const code = await spawnValidated('docker', args, line => { if (error.length < 1024) error += line; }, { timeoutMs: 10_000 });
+          const code = await spawnValidated('docker', args, line => { if (error.length < 1024) error += line; }, { timeoutMs: args[0] === 'stop' ? Math.max(10_000, (grace + 5) * 1000) : 10_000 });
           if (code !== 0 && !/No such (object|container)/i.test(error)) throw new Error('Container retirement unconfirmed');
         }
         onLine(`ND-RETIRED ${id}`); return 0;

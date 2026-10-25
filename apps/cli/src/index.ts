@@ -10,6 +10,7 @@ import { setupAction } from './commands/setup.js';
 import {
   servicesCompose, servicesCreate, servicesDelete, servicesDeploy, servicesExport,
   servicesGet, servicesInspect, servicesLifecycle, servicesList, servicesLogs,
+  servicesLifecycleStatus,
   servicesStickyAction,
   servicesPortsAction,
   servicesDeployHookAction,
@@ -276,6 +277,8 @@ services.command('stop <id>').description('Stop a running service').action((id: 
 services.command('start <id>').description('Start a stopped service').action((id: string) => servicesLifecycle(getClient(), 'start', id));
 
 services.command('restart <id>').description('Restart a service').action((id: string) => servicesLifecycle(getClient(), 'restart', id));
+services.command('lifecycle <id>').description('Show the last node runtime command and its pending reason').option('--retry', 'Retry the same command without changing its revision')
+  .action((id: string, opts: { retry?: boolean }) => servicesLifecycleStatus(getClient(), id, opts));
 
 services.command('delete <id>').description('Delete a service (with confirmation)').action((id: string) => servicesDelete(getClient(), id));
 

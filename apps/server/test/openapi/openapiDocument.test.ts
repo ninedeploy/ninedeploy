@@ -40,6 +40,14 @@ const operations = Object.entries(doc.paths).flatMap(([p, ops]) => Object.entrie
 const FLOORS = new Set(['public', 'token', 'self', 'authed', 'viewer', 'member', 'admin', 'owner', 'operator', 'scim']);
 
 describe('ROUTE_SPECS entries', () => {
+  it('documents accepted node lifecycle commands separately from completed local operations', () => {
+    for (const action of ['start', 'stop', 'restart']) {
+      expect(doc.paths[`/v1/services/{id}/${action}`]?.post?.responses).toHaveProperty('202');
+      expect(doc.paths[`/v1/services/{id}/${action}`]?.post?.responses).toHaveProperty('200');
+    }
+    expect(doc.paths['/v1/services/{id}/lifecycle/retry']?.post?.responses).toHaveProperty('202');
+    expect(doc.paths['/v1/services/{id}/lifecycle']?.get).toBeDefined();
+  });
   it('covers the routes that predate 0.15 (417 matrix entries, plus /v1/openapi.json)', () => {
     expect(Object.keys(ROUTE_SPECS).length).toBeGreaterThanOrEqual(418);
   });

@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Public node canary acceptance on isolated panel/node daemons. Keeps owned proof artifacts.
-// Usage: node scripts/smoke-node-canary.mjs --image=<candidate> [--proof=<output directory>]
+// Usage: node scripts/smoke-node-canary.mjs --image=<candidate> [--proof=<output directory>] [--lifecycle-only]
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { smokePublicNodeLifecycle } from './lib/smoke-public-node-lifecycle.mjs';
+const lifecycleOnly=process.argv.includes('--lifecycle-only');
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image&&/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
 const proof=resolve(process.argv.find(arg=>arg.startsWith('--proof='))?.slice(8)??('.temp_files/node-canary-'+randomBytes(6).toString('hex')));
@@ -21,12 +23,12 @@ const inner=(args,opts)=>docker(['exec',daemon,'docker',...args],opts);
 const primary=(args,opts)=>docker(['exec',panelDaemon,'docker',...args],opts);
 function run(name,args){containers.push(name);return docker(['run','-d','--name',name,'--label',`ninedeploy.proof=${label}`,...args]);}
 async function until(fn,description,ms=90000){const end=Date.now()+ms;while(Date.now()<end){const r=await fn();if(r)return r;await pause(500);}throw Error(`Timed out: ${description}`);}
-async function api(path,{method='GET',body,raw=false}={}){
+async function api(path,{method='GET',body,raw=false,expectedStatus}={}){
  const timeout=method==='POST'&&path.endsWith('/runtime-recovery')?90_000:15_000;
  let r;
  try{r=await fetch(baseUrl+path,{method,headers:{...(token?{authorization:`Bearer ${token}`}:{ }),...(body!==undefined?{'content-type':'application/json'}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});}
  catch(error){throw new Error(`${method} ${path} did not complete within its request budget`,{cause:error});}
- const text=await r.text();assert.ok(r.ok,`${method} ${path}: ${r.status} ${text.slice(0,1200)}`);return raw?text:text?JSON.parse(text):null;
+ const text=await r.text();if(expectedStatus!==undefined)assert.equal(r.status,expectedStatus,`${method} ${path}: ${text.slice(0,1200)}`);else assert.ok(r.ok,`${method} ${path}: ${r.status} ${text.slice(0,1200)}`);return raw?text:text?JSON.parse(text):null;
 }
 async function seed(){const save=spawn('docker',['save','node:26-slim',image,'busybox:1.36','registry:2'],{windowsHide:true,stdio:['ignore','pipe','pipe']}),load=spawn('docker',['exec','-i',daemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});save.stdout.pipe(load.stdin);save.stderr.resume();load.stdout.resume();load.stderr.resume();await Promise.all([save,load].map(p=>new Promise((r,j)=>{const timer=setTimeout(()=>{p.kill();j(Error('image transfer deadline'));},180000);p.on('error',j);p.on('close',c=>{clearTimeout(timer);c===0?r():j(Error(`image transfer ${c}`));});})));}
 const service=async id=>{const r=await api(`/v1/services/${id}`);return r.service??r;};
@@ -47,7 +49,7 @@ try{
  const fixtureImage=`127.0.0.1:5000/nd-readiness-app:${suffix}`;
  inner(["run","-d","--name","nd-owned-registry","-p","127.0.0.1:5000:5000","registry:2"]);
  await until(()=>docker(["exec",daemon,"wget","-qO-","-T","2","http://127.0.0.1:5000/v2/"],{allowFailure:true}).status===0,"owned node registry");
- const code="const fs=require('node:fs');require('node:http').createServer((q,r)=>{const ready=process.env.NEEDS_READINESS!=='1'||fs.existsSync('/tmp/nd-ready');const business=q.url!=='/ready'&&process.env.FAIL_BUSINESS==='1';r.statusCode=!ready||business?503:200;r.end(!ready?'booting':(process.env.RELEASE_LABEL||'old'));}).listen(8080,'0.0.0.0')";
+ const code="const fs=require('node:fs');require('node:http').createServer((q,r)=>{const ready=(process.env.NEEDS_READINESS!=='1'||fs.existsSync('/tmp/nd-ready'))&&(!fs.existsSync('/tmp/nd-unready')||fs.readFileSync('/tmp/nd-unready','utf8')!=='1');const business=q.url!=='/ready'&&process.env.FAIL_BUSINESS==='1';r.statusCode=!ready||business?503:200;r.end(!ready?'booting':(process.env.RELEASE_LABEL||'old'));}).listen(8080,'0.0.0.0')";
  docker(['exec','-i',daemon,'sh','-c','mkdir -p /tmp/readiness-fixture; cat > /tmp/readiness-fixture/Dockerfile'],{input:`FROM node:26-slim\nHEALTHCHECK NONE\nEXPOSE 8080\nCMD ${JSON.stringify(['node','-e',code])}\n`});
  inner(['build','-t',fixtureImage,'/tmp/readiness-fixture']);inner(['push',fixtureImage]);
  const saving=spawn('docker',['exec',daemon,'docker','save',fixtureImage],{windowsHide:true,stdio:['ignore','pipe','pipe']}),loading=spawn('docker',['exec','-i',panelDaemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});saving.stdout.pipe(loading.stdin);saving.stderr.resume();loading.stdout.resume();loading.stderr.resume();await Promise.all([saving,loading].map(p=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{p.kill();reject(Error('fixture image transfer deadline'));},180000);p.on('error',reject);p.on('close',code=>{clearTimeout(timer);code===0?resolve():reject(Error('fixture image transfer '+code));});})));
@@ -69,6 +71,7 @@ try{
  const created=await api('/v1/services',{method:'POST',body:{name:'R1 node canary',type:'docker',image:fixtureImage,port:8080,serverId:registration.id}});
  const id=created.id??created.service?.id;
  await api('/v1/services/'+id,{method:'PATCH',body:{healthCheck:'http-strict',healthPath:'/ready',healthTimeoutSeconds:60}});
+ if(lifecycleOnly)await api('/v1/services/'+id,{method:'PATCH',body:{replicas:2}});
  const first=(await api('/v1/services/'+id+'/deploys',{method:'POST',body:{}})).deploymentId;
  await success(id,first);
  const domain=(await api('/v1/services/'+id+'/domains'))[0];assert.ok(domain?.hostname);
@@ -137,6 +140,10 @@ try{
    const value=/X-NineDeploy-Generation:\s*([a-f0-9]{64})/i.exec(output)?.[1];assert.ok(value);return value;
  };
 
+ if(lifecycleOnly){
+   await smokePublicNodeLifecycle({api,inner,docker,panel,args,id,first,fixtureImage,service,domain,until,pause,report,cleared,
+     updatePanelUrl:()=>{baseUrl='http://127.0.0.1:'+docker(['port',panel,'3000/tcp']).out.split(':').at(-1);}});
+ }else{
  // Hold a real 503 readiness response, then exercise a harmless concurrent domain refresh.
  {
    const c=await startCase('healthy',{hold:true});await candidate(c);
@@ -231,7 +238,8 @@ try{
    assert.equal((await rows(id)).find(r=>r.id===c.dep)?.status,'cancelled');
    report({case:c.name,stopRemainedAuthoritative:true,noAutomaticRevival:true,trafficSamplingEndsBeforeStop:true,...sampled});
  }
- const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,cases:results,requests:results.reduce((n,r)=>n+r.requests,0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
+ }
+ const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
  writeFileSync(proof+'/runtime-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }catch(e){
  try{

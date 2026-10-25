@@ -139,6 +139,19 @@ describe('primary recovery through SQLite and the real routing writer', () => {
     expect(containers.has(oldId)).toBe(false); expect(containers.has(candidateId)).toBe(true); expect(await rows()).toEqual([]);
     expect(h.agent.mock.calls.find(c => c[2] === 'docker.retire')?.[3]).toEqual({ id: oldId, name: old });
   });
+
+  it('retires a node generation through the immutable recovery operation when legacy Stop is fenced', async () => {
+    caps.push('docker.lifecycle');
+    await journal(); const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'docker.stop') throw Error('Legacy Docker lifecycle is fenced by ordered lifecycle');
+      return original(...args);
+    });
+    expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
+    expect(containers.has(oldId)).toBe(false); expect(containers.has(candidateId)).toBe(true);
+    expect(h.agent.mock.calls.some(call => call[2] === 'docker.stop')).toBe(false);
+    expect(h.agent.mock.calls.find(call => call[2] === 'docker.retire')?.[3]).toMatchObject({ id: oldId, name: old, graceSeconds: '5' });
+  });
   it('ends an interrupted canary on the previous generation before removing its candidate', async () => {
     await journal({ desiredRuntimeId: old });
     expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });

@@ -34,6 +34,7 @@ import rawBodyPlugin from './plugins/rawBody.js';
 import runtimeStatePlugin from './plugins/runtimeState.js';
 import fanoutRecoveryPlugin from './plugins/fanoutRecovery.js';
 import primaryRecoveryPlugin from './plugins/primaryRecovery.js';
+import nodeLifecyclePlugin from './plugins/nodeLifecycle.js';
 import swarmRecoveryPlugin from './plugins/swarmRecovery.js';
 import securityHeadersPlugin from './plugins/securityHeaders.js';
 import staticFilesPlugin from './plugins/staticFiles.js';
@@ -158,6 +159,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(runtimeStatePlugin);
   await app.register(fanoutRecoveryPlugin);
   await app.register(primaryRecoveryPlugin);
+  await app.register(nodeLifecyclePlugin);
   await app.register(swarmRecoveryPlugin);
   // Resource metrics collector
   await app.register(collectorPlugin);

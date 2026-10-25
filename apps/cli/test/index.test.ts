@@ -101,6 +101,7 @@ const h = vi.hoisted(() => {
     servicesDeploy: vi.fn(),
     servicesLogs: vi.fn(),
     servicesLifecycle: vi.fn(),
+    servicesLifecycleStatus: vi.fn(),
     servicesDelete: vi.fn(),
     servicesExport: vi.fn(),
     servicesCompose: vi.fn(),
@@ -259,6 +260,7 @@ vi.mock('../src/commands/services.js', () => ({
   servicesExport: h.servicesExport,
   servicesGet: h.servicesGet,
   servicesLifecycle: h.servicesLifecycle,
+  servicesLifecycleStatus: h.servicesLifecycleStatus,
   servicesList: h.servicesList,
   servicesLogs: h.servicesLogs,
   servicesCompose: h.servicesCompose,
@@ -420,7 +422,9 @@ describe('program registration', () => {
     expect(findCommand('server').children).toHaveLength(4);
     // 0.13: + `services github <id>`.
     // 0.16 T8: + `services placement|transfers|swarm <id>`.
-    expect(findCommand('services').children).toHaveLength(19);
+    // Ordered node command status and same-command retry.
+    expect(findCommand('services').children).toHaveLength(20);
+    expect(findCommand('services').children.find(c => c.cmdName === 'lifecycle <id>')?.opts.flags).toBe('--retry');
     // 0.14: + public-access, import, imports.
     expect(findCommand('databases').children).toHaveLength(7);
     expect(findCommand('templates').children).toHaveLength(4);
@@ -465,7 +469,7 @@ describe('program registration', () => {
     // 0.16.16: + `deploys diagnose`.
     // Resource monitoring: settings/configure plus log-drains and its three actions.
     // Node volume files: list, read, write, mkdir, delete-file.
-    expect(h.FakeCommand.instances).toHaveLength(325);
+    expect(h.FakeCommand.instances).toHaveLength(326);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);
@@ -874,6 +878,9 @@ describe('delegating actions', () => {
 
     await cmds.get('restart <id>')!.actionFn!('4');
     expect(h.servicesLifecycle).toHaveBeenCalledWith(client, 'restart', '4');
+
+    await cmds.get('lifecycle <id>')!.actionFn!('12', { retry: true });
+    expect(h.servicesLifecycleStatus).toHaveBeenCalledWith(client, '12', { retry: true });
 
     await cmds.get('delete <id>')!.actionFn!('5');
     expect(h.servicesDelete).toHaveBeenCalledWith(client, '5');

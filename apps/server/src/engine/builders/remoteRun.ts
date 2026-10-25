@@ -17,6 +17,7 @@ import {
 } from '../../lib/remoteVolumes.js';
 import type { ServiceRuntimeOptions } from '@ninedeploy/db';
 import { type NodeFileMount, type NodeServiceFile, writeNodeFileMounts } from '../../lib/serviceFiles.js';
+import { runRemoteReplicas } from './remoteReplicas.js';
 
 /**
  * The RUN phase of a remote docker deploy: write the env-file on the node,
@@ -49,6 +50,8 @@ export function envForAgent(env: Record<string, string>): Record<string, string>
 }
 
 export interface RemoteRunInput {
+  /** Internal replica preparation keeps ambiguous failures for immutable recovery. */
+  immutableFailureCleanup?: true;
   service: BuildContext['service'];
   deploymentId: number;
   env: Record<string, string>;
@@ -85,8 +88,16 @@ interface SpecVolume {
   readOnly: boolean;
 }
 
-/** Start the container on the node. Returns the port the runtime listens on. */
-export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput): Promise<{ port: number | null }> {
+export interface RemoteRunResult {
+  port: number | null;
+  containerId?: string;
+  replicas?: number;
+  targets?: Array<{ id: string; name: string }>;
+}
+
+/** Start a complete manual replica set, retaining the single-container compatibility path. */
+export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput): Promise<RemoteRunResult> {
+  if ((input.service.replicas ?? 1) > 1) return runRemoteReplicas(agent, input, runRemoteContainer);
   const { service, deploymentId, env, name, image: target, previous, log } = input;
   const sink = (line: string) => log(line);
 
@@ -194,10 +205,15 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   }
 
   log(`Starting ${name} on the node …`);
+  let containerId: string | undefined;
+  const creationId = (lines: string[]) => {
+    const ids = lines.map(line => line.trim()).filter(line => /^[a-f0-9]{64}$/.test(line));
+    return ids.length === 1 ? ids[0] : undefined;
+  };
   try {
     // ── 0.16 T5 node volumes ──
     if (runSpec) {
-      await agent(
+      const result = await agent(
         'docker.runSpec',
         runSpecParams(service, {
           name,
@@ -213,8 +229,10 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
         }),
         sink,
       );
+      containerId = creationId(result.lines);
     } else {
-      await agent('docker.runEnv', runParams, sink);
+      const result = await agent('docker.runEnv', runParams, sink);
+      containerId = creationId(result.lines);
     }
     // ── end 0.16 T5 ──
   } catch (err) {
@@ -222,7 +240,7 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
     // mount) leaves a Created container under this deployment's name, and
     // the pipeline has no runtime to stop. Remove it; the run error is
     // still what fails the deployment.
-    await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
+    if (!input.immutableFailureCleanup) await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
     throw err;
   } finally {
     // The env-file has been consumed by `docker run`; leaving decrypted
@@ -230,7 +248,7 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
     await agent('file.deleteEnv', { name: envFileName }, sink).catch(() => undefined);
   }
 
-  return { port: resolvedPort };
+  return { port: resolvedPort, ...(input.immutableFailureCleanup && containerId ? { containerId } : {}) };
 }
 
 // ── 0.16 T5 node volumes ──

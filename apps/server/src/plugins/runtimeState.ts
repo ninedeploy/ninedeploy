@@ -8,6 +8,8 @@ import { replicaNames } from '../engine/dockerNames.js';
 import { agentOp } from '../lib/agentClient.js';
 import { serviceTargets } from '@ninedeploy/db';
 import { swarmRuntimeOf } from '../lib/swarm.js';
+import { acceptNodeLifecycleIntent } from '../lib/nodeLifecycleIntent.js';
+import { assertNodeLifecycleAvailable, publicNodeLifecycle } from '../lib/nodeLifecycleRuntime.js';
 
 // A tight loop matters for the boot promise ("everything comes back on its
 // own"): the first pass runs at startup, and anything it cannot fix — e.g. a
@@ -312,7 +314,7 @@ export default fp(
      */
     const patrolNode = async (
       serverId: number,
-      rows: Array<{ id: number; name: string; runtimeId: string }>,
+      rows: Array<{ id: number; name: string; runtimeId: string; type: string }>,
     ): Promise<void> => {
       const agent = (op: string, params: Record<string, unknown>) =>
         agentOp(fastify.db, serverId, op, params, () => undefined, { tolerateExit: true });
@@ -352,6 +354,23 @@ export default fp(
         if (live === 'stopped') {
           // F940: not `running` (or not this runtime) any more — leave it.
           if (!(await stillRunning(svc))) continue;
+          if (svc.type === 'docker') {
+            // Acceptance rechecks the running snapshot transactionally. A
+            // newer explicit Stop either wins that check or supersedes this
+            // durable Start; the agent fences every delayed legacy callback.
+            try {
+              const fresh = await fastify.db.query.services.findFirst({ where: eq(services.id, svc.id) });
+              if (!fresh || fresh.status !== 'running' || fresh.runtimeId !== svc.runtimeId || fresh.serverId !== serverId) continue;
+              const pending = (await publicNodeLifecycle(fastify.db, fresh)).command;
+              if (pending?.current && pending.phase !== 'completed' && pending.phase !== 'superseded') continue;
+              await assertNodeLifecycleAvailable(fastify.db, fresh);
+              await acceptNodeLifecycleIntent(fastify.db, fresh, 'start', { automatic: true });
+              fastify.log.warn({ serviceId: svc.id, serverId }, 'queued ordered node runtime recovery');
+            } catch (err) {
+              fastify.log.warn({ err, serviceId: svc.id, serverId }, 'ordered node recovery unavailable; runtime retained');
+            }
+            continue;
+          }
           try {
             const started = await agent('docker.start', { name: svc.runtimeId });
             if (started.exitCode === 0 && (await stateOf(svc.runtimeId)) === 'running') {
@@ -380,7 +399,7 @@ export default fp(
       void audit(fastify.db, null, 'alert.oom', name, { serviceId, runtimeId, exitCode });
     };
 
-    const reconcile = async () => {
+    const reconcilePass = async () => {
       try {
         const rows = await fastify.db.query.services.findMany({
           where: and(eq(services.status, 'running'), isNull(services.serverId)),
@@ -492,12 +511,12 @@ export default fp(
             inArray(services.type, [...NODE_PATROLLED_TYPES]),
           ),
         });
-        const byNode = new Map<number, Array<{ id: number; name: string; runtimeId: string }>>();
+        const byNode = new Map<number, Array<{ id: number; name: string; runtimeId: string; type: string }>>();
         for (const svc of remote) {
           if (svc.serverId == null || !svc.runtimeId) continue;
           if (!(NODE_PATROLLED_TYPES as readonly string[]).includes(svc.type)) continue;
           const batch = byNode.get(svc.serverId) ?? [];
-          batch.push({ id: svc.id, name: svc.name, runtimeId: svc.runtimeId });
+          batch.push({ id: svc.id, name: svc.name, runtimeId: svc.runtimeId, type: svc.type });
           byNode.set(svc.serverId, batch);
         }
         for (const [serverId, batch] of byNode) await patrolNode(serverId, batch);
@@ -506,6 +525,12 @@ export default fp(
       }
     };
 
+    let closed = false, cycle: Promise<void> | undefined;
+    const reconcile = () => {
+      if (closed || cycle) return cycle ?? Promise.resolve();
+      cycle = reconcilePass().finally(() => { cycle = undefined; });
+      return cycle;
+    };
     // Fire-and-forget on boot: reconcile must not delay readiness, and the
     // rows it inspects are by definition not mid-deploy (status = 'running').
     fastify.addHook('onReady', () => {
@@ -517,8 +542,8 @@ export default fp(
     }, RECONCILE_INTERVAL_MS);
     timer.unref();
 
-    fastify.addHook('onClose', () => {
-      clearInterval(timer);
+    fastify.addHook('onClose', async () => {
+      closed = true; clearInterval(timer); await cycle;
     });
   },
   { name: 'ninedeploy-runtime-state' },

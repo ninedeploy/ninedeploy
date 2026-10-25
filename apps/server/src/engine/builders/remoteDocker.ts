@@ -9,6 +9,8 @@ import type { NodeGitCredentialSource } from '../../lib/nodeGitCredential.js';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
 import { runRemoteContainer } from './remoteRun.js';
+import { verifyNodeReadiness } from '../../lib/nodeReadiness.js';
+import { discoverRemoteReplicas, retireRemoteReplicas } from './remoteReplicas.js';
 
 // r267: moved to remoteRun.ts with the run phase (multi-node T1); re-exported
 // so every importer keeps its path.
@@ -365,6 +367,8 @@ export function createRemoteDockerBuilder(
   } = {},
 ): Builder {
   const pollMs = opts.pollMs ?? 2000;
+  const replicaSets = new Map<string, Array<{ id: string; name: string }>>();
+  const previousReplicaOwners = new Map<string, number>();
   /** Parse the `health` inspect format: `<status>|<health>|<failingStreak>|<restartCount>`. */
   const parseHealth = (
     lines: string[],
@@ -382,6 +386,7 @@ export function createRemoteDockerBuilder(
   return {
     async buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime> {
       const { service, deploymentId, env, imageDigest, registryAuth, log } = ctx;
+      if (previous && (service.runtimeReplicas ?? 1) > 1) previousReplicaOwners.set(previous.runtimeId, service.id);
       const probeProtocol = service.healthCheck === 'http-strict' ? 'http' : service.healthCheck === 'tcp' ? 'tcp' : undefined;
       if (probeProtocol) {
         const info = parseAgentCapabilities((await agent('agent.ping', {}, () => undefined)).lines);
@@ -416,7 +421,7 @@ export function createRemoteDockerBuilder(
       // the run phase (design §6.3 step 5). Unset by every caller until build
       // placement lands, so every deploy takes the branches below as before.
       if (opts.prebuiltImage) {
-        target = opts.prebuiltImage.tag;
+        target = (service.replicas ?? 1) > 1 ? opts.prebuiltImage.imageId : opts.prebuiltImage.tag;
         builtWithNixpacks = opts.prebuiltImage.builtWithNixpacks ?? false;
         log(`Running ${target} (${opts.prebuiltImage.imageId.slice(0, 19)}), built elsewhere and shipped to the node …`);
       } else
@@ -482,7 +487,7 @@ export function createRemoteDockerBuilder(
 
       // The run phase (env-file, `docker.runEnv`, cleanup) lives in
       // remoteRun.ts, unchanged.
-      const { port: resolvedPort } = await runRemoteContainer(agent, {
+      const { port: resolvedPort, replicas, targets } = await runRemoteContainer(agent, {
         service: runService,
         deploymentId,
         env: runEnv,
@@ -497,12 +502,14 @@ export function createRemoteDockerBuilder(
         files: ctx.nodeFiles ?? [],
       });
 
+      if (targets) replicaSets.set(name, targets);
       if (opts.prebuiltImage && target === opts.prebuiltImage.imageId) {
         try {
-          const actual = (await agent('docker.inspect', { name, format: 'image' }, () => undefined)).lines.filter(line => line.trim()).at(-1)?.trim();
+          const actual = (await agent('docker.inspect', { name: targets?.[0]?.id ?? name, format: 'image' }, () => undefined)).lines.filter(line => line.trim()).at(-1)?.trim();
           if (actual !== opts.prebuiltImage.imageId) throw new Error('Runtime image identity does not match the recorded artifact');
         } catch (err) {
-          await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
+          if (targets) await retireRemoteReplicas(agent, targets).catch(() => undefined);
+          else await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
           throw err;
         }
       }
@@ -510,7 +517,7 @@ export function createRemoteDockerBuilder(
       let sourceImageId: string | undefined;
       if (ctx.recordDockerArtifact && !service.image) {
         try {
-          const actual = (await agent('docker.inspect', { name, format: 'image' }, () => undefined)).lines.filter(line => line.trim()).at(-1)?.trim();
+          const actual = (await agent('docker.inspect', { name: targets?.[0]?.id ?? name, format: 'image' }, () => undefined)).lines.filter(line => line.trim()).at(-1)?.trim();
           if (!actual || !/^sha256:[a-f0-9]{64}$/.test(actual)) throw new Error('unreadable image ID');
           if (opts.prebuiltImage && actual !== opts.prebuiltImage.imageId) throw new Error('placed build image changed');
           sourceImageId = actual;
@@ -522,6 +529,7 @@ export function createRemoteDockerBuilder(
       return {
         ...(sourceImageId ? { artifactBuild: { builtWithNixpacks, builtStatic: opts.prebuiltImage?.builtStatic ?? false } } : {}),
         runtimeId: name,
+        ...(targets ? { nodeTargets: targets, replicas } : {}),
         port: resolvedPort,
         healthPath: service.healthPath ?? '/',
         ...(probeProtocol ? { healthCheck: service.healthCheck as 'http-strict' | 'tcp' } : {}),
@@ -565,6 +573,11 @@ export function createRemoteDockerBuilder(
         const remaining = deadline - Date.now();
         if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(pollMs, remaining)));
       };
+      if (runtime.nodeTargets?.length) {
+        return verifyNodeReadiness((op, params, sink) => healthCall(op, params, sink), {
+          targets: runtime.nodeTargets, port: runtime.port, mode: runtime.healthCheck ?? 'auto', path: runtime.healthPath,
+        }, Math.max(0, deadline - Date.now()), checkpoint, log);
+      }
       // r265: the first `running` sample used to be the verdict and
       // `restarting` just kept the poll going — under `--restart
       // unless-stopped` a crash-looping container is `running` between
@@ -665,6 +678,13 @@ export function createRemoteDockerBuilder(
     },
 
     async stop(runtimeId: string, opts?: { graceSeconds?: number }): Promise<void> {
+      const known = replicaSets.get(runtimeId);
+      const owner = previousReplicaOwners.get(runtimeId);
+      if (known || owner != null) {
+        const targets = known ?? await discoverRemoteReplicas(agent, runtimeId, owner!);
+        await retireRemoteReplicas(agent, targets, opts?.graceSeconds ?? 5);
+        return;
+      }
       // r526: the service's stop grace reaches the node too (it used to be
       // dropped and the agent pinned `-t 5`). An agent that predates the
       // operand ignores it and keeps 5 s. Both calls are best-effort: a

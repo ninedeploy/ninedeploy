@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import type { ServiceLifecycleView } from '@ninedeploy/sdk';
 import {
   Activity, ArrowLeft, Boxes, Copy, Download, ExternalLink, FileCode2, FileStack, FolderTree, GitBranch, Globe, HardDrive, KeyRound, LayoutDashboard, Network, Play, Rocket, RotateCcw, Settings, ShieldAlert, Square, Terminal,
 } from 'lucide-react';
@@ -7,7 +8,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api, authedFetch } from '../../lib/api.js';
 import { ContainerTerminal } from '../../components/ContainerTerminal.js';
 import { useToast } from '../../components/Toast.js';
-import { Button, Card, CardBody, ConfirmDialog, Skeleton, cn } from '../../components/ui.js';
+import { Button, Card, CardBody, ConfirmDialog, ErrorCard, Skeleton, cn } from '../../components/ui.js';
 import { downloadBlob } from '../../lib/format.js';
 import { OverviewTab } from './OverviewTab.js';
 import { ServiceTrafficCard } from './ServiceTrafficCard.js';
@@ -26,6 +27,7 @@ import { ActivityTab } from './ActivityTab.js';
 import { DangerZone } from './DangerZone.js';
 import { CanaryPanel } from './CanaryPanel.js';
 import { ServiceStatusBadge, SleepActions } from './SleepState.js';
+import { NodeLifecycleCard } from './NodeLifecycleCard.js';
 
 import { ContainerFileBrowser } from '../../components/ContainerFileBrowser.js';
 import { ServiceDomainLauncher } from '../../components/ServiceDomainLauncher.js';
@@ -84,6 +86,18 @@ export function ServiceDetail() {
     queryFn: () => api.services.get(id),
     refetchInterval: (q) => (q.state.data?.status === 'deploying' ? 2000 : false),
   });
+  const lifecycleState = useQuery({
+    queryKey: ['service-lifecycle', id], queryFn: () => api.services.lifecycle(id),
+    enabled: service.data?.type === 'docker' && service.data.serverId != null && service.data.orchestrator !== 'swarm',
+    refetchInterval: query => query.state.data?.command && !['completed', 'superseded'].includes(query.state.data.command.phase) ? 1000 : 30_000,
+  });
+  const lifecycleCommand = lifecycleState.data?.command;
+  useEffect(() => {
+    if (lifecycleCommand?.current && lifecycleCommand.phase === 'completed') {
+      void qc.invalidateQueries({ queryKey: ['service', id] });
+      void qc.invalidateQueries({ queryKey: ['services'] });
+    }
+  }, [lifecycleCommand, id, qc]);
   const deploys = useQuery({
     queryKey: ['deploys', id],
     queryFn: () => api.deploys.list(id),
@@ -146,12 +160,22 @@ export function ServiceDetail() {
   });
 
   const lifecycle = useMutation({
-    mutationFn: (action: 'stop' | 'start' | 'restart') => api.services[action](id),
-    onSuccess: (_d, action) => {
-      qc.invalidateQueries({ queryKey: ['service', id] });
-      toast(`Service ${LIFECYCLE_DONE[action]}`, 'success');
+    mutationFn: ({ action, serviceId }: { action: 'stop' | 'start' | 'restart'; serviceId: number }) => api.services[action](serviceId),
+    onSuccess: (result, { action, serviceId }) => {
+      qc.invalidateQueries({ queryKey: ['service', serviceId] });
+      if (result?.pending) {
+        const known = qc.getQueryData<ServiceLifecycleView>(['service-lifecycle', serviceId])?.command;
+        if (known && result.lifecycle && (known.id > result.lifecycle.id || known.id === result.lifecycle.id && ['completed', 'superseded'].includes(known.phase))) {
+          void qc.invalidateQueries({ queryKey: ['service-lifecycle', serviceId] }); return;
+        }
+        qc.setQueryData(['service-lifecycle', serviceId], { command: result.lifecycle ?? null });
+        void qc.invalidateQueries({ queryKey: ['service-lifecycle', serviceId] });
+        if (serviceId !== id) return;
+        const title = { start: 'Start', stop: 'Stop', restart: 'Restart' }[action];
+        toast(result.lifecycle?.phase === 'superseded' ? `${title} request superseded by a newer action` : `${title} requested; runtime verification is pending`, 'info');
+      } else if (serviceId === id) toast(`Service ${LIFECYCLE_DONE[action]}`, 'success');
     },
-    onError: () => toast('Action failed', 'error'),
+    onError: (error, { serviceId }) => { if (serviceId === id) toast(error instanceof Error ? error.message : 'Action failed', 'error'); },
   });
 
   // Danger zone: delete the service (type-the-name confirm).
@@ -294,17 +318,22 @@ export function ServiceDetail() {
             <>
               {/* 0.16.11: Wake now while asleep, Sleep now while awake with Sleep when idle on. */}
               <SleepActions svc={svc} />
-              <Button variant="secondary" size="md" onClick={() => lifecycle.mutate('restart')} disabled={lifecycle.isPending} title="Restart">
+              <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'restart', serviceId: id })} disabled={lifecycle.isPending} title="Restart">
                 <RotateCcw size={15} /> Restart
               </Button>
-              <Button variant="secondary" size="md" onClick={() => lifecycle.mutate('stop')} disabled={lifecycle.isPending} title="Stop">
+              <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'stop', serviceId: id })} disabled={lifecycle.isPending} title="Stop">
                 <Square size={15} /> Stop
               </Button>
             </>
           )}
           {svc.status === 'stopped' && (
-            <Button variant="secondary" size="md" onClick={() => lifecycle.mutate('start')} disabled={lifecycle.isPending}>
+            <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'start', serviceId: id })} disabled={lifecycle.isPending}>
               <Play size={15} /> Start
+            </Button>
+          )}
+          {svc.status !== 'running' && lifecycleState.data?.command?.current && !['completed', 'superseded'].includes(lifecycleState.data.command.phase) && lifecycleState.data.command.action !== 'stop' && (
+            <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'stop', serviceId: id })} disabled={lifecycle.isPending} title="Stop">
+              <Square size={15} /> Stop
             </Button>
           )}
           {svc.runtimeId && (
@@ -334,6 +363,8 @@ export function ServiceDetail() {
       />
 
       {showRuntimeLogs && svc.runtimeId && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
+      <NodeLifecycleCard serviceId={id} command={lifecycleState.data?.command ?? null} />
+      {lifecycleState.isError && <ErrorCard title="Could not load runtime commands" error={lifecycleState.error} onRetry={() => void lifecycleState.refetch()} />}
 
       {showExec && svc.runtimeId && tab !== 'terminal' && (
         <div className="mt-5">

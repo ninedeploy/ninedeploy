@@ -29,6 +29,8 @@ const setTargets = z.object({ serverIds: z.array(z.number().int().positive()).ma
 import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from '../lib/runtimeReplicaCounts.js';
+import { acceptNodeLifecycleIntent, retryNodeLifecycleIntent } from '../lib/nodeLifecycleIntent.js';
+import { assertNodeLifecycleAvailable, publicNodeLifecycle } from '../lib/nodeLifecycleRuntime.js';
 import { targetsForService, teardownTargets, type FanoutTarget } from '../engine/fanout.js';
 import { listFanoutRecovery, reconcileFanoutTransitions } from '../engine/fanoutRecovery.js';
 import { listPrimaryRecovery, reconcilePrimaryTransitions } from '../engine/primaryRecovery.js';
@@ -52,6 +54,7 @@ import {
   maxRole,
   mayUseEnvironment,
   roleAtLeast,
+  serviceRole,
   userWorkspaceMemberships,
   visibleServiceIdSet,
 } from '../lib/resourceAccess.js';
@@ -1454,6 +1457,35 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── Lifecycle: stop / start / restart ──────────────────────────────────
+  app.get('/:id/lifecycle', async req => {
+    const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
+    const view = await publicNodeLifecycle(app.db, svc);
+    if (view.command?.retryable) {
+      const role = await serviceRole(app.db, svc, req.user!);
+      view.command.retryable = role != null && roleAtLeast(role, 'member');
+    }
+    return view;
+  });
+
+  app.post('/:id/lifecycle/retry', async (req, reply) => {
+    const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'member');
+    await assertNodeLifecycleAvailable(app.db, svc);
+    const command = await retryNodeLifecycleIntent(app.db, svc);
+    void audit(app.db, req.user!.id, 'service.lifecycle_retry', `${svc.name} #${svc.id}`, { serviceId: svc.id, commandId: command.id });
+    return reply.code(202).send({ ok: true, pending: true, ...(await publicNodeLifecycle(app.db, svc, command.id)) });
+  });
+
+  const orderedNode = (svc: Service) => svc.type === 'docker' && svc.orchestrator !== 'swarm' && svc.serverId != null;
+  const requestLifecycle = async (svc: Service, action: 'start' | 'stop' | 'restart', req: FastifyRequest) => {
+    // A desired Stop survives an unreachable/disabled node. Execution holds
+    // with its reason until the sealed capability is available again.
+    if (action !== 'stop') await assertNodeLifecycleAvailable(app.db, svc);
+    const command = await acceptNodeLifecycleIntent(app.db, svc, action);
+    void audit(app.db, req.user!.id, 'service.lifecycle_requested', `${svc.name} #${svc.id}`, { serviceId: svc.id, commandId: command.id, action });
+    const view = await publicNodeLifecycle(app.db, { ...svc, status: action === 'start' ? svc.status : 'stopped' }, command.id);
+    return { ok: true, pending: true, status: action === 'start' ? svc.status : 'stopped', lifecycle: view.command };
+  };
   // PM2 services run as host processes under the PM2 daemon and must be
   // managed through it — `docker stop/start/restart` would silently no-op on a
   // PM2 process name. Docker services are managed through the docker CLI.
@@ -1492,10 +1524,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
   };
 
-  app.post('/:id/stop', async (req) => {
+  app.post('/:id/stop', async (req, reply) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
+    if (orderedNode(svc)) return reply.code(202).send(await requestLifecycle(svc, 'stop', req));
     // PM2 and Docker have disjoint runtimes — an unknown type must not silently
     // misroute to the docker CLI (which would no-op on a PM2 process name).
     if (svc.type !== 'pm2' && svc.type !== 'docker' && svc.type !== 'compose') {
@@ -1571,10 +1604,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true, status: 'stopped' };
   });
 
-  app.post('/:id/start', async (req) => {
+  app.post('/:id/start', async (req, reply) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
+    if (orderedNode(svc)) return reply.code(202).send(await requestLifecycle(svc, 'start', req));
     // 0.16.11: a sleeping service is woken (its containers started, its routes back).
     if (svc.asleepAt != null) return wakeFromRoute(svc, req, 'start');
     // ── 0.16 T7 swarm ── start = scale back to the service's replicas.
@@ -1633,10 +1667,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true, status: 'running' };
   });
 
-  app.post('/:id/restart', async (req) => {
+  app.post('/:id/restart', async (req, reply) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
+    if (orderedNode(svc)) return reply.code(202).send(await requestLifecycle(svc, 'restart', req));
     // 0.16.11: a sleeping service is woken (its containers started, its routes back).
     if (svc.asleepAt != null) return wakeFromRoute(svc, req, 'restart');
     // ── 0.16 T7 swarm ── restart = `docker service update --force` (a rolling restart of every task).

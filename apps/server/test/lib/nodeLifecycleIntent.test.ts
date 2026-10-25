@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDb, runMigrations, services, servers, users, deployments, nodeLifecycleIntents, eq } from '@ninedeploy/db';
-import { acceptNodeLifecycleIntent, advanceNodeLifecycleIntent, checkpointNodeLifecycleIntent, claimNodeLifecycleIntent, holdNodeLifecycleIntent, nodeLifecycleRevision, pruneNodeLifecycleHistory, NODE_LIFECYCLE_LEASE_MS } from '../../src/lib/nodeLifecycleIntent.js';
+import { acceptNodeLifecycleIntent, advanceNodeLifecycleIntent, checkpointNodeLifecycleIntent, claimNodeLifecycleIntent, holdNodeLifecycleIntent, nodeLifecycleRevision, pruneNodeLifecycleHistory, retryNodeLifecycleIntent, NODE_LIFECYCLE_LEASE_MS } from '../../src/lib/nodeLifecycleIntent.js';
 
 let c: ReturnType<typeof createDb>;
 beforeEach(async () => {
@@ -13,6 +13,34 @@ afterEach(() => c.client?.close());
 const row = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
 
 describe('durable panel node lifecycle intent', () => {
+  it('reserves restart Start below the next command fence', async () => {
+    const first = await acceptNodeLifecycleIntent(c.db, await row(), 'restart');
+    const next = await acceptNodeLifecycleIntent(c.db, await row(), 'stop');
+    expect(nodeLifecycleRevision(first.id, 'restart-start')).toBeGreaterThan(nodeLifecycleRevision(first.id, 'effect'));
+    expect(nodeLifecycleRevision(first.id, 'restart-start')).toBeLessThan(nodeLifecycleRevision(next.id, 'fence'));
+  });
+
+  it('rejects Start checkpoints when a deployment takes ownership after acceptance', async () => {
+    const accepted = await acceptNodeLifecycleIntent(c.db, await row(), 'start');
+    const intent = (await claimNodeLifecycleIntent(c.db, accepted.id))!;
+    await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+    await expect(checkpointNodeLifecycleIntent(c.db, intent)).rejects.toThrow(/changed/);
+    expect((await row()).runtimeId).toBe('web-9');
+    expect((await c.db.query.deployments.findFirst())!.status).toBe('queued');
+  });
+
+  it('clears an expired owner during manual retry so its late callback cannot delay recovery', async () => {
+    const accepted = await acceptNodeLifecycleIntent(c.db, await row(), 'stop');
+    const owner = (await claimNodeLifecycleIntent(c.db, accepted.id))!;
+    await c.db.update(nodeLifecycleIntents).set({ leaseUntil: new Date(0) }).where(eq(nodeLifecycleIntents.id, accepted.id));
+    const retried = await retryNodeLifecycleIntent(c.db, await row());
+    expect(retried).toMatchObject({ id: accepted.id, requestId: accepted.requestId, phase: accepted.phase, ownerToken: null, leaseUntil: null });
+    await holdNodeLifecycleIntent(c.db, owner, Error('Late abandoned callback'));
+    expect((await c.db.query.nodeLifecycleIntents.findFirst())!.reason).toBeNull();
+    const next = await claimNodeLifecycleIntent(c.db, accepted.id);
+    expect(next?.ownerToken).toBeTruthy(); expect(next?.ownerToken).not.toBe(owner.ownerToken);
+  });
+
   it('persists Stop before effects, cancels older deployment work and records the serving snapshot', async () => {
     await c.db.insert(deployments).values([{ id: 9, serviceId: 1, status: 'running' }, { id: 10, serviceId: 1, status: 'queued' }, { id: 11, serviceId: 1, status: 'deploying' }]);
     const intent = await acceptNodeLifecycleIntent(c.db, await row(), 'stop');
@@ -161,5 +189,12 @@ describe('durable panel node lifecycle intent', () => {
     await c.db.update(nodeLifecycleIntents).set({ createdAt: new Date(0), updatedAt: new Date(0), reason: 'Node offline' }).where(eq(nodeLifecycleIntents.id, first.id));
     expect(await pruneNodeLifecycleHistory(c.db)).toEqual([]);
     expect((await c.db.query.nodeLifecycleIntents.findFirst())!.id).toBe(first.id);
+  });
+  it('coalesces automatic recovery without superseding an existing command', async () => {
+    const first = await acceptNodeLifecycleIntent(c.db, await row(), 'start', { automatic: true });
+    const owner = await claimNodeLifecycleIntent(c.db, first.id);
+    const second = await acceptNodeLifecycleIntent(c.db, await row(), 'start', { automatic: true });
+    expect(second.id).toBe(first.id); expect(second.ownerToken).toBe(owner!.ownerToken);
+    expect(await c.db.select().from(nodeLifecycleIntents)).toHaveLength(1);
   });
 });

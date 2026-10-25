@@ -47,6 +47,15 @@ async function finish<T>(promise: Promise<T>): Promise<T> {
 }
 
 describe('durable panel node lifecycle execution', () => {
+  it('restarts through durable Stop, drain, Start and readiness phases without early publication', async () => {
+    running = true; await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'restart');
+    expect((await service()).status).toBe('stopped');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'completed' });
+    expect(trace).toEqual(['fence', 'route:stopped', 'drain', 'effect:stop', 'effect:start',
+      'readiness:stopped', 'readiness:stopped', 'readiness:stopped', 'route:deploying']);
+    expect((await service()).status).toBe('running');
+  });
   it('keeps Start unpublished until all readiness rounds and routing confirmation complete', async () => {
     const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'start');
     expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toMatchObject({ state: 'completed' });

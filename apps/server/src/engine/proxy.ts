@@ -907,7 +907,7 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     }
   }
   if (confirm) await confirmProxyRouting(routes, { signal: opts.signal });
-  await refreshNodeProxies(db, opts.requireNode, confirmNode);
+  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal);
 }
 
 /**
@@ -971,9 +971,10 @@ const lastNodeSyncAuditAt = new Map<number, number>();
  * `routingFlipped` true and the pipeline stop the still-routed previous
  * container on the node — an outage reported as a successful deploy.
  */
-async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number): Promise<void> {
+async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal): Promise<void> {
   let results: Array<{ serverId: number; ok: boolean; reason?: string; routingUnconfirmed?: boolean }> = [];
   try {
+    signal?.throwIfAborted();
     // Ask which NODES exist, not which services are pinned: a node whose last
     // service was just deleted still needs its route table cleared, and a
     // single-host install pays one trivial select over an empty table.
@@ -983,10 +984,13 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
     }
     if (nodes.length === 0) return;
     const { syncAllNodeProxies } = await import('../lib/nodeProxy.js');
-    results = confirmNode === undefined
+    results = signal
+      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, signal, timeoutMs: 15_000 })
+      : confirmNode === undefined
       ? await syncAllNodeProxies(db, nodes.map((n) => n.id))
       : await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode });
   } catch (err) {
+    signal?.throwIfAborted();
     if (requireNode != null) {
       throw new Error(`the proxy on node #${requireNode} could not be updated: ${err instanceof Error ? err.message : String(err)}`);
     }

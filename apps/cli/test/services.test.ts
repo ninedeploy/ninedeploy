@@ -8,6 +8,7 @@ import {
   servicesGet,
   servicesInspect,
   servicesLifecycle,
+  servicesLifecycleStatus,
   servicesList,
   servicesLogs,
   servicesSticky,
@@ -416,7 +417,7 @@ describe('servicesLifecycle', () => {
     await servicesLifecycle(client, action as 'stop', '4');
 
     expect(fn).toHaveBeenCalledWith(4);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`Service ${action}ed.`));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`Service ${{ start: 'started', stop: 'stopped', restart: 'restarted' }[action as 'start' | 'stop' | 'restart']}.`));
   });
 
   it('reports a failure', async () => {
@@ -433,6 +434,30 @@ describe('servicesLifecycle', () => {
     await servicesLifecycle(client, 'start', '4');
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('boom'));
+  });
+});
+
+describe('durable node lifecycle status', () => {
+  it('reports acceptance without claiming a queued Start completed', async () => {
+    await servicesLifecycle(makeClient({ services: { start: vi.fn().mockResolvedValue({ ok: true, status: 'stopped', pending: true, lifecycle: { id: 7 } }) } }), 'start', '4');
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('verification is pending (command #7)'));
+    expect(logSpy.mock.calls.flat().join(' ')).not.toContain('Service started.');
+  });
+  it('shows a held command and retries the same public command route', async () => {
+    const command = { id: 7, action: 'restart', phase: 'warming', current: true, busy: false, reason: 'Readiness pending', nextAttemptAt: '2026-10-25T12:00:00Z' };
+    const read = vi.fn().mockResolvedValue({ command }), retry = vi.fn().mockResolvedValue({ command });
+    const client = makeClient({ services: { lifecycle: read, retryLifecycle: retry } });
+    await servicesLifecycleStatus(client, '4'); expect(read).toHaveBeenCalledWith(4);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Readiness pending'));
+    await servicesLifecycleStatus(client, '4', { retry: true }); expect(retry).toHaveBeenCalledWith(4);
+    expect(logSpy.mock.calls.flat().join(' ')).not.toContain('Runtime command completed.');
+  });
+  it('rejects malformed ids and handles missing or unavailable status', async () => {
+    await servicesLifecycleStatus(makeClient(), 'NaN'); expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('services lifecycle'));
+    await servicesLifecycleStatus(makeClient({ services: { lifecycle: vi.fn().mockResolvedValue({ command: null }) } }), '4');
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('No recorded node lifecycle command'));
+    await servicesLifecycleStatus(makeClient({ services: { lifecycle: vi.fn().mockRejectedValue(new Error('Node offline')) } }), '4');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Node offline'));
   });
 });
 

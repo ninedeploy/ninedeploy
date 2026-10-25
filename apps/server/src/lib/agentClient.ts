@@ -58,7 +58,7 @@ export function agentChildTimeoutMs(op: string): number | undefined {
 }
 
 /** How long the panel waits for `op`'s answer. */
-export function agentRequestTimeoutMs(op: string): number {
+export function agentRequestTimeoutMs(op: string, params: Record<string, unknown> = {}): number {
   if (op === 'docker.lifecycle') return 35_000;
   if (op === 'db.studio.start') return 205_000;
   // Clear can wait for an outstanding preparation plus both cleanup passes.
@@ -68,7 +68,11 @@ export function agentRequestTimeoutMs(op: string): number {
   if (op === 'volume.fileTool') return 145_000;
   if (op === 'docker.containerTool') return 45_000;
   if (op === 'docker.identity') return 15_000;
-  if (op === 'docker.retire') return 35_000;
+  if (op === 'docker.retire') {
+    const raw = params['graceSeconds'];
+    const grace = raw === undefined ? 5 : typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : typeof raw === 'number' ? raw : NaN;
+    return Number.isInteger(grace) && grace >= 0 && grace <= 300 ? Math.max(35_000, (grace + 30) * 1000) : 35_000;
+  }
   if (op === 'proxy.confirmRouting') return 25_000;
   if (op === 'docker.probe') return 15_000;
   if (op === 'docker.readiness') return 15_000;
@@ -325,7 +329,7 @@ export async function agentOp(
     : { 'content-type': 'application/json', 'x-agent-token': token };
   const requestBody = JSON.stringify(sealedOk ? { sealed: seal(shared, { op, params, nonce }) } : { op, params });
   opts?.signal?.throwIfAborted();
-  const budgetMs = Math.min(agentRequestTimeoutMs(op), opts?.timeoutMs ?? Number.POSITIVE_INFINITY);
+  const budgetMs = Math.min(agentRequestTimeoutMs(op, params), opts?.timeoutMs ?? Number.POSITIVE_INFINITY);
   const deadline = Date.now() + budgetMs;
   const signal = opts?.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(budgetMs)]) : AbortSignal.timeout(budgetMs);
   let res: ExecResponse;

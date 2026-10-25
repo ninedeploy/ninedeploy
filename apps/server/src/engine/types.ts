@@ -127,6 +127,8 @@ export interface BuildContext {
 
 /** Identifies a running workload so the engine can stop/inspect it later. */
 export interface DeployRuntime {
+  /** Creation receipts bind multi-replica node readiness to immutable containers. */
+  nodeTargets?: Array<{ id: string; name: string }>;
   /** Buildpack conventions needed to run the same image in another environment. */
   artifactBuild?: { builtWithNixpacks: boolean; builtStatic: boolean };
   /** Resolved secret-bearing model; the pipeline encrypts it in its own table. */

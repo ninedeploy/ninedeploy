@@ -43,6 +43,26 @@ function agentSteady() {
  * generate its own, and the agent only writes them to a fixed path.
  */
 describe('syncNodeProxy', () => {
+  it('does not write config or recreate a proxy after cancellation during inspection', async () => {
+    const abort = new AbortController();
+    h.agentOp.mockReset();
+    h.agentOp.mockImplementation(async (_db: unknown, _id: unknown, op: string) => {
+      if (op === 'proxy.writeConfig') return { exitCode: 0, lines: ['proxy-config x unchanged'] };
+      if (op === 'docker.inspect') { abort.abort(Error('Lifecycle cancelled')); return { exitCode: 0, lines: ['exited|'] }; }
+      return { exitCode: 0, lines: [] };
+    });
+    const result = await syncNodeProxy(db, 4, undefined, { signal: abort.signal } as never);
+    expect(result).toMatchObject({ ok: false, routingUnconfirmed: true, reason: 'Lifecycle cancelled' });
+    expect(opsIssued()).not.toContain('proxy.ensure');
+  });
+
+  it('does not contact any node when the routing refresh is already cancelled', async () => {
+    h.agentOp.mockReset(); agentSteady();
+    const abort = new AbortController(); abort.abort(Error('Lifecycle cancelled'));
+    await expect(syncAllNodeProxies(db, [4, 5], undefined, { signal: abort.signal } as never)).rejects.toThrow('Lifecycle cancelled');
+    expect(h.agentOp).not.toHaveBeenCalled();
+  });
+
   it('ships the static and dynamic config the panel rendered for THAT node', async () => {
     h.agentOp.mockReset();
     agentSteady();

@@ -143,8 +143,28 @@ export async function servicesLifecycle(client: NineDeployClient, action: 'stop'
   const id = Number(idStr);
   if (!id) return error(`Usage: ninedeploy services ${action} <id>`);
   try {
-    await spinner(`${action}ing service`, () => client.services[action](id));
-    success(`Service ${action}ed.`);
+    const result = await spinner(`${{ start: 'Starting', stop: 'Stopping', restart: 'Restarting' }[action]} service`, () => client.services[action](id));
+    if (result?.pending) {
+      info(`Service ${action} requested; runtime verification is pending${result.lifecycle ? ` (command #${result.lifecycle.id})` : ''}.`);
+      return;
+    }
+    success(`Service ${{ start: 'started', stop: 'stopped', restart: 'restarted' }[action]}.`);
+  } catch (err) { error(err instanceof Error ? err.message : String(err)); }
+}
+
+/** `ninedeploy services lifecycle <id> [--retry]` */
+export async function servicesLifecycleStatus(client: NineDeployClient, idStr: string, opts: { retry?: boolean } = {}): Promise<void> {
+  const id = Number(idStr);
+  if (!Number.isSafeInteger(id) || id < 1) return error('Usage: ninedeploy services lifecycle <id> [--retry]');
+  try {
+    const result = opts.retry ? await client.services.retryLifecycle(id) : await client.services.lifecycle(id);
+    if (!result.command) { info('No recorded node lifecycle command.'); return; }
+    const command = result.command;
+    kv('Command', command.id); kv('Action', command.action); kv('Phase', command.phase);
+    if (command.reason) info(command.reason);
+    if (command.phase === 'completed') success('Runtime command completed.');
+    else if (command.phase === 'superseded' || !command.current) info('Runtime command superseded by a service change.');
+    else info(command.busy ? 'Runtime verification is in progress.' : `Runtime command remains pending; next automatic check ${fmtTime(command.nextAttemptAt)}.`);
   } catch (err) { error(err instanceof Error ? err.message : String(err)); }
 }
 
