@@ -25,6 +25,7 @@ type Retention = { swept: string } | { config: string };
 
 /** Every table added from 0.15 on, and how it stays bounded. */
 const RETENTION: Record<string, Retention> = {
+  node_lifecycle_intents: { swept: 'node-lifecycle-history' },
   swarm_transitions: { config: 'one unresolved transition per service; encrypted spec and recovery lease retained until confirmed settlement, cascading with service deletion; never age-evicted' },
   primary_transitions: { config: 'one unresolved transition per service; deleted after confirmed cleanup and cascading with service/node; pending safety records are never age-evicted' },
   fanout_transitions: { config: 'at most one unresolved transition per service/node (unique service_id,server_id); deleted after confirmed cleanup and cascading with service/node; pending safety records are never age-evicted' },

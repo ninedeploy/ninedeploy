@@ -248,6 +248,8 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'lib/composeRelease.ts': { exempt: 'recorded releases are only for panel-host Compose stacks; Swarm services cannot use the Compose builder' },
   'lib/releaseRecords.ts': { exempt: 'assertReleaseTarget requires type compose on the panel host; recorded restores never operate on Swarm services' },
   'lib/nodeMetrics.ts': { exempt: 'node-only telemetry explicitly skips Swarm; Swarm services cannot be pinned to a node' },
+  'lib/nodeLifecycleIntent.ts': { exempt: 'acceptance and every ownership checkpoint require plain Docker on the captured node; lifecycle intent behavior tests refuse changed Swarm or Compose placement' },
+  'lib/nodeLifecycleController.ts': { exempt: 'consumes durable plain-Docker intents and checks their current placement before and after every asynchronous boundary; Swarm cannot reach its container effects' },
   'lib/localCanaryTraffic.ts': { exempt: 'local plain-Docker observation explicitly refuses source and fresh-row Swarm placement before opening a window; localCanaryTraffic.test.ts proves refusal without Docker or file access' },
   'lib/nodeProxyTrafficClient.ts': { exempt: 'node-only observation refuses Swarm and changed placement before agent operations; runtimeId is an ownership comparison, never a local container command' },
   'lib/webhookDispatch.ts': { exempt: 'PR previews never run on Swarm (a preview row has no orchestrator)' },

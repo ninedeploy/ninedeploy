@@ -5,6 +5,7 @@ import {
   metrics,
   metricRollups,
   logDrainCursors,
+  nodeLifecycleIntents,
   backupDrills,
   cacheRegistryBlobs,
   deployments,
@@ -66,7 +67,7 @@ function makeDb(expiredDeployments: Array<{ id: number }> = []) {
   const deleted: Array<{ table: unknown }> = [];
   const del = vi.fn((table: unknown) => {
     deleted.push({ table });
-    return { where: vi.fn(async () => undefined) };
+    return { where: vi.fn(() => Object.assign(Promise.resolve(undefined), { returning: vi.fn(async () => []) })) };
   });
   const selected: unknown[] = [];
   const select = vi.fn(() => ({
@@ -120,6 +121,7 @@ describe('housekeeping plugin', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(deleted.map((entry) => entry.table)).toContain(metrics);
     expect(deleted.map((entry) => entry.table)).toContain(metricRollups);
+    expect(deleted.map((entry) => entry.table)).toContain(nodeLifecycleIntents);
     expect(selected).toContain(logDrainCursors);
     await app.close();
   });

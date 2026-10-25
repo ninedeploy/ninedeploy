@@ -71,6 +71,10 @@ try {
     'busybox:1.36', 'sh', '-c', 'trap "exit 0" TERM; while :; do sleep 1; done']);
   const target = { id: node(['inspect', name, '--format', '{{.Id}}']), name };
   const start = params(1, 'start', target); receipt(run(start), start);
+  const fence = { ...params(2, 'stop', target), targets: [] }; receipt(run(fence), fence);
+  assert.equal(node(['inspect', name, '--format', '{{.State.Status}}']), 'running');
+  refused(run(start), /stale|superseded/);
+  cases.push({ name: 'fence-only-stop-persists-before-routing-and-does-not-stop-the-container', passed: true });
   const stop = params(3, 'stop', target); receipt(run(stop), stop);
   refused(run(params(2, 'start', target)), /stale|superseded/);
   assert.equal(node(['inspect', name, '--format', '{{.State.Status}}']), 'exited');

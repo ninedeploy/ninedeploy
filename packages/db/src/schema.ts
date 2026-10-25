@@ -1845,6 +1845,45 @@ export const primaryTransitions = sqliteTable('primary_transitions', {
 }));
 export type PrimaryTransition = typeof primaryTransitions.$inferSelect;
 
+export interface NodeLifecycleSnapshot {
+  status: string;
+  port: number | null;
+  healthCheck: string | null;
+  healthPath: string | null;
+  healthCommand: string | null;
+  healthTimeoutS: number | null;
+  serving: number;
+  capacity: number;
+  configuration: string;
+}
+
+/** Accepted panel intent. ID-derived agent revisions survive retries and panel restarts. */
+export const nodeLifecycleIntents = sqliteTable('node_lifecycle_intents', {
+  id: id(),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  serverId: integer('server_id').notNull().references(() => servers.id, { onDelete: 'cascade' }),
+  runtimeId: text('runtime_id').notNull(),
+  deploymentId: integer('deployment_id').notNull(),
+  action: text('action', { enum: ['start', 'stop'] }).notNull(),
+  requestId: text('request_id').notNull(),
+  phase: text('phase', { enum: ['fencing', 'preparing', 'routing', 'applying', 'readiness', 'completed', 'superseded'] }).notNull(),
+  snapshot: text('snapshot', { mode: 'json' }).$type<NodeLifecycleSnapshot>().notNull(),
+  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>(),
+  ownerToken: text('owner_token'),
+  leaseUntil: integer('lease_until', { mode: 'timestamp' }),
+  attempts: integer('attempts').notNull().default(0),
+  reason: text('reason'),
+  nextAttemptAt: ts('next_attempt_at'),
+  createdAt: ts('created_at'),
+  updatedAt: tsUpdatable('updated_at'),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+}, t => ({
+  requestIdx: uniqueIndex('node_lifecycle_request_idx').on(t.requestId),
+  pendingIdx: uniqueIndex('node_lifecycle_service_pending_idx').on(t.serviceId).where(sql`${t.phase} NOT IN ('completed', 'superseded')`),
+  retryIdx: index('node_lifecycle_retry_idx').on(t.nextAttemptAt, t.leaseUntil),
+}));
+export type NodeLifecycleIntent = typeof nodeLifecycleIntents.$inferSelect;
+
 /** Single managed Swarm service update. Fingerprints and recovery metadata are encrypted together. */
 export const swarmTransitions = sqliteTable('swarm_transitions', {
   id: id(),

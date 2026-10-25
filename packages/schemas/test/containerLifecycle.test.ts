@@ -9,6 +9,12 @@ describe('fenced container lifecycle protocol', () => {
     expect(containerLifecycleReply.parse({ requestId: input.requestId, serviceId: 7, deploymentId: 9, revision: 12, action: 'start', complete: true,
       items: [{ ...target, running: true }] }).items).toEqual([{ ...target, running: true }]);
   });
+  it('permits a Stop fence before identity discovery while refusing an empty Start receipt', () => {
+    expect(containerLifecycleRequest.parse({ ...input, action: 'stop', targets: [] }).targets).toEqual([]);
+    const reply = { requestId: input.requestId, serviceId: 7, deploymentId: 9, revision: 12, action: 'stop', complete: true, items: [] };
+    expect(containerLifecycleReply.parse(reply).items).toEqual([]);
+    expect(containerLifecycleReply.safeParse({ ...reply, action: 'start' }).success).toBe(false);
+  });
   it.each([
     { action: 'exec' }, { revision: 0 }, { revision: 1.5 }, { revision: Number.MAX_SAFE_INTEGER + 1 },
     { requestId: 'invalid' }, { serviceId: -1 }, { deploymentId: 0 }, { timeoutMs: 0 }, { timeoutMs: 30_001 },

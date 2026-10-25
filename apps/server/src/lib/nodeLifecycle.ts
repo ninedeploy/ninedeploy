@@ -81,6 +81,8 @@ export function createNodeLifecycle(root: string) {
 }
 
 async function applyDocker(input: ContainerLifecycleRequest, remaining: () => number, current: () => void): Promise<ContainerLifecycleReply> {
+  if (input.targets.length === 0) return containerLifecycleReply.parse({ requestId: input.requestId, serviceId: input.serviceId, deploymentId: input.deploymentId,
+    revision: input.revision, action: input.action, complete: true, items: [] });
   const inspect = async () => {
     current();
     let bytes = 0, invalid = false;

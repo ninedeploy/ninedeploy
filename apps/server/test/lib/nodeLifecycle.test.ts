@@ -29,6 +29,11 @@ afterEach(async () => {
 const effects = () => io.spawn.mock.calls.filter(call => call[1][0] !== 'inspect').map(call => call[1]);
 
 describe('durable node lifecycle ordering', () => {
+  it('accepts a durable Stop fence before identities are discovered without issuing Docker commands', async () => {
+    expect(await createNodeLifecycle(root).apply(request(2, 'stop', { targets: [] }))).toMatchObject({ revision: 2, complete: true, items: [] });
+    await expect(createNodeLifecycle(root).apply(request(1))).rejects.toThrow(/stale|superseded/);
+    expect(io.spawn).not.toHaveBeenCalled();
+  });
   it('keeps the existing immutable identity operation working as a control', async () => {
     const lines: string[] = [];
     expect(await runRegisteredOp('docker.identity', { name: target.name }, line => lines.push(line), { sealed: true }, {})).toBe(0);

@@ -31,6 +31,7 @@ import { sweepOrphanPreviewCopies } from '../lib/previewDatabases.js';
 import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 import { pruneServiceMetrics } from '../lib/serviceMetricHistory.js';
 import { pruneLogDrainCursors } from '../engine/logShipper.js';
+import { pruneNodeLifecycleHistory } from '../lib/nodeLifecycleIntent.js';
 
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
 /** Export artifacts (secret-bearing archives + scratch files) older than this
@@ -516,6 +517,7 @@ export default fp(
         await step('metric-history', () => pruneMetricHistory(fastify));
         await step('resource-metric-history', () => pruneServiceMetrics(fastify.db, new Date(now)));
         await step('log-drain-cursors', () => pruneLogDrainCursors(fastify.db, new Date(now)));
+        await step('node-lifecycle-history', () => pruneNodeLifecycleHistory(fastify.db, now));
         // 0.15 event tables (DESIGN §5). Every table added from 0.15 on needs a
         // sweep here or a `config:` reason in test/retentionCoverage.test.ts.
         await step('terminal-sessions', () => pruneTerminalSessions(fastify.db, now));
