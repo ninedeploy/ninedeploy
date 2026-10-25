@@ -21,7 +21,7 @@ export async function runLegacyNodeLifecycle(root: string, action: 'start' | 'st
   const deadline = performance.now() + (action === 'stop' ? Math.max(30_000, (graceSeconds + 10) * 1000) : 30_000);
   const remaining = () => Math.max(0, Math.floor(deadline - performance.now()));
   const current = () => { if (!remaining()) throw new Error('Node lifecycle deadline exceeded'); };
-  const inspect = async (reference: string) => {
+  const inspect = async (reference: string): Promise<Record<string, unknown> | null> => {
     current(); const lines: string[] = []; let bytes = 0;
     const code = await spawnValidated('docker', ['inspect', '--type', 'container', '--format', INSPECT, reference], line => {
       bytes += Buffer.byteLength(line); if (bytes <= 64 * 1024) lines.push(line);
@@ -36,21 +36,23 @@ export async function runLegacyNodeLifecycle(root: string, action: 'start' | 'st
     const value: unknown = JSON.parse(lines[0]!);
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Legacy lifecycle identity unavailable');
     const row = value as Record<string, unknown>;
-    if (typeof row.id !== 'string' || !/^[a-f0-9]{64}$/.test(row.id) || typeof row.name !== 'string' || row.name.replace(/^\//, '') !== name ||
+    const actualName = typeof row.name === 'string' ? row.name.replace(/^\//, '') : '';
+    if (typeof row.id !== 'string' || !/^[a-f0-9]{64}$/.test(row.id) || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(actualName) ||
+      (/^[a-f0-9]{64}$/.test(reference) ? row.id !== reference : actualName !== reference) ||
       typeof row.running !== 'boolean' || typeof row.status !== 'string') throw new Error('Legacy lifecycle identity changed');
-    return row;
+    return { ...row, name: actualName };
   };
   const work = (async () => {
     const target = await inspect(name);
     if (!target) { onLine(`Error: No such container: ${name}`); return 1; }
     const effect = async () => {
       const before = await inspect(String(target.id));
-      if (!before || before.id !== target.id || ['managed', 'serviceId', 'deploymentId'].some(key => before[key] !== target[key])) throw new Error('Legacy lifecycle identity changed');
+      if (!before || before.id !== target.id || ['name', 'managed', 'serviceId', 'deploymentId'].some(key => before[key] !== target[key])) throw new Error('Legacy lifecycle identity changed');
       current();
       const result = await spawnValidated('docker', action === 'start' ? ['start', String(target.id)] : ['stop', '-t', String(graceSeconds), String(target.id)], onLine, { timeoutMs: remaining() });
       current(); if (result !== 0) return result;
       const after = await inspect(String(target.id));
-      if (!after || after.id !== target.id || ['managed', 'serviceId', 'deploymentId'].some(key => after[key] !== target[key]) ||
+      if (!after || after.id !== target.id || ['name', 'managed', 'serviceId', 'deploymentId'].some(key => after[key] !== target[key]) ||
         (action === 'start' ? after.status !== 'running' || !after.running : after.running || !['created', 'exited', 'dead'].includes(String(after.status)))) throw new Error('Legacy lifecycle Docker state is unconfirmed');
       return result;
     };

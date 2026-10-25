@@ -26,6 +26,41 @@ afterEach(async () => {
 });
 
 describe('legacy node lifecycle compatibility barrier', () => {
+  it('accepts full immutable ID references used by deployment recovery', async () => {
+    expect(await runLegacyNodeLifecycle(root, 'start', target.id, 5, () => undefined)).toBe(0);
+    expect(await runLegacyNodeLifecycle(root, 'stop', target.id, 17, () => undefined)).toBe(0);
+    expect(effects).toEqual([['start', target.id], ['stop', '-t', '17', target.id]]);
+  });
+
+  it('allows old-generation retirement by immutable ID without allowing its resurrection', async () => {
+    await createNodeLifecycle(root).apply(fence(4, 10));
+    expect(await runLegacyNodeLifecycle(root, 'stop', target.id, 5, () => undefined)).toBe(0);
+    await expect(runLegacyNodeLifecycle(root, 'start', target.id, 5, () => undefined)).rejects.toThrow(/legacy.*fenced|ordered lifecycle/i);
+    expect(effects).toEqual([['stop', '-t', '5', target.id]]);
+  });
+
+  it('does not let an immutable ID bypass the ordered generation fence', async () => {
+    await createNodeLifecycle(root).apply(fence());
+    await expect(runLegacyNodeLifecycle(root, 'start', target.id, 5, () => undefined)).rejects.toThrow(/legacy.*fenced|ordered lifecycle/i);
+    expect(effects).toEqual([]);
+  });
+
+  it('refuses an ID whose inspect answer belongs to another container', async () => {
+    await expect(runLegacyNodeLifecycle(root, 'stop', 'b'.repeat(64), 5, () => undefined)).rejects.toThrow(/identity changed/);
+    expect(effects).toEqual([]);
+  });
+
+  it('does not stop a container renamed after its immutable ID was inspected', async () => {
+    const original = io.spawn.getMockImplementation()!; let inspected = 0;
+    io.spawn.mockImplementation(async (...args) => {
+      if (args[1][0] !== 'inspect') return original(...args);
+      inspected++;
+      return original(args[0], args[1], line => args[2](JSON.stringify({ ...JSON.parse(line), ...(inspected > 1 ? { name: '/renamed' } : {}) })), args[3]);
+    });
+    await expect(runLegacyNodeLifecycle(root, 'stop', target.id, 5, () => undefined)).rejects.toThrow(/identity changed/);
+    expect(effects).toEqual([]);
+  });
+
   it('retains legacy control before adoption while sending immutable IDs to Docker', async () => {
     expect(await runLegacyNodeLifecycle(root, 'start', target.name, 5, () => undefined)).toBe(0);
     expect(await runLegacyNodeLifecycle(root, 'stop', target.name, 17, () => undefined)).toBe(0);

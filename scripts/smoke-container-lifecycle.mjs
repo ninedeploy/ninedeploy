@@ -73,6 +73,11 @@ try {
   node(['create', '--name', name, '--label', 'ninedeploy.managed=service', '--label', 'ninedeploy.service=7', '--label', 'ninedeploy.deployment=9',
     'busybox:1.36', 'sh', '-c', 'trap "exit 0" TERM; while :; do sleep 1; done']);
   const target = { id: node(['inspect', name, '--format', '{{.Id}}']), name };
+  for (const action of ['start', 'stop', 'start']) {
+    const result = cli(argumentsFor(params(1, action, { ...target, name: target.id }), undefined, undefined, action).args);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  }
+  cases.push({ name: 'legacy-start-and-stop-accept-full-immutable-id-references', passed: true });
   const start = params(1, 'start', target); receipt(run(start), start);
   const fence = { ...params(2, 'stop', target), targets: [] }; receipt(run(fence), fence);
   assert.equal(node(['inspect', name, '--format', '{{.State.Status}}']), 'running');
@@ -119,6 +124,15 @@ try {
   assert.equal(node(['inspect', name, '--format', '{{.State.Status}}']), 'running');
   const orderedStop = params(12, 'stop', replacement); receipt(run(orderedStop), orderedStop);
   cases.push({ name: 'delayed-legacy-stop-cannot-undo-an-ordered-start', passed: true });
+  const oldName = `${name}-old`;
+  node(['run', '-d', '--name', oldName, '--label', 'ninedeploy.managed=service', '--label', 'ninedeploy.service=7', '--label', 'ninedeploy.deployment=8', 'busybox:1.36', 'sleep', '120']);
+  const oldId = node(['inspect', oldName, '--format', '{{.Id}}']);
+  const oldReference = { id: oldId, name: oldId };
+  const retiredOld = cli(argumentsFor(params(30, 'stop', oldReference), undefined, undefined, 'stop').args);
+  assert.equal(retiredOld.status, 0, retiredOld.stderr || retiredOld.stdout);
+  refused(cli(argumentsFor(params(31, 'start', oldReference), undefined, undefined, 'start').args), /[Ll]egacy.*fenced/);
+  assert.equal(node(['inspect', oldId, '--format', '{{.State.Status}}']), 'exited');
+  cases.push({ name: 'old-generation-id-retirement-remains-allowed-without-resurrection', passed: true });
   const legacyName = `${name}-legacy`;
   node(['create', '--name', legacyName, '--label', 'ninedeploy.managed=service', '--label', 'ninedeploy.service=11', '--label', 'ninedeploy.deployment=9', 'busybox:1.36', 'sleep', '120']);
   const legacyTarget = { name: legacyName, id: node(['inspect', legacyName, '--format', '{{.Id}}']) };
