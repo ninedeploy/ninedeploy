@@ -30,6 +30,8 @@ Focused acceptance: 277 covering server tests in nine files, all 591 schema test
 
 Node autoscaling and sleep remain held until these controller gates pass. The read-only metric foundation alone does not enable either feature. R3–R6 remain unchanged.
 
+The next R2 prerequisite corrects explicit service lifecycle replica selection. Stop and node teardown cover recorded serving members plus configured stopped autoscale capacity; Start and Restart use the recorded serving count, including after autoscaling is removed or the desired manual count changes. Local Restart quiesces spare capacity before restarting serving members. Every count remains bounded by the ten-replica ceiling. The original sources failed nine new API behavior cases while 19 existing controls passed; two further cases reproduced the lost recorded count after configuration changes. The corrected covering suite passed 207 tests in seven files. These are route-level boundary proofs, not acceptance of concurrent node controllers, immutable lifecycle effects, readiness on Start or agent-side fencing. Those R2 gates remain open.
+
 ## Release gate snapshot
 
 Across the multi-release program, one of six feature packages has implementation acceptance and five remain pending. This is a backlog inventory, not a 0.18.2 completion percentage. R1, compatibility of the completed increments and the recurring certification gates are closed for 0.18.2. R2–R6 remain allocated to later releases.

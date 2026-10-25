@@ -28,6 +28,7 @@ import { findCatalogTemplate } from '../templates/catalog.js';
 const setTargets = z.object({ serverIds: z.array(z.number().int().positive()).max(10) });
 import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
+import { runtimeReplicaCounts } from '../lib/runtimeReplicaCounts.js';
 import { targetsForService, teardownTargets, type FanoutTarget } from '../engine/fanout.js';
 import { listFanoutRecovery, reconcileFanoutTransitions } from '../engine/fanoutRecovery.js';
 import { listPrimaryRecovery, reconcilePrimaryTransitions } from '../engine/primaryRecovery.js';
@@ -1085,7 +1086,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
   };
   /** Tear a runtime down wherever it lives (non-throwing, like the builders' stop). */
   const retireRuntime = async (
-    svc: { type: string; slug: string; runtimeId: string | null; replicas: number; serverId: number | null },
+    svc: { type: string; slug: string; runtimeId: string | null; replicas: number; serverId: number | null; runtimeReplicas?: Service['runtimeReplicas']; autoscale?: Service['autoscale'] },
     log: (msg: string) => void,
   ): Promise<void> => {
     if (!svc.runtimeId) return;
@@ -1100,7 +1101,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (svc.type === 'compose') {
         await remoteDocker(serverId, 'docker.composeDown', { project: `ndcmp-${svc.slug}` }).catch((err: unknown) => log(String(err)));
       } else {
-        for (const name of replicaNames(svc.runtimeId, svc.replicas)) {
+        for (const name of replicaNames(svc.runtimeId, runtimeReplicaCounts(svc).capacity)) {
           await remoteDocker(serverId, 'docker.rm', { name }).catch((err: unknown) => log(String(err)));
         }
       }
@@ -1530,7 +1531,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
           req.log.warn({ err, runtimeId: svc.runtimeId }, 'pm2 process already gone; stop is idempotent');
         });
       } else if (svc.serverId != null) {
-        for (const name of replicaNames(svc.runtimeId, svc.replicas)) {
+        for (const name of replicaNames(svc.runtimeId, runtimeReplicaCounts(svc).capacity)) {
           await remoteDocker(svc.serverId, 'docker.stop', { name }).catch((err: unknown) => {
             if (!isMissingRuntime(err)) throw nodeUnavailable(err);
             req.log.warn({ err, name }, 'remote container already gone; stop is idempotent');
@@ -1540,7 +1541,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         // One batched stop covers the whole generation: primary + -r2..-rN
         // replicas. Stopping only the primary would leave replicas serving
         // while the panel says `stopped`.
-        await capture('docker', ['stop', '-t', '5', ...replicaNames(svc.runtimeId, svc.replicas)]).catch((err: unknown) => {
+        await capture('docker', ['stop', '-t', '5', ...replicaNames(svc.runtimeId, runtimeReplicaCounts(svc).capacity)]).catch((err: unknown) => {
           if (isDaemonDown(err)) throw daemonUnavailable(err);
           if (!isMissingRuntime(err)) throw err;
           req.log.warn({ err, runtimeId: svc.runtimeId }, 'container already gone; stop is idempotent');
@@ -1598,13 +1599,13 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       });
     } else if ((svc.type === 'docker' || svc.type === 'compose') && svc.serverId != null) {
-      await startRemote(svc.serverId, svc.id, svc.runtimeId, svc.replicas);
+      await startRemote(svc.serverId, svc.id, svc.runtimeId, runtimeReplicaCounts(svc).serving);
     } else if (svc.type === 'docker' || svc.type === 'compose') {
       // Batched start covers primary + replicas, mirroring stop. `docker
       // start` already-running members is a success (it prints the name),
       // so partial states converge.
       const startId = svc.runtimeId;
-      await capture('docker', ['start', ...replicaNames(startId, svc.replicas)]).catch(async (err: unknown) => {
+      await capture('docker', ['start', ...replicaNames(startId, runtimeReplicaCounts(svc).serving)]).catch(async (err: unknown) => {
         if (isDaemonDown(err)) throw daemonUnavailable(err);
         if (isMissingRuntime(err)) {
           // A batched start fails when ANY member is missing (a stale replica
@@ -1661,18 +1662,24 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       });
     } else if ((svc.type === 'docker' || svc.type === 'compose') && svc.serverId != null) {
       // The agent has no restart op: stop (idempotent) then start.
-      for (const name of replicaNames(svc.runtimeId, svc.replicas)) {
+      for (const name of replicaNames(svc.runtimeId, runtimeReplicaCounts(svc).capacity)) {
         await remoteDocker(svc.serverId, 'docker.stop', { name }).catch((err: unknown) => {
           if (!isMissingRuntime(err)) throw nodeUnavailable(err);
         });
       }
-      await startRemote(svc.serverId, svc.id, svc.runtimeId, svc.replicas);
+      await startRemote(svc.serverId, svc.id, svc.runtimeId, runtimeReplicaCounts(svc).serving);
     } else if (svc.type === 'docker' || svc.type === 'compose') {
       // Batched over the replica generation — a stop → restart flow must
       // bring the clones back too, or the panel would read `running` while
       // half the capacity stayed down.
       const restartId = svc.runtimeId;
-      await capture('docker', ['restart', ...replicaNames(restartId, svc.replicas)]).catch(async (err: unknown) => {
+      const shape = runtimeReplicaCounts(svc);
+      const spares = replicaNames(restartId, shape.capacity).slice(shape.serving);
+      if (spares.length > 0) await capture('docker', ['stop', '-t', '5', ...spares]).catch((err: unknown) => {
+        if (isDaemonDown(err)) throw daemonUnavailable(err);
+        if (!isMissingRuntime(err)) throw err;
+      });
+      await capture('docker', ['restart', ...replicaNames(restartId, shape.serving)]).catch(async (err: unknown) => {
         if (isDaemonDown(err)) throw daemonUnavailable(err);
         if (isMissingRuntime(err)) {
           // A stale replica name fails the whole batch — retry the primary

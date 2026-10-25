@@ -80,6 +80,73 @@ describe('remote-node service lifecycle (r225)', () => {
     expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['stop']));
   });
 
+  const scaled = () => remote({ replicas: 1, runtimeReplicas: 3,
+    autoscale: { metric: 'cpu', target: 50, minReplicas: 1, maxReplicas: 4, scaleUpSeconds: 60, scaleDownSeconds: 300 } });
+  it('stops serving replicas and unrouted autoscale capacity on the selected node', async () => {
+    const app = await appFor(scaled());
+    expect((await app.inject({ method: 'POST', url: '/1/stop', headers: asUser() })).statusCode).toBe(200);
+    expect(ops()).toEqual(['web-1-17', 'web-1-17-r2', 'web-1-17-r3', 'web-1-17-r4'].map(name => `4 docker.stop ${JSON.stringify({ name })}`));
+    expect(execMocks.capture).not.toHaveBeenCalled();
+  });
+  it('starts only the recorded serving replicas rather than the configured autoscale maximum', async () => {
+    const app = await appFor(scaled());
+    expect((await app.inject({ method: 'POST', url: '/1/start', headers: asUser() })).statusCode).toBe(200);
+    expect(ops()).toEqual(['web-1-17', 'web-1-17-r2', 'web-1-17-r3'].map(name => `4 docker.start ${JSON.stringify({ name })}`));
+  });
+  it('restarts the serving autoscale shape while quiescing spare capacity', async () => {
+    const app = await appFor(scaled());
+    expect((await app.inject({ method: 'POST', url: '/1/restart', headers: asUser() })).statusCode).toBe(200);
+    expect(ops()).toEqual([
+      ...['web-1-17', 'web-1-17-r2', 'web-1-17-r3', 'web-1-17-r4'].map(name => `4 docker.stop ${JSON.stringify({ name })}`),
+      ...['web-1-17', 'web-1-17-r2', 'web-1-17-r3'].map(name => `4 docker.start ${JSON.stringify({ name })}`),
+    ]);
+  });
+  it('removes stopped autoscale capacity together with serving containers on delete', async () => {
+    const app = await appFor(scaled());
+    expect((await app.inject({ method: 'DELETE', url: '/1', headers: asUser() })).statusCode).toBe(204);
+    expect(ops()).toEqual([
+      ...['web-1-17', 'web-1-17-r2', 'web-1-17-r3', 'web-1-17-r4'].map(name => `4 docker.rm ${JSON.stringify({ name })}`),
+      '4 workspace.remove {"workspace":"web"}',
+    ]);
+  });
+  it('stops all autoscale capacity on the panel host too', async () => {
+    const app = await appFor({ ...scaled(), serverId: null });
+    expect((await app.inject({ method: 'POST', url: '/1/stop', headers: asUser() })).statusCode).toBe(200);
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', ['stop', '-t', '5', 'web-1-17', 'web-1-17-r2', 'web-1-17-r3', 'web-1-17-r4']);
+    expect(agent.agentOp).not.toHaveBeenCalled();
+  });
+  it('starts only the recorded autoscale serving count on the panel host', async () => {
+    const app = await appFor({ ...scaled(), serverId: null });
+    expect((await app.inject({ method: 'POST', url: '/1/start', headers: asUser() })).statusCode).toBe(200);
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', ['start', 'web-1-17', 'web-1-17-r2', 'web-1-17-r3']);
+    expect(agent.agentOp).not.toHaveBeenCalled();
+  });
+  it('quiesces spare capacity before restarting serving members on the panel host', async () => {
+    const app = await appFor({ ...scaled(), serverId: null });
+    expect((await app.inject({ method: 'POST', url: '/1/restart', headers: asUser() })).statusCode).toBe(200);
+    expect(execMocks.capture.mock.calls).toEqual([
+      ['docker', ['stop', '-t', '5', 'web-1-17-r4']],
+      ['docker', ['restart', 'web-1-17', 'web-1-17-r2', 'web-1-17-r3']],
+    ]);
+  });
+  it('still stops serving replicas after the configured maximum was reduced', async () => {
+    const svc = scaled(); svc.autoscale = { ...svc.autoscale!, maxReplicas: 2 };
+    const app = await appFor(svc);
+    expect((await app.inject({ method: 'POST', url: '/1/stop', headers: asUser() })).statusCode).toBe(200);
+    expect(ops()).toEqual(['web-1-17', 'web-1-17-r2', 'web-1-17-r3'].map(name => `4 docker.stop ${JSON.stringify({ name })}`));
+  });
+  it('keeps lifecycle commands below the hard replica ceiling even for corrupt stored counts', async () => {
+    const app = await appFor({ ...scaled(), runtimeReplicas: 1000 });
+    expect((await app.inject({ method: 'POST', url: '/1/start', headers: asUser() })).statusCode).toBe(200);
+    expect(agent.agentOp).toHaveBeenCalledTimes(10);
+    expect(ops().at(-1)).toBe('4 docker.start {"name":"web-1-17-r10"}');
+  });
+  it.each([1, 4])('starts the recorded generation after autoscaling is removed or the desired count changes to %i', async desired => {
+    const app = await appFor(remote({ replicas: desired, runtimeReplicas: 3, autoscale: null }));
+    expect((await app.inject({ method: 'POST', url: '/1/start', headers: asUser() })).statusCode).toBe(200);
+    expect(ops()).toEqual(['web-1-17', 'web-1-17-r2', 'web-1-17-r3'].map(name => `4 docker.start ${JSON.stringify({ name })}`));
+  });
+
   it('reports an unreachable node instead of marking the service stopped', async () => {
     agent.agentOp.mockRejectedValueOnce(new Error('agent unreachable (502)'));
     const app = await appFor(remote());
