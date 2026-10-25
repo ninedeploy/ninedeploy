@@ -48,7 +48,16 @@ export interface DeploysApi {
      * Refused for an in-flight deployment (cancel it first) and for the one
      * currently serving traffic. Requires the `admin` role on the service.
      */
-    remove: (serviceId: number, deploymentId: number) => Promise<{ ok: boolean; id: number }>;
+    remove: (serviceId: number, deploymentId: number) => Promise<{ ok: boolean; id: number; removedContainers?: string[] }>;
+    /**
+     * Remove many finished deployments at once: `ids`, or every one in
+     * `statuses` (e.g. `['failed', 'cancelled']`). In-flight, waiting and live
+     * deployments are never removed. Requires the `admin` role.
+     */
+    removeMany: (
+      serviceId: number,
+      input: { ids?: number[]; statuses?: Array<'failed' | 'cancelled' | 'superseded'> },
+    ) => Promise<{ ok: true; removed: number[]; skipped: number; removedContainers: string[] }>;
     /** Build-config + env-key diff against the previous deployment. */
     configDiff: (serviceId: number, deploymentId: number) => Promise<{ deploymentId: number; previousDeploymentId: number | null; changed: boolean; diff: string }>;
     /** Build log download URL (serves the raw log file as an attachment). */
@@ -154,7 +163,9 @@ export function deploysApi(t: Transport): DeploysApi {
       cancel: (serviceId, deploymentId) =>
         send<{ ok: boolean; status: string }>('POST', `/v1/services/${serviceId}/deploys/${deploymentId}/cancel`),
       remove: (serviceId, deploymentId) =>
-        send<{ ok: boolean; id: number }>('DELETE', `/v1/services/${serviceId}/deploys/${deploymentId}`),
+        send<{ ok: boolean; id: number; removedContainers?: string[] }>('DELETE', `/v1/services/${serviceId}/deploys/${deploymentId}`),
+      removeMany: (serviceId, input) =>
+        send<{ ok: true; removed: number[]; skipped: number; removedContainers: string[] }>('POST', `/v1/services/${serviceId}/deploys/bulk-delete`, input),
       configDiff: (serviceId, deploymentId) =>
         get<{ deploymentId: number; previousDeploymentId: number | null; changed: boolean; diff: string }>(
           `/v1/services/${serviceId}/deploys/${deploymentId}/diff`,

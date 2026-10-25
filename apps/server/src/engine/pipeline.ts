@@ -57,6 +57,7 @@ import { dockerBuilder, railpackUnavailableReason } from './builders/docker.js';
 import { composeBuilder } from './builders/compose.js';
 import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
+import { deployAborted, outsideDeployScope, runInDeployScope } from '../lib/deployAbort.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
 import { beginPrimaryTransition, primaryRecoveryPending, PrimaryIdentityUnconfirmed, PrimaryRecoveryOwnershipLost, PrimaryRecoveryPending, type PrimaryRecoveryLease } from './primaryRecovery.js';
@@ -216,6 +217,14 @@ async function runHook(cmd: string, cwd: string, env: Record<string, string>, lo
 
 /** Render any thrown value as a single-line message (handles non-Error rejections). */
 const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** The service's configured readiness check, as a DeployRuntime carries it (same mapping as the docker builder). */
+function healthModeOf(service: { healthCheck?: string | null; healthCommand?: string | null }): Pick<DeployRuntime, 'healthCheck' | 'healthCommand'> {
+  const mode = service.healthCheck;
+  if (mode === 'http-strict' || mode === 'tcp' || mode === 'running') return { healthCheck: mode };
+  if (mode === 'command' && service.healthCommand) return { healthCheck: 'command', healthCommand: service.healthCommand };
+  return {};
+}
 
 /** Thrown at pipeline checkpoints when the deployment was cancelled mid-flight. */
 class DeploymentCancelled extends Error {
@@ -663,7 +672,8 @@ export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: Pi
   logBus.beginRun(deploymentId);
   if (events) await emitDeploying(db, deploymentId, events).catch(() => undefined);
   try {
-    await runDeploymentCore(db, deploymentId, kernelCtx, lease => { primaryRecovery = lease; });
+    // The scope lets the cancel route stop the running step (lib/deployAbort.ts).
+    await runInDeployScope(deploymentId, () => runDeploymentCore(db, deploymentId, kernelCtx, lease => { primaryRecovery = lease; }));
   } catch (err) {
     if (err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost || primaryRecovery && 'managerNodeId' in primaryRecovery.row) {
       const reason = err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost ? err.message : 'Swarm transition remains unconfirmed; retained for recovery';
@@ -1610,7 +1620,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       return;
     }
     await primaryRecovery?.check();
-    const cancelled = err instanceof DeploymentCancelled;
+    // A cancel kills the running step (lib/deployAbort.ts), so the error that
+    // lands here is that step's "killed by signal", not DeploymentCancelled.
+    const cancelled = err instanceof DeploymentCancelled || deployAborted() || await isCancelled(db, deploymentId);
     log(cancelled ? '⏹ Deployment cancelled' : `✗ Deployment failed: ${msg(err)}`);
     log('##[stage:ERROR:failed]');
 
@@ -1643,7 +1655,18 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     let restored = false;
     if (previous) {
       try {
-        restored = await builder.isHealthy(previous, 3000, 0, log);
+        // A host-port deploy stopped the previous generation before starting
+        // the candidate (the candidate is gone now, so is its port): start it
+        // again, and give it the service's own readiness check — a freshly
+        // started SIP/TCP/worker container cannot pass a 3-second HTTP probe.
+        const revived = !retainCandidate && runtime?.runtimeId !== previous.runtimeId && builder.revive
+          ? await outsideDeployScope(() => builder!.revive!(previous.runtimeId)).catch(() => false)
+          : false;
+        if (revived) log(`↻ Started the previous runtime ${previous.runtimeId} again`);
+        restored = revived
+          ? await outsideDeployScope(() => builder!.isHealthy({ ...previous, ...healthModeOf(service) },
+            Math.min(60, service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000, 10_000, log))
+          : await outsideDeployScope(() => builder!.isHealthy(previous, 3000, 0, log));
       } catch {
         restored = false;
       }
@@ -1772,6 +1795,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
         catch { canRetire = false; log(`⚠ Canary rollback was not confirmed; both runtime generations are kept running (candidate ${newRuntimeId})`); }
       }
       if (canRetire) await builder.stop(newRuntimeId).catch(() => undefined);
+      // A host-port deploy stopped the previous generation; with the candidate
+      // gone it can take its ports back.
+      if (canRetire && previous && builder.revive && await outsideDeployScope(() => builder!.revive!(previous.runtimeId)).catch(() => false)) {
+        log(`↻ Started the previous runtime ${previous.runtimeId} again`);
+      }
       if (previous) {
         await db.update(services).set({ status: 'running', runtimeId: previous.runtimeId }).where(and(eq(services.id, service.id), ne(services.status, 'stopped'), runtimeFence()));
       } else {
@@ -1923,7 +1951,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'deploying')));
     log('⏹ Cancelled during routing transition — restoring a healthy previous release before candidate retirement');
     const canRestore = previous && !inPlaceRedeploy && service.type !== 'pm2'
-      && await builder.isHealthy(previous, 5_000, 0).catch(() => false);
+      && await outsideDeployScope(() => builder!.isHealthy(previous!, 5_000, 0)).catch(() => false);
     if (canRestore) {
       const restored = await db.update(services).set({ status: 'running', runtimeId: previous!.runtimeId,
         port: previous!.port ?? null, commitSha: service.commitSha, runtimeReplicas: service.runtimeReplicas ?? 1,

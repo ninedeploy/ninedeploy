@@ -814,6 +814,7 @@ export const MATRIX: Record<string, Rule> = {
     note: 'the matrix service has a source of its own, so the at-floor call is a 409 from the onRequest guard; archive handling is covered by test/sourceUpload.test.ts',
   }),
   'DELETE /v1/services/:id/deploys/:depId': R('admin'),
+  'POST /v1/services/:id/deploys/bulk-delete': R('admin'),
   'POST /v1/services/:id/deploys/:depId/cancel': R('member'),
   'POST /v1/services/:id/deploys/:depId/rollback': R('member'),
   'GET /v1/services/:id/canary': R('viewer'),

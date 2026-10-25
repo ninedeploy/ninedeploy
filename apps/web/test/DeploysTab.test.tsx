@@ -175,6 +175,32 @@ describe('DeploysTab (per-service)', () => {
     });
   });
 
+  it('removes every failed and cancelled deploy in one confirmed call', async () => {
+    const removeMany = vi.fn().mockResolvedValue({ ok: true, removed: [31, 32], skipped: 0, removedContainers: ['web-31'] });
+    mockOf(api.deploys.removeMany).mockImplementation(removeMany);
+    const deploys: Deployment[] = [
+      baseDeploy({ id: 33, status: 'running' }),
+      baseDeploy({ id: 32, status: 'cancelled' }),
+      baseDeploy({ id: 31, status: 'failed' }),
+    ];
+    renderWithProviders(
+      <DeploysTab serviceId={1} repoUrl={null} deploys={deploys} loading={false} activeId={null} onSelect={() => {}} />,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Remove failed & cancelled \(2\)/ }));
+    expect(removeMany).not.toHaveBeenCalled(); // confirm first
+    await user.click(await screen.findByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(removeMany).toHaveBeenCalledWith(1, { statuses: ['failed', 'cancelled'] }));
+  });
+
+  it('offers no bulk removal when nothing failed or was cancelled', async () => {
+    renderWithProviders(
+      <DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 40, status: 'running' })]} loading={false} activeId={null} onSelect={() => {}} />,
+    );
+    await screen.findByText('#40');
+    expect(screen.queryByRole('button', { name: /Remove failed & cancelled/ })).toBeNull();
+  });
+
   it('offers approve and reject on a waiting deploy to a lane admin', async () => {
     const waiting = baseDeploy({ id: 21, status: 'awaiting_approval', message: 'fix: login', trigger: 'webhook' });
     mockOf(api.deploys.approvals).mockResolvedValue({

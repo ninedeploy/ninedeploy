@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
+import { trackDeployChild } from './deployAbort.js';
 
 export interface ExecOptions {
   cwd?: string;
@@ -318,6 +319,8 @@ export function run(cmd: string, args: string[], opts: ExecOptions, sink: (line:
       detached: true,
       stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+    // A cancelled deploy stops the step it is running (lib/deployAbort.ts).
+    trackDeployChild(child, killTree);
     if (input && child.stdin) {
       child.stdin.on('error', () => { /* EPIPE when the child exits early */ });
       child.stdin.end(input);
@@ -393,6 +396,8 @@ export function capture(cmd: string, args: string[], opts: ExecOptions = {}, inp
       detached: true,
       stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+    // A cancelled deploy stops the step it is running (lib/deployAbort.ts).
+    trackDeployChild(child, killTree);
     if (input && child.stdin) {
       child.stdin.on('error', () => { /* EPIPE when the child exits early */ });
       child.stdin.end(input);

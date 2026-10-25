@@ -4,7 +4,7 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { deployments, services, users, type DB } from '@ninedeploy/db';
+import { deployments, services, users, type DB, type Service } from '@ninedeploy/db';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { diffLines, renderDiff } from '../lib/diff.js';
 import { buildEnv, capture } from '../lib/exec.js';
@@ -28,6 +28,9 @@ import { websocketBearerToken } from '../lib/websocketAuth.js';
 import { dockerTransport, isEngineTransport, openExecTty, SHELL_CMD } from '../lib/dockerTty.js';
 import { reserveLive, runTerminalSession, startLegacyExecRecord, type TerminalSocket } from '../lib/terminalSessions.js';
 import { localSwarmTaskFor, swarmRuntimeOf } from '../lib/swarm.js';
+import { abortDeployment } from '../lib/deployAbort.js';
+import { removeInterruptedCandidates } from '../engine/interruptedRuntime.js';
+import { primaryRecoveryPending } from '../engine/primaryRecovery.js';
 
 /**
  * Statuses that mean the worker or the pipeline may still write to the row.
@@ -45,6 +48,33 @@ const isInFlight = (status: string): boolean =>
  * still waiting for approval, which its author may withdraw.
  */
 const CANCELLABLE_STATUSES = [...IN_FLIGHT_STATUSES, 'awaiting_approval'] as const;
+
+/** Statuses delete refuses: the worker may still write the row, it serves traffic, or it waits for a review. */
+const UNDELETABLE_STATUSES = [...IN_FLIGHT_STATUSES, 'running', 'awaiting_approval'] as const;
+
+/** Bulk removal: explicit ids, or every finished deploy of the service in these statuses. */
+const bulkRemoveInput = z
+  .object({
+    ids: z.array(z.number().int().positive()).min(1).max(500).optional(),
+    statuses: z.array(z.enum(['failed', 'cancelled', 'superseded'])).min(1).optional(),
+  })
+  .refine((v) => v.ids !== undefined || v.statuses !== undefined, 'Pass ids or statuses');
+
+/**
+ * Removing a failed or cancelled deploy also removes what it left behind on
+ * this host: a candidate container its failure path could not remove (it
+ * carries the deployment's labels). Never the service's current runtime, and
+ * nothing while a routing transition still owns both generations
+ * (engine/primaryRecovery.ts decides those).
+ */
+async function removeDeployLeftovers(db: DB, svc: Service, depIds: readonly number[]): Promise<string[]> {
+  if (svc.type !== 'docker' || svc.serverId != null || (await primaryRecoveryPending(db, svc.id))) return [];
+  const removed: string[] = [];
+  for (const depId of depIds) {
+    removed.push(...(await removeInterruptedCandidates(depId, svc.id, svc.runtimeId ?? null).catch(() => [])));
+  }
+  return removed;
+}
 const isCancellable = (status: string): boolean =>
   (CANCELLABLE_STATUSES as readonly string[]).includes(status);
 
@@ -438,8 +468,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Cancel a deployment. `queued` rows flip atomically (the worker never claims
-  // a cancelled row); `building` rows flip so the pipeline's checkpoints abort
-  // at the next step boundary and the previous runtime keeps serving.
+  // a cancelled row); `building` rows flip and their running step is killed
+  // (lib/deployAbort.ts), so the pipeline unwinds at once and the previous
+  // runtime keeps serving.
   app.post('/:id/deploys/:depId/cancel', { onRequest: [app.authenticate] }, async (req) => {
     const id = num((req.params as { id: string }).id);
     const depId = num((req.params as { depId: string }).depId);
@@ -463,6 +494,12 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     } else if (dep.status === 'queued') {
       // Never picked up — it is fully cancelled here.
       logBus.publish(depId, '⏹ Cancelled before the worker picked it up');
+    } else if (dep.status === 'building' && abortDeployment(depId)) {
+      // The running step (a build, a healthcheck) is stopped now, not at the
+      // next checkpoint: until the old pipeline exits, the worker holds every
+      // queued deploy of this service. `deploying` is the routing finalize,
+      // which has its own cancel handling and is never interrupted mid-step.
+      logBus.publish(depId, '⏹ Cancellation requested — stopping the running step');
     } else {
       // In-flight: the pipeline observes the flip at its next checkpoint.
       logBus.publish(depId, '⏹ Cancellation requested — stopping at the next step');
@@ -591,14 +628,43 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // the worker.
     const removed = await app.db
       .delete(deployments)
-      .where(
-        and(eq(deployments.id, depId), notInArray(deployments.status, [...IN_FLIGHT_STATUSES, 'running', 'awaiting_approval'])),
-      )
+      .where(and(eq(deployments.id, depId), notInArray(deployments.status, [...UNDELETABLE_STATUSES])))
       .returning({ id: deployments.id });
     if (removed.length === 0) throw badRequest('Deployment changed state — reload and try again');
     deleteLog(depId);
-    void audit(app.db, req.user!.id, 'deploy.delete', `${svc.name} #${depId}`);
-    return { ok: true, id: depId };
+    const removedContainers = await removeDeployLeftovers(app.db, svc, [depId]);
+    void audit(app.db, req.user!.id, 'deploy.delete', `${svc.name} #${depId}`, removedContainers.length > 0 ? { removedContainers } : undefined);
+    return { ok: true, id: depId, removedContainers };
+  });
+
+  /**
+   * Remove many finished deployments at once — the failed and cancelled ones
+   * piling up in the history, or a selection. The same rules as the single
+   * delete, applied per row inside the guarded DELETE: in-flight, live and
+   * waiting rows are skipped (counted), never removed.
+   */
+  app.post('/:id/deploys/bulk-delete', { onRequest: [app.authenticate] }, async (req) => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    await assertServiceRole(app.db, svc, req.user!, 'admin');
+    const input = bulkRemoveInput.parse(req.body ?? {});
+    const removed = (await app.db
+      .delete(deployments)
+      .where(and(
+        eq(deployments.serviceId, id),
+        notInArray(deployments.status, [...UNDELETABLE_STATUSES]),
+        input.ids ? inArray(deployments.id, input.ids) : undefined,
+        input.statuses ? inArray(deployments.status, input.statuses) : undefined,
+      ))
+      .returning({ id: deployments.id })).map((r) => r.id);
+    for (const depId of removed) deleteLog(depId);
+    const removedContainers = await removeDeployLeftovers(app.db, svc, removed);
+    if (removed.length > 0) {
+      void audit(app.db, req.user!.id, 'deploy.delete', `${svc.name} ×${removed.length}`, {
+        serviceId: svc.id, deploymentIds: removed, ...(removedContainers.length > 0 ? { removedContainers } : {}),
+      });
+    }
+    return { ok: true, removed, skipped: input.ids ? input.ids.length - removed.length : 0, removedContainers };
   });
 
   // Config diff: what changed between this deployment and the previous one

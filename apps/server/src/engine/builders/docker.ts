@@ -18,6 +18,8 @@ import { writeSecretFile, type SecretFile } from '../../lib/secretFile.js';
 import { pullableReleaseRef } from '../fanout.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
+import { deployAborted } from '../../lib/deployAbort.js';
+import { startStoppedGeneration } from '../interruptedRuntime.js';
 
 /**
  * Find a Dockerfile inside a repo when the user kept `baseDir: '/'` and
@@ -543,7 +545,7 @@ export async function holdsRunning(runtimeId: string, timeoutMs: number, log: (l
   const deadline = Date.now() + timeoutMs;
   let stable = 0;
   let restarts: string | null = null;
-  while (Date.now() < deadline) {
+  while (Date.now() < deadline && !deployAborted()) {
     let status = '';
     let count = '';
     try {
@@ -586,7 +588,7 @@ export const COMMAND_HEALTH_ATTEMPT_TIMEOUT_MS = 10_000;
 export async function commandSucceeds(runtimeId: string, command: string, timeoutMs: number, log: (line: string) => void): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let lastFailure = '';
-  while (Date.now() < deadline) {
+  while (Date.now() < deadline && !deployAborted()) {
     let status = '';
     try {
       status = (await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS })).trim();
@@ -1148,9 +1150,13 @@ export const dockerBuilder: Builder = {
     // EXCEPTION — host-published ports cannot run blue-green: Docker refuses to
     // bind the same host port twice, so EVERY redeploy after the first would
     // die on "port is already allocated" and the service would be stuck on its
-    // first version forever. Retire the previous runtime FIRST and deploy
+    // first version forever. Stop the previous runtime FIRST and deploy
     // sequentially — a short, deliberate gap beats a permanently failing
-    // redeploy.
+    // redeploy. It is STOPPED, not removed: a stopped container holds no
+    // port, and a candidate that fails its healthcheck (or a cancel) gets the
+    // previous one started again by the pipeline (`revive`). Removing it here
+    // left the service with no runtime at all and services.runtimeId naming a
+    // container that no longer existed — every request a 502 from then on.
     const hostPorts = [
       ...(service.publishedPort ? [String(service.publishedPort)] : []),
       // Allow-listed ones are held by the port proxy, not by this container.
@@ -1158,9 +1164,11 @@ export const dockerBuilder: Builder = {
     ];
     if (hostPorts.length > 0 && previous?.runtimeId && previous.runtimeId !== name) {
       log(
-        `Host port${hostPorts.length === 1 ? '' : 's'} ${hostPorts.join(', ')} ${hostPorts.length === 1 ? 'is' : 'are'} published — retiring previous runtime ${previous.runtimeId} before start (sequential deploy, no blue-green)`,
+        `Host port${hostPorts.length === 1 ? '' : 's'} ${hostPorts.join(', ')} ${hostPorts.length === 1 ? 'is' : 'are'} published — stopping previous runtime ${previous.runtimeId} before start (sequential deploy, no blue-green; it is started again if this deploy fails)`,
       );
-      await run('docker', ['rm', '-f', previous.runtimeId], {}, swallowLine);
+      const grace = buildConfig?.stopGraceSeconds;
+      await run('docker', ['stop', '-t', String(typeof grace === 'number' && grace >= 0 ? Math.min(Math.floor(grace), 300) : 5), ...replicaNames(previous.runtimeId, MAX_REPLICAS)], {}, swallowLine)
+        .catch(() => undefined); // a missing replica name fails the batch; the rest are stopped
     }
 
     // A worker/host crash can leave this deployment's candidate container
@@ -1497,7 +1505,7 @@ export const dockerBuilder: Builder = {
       if (!runtime.port) return false;
       const { probeContainer } = await import('../../lib/containerProbe.js');
       const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
+      while (Date.now() < deadline && !deployAborted()) {
         let ready = false;
         try {
           await probeContainer({ name: runtime.runtimeId, port: runtime.port,
@@ -1534,7 +1542,7 @@ export const dockerBuilder: Builder = {
     let fallbackPorts: number[] | null = null;
     let restartDiagnosticWritten = false;
     let siblingTopologyLogged = false;
-    while (Date.now() < deadline) {
+    while (Date.now() < deadline && !deployAborted()) {
       // Resolve the container's network address fresh on every attempt: null
       // when it is not running (a process that exits right after `docker run -d`
       // must not pass), and always the CURRENT address — which is exactly what
@@ -1640,6 +1648,9 @@ export const dockerBuilder: Builder = {
     await logContainerDiagnostic(runtime.runtimeId, log);
     return false;
   },
+
+  // The generation a host-port deploy stopped (see buildAndRun).
+  revive: (runtimeId) => startStoppedGeneration(runtimeId),
 
   async stop(runtimeId, opts) {
     // F527: 0 is a valid grace (schema min 0) — test for a number, not truthiness.

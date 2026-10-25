@@ -1324,6 +1324,34 @@ describe('runDeployment', () => {
     expect(updates.some((u) => u.table === services && u.values.status === 'error')).toBe(false);
   });
 
+  it('host ports: starts the stopped previous runtime again and probes it with the service readiness check', async () => {
+    // A host-port deploy stops the previous container before the candidate
+    // starts. When the candidate fails, it must come back — removing it left
+    // the service with no runtime and Traefik routing to a deleted name (502).
+    const { db, updates } = makeDb();
+    baseSetup(db, { runtimeId: 'sip-1', port: 5060, healthPath: '/', healthCheck: 'tcp', healthTimeoutSeconds: 120 });
+    const revive = vi.fn(async () => true);
+    Object.assign(h.builder, { revive });
+    try {
+      h.builder.buildAndRun.mockResolvedValue({ runtimeId: 'sip-2', port: 5060, healthPath: '/' });
+      h.builder.isHealthy.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      const lines = collectLogs(1);
+
+      await runDeployment(db as never, 1);
+
+      expect(h.builder.stop).toHaveBeenCalledWith('sip-2');
+      expect(revive).toHaveBeenCalledWith('sip-1');
+      expect(lines).toContain('↻ Started the previous runtime sip-1 again');
+      const probe = h.builder.isHealthy.mock.calls[1]!;
+      expect(probe[0]).toMatchObject({ runtimeId: 'sip-1', healthCheck: 'tcp' });
+      expect(probe[1]).toBe(60_000);
+      expect(lines).toContain('↩ Previous runtime is still healthy — rolled back to it.');
+      expect(updates.some((u) => u.table === services && u.values.status === 'error')).toBe(false);
+    } finally {
+      delete (h.builder as { revive?: unknown }).revive;
+    }
+  });
+
   it('marks the service errored when the previous runtime is gone (PM2-style failure)', async () => {
     const { db, updates } = makeDb();
     baseSetup(db, { runtimeId: 'old-c' });

@@ -100,8 +100,10 @@ export const config = {
   dnsProvider: env.NINEDEPLOY_DNS_PROVIDER ?? null,
   dnsToken: env.NINEDEPLOY_DNS_TOKEN ?? null,
   // JSON endpoint returning {"tag_name": "vX.Y.Z", ...} (GitHub Releases format).
-  // Set NINEDEPLOY_UPDATE_CHECK_URL=disabled to turn update checks off.
-  updateCheckUrl: env.NINEDEPLOY_UPDATE_CHECK_URL ?? 'https://api.github.com/repos/NineDeploy/NineDeploy/releases/latest',
+  // Set NINEDEPLOY_UPDATE_CHECK_URL=disabled to turn update checks off. Blank
+  // means unset: install.sh copies .env.example, which ships the key empty, and
+  // `??` alone turned that into fetch('') on every fresh install.
+  updateCheckUrl: env.NINEDEPLOY_UPDATE_CHECK_URL?.trim() || 'https://api.github.com/repos/NineDeploy/NineDeploy/releases/latest',
   /** How many volume backups to keep per volume (1-100). */
   volumeBackupRetainCount: env.NINEDEPLOY_BACKUP_VOLUME_RETAIN_COUNT,
   /** Largest database dump an import accepts (0.14), in bytes. */

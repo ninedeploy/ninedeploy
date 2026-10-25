@@ -112,6 +112,20 @@ export function DeploysTab({
     onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Remove failed', 'error'),
   });
 
+  // Bulk: every failed or cancelled deploy of this service, in one call.
+  const [confirmClear, setConfirmClear] = useState(false);
+  const clearable = deploys.filter((d) => d.status === 'failed' || d.status === 'cancelled').length;
+  const clearFailed = useMutation({
+    mutationFn: () => api.deploys.removeMany(serviceId, { statuses: ['failed', 'cancelled'] }),
+    onSuccess: (res) => {
+      if (activeId != null && res.removed.includes(activeId)) onSelect(null);
+      qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
+      const leftovers = res.removedContainers.length > 0 ? ` and ${res.removedContainers.length} leftover container(s)` : '';
+      toast(`Removed ${res.removed.length} deployment(s)${leftovers}`, 'info');
+    },
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Remove failed', 'error'),
+  });
+
   return (
     <div className="mt-5 space-y-5">
       <ConfirmDialog
@@ -132,6 +146,14 @@ export function DeploysTab({
         }}
         onClose={() => setPendingRollback(null)}
       />
+      <ConfirmDialog
+        open={confirmClear}
+        title="Remove failed and cancelled deployments?"
+        message={`Every failed or cancelled deployment of this service (${clearable} in the list) and its build log will be removed from history, with any container it left behind. Queued, running and live deployments are kept.`}
+        confirmLabel="Remove"
+        onConfirm={() => clearFailed.mutate()}
+        onClose={() => setConfirmClear(false)}
+      />
       {waitingRow && <ApprovalCard serviceId={serviceId} waiting={waitingRow} />}
       <DeploymentsCard
         deploys={deploys}
@@ -140,6 +162,8 @@ export function DeploysTab({
         onRollback={(depId) => setPendingRollback(depId)}
         onCancel={(depId) => cancelDeploy.mutate(depId)}
         onRemove={(depId) => removeDeploy.mutate(depId)}
+        onClearFailed={clearable > 0 ? () => setConfirmClear(true) : undefined}
+        clearable={clearable}
         loading={loading}
         positionById={positionById}
       />
@@ -448,6 +472,8 @@ function DeploymentsCard({
   onRollback,
   onCancel,
   onRemove,
+  onClearFailed,
+  clearable = 0,
   loading,
   positionById,
 }: {
@@ -457,6 +483,9 @@ function DeploymentsCard({
   onRollback?: (deploymentId: number) => void;
   onCancel?: (deploymentId: number) => void;
   onRemove?: (deploymentId: number) => void;
+  /** Remove every failed/cancelled deploy (absent when there is none). */
+  onClearFailed?: () => void;
+  clearable?: number;
   loading: boolean;
   /**
    * Map from queued deployment id to its position + total in the
@@ -473,7 +502,19 @@ function DeploymentsCard({
             <div className="text-sm font-medium text-slate-300">Deployments</div>
             <p className="mt-0.5 text-[11px] text-slate-600">Select a release to inspect its pipeline and output.</p>
           </div>
-          {deploys.length > 0 && <span className="text-[11px] text-slate-600">{deploys.length} total</span>}
+          <div className="flex items-center gap-3">
+            {onClearFailed && (
+              <button type="button"
+                onClick={onClearFailed}
+                className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-slate-500 transition hover:bg-white/5 hover:text-rose-300"
+                title="Remove every failed and cancelled deployment from history"
+              >
+                <Trash2 size={12} />
+                Remove failed &amp; cancelled ({clearable})
+              </button>
+            )}
+            {deploys.length > 0 && <span className="text-[11px] text-slate-600">{deploys.length} total</span>}
+          </div>
         </div>
         {loading ? (
           <Skeleton className="h-8 w-full" />

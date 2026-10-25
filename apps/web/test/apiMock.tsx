@@ -155,6 +155,7 @@ export function createFakeApiModule() {
       releaseInfo: vi.fn().mockResolvedValue({ available: true, mode: 'legacy', imageCount: 0, reason: 'Legacy redeploy: current settings and environment.' }),
       cancel: vi.fn(),
       remove: vi.fn(),
+      removeMany: vi.fn(),
       configDiff: vi.fn(),
       promote: vi.fn(),
       approvals: vi.fn().mockResolvedValue({ items: [], count: 0 }),

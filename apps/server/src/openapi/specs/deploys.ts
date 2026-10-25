@@ -159,7 +159,17 @@ export const deploysSpecs: RouteSpecMap = {
     summary: 'Remove a finished deployment and its build log',
     tag: 'deploys',
     floor: 'admin',
-    responseType: '{ ok: boolean; id: number }',
+    responseType: '{ ok: boolean; id: number; removedContainers: string[] }',
+  },
+  'POST /v1/services/:id/deploys/bulk-delete': {
+    summary: 'Remove many finished deployments and their build logs',
+    tag: 'deploys',
+    description:
+      'Body `{ ids?: number[], statuses?: ("failed"|"cancelled"|"superseded")[] }` (at least one). Queued, building, deploying, awaiting-CI, waiting-for-approval and the live deployment are never removed; with `ids` they are counted in `skipped`. Containers a removed deploy left behind on this host are removed too (`removedContainers`).',
+    floor: 'admin',
+    localBody: 'deploys.ts#bulkRemoveInput',
+    responseType: '{ ok: true; removed: number[]; skipped: number; removedContainers: string[] }',
+    validation: 'zod',
   },
   'POST /v1/services/:id/deploys/:depId/cancel': {
     summary: 'Cancel a queued or in-flight deployment',

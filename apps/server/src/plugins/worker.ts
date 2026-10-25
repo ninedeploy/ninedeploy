@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { runDeployment } from '../engine/pipeline.js';
 import { logBus } from '../engine/logs.js';
-import { removeInterruptedCandidates } from '../engine/interruptedRuntime.js';
+import { removeInterruptedCandidates, startStoppedGeneration } from '../engine/interruptedRuntime.js';
 import { audit } from '../lib/audit.js';
 import { dropStaleApprovals, holdForApprovalIfNeeded } from '../lib/protectedLanes.js';
 import { holdForCiIfNeeded, pollCiGates } from '../lib/ciGate.js';
@@ -227,6 +227,12 @@ export default fp(
         removedContainers = await removeInterruptedCandidates(row.deploymentId, row.serviceId, row.runtimeId);
         if (removedContainers.length > 0) {
           logBus.publish(row.deploymentId, `Removed the container(s) this deploy had started: ${removedContainers.join(', ')}`);
+        }
+        // A host-port deploy stopped the previous runtime before starting the
+        // candidate; with the candidate gone it gets its ports back (a
+        // candidate still holding them makes `docker start` fail harmlessly).
+        if (row.runtimeId && (await startStoppedGeneration(row.runtimeId).catch(() => false))) {
+          logBus.publish(row.deploymentId, `Started the previous runtime ${row.runtimeId} again`);
         }
       }
       // F881: the row is failed and the recovery's last line is written — end

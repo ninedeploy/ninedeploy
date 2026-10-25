@@ -156,4 +156,10 @@ export interface Builder {
   buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime>;
   isHealthy(runtime: DeployRuntime, timeoutMs?: number, directGraceMs?: number, log?: (line: string) => void, options?: { checkpoint?: () => Promise<void> }): Promise<boolean>;
   stop(runtimeId: string, opts?: { graceSeconds?: number }): Promise<void>;
+  /**
+   * Start a stopped previous generation again (local docker, host-port
+   * deploys stop it before the candidate starts). Resolves true when it
+   * started anything. Builders that never stop the previous omit it.
+   */
+  revive?(runtimeId: string): Promise<boolean>;
 }

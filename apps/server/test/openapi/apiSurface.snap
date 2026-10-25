@@ -405,6 +405,7 @@ POST /v1/services/:id/deploys/:depId/canary/promote member nd://scope/write/depl
 POST /v1/services/:id/deploys/:depId/cancel member nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/reject admin nd://scope/write/deploys
 POST /v1/services/:id/deploys/:depId/rollback member nd://scope/write/deploys
+POST /v1/services/:id/deploys/bulk-delete admin nd://scope/write/deploys
 POST /v1/services/:id/domains member nd://scope/write/domains
 POST /v1/services/:id/domains/:domainId/verify member nd://scope/write/domains
 POST /v1/services/:id/domains/auto member nd://scope/write/domains

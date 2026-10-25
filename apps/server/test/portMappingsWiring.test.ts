@@ -64,9 +64,12 @@ describe('port mappings on the docker run line', () => {
     expect(options[options.indexOf('203.0.113.7:8443:443/tcp') - 1]).toBe('-p');
   });
 
-  it('retires the previous container first: the new one cannot bind the same host ports', async () => {
+  it('stops (never removes) the previous container first: the new one cannot bind the same host ports', async () => {
     const { removed, logs } = await deploy({ portMappings: mappings }, { runtimeId: 'game-4' });
-    expect(removed).toContainEqual(['rm', '-f', 'game-4']);
+    // Stopped, so a failed candidate can hand the ports back (pipeline `revive`).
+    const stopped = execMocks.run.mock.calls.map((c) => c[1] as string[]).filter((a) => a[0] === 'stop');
+    expect(stopped[0]).toEqual(expect.arrayContaining(['stop', 'game-4', 'game-4-r2']));
+    expect(removed.flat()).not.toContain('game-4');
     expect(logs.some((l) => l.includes('27015-27030:27015-27030/udp') && l.includes('sequential deploy'))).toBe(true);
   });
 

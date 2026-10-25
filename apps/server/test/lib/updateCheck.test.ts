@@ -215,6 +215,15 @@ describe('checkForUpdate', () => {
     expect(await checkForUpdate(true)).toMatchObject({ latest: 'v99.10.1', source: 'git' });
   });
 
+  it('treats a blank NINEDEPLOY_UPDATE_CHECK_URL (as .env.example ships it) as the default GitHub feed', async () => {
+    vi.stubEnv('NINEDEPLOY_UPDATE_CHECK_URL', '');
+    const f = feed({ tag_name: 'v99.0.0', html_url: 'https://notes' });
+    vi.stubGlobal('fetch', f);
+    const { checkForUpdate } = await import('../../src/lib/updateCheck.js');
+    expect(await checkForUpdate(true)).toMatchObject({ latest: 'v99.0.0', source: 'github-api' });
+    expect(f.mock.calls[0]?.[0]).toBe('https://api.github.com/repos/NineDeploy/NineDeploy/releases/latest');
+  });
+
   it('keeps a custom (non-GitHub) feed to the feed itself: no release page or git fallback', async () => {
     vi.stubEnv('NINEDEPLOY_UPDATE_CHECK_URL', 'https://updates.example.com/latest.json');
     const f = unreachable();

@@ -67,9 +67,10 @@ const childProc = vi.hoisted(() => {
 });
 vi.mock('node:child_process', () => ({ spawn: (...a: unknown[]) => childProc.spawn(...a) }));
 
-const execMocks = vi.hoisted(() => ({ capture: vi.fn(), buildEnv: vi.fn((extra?: Record<string, string>) => ({ ...(extra ?? {}) })) }));
+const execMocks = vi.hoisted(() => ({ capture: vi.fn(), run: vi.fn(), buildEnv: vi.fn((extra?: Record<string, string>) => ({ ...(extra ?? {}) })) }));
 vi.mock('../src/lib/exec.js', () => ({
   capture: (...a: unknown[]) => execMocks.capture(...a),
+  run: (...a: unknown[]) => execMocks.run(...a),
   buildEnv: (extra?: Record<string, string>) => execMocks.buildEnv(extra),
 }));
 
@@ -444,7 +445,28 @@ describe('deploys routes', () => {
       await app.register(deploysRoutes, { prefix: '/services' });
       const res = await app.inject({ method: 'DELETE', url: '/services/1/deploys/20', headers: asUser() });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ ok: true, id: 20 });
+      expect(res.json()).toEqual({ ok: true, id: 20, removedContainers: [] });
+    });
+
+    it('removes the container a failed deploy left behind, never the live runtime', async () => {
+      // The failure path could not remove its candidate (a stuck `docker rm`,
+      // a crash): deleting the deploy from history now cleans it up.
+      execMocks.capture.mockImplementation(async (_cmd: string, args: string[]) =>
+        args[0] === 'ps' ? 'web-23\nweb-1\n' : 'running\n');
+      execMocks.run.mockResolvedValue(undefined);
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: svcRow({ id: 1, type: 'docker', serverId: null, runtimeId: 'web-1' }), deployments: depRow({ id: 23, serviceId: 1, status: 'failed' }) },
+          delete: { deployments: [{ id: 23 }] },
+        }),
+      });
+      await app.register(deploysRoutes, { prefix: '/services' });
+      const res = await app.inject({ method: 'DELETE', url: '/services/1/deploys/23', headers: asUser() });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().removedContainers).toEqual(['web-23']);
+      const psArgs = execMocks.capture.mock.calls.find((c) => (c[1] as string[])[0] === 'ps')![1] as string[];
+      expect(psArgs).toEqual(expect.arrayContaining(['label=ninedeploy.deployment=23', 'label=ninedeploy.service=1']));
+      expect(execMocks.run).toHaveBeenCalledWith('docker', ['rm', '-f', 'web-23'], {}, expect.any(Function));
     });
 
     it('refuses to delete an in-flight deployment', async () => {
@@ -486,6 +508,46 @@ describe('deploys routes', () => {
       const res = await app.inject({ method: 'DELETE', url: '/services/1/deploys/23', headers: asUser() });
       expect(res.statusCode).toBe(400);
       expect(res.json().error.message).toMatch(/changed state/);
+    });
+
+    it('bulk: removes every failed and cancelled deploy, their logs and their leftover containers', async () => {
+      execMocks.capture.mockImplementation(async (_cmd: string, args: string[]) =>
+        args[0] === 'ps' ? (args.includes('label=ninedeploy.deployment=31') ? 'web-31\n' : '') : 'running\n');
+      execMocks.run.mockResolvedValue(undefined);
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: svcRow({ id: 1, type: 'docker', serverId: null, runtimeId: 'web-1' }) },
+          delete: { deployments: [{ id: 31 }, { id: 32 }] },
+        }),
+      });
+      await app.register(deploysRoutes, { prefix: '/services' });
+      const res = await app.inject({ method: 'POST', url: '/services/1/deploys/bulk-delete', headers: asUser(), payload: { statuses: ['failed', 'cancelled'] } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ ok: true, removed: [31, 32], skipped: 0, removedContainers: ['web-31'] });
+      expect(execMocks.run).toHaveBeenCalledWith('docker', ['rm', '-f', 'web-31'], {}, expect.any(Function));
+    });
+
+    it('bulk: counts the ids it would not remove (in flight, live) as skipped', async () => {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: svcRow({ id: 1 }) },
+          delete: { deployments: [{ id: 41 }] },
+        }),
+      });
+      await app.register(deploysRoutes, { prefix: '/services' });
+      const res = await app.inject({ method: 'POST', url: '/services/1/deploys/bulk-delete', headers: asUser(), payload: { ids: [41, 42, 43] } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ removed: [41], skipped: 2 });
+    });
+
+    it('bulk: refuses an empty request and statuses it must never remove', async () => {
+      const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: svcRow({ id: 1 }) } }) });
+      await app.register(deploysRoutes, { prefix: '/services' });
+      for (const payload of [{}, { statuses: ['running'] }, { statuses: ['building'] }]) {
+        const res = await app.inject({ method: 'POST', url: '/services/1/deploys/bulk-delete', headers: asUser(), payload });
+        expect(res.statusCode).toBeGreaterThanOrEqual(400);
+        expect(res.statusCode).toBeLessThan(500);
+      }
     });
 
     it('404s for a deployment belonging to another service', async () => {
