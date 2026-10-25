@@ -4238,6 +4238,40 @@ describe('0.16 T6: attached databases are reachable from the service (D4, O7)', 
     expect(ops.lastIndexOf('docker.inspect')).toBeGreaterThan(connect);
     expect(h.builder.buildAndRun).not.toHaveBeenCalledWith(expect.objectContaining({ databaseContainers: ['nd-db-orders'] }), expect.anything());
   });
+
+  it('connects every immutable node replica to its database before any readiness probe', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4, replicas: 2 });
+    db.query.databaseAttachments.findMany.mockResolvedValue([{ serviceId: 5, databaseId: 9, envAlias: 'DATABASE_URL' }]);
+    db.query.databases.findFirst.mockResolvedValue({ id: 9, slug: 'orders', name: 'orders', engine: 'postgres', status: 'running', containerName: null, nodeContainerName: 'nd-db-orders', serverId: 4 });
+    const targets = new Map<string, { id: string; name: string }>();
+    const immutable = ['a'.repeat(64), 'b'.repeat(64)];
+    h.agentOp.mockReset().mockImplementation(async (_db: unknown, node: unknown, op: string, params: Record<string, unknown>) => {
+      expect(node).toBe(4);
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'stream', 'docker.runSpec', 'volume.manage', 'image.manage', 'db.manage', 'docker.recovery', 'docker.readiness', 'docker.lifecycle', 'docker.probe'] })] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/web-1.env'] };
+      if (op === 'docker.identity') {
+        const target = targets.get(String(params.name)) ?? [...targets.values()].find(item => item.id === params.name);
+        return { exitCode: 0, lines: ['ND-CONTAINER ' + JSON.stringify(target ? { ...target, managed: 'service', serviceId: '5', deploymentId: '1' } : null)] };
+      }
+      if (op === 'docker.runEnv') {
+        const target = { id: immutable[targets.size]!, name: String(params.name) };
+        targets.set(target.name, target); return { exitCode: 0, lines: [target.id] };
+      }
+      if (op === 'docker.inspect') return { exitCode: 0, lines: [params.format === 'image' ? 'sha256:' + 'f'.repeat(64) : 'running|none|0|0'] };
+      if (op === 'docker.readiness') return { exitCode: 0, lines: ['ND-READINESS ' + JSON.stringify({ requestId: params.requestId, complete: true,
+        items: (params.targets as Array<{ id: string; name: string }>).map(target => ({ ...target, status: 'running', health: 'none', ready: true, restarts: 0, failingStreak: 0 })) })] };
+      return { exitCode: 0, lines: [] };
+    });
+    const lines = collectLogs(1); await runDeployment(db as never, 1);
+    expect(lines, lines.join('\n')).toContain('✓ Deployment successful');
+    expect([...targets.keys()]).toEqual(['web-1', 'web-1-r2']);
+    const calls = h.agentOp.mock.calls;
+    const joins = calls.filter(call => call[2] === 'docker.networkConnect');
+    expect(joins.map(call => call[3])).toEqual(immutable.map(container => ({ network: 'nd-dbnet-orders', container })));
+    const firstProbe = calls.findIndex(call => call[2] === 'docker.readiness');
+    expect(firstProbe).toBeGreaterThan(calls.findLastIndex(call => call[2] === 'docker.networkConnect'));
+  });
 });
 // ── end 0.16 T6 ──
 

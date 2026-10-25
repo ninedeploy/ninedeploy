@@ -415,6 +415,10 @@ jobs:
         timeout-minutes: 15
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --lifecycle-only
 
+      - name: Node replica database SQL readiness, rollback and cancellation
+        timeout-minutes: 10
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --replica-databases-only
+
       - name: Recorded Compose release restore smoke on the pushed image
         timeout-minutes: 10
         run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only

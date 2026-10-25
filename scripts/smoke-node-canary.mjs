@@ -7,7 +7,11 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { smokePublicNodeLifecycle } from './lib/smoke-public-node-lifecycle.mjs';
+import { smokeNodeReplicaDatabases } from './lib/smoke-node-replica-databases.mjs';
+import { nodeReplicaDatabaseApp } from './fixtures/node-replica-database-app.mjs';
 const lifecycleOnly=process.argv.includes('--lifecycle-only');
+const replicaDatabasesOnly=process.argv.includes('--replica-databases-only');
+assert.ok(!(lifecycleOnly&&replicaDatabasesOnly),'Select one focused smoke mode');
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image&&/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
 const proof=resolve(process.argv.find(arg=>arg.startsWith('--proof='))?.slice(8)??('.temp_files/node-canary-'+randomBytes(6).toString('hex')));
@@ -24,7 +28,7 @@ const primary=(args,opts)=>docker(['exec',panelDaemon,'docker',...args],opts);
 function run(name,args){containers.push(name);return docker(['run','-d','--name',name,'--label',`ninedeploy.proof=${label}`,...args]);}
 async function until(fn,description,ms=90000){const end=Date.now()+ms;while(Date.now()<end){const r=await fn();if(r)return r;await pause(500);}throw Error(`Timed out: ${description}`);}
 async function api(path,{method='GET',body,raw=false,expectedStatus}={}){
- const timeout=method==='POST'&&path.endsWith('/runtime-recovery')?90_000:15_000;
+ const timeout=method==='POST'&&(path.endsWith('/runtime-recovery')||path==='/v1/databases')?90_000:15_000;
  let r;
  try{r=await fetch(baseUrl+path,{method,headers:{...(token?{authorization:`Bearer ${token}`}:{ }),...(body!==undefined?{'content-type':'application/json'}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});}
  catch(error){throw new Error(`${method} ${path} did not complete within its request budget`,{cause:error});}
@@ -50,7 +54,8 @@ try{
  inner(["run","-d","--name","nd-owned-registry","-p","127.0.0.1:5000:5000","registry:2"]);
  await until(()=>docker(["exec",daemon,"wget","-qO-","-T","2","http://127.0.0.1:5000/v2/"],{allowFailure:true}).status===0,"owned node registry");
  const code="const fs=require('node:fs');require('node:http').createServer((q,r)=>{const ready=(process.env.NEEDS_READINESS!=='1'||fs.existsSync('/tmp/nd-ready'))&&(!fs.existsSync('/tmp/nd-unready')||fs.readFileSync('/tmp/nd-unready','utf8')!=='1');const business=q.url!=='/ready'&&process.env.FAIL_BUSINESS==='1';r.statusCode=!ready||business?503:200;r.end(!ready?'booting':(process.env.RELEASE_LABEL||'old'));}).listen(8080,'0.0.0.0')";
- docker(['exec','-i',daemon,'sh','-c','mkdir -p /tmp/readiness-fixture; cat > /tmp/readiness-fixture/Dockerfile'],{input:`FROM node:26-slim\nHEALTHCHECK NONE\nEXPOSE 8080\nCMD ${JSON.stringify(['node','-e',code])}\n`});
+ docker(['exec','-i',daemon,'sh','-c','mkdir -p /tmp/readiness-fixture; cat > /tmp/readiness-fixture/Dockerfile'],{input:`FROM node:26-slim\nHEALTHCHECK NONE\nEXPOSE 8080\n${replicaDatabasesOnly?'COPY app.cjs /app.cjs\n':''}CMD ${JSON.stringify(replicaDatabasesOnly?['node','/app.cjs']:['node','-e',code])}\n`});
+ if(replicaDatabasesOnly)docker(['exec','-i',daemon,'sh','-c','cat > /tmp/readiness-fixture/app.cjs'],{input:nodeReplicaDatabaseApp()});
  inner(['build','-t',fixtureImage,'/tmp/readiness-fixture']);inner(['push',fixtureImage]);
  const saving=spawn('docker',['exec',daemon,'docker','save',fixtureImage],{windowsHide:true,stdio:['ignore','pipe','pipe']}),loading=spawn('docker',['exec','-i',panelDaemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});saving.stdout.pipe(loading.stdin);saving.stderr.resume();loading.stdout.resume();loading.stderr.resume();await Promise.all([saving,loading].map(p=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{p.kill();reject(Error('fixture image transfer deadline'));},180000);p.on('error',reject);p.on('close',code=>{clearTimeout(timer);code===0?resolve():reject(Error('fixture image transfer '+code));});})));
  primary(['run','-d','--name','nd-owned-registry','-p','127.0.0.1:5000:5000','registry:2']);await until(()=>docker(['exec',panelDaemon,'wget','-qO-','-T','2','http://127.0.0.1:5000/v2/'],{allowFailure:true}).status===0,'owned primary registry');primary(['push',fixtureImage]);
@@ -71,8 +76,20 @@ try{
  const created=await api('/v1/services',{method:'POST',body:{name:'R1 node canary',type:'docker',image:fixtureImage,port:8080,serverId:registration.id}});
  const id=created.id??created.service?.id;
  await api('/v1/services/'+id,{method:'PATCH',body:{healthCheck:'http-strict',healthPath:'/ready',healthTimeoutSeconds:60}});
- if(lifecycleOnly)await api('/v1/services/'+id,{method:'PATCH',body:{replicas:2}});
+ if(lifecycleOnly||replicaDatabasesOnly)await api('/v1/services/'+id,{method:'PATCH',body:{replicas:2}});
+ let replicaDatabase;
+ if(replicaDatabasesOnly){
+   replicaDatabase=await api('/v1/databases',{method:'POST',body:{name:'R2 replica PostgreSQL',engine:'postgres',serverId:registration.id}});
+   assert.ok(replicaDatabase.id);assert.equal(replicaDatabase.status,'running');
+   await api(`/v1/services/${id}/attachments`,{method:'POST',body:{databaseId:replicaDatabase.id,envAlias:'DATABASE_URL'}});
+ }
  const first=(await api('/v1/services/'+id+'/deploys',{method:'POST',body:{}})).deploymentId;
+ if(replicaDatabasesOnly){
+   const slug=(await service(id)).slug,names=[`${slug}-${first}`,`${slug}-${first}-r2`];
+   await until(async()=>{const job=(await rows(id)).find(row=>row.id===first);if(job?.status==='failed')throw Error(await log(id,first));return names.every(name=>inner(['inspect',name,'--format','{{.State.Running}}'],{allowFailure:true}).out==='true')&&(await log(id,first)).includes('Running healthcheck');},'SQL fixture containers and completed bridge attachment',120_000);
+   const initial=names.map(name=>({name,networks:Object.keys(JSON.parse(inner(['inspect',name,'--format','{{json .NetworkSettings.Networks}}']).out)),sql:JSON.parse(inner(['exec',name,'node','-e',"fetch('http://127.0.0.1:8080/ready').then(async r=>console.log(JSON.stringify({status:r.status,...await r.json()})))"]).out)}));
+   writeFileSync(proof+'/initial-sql.json',JSON.stringify(initial,null,2));console.log(JSON.stringify({initialSql:initial}));
+ }
  await success(id,first);
  const domain=(await api('/v1/services/'+id+'/domains'))[0];assert.ok(domain?.hostname);
  const state=()=>api(`/v1/services/${id}/canary`);
@@ -140,7 +157,9 @@ try{
    const value=/X-NineDeploy-Generation:\s*([a-f0-9]{64})/i.exec(output)?.[1];assert.ok(value);return value;
  };
 
- if(lifecycleOnly){
+ if(replicaDatabasesOnly){
+   await smokeNodeReplicaDatabases({api,inner,id,first,fixtureImage,service,domain,database:replicaDatabase,until,pause,report,cleared,env});
+ }else if(lifecycleOnly){
    await smokePublicNodeLifecycle({api,inner,docker,panel,args,id,first,fixtureImage,service,domain,until,pause,report,cleared,
      updatePanelUrl:()=>{baseUrl='http://127.0.0.1:'+docker(['port',panel,'3000/tcp']).out.split(':').at(-1);}});
  }else{
@@ -239,7 +258,7 @@ try{
    report({case:c.name,stopRemainedAuthoritative:true,noAutomaticRevival:true,trafficSamplingEndsBeforeStop:true,...sampled});
  }
  }
- const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
+ const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
  writeFileSync(proof+'/runtime-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }catch(e){
  try{

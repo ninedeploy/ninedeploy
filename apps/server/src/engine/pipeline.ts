@@ -1499,7 +1499,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       const onNode = runtimeEnvironment.attachedDatabases.filter((a) => a.serverId === service.serverId);
       if (onNode.length > 0) {
         const { connectServiceToNodeDatabases } = await import('../lib/nodeDatabase.js');
-        await connectServiceToNodeDatabases(db, service.serverId, runtime.runtimeId, onNode, log);
+        await connectServiceToNodeDatabases(db, service.serverId, runtime.nodeTargets ?? runtime.runtimeId, onNode, log, { checkpoint: candidateCheckpoint });
       }
     }
     // ── end 0.16 T6 ──

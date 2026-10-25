@@ -32,6 +32,7 @@ import {
 import { HttpError } from './errors.js';
 import { sleep } from './exec.js';
 import { parseNodeVolumeList } from './nodeVolumes.js';
+import { MAX_REPLICAS } from '../engine/dockerNames.js';
 
 /**
  * Managed databases on a node, panel side (multi-node T6, design §5.3, §5.4).
@@ -66,11 +67,13 @@ export const nodeVolumeOf = (d: Pick<Database, 'slug' | 'nodeVolumeName'>): stri
 export type NodeDatabaseAgent = (
   op: string,
   params: Record<string, unknown>,
-  opts?: { tolerateExit?: boolean },
+  opts?: { tolerateExit?: boolean; timeoutMs?: number },
 ) => Promise<{ exitCode: number; lines: string[] }>;
 
 export interface NodeDatabaseDeps {
   agent?: NodeDatabaseAgent;
+  /** Recheck deployment ownership around each database bridge join. */
+  checkpoint?: () => Promise<void>;
   openStream?: (db: DB, serverId: number, kind: 'db.dump' | 'db.restore', params: Record<string, unknown>) => Promise<AgentStreamHandle>;
   /** Capability check (default: the queue-time `assertNodeCapability`, cached 5 min). */
   assertCapable?: (db: DB, serverId: number, caps: readonly MultiNodeCapability[], feature: string) => Promise<void>;
@@ -415,7 +418,7 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
 export type NodeDatabaseRuntime = ReturnType<typeof nodeDatabaseRuntime>;
 
 /**
- * Put a node service's new container on the bridge of every database on the
+ * Put a node service's new containers on the bridge of every database on the
  * same node it is attached to (O7; the pipeline, after the container starts
  * and before the healthcheck). Throws when a join fails: the service would
  * come up unable to reach its database.
@@ -423,18 +426,31 @@ export type NodeDatabaseRuntime = ReturnType<typeof nodeDatabaseRuntime>;
 export async function connectServiceToNodeDatabases(
   db: DB,
   serverId: number,
-  serviceContainer: string,
+  serviceContainer: string | ReadonlyArray<{ id: string; name: string }>,
   attached: ReadonlyArray<{ id: number; slug: string }>,
   log: (line: string) => void,
   deps: NodeDatabaseDeps = {},
 ): Promise<void> {
   const agent: NodeDatabaseAgent = deps.agent ?? ((op, params, opts) => agentOp(db, serverId, op, params, () => undefined, opts));
-  for (const a of attached) {
-    const network = nodeDatabaseNetwork(a.slug);
-    log(`Connecting ${serviceContainer} to ${network} on node #${serverId}`);
-    const res = await agent('docker.networkConnect', { network, container: serviceContainer }, { tolerateExit: true });
-    if (res.exitCode !== 0 && !res.lines.some((l) => /already exists|already attached|endpoint with name/i.test(l))) {
-      throw new Error(`could not connect ${serviceContainer} to the database network ${network} on node #${serverId}: ${res.lines.join(' ').slice(-300)}`);
+  const containers = typeof serviceContainer === 'string' ? [serviceContainer] : serviceContainer.map(target => target.id);
+  if (typeof serviceContainer !== 'string' && (containers.length < 1 || containers.length > MAX_REPLICAS ||
+    containers.some(id => !/^[a-f0-9]{64}$/.test(id)) || new Set(containers).size !== containers.length)) {
+    throw new Error('Node database attachment requires a complete immutable replica set');
+  }
+  const deadline = Date.now() + 60_000;
+  for (const container of containers) {
+    for (const a of attached) {
+      await deps.checkpoint?.();
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error('Node database attachment deadline exceeded');
+      const network = nodeDatabaseNetwork(a.slug);
+      log(`Connecting ${container} to ${network} on node #${serverId}`);
+      const res = await agent('docker.networkConnect', { network, container }, { tolerateExit: true, timeoutMs: Math.min(15_000, remaining) });
+      await deps.checkpoint?.();
+      if (Date.now() >= deadline) throw new Error('Node database attachment deadline exceeded');
+      if (res.exitCode !== 0 && !res.lines.some((l) => /already exists|already attached|endpoint with name/i.test(l))) {
+        throw new Error(`could not connect ${container} to the database network ${network} on node #${serverId}: ${res.lines.join(' ').slice(-300)}`);
+      }
     }
   }
 }

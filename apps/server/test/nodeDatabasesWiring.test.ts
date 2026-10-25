@@ -45,7 +45,7 @@ describe('the runtime dispatch reaches every caller (M17)', () => {
 
   it('O7: the pipeline joins a node service to its same-node database bridges between the run and the healthcheck', () => {
     const pipeline = read('../src/engine/pipeline.ts');
-    const join = pipeline.indexOf('await connectServiceToNodeDatabases(db, service.serverId, runtime.runtimeId, onNode, log);');
+    const join = pipeline.indexOf('await connectServiceToNodeDatabases(db, service.serverId, runtime.nodeTargets ?? runtime.runtimeId, onNode, log, { checkpoint: candidateCheckpoint });');
     expect(join).toBeGreaterThan(pipeline.indexOf('runtime = await builder.buildAndRun(ctx, previous);'));
     const healthcheck = pipeline.indexOf('await builder.isHealthy(runtime, healthTimeoutS * 1000, 10_000, log');
     expect(healthcheck).toBeGreaterThan(-1);

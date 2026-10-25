@@ -13,6 +13,7 @@ vi.mock('../src/lib/agentClient.js', async original => ({ ...await original<type
 vi.mock('../src/engine/proxy.js', async original => ({ ...await original<typeof import('../src/engine/proxy.js')>(), writeDynamicConfig: network.writeDynamicConfig }));
 
 let c: ReturnType<typeof createDb>, effects: string[], running: boolean, available: typeof targets;
+const instances: Awaited<ReturnType<typeof buildTestApp>>[] = [];
 const targets = [{ id: 'a'.repeat(64), name: 'web-9' }, { id: 'b'.repeat(64), name: 'web-9-r2' }];
 const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
 beforeEach(async () => {
@@ -42,8 +43,13 @@ beforeEach(async () => {
     throw Error(`Unexpected operation ${op}`);
   });
 });
-afterEach(() => { vi.useRealTimers(); c.client?.close(); });
-async function app() { const instance = await buildTestApp({ db: c.db }); await instance.register(servicesRoutes); return instance; }
+afterEach(async () => {
+  vi.useRealTimers();
+  // The worker and its callbacks must settle before their native SQLite client closes.
+  await Promise.all(instances.splice(0).map(instance => instance.close()));
+  c.client?.close();
+});
+async function app() { const instance = await buildTestApp({ db: c.db }); instances.push(instance); await instance.register(servicesRoutes); return instance; }
 async function finish<T>(promise: Promise<T>): Promise<T> {
   let done = false; void promise.then(() => { done = true; }, () => { done = true; });
   for (let n = 0; n < 200 && !done; n++) await vi.advanceTimersByTimeAsync(250);
@@ -183,6 +189,33 @@ describe('public ordered node lifecycle', () => {
     expect(result.action).toBe('start'); expect(effects).toEqual(['start']);
     expect(network.agentOp.mock.calls.some(call => call[2] === 'docker.start')).toBe(false);
     await instance.close();
+  });
+
+  it('announces a completed worker Stop to the activity trail and kernel after immutable effects', async () => {
+    running = true;
+    await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const instance = await app();
+    const emit = vi.spyOn(instance.kernel.events, 'emit');
+    await instance.register(nodeLifecyclePlugin); await instance.ready();
+    try {
+      const result = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+      expect(result.statusCode).toBe(202);
+      expect(emit).not.toHaveBeenCalledWith('service.stopped', expect.anything());
+      const observed = (async () => {
+        for (let n = 0; n < 100; n++) {
+          if (emit.mock.calls.some(call => call[0] === 'service.stopped')) return;
+          await new Promise(resolve => setImmediate(resolve));
+        }
+      })();
+      await finish(observed);
+      expect(emit.mock.calls.filter(call => call[0] === 'service.stopped')).toEqual([['service.stopped', { serviceId: 1 }]]);
+      expect(effects).toEqual(['fence', 'stop']); expect(running).toBe(false);
+      expect((await c.db.query.nodeLifecycleIntents.findFirst())!.phase).toBe('completed');
+      expect((await c.db.select().from(auditLog)).filter(row => row.action === 'service.stop')).toMatchObject([
+        { entity: 'Web #1', meta: { serviceId: 1, commandId: result.json().lifecycle.id } },
+      ]);
+    } finally { await instance.close(); emit.mockRestore(); }
   });
 
   it('alerts when the production worker holds a recovery command without declaring the service dead', async () => {
