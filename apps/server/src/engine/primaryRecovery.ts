@@ -21,6 +21,8 @@ import { capturePreviousNative, previousNativeHealthy, previousNativeRetired, re
 import type { Builder, DeployRuntime } from './types.js';
 
 const LEASE_MS = 90_000;
+/** Longest a pending transition waits between attempts while its service has a queued deploy. */
+const QUEUED_RETRY_MS = 60_000;
 const ACTIVE = ['building', 'deploying'] as const;
 interface Identity { id: string; name: string; managed: string | null; serviceId: string | null; deploymentId: string | null }
 export class PrimaryRecoveryOwnershipLost extends Error {
@@ -338,8 +340,13 @@ async function healthy(db: DB, row: PrimaryTransition, group: PrimaryRuntimeSnap
 
 export async function reconcilePrimaryTransitions(db: DB, opts: { serviceId?: number; force?: boolean; signal?: AbortSignal; log?: (line: string) => void } = {}) {
   const now = new Date();
+  // The backoff grows to an hour, and the worker holds every queued deploy of
+  // the service while its transition is pending — so a service with a queued
+  // deploy is retried at most a minute after its last attempt instead.
+  const queuedRetry = and(lte(primaryTransitions.updatedAt, new Date(now.getTime() - QUEUED_RETRY_MS)),
+    exists(db.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, primaryTransitions.serviceId), eq(deployments.status, 'queued')))));
   const rows = await db.select().from(primaryTransitions).where(and(or(isNull(primaryTransitions.leaseUntil), lte(primaryTransitions.leaseUntil, now)),
-    opts.force ? undefined : lte(primaryTransitions.nextAttemptAt, now), opts.serviceId == null ? undefined : eq(primaryTransitions.serviceId, opts.serviceId))).limit(10);
+    opts.force ? undefined : or(lte(primaryTransitions.nextAttemptAt, now), queuedRetry), opts.serviceId == null ? undefined : eq(primaryTransitions.serviceId, opts.serviceId))).limit(10);
   let recovered = 0, held = 0;
   for (const pending of rows) {
     if (opts.signal?.aborted) break;

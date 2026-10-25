@@ -282,3 +282,24 @@ describe('primary recovery through SQLite and the real routing writer', () => {
     expect(stops()).toEqual([]); expect(writes).toEqual([]); expect(await rows()).toHaveLength(1);
   });
 });
+
+describe('a queued deploy shortens the recovery backoff', () => {
+  const backedOff = () => journal({ nextAttemptAt: new Date(Date.now() + 3600_000), updatedAt: new Date(Date.now() - 120_000), interrupted: false });
+  const sweep = async () => { h.agent.mockRejectedValue(new Error('node offline')); await pump(reconcilePrimaryTransitions(f.db)); };
+
+  it('waits out the backoff while nothing is queued', async () => {
+    await backedOff();
+    await sweep();
+    expect((await rows())[0]!.attempts).toBe(0);
+  });
+
+  it('retries a minute after the last attempt while a deploy of the service is queued', async () => {
+    await backedOff();
+    await f.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+    await sweep();
+    expect((await rows())[0]!.attempts).toBe(1);
+    // The failed attempt just touched the row: the next sweep waits again.
+    await sweep();
+    expect((await rows())[0]!.attempts).toBe(1);
+  });
+});
