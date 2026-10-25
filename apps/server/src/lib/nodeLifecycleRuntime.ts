@@ -39,7 +39,8 @@ export function nodeLifecycleRuntime(db: DB, options: { signal?: AbortSignal; lo
 
 /** One bounded batch. Expired leases and held commands recover through the same dispatcher. */
 export async function reconcileNodeLifecycleIntents(db: DB, options: { signal?: AbortSignal; log?: (line: string) => void; limit?: number;
-  settled?: (serviceId: number, action: 'start' | 'stop' | 'restart', id: number) => Promise<void> } = {}) {
+  settled?: (serviceId: number, action: 'start' | 'stop' | 'restart', id: number) => Promise<void>;
+  held?: (serviceId: number, action: 'start' | 'stop' | 'restart', id: number) => Promise<void> } = {}) {
   options.signal?.throwIfAborted();
   const now = new Date();
   const due = await db.select().from(nodeLifecycleIntents).where(and(
@@ -50,6 +51,7 @@ export async function reconcileNodeLifecycleIntents(db: DB, options: { signal?: 
     try {
       const result = await executeNodeLifecycleIntent(db, row.id, nodeLifecycleRuntime(db, options));
       if (result.state === 'completed') await options.settled?.(row.serviceId, row.action, row.id);
+      if (result.state === 'held' && !options.signal?.aborted) await options.held?.(row.serviceId, row.action, row.id);
       return { id: row.id, ...result };
     } catch (error) {
       options.log?.(`Node lifecycle #${row.id} unavailable: ${error instanceof Error ? error.message : String(error)}`);

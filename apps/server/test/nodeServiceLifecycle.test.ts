@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, users, servers, services, nodeLifecycleIntents, eq } from '@ninedeploy/db';
+import { createDb, runMigrations, users, servers, services, auditLog, nodeLifecycleIntents, eq } from '@ninedeploy/db';
 import { containerLifecycleRequest } from '@ninedeploy/schemas';
 import { asUser, buildTestApp } from './helpers.js';
 import { servicesRoutes } from '../src/modules/services.js';
 import { reconcileNodeLifecycleIntents } from '../src/lib/nodeLifecycleRuntime.js';
 import { acceptNodeLifecycleIntent, claimNodeLifecycleIntent } from '../src/lib/nodeLifecycleIntent.js';
-import runtimeStatePlugin from '../src/plugins/runtimeState.js';
+import runtimeStatePlugin, { createRuntimeStateReconciler } from '../src/plugins/runtimeState.js';
 import nodeLifecyclePlugin from '../src/plugins/nodeLifecycle.js';
 
 const network = vi.hoisted(() => ({ agentOp: vi.fn(), agentTransportSealed: vi.fn(async () => true), writeDynamicConfig: vi.fn(async () => undefined) }));
@@ -16,7 +16,7 @@ let c: ReturnType<typeof createDb>, effects: string[], running: boolean, availab
 const targets = [{ id: 'a'.repeat(64), name: 'web-9' }, { id: 'b'.repeat(64), name: 'web-9-r2' }];
 const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
 beforeEach(async () => {
-  effects = []; running = false; available = [...targets]; vi.clearAllMocks(); network.agentTransportSealed.mockResolvedValue(true);
+  effects = []; running = false; available = [...targets]; vi.clearAllMocks(); network.agentTransportSealed.mockResolvedValue(true); network.writeDynamicConfig.mockResolvedValue(undefined);
   c = createDb({ url: 'file::memory:' }); await c.ready; await runMigrations(c.db);
   await c.db.insert(users).values({ id: 1, email: 'operator@example.test', passwordHash: 'fixture', isInstanceOperator: true });
   await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
@@ -183,6 +183,50 @@ describe('public ordered node lifecycle', () => {
     expect(result.action).toBe('start'); expect(effects).toEqual(['start']);
     expect(network.agentOp.mock.calls.some(call => call[2] === 'docker.start')).toBe(false);
     await instance.close();
+  });
+
+  it('alerts when the production worker holds a recovery command without declaring the service dead', async () => {
+    await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
+    await acceptNodeLifecycleIntent(c.db, await service(), 'start', { automatic: true });
+    network.writeDynamicConfig.mockRejectedValue(new Error('Routing unconfirmed'));
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const instance = await app();
+    await instance.register(nodeLifecyclePlugin); await instance.ready();
+    try {
+      let alerted = false;
+      const observing = (async () => {
+        for (let n = 0; n < 100; n++) {
+          if ((await c.db.select().from(auditLog)).some(row => row.action === 'alert.service_recovery_held')) { alerted = true; return; }
+          await new Promise(resolve => setImmediate(resolve));
+        }
+      })();
+      await finish(observing);
+      const command = (await c.db.query.nodeLifecycleIntents.findFirst())!;
+      expect(command).toMatchObject({ action: 'start', phase: 'routing', reason: 'Routing unconfirmed' });
+      expect(alerted, 'A held automatic recovery must reach the operator alert stream').toBe(true);
+      expect((await service()).status).toBe('deploying');
+      const alerts = (await c.db.select().from(auditLog)).filter(row => row.action.startsWith('alert.'));
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toMatchObject({ action: 'alert.service_recovery_held', entity: 'Web #1', meta: { serviceId: 1, serverId: 4, commandId: command.id, action: 'start', phase: 'routing' } });
+      expect(effects).toEqual(['start']);
+    } finally { await instance.close(); }
+  });
+
+  it('alerts when an old agent blocks automatic recovery before a command can be accepted', async () => {
+    await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
+    const original = network.agentOp.getMockImplementation()!;
+    network.agentOp.mockImplementation(async (...args) => args[2] === 'agent.ping'
+      ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.18.2","caps":[]}'] } : original(...args));
+    const instance = await app(), patrol = createRuntimeStateReconciler(instance);
+    try {
+      await patrol.reconcile(); await patrol.reconcile();
+      const alerts = (await c.db.select().from(auditLog)).filter(row => row.action.startsWith('alert.'));
+      expect(alerts, 'A stopped runtime held by an incompatible agent must notify its operator').toHaveLength(1);
+      expect(alerts[0]).toMatchObject({ action: 'alert.service_recovery_held', entity: 'Web #1', meta: { serviceId: 1, serverId: 4, code: 'node_agent_outdated' } });
+      expect((await service()).status).toBe('running');
+      expect(await c.db.select().from(nodeLifecycleIntents)).toEqual([]);
+      expect(effects).toEqual([]);
+    } finally { await patrol.close(); await instance.close(); }
   });
 
   it('keeps explicit Stop authoritative when automatic recovery was paused after reading running', async () => {

@@ -2,13 +2,15 @@ import fp from 'fastify-plugin';
 import { eq, services } from '@ninedeploy/db';
 import { reconcileNodeLifecycleIntents } from '../lib/nodeLifecycleRuntime.js';
 import { audit } from '../lib/audit.js';
+import { createNodeRecoveryNotifier } from '../lib/nodeLifecycleAlerts.js';
 
 export default fp(async app => {
   const abort = new AbortController();
+  const { held } = createNodeRecoveryNotifier(app.db, abort.signal);
   let timer: NodeJS.Timeout | undefined, cycle: Promise<unknown> | undefined;
   const tick = async () => {
     if (abort.signal.aborted || cycle) return;
-    cycle = reconcileNodeLifecycleIntents(app.db, { signal: abort.signal, log: line => app.log.warn(line),
+    cycle = reconcileNodeLifecycleIntents(app.db, { signal: abort.signal, log: line => app.log.warn(line), held,
       settled: async (serviceId, action, id) => {
         const service = await app.db.query.services.findFirst({ where: eq(services.id, serviceId) });
         if (!service) return;

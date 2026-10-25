@@ -11,6 +11,7 @@ import { serviceTargets } from '@ninedeploy/db';
 import { swarmRuntimeOf } from '../lib/swarm.js';
 import { acceptNodeLifecycleIntent } from '../lib/nodeLifecycleIntent.js';
 import { assertNodeLifecycleAvailable, publicNodeLifecycle } from '../lib/nodeLifecycleRuntime.js';
+import { createNodeRecoveryNotifier } from '../lib/nodeLifecycleAlerts.js';
 
 // A tight loop matters for the boot promise ("everything comes back on its
 // own"): the first pass runs at startup, and anything it cannot fix — e.g. a
@@ -177,6 +178,7 @@ async function reviveContainer(runtimeId: string): Promise<boolean> {  try {
 /** One serial, awaitable patrol owner; the plugin below binds it to server lifetime. */
 export function createRuntimeStateReconciler(fastify: FastifyInstance) {
     const abort = new AbortController();
+    const recoveryAlerts = createNodeRecoveryNotifier(fastify.db, abort.signal);
     const nodeCall = async (serverId: number, op: string, params: Record<string, unknown>, opts: { tolerateExit?: boolean } = {}) => {
       abort.signal.throwIfAborted();
       const result = await agentOp(fastify.db, serverId, op, params, () => undefined, { ...opts, timeoutMs: 15_000, signal: abort.signal });
@@ -378,6 +380,7 @@ export function createRuntimeStateReconciler(fastify: FastifyInstance) {
               fastify.log.warn({ serviceId: svc.id, serverId }, 'queued ordered node runtime recovery');
             } catch (err) {
               if (abort.signal.aborted) return;
+              await recoveryAlerts.unavailable({ ...svc, serverId }, err);
               fastify.log.warn({ err, serviceId: svc.id, serverId }, 'ordered node recovery unavailable; runtime retained');
             }
             continue;

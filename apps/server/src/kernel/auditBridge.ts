@@ -119,6 +119,16 @@ export function mapAuditToDomainEvent(event: AppEvent): MappedEvent | null {
     } as MappedEvent;
   }
 
+  if (action === 'alert.service_recovery_held') {
+    return {
+      name: 'alert.triggered',
+      payload: {
+        title: 'Service recovery held', message: entity ?? '', level: 'warn',
+        ...(entityId(entity) === undefined ? {} : { serviceId: entityId(entity) }),
+      },
+    } as MappedEvent;
+  }
+
   if (action === 'backup.create') {
     // r437: the backup route audits the DATABASE NAME as the entity — carry
     // it through instead of an empty payload, which the notifications plugin
