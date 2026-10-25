@@ -69,3 +69,24 @@ describe('renderDynamicConfig replica backends', () => {
     expect(yaml).not.toContain('web-1-r3');
   });
 });
+
+
+describe('fan-out replica placement', () => {
+  it.each([2, 10, null])('routes only the one container created on a target when primary runtimeReplicas=%s', async runtimeReplicas => {
+    const db = makeDb([domainRow], [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-9', serverId: 4, type: 'docker', replicas: 3, runtimeReplicas }],
+      [{ id: 42, serviceId: 1, serverId: 5, runtimeId: 'web-t5-7', status: 'running' }]);
+    const yaml = await renderDynamicConfig(db as never, { serverId: 5 });
+    expect(yaml).toContain('url: "http://web-t5-7:3000"');
+    expect(yaml).not.toContain('web-t5-7-r2');
+    expect(yaml.match(/- url:/g)).toHaveLength(1);
+    expect(yaml).not.toContain('web-9');
+  });
+
+  it('keeps every achieved primary-node replica when the service also has other placements', async () => {
+    const db = makeDb([domainRow], [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-9', serverId: 4, type: 'docker', replicas: 3, runtimeReplicas: 2 }]);
+    const yaml = await renderDynamicConfig(db as never, { serverId: 4 });
+    expect(yaml).toContain('url: "http://web-9:3000"');
+    expect(yaml).toContain('url: "http://web-9-r2:3000"');
+    expect(yaml).not.toContain('web-9-r3');
+  });
+});

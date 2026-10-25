@@ -1297,7 +1297,9 @@ export async function renderDynamicConfig(
       // to start — or the window between saving a higher count and the
       // next deploy — must not linger as an unresolvable 502 backend.
       const replicaCount =
-        svc.type === 'docker' ? Math.max(1, Math.min(svc.runtimeReplicas ?? svc.replicas ?? 1, MAX_REPLICAS)) : 1;
+        // Fan-out currently creates one container per target; primary replicas live on the primary node only.
+        svc.type === 'docker' && !targetRuntimeByService.has(svc.id)
+          ? Math.max(1, Math.min(svc.runtimeReplicas ?? svc.replicas ?? 1, MAX_REPLICAS)) : 1;
       // Health paths allow queries and percent encoding, unlike router paths.
       // Keep the API-validated endpoint intact; retain legacy sanitization
       // only for old rows that do not satisfy the current path contract.
