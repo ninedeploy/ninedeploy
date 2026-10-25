@@ -216,13 +216,15 @@ const cleartextFallbackAllowed = (): boolean =>
   process.env['NINEDEPLOY_AGENT_REQUIRE_SEALED'] !== '1';
 
 /** Ask an agent whether it speaks the sealed protocol (cached per server). */
-async function supportsSealed(serverId: number, host: string, port: number): Promise<boolean> {
+async function supportsSealed(serverId: number, host: string, port: number, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   const cached = sealedSupport.get(serverId);
   if (cached?.host === host && cached.port === port) return true;
   try {
-    const res = await fetch(`${agentBaseUrl(host, port)}/agent/ping`, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(`${agentBaseUrl(host, port)}/agent/ping`, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000) });
     if (!res.ok) return false;
     const body = (await res.json()) as { sealed?: unknown };
+    signal?.throwIfAborted();
     const supported = body.sealed === true;
     // Only the AFFIRMATIVE answer is cached. `sealed: false` (or a dropped
     // probe) must not pin this server to anything for the rest of the
@@ -231,6 +233,7 @@ async function supportsSealed(serverId: number, host: string, port: number): Pro
     if (supported) sealedSupport.set(serverId, { host, port });
     return supported;
   } catch {
+    signal?.throwIfAborted();
     // Unreachable right now just means "cannot confirm"; the operation itself
     // fails with a better message a moment later, and the next call re-probes.
     return false;
@@ -252,10 +255,11 @@ export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OP
  * answers yes — and {@link agentOp} refuses to send one in clear regardless.
  * Unknown server or an unreachable probe reads as "not sealed".
  */
-export async function agentTransportSealed(db: DB, serverId: number): Promise<boolean> {
+export async function agentTransportSealed(db: DB, serverId: number, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   const row = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
   if (!row) return false;
-  return supportsSealed(serverId, row.host, row.port);
+  return supportsSealed(serverId, row.host, row.port, signal);
 }
 
 /**
@@ -288,7 +292,12 @@ export async function agentOp(
   // material for the envelope.
   const shared = sha256(token);
 
-  const sealedOk = await supportsSealed(serverId, row.host, row.port);
+  const budgetMs = Math.min(agentRequestTimeoutMs(op, params), opts?.timeoutMs ?? Number.POSITIVE_INFINITY);
+  const deadline = Date.now() + budgetMs;
+  const signal = opts?.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(budgetMs)]) : AbortSignal.timeout(budgetMs);
+
+  const sealedOk = await supportsSealed(serverId, row.host, row.port, signal);
+  signal.throwIfAborted();
   if (!sealedOk) {
     // 0.13 (T5): a per-job Git credential never travels in clear — not even
     // when the operator opened the cleartext fallback for the rest.
@@ -329,9 +338,6 @@ export async function agentOp(
     : { 'content-type': 'application/json', 'x-agent-token': token };
   const requestBody = JSON.stringify(sealedOk ? { sealed: seal(shared, { op, params, nonce }) } : { op, params });
   opts?.signal?.throwIfAborted();
-  const budgetMs = Math.min(agentRequestTimeoutMs(op, params), opts?.timeoutMs ?? Number.POSITIVE_INFINITY);
-  const deadline = Date.now() + budgetMs;
-  const signal = opts?.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(budgetMs)]) : AbortSignal.timeout(budgetMs);
   let res: ExecResponse;
   try {
     for (let attempt = 0; ; attempt++) {

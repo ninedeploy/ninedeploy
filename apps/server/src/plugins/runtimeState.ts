@@ -1,4 +1,5 @@
 import fp from 'fastify-plugin';
+import type { FastifyInstance } from 'fastify';
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { services } from '@ninedeploy/db';
 import { pm2Resurrect, pm2Start, pm2Status } from '../engine/builders/pm2.js';
@@ -173,8 +174,15 @@ async function reviveContainer(runtimeId: string): Promise<boolean> {  try {
   }
 }
 
-export default fp(
-  async (fastify) => {
+/** One serial, awaitable patrol owner; the plugin below binds it to server lifetime. */
+export function createRuntimeStateReconciler(fastify: FastifyInstance) {
+    const abort = new AbortController();
+    const nodeCall = async (serverId: number, op: string, params: Record<string, unknown>, opts: { tolerateExit?: boolean } = {}) => {
+      abort.signal.throwIfAborted();
+      const result = await agentOp(fastify.db, serverId, op, params, () => undefined, { ...opts, timeoutMs: 15_000, signal: abort.signal });
+      abort.signal.throwIfAborted();
+      return result;
+    };
     // A crash-looping service dies every round — alert at most once per
     // window per service so notifications stay useful, not noisy. In-memory
     // is deliberate: a panel restart re-alerting once is fine, persistence
@@ -186,6 +194,7 @@ export default fp(
       svc: { id: number; name: string; runtimeId: string },
       status: 'stopped' | 'error',
     ) => {
+      if (abort.signal.aborted) return;
       // Also match on runtimeId: if a deploy swapped the runtime between our
       // read and this write, the stale reconcile must not clobber it.
       // F164: and on status — a row deleted, stopped or put mid-deploy
@@ -221,12 +230,13 @@ export default fp(
      * closing it needs a lock shared with the lifecycle routes.
      */
     const stillRunning = async (svc: { id: number; runtimeId: string }): Promise<boolean> => {
+      if (abort.signal.aborted) return false;
       const rows = await fastify.db
         .select({ id: services.id })
         .from(services)
         .where(and(eq(services.id, svc.id), eq(services.runtimeId, svc.runtimeId), eq(services.status, 'running')))
         .limit(1);
-      return rows.length > 0;
+      return rows.length > 0 && !abort.signal.aborted;
     };
 
     /**
@@ -252,13 +262,10 @@ export default fp(
         .from(serviceTargets)
         .where(eq(serviceTargets.serviceId, serviceId));
       for (const target of rows) {
+        if (abort.signal.aborted) return;
         if (!target.runtimeId) continue;
-        // opts is spread only when set: an explicit undefined 6th argument
-        // would change the call shape every existing assertion pins.
         const agent = (op: string, params: Record<string, unknown>, opts?: { tolerateExit?: boolean }) =>
-          opts === undefined
-            ? agentOp(fastify.db, target.serverId, op, params, () => undefined)
-            : agentOp(fastify.db, target.serverId, op, params, () => undefined, opts);
+          nodeCall(target.serverId, op, params, opts);
         try {
           const res = await agent('docker.inspect', { name: target.runtimeId, format: 'state' }, { tolerateExit: true });
           if (res.exitCode !== 0) {
@@ -317,7 +324,7 @@ export default fp(
       rows: Array<{ id: number; name: string; runtimeId: string; type: string }>,
     ): Promise<void> => {
       const agent = (op: string, params: Record<string, unknown>) =>
-        agentOp(fastify.db, serverId, op, params, () => undefined, { tolerateExit: true });
+        nodeCall(serverId, op, params, { tolerateExit: true });
       const stateOf = async (runtimeId: string): Promise<'running' | 'stopped' | 'gone' | 'unknown'> => {
         const res = await agent('docker.inspect', { name: runtimeId, format: 'state' });
         if (res.exitCode !== 0) {
@@ -328,10 +335,12 @@ export default fp(
         return state === 'running' || state === 'restarting' ? 'running' : 'stopped';
       };
       for (const svc of rows) {
+        if (abort.signal.aborted) return;
         let live: Awaited<ReturnType<typeof stateOf>>;
         try {
           live = await stateOf(svc.runtimeId);
         } catch (err) {
+          if (abort.signal.aborted) return;
           // r591: an agent that predates the op answered — it is reachable,
           // so neither the node nor the service is judged; skip quietly.
           if (isUnknownAgentOp(err)) {
@@ -363,10 +372,12 @@ export default fp(
               if (!fresh || fresh.status !== 'running' || fresh.runtimeId !== svc.runtimeId || fresh.serverId !== serverId) continue;
               const pending = (await publicNodeLifecycle(fastify.db, fresh)).command;
               if (pending?.current && pending.phase !== 'completed' && pending.phase !== 'superseded') continue;
-              await assertNodeLifecycleAvailable(fastify.db, fresh);
+              await assertNodeLifecycleAvailable(fastify.db, fresh, { signal: abort.signal });
+              abort.signal.throwIfAborted();
               await acceptNodeLifecycleIntent(fastify.db, fresh, 'start', { automatic: true });
               fastify.log.warn({ serviceId: svc.id, serverId }, 'queued ordered node runtime recovery');
             } catch (err) {
+              if (abort.signal.aborted) return;
               fastify.log.warn({ err, serviceId: svc.id, serverId }, 'ordered node recovery unavailable; runtime retained');
             }
             continue;
@@ -407,6 +418,7 @@ export default fp(
         let daemonDown = false;
         let pm2Resurrected = false;
         for (const svc of rows) {
+          if (abort.signal.aborted) return;
           const runtimeId = svc.runtimeId;
           if (!runtimeId) continue;
           // ── 0.16 T7 swarm ── Swarm restarts its own tasks; a Swarm service has no container to inspect or revive here.
@@ -504,6 +516,7 @@ export default fp(
       // the local pass above: a node problem must never cost the panel host
       // its reconcile, nor the other way round. r591: compose services too.
       try {
+        if (abort.signal.aborted) return;
         const remote = await fastify.db.query.services.findMany({
           where: and(
             eq(services.status, 'running'),
@@ -531,20 +544,24 @@ export default fp(
       cycle = reconcilePass().finally(() => { cycle = undefined; });
       return cycle;
     };
-    // Fire-and-forget on boot: reconcile must not delay readiness, and the
-    // rows it inspects are by definition not mid-deploy (status = 'running').
-    fastify.addHook('onReady', () => {
-      void reconcile();
-    });
+    return {
+      reconcile,
+      close: async () => {
+        closed = true;
+        abort.abort(new Error('Runtime patrol stopped'));
+        await cycle;
+      },
+    };
+}
 
-    const timer = setInterval(() => {
-      void reconcile();
-    }, RECONCILE_INTERVAL_MS);
+export default fp(
+  async fastify => {
+    const patrol = createRuntimeStateReconciler(fastify);
+    // Runtime repair never delays panel readiness.
+    fastify.addHook('onReady', () => { void patrol.reconcile(); });
+    const timer = setInterval(() => { void patrol.reconcile(); }, RECONCILE_INTERVAL_MS);
     timer.unref();
-
-    fastify.addHook('onClose', async () => {
-      closed = true; clearInterval(timer); await cycle;
-    });
+    fastify.addHook('onClose', async () => { clearInterval(timer); await patrol.close(); });
   },
   { name: 'ninedeploy-runtime-state' },
 );

@@ -4,7 +4,7 @@ import { eq, type SQL } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import { createDb, servers, services, users, type DB } from '@ninedeploy/db';
-import runtimeStatePlugin from '../src/plugins/runtimeState.js';
+import { createRuntimeStateReconciler } from '../src/plugins/runtimeState.js';
 import { buildTestApp, createFakeDb, type FakeDbOpts, svcRow, trackStatusUpdates } from './helpers.js';
 
 const execMocks = vi.hoisted(() => ({
@@ -42,7 +42,7 @@ const configMock = vi.hoisted(() => ({
 }));
 vi.mock('../src/config.js', () => ({ config: configMock }));
 
-/** Build an app whose onReady runs one reconcile pass against `row`. */
+/** Await one business patrol pass; real boot/shutdown is covered by runtimePatrolShutdown.test.ts. */
 async function reconcileOnce(
   row: Record<string, unknown> | null,
   extra: Record<string, unknown> = {},
@@ -58,9 +58,12 @@ async function reconcileOnce(
   );
   const { updates } = trackStatusUpdates(db);
   const app = await buildTestApp({ db });
-  await app.register(runtimeStatePlugin);
-  await app.ready(); // fires the onReady reconcile
-  await app.close();
+  const patrol = createRuntimeStateReconciler(app);
+  await app.ready();
+  const passing = patrol.reconcile(); // start one explicit patrol pass
+  await passing;
+    await patrol.close();
+    await app.close();
   return { updates };
 }
 
@@ -176,7 +179,7 @@ describe('runtime state reconciliation', () => {
       },
     );
     expect(agentMocks.agentOp).toHaveBeenCalledWith(
-      expect.anything(), 5, 'docker.start', { name: 'web-t5-9' }, expect.any(Function),
+      expect.anything(), 5, 'docker.start', { name: 'web-t5-9' }, expect.any(Function), { timeoutMs: 15_000, signal: expect.any(AbortSignal) },
     );
     // The service row itself is untouched — only the target row's status
     // flipped to running (the tracker records table-agnostically).
@@ -213,7 +216,7 @@ describe('runtime state reconciliation', () => {
     expect(updates).toContainEqual({ status: 'error' });
     // No revival attempt against a container that does not exist.
     expect(agentMocks.agentOp.mock.calls.some((c) => c[2] === 'docker.start')).toBe(false);
-    expect(agentMocks.agentOp.mock.calls.find((c) => c[2] === 'docker.inspect')![5]).toEqual({ tolerateExit: true });
+    expect(agentMocks.agentOp.mock.calls.find((c) => c[2] === 'docker.inspect')![5]).toEqual({ tolerateExit: true, timeoutMs: 15_000, signal: expect.any(AbortSignal) });
   });
 
   it('throttles repeated OOM alerts for the same service', async () => {
@@ -333,7 +336,7 @@ describe('r525: node-pinned docker services are patrolled through their agent', 
     agentReplies([{ exitCode: 0, lines: ['running|10.0.0.2'] }]);
     const { updates } = await reconcileOnce(remoteRow());
     expect(agentMocks.agentOp).toHaveBeenCalledWith(
-      expect.anything(), 4, 'docker.inspect', { name: 'edge-api-9', format: 'state' }, expect.any(Function), { tolerateExit: true },
+      expect.anything(), 4, 'docker.inspect', { name: 'edge-api-9', format: 'state' }, expect.any(Function), { tolerateExit: true, timeoutMs: 15_000, signal: expect.any(AbortSignal) },
     );
     expect(updates).toEqual([]);
     expect(auditMocks.audit).not.toHaveBeenCalled();
@@ -362,8 +365,11 @@ describe('r525: node-pinned docker services are patrolled through their agent', 
     });
     const { updates } = trackStatusUpdates(db);
     const app = await buildTestApp({ db });
-    await app.register(runtimeStatePlugin);
+    const patrol = createRuntimeStateReconciler(app);
     await app.ready();
+    const passing = patrol.reconcile();
+    await passing;
+    await patrol.close();
     await app.close();
 
     expect(updates).toEqual([]);
@@ -412,8 +418,11 @@ describe('r591: node-pinned compose services are patrolled through their agent',
     const db = createFakeDb({ findMany: { services: servedByTypeFilter(rows) }, select: { services: rows } });
     const { updates } = trackStatusUpdates(db);
     const app = await buildTestApp({ db });
-    await app.register(runtimeStatePlugin);
+    const patrol = createRuntimeStateReconciler(app);
     await app.ready();
+    const passing = patrol.reconcile();
+    await passing;
+    await patrol.close();
     await app.close();
     return { updates };
   }
@@ -422,7 +431,7 @@ describe('r591: node-pinned compose services are patrolled through their agent',
     agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|10.0.0.7'] });
     const { updates } = await patrol([composeRow()]);
     expect(agentMocks.agentOp).toHaveBeenCalledWith(
-      expect.anything(), 4, 'docker.inspect', { name: 'ndcmp-ghost-ghost-1', format: 'state' }, expect.any(Function), { tolerateExit: true },
+      expect.anything(), 4, 'docker.inspect', { name: 'ndcmp-ghost-ghost-1', format: 'state' }, expect.any(Function), { tolerateExit: true, timeoutMs: 15_000, signal: expect.any(AbortSignal) },
     );
     expect(updates).toEqual([]);
   });
@@ -444,7 +453,7 @@ describe('r591: node-pinned compose services are patrolled through their agent',
     });
     const { updates } = await patrol([composeRow()]);
     expect(agentMocks.agentOp).toHaveBeenCalledWith(
-      expect.anything(), 4, 'docker.start', { name: 'ndcmp-ghost-ghost-1' }, expect.any(Function), { tolerateExit: true },
+      expect.anything(), 4, 'docker.start', { name: 'ndcmp-ghost-ghost-1' }, expect.any(Function), { tolerateExit: true, timeoutMs: 15_000, signal: expect.any(AbortSignal) },
     );
     expect(updates).toEqual([]);
   });
@@ -518,12 +527,15 @@ describe('F164: an outage is reported only for a row this pass actually moved of
       return findMany(...a);
     };
     const app = await buildTestApp({ db });
-    await app.register(runtimeStatePlugin);
+    const patrol = createRuntimeStateReconciler(app);
     await app.ready();
+    const passing = patrol.reconcile();
     await inspecting.promise;
     await mutate(db, row!.id);
     release.resolve();
     await localPassDone.promise;
+    await passing;
+    await patrol.close();
     await app.close();
     const [after] = await db.select({ status: services.status }).from(services).where(eq(services.id, row!.id));
     const alerts = auditMocks.audit.mock.calls.filter((c) => (c as unknown[])[2] === 'alert.service_down').length;
@@ -606,10 +618,13 @@ describe('F889/F940: a revive re-checks the row it is about to start (real SQLit
       return findMany(...a);
     };
     const app = await buildTestApp({ db });
-    await app.register(runtimeStatePlugin);
+    const patrol = createRuntimeStateReconciler(app);
     await app.ready();
+    const passing = patrol.reconcile();
     await localDone.promise;
     if (nodeDone) await nodeDone;
+    await passing;
+    await patrol.close();
     await app.close();
   }
 

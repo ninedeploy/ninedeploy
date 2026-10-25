@@ -6,19 +6,22 @@ import { executeNodeLifecycleIntent, type NodeLifecycleControllerDeps } from './
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { HttpError } from './errors.js';
 
-export async function assertNodeLifecycleAvailable(db: DB, service: Service): Promise<void> {
+export async function assertNodeLifecycleAvailable(db: DB, service: Service, options: { signal?: AbortSignal } = {}): Promise<void> {
+  options.signal?.throwIfAborted();
   if (service.serverId == null) throw new HttpError(422, 'node_lifecycle_unsupported', 'Ordered lifecycle requires a node');
-  const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, service.serverId!, op, params, sink, { timeoutMs: 5000 }),
-    `#${service.serverId}`, await agentTransportSealed(db, service.serverId), {
+  const sealed = options.signal ? await agentTransportSealed(db, service.serverId, options.signal) : await agentTransportSealed(db, service.serverId);
+  const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, service.serverId!, op, params, sink, { timeoutMs: 5000, ...(options.signal ? { signal: options.signal } : {}) }),
+    `#${service.serverId}`, sealed, {
       cap: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
     });
+  options.signal?.throwIfAborted();
   if (refusal) throw new HttpError(refusal.status, refusal.code, refusal.message);
 }
 
 export function nodeLifecycleRuntime(db: DB, options: { signal?: AbortSignal; log?: (line: string) => void } = {}): NodeLifecycleControllerDeps {
   return {
     agent: (id, op, params, opts) => agentOp(db, id, op, params, () => undefined, opts),
-    sealed: id => agentTransportSealed(db, id),
+    sealed: id => options.signal ? agentTransportSealed(db, id, options.signal) : agentTransportSealed(db, id),
     route: (service, parent) => {
       const signal = AbortSignal.any([...(parent ? [parent] : []), AbortSignal.timeout(60_000)]);
       signal.throwIfAborted();
