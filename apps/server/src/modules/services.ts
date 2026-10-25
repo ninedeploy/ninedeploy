@@ -34,6 +34,7 @@ import { assertNodeLifecycleAvailable, publicNodeLifecycle } from '../lib/nodeLi
 import { targetsForService, teardownTargets, type FanoutTarget } from '../engine/fanout.js';
 import { listFanoutRecovery, reconcileFanoutTransitions } from '../engine/fanoutRecovery.js';
 import { listPrimaryRecovery, reconcilePrimaryTransitions } from '../engine/primaryRecovery.js';
+import { serviceRoutingView } from '../engine/routingView.js';
 import { listSwarmRecovery, reconcileSwarmTransitions } from '../engine/swarmRecovery.js';
 import { audit } from '../lib/audit.js';
 import { agentOp } from '../lib/agentClient.js';
@@ -1387,6 +1388,14 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const id = num((req.params as { id: string }).id);
     await loadServiceForUser(app.db, id, req.user!);
     return { entry: await listPrimaryRecovery(app.db, id) };
+  });
+
+  // Where the service's traffic goes right now: each domain through the router
+  // Traefik was given, each host port through what Docker bound.
+  app.get('/:id/routing', async req => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    return serviceRoutingView(app.db, svc);
   });
 
   app.get('/:id/swarm/recovery', async req => {

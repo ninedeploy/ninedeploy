@@ -209,6 +209,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'engine/previousNative.ts': { branch: true },
   'engine/primaryRecovery.ts': { branch: true },
   'engine/doctor.ts': { branch: true },
+  'engine/routingView.ts': { branch: true },
   'engine/doctorDeploy.ts': { exempt: 'only matches containers carrying a docker-builder deployment label against the live generation; Swarm tasks carry none, and the host-port checks skip orchestrator=swarm' },
   'lib/jobRunner.ts': { branch: true },
   'lib/runtimeLogs.ts': { branch: true },

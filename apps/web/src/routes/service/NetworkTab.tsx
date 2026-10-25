@@ -3,6 +3,7 @@ import { ExternalLink, Globe, Plus, Radio, Shield, Trash2, Wand2 } from 'lucide-
 import { useEffect, useState } from 'react';
 import { DomainRedirects } from './DomainRedirects.js';
 import { PortMappingsCard } from './PortMappingsCard.js';
+import { RoutingCard } from './RoutingCard.js';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
@@ -13,6 +14,7 @@ import type { DomainVerificationChallenge, Service } from '@ninedeploy/sdk';
 export function NetworkTab({ serviceId, svc }: { serviceId: number; svc?: Service | null }) {
   return (
     <div className="mt-5 max-w-3xl space-y-5">
+      <RoutingCard serviceId={serviceId} />
       <ContainerPortCard serviceId={serviceId} svc={svc} />
       <DirectPortCard serviceId={serviceId} svc={svc} />
       <PortMappingsCard serviceId={serviceId} svc={svc} />

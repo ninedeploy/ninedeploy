@@ -783,6 +783,7 @@ export const MATRIX: Record<string, Rule> = {
   }),
   'GET /v1/services/:id/targets': R('viewer'),
   'GET /v1/services/:id/runtime-recovery': R('viewer'),
+  'GET /v1/services/:id/routing': R('viewer'),
   'POST /v1/services/:id/runtime-recovery': R('operator'),
   'GET /v1/services/:id/swarm/recovery': R('viewer'),
   'POST /v1/services/:id/swarm/recovery': R('operator'),

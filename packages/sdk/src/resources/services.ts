@@ -15,6 +15,7 @@ import type {
   EnvironmentCreateInput,
   EnvironmentPatchInput,
   PrimaryRecoveryEntry,
+  ServiceRoutingView,
   PrimaryRecoveryResult,
   SwarmRecoveryEntry,
   SwarmRecoveryResult,
@@ -186,6 +187,8 @@ export interface ServicesApi {
      * scaling event. The configuration itself is `autoscale` on the service
      * and is set with `update(id, { autoscale })` (`null` turns it off).
      */
+    /** Where the service's traffic goes now: domains through Traefik, host ports through Docker. */
+    routing: (id: number) => Promise<ServiceRoutingView>;
     runtimeRecovery: (id: number) => Promise<PrimaryRecoveryEntry | null>;
     retryRuntimeRecovery: (id: number) => Promise<PrimaryRecoveryResult>;
     swarmRecovery: (id: number) => Promise<SwarmRecoveryEntry | null>;
@@ -328,6 +331,7 @@ export function servicesApi(t: Transport): ServicesApi {
       },
       imageTransfers: (id, query) => get<ImageTransfer[]>(apiGetUrl(`/v1/services/${id}/image-transfers`, { ...query })),
       swarm: (id) => get<ServiceSwarmStatus>(`/v1/services/${id}/swarm`),
+      routing: (id) => get<ServiceRoutingView>(`/v1/services/${id}/routing`),
       runtimeRecovery: async id => (await get<{ entry: PrimaryRecoveryEntry | null }>(`/v1/services/${id}/runtime-recovery`)).entry,
       retryRuntimeRecovery: id => request<PrimaryRecoveryResult>(`/v1/services/${id}/runtime-recovery`, { method: 'POST' }, 600_000),
       swarmRecovery: async id => (await get<{ entry: SwarmRecoveryEntry | null }>(`/v1/services/${id}/swarm/recovery`)).entry,

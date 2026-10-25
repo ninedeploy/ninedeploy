@@ -22,6 +22,7 @@ const apiMock = vi.hoisted(() => ({
       generate: vi.fn(),
     },
     ports: { list: vi.fn() },
+    services: { routing: vi.fn(async () => ({ live: true, liveNote: null, container: null, http: [], ports: [] })) },
   },
   authedFetch: vi.fn(),
 }));
