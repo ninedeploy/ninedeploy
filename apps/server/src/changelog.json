@@ -1,6 +1,6 @@
 [
   {
-    "version": "0.18.0",
+    "version": "0.18.1",
     "date": "2026-10-25",
     "title": "Measured node canaries and recoverable operations",
     "changes": [
@@ -12,7 +12,8 @@
       "Add configurable metric history/rollups, authenticated Prometheus and OTLP export, and encrypted durable per-destination log queues with retries, backpressure and operator queue controls.",
       "Batch node readiness by immutable identity, preserve consecutive samples and recheck health/restarts. Handle images without Docker HEALTHCHECK and keep negotiated older-agent behavior without protocol downgrade.",
       "Include additive migrations 0096–0100. Update panel and agents together for routed node recovery and explicitly opt in to node proxy traffic observations for node canary.",
-      "Gate publication on public API/worker canary lifecycle, upgrade and user-journey smokes against the pushed version image."
+      "Gate publication on public API/worker canary lifecycle, upgrade and user-journey smokes against the pushed version image.",
+      "Wait for completed primary-node retirement before changing readiness in release acceptance. Supersede the unpublished 0.18.0 candidate while preserving runtime safety guards."
     ]
   },
   {
