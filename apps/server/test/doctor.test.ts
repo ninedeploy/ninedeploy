@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { buildTestApp, asUser, createFakeDb } from './helpers.js';
 import { doctorRoutes } from '../src/modules/doctor.js';
 import { fixDoctorFinding, panelExposureFinding, sandboxNetworkFinding, scanDoctor, templatesSourceFinding } from '../src/engine/doctor.js';
@@ -25,6 +28,13 @@ vi.mock('../src/lib/dockerPull.js', () => ({
 // the default (loopback) keeps every other scan free of that finding.
 const cfg = vi.hoisted(() => ({ paths: { dataDir: '/tmp/nd-doctor-test' }, host: '127.0.0.1', port: 3000 }));
 vi.mock('../src/config.js', () => ({ config: cfg }));
+// The routing check reads the written Traefik file; its rewrite is the fix.
+const proxyState = vi.hoisted(() => ({ file: '/nonexistent/nd-doctor-test/ninedeploy.yml', write: vi.fn(async () => undefined) }));
+vi.mock('../src/engine/proxy.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/engine/proxy.js')>()),
+  generatedConfigPath: () => proxyState.file,
+  writeDynamicConfig: proxyState.write,
+}));
 const fsState = vi.hoisted(() => ({ dockerenv: false }));
 vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs')>();
@@ -508,5 +518,68 @@ describe('doctor: plaintext template source (r655)', () => {
     expect(templatesSourceFinding('HTTP://registry.example.com/r.json')?.kind).toBe('templates_source_plaintext');
     const clean = await scanDoctor(createFakeDb());
     expect(clean.findings.filter((x) => x.kind === 'templates_source_plaintext')).toEqual([]);
+  });
+});
+
+describe('doctor: live routing (domains through Traefik, host ports through Docker)', () => {
+  const tmpDir = path.join(os.tmpdir(), `nd-doctor-routing-${process.pid}`);
+  const routeTo = (runtime: string) => writeFileSync(proxyState.file, [
+    'http:', '  routers:', '    web_3:', '      rule: "Host(`web.test`)"', '      service: svc_web_3',
+    '  services:', '    svc_web_3:', '      loadBalancer:', '        servers:', `          - url: "http://${runtime}:8080"`, '',
+  ].join('\n'));
+  const inspectPorts = { value: {} as Record<string, unknown> };
+  const routedDb = (over: Record<string, unknown> = {}) => createFakeDb({ select: {
+    services: [svcRow({ runtimeId: 'web-5', port: 8080, serverId: null, ...over })],
+    domains: [{ id: 3, serviceId: 1, hostname: 'web.test', path: null, ssl: false, status: 'active' }],
+  } });
+
+  beforeEach(() => {
+    mkdirSync(tmpDir, { recursive: true });
+    proxyState.file = path.join(tmpDir, 'ninedeploy.yml');
+    inspectPorts.value = {};
+    host.containers = [{ Names: 'web-5', State: 'running', Image: 'web:5' }];
+    const base = ex.capture.getMockImplementation()!;
+    ex.capture.mockImplementation(async (cmd: string, args: string[]) => (args[0] === 'inspect' && args.includes('--type')
+      ? JSON.stringify([{ State: { Status: 'running' }, NetworkSettings: { Ports: inspectPorts.value, Networks: {} } }])
+      : base(cmd, args)));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    proxyState.file = '/nonexistent/nd-doctor-test/ninedeploy.yml';
+  });
+
+  it('flags a domain Traefik still routes to an old container and rewrites the file to fix it', async () => {
+    routeTo('web-4');
+    const report = await scanDoctor(routedDb());
+    const f = report.findings.find((x) => x.kind === 'http_route_broken');
+    expect(f).toMatchObject({ id: 'http_route_broken:1:3', severity: 'critical', action: 'rewrite_proxy_config', detail: expect.stringContaining('web-4') });
+
+    const res = await fixDoctorFinding(routedDb(), 'http_route_broken:1:3', vi.fn());
+    expect(res).toMatchObject({ fixed: true, action: 'rewrite_proxy_config' });
+    expect(proxyState.write).toHaveBeenCalledOnce();
+  });
+
+  it('stays quiet for a correct route, and while a deploy of the service runs', async () => {
+    routeTo('web-5');
+    expect((await scanDoctor(routedDb())).findings.filter((x) => x.kind === 'http_route_broken')).toEqual([]);
+    routeTo('web-4');
+    const deploying = createFakeDb({ select: {
+      services: [svcRow({ runtimeId: 'web-5', port: 8080, serverId: null })],
+      domains: [{ id: 3, serviceId: 1, hostname: 'web.test', path: null, ssl: false, status: 'active' }],
+      deployments: [{ id: 12, serviceId: 1, status: 'deploying', createdAt: new Date() }],
+    } });
+    expect((await scanDoctor(deploying)).findings.filter((x) => x.kind === 'http_route_broken')).toEqual([]);
+  });
+
+  it('flags a UDP port mapping Docker did not bind', async () => {
+    routeTo('web-5');
+    inspectPorts.value = { '5060/udp': null };
+    const report = await scanDoctor(routedDb({ portMappings: [{ hostPort: 5060, containerPort: 5060, protocol: 'udp' }] }));
+    expect(report.findings.find((x) => x.kind === 'host_port_unbound')).toMatchObject({
+      id: 'host_port_unbound:1:*:5060/udp', severity: 'critical', action: null, detail: expect.stringContaining('redeploy'),
+    });
+    inspectPorts.value = { '5060/udp': [{ HostIp: '0.0.0.0', HostPort: '5060' }] };
+    const bound = await scanDoctor(routedDb({ portMappings: [{ hostPort: 5060, containerPort: 5060, protocol: 'udp' }] }));
+    expect(bound.findings.filter((x) => x.kind === 'host_port_unbound')).toEqual([]);
   });
 });

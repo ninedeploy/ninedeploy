@@ -98,6 +98,10 @@ export const doctorFindingKind = z.enum([
   'host_port_conflict',
   /** Many published host ports while Docker's userland proxy is on: one docker-proxy process per port. */
   'userland_proxy_ports',
+  /** Traefik has no router, or routes to a container that is not the live runtime: the domain answers 404/502. */
+  'http_route_broken',
+  /** A host port mapping Docker did not bind on the running container. */
+  'host_port_unbound',
 ]);
 export type DoctorFindingKind = z.infer<typeof doctorFindingKind>;
 
@@ -127,6 +131,8 @@ export const doctorActionKind = z.enum([
   'start_service_runtime',
   /** Switch a service whose HTTP probe cannot pass to the `running` readiness check. */
   'set_healthcheck_running',
+  /** Re-render the Traefik dynamic file from the stored services and domains. */
+  'rewrite_proxy_config',
 ]);
 export type DoctorActionKind = z.infer<typeof doctorActionKind>;
 

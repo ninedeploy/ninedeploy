@@ -40,7 +40,9 @@ import { storedInsightsLeakSuspected } from './repoInsights.js';
 import { swarmRuntimeOf } from '../lib/swarm.js';
 import { abortDeployment } from '../lib/deployAbort.js';
 import { listHostAddresses } from '../lib/hostAddresses.js';
-import { deployLeftoverFindings, hostPortFindings, parseDockerLabels, userlandProxyFinding } from './doctorDeploy.js';
+import { deployLeftoverFindings, hostPortFindings, parseDockerLabels, routingFindings, userlandProxyFinding } from './doctorDeploy.js';
+import { serviceRoutingView } from './routingView.js';
+import { writeDynamicConfig } from './proxy.js';
 import { startStoppedGeneration } from './interruptedRuntime.js';
 import {
   containerRunning,
@@ -555,6 +557,15 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
   findings.push(...hostPortFindings(svcs, routed, hostIps));
   const userland = userlandProxyFinding(svcs, readDockerDaemonJson());
   if (userland) findings.push(userland);
+  // Live routes of running local services. A deploy in flight (or a pending
+  // transition) flips the route on purpose, so those services are skipped.
+  const deploying = new Set(activeDeployRows.filter((d) => d.status !== 'queued').map((d) => d.serviceId));
+  const routable = svcs.filter((s) => s.serverId == null && s.type === 'docker' && s.status === 'running' && s.runtimeId
+    && !swarmRuntimeOf(s) && !deploying.has(s.id) && !transitionServiceIds.has(s.id)
+    && (routed.has(s.id) || s.publishedPort || (s.portMappings ?? []).length > 0)
+    && containerByName.get(s.runtimeId)?.state === 'running');
+  const routingEntries = await Promise.all(routable.map(async (s) => ({ service: s, view: await serviceRoutingView(db, s) })));
+  findings.push(...routingFindings(routingEntries));
 
   // r575: plaintext panel port on a non-loopback address.
   const exposure = panelExposureFinding(config.host, config.port, existsSync('/.dockerenv'));
@@ -844,6 +855,11 @@ export async function fixDoctorFinding(
       if (id == null) throw new Error('missing service id');
       await db.update(services).set({ healthCheck: 'running' }).where(eq(services.id, id));
       collect(`service #${id} now uses the "running" readiness check — redeploy it`);
+      break;
+    }
+    case 'rewrite_proxy_config': {
+      await writeDynamicConfig(db);
+      collect('rewrote the Traefik dynamic file from the stored services and domains');
       break;
     }
   }

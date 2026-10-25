@@ -75,16 +75,16 @@ function httpRoutes(service: ServiceRow, rows: DomainRow[], facts: RoutingFacts)
         note: facts.live ? 'The Traefik dynamic file could not be read' : 'Routed by the node\'s own Traefik; the expected upstream is shown' };
     }
     const router = obj(routers[key]);
-    if (!router['rule']) return { ...base, router: null, upstreams: [], verdict: 'error' as const, note: 'Traefik has no router for this domain — requests answer 404' };
+    if (!router['rule']) return { ...base, router: null, upstreams: [], verdict: 'error' as const, note: 'Traefik has no router for this domain — requests answer 404', problem: 'no_router' as const };
     const upstreams = upstreamsOf(services, String(router['service'] ?? ''));
     if (service.asleepAt != null) return { ...base, router: key, upstreams, verdict: 'ok' as const, note: 'Service is asleep: requests go to the wake endpoint first' };
     const stale = upstreams.filter((u) => !expected.includes(u) && !u.startsWith('http://host.docker.internal'));
-    if (upstreams.length === 0) return { ...base, router: key, upstreams, verdict: 'error' as const, note: 'The router has no upstream — requests answer 502' };
+    if (upstreams.length === 0) return { ...base, router: key, upstreams, verdict: 'error' as const, note: 'The router has no upstream — requests answer 502', problem: 'no_upstream' as const };
     if (stale.length === upstreams.length) {
-      return { ...base, router: key, upstreams, verdict: 'error' as const, note: `Traefik still routes to ${stale.join(', ')}, not the live runtime ${service.runtimeId}` };
+      return { ...base, router: key, upstreams, verdict: 'error' as const, note: `Traefik still routes to ${stale.join(', ')}, not the live runtime ${service.runtimeId}`, problem: 'stale_upstream' as const };
     }
     if (facts.live && facts.container && facts.container.state !== 'running') {
-      return { ...base, router: key, upstreams, verdict: 'error' as const, note: `The container is ${facts.container.state} — requests answer 502 Bad Gateway` };
+      return { ...base, router: key, upstreams, verdict: 'error' as const, note: `The container is ${facts.container.state} — requests answer 502 Bad Gateway`, problem: 'container_down' as const };
     }
     if (facts.live && facts.container?.health === 'unhealthy') {
       return { ...base, router: key, upstreams, verdict: 'warn' as const, note: 'The container reports unhealthy' };
@@ -107,9 +107,14 @@ function portRoute(m: ServicePortMapping, via: PortRoute['via'], facts: RoutingF
   if (!facts.live) return { ...base, bound: null, verdict: 'unknown', note: 'Bound on the node; open the node to inspect it' };
   const owner = via === 'portproxy' ? facts.portProxy : facts.container;
   if (!owner) {
-    return { ...base, bound: [], verdict: 'error', note: via === 'portproxy' ? 'The port proxy container is missing — the port is closed' : 'No container: nothing listens on this port' };
+    return via === 'portproxy'
+      ? { ...base, bound: [], verdict: 'error', note: 'The port proxy container is missing — the port is closed', problem: 'proxy_missing' }
+      : { ...base, bound: [], verdict: 'error', note: 'No container: nothing listens on this port', problem: 'container_down' };
   }
-  if (owner.state !== 'running') return { ...base, bound: [], verdict: 'error', note: `The ${via === 'portproxy' ? 'port proxy' : 'container'} is ${owner.state}` };
+  if (owner.state !== 'running') {
+    return { ...base, bound: [], verdict: 'error', note: `The ${via === 'portproxy' ? 'port proxy' : 'container'} is ${owner.state}`,
+      problem: via === 'portproxy' ? 'proxy_missing' : 'container_down' };
+  }
   const count = Math.max(1, (m.hostPortEnd ?? m.hostPort) - m.hostPort + 1);
   const bound: string[] = [];
   let missing = 0;
@@ -119,7 +124,7 @@ function portRoute(m: ServicePortMapping, via: PortRoute['via'], facts: RoutingF
     if (hits.length === 0) missing++;
     if (bound.length < 20) for (const b of hits) bound.push(`${b.HostIp || '*'}:${b.HostPort}/${protocol}`);
   }
-  if (missing > 0) return { ...base, bound, verdict: 'error', note: `${missing} of ${count} host port(s) are not bound — redeploy to publish them` };
+  if (missing > 0) return { ...base, bound, verdict: 'error', note: `${missing} of ${count} host port(s) are not bound — redeploy to publish them`, problem: 'unbound' };
   const note = via === 'portproxy'
     ? 'Through the allow-list proxy: the app sees the proxy\'s address, not the client\'s'
     : protocol === 'udp' ? 'Docker DNAT: datagrams keep the client\'s source IP (SIP/RTP safe)' : 'Docker DNAT: the app sees the client\'s source IP';

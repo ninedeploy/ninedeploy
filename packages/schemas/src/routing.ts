@@ -17,6 +17,8 @@ export interface ServiceHttpRoute {
   upstreams: string[];
   verdict: RoutingHopVerdict;
   note: string;
+  /** Why the hop fails, for checks that act on it (the Doctor); absent when nothing is wrong with the route itself. */
+  problem?: 'no_router' | 'no_upstream' | 'stale_upstream' | 'container_down';
 }
 
 export interface ServicePortRoute {
@@ -32,6 +34,8 @@ export interface ServicePortRoute {
   bound: string[] | null;
   verdict: RoutingHopVerdict;
   note: string;
+  /** Why the hop fails; absent when the port is bound (or was not inspected). */
+  problem?: 'unbound' | 'container_down' | 'proxy_missing';
 }
 
 export interface ServiceRoutingView {

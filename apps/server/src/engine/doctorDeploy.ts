@@ -1,4 +1,4 @@
-import type { DoctorFinding, PortMapping } from '@ninedeploy/schemas';
+import type { DoctorFinding, PortMapping, ServiceRoutingView } from '@ninedeploy/schemas';
 import { formatPortMapping, mappedPortCount, portMappingsOverlap } from '@ninedeploy/schemas';
 import { DEPLOYMENT_LABEL, MAX_REPLICAS, SERVICE_LABEL, replicaNames } from './dockerNames.js';
 
@@ -207,4 +207,47 @@ export function userlandProxyFinding(svcs: readonly ServiceFacts[], daemonJson: 
     action: null,
     sizeBytes: null,
   };
+}
+
+/**
+ * What the live routing view (routingView.ts) found wrong with a running
+ * local service: a domain Traefik has no router for, or one still pointing at
+ * a container that is not the live runtime (404 / 502 while the app is up),
+ * and host ports Docker did not bind. A stopped container is left to the
+ * runtime findings, which already report it.
+ */
+export function routingFindings(
+  entries: ReadonlyArray<{ service: { id: number; name: string }; view: ServiceRoutingView }>,
+): DoctorFinding[] {
+  const out: DoctorFinding[] = [];
+  for (const { service: s, view } of entries) {
+    for (const r of view.http) {
+      if (r.problem !== 'no_router' && r.problem !== 'no_upstream' && r.problem !== 'stale_upstream') continue;
+      out.push({
+        id: `http_route_broken:${s.id}:${r.domainId}`,
+        kind: 'http_route_broken',
+        severity: 'critical',
+        title: `${r.hostname} of "${s.name}" is not routed to its live container`,
+        detail: `${r.note}. The Traefik file is out of step with the service; rewriting it from the stored services and domains restores the route without a redeploy.`,
+        target: { type: 'service', name: s.name, id: s.id },
+        action: 'rewrite_proxy_config',
+        sizeBytes: null,
+      });
+    }
+    for (const p of view.ports) {
+      if (p.problem !== 'unbound' && p.problem !== 'proxy_missing') continue;
+      const host = `${p.hostIp ?? '*'}:${p.hostPortEnd ? `${p.hostPort}-${p.hostPortEnd}` : p.hostPort}/${p.protocol}`;
+      out.push({
+        id: `host_port_unbound:${s.id}:${host}`,
+        kind: 'host_port_unbound',
+        severity: 'critical',
+        title: `Host port ${host} of "${s.name}" is not open`,
+        detail: `${p.note}. Port mappings are applied when the container is created, so a mapping saved after the last deploy (or one Docker could not bind) stays closed until the service is redeployed.`,
+        target: { type: 'service', name: s.name, id: s.id },
+        action: null,
+        sizeBytes: null,
+      });
+    }
+  }
+  return out;
 }
