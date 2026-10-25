@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
-import { deployments, nodeLifecycleIntents, primaryTransitions, services, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
+import { deployments, fanoutTransitions, nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
 import { HttpError } from './errors.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
 
@@ -9,6 +9,11 @@ export const NODE_LIFECYCLE_LEASE_MS = 90_000;
 const changed = () => new HttpError(409, 'node_lifecycle_superseded', 'The service or node lifecycle owner changed');
 const configuration = (s: Service) => JSON.stringify([s.type, s.orchestrator, s.runtimeId, s.serverId, s.port,
   s.healthCheck, s.healthPath, s.healthCommand, s.healthTimeoutSeconds, s.runtimeReplicas, s.replicas, s.autoscale, s.sleepAfterMinutes]);
+
+async function fanoutPlacement(db: Pick<DB, 'select'>, serviceId: number) {
+  return db.select({ targetId: serviceTargets.id, serverId: serviceTargets.serverId, runtimeId: serviceTargets.runtimeId })
+    .from(serviceTargets).where(eq(serviceTargets.serviceId, serviceId)).orderBy(serviceTargets.id);
+}
 
 /** Reserve a fence, an effect and a restart's Start revision per durable command. */
 export function nodeLifecycleRevision(id: number, phase: 'fence' | 'effect' | 'restart-start'): number {
@@ -39,12 +44,14 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
     await tx.update(nodeLifecycleIntents).set({ phase: 'superseded', ownerToken: null, leaseUntil: null, completedAt: new Date() })
       .where(and(eq(nodeLifecycleIntents.serviceId, service.id), notInArray(nodeLifecycleIntents.phase, [...terminal])));
     const shape = runtimeReplicaCounts(fresh);
+    const fanout = await fanoutPlacement(tx, fresh.id);
+    if (fanout.some(target => target.serverId === fresh.serverId)) throw new HttpError(422, 'node_lifecycle_placement_invalid', 'A fan-out target duplicates the primary node');
     const acceptedAt = new Date();
     const [intent] = await tx.insert(nodeLifecycleIntents).values({ serviceId: fresh.id, serverId: fresh.serverId!, runtimeId: fresh.runtimeId!, deploymentId,
       action, requestId: randomBytes(16).toString('hex'), phase: action !== 'start' ? 'fencing' : 'preparing',
       nextAttemptAt: acceptedAt, createdAt: acceptedAt, updatedAt: acceptedAt,
       snapshot: { status: fresh.status, port: fresh.port, healthCheck: fresh.healthCheck, healthPath: fresh.healthPath, healthCommand: fresh.healthCommand,
-        healthTimeoutS: fresh.healthTimeoutSeconds, serving: shape.serving, capacity: shape.capacity, configuration: configuration(fresh) } }).returning();
+        healthTimeoutS: fresh.healthTimeoutSeconds, serving: shape.serving, capacity: shape.capacity, configuration: configuration(fresh), fanout } }).returning();
     nodeLifecycleRevision(intent!.id, 'effect');
     if (action !== 'start') {
       await tx.update(services).set({ status: 'stopped', asleepAt: null }).where(eq(services.id, service.id));
@@ -73,6 +80,14 @@ async function owned(db: Pick<DB, 'query' | 'select'>, intent: NodeLifecycleInte
   if (latest[0]?.id !== intent.id || !service || service.type !== 'docker' || service.orchestrator === 'swarm' || service.runtimeId !== fresh.runtimeId || service.serverId !== fresh.serverId ||
     fresh.action === 'stop' && service.status !== 'stopped' || fresh.action !== 'stop' && (configuration(service) !== fresh.snapshot.configuration ||
       service.status !== (fresh.action === 'restart' ? fresh.phase === 'publishing' ? 'deploying' : 'stopped' : fresh.phase === 'routing' ? 'deploying' : fresh.snapshot.status))) throw changed();
+  const fanout = await fanoutPlacement(db, fresh.serviceId);
+  if (fresh.snapshot.fanout === undefined && fanout.length) {
+    throw new Error('This older lifecycle command has no accepted fan-out placement; submit a new command');
+  }
+  if (JSON.stringify(fanout) !== JSON.stringify(fresh.snapshot.fanout ?? [])) throw changed();
+  // An unresolved generation may own additional containers not represented by the serving row.
+  const transitioning = await db.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(eq(fanoutTransitions.serviceId, fresh.serviceId)).limit(1);
+  if (transitioning.length) throw new Error('Fan-out generation recovery must settle before lifecycle effects');
   if (fresh.action !== 'stop') {
     const deploying = await db.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, service.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1);
     const recovering = await db.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, service.id)).limit(1);
@@ -118,6 +133,12 @@ export async function advanceNodeLifecycleIntent(db: DB, intent: NodeLifecycleIn
     if (patch.serviceStatus && (fresh.action === 'stop' || (phase === publication ? patch.serviceStatus !== 'deploying' : phase !== 'completed' || patch.serviceStatus !== 'running'))) throw new Error('Invalid node lifecycle publication phase');
     if (patch.serviceStatus) await tx.update(services).set({ status: patch.serviceStatus, asleepAt: null }).where(eq(services.id, fresh.serviceId));
     const done = phase === 'completed';
+    if (done) {
+      for (const target of fresh.snapshot.fanout ?? []) {
+        if (target.runtimeId) await tx.update(serviceTargets).set({ status: fresh.action === 'stop' ? 'idle' : 'running', updatedAt: new Date(now) })
+          .where(eq(serviceTargets.id, target.targetId));
+      }
+    }
     const [row] = await tx.update(nodeLifecycleIntents).set({ phase, ...(patch.targets !== undefined ? { targets: patch.targets } : {}), reason: null,
       ownerToken: done ? null : fresh.ownerToken, leaseUntil: done ? null : new Date(now + NODE_LIFECYCLE_LEASE_MS), ...(done ? { completedAt: new Date(now) } : {}) })
       .where(and(eq(nodeLifecycleIntents.id, fresh.id), eq(nodeLifecycleIntents.ownerToken, fresh.ownerToken!))).returning();

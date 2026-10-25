@@ -22,14 +22,14 @@ export function nodeLifecycleRuntime(db: DB, options: { signal?: AbortSignal; lo
   return {
     agent: (id, op, params, opts) => agentOp(db, id, op, params, () => undefined, opts),
     sealed: id => options.signal ? agentTransportSealed(db, id, options.signal) : agentTransportSealed(db, id),
-    route: (service, parent) => {
+    route: (service, parent, serverId = service.serverId!) => {
       const signal = AbortSignal.any([...(parent ? [parent] : []), AbortSignal.timeout(60_000)]);
       signal.throwIfAborted();
       return new Promise<void>((resolve, reject) => {
         const cancelled = () => reject(signal.reason);
         signal.addEventListener('abort', cancelled, { once: true });
         // A queued write also observes cancellation before touching any proxy.
-        void writeDynamicConfig(db, { requireNode: service.serverId!, confirmNodeRouting: true, confirmServiceId: service.id, signal })
+        void writeDynamicConfig(db, { requireNode: serverId, confirmNodeRouting: true, confirmServiceId: service.id, signal })
           .then(resolve, reject).finally(() => signal.removeEventListener('abort', cancelled));
       });
     },

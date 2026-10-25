@@ -16,7 +16,7 @@ export interface NodeLifecycleControllerDeps {
   agent: (serverId: number, op: string, params: Record<string, unknown>, options: { signal?: AbortSignal; timeoutMs: number }) => Promise<AgentOpResult>;
   sealed: (serverId: number) => Promise<boolean>;
   /** Resolve only after this service's routing generation is acknowledged by the selected node. */
-  route: (service: Service, signal?: AbortSignal) => Promise<void>;
+  route: (service: Service, signal?: AbortSignal, serverId?: number) => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   signal?: AbortSignal;
   log?: (line: string) => void;
@@ -42,47 +42,56 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     deps.signal?.throwIfAborted();
     return current.service;
   };
-  const call = async (op: string, params: Record<string, unknown>, timeoutMs = 15_000) => {
+  const call = async (serverId: number, op: string, params: Record<string, unknown>, timeoutMs = 15_000) => {
     await checkpoint();
-    const result = await deps.agent(intent.serverId, op, params, { signal: deps.signal, timeoutMs });
+    const result = await deps.agent(serverId, op, params, { signal: deps.signal, timeoutMs });
     await checkpoint();
     if (result.exitCode !== 0) throw new Error(`Node lifecycle operation ${op} failed`);
     return result;
   };
-  const discover = async () => {
-    const targets: Array<{ id: string; name: string }> = [];
-    const names = replicaNames(intent.runtimeId, intent.action === 'start' ? intent.snapshot.serving : MAX_REPLICAS);
+  type Participant = { serverId: number; runtimeId: string; deploymentId: number; serving: number };
+  const participants = (): Participant[] => [{ serverId: intent.serverId, runtimeId: intent.runtimeId, deploymentId: intent.deploymentId, serving: intent.snapshot.serving },
+    ...(intent.snapshot.fanout ?? []).filter(target => target.runtimeId !== null).map(target => {
+      const deploymentId = Number(/-([1-9]\d*)$/.exec(target.runtimeId!)?.[1]);
+      if (!Number.isSafeInteger(deploymentId) || deploymentId < 1) throw new Error('Fan-out runtime has no managed deployment identity; redeploy this target');
+      return { serverId: target.serverId, runtimeId: target.runtimeId!, deploymentId, serving: 1 };
+    })];
+  const capturedTargets = (participant: Participant) => (intent.targets ?? [])
+    .filter(target => (target.serverId ?? intent.serverId) === participant.serverId).map(({ id, name }) => ({ id, name }));
+  const discover = async (participant: Participant) => {
+    const targets: NonNullable<typeof intent.targets> = [];
+    const names = replicaNames(participant.runtimeId, intent.action === 'start' ? participant.serving : MAX_REPLICAS);
     for (const name of names) {
-      const result = await call('docker.identity', { name });
+      const result = await call(participant.serverId, 'docker.identity', { name });
       const frames = result.lines.filter(line => line.startsWith('ND-CONTAINER '));
       if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 16 * 1024) throw new Error('Node lifecycle identity unavailable');
       const found = identity.nullable().parse(JSON.parse(frames[0]!.slice(13)));
       if (!found) {
-        if (intent.action !== 'stop' && replicaNames(intent.runtimeId, intent.snapshot.serving).includes(name)) throw new Error(`Node lifecycle serving replica ${name} is missing`);
+        if (intent.action !== 'stop' && replicaNames(participant.runtimeId, participant.serving).includes(name)) throw new Error(`Node lifecycle serving replica ${name} is missing`);
         continue;
       }
-      if (found.name !== name || found.managed !== 'service' || found.serviceId !== String(intent.serviceId) || found.deploymentId !== String(intent.deploymentId)) {
+      if (found.name !== name || found.managed !== 'service' || found.serviceId !== String(intent.serviceId) || found.deploymentId !== String(participant.deploymentId)) {
         throw new Error(`Node lifecycle ownership of ${name} is unconfirmed; container retained`);
       }
-      targets.push({ id: found.id, name });
+      targets.push({ id: found.id, name, ...(participant.serverId !== intent.serverId ? { serverId: participant.serverId } : {}) });
     }
     if (new Set(targets.map(target => target.id)).size !== targets.length) throw new Error('Duplicate node lifecycle identity');
     return targets;
   };
-  const servingTargets = () => {
-    const names = replicaNames(intent.runtimeId, intent.snapshot.serving);
-    const selected = names.map(name => intent.targets?.find(t => t.name === name));
+  const servingTargets = (participant: Participant) => {
+    const names = replicaNames(participant.runtimeId, participant.serving);
+    const selected = names.map(name => capturedTargets(participant).find(t => t.name === name));
     if (selected.some(target => !target)) throw new Error('Node lifecycle serving targets are unavailable');
     return selected.map(target => target!);
   };
-  const apply = async (fence: boolean, restarting = false) => {
+  const apply = async (participant: Participant, fence: boolean, restarting = false) => {
     if (!fence && intent.targets === null) throw new Error('Node lifecycle immutable targets are unavailable');
     const request = containerLifecycleRequest.parse({ requestId: fence
-      ? createHash('sha256').update(`${intent.requestId}:fence`).digest('hex').slice(0, 32) : intent.requestId,
-    serviceId: intent.serviceId, deploymentId: intent.deploymentId, revision: nodeLifecycleRevision(intent.id, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
+      ? createHash('sha256').update(`${intent.requestId}:fence${participant.serverId === intent.serverId ? '' : `:${participant.serverId}`}`).digest('hex').slice(0, 32) : intent.requestId,
+    serviceId: intent.serviceId, deploymentId: participant.deploymentId, revision: nodeLifecycleRevision(intent.id, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
     action: !fence && (intent.action === 'start' || restarting) ? 'start' : 'stop',
-    targets: fence ? [] : restarting ? servingTargets() : intent.targets, timeoutMs: 30_000 });
-    const result = await call('docker.lifecycle', request, 35_000);
+    targets: fence ? [] : restarting ? servingTargets(participant) : capturedTargets(participant), timeoutMs: 30_000 });
+    const result = await call(participant.serverId, 'docker.lifecycle', request, 35_000);
     const frames = result.lines.filter(line => line.startsWith('ND-LIFECYCLE '));
     if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 64 * 1024) throw new Error('Node lifecycle receipt unavailable');
     const reply = containerLifecycleReply.parse(JSON.parse(frames[0]!.slice(13)));
@@ -93,64 +102,73 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       throw new Error('Node lifecycle receipt identity, revision or coverage changed');
     }
   };
-  const readiness = async () => {
+  const readiness = async (participant: Participant) => {
     const mode = intent.snapshot.healthCheck;
     const spec: Omit<ContainerReadinessRequest, 'requestId' | 'timeoutMs'> = {
-      targets: servingTargets(), port: intent.snapshot.port, path: intent.snapshot.healthPath || '/',
+      targets: servingTargets(participant), port: intent.snapshot.port, path: intent.snapshot.healthPath || '/',
       mode: mode === 'running' || mode === 'command' || mode === 'http-strict' || mode === 'tcp' ? mode : 'auto',
     };
-    const ready = await verifyNodeReadiness((op, params, _sink, options) => call(op, params, Math.min(15_000, options?.timeoutMs ?? 15_000)),
+    const ready = await verifyNodeReadiness((op, params, _sink, options) => call(participant.serverId, op, params, Math.min(15_000, options?.timeoutMs ?? 15_000)),
       spec, (intent.snapshot.healthTimeoutS ?? 300) * 1000, async () => { await checkpoint(); }, deps.log ?? (() => undefined));
     await checkpoint();
     if (!ready) throw new Error('Node lifecycle serving readiness is unconfirmed');
   };
+  const routeAll = async () => {
+    for (const participant of participants()) {
+      const service = await checkpoint();
+      await deps.route(service, deps.signal, participant.serverId);
+      await checkpoint();
+    }
+  };
+  const readinessAll = async () => {
+    for (const participant of participants()) await readiness(participant);
+  };
   const removeRouting = async () => {
-    const service = await checkpoint();
-    await deps.route(service, deps.signal);
-    await checkpoint();
+    await routeAll();
     await deps.sleep(2000);
     await checkpoint();
   };
   try {
     await checkpoint();
-    const sealed = await deps.sealed(intent.serverId);
-    await checkpoint();
-    const refusal = await capabilityRefusal((op, params) => call(op, params, 5000), `#${intent.serverId}`, sealed, {
-      cap: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
-    });
-    await checkpoint();
-    if (refusal) throw new Error(refusal.message);
+    for (const participant of participants()) {
+      const sealed = await deps.sealed(participant.serverId);
+      await checkpoint();
+      const refusal = await capabilityRefusal((op, params) => call(participant.serverId, op, params, 5000), `#${participant.serverId}`, sealed, {
+        cap: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
+      });
+      await checkpoint();
+      if (refusal) throw new Error(refusal.message);
+    }
     let readyThisRun = false, routingRemovedThisRun = false;
     while (true) {
       await checkpoint();
       if (intent.phase === 'fencing') {
-        await apply(true);
+        for (const participant of participants()) await apply(participant, true);
         intent = await advanceNodeLifecycleIntent(db, intent, 'preparing');
       } else if (intent.phase === 'preparing') {
-        const targets = await discover();
+        const targets: NonNullable<typeof intent.targets> = [];
+        for (const participant of participants()) targets.push(...await discover(participant));
         intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'start' ? 'applying' : 'routing', { targets });
       } else if (intent.phase === 'applying') {
         if (intent.action !== 'start' && !routingRemovedThisRun) await removeRouting();
-        await apply(false);
+        for (const participant of participants()) await apply(participant, false);
         intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'restart' ? 'starting' : intent.action === 'start' ? 'readiness' : 'completed');
       } else if (intent.phase === 'starting') {
-        await apply(false, true);
+        for (const participant of participants()) await apply(participant, false, true);
         intent = await advanceNodeLifecycleIntent(db, intent, 'warming');
       } else if (intent.phase === 'warming') {
-        await readiness(); readyThisRun = true;
+        await readinessAll(); readyThisRun = true;
         intent = await advanceNodeLifecycleIntent(db, intent, 'publishing', { serviceStatus: 'deploying' });
       } else if (intent.phase === 'readiness') {
-        await readiness(); readyThisRun = true;
+        await readinessAll(); readyThisRun = true;
         intent = await advanceNodeLifecycleIntent(db, intent, 'routing', { serviceStatus: 'deploying' });
       } else if (intent.phase === 'routing' || intent.phase === 'publishing') {
         if (intent.phase === 'routing' && intent.action !== 'start') {
           await removeRouting(); routingRemovedThisRun = true;
           intent = await advanceNodeLifecycleIntent(db, intent, 'applying');
         } else {
-          if (!readyThisRun) await readiness();
-          const service = await checkpoint();
-          await deps.route(service, deps.signal);
-          await checkpoint();
+          if (!readyThisRun) await readinessAll();
+          await routeAll();
           intent = await advanceNodeLifecycleIntent(db, intent, 'completed', { serviceStatus: 'running' });
         }
       } else return { state: intent.phase };

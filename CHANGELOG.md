@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Bind ordered Start, Stop and Restart commands to the accepted primary and additional-node placements. Capture immutable container IDs per node, verify each node's generation and lifecycle receipt, require all serving targets to pass readiness, and confirm routing on every participant before completion. Offline nodes and uncertain receipts keep the original command pending; newer commands and changed placements supersede stale continuations.
+- Render one backend for each additional-node target, matching the container actually created there, instead of copying the primary node's replica count into nonexistent target replica addresses.
+- Add a two-daemon, sealed-agent and Traefik lifecycle smoke to the release gate, covering readiness refusal, offline recovery, lost effect/routing responses and a newer Stop.
+
 ## [0.18.2] - 2026-10-25
 
 Supersedes the unpublished v0.18.0 and v0.18.1 candidates. Acceptance gates held publication; their existing Git tags and the v0.18.0 image were preserved.

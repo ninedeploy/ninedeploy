@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, services, servers, users, nodeLifecycleIntents, eq } from '@ninedeploy/db';
+import { createDb, runMigrations, services, servers, users, nodeLifecycleIntents, serviceTargets, fanoutTransitions, eq } from '@ninedeploy/db';
 import { containerLifecycleRequest, type ContainerLifecycleReply } from '@ninedeploy/schemas';
 import { acceptNodeLifecycleIntent, claimNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { executeNodeLifecycleIntent, type NodeLifecycleControllerDeps } from '../../src/lib/nodeLifecycleController.js';
@@ -250,5 +250,198 @@ describe('durable panel node lifecycle execution', () => {
     const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
     expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
     expect((await stored()).reason).toMatch(/owner turned it off/); expect(trace).toEqual([]);
+  });
+});
+
+
+async function installFanout() {
+  await c.db.insert(servers).values({ id: 5, name: 'Fan-out', host: 'fanout.test', tokenEncrypted: 'fixture' });
+  await c.db.insert(serviceTargets).values({ id: 42, serviceId: 1, serverId: 5, runtimeId: 'web-t5-7', status: 'running' });
+  const child = { id: 'c'.repeat(64), name: 'web-t5-7' };
+  const state = { running: true, ready: true, offline: false, lostEffect: false, identity: child, readiness: 0 };
+  const requests: ReturnType<typeof containerLifecycleRequest.parse>[] = [];
+  const original = deps.agent;
+  deps.agent = async (...args) => {
+    if (args[0] !== 5) return original(...args);
+    if (state.offline) throw Error('Fan-out node offline');
+    const [, op, params] = args;
+    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps })] };
+    if (op === 'docker.identity') return { exitCode: 0, lines: ['ND-CONTAINER ' + JSON.stringify(params.name === child.name
+      ? { ...state.identity, managed: 'service', serviceId: '1', deploymentId: '7' } : null)] };
+    if (op === 'docker.lifecycle') {
+      const request = containerLifecycleRequest.parse(params); requests.push(request);
+      expect(request.deploymentId).toBe(7);
+      if (request.targets.length) {
+        expect(request.targets).toEqual([child]);
+        state.running = request.action === 'start'; trace.push('fanout:' + request.action);
+        if (state.lostEffect) { state.lostEffect = false; throw Error('Lost fan-out effect receipt'); }
+      }
+      return { exitCode: 0, lines: ['ND-LIFECYCLE ' + JSON.stringify({ ...request, targets: undefined, timeoutMs: undefined, complete: true,
+        items: request.targets.map(item => ({ ...item, running: state.running })) })] };
+    }
+    if (op === 'docker.readiness') {
+      state.readiness++; trace.push('fanout:readiness:' + (await service()).status);
+      return { exitCode: 0, lines: ['ND-READINESS ' + JSON.stringify({ requestId: params.requestId, complete: true,
+        items: [{ ...child, status: state.running ? 'running' : 'exited', health: 'none', restarts: 0, failingStreak: 0, ready: state.running && state.ready }] })] };
+    }
+    throw Error('Unexpected fan-out operation ' + op);
+  };
+  return { child, state, requests };
+}
+
+describe('multi-node durable lifecycle', () => {
+  it.each(['start', 'stop', 'restart'] as const)('requires every node for %s and binds each generation independently', async action => {
+    const fanout = await installFanout();
+    const routes: Array<{ serverId: number | undefined; status: string }> = [];
+    deps.route = vi.fn(async (service, _signal, serverId) => {
+      routes.push({ serverId, status: service.status });
+      if (service.status !== 'stopped') {
+        expect(fanout.state.readiness).toBeGreaterThanOrEqual(3);
+        expect(running).toBe(true); expect(fanout.state.running).toBe(true);
+      }
+    });
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), action);
+    expect(intent.snapshot.fanout).toEqual([{ targetId: 42, serverId: 5, runtimeId: 'web-t5-7' }]);
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'completed' });
+    expect(running).toBe(action !== 'stop'); expect(fanout.state.running).toBe(action !== 'stop');
+    expect(routes).toEqual(action === 'restart' ? [
+      { serverId: 4, status: 'stopped' }, { serverId: 5, status: 'stopped' }, { serverId: 4, status: 'deploying' }, { serverId: 5, status: 'deploying' },
+    ] : [{ serverId: 4, status: action === 'stop' ? 'stopped' : 'deploying' }, { serverId: 5, status: action === 'stop' ? 'stopped' : 'deploying' }]);
+    expect((await stored()).targets).toContainEqual({ ...fanout.child, serverId: 5 });
+    expect((await c.db.query.serviceTargets.findFirst())!.status).toBe(action === 'stop' ? 'idle' : 'running');
+    if (action !== 'stop') expect(fanout.state.readiness).toBe(3);
+  });
+
+  it('holds an offline fan-out participant without declaring Stop completed', async () => {
+    const fanout = await installFanout(); fanout.state.offline = true;
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).reason).toMatch(/Fan-out node offline/);
+    expect((await stored()).phase).toBe('fencing'); expect(trace).toEqual([]);
+    expect((await service()).status).toBe('stopped'); expect(fanout.state.running).toBe(true);
+  });
+
+  it('retries lost fan-out effects against captured IDs instead of rediscovering a reused name', async () => {
+    const fanout = await installFanout(); fanout.state.lostEffect = true;
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).phase).toBe('applying');
+    fanout.state.identity = { ...fanout.child, id: 'd'.repeat(64) };
+    await vi.advanceTimersByTimeAsync(121_000);
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'completed' });
+    const effects = fanout.requests.filter(request => request.targets.length);
+    expect(effects).toHaveLength(2); expect(effects[0]).toEqual(effects[1]);
+    expect(fanout.state.running).toBe(false);
+  });
+
+  it('does not publish Start when only the primary is ready', async () => {
+    const fanout = await installFanout(); fanout.state.ready = false;
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'start');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).phase).toBe('readiness'); expect((await service()).status).toBe('stopped');
+    expect(deps.route).not.toHaveBeenCalled(); expect(running).toBe(true);
+    expect(trace.filter(item => item.startsWith('readiness:'))).toHaveLength(3);
+  });
+
+  it('holds lost fan-out routing acknowledgement and rechecks every node on recovery', async () => {
+    const fanout = await installFanout(); let refuse = true;
+    deps.route = vi.fn(async (_service, _signal, serverId) => { if (serverId === 5 && refuse) throw Error('Fan-out routing unconfirmed'); });
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'start');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).phase).toBe('routing'); expect((await service()).status).toBe('deploying');
+    refuse = false; await vi.advanceTimersByTimeAsync(121_000);
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'completed' });
+    expect(fanout.state.readiness).toBe(6);
+    expect(fanout.requests.filter(request => request.targets.length)).toHaveLength(1);
+  });
+
+  it.each(['replace', 'remove', 'add'] as const)('supersedes a command when its accepted placement changes: %s', async change => {
+    await installFanout();
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    if (change === 'replace') await c.db.update(serviceTargets).set({ runtimeId: 'web-t5-10' }).where(eq(serviceTargets.id, 42));
+    if (change === 'remove') await c.db.delete(serviceTargets).where(eq(serviceTargets.id, 42));
+    if (change === 'add') {
+      await c.db.insert(servers).values({ id: 6, name: 'New node', host: 'new.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 6, runtimeId: 'web-t6-9' });
+    }
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'superseded' });
+    expect(trace).toEqual([]); expect(deps.route).not.toHaveBeenCalled();
+  });
+
+  it('holds an older primary-only journal when fan-out runtimes exist', async () => {
+    await installFanout();
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    await c.db.update(nodeLifecycleIntents).set({ snapshot: { ...intent.snapshot, fanout: undefined } }).where(eq(nodeLifecycleIntents.id, intent.id));
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).reason).toMatch(/no accepted fan-out placement/); expect(trace).toEqual([]);
+  });
+
+  it('retains unresolved fan-out generations instead of completing against only the serving row', async () => {
+    await installFanout();
+    await c.db.insert(fanoutTransitions).values({ serviceId: 1, serverId: 5, targetId: 42, deploymentId: 10, primaryRuntimeId: 'web-9',
+      previousRuntimeId: 'web-t5-7', candidateRuntimeId: 'web-t5-10', port: 3000 });
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).reason).toMatch(/generation recovery must settle/); expect(trace).toEqual([]);
+    expect(await c.db.select().from(fanoutTransitions)).toHaveLength(1);
+  });
+
+  it('prevents an old fan-out Start callback from publishing after a newer Stop', async () => {
+    const fanout = await installFanout(); const original = deps.agent; let nextId = 0;
+    deps.agent = async (...args) => {
+      const result = await original(...args);
+      if (args[0] === 5 && args[1] === 'docker.lifecycle' && args[2].action === 'start') {
+        nextId = (await acceptNodeLifecycleIntent(c.db, await service(), 'stop')).id;
+      }
+      return result;
+    };
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'start');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'superseded' });
+    expect(deps.route).not.toHaveBeenCalled(); expect(nextId).toBeGreaterThan(intent.id);
+    deps.agent = original;
+    expect(await finish(executeNodeLifecycleIntent(c.db, nextId, deps))).toEqual({ state: 'completed' });
+    expect(fanout.state.running).toBe(false); expect(running).toBe(false);
+    expect((await service()).status).toBe('stopped');
+  });
+});
+
+
+describe('fan-out lifecycle refusal boundaries', () => {
+  it('refuses an unsealed child before any container effect', async () => {
+    await installFanout(); deps.sealed = async id => id !== 5;
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).reason).toMatch(/#5.*unencrypted transport/); expect(trace).toEqual([]);
+  });
+  it('holds an unidentifiable target generation without effects', async () => {
+    await installFanout(); await c.db.update(serviceTargets).set({ runtimeId: 'legacy-runtime' });
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).reason).toMatch(/managed deployment identity/); expect(trace).toEqual([]);
+  });
+  it('includes idle configured placements in the snapshot without inventing a runtime', async () => {
+    const fanout = await installFanout(); await c.db.update(serviceTargets).set({ runtimeId: null, status: 'idle' });
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(intent.snapshot.fanout).toEqual([{ targetId: 42, serverId: 5, runtimeId: null }]);
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'completed' });
+    expect(fanout.requests).toEqual([]); expect(trace).toEqual(['fence', 'route:stopped', 'drain', 'effect:stop']);
+  });
+  it('rejects corrupt placement that duplicates the primary node before acceptance', async () => {
+    await installFanout(); await c.db.update(serviceTargets).set({ serverId: 4 });
+    await expect(acceptNodeLifecycleIntent(c.db, await service(), 'stop')).rejects.toThrow(/duplicates the primary/);
+    expect(await c.db.select().from(nodeLifecycleIntents)).toEqual([]); expect(trace).toEqual([]);
+  });
+  it('retains the command after a child returns an effect receipt for another generation', async () => {
+    await installFanout(); const original = deps.agent;
+    deps.agent = async (...args) => {
+      const result = await original(...args);
+      if (args[0] === 5 && args[1] === 'docker.lifecycle' && (args[2].targets as unknown[]).length) {
+        result.lines = result.lines.map(line => line.replace('"deploymentId":7', '"deploymentId":99'));
+      }
+      return result;
+    };
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).phase).toBe('applying'); expect((await stored()).reason).toMatch(/receipt identity/);
   });
 });

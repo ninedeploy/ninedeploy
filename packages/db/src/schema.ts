@@ -1855,6 +1855,8 @@ export interface NodeLifecycleSnapshot {
   serving: number;
   capacity: number;
   configuration: string;
+  /** Placement accepted with the command; absent only on older primary-only journals. */
+  fanout?: Array<{ targetId: number; serverId: number; runtimeId: string | null }>;
 }
 
 /** Accepted panel intent. ID-derived agent revisions survive retries and panel restarts. */
@@ -1868,7 +1870,7 @@ export const nodeLifecycleIntents = sqliteTable('node_lifecycle_intents', {
   requestId: text('request_id').notNull(),
   phase: text('phase', { enum: ['fencing', 'preparing', 'routing', 'applying', 'readiness', 'starting', 'warming', 'publishing', 'completed', 'superseded'] }).notNull(),
   snapshot: text('snapshot', { mode: 'json' }).$type<NodeLifecycleSnapshot>().notNull(),
-  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>(),
+  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string; serverId?: number }>>(),
   ownerToken: text('owner_token'),
   leaseUntil: integer('lease_until', { mode: 'timestamp' }),
   attempts: integer('attempts').notNull().default(0),

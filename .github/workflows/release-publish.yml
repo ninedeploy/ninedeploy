@@ -407,6 +407,10 @@ jobs:
         timeout-minutes: 10
         run: node scripts/smoke-node-lifecycle-controller.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
+      - name: Verify ordered lifecycle across two independent nodes
+        timeout-minutes: 10
+        run: node scripts/smoke-node-lifecycle-fanout.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+
       - name: Public node canary lifecycle smoke on the pushed image
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"

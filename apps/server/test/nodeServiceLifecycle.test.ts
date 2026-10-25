@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, users, servers, services, auditLog, nodeLifecycleIntents, eq } from '@ninedeploy/db';
+import { createDb, runMigrations, users, servers, services, auditLog, nodeLifecycleIntents, serviceTargets, eq } from '@ninedeploy/db';
 import { containerLifecycleRequest } from '@ninedeploy/schemas';
 import { asUser, buildTestApp } from './helpers.js';
 import { servicesRoutes } from '../src/modules/services.js';
@@ -57,6 +57,38 @@ async function finish<T>(promise: Promise<T>): Promise<T> {
 }
 
 describe('public ordered node lifecycle', () => {
+  it('completes a node Stop only after its fan-out node is stopped by immutable ordered effects', async () => {
+    running = true;
+    await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
+    await c.db.insert(servers).values({ id: 5, name: 'Fan-out node', host: 'fanout.test', tokenEncrypted: 'fixture' });
+    await c.db.insert(serviceTargets).values({ id: 42, serviceId: 1, serverId: 5, runtimeId: 'web-t42-9', status: 'running' });
+    const target = { id: 'c'.repeat(64), name: 'web-t42-9' };
+    let fanoutRunning = true;
+    const original = network.agentOp.getMockImplementation()!;
+    network.agentOp.mockImplementation(async (...args) => {
+      if (args[1] !== 5) return original(...args);
+      const op = args[2], params = args[3];
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'] })] };
+      if (op === 'docker.identity') return { exitCode: 0, lines: ['ND-CONTAINER ' + JSON.stringify(params.name === target.name || params.name === target.id ? { ...target, managed: 'service', serviceId: '1', deploymentId: '9' } : null)] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: [fanoutRunning ? 'running|172.23.0.2' : 'exited|'] };
+      if (op === 'docker.lifecycle') {
+        const request = containerLifecycleRequest.parse(params);
+        if (request.targets.length) { expect(request.action).toBe('stop'); expect(request.targets).toEqual([target]); fanoutRunning = false; }
+        return { exitCode: 0, lines: ['ND-LIFECYCLE ' + JSON.stringify({ ...request, timeoutMs: undefined, targets: undefined, complete: true, items: request.targets.map(item => ({ ...item, running: fanoutRunning })) })] };
+      }
+      throw Error('Fan-out Stop requires ordered immutable effects, not a legacy fallback: ' + op);
+    });
+    const instance = await app();
+    const response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    expect(response.statusCode).toBe(202);
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const result = await finish(reconcileNodeLifecycleIntents(c.db));
+    expect(result).toEqual([{ id: response.json().lifecycle.id, state: 'completed' }]);
+    expect(running).toBe(false);
+    expect(fanoutRunning, 'A completed service Stop must not leave a fan-out runtime running').toBe(false);
+    expect(network.agentOp.mock.calls.some(call => call[1] === 5 && call[2] === 'docker.lifecycle')).toBe(true);
+  });
+
   it.each(['start', 'stop', 'restart'] as const)('accepts %s durably without reporting a completed runtime effect', async action => {
     const instance = await app();
     const response = await instance.inject({ method: 'POST', url: `/1/${action}`, headers: asUser() });

@@ -32,6 +32,14 @@ fan-out outcome lines and per-target status. Published host ports prevent safe
 overlap, so routed fan-out with a published port is refused before retirement.
 Primary node canary has the separate eligibility requirements below; node autoscaling remains later R2 work. The 0.18.2 artifact increment also uses these guards for recorded-image fan-out promotion.
 
+### Ordered multi-node lifecycle (unreleased)
+
+For plain Docker services whose primary runs on a node, accepted Start, Stop and Restart commands record the primary and additional-node placements together. Every participating agent must support sealed `docker.lifecycle`, `docker.recovery`, `docker.readiness` and `proxy.routingAck`. Additional-node targets currently run one container each; the primary's replica count does not create extra target containers or routing backends.
+
+The worker captures immutable container IDs separately on each node and verifies that node's deployment generation. Start and Restart require three stable readiness samples for every serving target before publishing routing. Stop confirms routing removal on every participant and drains requests before stopping the captured IDs. A command is complete only after every required node acknowledges its effect and routing phase. An offline node, lost response or unsupported agent leaves it pending with a reason; retry preserves the original command and identities. A newer command or changed target membership/runtime invalidates an older continuation.
+
+An older primary-only journal cannot silently adopt existing fan-out targets: submit a new command to capture the full placement. An unresolved fan-out deployment/recovery transition holds lifecycle effects because it may own containers outside the serving row. Coordinating Stop with those unfinished generations, deploy/scale/wake ordering and local-primary fan-out remain separate R2 work; this increment does not certify those paths.
+
 ### Canary releases (0.16.9)
 
 With a canary configuration (**Service → Settings → Canary releases**, or `canary` on `PATCH /v1/services/:id`), step 4 happens in stages instead of all at once. After the new container passes its healthcheck:
