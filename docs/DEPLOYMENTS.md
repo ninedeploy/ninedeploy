@@ -40,6 +40,8 @@ The worker captures immutable container IDs separately on each node and verifies
 
 An older primary-only journal cannot silently adopt existing fan-out targets: submit a new command to capture the full placement. An unresolved fan-out deployment/recovery transition holds lifecycle effects because it may own containers outside the serving row. Coordinating Stop with those unfinished generations, deploy/scale/wake ordering and local-primary fan-out remain separate R2 work; this increment does not certify those paths.
 
+The development agent additionally advertises `docker.lifecycle.generations`. It accepts an explicit expected deployment label for every immutable target in a Stop batch, checks the entire batch before effects and verifies it again afterward. A fresh agent process can replay the same durable receipt. Explicit batches permit up to thirty targets; legacy batches remain limited to ten, and Start refuses explicit generation annotations. `NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE=off` disables both forms. This agent foundation does not remove the panel's unresolved-transition hold: builders must participate in the same ordering before that path can complete safely.
+
 ### Canary releases (0.16.9)
 
 With a canary configuration (**Service → Settings → Canary releases**, or `canary` on `PATCH /v1/services/:id`), step 4 happens in stages instead of all at once. After the new container passes its healthcheck:

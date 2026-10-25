@@ -445,3 +445,24 @@ describe('fan-out lifecycle refusal boundaries', () => {
     expect((await stored()).phase).toBe('applying'); expect((await stored()).reason).toMatch(/receipt identity/);
   });
 });
+
+
+it('refuses target generation annotations that were not present in the accepted request', async () => {
+  const original = deps.agent;
+  deps.agent = async (...args) => {
+    const result = await original(...args);
+    if (args[1] === 'docker.lifecycle' && (args[2].targets as unknown[]).length) {
+      result.lines = result.lines.map(line => {
+        const receipt = JSON.parse(line.slice(13));
+        receipt.items = receipt.items.map((item: Record<string, unknown>) => ({ ...item, deploymentId: 10 }));
+        return 'ND-LIFECYCLE ' + JSON.stringify(receipt);
+      });
+    }
+    return result;
+  };
+  const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+  expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+  expect((await stored()).reason).toMatch(/receipt identity/);
+  expect((await stored()).phase).toBe('applying');
+  expect((await service()).status).toBe('stopped');
+});

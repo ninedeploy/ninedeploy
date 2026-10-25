@@ -4,7 +4,7 @@ import type { AgentOpModule } from './index.js';
 
 /** Fixed managed-container effects; readiness and route publication are separate phases. */
 export const containerLifecycleOps: AgentOpModule = {
-  name: 'containerLifecycle', caps: ['docker.lifecycle'],
+  name: 'containerLifecycle', caps: ['docker.lifecycle', 'docker.lifecycle.generations'],
   ops: {
     'docker.lifecycle': {
       cap: 'docker.lifecycle', sealedOnly: true,

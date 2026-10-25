@@ -74,8 +74,10 @@ export async function runLegacyNodeLifecycle(root: string, action: 'start' | 'st
             const head = database.prepare('SELECT intent FROM lifecycle_head WHERE id=1').get();
             if (head) {
               const intent: unknown = JSON.parse(String(head.intent));
-              if (!intent || typeof intent !== 'object' || !('deploymentId' in intent) || typeof intent.deploymentId !== 'number' ||
-                action === 'start' || String(intent.deploymentId) === target.deploymentId || typeof target.deploymentId !== 'string' || !/^[1-9]\d*$/.test(target.deploymentId)) {
+              const recorded = intent && typeof intent === 'object' ? containerLifecycleRequest.safeParse({ ...intent, timeoutMs: 1 }) : null;
+              if (!recorded?.success || action === 'start' || String(recorded.data.deploymentId) === target.deploymentId ||
+                recorded.data.targets.some(item => String(item.deploymentId) === target.deploymentId) ||
+                typeof target.deploymentId !== 'string' || !/^[1-9]\d*$/.test(target.deploymentId)) {
                 throw new Error('Legacy Docker lifecycle is fenced by ordered lifecycle; update the panel to use docker.lifecycle');
               }
             }
@@ -188,7 +190,7 @@ async function applyDocker(input: ContainerLifecycleRequest, remaining: () => nu
     if (invalid || code !== 0 || rows.length !== input.targets.length || new Set(rows.map(row => row.id)).size !== input.targets.length) throw new Error('Node lifecycle identity inspection unavailable');
     for (const target of input.targets) {
       const row = rows.find(row => row.id === target.id);
-      if (!row || row.name !== target.name && row.name !== `/${target.name}` || row.managed !== 'service' || row.serviceId !== String(input.serviceId) || row.deploymentId !== String(input.deploymentId)) throw new Error('Node lifecycle identity or generation changed');
+      if (!row || row.name !== target.name && row.name !== `/${target.name}` || row.managed !== 'service' || row.serviceId !== String(input.serviceId) || row.deploymentId !== String(target.deploymentId ?? input.deploymentId)) throw new Error('Node lifecycle identity or generation changed');
       if (typeof row.running !== 'boolean' || !['running', 'created', 'exited', 'dead', 'paused', 'restarting'].includes(String(row.status))) throw new Error('Node lifecycle state unavailable');
     }
     return rows;

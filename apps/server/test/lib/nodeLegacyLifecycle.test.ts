@@ -117,3 +117,12 @@ describe('legacy node lifecycle compatibility barrier', () => {
     expect(effects).toEqual([['start', target.id]]);
   });
 });
+
+
+it('fences every adopted generation from legacy Stop, including a target outside the root generation', async () => {
+  // The captured container is generation 9, while the batch root identifies generation 10.
+  await createNodeLifecycle(root).apply({ ...fence(4, 10), targets: [{ ...target, deploymentId: 9 }] });
+  effects = [];
+  await expect(runLegacyNodeLifecycle(root, 'stop', target.id, 5, () => undefined)).rejects.toThrow(/legacy.*fenced|ordered lifecycle/i);
+  expect(effects).toEqual([]);
+});

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Agent capability `docker.lifecycle.generations` for one durable Stop across retained deployment generations. Each immutable target carries its own expected deployment label; Start keeps its single-generation contract. Explicit Stop batches are bounded at thirty targets, while existing requests retain their ten-target limit. The existing lifecycle owner switch disables both capabilities. Panel coordination for unresolved transitions remains R2 work.
+
 ### Fixed
 
 - Bind ordered Start, Stop and Restart commands to the accepted primary and additional-node placements. Capture immutable container IDs per node, verify each node's generation and lifecycle receipt, require all serving targets to pass readiness, and confirm routing on every participant before completion. Offline nodes and uncertain receipts keep the original command pending; newer commands and changed placements supersede stale continuations.

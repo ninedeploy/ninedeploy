@@ -210,3 +210,48 @@ describe('durable node lifecycle ordering', () => {
     expect(effects()).toEqual([['start', target.id], ['stop', '-t', '5', target.id]]);
   });
 });
+
+
+describe('ordered Stop across retained deployment generations', () => {
+  it('stops both immutable generations under one service revision and replays the same durable receipt', async () => {
+    const old = { ...target, deploymentId: 9 };
+    const candidate = { id: 'b'.repeat(64), name: 'web-10', deploymentId: 10 };
+    const rows = [old, candidate].map(item => ({ ...item, name: '/' + item.name, deploymentId: String(item.deploymentId),
+      managed: 'service', serviceId: '7', status: 'running', running: true }));
+    io.spawn.mockImplementation(async (_bin, args, sink) => {
+      if (args[0] === 'inspect') for (const item of rows) sink(JSON.stringify(item));
+      else for (const item of rows) { item.running = false; item.status = 'exited'; }
+      return 0;
+    });
+    const input = request(3, 'stop', { targets: [old, candidate] });
+    const first = await createNodeLifecycle(root).apply(input);
+    expect(first).toMatchObject({ revision: 3, action: 'stop', complete: true,
+      items: [{ ...old, running: false }, { ...candidate, running: false }] });
+    expect(rows.every(item => !item.running)).toBe(true);
+    expect(effects()).toEqual([['stop', '-t', '5', old.id, candidate.id]]);
+    io.spawn.mockClear();
+    expect(await createNodeLifecycle(root).apply(input)).toEqual(first);
+    expect(io.spawn).not.toHaveBeenCalled();
+    await expect(createNodeLifecycle(root).apply(request(2))).rejects.toThrow(/stale|superseded/);
+  });
+});
+
+
+describe('retained generation identity boundaries', () => {
+  it.each(['before', 'after'] as const)('refuses a foreign generation observed %s the mixed Stop', async stage => {
+    const candidate = { id: 'b'.repeat(64), name: 'web-10', deploymentId: 10 };
+    const rows = [{ ...target, deploymentId: 9 }, candidate].map(item => ({ ...item, managed: 'service', serviceId: '7',
+      deploymentId: String(item.deploymentId), running: true, status: 'running' }));
+    let inspected = 0;
+    io.spawn.mockImplementation(async (_bin, args, sink) => {
+      if (args[0] === 'inspect') {
+        inspected++;
+        for (const item of rows) sink(JSON.stringify(item.id === candidate.id && (stage === 'before' || inspected > 1) ? { ...item, deploymentId: '11' } : item));
+      } else for (const item of rows) { item.running = false; item.status = 'exited'; }
+      return 0;
+    });
+    await expect(createNodeLifecycle(root).apply(request(3, 'stop', { targets: [{ ...target, deploymentId: 9 }, candidate] }))).rejects.toThrow(/identity|generation/);
+    expect(effects()).toEqual(stage === 'before' ? [] : [['stop', '-t', '5', target.id, candidate.id]]);
+    await expect(createNodeLifecycle(root).apply(request(2))).rejects.toThrow(/stale|superseded/);
+  });
+});

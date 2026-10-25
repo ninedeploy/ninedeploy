@@ -25,3 +25,38 @@ describe('fenced container lifecycle protocol', () => {
     expect(containerLifecycleRequest.safeParse({ ...input, ...changed }).success).toBe(false);
   });
 });
+
+
+describe('explicit generation Stop batches', () => {
+  const old = { ...target, deploymentId: 9 };
+  const candidate = { id: 'c'.repeat(64), name: 'web-10', deploymentId: 10 };
+  const stop = { ...input, action: 'stop', targets: [old, candidate] };
+  const receipt = { requestId: input.requestId, serviceId: 7, deploymentId: 9, revision: 12, action: 'stop', complete: true,
+    items: [old, candidate].map(item => ({ ...item, running: false })) };
+  it('binds every target and receipt to its own deployment without widening Start', () => {
+    expect(containerLifecycleRequest.parse(stop)).toEqual(stop);
+    expect(containerLifecycleReply.parse(receipt)).toEqual(receipt);
+    expect(containerLifecycleRequest.safeParse({ ...stop, action: 'start' }).success).toBe(false);
+    expect(containerLifecycleReply.safeParse({ ...receipt, action: 'start' }).success).toBe(false);
+  });
+  it('keeps the legacy limit while bounding explicit Stop batches at thirty immutable targets', () => {
+    const batch = Array.from({ length: 30 }, (_, n) => ({ id: (n + 1).toString(16).padStart(64, '0'), name: 'web-' + (n + 1), deploymentId: n + 1 }));
+    expect(containerLifecycleRequest.parse({ ...stop, targets: batch }).targets).toHaveLength(30);
+    expect(containerLifecycleReply.parse({ ...receipt, items: batch.map(item => ({ ...item, running: false })) }).items).toHaveLength(30);
+    const tooMany = [...batch, { id: 'f'.repeat(64), name: 'overflow', deploymentId: 31 }];
+    expect(containerLifecycleRequest.safeParse({ ...stop, targets: tooMany }).success).toBe(false);
+    expect(containerLifecycleReply.safeParse({ ...receipt, items: tooMany.map(item => ({ ...item, running: false })) }).success).toBe(false);
+    const legacy = batch.slice(0, 11).map(({ id, name }) => ({ id, name }));
+    expect(containerLifecycleRequest.safeParse({ ...stop, targets: legacy }).success).toBe(false);
+    expect(containerLifecycleReply.safeParse({ ...receipt, items: legacy.map(item => ({ ...item, running: false })) }).success).toBe(false);
+  });
+  it('refuses partial generation annotation and duplicate identities across generations', () => {
+    expect(containerLifecycleRequest.safeParse({ ...stop, targets: [old, { ...candidate, deploymentId: undefined }] }).success).toBe(false);
+    expect(containerLifecycleReply.safeParse({ ...receipt, items: [{ ...old, running: false }, { ...target, running: false }] }).success).toBe(false);
+    expect(containerLifecycleRequest.safeParse({ ...stop, targets: [old, { ...candidate, id: old.id }] }).success).toBe(false);
+  });
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '10'])('refuses an invalid target generation: %s', deploymentId => {
+    expect(containerLifecycleRequest.safeParse({ ...stop, targets: [{ ...candidate, deploymentId }] }).success).toBe(false);
+    expect(containerLifecycleReply.safeParse({ ...receipt, items: [{ ...candidate, deploymentId, running: false }] }).success).toBe(false);
+  });
+});

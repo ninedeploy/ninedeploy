@@ -35,6 +35,7 @@
     "smoke:container-readiness": "node scripts/smoke-container-readiness.mjs",
     "smoke:container-metrics": "node scripts/smoke-container-metrics.mjs",
     "smoke:container-lifecycle": "node scripts/smoke-container-lifecycle.mjs",
+    "smoke:container-generation-stop": "node scripts/smoke-container-generation-stop.mjs",
     "smoke:node-lifecycle": "node scripts/smoke-node-lifecycle-controller.mjs",
     "smoke:node-lifecycle-fanout": "node scripts/smoke-node-lifecycle-fanout.mjs",
     "smoke:node-canary": "node scripts/smoke-node-canary.mjs",

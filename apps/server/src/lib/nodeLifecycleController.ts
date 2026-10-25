@@ -98,7 +98,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     if (reply.requestId !== request.requestId || reply.serviceId !== request.serviceId || reply.deploymentId !== request.deploymentId ||
       reply.revision !== request.revision || reply.action !== request.action || reply.items.length !== request.targets.length ||
       new Set(reply.items.map(item => item.id)).size !== request.targets.length || request.targets.some(target =>
-        !reply.items.some(item => item.id === target.id && item.name === target.name && item.running === (request.action === 'start')))) {
+        !reply.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId && item.running === (request.action === 'start')))) {
       throw new Error('Node lifecycle receipt identity, revision or coverage changed');
     }
   };
