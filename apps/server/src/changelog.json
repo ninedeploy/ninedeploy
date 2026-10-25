@@ -1,9 +1,10 @@
 [
   {
-    "version": "0.18.1",
+    "version": "0.18.2",
     "date": "2026-10-25",
     "title": "Measured node canaries and recoverable operations",
     "changes": [
+      "Allow bounded agent control traffic for readiness and measured canaries while retaining a separate 120/minute rejection budget, including concurrent invalid requests.",
       "Close encrypted node volume and database backup writers before cleaning failed partial files, including integrity failures while the output file is still opening.",
       "Add single-replica node canary with explicit HTTP readiness, owner-enabled sealed traffic observations and loaded HTTP/TLS routing acknowledgement. Validate support before candidate launch; keep cancellation, Stop and crash recovery authoritative.",
       "Node promotion completes the current measured step before skipping the remaining steps. Panel controls expose actual node requirements and keep Abort usable while promotion waits.",
@@ -14,7 +15,7 @@
       "Batch node readiness by immutable identity, preserve consecutive samples and recheck health/restarts. Handle images without Docker HEALTHCHECK and keep negotiated older-agent behavior without protocol downgrade.",
       "Include additive migrations 0096–0100. Update panel and agents together for routed node recovery and explicitly opt in to node proxy traffic observations for node canary.",
       "Gate publication on public API/worker canary lifecycle, upgrade and user-journey smokes against the pushed version image.",
-      "Wait for completed primary-node retirement before changing readiness in release acceptance. Supersede the unpublished 0.18.0 candidate while preserving runtime safety guards."
+      "Wait for completed primary-node retirement before changing readiness in release acceptance. Supersede the unpublished 0.18.0 and 0.18.1 candidates while preserving runtime safety guards."
     ]
   },
   {
