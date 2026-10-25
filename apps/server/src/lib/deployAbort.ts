@@ -21,7 +21,28 @@ interface DeployScope {
   aborted: boolean;
   /** Running children and how each must be killed (exec.ts kills the process group). */
   children: Map<ChildProcess, Kill>;
+  /** Fires on abort: cuts an in-flight agent request, which the agent answers by killing the op. */
+  controller: AbortController;
 }
+
+/**
+ * Node ops a cancel may cut mid-way. The agent kills their child when the
+ * panel's request goes away (agent.ts `/agent/exec`); everything else — the
+ * container lifecycle, file writes, compose bring-up — runs to completion so
+ * a half-applied state change never outlives the request that made it.
+ */
+export const CANCELLABLE_AGENT_OPS: ReadonlySet<string> = new Set([
+  'docker.build',
+  'build.nixpacks',
+  'build.railpack',
+  'docker.pull',
+  'docker.composePull',
+  'docker.push',
+  'git.fetch',
+]);
+
+/** Advertised in `agent.ping` by an agent that kills a {@link CANCELLABLE_AGENT_OPS} op whose request was dropped. */
+export const AGENT_CAP_OP_CANCEL = 'op.cancel';
 
 type Kill = (child: ChildProcess, signal: NodeJS.Signals) => void;
 
@@ -32,7 +53,7 @@ const scopes = new Map<number, DeployScope>();
 const ABORT_KILL_GRACE_MS = 5_000;
 
 export function runInDeployScope<T>(deploymentId: number, fn: () => Promise<T>): Promise<T> {
-  const scope: DeployScope = { deploymentId, aborted: false, children: new Map() };
+  const scope: DeployScope = { deploymentId, aborted: false, children: new Map(), controller: new AbortController() };
   scopes.set(deploymentId, scope);
   return storage.run(scope, fn).finally(() => {
     if (scopes.get(deploymentId) === scope) scopes.delete(deploymentId);
@@ -42,6 +63,16 @@ export function runInDeployScope<T>(deploymentId: number, fn: () => Promise<T>):
 /** True once the running deploy this code belongs to was cancelled. */
 export function deployAborted(): boolean {
   return storage.getStore()?.aborted === true;
+}
+
+/**
+ * The running deploy's abort signal, for a request it starts now — undefined
+ * outside a deploy and once it was aborted (the failure path's own requests
+ * must not be cut, like children started after the abort).
+ */
+export function deployAbortSignal(): AbortSignal | undefined {
+  const scope = storage.getStore();
+  return scope && !scope.aborted ? scope.controller.signal : undefined;
 }
 
 /**
@@ -78,5 +109,6 @@ export function abortDeployment(deploymentId: number): boolean {
     t.unref();
   }
   scope.children.clear();
+  scope.controller.abort(new Error('Deployment cancelled'));
   return true;
 }

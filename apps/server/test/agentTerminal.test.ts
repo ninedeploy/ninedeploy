@@ -263,11 +263,12 @@ describe('terminal.open', () => {
     const { AGENT_OPT_IN } = await import('../src/agentOps/index.js');
     const added = agent.AGENT_CAPABILITIES.slice(agent.AGENT_CAPABILITIES_015.length).filter((c) => !Object.hasOwn(AGENT_OPT_IN, c));
     expect(added.length).toBe(agent.AGENT_CAPABILITIES.length - agent.AGENT_CAPABILITIES_015.length - Object.keys(AGENT_OPT_IN).length);
-    expect([...parseAgentCapabilities(ping.lines).caps]).toEqual([...agent.AGENT_CAPABILITIES_015, ...added]);
+    expect([...parseAgentCapabilities(ping.lines).caps]).toEqual([...agent.AGENT_CAPABILITIES_015, ...added, 'op.cancel']);
     expect([...parseAgentCapabilities((await sealedOp('agent.ping', {})).lines).caps]).toEqual([
       ...agent.AGENT_CAPABILITIES_015,
       'terminal.host',
       ...added,
+      'op.cancel',
     ]);
   });
 

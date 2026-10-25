@@ -10,6 +10,7 @@ import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '
 import { GithubAppError } from '../src/lib/githubApp.js';
 import { githubAppCloneHint } from '../src/lib/sourceCreds.js';
 import { ProxyRoutingUnconfirmed } from '../src/lib/proxyRoutingAck.js';
+import { abortDeployment } from '../src/lib/deployAbort.js';
 
 const h = vi.hoisted(() => {
   // Loose `...args: any[]` signatures: individual tests install impls with
@@ -2451,6 +2452,40 @@ describe('runDeployment on a remote-server target', () => {
     for (const call of h.agentOp.mock.calls) {
       expect((call as unknown[])[1]).toBe(4);
     }
+  });
+
+  it('a cancel cuts a running node pull when the agent advertises op.cancel', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4 });
+    collectLogs(1);
+    let pullSignal: AbortSignal | undefined;
+    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, _params: unknown, _sink: unknown, options?: { signal?: AbortSignal }) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '9.9.9', caps: ['build-path-guard', 'op.cancel'] })}`] };
+      if (op === 'docker.pull') {
+        pullSignal = options?.signal;
+        if (!pullSignal) return { exitCode: 0, lines: [] };
+        abortDeployment(1);
+        pullSignal.throwIfAborted();
+      }
+      return op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] };
+    });
+
+    await runDeployment(db as never, 1);
+
+    expect(pullSignal?.aborted).toBe(true);
+    expect(h.agentOp.mock.calls.map((c) => (c as unknown[])[2])).not.toContain('docker.runEnv');
+  });
+
+  it('an agent without op.cancel keeps the uncut pull', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4 });
+    collectLogs(1);
+    agentAnswersRunning();
+
+    await runDeployment(db as never, 1);
+
+    const pull = h.agentOp.mock.calls.find((c) => (c as unknown[])[2] === 'docker.pull') as unknown[];
+    expect((pull[5] as { signal?: AbortSignal } | undefined)?.signal).toBeUndefined();
   });
 
   it('deletes the env file from the node after the container has taken it', async () => {

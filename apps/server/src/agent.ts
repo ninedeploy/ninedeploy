@@ -27,6 +27,7 @@ import { closeAllStreamChannels, startTransferSweep } from './agentOps/stream.js
 import { agentChildTimeoutMs, tokenMatches } from './lib/agentClient.js';
 import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
 import { spawnValidated } from './lib/spawnValidated.js';
+import { abortDeployment, AGENT_CAP_OP_CANCEL, CANCELLABLE_AGENT_OPS, runInDeployScope } from './lib/deployAbort.js';
 import { runLegacyNodeLifecycle } from './lib/nodeLifecycle.js';
 
 /**
@@ -124,6 +125,8 @@ export function agentCapabilities(env: NodeJS.ProcessEnv = process.env): string[
     ...AGENT_CAPABILITIES_015,
     ...(nodeHostTerminalForbidden(env) ? [] : [AGENT_CAP_TERMINAL_HOST]),
     ...advertisedCapabilities(env),
+    // Not an op: the /agent/exec route kills a cancellable op whose request was dropped.
+    AGENT_CAP_OP_CANCEL,
   ];
 }
 
@@ -1619,6 +1622,8 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
   const nonceFile = opts.nonceFile;
   if (nonceFile !== undefined) loadSeenNonces(nonceFile, seenNonces);
   let appendedSinceCompact = 0;
+  /** Scope keys of cancellable ops (negative: never a panel deployment id). */
+  let cancellableOpSeq = 0;
 
   app.post('/agent/exec', { bodyLimit: 2 * 1024 * 1024, config: { rateLimit: { max: 1000, timeWindow: '1 minute' } } }, async (req, reply) => {
     const raw = (req.body ?? {}) as { sealed?: unknown; op?: unknown; params?: unknown };
@@ -1720,7 +1725,24 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
     let envFile: string | null = null;
     try {
       // 0.13 (T5): a Git credential is accepted only from a sealed request.
-      exitCode = await runOp(op, params, collect, { sealed: sealedRequest });
+      const execute = () => runOp(op, params, collect, { sealed: sealedRequest });
+      if (CANCELLABLE_AGENT_OPS.has(op)) {
+        // A cancelled deploy drops its request: kill the build (or pull, or
+        // fetch) instead of letting it run on in the service's workspace
+        // while the panel already starts the next deploy there.
+        const key = -(++cancellableOpSeq);
+        const onClose = () => {
+          if (!reply.raw.writableFinished) abortDeployment(key);
+        };
+        reply.raw.once('close', onClose);
+        try {
+          exitCode = await runInDeployScope(key, execute);
+        } finally {
+          reply.raw.off('close', onClose);
+        }
+      } else {
+        exitCode = await execute();
+      }
       if (dropped + droppedEarlier > 0) {
         lines.splice(0, dropped, `… ${dropped + droppedEarlier} earlier output line(s) omitted by the agent`);
       }

@@ -131,7 +131,7 @@ describe('a 0.15 panel talking to this agent sees no behaviour change (§1.7)', 
   it("the ping's capabilities start with the exact 0.15 answer; /agent/ping keys are unchanged", async () => {
     const caps = [...parseAgentCapabilities((await sealedOp('agent.ping', {})).lines).caps];
     expect(caps.slice(0, 5)).toEqual(CAPS_015_PING);
-    expect(caps.slice(5)).toEqual(registry.advertisedCapabilities());
+    expect(caps.slice(5)).toEqual([...registry.advertisedCapabilities(), 'op.cancel']);
     const res = await app.inject({ method: 'GET', url: '/agent/ping' });
     expect(Object.keys(res.json())).toEqual(['ok', 'agent', 'sealed', 'version']);
   });

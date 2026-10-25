@@ -5,6 +5,7 @@ import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
 import { AGENT_CAPABILITY_VERSION, assertAgentGuardsBuildPaths, capabilityRefusalFor, parseAgentCapabilities } from '../../lib/agentCapabilities.js';
+import { deployAborted } from '../../lib/deployAbort.js';
 import type { NodeGitCredentialSource } from '../../lib/nodeGitCredential.js';
 import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
@@ -600,7 +601,7 @@ export function createRemoteDockerBuilder(
       let stable = 0;
       let baselineRestarts: number | undefined;
       let lastRestarts: number | undefined;
-      while (Date.now() < deadline) {
+      while (Date.now() < deadline && !deployAborted()) {
         try {
           const res = await healthCall(
             'docker.inspect',

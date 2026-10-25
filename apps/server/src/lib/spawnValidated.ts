@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 import { armTimeout, killTree, makeLineSplitter } from './exec.js';
+import { trackDeployChild } from './deployAbort.js';
 
 /**
  * Default cap for an op's child. The master's request to this agent dies at
@@ -112,6 +113,8 @@ export function spawnValidated(
   };
   if (opts.cwd) spawnOpts.cwd = opts.cwd;
   const child: ChildProcess = spawn(BINARIES[executable], argv, spawnOpts);
+  // An agent op whose panel request was dropped is killed (see agent.ts).
+  trackDeployChild(child, killTree);
   if (opts.stdin !== undefined) {
     child.stdin?.end(opts.stdin);
   }

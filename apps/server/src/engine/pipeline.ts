@@ -20,7 +20,7 @@ import { extractSourceUpload, isUploadSourced, UPLOAD_SOURCE_PANEL_BUILD } from 
 import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp } from '../lib/agentClient.js';
-import { nodeLabel } from '../lib/agentCapabilities.js';
+import { nodeLabel, parseAgentCapabilities } from '../lib/agentCapabilities.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
 import { deployToTargets, type FanoutContext, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
 import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
@@ -57,7 +57,7 @@ import { dockerBuilder, railpackUnavailableReason } from './builders/docker.js';
 import { composeBuilder } from './builders/compose.js';
 import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
-import { deployAborted, outsideDeployScope, runInDeployScope } from '../lib/deployAbort.js';
+import { AGENT_CAP_OP_CANCEL, CANCELLABLE_AGENT_OPS, deployAbortSignal, deployAborted, outsideDeployScope, runInDeployScope } from '../lib/deployAbort.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
 import { beginPrimaryTransition, primaryRecoveryPending, PrimaryIdentityUnconfirmed, PrimaryRecoveryOwnershipLost, PrimaryRecoveryPending, type PrimaryRecoveryLease } from './primaryRecovery.js';
@@ -979,8 +979,19 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
       await auditOutcome(db, service, deploymentId, 'failed', serviceRefusal);
       return;
     }
-    const call =(op: string, params: Record<string, unknown>, sink: (line: string) => void, options?: { timeoutMs?: number; signal?: AbortSignal }) =>
-      agentOp(db, serverId, op, params, sink, options);
+    // A cancel cuts a build/pull/fetch on the node only when its agent kills
+    // the op with the dropped request; an older agent would build on in the
+    // workspace the next deploy is about to use, so it keeps the old wait.
+    let opCancel: Promise<boolean> | undefined;
+    const call = async (op: string, params: Record<string, unknown>, sink: (line: string) => void, options?: { timeoutMs?: number; signal?: AbortSignal }) => {
+      const abort = CANCELLABLE_AGENT_OPS.has(op) && !options?.signal ? deployAbortSignal() : undefined;
+      if (abort) {
+        opCancel ??= agentOp(db, serverId, 'agent.ping', {}, () => undefined)
+          .then((r) => parseAgentCapabilities(r.lines).caps.has(AGENT_CAP_OP_CANCEL), () => false);
+        if (await opCancel) return agentOp(db, serverId, op, params, sink, { ...options, signal: abort });
+      }
+      return agentOp(db, serverId, op, params, sink, options);
+    };
     // r660: the node's name goes into the "update this agent" refusal.
     const label = await nodeLabel(db, serverId);
     // 0.13 (T5): a GitHub App repository is checked out on the node with a

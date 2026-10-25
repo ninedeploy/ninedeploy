@@ -7,6 +7,7 @@ import { composeScalar, parseComposePs } from './compose.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
+import { deployAborted } from '../../lib/deployAbort.js';
 import type { NodeGitCredentialSource } from '../../lib/nodeGitCredential.js';
 // ── 0.16 T5 volume pre-create (D9) ──
 import { precreateComposeVolumes } from '../../lib/remoteVolumes.js';
@@ -389,7 +390,7 @@ export function createRemoteComposeBuilder(
     ): Promise<boolean> {
       const deadline = Date.now() + timeoutMs;
       let baselineRestarts: number | undefined;
-      while (Date.now() < deadline) {
+      while (Date.now() < deadline && !deployAborted()) {
         try {
           const res = await agent(
             'docker.inspect',
