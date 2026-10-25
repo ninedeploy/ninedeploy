@@ -33,7 +33,9 @@ vi.mock('node:fs', async (importOriginal) => {
 
 /** The docker facade the scan reads. */
 const host = {
-  containers: [] as Array<{ Names: string; State: string; Image: string }>,
+  containers: [] as Array<{ Names: string; State: string; Image: string; Labels?: string }>,
+  /** Names only the fix's fresh `containerRunning` probe sees (a container that came back mid-fix). */
+  cameBack: [] as string[],
   volumeLs: '',
   networks: 'ninedeploy\n',
   networkMembers: {} as Record<string, string>,
@@ -46,6 +48,7 @@ beforeEach(() => {
   cfg.host = '127.0.0.1';
   fsState.dockerenv = false;
   host.containers = [];
+  host.cameBack = [];
   host.volumeLs = '';
   host.networks = 'ninedeploy\n';
   host.networkMembers = {};
@@ -63,6 +66,7 @@ beforeEach(() => {
       // matching name only; the plain `ps -a --format` dump is JSON lines.
       if (a.includes('-q')) {
         const filter = (a.find((x) => x.startsWith('name=^')) ?? '').slice('name=^'.length).replace(/\$$/, '');
+        if (host.cameBack.includes(filter)) return `id-${filter}`;
         return host.containers.filter((c) => c.Names === filter).map((c) => `id-${c.Names}`).join('\n');
       }
       return host.containers.map((c) => JSON.stringify(c)).join('\n');
@@ -73,6 +77,11 @@ beforeEach(() => {
     if (a[0] === 'network' && a[1] === 'ls') return host.networks;
     if (a[0] === 'network' && a[1] === 'inspect') return host.networkMembers[String(a[2])] ?? '';
     if (a[0] === 'images') return host.images;
+    if (a[0] === 'inspect' && a.includes('{{.State.Status}}')) {
+      const c = host.containers.find((x) => x.Names === a[1]);
+      if (!c) throw new Error(`No such object: ${a[1]}`);
+      return c.State;
+    }
     if (a[0] === 'system') return host.df;
     if (a[0] === 'run') return '1048576 /v'; // du sidecar for orphan volume sizing
     return '';
@@ -260,6 +269,53 @@ describe('doctor fix', () => {
     expect(updates).toContainEqual(expect.objectContaining({ status: 'error' }));
   });
 
+  it('starts a stopped runtime instead of marking the service errored', async () => {
+    // A host-port deploy stopped the previous generation and nothing started it again.
+    host.containers = [{ Names: 'nd-web-1', State: 'exited', Image: 'nginx' }];
+    ex.run.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'start') host.cameBack = [String(args[1])];
+    });
+    const updates: Array<Record<string, unknown>> = [];
+    const db = createFakeDb({
+      select: { services: [svcRow()] },
+      update: { services: (value) => { updates.push(value); return [value]; } },
+    });
+    const report = await scanDoctor(db);
+    expect(report.findings.map((f) => f.kind)).toContain('service_runtime_stopped');
+    expect(report.findings.map((f) => f.kind)).not.toContain('service_runtime_desync');
+    const res = await fixDoctorFinding(db, 'service_runtime_stopped:1', vi.fn());
+    expect(res?.action).toBe('start_service_runtime');
+    expect(ex.run).toHaveBeenCalledWith('docker', ['start', 'nd-web-1'], {}, expect.any(Function));
+    expect(updates).toEqual([]);
+  });
+
+  it('removes a running candidate a failed deploy left behind, and re-validates first', async () => {
+    host.containers = [
+      { Names: 'web-11', State: 'running', Image: 'web:sha', Labels: 'ninedeploy.managed=service,ninedeploy.deployment=11,ninedeploy.service=1' },
+    ];
+    const db = createFakeDb({ select: { services: [svcRow()], deployments: [{ id: 11, status: 'failed', createdAt: new Date() }] } });
+    const res = await fixDoctorFinding(db, 'deploy_leftover_container:web-11', vi.fn());
+    expect(res?.action).toBe('remove_deploy_leftover');
+    expect(ex.run).toHaveBeenCalledWith('docker', ['rm', '-f', 'web-11'], {}, expect.any(Function));
+    // The same container while its deploy is still building is not a leftover.
+    vi.clearAllMocks();
+    const busy = createFakeDb({ select: { services: [svcRow()], deployments: [{ id: 11, status: 'building', createdAt: new Date() }] } });
+    await expect(fixDoctorFinding(busy, 'deploy_leftover_container:web-11', vi.fn())).resolves.toBeNull();
+    expect(ex.run).not.toHaveBeenCalled();
+  });
+
+  it('switches a UDP-only service to the running readiness check', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    host.containers = [{ Names: 'nd-web-1', State: 'running', Image: 'pbx' }];
+    const db = createFakeDb({
+      select: { services: [svcRow({ port: 5060, portMappings: [{ hostPort: 5060, containerPort: 5060, protocol: 'udp' }] })] },
+      update: { services: (value) => { updates.push(value); return [value]; } },
+    });
+    const res = await fixDoctorFinding(db, 'healthcheck_unpassable:1', vi.fn());
+    expect(res?.action).toBe('set_healthcheck_running');
+    expect(updates).toEqual([{ healthCheck: 'running' }]);
+  });
+
   it('cancels a stuck queued deploy', async () => {
     const updates: Array<Record<string, unknown>> = [];
     const db = createFakeDb({
@@ -283,10 +339,10 @@ describe('doctor fix', () => {
   });
 
   it('answers 409 (not 500) when the container came back up mid-fix — the state moved on', async () => {
-    // The scan lists the container as exited (desync finding exists), but by
-    // the time the fix's fresh `containerRunning` probe looks, it is up again —
-    // exactly the race the guard exists for.
-    host.containers = [{ Names: 'nd-web-1', State: 'exited', Image: 'nginx' }];
+    // The scan finds no container (desync finding exists), but by the time the
+    // fix's fresh `containerRunning` probe looks, it is up again — exactly the
+    // race the guard exists for. (An exited one is service_runtime_stopped.)
+    host.cameBack = ['nd-web-1'];
     const db = createFakeDb({ select: { services: [svcRow()] } });
     const err = await fixDoctorFinding(db, 'service_runtime_desync:1', vi.fn()).catch((e: unknown) => e);
     expect((err as { statusCode?: number }).statusCode).toBe(409);
@@ -347,7 +403,7 @@ describe('doctor routes', () => {
   });
 
   it('surfaces state-moved-on refusals as 409 with the reason, not a 500', async () => {
-    host.containers = [{ Names: 'nd-web-1', State: 'exited', Image: 'nginx' }];
+    host.cameBack = ['nd-web-1'];
     const app = await buildTestApp({ db: createFakeDb({ select: { services: [svcRow()] } }) });
     await app.register(doctorRoutes);
     const res = await app.inject({ method: 'POST', url: '/fix', headers: asUser(), payload: { findingId: 'service_runtime_desync:1' } });

@@ -27,7 +27,8 @@ const SEVERITY_TONE: Record<DoctorFinding['severity'], 'rose' | 'amber' | 'sky'>
 
 /** Destructive repairs confirm; self-healing or advisory-safe ones run directly. */
 function needsConfirm(finding: DoctorFinding): boolean {
-  return finding.action === 'delete_volume' || finding.action === 'remove_container' || finding.action === 'remove_network';
+  return finding.action === 'delete_volume' || finding.action === 'remove_container' || finding.action === 'remove_network'
+    || finding.action === 'remove_deploy_leftover' || finding.action === 'set_healthcheck_running';
 }
 
 export function Doctor() {

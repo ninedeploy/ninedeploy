@@ -1,10 +1,13 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 import type { DB } from '@ninedeploy/db';
 import {
   databases,
   deployments,
+  domains,
   installedPlugins,
+  primaryTransitions,
+  swarmTransitions,
   oidcProviders,
   projects,
   repoInsights,
@@ -35,6 +38,10 @@ import { config } from '../config.js';
 import { SandboxPlugin } from '../kernel/sandbox/sandboxPlugin.js';
 import { storedInsightsLeakSuspected } from './repoInsights.js';
 import { swarmRuntimeOf } from '../lib/swarm.js';
+import { abortDeployment } from '../lib/deployAbort.js';
+import { listHostAddresses } from '../lib/hostAddresses.js';
+import { deployLeftoverFindings, hostPortFindings, parseDockerLabels, userlandProxyFinding } from './doctorDeploy.js';
+import { startStoppedGeneration } from './interruptedRuntime.js';
 import {
   containerRunning,
   listManagedVolumeNames,
@@ -83,6 +90,7 @@ interface ContainerFact {
   name: string;
   state: string;
   image: string;
+  labels: Record<string, string>;
 }
 
 async function listAllContainers(): Promise<ContainerFact[]> {
@@ -95,9 +103,9 @@ async function listAllContainers(): Promise<ContainerFact[]> {
     const t = line.trim();
     if (!t) continue;
     try {
-      const parsed = JSON.parse(t) as { Names?: string; State?: string; Image?: string };
+      const parsed = JSON.parse(t) as { Names?: string; State?: string; Image?: string; Labels?: string };
       const name = (parsed.Names ?? '').replace(/^\//, '');
-      if (name) out.push({ name, state: parsed.State ?? 'unknown', image: parsed.Image ?? '' });
+      if (name) out.push({ name, state: parsed.State ?? 'unknown', image: parsed.Image ?? '', labels: parseDockerLabels(parsed.Labels) });
     } catch {
       /* skip non-JSON line (CLI version differences) */
     }
@@ -338,6 +346,21 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
     if (!isLocalContainerRuntime(s)) continue;
     const c = containerByName.get(s.runtimeId);
     if (c && (c.state === 'running' || c.state === 'restarting')) continue;
+    if (c && (c.state === 'exited' || c.state === 'created')) {
+      // The container is still there, only stopped — typically the previous
+      // generation a host-port deploy stopped and nothing started again.
+      // Starting it is the repair; marking the row errored (sync) is not.
+      finding({
+        id: `service_runtime_stopped:${s.id}`,
+        kind: 'service_runtime_stopped',
+        severity: 'critical',
+        title: `Service "${s.name}" claims to be running but its container ${s.runtimeId} is stopped`,
+        detail: 'Its domains answer 502 and its published ports refuse connections. Start the container again (primary and replicas); redeploy if it does not stay up.',
+        target: { type: 'service', name: s.name, id: s.id },
+        action: 'start_service_runtime',
+      });
+      continue;
+    }
     finding({
       id: `service_runtime_desync:${s.id}`,
       kind: 'service_runtime_desync',
@@ -518,6 +541,21 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
     });
   }
 
+  // ── deploy leftovers + host-port / NAT setups (doctorDeploy.ts) ──────────
+  const [primaryRows, swarmRows, domainRows] = await Promise.all([
+    db.select({ serviceId: primaryTransitions.serviceId }).from(primaryTransitions),
+    db.select({ serviceId: swarmTransitions.serviceId }).from(swarmTransitions),
+    db.select({ serviceId: domains.serviceId, status: domains.status }).from(domains),
+  ]);
+  const transitionServiceIds = new Set([...primaryRows, ...swarmRows].map((r) => r.serviceId));
+  findings.push(...deployLeftoverFindings(allContainers, svcs, activeDeploys, transitionServiceIds));
+  const routed = new Set(domainRows.filter((d) => d.status === 'active' && d.serviceId != null).map((d) => d.serviceId as number));
+  const usesHostIps = svcs.some((s) => s.status !== 'stopped' && (s.portMappings ?? []).some((m) => m.hostIp));
+  const hostIps = usesHostIps ? (await listHostAddresses())?.map((a) => a.ip) ?? null : null;
+  findings.push(...hostPortFindings(svcs, routed, hostIps));
+  const userland = userlandProxyFinding(svcs, readDockerDaemonJson());
+  if (userland) findings.push(userland);
+
   // r575: plaintext panel port on a non-loopback address.
   const exposure = panelExposureFinding(config.host, config.port, existsSync('/.dockerenv'));
   if (exposure) findings.push(exposure);
@@ -602,6 +640,16 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
     },
     findings,
   };
+}
+
+/** /etc/docker/daemon.json; null = absent (Docker defaults); undefined = this panel cannot see the host's Docker config. */
+function readDockerDaemonJson(): string | null | undefined {
+  if (existsSync('/.dockerenv') || !existsSync('/etc/docker')) return undefined;
+  try {
+    return readFileSync('/etc/docker/daemon.json', 'utf8');
+  } catch (err) {
+    return (err as { code?: string }).code === 'ENOENT' ? null : undefined;
+  }
 }
 
 export interface DoctorFixResult {
@@ -765,7 +813,37 @@ export async function fixDoctorFinding(
         throw conflict(`Deployment #${id} moved to "${row.status}" on its own — re-scan instead of cancelling.`);
       }
       await db.update(deployments).set({ status: 'cancelled', finishedAt: new Date() }).where(eq(deployments.id, id));
+      // A pipeline still running it in this process stops its step now (lib/deployAbort.ts).
+      if (abortDeployment(id)) collect(`stopped the running step of deployment #${id}`);
       collect(`deployment #${id} cancelled`);
+      break;
+    }
+    case 'remove_deploy_leftover': {
+      // The fresh scan re-derived this finding: the container still carries a
+      // deploy's labels, is not the live generation, and no deploy or routing
+      // transition owns it. Those labels are the guard, not the name family.
+      const name = finding.target.name ?? '';
+      await run('docker', ['rm', '-f', name], {}, collect);
+      collect(`removed leftover container ${name}`);
+      break;
+    }
+    case 'start_service_runtime': {
+      const id = finding.target.id;
+      if (id == null) throw new Error('missing service id');
+      const [row] = await db.select().from(services).where(eq(services.id, id));
+      if (!row?.runtimeId) throw conflict(`Service #${id} has no runtime any more — re-scan and retry.`);
+      await startStoppedGeneration(row.runtimeId);
+      if (!(await containerRunning(row.runtimeId))) {
+        throw new Error(`Container ${row.runtimeId} did not stay up — check its logs, then redeploy the service.`);
+      }
+      collect(`started ${row.runtimeId} for service "${row.name}"`);
+      break;
+    }
+    case 'set_healthcheck_running': {
+      const id = finding.target.id;
+      if (id == null) throw new Error('missing service id');
+      await db.update(services).set({ healthCheck: 'running' }).where(eq(services.id, id));
+      collect(`service #${id} now uses the "running" readiness check — redeploy it`);
       break;
     }
   }

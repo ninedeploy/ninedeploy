@@ -77,6 +77,27 @@ export const doctorFindingKind = z.enum([
    * the source keeps loading (upgrade-safe); new http sources are refused.
    */
   'templates_source_plaintext',
+  /**
+   * A container a deploy started (it carries that deployment's labels) that
+   * is not the service's live generation, while nothing owns it any more: no
+   * deploy in flight, no routing transition pending. A failed or cancelled
+   * candidate whose cleanup did not land — often still holding host ports.
+   * App containers are `<slug>-<deploymentId>`, outside the `nd-` family the
+   * exited-container check guards on, so nothing reported them before.
+   */
+  'deploy_leftover_container',
+  /** Service row says running, its container exists but is stopped (a host-port deploy that never restarted it). */
+  'service_runtime_stopped',
+  /** An HTTP domain routes to a port the service only publishes as UDP: Traefik answers every request with 502. */
+  'domain_on_udp_port',
+  /** The HTTP readiness probe can never pass on a UDP-only port: every deploy fails at the healthcheck timeout. */
+  'healthcheck_unpassable',
+  /** A port mapping binds to an IP this host does not have: `docker run` fails with "cannot assign requested address". */
+  'port_host_ip_missing',
+  /** Two services publish the same host port (protocol + address): the second deploy fails "port is already allocated". */
+  'host_port_conflict',
+  /** Many published host ports while Docker's userland proxy is on: one docker-proxy process per port. */
+  'userland_proxy_ports',
 ]);
 export type DoctorFindingKind = z.infer<typeof doctorFindingKind>;
 
@@ -100,6 +121,12 @@ export const doctorActionKind = z.enum([
    * container and volume, so those findings stay advisory with a manual step.
    */
   'repair_slug',
+  /** Remove a deploy's leftover container (re-validated: still not live, still unowned). */
+  'remove_deploy_leftover',
+  /** Start the stopped generation of a running service (primary + replicas). */
+  'start_service_runtime',
+  /** Switch a service whose HTTP probe cannot pass to the `running` readiness check. */
+  'set_healthcheck_running',
 ]);
 export type DoctorActionKind = z.infer<typeof doctorActionKind>;
 
