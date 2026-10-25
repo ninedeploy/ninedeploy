@@ -10,11 +10,11 @@ const docker = args => spawnSync('docker', args, { encoding: 'utf8', windowsHide
 const checked = args => { const result = docker(args); assert.equal(result.status, 0, result.stderr); return result.stdout.trim(); };
 try {
   if (docker(['image', 'inspect', 'busybox:1.36']).status !== 0) checked(['pull', 'busybox:1.36']);
-  for (const nativeHealth of [true, false]) {
-    const name = `nd-${owner}-${nativeHealth ? 'native' : 'none'}`; names.push(name);
+  for (const [nativeHealth, responseDelayMs] of [[true, 0], [false, 0], [true, 50], [false, 50]]) {
+    const name = `nd-${owner}-${nativeHealth ? 'native' : 'none'}-${responseDelayMs}`; names.push(name);
     checked(['run', '-d', '--name', name, '--label', `ninedeploy.proof=${owner}`,
       ...(nativeHealth ? ['--health-cmd', 'exit 0', '--health-interval', '1s', '--health-timeout', '1s', '--health-start-period', '0s'] : ['--no-healthcheck']),
-      '--entrypoint', 'node', image, '-e', "require('node:http').createServer((q,s)=>s.end('ready')).listen(8080,'0.0.0.0')"]);
+      '--entrypoint', 'node', image, '-e', `require('node:http').createServer((q,s)=>${responseDelayMs ? `setTimeout(()=>s.end('ready'),${responseDelayMs})` : "s.end('ready')"}).listen(8080,'0.0.0.0')`]);
     const id = checked(['inspect', name, '--format', '{{.Id}}']);
     const deadline = Date.now() + 20_000;
     let running = false;
@@ -34,7 +34,7 @@ try {
     try { if (frames.length === 1) reply = JSON.parse(frames[0].slice(13)); } catch { /* a malformed frame is a failed smoke */ }
     const passed = sample.status === 0 && reply?.requestId === request.requestId && reply.complete === true && reply.items?.length === 1 &&
       reply.items[0].id === id && reply.items[0].name === name && reply.items[0].ready === true;
-    cases.push({ nativeHealth, passed, ...(passed ? {} : { code: sample.status, detail: (sample.stderr || sample.stdout || '').slice(-2000) }) });
+    cases.push({ nativeHealth, responseDelayMs, passed, ...(passed ? {} : { code: sample.status, detail: (sample.stderr || sample.stdout || '').slice(-2000) }) });
   }
   console.log(JSON.stringify({ image, cases, realDocker: true }));
   assert.ok(cases.every(result => result.passed), 'Container readiness smoke failed');

@@ -5,7 +5,10 @@ import { intOperand, RE_NAME, str, validated, type Params } from '../agentOps/op
 // Same small helper image as the panel's existing sibling prober. No host
 // ports, credentials or filesystem mounts; only the workload's network is shared.
 const PROBE_IMAGE = 'busybox:1.36';
-const HTTP_PROBE = 'printf "GET %s HTTP/1.0\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n" "$1" | nc -w 3 127.0.0.1 "$2" | head -n 1';
+// An EOF on nc's stdin closes the connection before an asynchronous handler
+// answers. Keep a bidirectional socket until its status line arrives. nc -e
+// owns stdin/stdout; stderr still feeds the bounded probe output parser.
+const HTTP_PROBE = String.raw`exec nc -w 3 127.0.0.1 "$2" -e sh -c 'printf "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" "$1"; IFS= read -r -t 3 status && printf "%s\n" "$status" >&2' probe "$1"`;
 
 /** A fixed, bounded probe inside a workload network namespace. */
 export async function probeContainer(params: Params, onLine: (line: string) => void, options: { timeoutMs?: number } = {}): Promise<number> {
