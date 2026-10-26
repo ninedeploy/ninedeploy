@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.18.3",
+    "date": "2026-10-26",
+    "title": "Deployment safety and node recovery",
+    "changes": [
+      "Verify every serving node replica and confirm loaded routing before completing lifecycle commands; retain uncertain work for recovery.",
+      "Apply ordered Start, Stop and Restart across accepted primary and additional-node placements, with immutable identities and same-command retries.",
+      "Attach every node replica to its same-node database bridges before readiness and wait for asynchronous HTTP responses.",
+      "Drain admitted create, network and Start work before acknowledging Stop, and keep timed-out child processes owned until they actually close.",
+      "Persist service mutation ownership independently of lifecycle history and preserve replay identities when upgrading existing journals.",
+      "Add live routing and Doctor observations, held-recovery notifications and real node deployment cancellation. Further R2 coordination and node autoscaling remain in development."
+    ]
+  },
+  {
     "version": "0.18.2",
     "date": "2026-10-25",
     "title": "Measured node canaries and recoverable operations",
