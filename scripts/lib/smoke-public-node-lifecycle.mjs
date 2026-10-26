@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 
+/** Match the first agent supporting ordered lifecycle, including maintenance releases. */
+export function nodeLifecycleDisabledRefusal(version) {
+  assert.match(version, /^\d+\.\d+\.\d+$/);
+  const [major, minor, patch] = version.split('.').map(Number);
+  const supported = major > 0 || minor > 18 || minor === 18 && patch >= 3;
+  return supported ? { status: 403, code: 'node_feature_disabled' } : { status: 422, code: 'node_agent_outdated' };
+}
+
 /** Runs against the full production panel, worker, enrolled agent and isolated Docker daemon. */
 export async function smokePublicNodeLifecycle({ api, inner, docker, panel, args, id, first, fixtureImage, service, domain, until, pause, report, cleared, updatePanelUrl }) {
   const latest = async () => (await api(`/v1/services/${id}/lifecycle`)).command;
-  const version = (await api('/health')).version.split('.').map(Number);
-  const disabledStatus = version[0] > 0 || version[1] >= 19 ? 403 : 422;
+  const disabledRefusal = nodeLifecycleDisabledRefusal((await api('/health')).version);
   const request = async action => {
     const result = await api(`/v1/services/${id}/${action}`, { method: 'POST', expectedStatus: 202 });
     assert.equal(result.pending, true); assert.equal(result.lifecycle.action, action);
@@ -80,7 +87,7 @@ export async function smokePublicNodeLifecycle({ api, inner, docker, panel, args
     inner(['rm', 'ninedeploy-agent']);
     const disabled = [...args]; const slot = disabled.indexOf('NINEDEPLOY_AGENT_PROXY_TRAFFIC=on'); assert.ok(slot > 0);
     disabled.splice(slot - 1, 0, '-e', 'NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE=off'); inner(disabled);
-    await until(async () => { try { const result = await api(`/v1/services/${id}/start`, { method: 'POST', expectedStatus: disabledStatus }); return result.error.code === (disabledStatus === 403 ? 'node_feature_disabled' : 'node_agent_outdated'); } catch { return false; } }, 'owner-disabled Start refusal');
+    await until(async () => { try { const result = await api(`/v1/services/${id}/start`, { method: 'POST', expectedStatus: disabledRefusal.status }); return result.error.code === disabledRefusal.code; } catch { return false; } }, 'owner-disabled Start refusal');
     assert.equal((await latest()).id, command.id);
     inner(['rm', '-f', 'ninedeploy-agent']); inner(args);
     await until(async () => { try { return (await api(`/v1/services/${id}/lifecycle/retry`, { method: 'POST', expectedStatus: 202 })).command.id === command.id; } catch { return false; } }, 'retry after node returns');
