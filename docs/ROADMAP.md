@@ -2,21 +2,21 @@
 
 This plan was drawn up on 2026-10-08 from a feature-gap analysis against Dokploy v0.30.0 and Coolify v4.4.x. Every gap listed here was checked against the NineDeploy source code.
 
-## Current release sequence — updated 2026-10-24
+## Current release sequence — updated 2026-10-26
 
-Ship independently accepted increments regularly. The owner replaced the single large 0.18.0 scope with the sequence below. The next release includes the completed Unreleased work and R1; later packages do not block it.
+Ship independently accepted increments regularly. The owner replaced the single large 0.18.0 scope with the sequence below. Published 0.18.4 includes R1 and the accepted deployment-safety/node-lifecycle maintenance work. R2 is the next feature package; later packages do not block validated maintenance releases.
 
 | Release | Scope | Release condition |
 | --- | --- | --- |
-| **0.18.0** | Completed observability/runtime/node work plus **R1: public node canary** | Real API/worker healthy/readiness/rollback/promote/cancel/Stop/restart and concurrent-proxy acceptance; panel support controls; full release and upgrade verification |
+| **0.18.4 — published** | Observability/runtime/node work plus **R1: public node canary** and deployment-safety/node-lifecycle maintenance | Hosted release jobs passed; GitHub assets, signatures, multi-architecture image revisions, npm integrity and the public CLI were independently verified |
 | **0.18.x**, when needed | Validated fixes, compatibility and maintenance | Focused regressions and the current patch's release/upgrade gates; ship without waiting for R2 |
-| **0.19.0 target** | **R2:** node autoscaling/sleep and remaining Swarm support acceptance | Runtime support matrix and real scaling/wake/restart/rollback checks, followed by release verification |
+| **0.19.0 target** | **R2:** ordered node Stop/deploy/scale/wake, node autoscaling/sleep and remaining Swarm support | Shared durable authority across all runtime producers; real first-deploy/handoff cancellation and recovery, scaling/wake/restart/rollback, mixed-agent upgrades and full release verification |
 | **0.20.0 target** | **R3:** isolated restore verification and PostgreSQL PITR | Actual restore/query/recovery-time and point-in-time recovery evidence, followed by release verification |
 | **0.21.0 target** | **R4:** remote MCP over HTTP/OAuth | Real-client authorization, expiry/revocation and stdio compatibility, followed by release verification |
 | **0.22.0 target** | **R5:** durable CI and isolated runners | Actual execution, isolation, approvals and restart recovery, followed by release verification |
 | **0.23.0 target** | **R6:** packaged desktop | Secure credentials/IPC/navigation and supported-platform installer acceptance, followed by release verification |
 
-Versions after 0.18.0 are planning targets, not publication dates. Smaller validated patches may ship between feature milestones. R7 is the recurring certification/publication gate for **every** release, not a final milestone after R6. Complete R1 and publish 0.18.0 before starting R2 feature implementation. See the detailed [incremental release plan](COMPETITIVE_DELIVERY.md#incremental-release-plan--2026-10-24) for acceptance criteria and current evidence.
+Versions 0.19.0–0.23.0 are planning targets, not publication dates. Existing 0.18.0, 0.18.1 and 0.18.3 candidate tags are preserved; they do not represent published releases. Smaller validated patches may ship between feature milestones. R7 is the recurring certification/publication gate for **every** release, not a final milestone after R6. R1 and the 0.18.4 publication gate are accepted. R2 development is underway; generation-independent Stop is a development checkpoint, and production deploy/scale/wake wiring plus the remaining R2 acceptance gates are still open. See the detailed [incremental release plan](COMPETITIVE_DELIVERY.md#incremental-release-plan--2026-10-24) for acceptance criteria and current evidence.
 
 Earlier dated sections and acceptance records describe their original scope. This sequence supersedes statements that all six packages must be completed before 0.18.0. Existing additive migration, compatibility, verification and publication requirements remain in force.
 

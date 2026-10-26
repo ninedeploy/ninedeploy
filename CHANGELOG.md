@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- R2 development: accept a durable node Stop before the first deployment has selected a runtime. Cancel queued, building, deploying, CI-waiting and approval-waiting work atomically with runtime ownership, fence every accepted node, capture immutable managed generations and confirm routing withdrawal and physical Stop before completion. Nullable Stop anchors retain existing journal data and command revision high-water marks through migration 0103. The new protocol requires capable 0.19.0 agents; production deploy/scale/wake integration and full R2 acceptance remain open.
+
+### Fixed
+
+- Clear an additional node's pending deployment status after its generation-independent Stop completes. Lost routing confirmation retains the captured targets for retry, while a newer runtime selection prevents the old Stop from resuming.
+- Offer Stop during the first plain-Docker node deployment, show the pending verification state, refresh cancelled deployment history and hide Start while no node runtime has been selected.
+
 ## [0.18.4] - 2026-10-26
 
 Supersedes the unpublished 0.18.3 candidate while preserving its Git tag and version image. Includes the deployment safety and node recovery maintenance package documented below; remaining R2 coordination still targets 0.19.0.
