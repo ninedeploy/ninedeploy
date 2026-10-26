@@ -508,6 +508,41 @@ describe('ServiceDetail', () => {
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('nope', 'error'));
   });
 
+  it.each(['queued', 'building', 'deploying', 'awaiting_ci', 'awaiting_approval'])('offers a durable Stop before the first node runtime exists: %s', async status => {
+    mockOf(api.services.get).mockResolvedValue({ ...service, type: 'docker', orchestrator: 'container', status: 'deploying', serverId: 4, runtimeId: null } as never);
+    mockOf(api.deploys.list).mockResolvedValue([{ ...deploys[0], status }] as never);
+    mockOf(api.services.stop).mockResolvedValue({ ok: true, status: 'stopped', pending: true,
+      lifecycle: { id: 8, action: 'stop', phase: 'fencing', current: true, busy: false, retryable: false, attempts: 0, reason: null,
+        createdAt: '2026-10-26T12:00:00Z', updatedAt: '2026-10-26T12:00:00Z', nextAttemptAt: '2026-10-26T12:00:00Z' } } as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    await waitFor(() => expect(api.services.stop).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Stop requested; runtime verification is pending', 'info'));
+    expect(toastSpy.toast).not.toHaveBeenCalledWith('Service stopped', 'success');
+  });
+
+  it.each([
+    { label: 'idle node', serverId: 4, orchestrator: null, active: false },
+    { label: 'local Docker', serverId: null, orchestrator: null, active: true },
+    { label: 'Swarm', serverId: 4, orchestrator: 'swarm', active: true },
+  ])('keeps first-runtime Stop unavailable for $label', async ({ serverId, orchestrator, active }) => {
+    mockOf(api.services.get).mockResolvedValue({ ...service, type: 'docker', status: 'idle', runtimeId: null, serverId, orchestrator } as never);
+    mockOf(api.deploys.list).mockResolvedValue(active ? [{ ...deploys[0], status: 'building' }] as never : []);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await screen.findByRole('heading', { name: service.name });
+    await waitFor(() => expect(api.deploys.list).toHaveBeenCalledWith(1));
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer Start after first-deployment Stop without a selected node runtime', async () => {
+    mockOf(api.services.get).mockResolvedValue({ ...service, type: 'docker', orchestrator: 'container', status: 'stopped', serverId: 4, runtimeId: null } as never);
+    mockOf(api.deploys.list).mockResolvedValue([{ ...deploys[0], status: 'cancelled' }] as never);
+    renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+    await screen.findByRole('heading', { name: service.name });
+    expect(screen.queryByRole('button', { name: 'Start' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deploy' })).toBeEnabled();
+  });
+
   it('shows a queued node Start as pending and keeps Stop available during readiness', async () => {
     mockOf(api.services.get).mockResolvedValue({ ...service, status: 'stopped', serverId: 4 } as never);
     const command = { id: 7, action: 'start', phase: 'preparing', current: true, busy: false, retryable: false,

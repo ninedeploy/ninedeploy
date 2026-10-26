@@ -163,6 +163,7 @@ export function ServiceDetail() {
     mutationFn: ({ action, serviceId }: { action: 'stop' | 'start' | 'restart'; serviceId: number }) => api.services[action](serviceId),
     onSuccess: (result, { action, serviceId }) => {
       qc.invalidateQueries({ queryKey: ['service', serviceId] });
+      if (action === 'stop') void qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
       if (result?.pending) {
         const known = qc.getQueryData<ServiceLifecycleView>(['service-lifecycle', serviceId])?.command;
         if (known && result.lifecycle && (known.id > result.lifecycle.id || known.id === result.lifecycle.id && ['completed', 'superseded'].includes(known.phase))) {
@@ -216,6 +217,9 @@ export function ServiceDetail() {
     }
   };
   const svc = service.data;
+  const unselectedNode = svc?.type === 'docker' && svc.serverId != null && svc.orchestrator !== 'swarm' && svc.runtimeId === null;
+  const initialNodeWork = unselectedNode &&
+    (deploys.data ?? []).some(deploy => IN_FLIGHT.includes(deploy.status) || deploy.status === WAITING);
   // The Compose File tab edits `composeContent`, which only an INLINE stack
   // has: a git-repo compose service keeps its file in the repository, where
   // the next checkout would overwrite anything typed here. Hidden — and not
@@ -326,12 +330,12 @@ export function ServiceDetail() {
               </Button>
             </>
           )}
-          {svc.status === 'stopped' && (
+          {svc.status === 'stopped' && !unselectedNode && (
             <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'start', serviceId: id })} disabled={lifecycle.isPending}>
               <Play size={15} /> Start
             </Button>
           )}
-          {svc.status !== 'running' && lifecycleState.data?.command?.current && !['completed', 'superseded'].includes(lifecycleState.data.command.phase) && lifecycleState.data.command.action !== 'stop' && (
+          {svc.status !== 'running' && (initialNodeWork || lifecycleState.data?.command?.current && !['completed', 'superseded'].includes(lifecycleState.data.command.phase) && lifecycleState.data.command.action !== 'stop') && (
             <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'stop', serviceId: id })} disabled={lifecycle.isPending} title="Stop">
               <Square size={15} /> Stop
             </Button>
