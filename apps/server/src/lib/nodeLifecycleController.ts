@@ -8,7 +8,7 @@ import { capabilityRefusal } from './agentCapabilities.js';
 import { HttpError } from './errors.js';
 import {
   advanceNodeLifecycleIntent, checkpointNodeLifecycleIntent, claimNodeLifecycleIntent, holdNodeLifecycleIntent,
-  nodeLifecycleRevision, supersedeNodeLifecycleIntent,
+  nodeLifecycleWireRevision, supersedeNodeLifecycleIntent,
 } from './nodeLifecycleIntent.js';
 import { verifyNodeReadiness } from './nodeReadiness.js';
 
@@ -88,7 +88,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     if (!fence && intent.targets === null) throw new Error('Node lifecycle immutable targets are unavailable');
     const request = containerLifecycleRequest.parse({ requestId: fence
       ? createHash('sha256').update(`${intent.requestId}:fence${participant.serverId === intent.serverId ? '' : `:${participant.serverId}`}`).digest('hex').slice(0, 32) : intent.requestId,
-    serviceId: intent.serviceId, deploymentId: participant.deploymentId, revision: nodeLifecycleRevision(intent.id, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
+    serviceId: intent.serviceId, deploymentId: participant.deploymentId, revision: nodeLifecycleWireRevision(intent, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
     action: !fence && (intent.action === 'start' || restarting) ? 'start' : 'stop',
     targets: fence ? [] : restarting ? servingTargets(participant) : capturedTargets(participant), timeoutMs: 30_000 });
     const result = await call(participant.serverId, 'docker.lifecycle', request, 35_000);

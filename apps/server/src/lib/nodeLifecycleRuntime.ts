@@ -5,6 +5,7 @@ import { capabilityRefusal } from './agentCapabilities.js';
 import { executeNodeLifecycleIntent, type NodeLifecycleControllerDeps } from './nodeLifecycleController.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { HttpError } from './errors.js';
+import { nodeLifecycleHasRuntimeAuthority } from './nodeLifecycleIntent.js';
 
 export async function assertNodeLifecycleAvailable(db: DB, service: Service, options: { signal?: AbortSignal } = {}): Promise<void> {
   options.signal?.throwIfAborted();
@@ -64,7 +65,8 @@ export async function publicNodeLifecycle(db: DB, service: Service, commandId?: 
   const row = await db.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id), commandId == null ? undefined : eq(nodeLifecycleIntents.id, commandId)), orderBy: desc(nodeLifecycleIntents.id) });
   if (!row) return { command: null };
   const latest = commandId == null ? row.id : (await db.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(eq(nodeLifecycleIntents.serviceId, service.id)).orderBy(desc(nodeLifecycleIntents.id)).limit(1))[0]?.id;
-  const current = row.id === latest && row.phase !== 'superseded' && service.type === 'docker' && service.orchestrator !== 'swarm' && service.serverId === row.serverId && service.runtimeId === row.runtimeId;
+  const current = row.id === latest && row.phase !== 'superseded' && service.type === 'docker' && service.orchestrator !== 'swarm' && service.serverId === row.serverId && service.runtimeId === row.runtimeId &&
+    await nodeLifecycleHasRuntimeAuthority(db, row);
   const busy = !!row.ownerToken && !!row.leaseUntil && row.leaseUntil.getTime() > Date.now();
   return { command: { id: row.id, action: row.action, phase: row.phase, reason: row.reason, attempts: row.attempts,
     busy, current, retryable: current && !busy && row.phase !== 'completed' && row.phase !== 'superseded',

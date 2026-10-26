@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Persistent per-service runtime ownership for node lifecycle commands, with migration of pending commands and deleted-history revision protection. Superseded lifecycle continuations and retries lose authority. This foundation keeps existing agent replay identities; deployment creation, scale and wake integration remain pending.
 - Agent capability `docker.lifecycle.generations` for one durable Stop across retained deployment generations. Each immutable target carries its own expected deployment label; Start keeps its single-generation contract. Explicit Stop batches are bounded at thirty targets, while existing requests retain their ten-target limit. The existing lifecycle owner switch disables both capabilities. Panel coordination for unresolved transitions remains R2 work.
 
 ### Fixed

@@ -708,6 +708,13 @@
       "when": 1792938184040,
       "tag": "0101_node_lifecycle_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "6",
+      "when": 1793001461633,
+      "tag": "0102_service_runtime_owners",
+      "breakpoints": true
     }
   ]
 }

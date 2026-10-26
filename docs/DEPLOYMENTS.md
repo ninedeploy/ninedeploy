@@ -42,6 +42,8 @@ An older primary-only journal cannot silently adopt existing fan-out targets: su
 
 The development agent additionally advertises `docker.lifecycle.generations`. It accepts an explicit expected deployment label for every immutable target in a Stop batch, checks the entire batch before effects and verifies it again afterward. A fresh agent process can replay the same durable receipt. Explicit batches permit up to thirty targets; legacy batches remain limited to ten, and Start refuses explicit generation annotations. `NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE=off` disables both forms. This agent foundation does not remove the panel's unresolved-transition hold: builders must participate in the same ordering before that path can complete safely.
 
+The development panel persists one runtime ownership clock per service independently of lifecycle history. New node lifecycle commands reserve that ownership in the same transaction as their journal entry; a replaced owner invalidates old leases, continuations and retries. Migration 0102 preserves the wire revision of already-pending commands, while later commands advance beyond the retained high-water mark. Ownership metadata does not start or stop containers by itself. Builder creation, scale and wake still need the shared agent mutation guard, so the unresolved-transition hold remains in force.
+
 ### Canary releases (0.16.9)
 
 With a canary configuration (**Service → Settings → Canary releases**, or `canary` on `PATCH /v1/services/:id`), step 4 happens in stages instead of all at once. After the new container passes its healthcheck:
