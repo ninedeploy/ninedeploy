@@ -58,6 +58,7 @@ import { composeBuilder } from './builders/compose.js';
 import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
 import { AGENT_CAP_OP_CANCEL, CANCELLABLE_AGENT_OPS, deployAbortSignal, deployAborted, outsideDeployScope, runInDeployScope } from '../lib/deployAbort.js';
+import { claimNodeDeploymentAttempt } from '../lib/nodeDeploymentOwner.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
 import { beginPrimaryTransition, primaryRecoveryPending, PrimaryIdentityUnconfirmed, PrimaryRecoveryOwnershipLost, PrimaryRecoveryPending, type PrimaryRecoveryLease } from './primaryRecovery.js';
@@ -815,7 +816,15 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   // harness) never pass through the worker's claim. When the row was taken
   // away, the first checkpoint inside the try below resolves the cancellation
   // with the full cleanup semantics (r404).
-  const claimed = await db
+  const orderedNode = service.type === 'docker' && service.serverId != null && service.orchestrator !== 'swarm';
+  const admission = orderedNode ? await claimNodeDeploymentAttempt(db, deploymentId, service, configSnapshot) : null;
+  if (admission && !admission.claimed) {
+    const reasons = { placement_changed: 'service node placement changed', owner_changed: 'a newer operation owns the runtime',
+      not_claimable: 'the deployment is no longer eligible or this service already has active work' };
+    log(`⏹ Node deployment skipped: ${reasons[admission.reason]}`);
+    return false;
+  }
+  const claimed = admission?.claimed ? [{ id: deploymentId }] : await db
     .update(deployments)
     .set({ status: 'building', startedAt: new Date(), configSnapshot })
     .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['queued', 'building'])))
@@ -825,7 +834,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     return false;
   }
   if (claimed.length > 0) {
-    await db.update(services).set({ status: 'deploying' }).where(and(eq(services.id, service.id),
+    if (!orderedNode) await db.update(services).set({ status: 'deploying' }).where(and(eq(services.id, service.id),
       exists(db.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'building'))))));
     log(`▶ Deployment #${deploymentId} for "${service.name}" (${service.type})`);
   }

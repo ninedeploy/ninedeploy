@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deploymentReleaseRecords, deployments, domains, servers, serviceFiles, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { auditLog, deploymentReleaseRecords, deploymentRuntimeOwners, deployments, domains, servers, serviceFiles, serviceRuntimeOwners, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { createComposeRelease } from '../src/lib/composeRelease.js';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
@@ -202,12 +202,14 @@ interface FakeDb {
   select: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
   insert: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
 }
 
 function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<string, unknown> }[]; inserts: { table: unknown; values: Record<string, unknown> }[] } {
   const updates: { table: unknown; values: Record<string, unknown> }[] = [];
   const inserts: { table: unknown; values: Record<string, unknown> }[] = [];
   const db: FakeDb = {
+    transaction: vi.fn(),
     query: {
       serviceTargets: { findFirst: vi.fn().mockResolvedValue(undefined) },
       deploymentReleaseRecords: { findFirst: vi.fn().mockResolvedValue(undefined) },
@@ -271,6 +273,29 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
       },
     })),
   };
+  // SQL boundary for the legacy statement fixtures. Ownership correctness and
+  // pipeline wiring are exercised separately against real migrated SQLite.
+  let owner: Record<string, unknown> | undefined, stamp: Record<string, unknown> | undefined;
+  db.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
+    ...db,
+    select: () => ({ from: (table: unknown) => {
+      const rows = table === serviceRuntimeOwners ? owner ? [owner] : [] : table === deploymentRuntimeOwners ? stamp ? [stamp] : [] : [{ epoch: 0 }];
+      const query = { where: () => query, limit: async () => rows,
+        // biome-ignore lint/suspicious/noThenProperty: mirrors an awaitable SQL query.
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve(rows).then(resolve) };
+      return query;
+    } }),
+    insert: (table: unknown) => ({ values: (values: Record<string, unknown>) => {
+      if (table === deploymentRuntimeOwners) { stamp = values; return Promise.resolve(); }
+      if (table !== serviceRuntimeOwners) throw Error('Unexpected transactional insert');
+      owner = values;
+      const query = { onConflictDoNothing: () => query, returning: async () => [owner] };
+      return query;
+    } }),
+    update: (table: unknown) => table !== serviceRuntimeOwners ? db.update(table) : ({ set: (values: Record<string, unknown>) => ({
+      where: () => ({ returning: async () => { owner = { ...owner, ...values }; return [owner]; } }),
+    }) }),
+  }));
   return { db, updates, inserts };
 }
 
@@ -292,6 +317,46 @@ describe('explicit Stop during primary readiness', () => {
   const originalBuild = h.builder.buildAndRun.getMockImplementation()!;
   const originalHealth = h.builder.isHealthy.getMockImplementation()!;
   afterEach(() => { h.builder.buildAndRun.mockReset().mockImplementation(originalBuild); h.builder.isHealthy.mockReset().mockImplementation(originalHealth); });
+  it('persists deployment authority before the first node operation', async () => {
+    const { observabilityDb } = await import('./fixtures/observability.js');
+    const { readServiceRuntimeOwner } = await import('../src/lib/serviceRuntimeOwner.js');
+    const f = await observabilityDb(), originalAgent = h.agentOp.getMockImplementation()!;
+    const observed: Awaited<ReturnType<typeof readServiceRuntimeOwner>>[] = [];
+    h.agentOp.mockImplementation(async () => { observed.push(await readServiceRuntimeOwner(f.db, 1)); throw new Error('Controlled node boundary'); });
+    try {
+      await f.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await f.db.update(services).set({ serverId: 4, image: 'fixture:1', port: 8080, runtimeId: null, status: 'idle' }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+      await runDeployment(f.db, 9).catch(error => { expect(error.message).toBe('Controlled node boundary'); });
+      expect(observed.length).toBeGreaterThan(0);
+      for (const owner of observed) expect(owner).toMatchObject({ serviceId: 1, kind: 'deploy', epoch: expect.any(Number), requestId: expect.stringMatching(/^[a-f0-9]{32}$/) });
+    } finally { h.agentOp.mockReset().mockImplementation(originalAgent); f.close(); }
+  });
+  it('does not replace Stop authority when cancellation wins before node deployment admission', async () => {
+    const { observabilityDb } = await import('./fixtures/observability.js');
+    const { acceptNodeLifecycleIntent } = await import('../src/lib/nodeLifecycleIntent.js');
+    const { readServiceRuntimeOwner } = await import('../src/lib/serviceRuntimeOwner.js');
+    const f = await observabilityDb(); h.agentOp.mockClear();
+    let stoppedOwner: Awaited<ReturnType<typeof readServiceRuntimeOwner>>;
+    const hooks = { call: vi.fn(async (name: string) => {
+      if (name === 'deploy:before') {
+        await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
+        stoppedOwner = await readServiceRuntimeOwner(f.db, 1);
+      }
+    }) };
+    try {
+      await f.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await f.db.update(services).set({ serverId: 4, image: 'fixture:1', runtimeId: null, status: 'idle' }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+      await runDeployment(f.db, 9, { hooks } as never);
+      expect(stoppedOwner!).toMatchObject({ kind: 'stop' });
+      expect(await readServiceRuntimeOwner(f.db, 1)).toEqual(stoppedOwner!);
+      expect(await f.db.select().from(deploymentRuntimeOwners)).toEqual([]);
+      expect(await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) })).toMatchObject({ status: 'cancelled', configSnapshot: null });
+      expect((await f.db.query.services.findFirst({ where: eq(services.id, 1) }))?.status).toBe('stopped');
+      expect(h.agentOp).not.toHaveBeenCalled(); expect(hooks.call.mock.calls.map(call => call[0])).toEqual(['deploy:before']);
+    } finally { f.close(); }
+  });
   it.each(['running', 'failed', 'superseded', 'cancelled', 'deploying', 'awaiting_ci', 'awaiting_approval'] as const)('does not replay a non-claimable deployment: %s', async status => {
     const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
     h.builder.buildAndRun.mockClear(); h.builder.stop.mockClear(); h.builder.isHealthy.mockClear(); h.writeDynamicConfig.mockClear();

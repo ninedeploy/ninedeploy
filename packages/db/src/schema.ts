@@ -1856,6 +1856,17 @@ export const serviceRuntimeOwners = sqliteTable('service_runtime_owners', {
 });
 export type ServiceRuntimeOwner = typeof serviceRuntimeOwners.$inferSelect;
 
+/** Private immutable deployment authority, independent of mutable configuration snapshots. */
+export const deploymentRuntimeOwners = sqliteTable('deployment_runtime_owners', {
+  deploymentId: integer('deployment_id').primaryKey().references(() => deployments.id, { onDelete: 'cascade' }),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  // Retain the original placement even if that node is removed.
+  serverId: integer('server_id').notNull(),
+  epoch: integer('epoch').notNull(),
+  requestId: text('request_id').notNull(),
+}, t => ({ serviceEpoch: uniqueIndex('deployment_runtime_owner_epoch_idx').on(t.serviceId, t.epoch) }));
+export type DeploymentRuntimeOwner = typeof deploymentRuntimeOwners.$inferSelect;
+
 export interface NodeLifecycleSnapshot {
   status: string;
   port: number | null;
