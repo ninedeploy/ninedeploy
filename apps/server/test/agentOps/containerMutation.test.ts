@@ -41,3 +41,16 @@ it('owner opt-out does not downgrade an already-adopted service to unsafe legacy
   await expect(runRegisteredOp('docker.runSpec', { name: 'web-10', image: 'sha256:' + 'b'.repeat(64), serviceId: 7, deploymentId: 10 }, () => {}, { sealed: true }, disabled)).rejects.toThrow(/fenced/);
   expect(io.spawn).not.toHaveBeenCalled();
 });
+it('dispatches fenced inventory and empty Stop with complete owner-bound machine frames', async () => {
+  const input = { requestId: 'a'.repeat(32), serviceId: 7, revision: 8, timeoutMs: 5000 }, lines: string[] = [];
+  io.spawn.mockImplementation(async (_bin, args: string[]) => { expect(args[0]).toBe('ps'); return 0; });
+  await runRegisteredOp('docker.runtimeFence', input, () => {}, { sealed: true }, {});
+  expect(await runRegisteredOp('docker.runtimeInventory', input, line => lines.push(line), { sealed: true }, {})).toBe(0);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toBe('ND-RUNTIME-INVENTORY ' + JSON.stringify({ requestId: input.requestId, serviceId: 7, revision: 8, complete: true, items: [] }));
+  io.spawn.mockClear(); lines.length = 0;
+  expect(await runRegisteredOp('docker.stopSet', { ...input, revision: 9, targets: [], graceSeconds: 1 }, line => lines.push(line), { sealed: true }, {})).toBe(0);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toBe('ND-STOPPED-SET ' + JSON.stringify({ requestId: input.requestId, serviceId: 7, revision: 9, complete: true, items: [] }));
+  expect(io.spawn).not.toHaveBeenCalled();
+});

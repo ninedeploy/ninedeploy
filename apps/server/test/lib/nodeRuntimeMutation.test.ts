@@ -204,6 +204,65 @@ describe('persistent runtime request admission', () => {
 });
 
 describe('fenced generation-independent inventory and Stop', () => {
+  it('requires explicit protocol adoption before inventory under a replayable legacy fence', async () => {
+    const legacy = { ...fence(), deploymentId: 10, action: 'stop', targets: [] };
+    await createNodeLifecycle(join(root, '.agent-work', '.lifecycle')).apply(legacy);
+    io.spawn.mockClear();
+    await expect(runtime().inventory(fence())).rejects.toThrow(/protocol is unconfirmed/);
+    expect(io.spawn).not.toHaveBeenCalled();
+    await runtime().fence(fence());
+    expect((await runtime().inventory(fence())).items).toEqual([]);
+  });
+  it('does not follow a reused name when a captured Stop target has disappeared', async () => {
+    const prepared = await runtime().prepare(prepare());
+    const input = { ...fence(), graceSeconds: 1, targets: prepared.items.map(({ running: _running, ...target }) => target) };
+    rows = [{ ...rows[0]!, id: 'e'.repeat(64), deploymentId: '11' }]; io.spawn.mockClear();
+    expect((await runtime().stop(input)).items).toEqual(input.targets.map(target => ({ ...target, running: false })));
+    expect(rows[0]!.running).toBe(true); expect(effects()).toEqual([]);
+  });
+  it.each(['unavailable', 'malformed', 'duplicate', 'overflow', 'too-many'])('holds incomplete Docker inventory without issuing effects: %s', async failure => {
+    await runtime().fence(fence());
+    const original = io.spawn.getMockImplementation()!;
+    io.spawn.mockImplementation(async (...args: Parameters<typeof original>) => {
+      if (args[1][0] !== 'ps') return original(...args);
+      const sink = args[2];
+      if (failure === 'unavailable') return 1;
+      if (failure === 'malformed') sink('not-an-immutable-id');
+      if (failure === 'duplicate') { sink('a'.repeat(64)); sink('a'.repeat(64)); }
+      if (failure === 'overflow') sink('a'.repeat(65_537));
+      if (failure === 'too-many') for (let n = 1; n <= 31; n++) sink(n.toString(16).padStart(64, '0'));
+      return 0;
+    });
+    await expect(runtime().inventory(fence())).rejects.toThrow(/incomplete/);
+    expect(effects().filter(args => args[0] !== 'ps')).toEqual([]);
+  });
+  it.each(['missing-mode', 'unknown-mode', 'corrupt-intent'])('retains an unconfirmed inventory journal without Docker effects: %s', async failure => {
+    await runtime().fence(fence()); const db = new DatabaseSync(journalFile());
+    try {
+      if (failure === 'missing-mode') db.exec('DELETE FROM runtime_protocol');
+      if (failure === 'unknown-mode') db.exec('UPDATE runtime_protocol SET version=2');
+      if (failure === 'corrupt-intent') db.prepare('UPDATE lifecycle_head SET request_hash=?').run('0'.repeat(64));
+    } finally { db.close(); }
+    io.spawn.mockClear();
+    await expect(runtime().inventory(fence())).rejects.toThrow(/unconfirmed/);
+    expect(io.spawn).not.toHaveBeenCalled();
+  });
+  it('retains a running managed container whose generation label is invalid', async () => {
+    await runtime().prepare(prepare()); rows[0]!.deploymentId = 'unknown';
+    await runtime().fence(fence()); io.spawn.mockClear();
+    await expect(runtime().inventory(fence())).rejects.toThrow(/generation is unconfirmed/);
+    expect(rows[0]!.running).toBe(true); expect(effects().filter(args => args[0] !== 'ps')).toEqual([]);
+  });
+  it.each(['failed-command', 'still-running'])('does not complete an unconfirmed physical Stop and retries its captured identity: %s', async failure => {
+    const prepared = await runtime().prepare(prepare());
+    const input = { ...fence(), graceSeconds: 1, targets: prepared.items.map(({ running: _running, ...target }) => target) };
+    const original = io.spawn.getMockImplementation()!;
+    io.spawn.mockImplementation(async (...args: Parameters<typeof original>) => args[1][0] === 'stop' ? failure === 'failed-command' ? 1 : 0 : original(...args));
+    await expect(runtime().stop(input)).rejects.toThrow(/Stop.*unconfirmed/); expect(rows[0]!.running).toBe(true);
+    io.spawn.mockImplementation(original);
+    expect((await runtime().stop(input)).items).toEqual(input.targets.map(target => ({ ...target, running: false })));
+    expect(rows[0]!.running).toBe(false);
+  });
   it('discovers actual IDs across generations and stops without deleting or following replacements', async () => {
     const first = await runtime().prepare(prepare(5, 10));
     const second = await runtime().prepare(prepare(9, 11));
