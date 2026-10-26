@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- R2 development: persist plain-Docker node deployment authority in a private journal atomically with actual admission. Preserve queued predecessors, retain the original owner across configuration-snapshot rewrites, refuse old ownership after Stop or a newer deployment, and retain node identity across removal. Migration 0104 preserves existing work and deployment API payloads. Physical prepare/network/retire and scale/wake integration remain open.
+
 - R2 development: accept a durable node Stop before the first deployment has selected a runtime. Cancel queued, building, deploying, CI-waiting and approval-waiting work atomically with runtime ownership, fence every accepted node, capture immutable managed generations and confirm routing withdrawal and physical Stop before completion. Nullable Stop anchors retain existing journal data and command revision high-water marks through migration 0103. The new protocol requires capable 0.19.0 agents; production deploy/scale/wake integration and full R2 acceptance remain open.
 
 ### Fixed
