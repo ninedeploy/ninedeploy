@@ -53,6 +53,7 @@ export const MULTI_NODE_CAPABILITIES = [
   'docker.metrics',
   'docker.lifecycle',
   'docker.lifecycle.generations',
+  'docker.mutations',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

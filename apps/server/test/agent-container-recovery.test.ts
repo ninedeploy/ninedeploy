@@ -3,10 +3,14 @@ const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
 const { runRegisteredOp } = await import('../src/agentOps/index.js');
 const id = 'a'.repeat(64);
+const retireDockerStub = (name = 'web-9') => async (_exe: unknown, argv: unknown, sink: (line: string) => void) => {
+  if ((argv as string[])[0] === 'inspect') sink(JSON.stringify({ id, name: '/' + name, managed: null, serviceId: null, deploymentId: null, composeProject: null }));
+  return 0;
+};
 afterEach(() => io.spawn.mockReset());
 describe('sealed immutable container recovery operations', () => {
   it('honors the requested stop grace with a matching child timeout before removing the immutable ID', async () => {
-    io.spawn.mockImplementation(async (_e, args, sink) => { if (args[0] === 'inspect') sink('/web-9'); return 0; });
+    io.spawn.mockImplementation(retireDockerStub());
     await runRegisteredOp('docker.retire', { id, name: 'web-9', graceSeconds: '37' }, () => {}, { sealed: true });
     expect(io.spawn.mock.calls[1][1]).toEqual(['stop', '-t', '37', id]);
     expect(io.spawn.mock.calls[1][3].timeoutMs).toBeGreaterThanOrEqual(42_000);
@@ -32,14 +36,14 @@ describe('sealed immutable container recovery operations', () => {
     await expect(runRegisteredOp('docker.identity', { name: 'web-9' }, () => {}, { sealed: true })).rejects.toThrow('unavailable');
   });
   it('stops and removes only the immutable ID, after matching its expected name', async () => {
-    io.spawn.mockImplementation(async (_e, args, sink) => { if (args[0] === 'inspect') sink('/web-9'); return 0; });
+    io.spawn.mockImplementation(retireDockerStub());
     const out: string[] = [];
     await runRegisteredOp('docker.retire', { id, name: 'web-9' }, s => out.push(s), { sealed: true });
     expect(io.spawn.mock.calls.slice(1).map(c => c[1])).toEqual([['stop', '-t', '5', id], ['rm', '-f', id]]);
     expect(out).toEqual([`ND-RETIRED ${id}`]);
   });
   it('keeps a renamed container and refuses arbitrary IDs before side effects', async () => {
-    io.spawn.mockImplementation(async (_e, _a, sink) => { sink('/different-owner'); return 0; });
+    io.spawn.mockImplementation(retireDockerStub('different-owner'));
     await expect(runRegisteredOp('docker.retire', { id, name: 'web-9' }, () => {}, { sealed: true })).rejects.toThrow('changed');
     expect(io.spawn).toHaveBeenCalledTimes(1); io.spawn.mockClear();
     await expect(runRegisteredOp('docker.retire', { id: '--all', name: 'web-9' }, () => {}, { sealed: true })).rejects.toThrow('Invalid');

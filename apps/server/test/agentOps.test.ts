@@ -55,11 +55,12 @@ describe('agent typed-op argv templates', () => {
   it('docker.networkRm / connect / disconnect', async () => {
     expect(await argvOf('docker.networkRm', { name: 'net-a' })).toEqual(['network', 'rm', 'net-a']);
     expect(await argvOf('docker.networkConnect', { network: 'net-a', container: 'web-1' })).toEqual([
-      'network', 'connect', 'net-a', 'web-1',
+      'network', 'connect', 'net-a', LEGACY_DOCKER_ID,
     ]);
     expect(await argvOf('docker.networkDisconnect', { network: 'net-a', container: 'web-1' })).toEqual([
-      'network', 'disconnect', 'net-a', 'web-1',
+      'network', 'disconnect', 'net-a', LEGACY_DOCKER_ID,
     ]);
+    expect(spawnMock).toHaveBeenCalledWith('docker', ['inspect', '--type', 'container', '--format', expect.stringContaining('.Config.Labels'), 'web-1'], expect.any(Function), { timeoutMs: expect.any(Number) });
     await expect(argvOf('docker.networkConnect', { network: 'net-a', container: 'x;y' })).rejects.toThrow(
       'Invalid container name',
     );
@@ -140,7 +141,7 @@ describe('agent typed-op argv templates', () => {
 
   it('docker.stop / rm / logs / inspect', async () => {
     expect(await argvOf('docker.stop', { name: 'c1' })).toEqual(['stop', '-t', '5', LEGACY_DOCKER_ID]);
-    expect(await argvOf('docker.rm', { name: 'c1' })).toEqual(['rm', '-f', 'c1']);
+    expect(await argvOf('docker.rm', { name: 'c1' })).toEqual(['rm', '-f', LEGACY_DOCKER_ID]);
     expect(await argvOf('docker.logs', { name: 'c1' })).toEqual(['logs', '--tail', '300', '--timestamps', 'c1']);
     // 0.16.3 `tail`: re-validated on the agent; anything off-format is the old 300.
     expect(await argvOf('docker.logs', { name: 'c1', tail: '1000' })).toEqual(['logs', '--tail', '1000', '--timestamps', 'c1']);

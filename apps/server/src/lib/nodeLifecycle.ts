@@ -11,6 +11,15 @@ let active = 0;
 const INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"composeProject":{{json (index .Config.Labels "com.docker.compose.project")}},"status":{{json .State.Status}},"running":{{json .State.Running}}}';
 const JOURNAL_SCHEMA = 'PRAGMA busy_timeout=100; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS lifecycle_head (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, intent TEXT NOT NULL, receipt TEXT)';
 
+export function assertLegacyNodeMutationAllowed(database: DatabaseSync): void {
+  const table = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_protocol'").get();
+  if (!table) return;
+  const mode = database.prepare('SELECT version FROM runtime_protocol WHERE id=1').get();
+  if (!mode) return;
+  if (mode.version !== 1) throw new Error('Unsupported runtime journal protocol; retained for review');
+  throw new Error('Unversioned container mutation is fenced by ordered runtime ownership; update the panel');
+}
+
 /** Compatibility entry point; ordered commands must also fence old agent callers. */
 export async function runLegacyNodeLifecycle(root: string, action: 'start' | 'stop', name: string, graceSeconds: number,
   onLine: (line: string) => void): Promise<number> {
@@ -71,6 +80,7 @@ export async function runLegacyNodeLifecycle(root: string, action: 'start' | 'st
           current(); let begun = false;
           try {
             database.exec('BEGIN IMMEDIATE'); begun = true; current();
+            assertLegacyNodeMutationAllowed(database);
             const head = database.prepare('SELECT intent FROM lifecycle_head WHERE id=1').get();
             if (head) {
               const intent: unknown = JSON.parse(String(head.intent));
@@ -152,7 +162,10 @@ export async function withNodeServiceJournal<T>(root: string, serviceId: number,
 /** Drain the complete admitted create/network/Start sequence before acknowledging a lifecycle effect. */
 export function runNodeCreation<T>(root: string, serviceId: number,
   operation: (remaining: () => number, current: () => void) => Promise<T>): Promise<T> {
-  return withNodeServiceJournal(root, serviceId, 595_000, ({ write, remaining, current }) => write(() => operation(remaining, current)));
+  return withNodeServiceJournal(root, serviceId, 595_000, ({ database, write, remaining, current }) => write(async () => {
+    assertLegacyNodeMutationAllowed(database);
+    return operation(remaining, current);
+  }));
 }
 
 /** The committed head is never rolled back with a failed or interrupted Docker effect. */

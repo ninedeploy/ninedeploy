@@ -40,3 +40,4 @@ export * from './containerMetrics.js';
 export * from './containerLifecycle.js';
 export * from './serviceLifecycle.js';
 export * from './autoscale.js';
+export * from './containerMutation.js';

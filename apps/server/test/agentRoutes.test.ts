@@ -356,6 +356,8 @@ describe('agent /agent/exec sealed transport', () => {
     await first.register(agentRoutes, { tokenHash: TOKEN_HASH, nonceFile });
     const envelope = seal(TOKEN_HASH, { op: 'docker.rm', params: { name: 'web-3' }, nonce: 'c0ffee00c0ffee00' });
     expect((await first.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } })).statusCode).toBe(200);
+    const beforeReplay = spawnMock.mock.calls.length;
+    expect(spawnMock.mock.calls.filter(call => call[1][0] === 'rm')).toHaveLength(1);
     await first.close();
     // A new process: the in-memory cache is gone, the file is not.
     const second = await buildTestApp();
@@ -363,10 +365,11 @@ describe('agent /agent/exec sealed transport', () => {
     const replay = await second.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: envelope } });
     expect(replay.statusCode).toBe(401);
     expect(replay.json().error.code).toBe('replayed');
-    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(beforeReplay);
     // Fresh requests keep working after the restart.
     const fresh = seal(TOKEN_HASH, { op: 'docker.rm', params: { name: 'web-3' }, nonce: 'c0ffee00c0ffee01' });
     expect((await second.inject({ method: 'POST', url: '/agent/exec', payload: { sealed: fresh } })).statusCode).toBe(200);
+    expect(spawnMock.mock.calls.filter(call => call[1][0] === 'rm')).toHaveLength(2);
   });
 
   it('refuses to boot when its replay cache cannot be persisted', async () => {

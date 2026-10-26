@@ -41,7 +41,7 @@ const MAX_LABELS = 32;
 const RESTART = ['unless-stopped', 'always', 'on-failure', 'no'] as const;
 const RE_LABEL_KEY = /^ninedeploy\.[a-z0-9][a-z0-9._-]{0,127}$/;
 /** Labels the op sets itself (r593 recovery labels); a spec cannot override them. */
-const RESERVED_LABELS = new Set(['ninedeploy.managed', 'ninedeploy.deployment', 'ninedeploy.service']);
+const RESERVED_LABELS = new Set(['ninedeploy.managed', 'ninedeploy.deployment', 'ninedeploy.service', 'ninedeploy.mutation', 'ninedeploy.spec']);
 const SPEC_KEYS = new Set([
   'name', 'image', 'envFile', 'restart', 'network', 'extraNetworks', 'volumes', 'dockerSocket', 'cmd', 'labels', 'publish', 'ports',
   'cpuShares', 'cpuLimitMilli', 'memLimitMb', 'managed', 'deploymentId', 'serviceId', 'userLabels', 'healthCmd',

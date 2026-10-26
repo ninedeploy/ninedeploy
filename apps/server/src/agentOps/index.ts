@@ -1,3 +1,4 @@
+import { containerMutationOps } from './containerMutation.js';
 import { databaseClientOps } from './databaseClient.js';
 import { studioOps } from './studios.js';
 import { proxyTrafficOps } from './proxyTraffic.js';
@@ -63,6 +64,7 @@ export interface AgentOpModule {
 }
 
 export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
+  containerMutationOps,
   containerLifecycleOps,
   containerMetricsOps,
   containerReadinessOps,
@@ -105,6 +107,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
  * only socket mounts and is enforced in agentOps/runSpec.ts.
  */
 export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, readonly string[]>>> = {
+  'docker.mutations': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'docker.lifecycle': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
   'docker.lifecycle.generations': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
   'docker.metrics': ['NINEDEPLOY_AGENT_CONTAINER_METRICS'],

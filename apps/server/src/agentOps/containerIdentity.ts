@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { guardLegacyNodeTarget } from '../lib/nodeLegacyMutation.js';
 import { spawnValidated } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { RE_NAME, str } from './operands.js';
@@ -38,19 +40,16 @@ export const containerIdentityOps: AgentOpModule = {
         const supplied = params['graceSeconds'];
         const grace = supplied === undefined ? 5 : typeof supplied === 'string' && /^\d+$/.test(supplied) ? Number(supplied) : typeof supplied === 'number' ? supplied : NaN;
         if (!Number.isInteger(grace) || grace < 0 || grace > 300) throw new Error('Invalid retirement grace');
-        let actual = '';
-        const found = await spawnValidated('docker', ['inspect', '--type', 'container', '--format', '{{.Name}}', id], line => { if (actual.length < 1024) actual += line; }, { timeoutMs: 10_000 });
-        if (found !== 0) {
-          if (/No such (object|container)/i.test(actual)) { onLine(`ND-RETIRED ${id}`); return 0; }
-          throw new Error('Container generation unavailable');
-        }
-        if (actual.trim().replace(/^\//, '') !== name) throw new Error('Container generation changed; retained');
-        for (const args of [['stop', '-t', String(grace), id], ['rm', '-f', id]]) {
-          let error = '';
-          const code = await spawnValidated('docker', args, line => { if (error.length < 1024) error += line; }, { timeoutMs: args[0] === 'stop' ? Math.max(10_000, (grace + 5) * 1000) : 10_000 });
-          if (code !== 0 && !/No such (object|container)/i.test(error)) throw new Error('Container retirement unconfirmed');
-        }
-        onLine(`ND-RETIRED ${id}`); return 0;
+        return guardLegacyNodeTarget(join(process.cwd(), '.agent-work', '.lifecycle'), id, async (target, remaining, current) => {
+          if (!target) { onLine(`ND-RETIRED ${id}`); return 0; }
+          if (target.name !== name) throw new Error('Container generation changed; retained');
+          for (const args of [['stop', '-t', String(grace), id], ['rm', '-f', id]]) {
+            let error = ''; current();
+            const code = await spawnValidated('docker', args, line => { if (error.length < 1024) error += line; }, { timeoutMs: Math.min(remaining(), args[0] === 'stop' ? Math.max(10_000, (grace + 5) * 1000) : 10_000) });
+            current(); if (code !== 0 && !/No such (object|container)/i.test(error)) throw new Error('Container retirement unconfirmed');
+          }
+          onLine(`ND-RETIRED ${id}`); return 0;
+        }, Math.max(35_000, (grace + 30) * 1000));
       },
     },
   },

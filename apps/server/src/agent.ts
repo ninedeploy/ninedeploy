@@ -29,6 +29,7 @@ import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/age
 import { spawnValidated } from './lib/spawnValidated.js';
 import { abortDeployment, AGENT_CAP_OP_CANCEL, CANCELLABLE_AGENT_OPS, runInDeployScope } from './lib/deployAbort.js';
 import { runLegacyNodeLifecycle, runNodeCreation } from './lib/nodeLifecycle.js';
+import { guardLegacyNodeTarget } from './lib/nodeLegacyMutation.js';
 
 /**
  * Agent mode (NINEDEPLOY_AGENT=1): a minimal HTTP surface for the core to run
@@ -1410,6 +1411,13 @@ export async function runOp(
   // r660: repository paths are symlink-walked under the directory the op
   // runs in before any argv exists.
   const argv = def.build(guardWorkspacePaths(op, params, cwd ?? process.cwd()));
+  if (op === 'docker.rm' || op === 'docker.networkConnect' || op === 'docker.networkDisconnect') {
+    const reference = argv.at(-1)!;
+    return guardLegacyNodeTarget(joinPath(process.cwd(), WORK_DIR, '.lifecycle'), reference, (target, remaining, current) => {
+      if (!target) { onLine(`Error: No such container: ${reference}`); return Promise.resolve(1); }
+      current(); return spawnValidated(def.exe, [...argv.slice(0, -1), target.id], onLine, { ...(cwd === undefined ? {} : { cwd }), timeoutMs: remaining() });
+    });
+  }
   if (op === 'docker.runEnv' && params['serviceId'] !== undefined) {
     return runNodeCreation(joinPath(process.cwd(), WORK_DIR, '.lifecycle'), Number(params['serviceId']), (remaining, current) => {
       current(); return spawnValidated(def.exe, argv, onLine, { ...(cwd === undefined ? {} : { cwd }), timeoutMs: remaining() });
