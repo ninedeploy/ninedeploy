@@ -9,6 +9,12 @@ export const containerMutationOps: AgentOpModule = {
     'docker.runtimeFence': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
       onLine('ND-RUNTIME-FENCE ' + JSON.stringify(await runtime().fence(params))); return 0;
     } },
+    'docker.runtimeInventory': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+      onLine('ND-RUNTIME-INVENTORY ' + JSON.stringify(await runtime().inventory(params))); return 0;
+    } },
+    'docker.stopSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+      onLine('ND-STOPPED-SET ' + JSON.stringify(await runtime().stop(params, onLine))); return 0;
+    } },
     'docker.prepare': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
       onLine('ND-PREPARED ' + JSON.stringify(await runtime().prepare(params, onLine))); return 0;
     } },

@@ -6,7 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import { advertisedCapabilities, runRegisteredOp } from '../../src/agentOps/index.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
-const ops = ['docker.runtimeFence', 'docker.prepare', 'docker.networkSet', 'docker.retireSet'];
+const ops = ['docker.runtimeInventory', 'docker.stopSet', 'docker.runtimeFence', 'docker.prepare', 'docker.networkSet', 'docker.retireSet'];
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'nd-mutation-op-')); vi.spyOn(process, 'cwd').mockReturnValue(root); io.spawn.mockReset(); });
 afterEach(async () => {

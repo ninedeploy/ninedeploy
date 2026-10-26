@@ -715,6 +715,13 @@
       "when": 1793001461633,
       "tag": "0102_service_runtime_owners",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "6",
+      "when": 1793045120596,
+      "tag": "0103_generation_independent_stop",
+      "breakpoints": true
     }
   ]
 }

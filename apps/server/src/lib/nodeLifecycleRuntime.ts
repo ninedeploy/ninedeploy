@@ -13,7 +13,7 @@ export async function assertNodeLifecycleAvailable(db: DB, service: Service, opt
   const sealed = options.signal ? await agentTransportSealed(db, service.serverId, options.signal) : await agentTransportSealed(db, service.serverId);
   const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, service.serverId!, op, params, sink, { timeoutMs: 5000, ...(options.signal ? { signal: options.signal } : {}) }),
     `#${service.serverId}`, sealed, {
-      cap: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
+      cap: service.runtimeId === null ? ['docker.mutations', 'proxy.routingAck'] : ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
     });
   options.signal?.throwIfAborted();
   if (refusal) throw new HttpError(refusal.status, refusal.code, refusal.message);

@@ -2,10 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import { deployments, fanoutTransitions, nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
 import { HttpError } from './errors.js';
+import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 
 const terminal = ['completed', 'superseded'] as const;
+const cancellable = ['queued', 'building', 'deploying', 'awaiting_ci', 'awaiting_approval'] as const;
 export const NODE_LIFECYCLE_LEASE_MS = 90_000;
 const changed = () => new HttpError(409, 'node_lifecycle_superseded', 'The service or node lifecycle owner changed');
 const configuration = (s: Service) => JSON.stringify([s.type, s.orchestrator, s.runtimeId, s.serverId, s.port,
@@ -32,15 +34,22 @@ export async function nodeLifecycleHasRuntimeAuthority(db: Pick<DB, 'select'>, i
 }
 
 export async function acceptNodeLifecycleIntent(db: DB, service: Service, action: 'start' | 'stop' | 'restart', options: { automatic?: boolean } = {}): Promise<NodeLifecycleIntent> {
-  if (service.type !== 'docker' || service.orchestrator === 'swarm' || service.serverId == null || !service.runtimeId) {
+  if (service.type !== 'docker' || service.orchestrator === 'swarm' || service.serverId == null || !service.runtimeId && (service.runtimeId !== null || action !== 'stop')) {
     throw new HttpError(422, 'node_lifecycle_unsupported', 'Ordered node lifecycle requires a plain Docker runtime on a node');
   }
-  const deploymentId = Number(/-([1-9]\d*)$/.exec(service.runtimeId)?.[1]);
-  if (!Number.isSafeInteger(deploymentId) || deploymentId < 1) throw new HttpError(422, 'node_lifecycle_identity_unknown', 'Redeploy this service to establish a managed runtime identity');
+  const deploymentId = service.runtimeId === null ? null : Number(/-([1-9]\d*)$/.exec(service.runtimeId)?.[1]);
+  if (deploymentId !== null && (!Number.isSafeInteger(deploymentId) || deploymentId < 1)) throw new HttpError(422, 'node_lifecycle_identity_unknown', 'Redeploy this service to establish a managed runtime identity');
   return db.transaction(async tx => {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, service.id) });
     if (!fresh || fresh.type !== 'docker' || fresh.orchestrator === 'swarm' || fresh.runtimeId !== service.runtimeId || fresh.serverId !== service.serverId ||
       action !== 'stop' && (configuration(fresh) !== configuration(service) || fresh.status !== service.status)) throw changed();
+    const activeWork = fresh.runtimeId === null ? await tx.select({ id: deployments.id, status: deployments.status }).from(deployments)
+      .where(and(eq(deployments.serviceId, service.id), inArray(deployments.status, [...cancellable]))) : [];
+    if (fresh.runtimeId === null && activeWork.length === 0) {
+      const pending = await tx.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id), notInArray(nodeLifecycleIntents.phase, [...terminal])) });
+      if (pending?.action === 'stop' && pending.runtimeId === null && await nodeLifecycleHasRuntimeAuthority(tx, pending)) return pending;
+      throw new HttpError(404, 'not_found', 'Service has no selected runtime or active deployment to stop');
+    }
     if (options.automatic) {
       if (action !== 'start' || fresh.status !== 'running') throw changed();
       const pending = await tx.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id), notInArray(nodeLifecycleIntents.phase, [...terminal])) });
@@ -60,17 +69,21 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
     const requestId = randomBytes(16).toString('hex');
     const authority = await reserveServiceRuntimeOwnerInTransaction(tx, fresh.id, action, requestId, 'supersede');
     const acceptedAt = new Date();
-    const [intent] = await tx.insert(nodeLifecycleIntents).values({ serviceId: fresh.id, serverId: fresh.serverId!, runtimeId: fresh.runtimeId!, deploymentId,
+    const [intent] = await tx.insert(nodeLifecycleIntents).values({ serviceId: fresh.id, serverId: fresh.serverId!, runtimeId: fresh.runtimeId, deploymentId,
       action, requestId, phase: action !== 'start' ? 'fencing' : 'preparing',
       nextAttemptAt: acceptedAt, createdAt: acceptedAt, updatedAt: acceptedAt,
       snapshot: { status: fresh.status, port: fresh.port, healthCheck: fresh.healthCheck, healthPath: fresh.healthPath, healthCommand: fresh.healthCommand,
         healthTimeoutS: fresh.healthTimeoutSeconds, serving: shape.serving, capacity: shape.capacity, configuration: configuration(fresh), fanout,
-        mutationEpoch: authority.epoch, revisionEpoch: authority.epoch } }).returning();
+        mutationEpoch: authority.epoch, revisionEpoch: authority.epoch,
+        ...(fresh.runtimeId === null ? { unselected: { participants: [
+          { serverId: fresh.serverId!, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-' + row.id, MAX_REPLICAS)) },
+          ...fanout.map(target => ({ serverId: target.serverId, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-t' + target.serverId + '-' + row.id, MAX_REPLICAS)) })),
+        ] } } : {}) } }).returning();
     nodeLifecycleWireRevision(intent!, 'effect');
     if (action !== 'start') {
       await tx.update(services).set({ status: 'stopped', asleepAt: null }).where(eq(services.id, service.id));
       await tx.update(deployments).set({ status: 'cancelled', finishedAt: new Date() })
-        .where(and(eq(deployments.serviceId, service.id), inArray(deployments.status, ['queued', 'building', 'deploying'])));
+        .where(and(eq(deployments.serviceId, service.id), inArray(deployments.status, [...cancellable])));
     }
     return intent!;
   });
@@ -151,7 +164,7 @@ export async function advanceNodeLifecycleIntent(db: DB, intent: NodeLifecycleIn
     const done = phase === 'completed';
     if (done) {
       for (const target of fresh.snapshot.fanout ?? []) {
-        if (target.runtimeId) await tx.update(serviceTargets).set({ status: fresh.action === 'stop' ? 'idle' : 'running', updatedAt: new Date(now) })
+        if (target.runtimeId || (fresh.action === 'stop' && fresh.snapshot.unselected)) await tx.update(serviceTargets).set({ status: fresh.action === 'stop' ? 'idle' : 'running', updatedAt: new Date(now) })
           .where(eq(serviceTargets.id, target.targetId));
       }
     }

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { eq, nodeLifecycleIntents, type DB, type Service } from '@ninedeploy/db';
-import { containerLifecycleReply, containerLifecycleRequest, type ContainerReadinessRequest } from '@ninedeploy/schemas';
+import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, runtimeFenceRequest, runtimeFenceReply, containerLifecycleReply, containerLifecycleRequest, type ContainerReadinessRequest } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import type { AgentOpResult } from './agentClient.js';
@@ -49,17 +49,43 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     if (result.exitCode !== 0) throw new Error(`Node lifecycle operation ${op} failed`);
     return result;
   };
-  type Participant = { serverId: number; runtimeId: string; deploymentId: number; serving: number };
-  const participants = (): Participant[] => [{ serverId: intent.serverId, runtimeId: intent.runtimeId, deploymentId: intent.deploymentId, serving: intent.snapshot.serving },
+  type Participant = { serverId: number; runtimeId: string | null; deploymentId: number | null; serving: number; expectedNames?: string[] };
+  const participants = (): Participant[] => {
+    if (intent.snapshot.unselected) {
+      if (intent.action !== 'stop' || intent.runtimeId !== null || intent.deploymentId !== null) throw new Error('Invalid unselected Stop snapshot');
+      const accepted = [intent.serverId, ...(intent.snapshot.fanout ?? []).map(target => target.serverId)];
+      const nodes = intent.snapshot.unselected.participants;
+      if (!Array.isArray(nodes) || nodes.length !== accepted.length || new Set(nodes.map(node => node.serverId)).size !== nodes.length ||
+        nodes.some(node => !accepted.includes(node.serverId) || !Array.isArray(node.expectedNames))) throw new Error('Unselected Stop placement changed');
+      return nodes.map(node => ({ ...node, runtimeId: null, deploymentId: null, serving: 0 }));
+    }
+    if (intent.runtimeId === null || intent.deploymentId === null) throw new Error('Missing selected runtime identity');
+    return [{ serverId: intent.serverId, runtimeId: intent.runtimeId, deploymentId: intent.deploymentId, serving: intent.snapshot.serving },
     ...(intent.snapshot.fanout ?? []).filter(target => target.runtimeId !== null).map(target => {
       const deploymentId = Number(/-([1-9]\d*)$/.exec(target.runtimeId!)?.[1]);
       if (!Number.isSafeInteger(deploymentId) || deploymentId < 1) throw new Error('Fan-out runtime has no managed deployment identity; redeploy this target');
       return { serverId: target.serverId, runtimeId: target.runtimeId!, deploymentId, serving: 1 };
     })];
+  };
+  const fenceRequest = (participant: Participant) => ({ requestId: createHash('sha256').update(intent.requestId + ':fence' + (participant.serverId === intent.serverId ? '' : ':' + participant.serverId)).digest('hex').slice(0,32),
+    serviceId: intent.serviceId, revision: nodeLifecycleWireRevision(intent, 'fence'), timeoutMs: 30_000 });
+  const machine = <T extends { requestId: string; serviceId: number; revision: number }>(result: AgentOpResult, prefix: string, parse: (value: unknown) => T, input: { requestId: string; serviceId: number; revision: number }): T => {
+    const frames = result.lines.filter(line => line.startsWith(prefix));
+    if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 65_536) throw new Error('Node runtime receipt unavailable');
+    const reply = parse(JSON.parse(frames[0]!.slice(prefix.length)));
+    if (reply.requestId !== input.requestId || reply.serviceId !== input.serviceId || reply.revision !== input.revision) throw new Error('Node runtime receipt owner changed');
+    return reply;
+  };
   const capturedTargets = (participant: Participant) => (intent.targets ?? [])
     .filter(target => (target.serverId ?? intent.serverId) === participant.serverId).map(({ id, name }) => ({ id, name }));
   const discover = async (participant: Participant) => {
     const targets: NonNullable<typeof intent.targets> = [];
+    if (intent.snapshot.unselected) {
+      const request = containerInventoryRequest.parse({ ...fenceRequest(participant), expectedNames: participant.expectedNames });
+      const reply = machine(await call(participant.serverId, 'docker.runtimeInventory', request, 35_000), 'ND-RUNTIME-INVENTORY ', value => containerInventoryReply.parse(value), request);
+      return reply.items.map(({ running: _running, ...item }) => ({ ...item, ...(participant.serverId === intent.serverId ? {} : { serverId: participant.serverId }) }));
+    }
+    if (participant.runtimeId === null || participant.deploymentId === null) throw new Error('Missing selected generation');
     const names = replicaNames(participant.runtimeId, intent.action === 'start' ? participant.serving : MAX_REPLICAS);
     for (const name of names) {
       const result = await call(participant.serverId, 'docker.identity', { name });
@@ -79,6 +105,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     return targets;
   };
   const servingTargets = (participant: Participant) => {
+    if (participant.runtimeId === null) throw new Error('Missing serving runtime');
     const names = replicaNames(participant.runtimeId, participant.serving);
     const selected = names.map(name => capturedTargets(participant).find(t => t.name === name));
     if (selected.some(target => !target)) throw new Error('Node lifecycle serving targets are unavailable');
@@ -86,6 +113,20 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
   };
   const apply = async (participant: Participant, fence: boolean, restarting = false) => {
     if (!fence && intent.targets === null) throw new Error('Node lifecycle immutable targets are unavailable');
+    if (intent.snapshot.unselected) {
+      if (fence) {
+        const request = runtimeFenceRequest.parse(fenceRequest(participant));
+        machine(await call(participant.serverId, 'docker.runtimeFence', request, 35_000), 'ND-RUNTIME-FENCE ', value => runtimeFenceReply.parse(value), request);
+      } else {
+        const request = containerStopSetRequest.parse({ requestId: intent.requestId, serviceId: intent.serviceId, revision: nodeLifecycleWireRevision(intent, 'effect'), timeoutMs: 30_000, graceSeconds: 5,
+          targets: (intent.targets ?? []).filter(target => (target.serverId ?? intent.serverId) === participant.serverId).map(({ serverId: _server, ...target }) => target) });
+        const reply = machine(await call(participant.serverId, 'docker.stopSet', request, 35_000), 'ND-STOPPED-SET ', value => containerStopSetReply.parse(value), request);
+        if (reply.items.length !== request.targets.length || request.targets.some(target => !reply.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId))) throw new Error('Node Stop generation coverage changed');
+      }
+      return;
+    }
+    if (participant.deploymentId === null) throw new Error('Missing selected deployment');
+
     const request = containerLifecycleRequest.parse({ requestId: fence
       ? createHash('sha256').update(`${intent.requestId}:fence${participant.serverId === intent.serverId ? '' : `:${participant.serverId}`}`).digest('hex').slice(0, 32) : intent.requestId,
     serviceId: intent.serviceId, deploymentId: participant.deploymentId, revision: nodeLifecycleWireRevision(intent, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
@@ -134,7 +175,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       const sealed = await deps.sealed(participant.serverId);
       await checkpoint();
       const refusal = await capabilityRefusal((op, params) => call(participant.serverId, op, params, 5000), `#${participant.serverId}`, sealed, {
-        cap: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
+        cap: intent.snapshot.unselected ? ['docker.mutations', 'proxy.routingAck'] : ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
       });
       await checkpoint();
       if (refusal) throw new Error(refusal.message);

@@ -23,6 +23,7 @@ beforeEach(() => {
   vi.spyOn(process, 'cwd').mockReturnValue(root);
   io.spawn.mockReset().mockImplementation(async (_bin, args: string[], sink: (line: string) => void) => {
     const find = (reference: string) => rows.find(row => row.id === reference || row.name === reference);
+    if (args[0] === 'ps') { for (const row of rows.filter(row => row.managed === 'service' && row.serviceId === '7')) sink(row.id); return 0; }
     if (args[0] === 'inspect') { const row = find(args.at(-1)!); if (!row) { sink('Error: No such container'); return 1; } sink(args.includes('{{.Name}}') ? '/' + row.name : JSON.stringify({ ...row, name: '/' + row.name })); return 0; }
     if (args[0] === 'create' || args[0] === 'run') {
       const label = (key: string) => args.find(value => value.startsWith(key + '='))?.slice(key.length + 1) ?? null;
@@ -200,4 +201,44 @@ describe('persistent runtime request admission', () => {
     io.spawn.mockClear(); await expect(runtime().prepare(prepare())).rejects.toThrow(/receipt ownership/); expect(io.spawn).not.toHaveBeenCalled();
   });
 
+});
+
+describe('fenced generation-independent inventory and Stop', () => {
+  it('discovers actual IDs across generations and stops without deleting or following replacements', async () => {
+    const first = await runtime().prepare(prepare(5, 10));
+    const second = await runtime().prepare(prepare(9, 11));
+    await runtime().fence(fence(12));
+    const inventory = await runtime().inventory({ ...fence(12), expectedNames: ['web-10', 'web-11', 'never-created'] });
+    expect(inventory.items.map(item => item.id)).toEqual([first.items[0]!.id, second.items[0]!.id]);
+    const input = { ...fence(13), graceSeconds: 5, targets: inventory.items.map(({ running: _running, ...target }) => target) };
+    const stopped = await runtime().stop(input);
+    expect(stopped.items.every(item => item.running === false)).toBe(true); expect(rows.every(row => !row.running)).toBe(true);
+    expect(effects().some(args => args[0] === 'rm')).toBe(false);
+    io.spawn.mockClear(); expect(await runtime().stop(input)).toEqual(stopped); expect(io.spawn).not.toHaveBeenCalled();
+    await expect(runtime().inventory(fence(12))).rejects.toThrow(/stale/);
+  });
+  it('does not invent identities for an empty fenced node', async () => {
+    await runtime().fence(fence());
+    expect((await runtime().inventory(fence())).items).toEqual([]);
+    expect((await runtime().stop({ ...fence(9), graceSeconds: 5, targets: [] })).items).toEqual([]);
+    expect(effects().filter(args => args[0] !== 'ps')).toEqual([]);
+  });
+  it('refuses inventory before its fence or with another owner nonce', async () => {
+    await expect(runtime().inventory(fence())).rejects.toThrow(/fence/);
+    await runtime().fence(fence()); io.spawn.mockClear();
+    await expect(runtime().inventory({ ...fence(), requestId: nonce(99) })).rejects.toThrow(/fence/);
+    expect(io.spawn).not.toHaveBeenCalled();
+  });
+  it('holds a foreign container occupying an expected pending name', async () => {
+    rows.push({ id: 'f'.repeat(64), name: 'web-10', managed: 'service', serviceId: '8', deploymentId: '10', nonce: null, specHash: null, status: 'running', running: true, networks: {} });
+    await runtime().fence(fence());
+    await expect(runtime().inventory({ ...fence(), expectedNames: ['web-10'] })).rejects.toThrow(/ownership/);
+    expect(rows[0]!.running).toBe(true); expect(effects().filter(args => args[0] !== 'ps')).toEqual([]);
+  });
+  it('validates every Stop identity before affecting any owned member', async () => {
+    const own = await runtime().prepare(prepare());
+    rows.push({ ...rows[0]!, id: 'f'.repeat(64), name: 'foreign', serviceId: '8' }); io.spawn.mockClear();
+    await expect(runtime().stop({ ...fence(), graceSeconds: 5, targets: [{ id: own.items[0]!.id, name: own.items[0]!.name, deploymentId: 10 }, { id: 'f'.repeat(64), name: 'foreign', deploymentId: 10 }] })).rejects.toThrow(/ownership/);
+    expect(effects()).toEqual([]); expect(rows.every(row => row.running)).toBe(true);
+  });
 });

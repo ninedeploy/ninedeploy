@@ -53,3 +53,11 @@ export const containerNetworkSetReply = containerNetworkSetRequest.omit({ timeou
 }).strict().refine(reply => reply.items.every(item => item.connected === (reply.action === 'connect')), 'Network receipt contradicts its action');
 export type ContainerNetworkSetRequest = z.infer<typeof containerNetworkSetRequest>;
 export type ContainerNetworkSetReply = z.infer<typeof containerNetworkSetReply>;
+
+/** Discover every managed generation only under an acknowledged service fence. */
+export const containerInventoryRequest = runtimeFenceRequest.extend({ expectedNames: z.array(name).max(30).refine(items => new Set(items).size === items.length, 'Duplicate expected name').optional() });
+export const containerInventoryReply = runtimeFenceReply.extend({ items: z.array(target.extend({ running: z.boolean() })).max(30).refine(distinct, 'Duplicate inventory identity') });
+export const containerStopSetRequest = containerRetireSetRequest;
+export const containerStopSetReply = runtimeFenceReply.extend({ items: z.array(target.extend({ running: z.literal(false) })).max(30).refine(distinct, 'Duplicate Stop identity') });
+export type ContainerInventoryReply = z.infer<typeof containerInventoryReply>;
+export type ContainerStopSetReply = z.infer<typeof containerStopSetReply>;

@@ -1536,8 +1536,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/stop', async (req, reply) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
-    if (!svc?.runtimeId) throw notFound('Service not found or not deployed');
     if (orderedNode(svc)) return reply.code(202).send(await requestLifecycle(svc, 'stop', req));
+    if (!svc.runtimeId) throw notFound('Service not found or not deployed');
     // PM2 and Docker have disjoint runtimes — an unknown type must not silently
     // misroute to the docker CLI (which would no-op on a PM2 process name).
     if (svc.type !== 'pm2' && svc.type !== 'docker' && svc.type !== 'compose') {

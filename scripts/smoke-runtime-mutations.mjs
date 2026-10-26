@@ -84,6 +84,30 @@ try{
  const newer=head(6,9),fencing=launch('docker.runtimeFence',newer,false);await pause(1200);assert.equal(fencing.done,false,'Fence overtook admitted Docker Start');
  check(['exec',pending.name,'touch',home+'/start-barrier-9-release']);receipt(parse(await pending.promise,pending.name),'ND-PREPARED ',ordered);receipt(parse(await fencing.promise,fencing.name),'ND-RUNTIME-FENCE ',newer);
  refused(run('docker.prepare',ordered),/stale|superseded/);report('native-sqlite-fence-drains-admitted-start-across-separate-sealed-http-agents');
+ // A first deployment has no selected generation: discover every physical generation after fencing.
+ const initial=batch(5,40,10),initialPrepared=receipt(run('docker.prepare',initial),'ND-PREPARED ',initial);
+ const orphan=inner(['run','-d','--name','proof-web-older','--network','ninedeploy','--label','ninedeploy.managed=service','--label','ninedeploy.service=10','--label','ninedeploy.deployment=39',appImage,'sleep','300']);
+ const firstStopFence=head(6,10);receipt(run('docker.runtimeFence',firstStopFence),'ND-RUNTIME-FENCE ',firstStopFence);
+ const inventoryInput={...firstStopFence,expectedNames:initial.specs.map(spec=>spec.name)};
+ const inventory=receipt(run('docker.runtimeInventory',inventoryInput),'ND-RUNTIME-INVENTORY ',inventoryInput);
+ assert.equal(inventory.items.length,4);assert.ok(inventory.items.some(item=>item.id===orphan&&item.deploymentId===39&&item.running));
+ const captured=inventory.items.map(({running,...item})=>item),initialStop={...head(7,10),graceSeconds:1,targets:captured};
+ const stopped=receipt(run('docker.stopSet',initialStop),'ND-STOPPED-SET ',initialStop);
+ assert.equal(stopped.items.length,4);assert.ok(captured.every(item=>!state(item.id).running));
+ assert.ok(initialPrepared.items.every(item=>captured.some(target=>target.id===item.id)));
+ receipt(run('docker.stopSet',initialStop),'ND-STOPPED-SET ',initialStop);
+ refused(run('docker.prepare',initial),/stale|superseded/);
+ refused(run('docker.runtimeInventory',inventoryInput),/stale|unconfirmed/);
+ report('generation-independent-stop-captures-all-generations-and-replays-across-native-agent-processes');
+ const emptyFence=head(1,11);receipt(run('docker.runtimeFence',emptyFence),'ND-RUNTIME-FENCE ',emptyFence);
+ assert.deepEqual(receipt(run('docker.runtimeInventory',emptyFence),'ND-RUNTIME-INVENTORY ',emptyFence).items,[]);
+ const emptyStop={...head(2,11),graceSeconds:1,targets:[]};assert.deepEqual(receipt(run('docker.stopSet',emptyStop),'ND-STOPPED-SET ',emptyStop).items,[]);
+ report('generation-independent-stop-completes-on-a-fenced-empty-node');
+ const nextInitial=batch(9,41,10),afterStop=receipt(run('docker.prepare',nextInitial),'ND-PREPARED ',nextInitial);
+ assert.ok(afterStop.items.slice(0,2).every(item=>state(item.id).running));
+ refused(run('docker.stopSet',initialStop),/stale|superseded/);
+ assert.ok(afterStop.items.slice(0,2).every(item=>state(item.id).running));
+ report('newer-typed-deployment-survives-stale-generation-independent-stop');
 }finally{
  for(const name of runners){const r=cli(['inspect',name,'--format','{{index .Config.Labels "ninedeploy.proof"}}']);if(r.status===0){assert.equal(r.stdout.trim(),owner);check(['rm','-fv',name]);}}
  await Promise.allSettled(jobs);

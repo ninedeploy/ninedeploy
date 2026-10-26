@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest, runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply } from '../src/containerMutation.js';
+import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest, runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply } from '../src/containerMutation.js';
 const head = { requestId: 'a'.repeat(32), serviceId: 7, revision: 8, timeoutMs: 30_000 };
 const spec = { name: 'web-10', image: 'sha256:' + 'b'.repeat(64), serviceId: 7, deploymentId: 10 };
 const prepare = { ...head, deploymentId: 10, specs: [spec] };
@@ -92,4 +92,23 @@ describe('ordered runtime mutation wire contracts', () => {
     expect(containerNetworkSetRequest.safeParse({ ...head, action: 'connect', networks: ['nd-dbnet-pg'], targets: [target], ...patch }).success).toBe(false);
   });
 
+});
+
+describe('generation-independent Stop wire contracts', () => {
+  it('accepts fenced inventory and Stop without fabricating a deployment anchor', () => {
+    expect(containerInventoryRequest.parse({ ...head, expectedNames: ['web-10'] })).toMatchObject({ serviceId: 7 });
+    expect(containerInventoryRequest.parse(head).expectedNames).toBeUndefined();
+    expect(containerInventoryReply.parse({ ...replyHead, items: [] }).items).toEqual([]);
+    expect(containerInventoryReply.parse({ ...replyHead, items: [{ ...target, running: true }] }).items).toHaveLength(1);
+    expect(containerStopSetRequest.parse({ ...retired, targets: [] }).targets).toEqual([]);
+    expect(containerStopSetReply.parse({ ...replyHead, items: [{ ...target, running: false }] })).toMatchObject({ complete: true });
+  });
+  it.each([['x', 'x'], ['--unsafe'], Array.from({ length: 31 }, (_, i) => 'web-' + i)])('rejects ambiguous or unbounded expected names: %j', (...names) => {
+    expect(containerInventoryRequest.safeParse({ ...head, expectedNames: names }).success).toBe(false);
+  });
+  it('rejects duplicate inventory and stopped-set identities or a still-running completion', () => {
+    expect(containerInventoryReply.safeParse({ ...replyHead, items: [{ ...target, running: true }, { ...target, running: false }] }).success).toBe(false);
+    expect(containerStopSetReply.safeParse({ ...replyHead, items: [{ ...target, running: true }] }).success).toBe(false);
+    expect(containerStopSetReply.safeParse({ ...replyHead, items: [{ ...target, running: false }, { ...target, running: false }] }).success).toBe(false);
+  });
 });

@@ -1,5 +1,5 @@
 import { relations, sql } from 'drizzle-orm';
-import { type AnySQLiteColumn, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /**
  * NineDeploy — database schema (single source of truth).
@@ -1871,6 +1871,8 @@ export interface NodeLifecycleSnapshot {
   revisionEpoch?: number;
   /** Placement accepted with the command; absent only on older primary-only journals. */
   fanout?: Array<{ targetId: number; serverId: number; runtimeId: string | null }>;
+  /** Initial Stop discovers all physical generations after fencing each accepted node. */
+  unselected?: { participants: Array<{ serverId: number; expectedNames: string[] }> };
 }
 
 /** Accepted panel intent. ID-derived agent revisions survive retries and panel restarts. */
@@ -1878,13 +1880,13 @@ export const nodeLifecycleIntents = sqliteTable('node_lifecycle_intents', {
   id: id(),
   serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
   serverId: integer('server_id').notNull().references(() => servers.id, { onDelete: 'cascade' }),
-  runtimeId: text('runtime_id').notNull(),
-  deploymentId: integer('deployment_id').notNull(),
+  runtimeId: text('runtime_id'),
+  deploymentId: integer('deployment_id'),
   action: text('action', { enum: ['start', 'stop', 'restart'] }).notNull(),
   requestId: text('request_id').notNull(),
   phase: text('phase', { enum: ['fencing', 'preparing', 'routing', 'applying', 'readiness', 'starting', 'warming', 'publishing', 'completed', 'superseded'] }).notNull(),
   snapshot: text('snapshot', { mode: 'json' }).$type<NodeLifecycleSnapshot>().notNull(),
-  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string; serverId?: number }>>(),
+  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string; serverId?: number; deploymentId?: number }>>(),
   ownerToken: text('owner_token'),
   leaseUntil: integer('lease_until', { mode: 'timestamp' }),
   attempts: integer('attempts').notNull().default(0),
@@ -1894,6 +1896,7 @@ export const nodeLifecycleIntents = sqliteTable('node_lifecycle_intents', {
   updatedAt: tsUpdatable('updated_at'),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 }, t => ({
+  anchorCheck: check('node_lifecycle_anchor_check', sql`(${t.runtimeId} IS NOT NULL AND ${t.deploymentId} IS NOT NULL) OR (${t.action} = 'stop' AND ${t.runtimeId} IS NULL AND ${t.deploymentId} IS NULL)`),
   requestIdx: uniqueIndex('node_lifecycle_request_idx').on(t.requestId),
   pendingIdx: uniqueIndex('node_lifecycle_service_pending_idx').on(t.serviceId).where(sql`${t.phase} NOT IN ('completed', 'superseded')`),
   retryIdx: index('node_lifecycle_retry_idx').on(t.nextAttemptAt, t.leaseUntil),

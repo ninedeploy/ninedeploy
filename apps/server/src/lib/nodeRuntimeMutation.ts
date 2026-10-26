@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { containerLifecycleRequest, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest,
+import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, type ContainerInventoryReply, type ContainerStopSetReply, containerLifecycleRequest, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest,
   runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply, type ContainerNetworkSetReply, type ContainerPrepareReply, type ContainerRetireSetReply, type RuntimeFenceReply } from '@ninedeploy/schemas';
 import { parseRunSpec, runSpecArgv, type RunSpec } from '../agentOps/runSpec.js';
 import { assertFileMountsWritten } from '../agentOps/fileMounts.js';
@@ -104,6 +104,52 @@ export function createNodeRuntimeMutation(root: string) {
         const admitted = await claim(journal, input, { kind: 'fence', ...identity }, true);
         if (admitted.compatible) return runtimeFenceReply.parse({ ...identity, complete: true });
         return effect(journal, input, admitted.hash, value => runtimeFenceReply.parse(value), async () => ({ ...identity, complete: true }));
+      });
+    },
+    async inventory(params: unknown): Promise<ContainerInventoryReply> {
+      const input = containerInventoryRequest.parse(params);
+      return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, journal => journal.write(async () => {
+        const recorded = head(journal);
+        if (!recorded || Number(recorded.revision) !== input.revision || digest(String(recorded.intent)) !== recorded.request_hash) throw new Error('Runtime inventory fence is stale or unconfirmed');
+        const intent = JSON.parse(String(recorded.intent)) as Record<string, unknown>;
+        const { kind, ...stored } = intent;
+        const modern = kind === 'fence' && runtimeFenceRequest.safeParse({ ...stored, timeoutMs: 1 }).success;
+        const legacy = containerLifecycleRequest.safeParse({ ...intent, timeoutMs: 1 });
+        if ((!modern && !(legacy.success && legacy.data.action === 'stop' && legacy.data.targets.length === 0)) ||
+          intent.requestId !== input.requestId || intent.serviceId !== input.serviceId || intent.revision !== input.revision) throw new Error("Runtime inventory requires this command's completed fence");
+        const adopted = journal.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_protocol'").get();
+        const mode = adopted ? journal.database.prepare("SELECT version FROM runtime_protocol WHERE id=1").get() : undefined;
+        if (mode?.version !== 1) throw new Error('Runtime inventory protocol is unconfirmed');
+        const io = dockerIO(journal, () => {}), listed: string[] = []; let bytes = 0;
+        const code = await io.call(['ps', '--all', '--no-trunc', '--filter', 'label=ninedeploy.managed=service', '--filter', 'label=ninedeploy.service=' + input.serviceId, '--format', '{{.ID}}'], line => {
+          bytes += Buffer.byteLength(line); if (bytes <= 65_536) listed.push(...line.split(/\s+/).filter(Boolean));
+        });
+        if (code !== 0 || bytes > 65_536 || listed.length > 30 || new Set(listed).size !== listed.length || listed.some(id => !/^[a-f0-9]{64}$/.test(id))) throw new Error('Managed runtime inventory is incomplete');
+        const items: ContainerInventoryReply['items'] = [];
+        const capture = (row: DockerRow) => {
+          const deploymentId = Number(row.deploymentId);
+          if (!Number.isSafeInteger(deploymentId) || deploymentId < 1) throw new Error('Managed inventory generation is unconfirmed');
+          owned(row, input.serviceId, { name: row.name, deploymentId });
+          if (!items.some(item => item.id === row.id)) items.push({ id: row.id, name: row.name, deploymentId, running: row.running });
+        };
+        for (const id of listed) { const row = await io.inspect(id); if (row) capture(row); }
+        for (const name of input.expectedNames ?? []) { const row = await io.inspect(name); if (row) capture(row); }
+        return containerInventoryReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision, complete: true,
+          items: items.sort((a,b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0) });
+      }));
+    },
+    async stop(params: unknown, onLine: (line: string) => void = () => {}): Promise<ContainerStopSetReply> {
+      const input = containerStopSetRequest.parse(params), { timeoutMs: _timeout, ...intent } = input;
+      return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, async journal => {
+        const admitted = await claim(journal, input, { kind: 'stop', ...intent });
+        return effect(journal, input, admitted.hash, value => containerStopSetReply.parse(value), async () => {
+          const io = dockerIO(journal, onLine), running: string[] = [];
+          for (const target of input.targets) { const row = await io.inspect(target.id); if (row) { owned(row, input.serviceId, target); if (row.running || row.status === 'restarting') running.push(row.id); } }
+          if (running.length && await io.call(['stop', '-t', String(input.graceSeconds), ...running]) !== 0) throw new Error('Managed Stop unconfirmed');
+          for (const target of input.targets) { const row = await io.inspect(target.id); if (row) { owned(row, input.serviceId, target); if (row.running || !['created', 'exited', 'dead'].includes(row.status)) throw new Error('Managed Stop state is unconfirmed'); } }
+          return containerStopSetReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision, complete: true,
+            items: input.targets.map(target => ({ ...target, running: false })) });
+        });
       });
     },
     async prepare(params: unknown, onLine: (line: string) => void = () => {}): Promise<ContainerPrepareReply> {

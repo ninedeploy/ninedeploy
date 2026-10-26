@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, users, servers, services, auditLog, nodeLifecycleIntents, serviceTargets, eq } from '@ninedeploy/db';
+import { createDb, runMigrations, users, servers, services, deployments, auditLog, nodeLifecycleIntents, serviceTargets, eq } from '@ninedeploy/db';
 import { containerLifecycleRequest } from '@ninedeploy/schemas';
 import { asUser, buildTestApp } from './helpers.js';
 import { servicesRoutes } from '../src/modules/services.js';
@@ -57,6 +57,120 @@ async function finish<T>(promise: Promise<T>): Promise<T> {
 }
 
 describe('public ordered node lifecycle', () => {
+  it('stops every accepted unselected node and clears pending fan-out state without mixing equal IDs across hosts', async () => {
+    await c.db.update(services).set({ runtimeId: null, status: 'deploying' }).where(eq(services.id,1));
+    await c.db.insert(deployments).values({id:9,serviceId:1,status:'building'});
+    await c.db.insert(servers).values({id:5,name:'Additional node',host:'second.test',tokenEncrypted:'fixture'});
+    await c.db.insert(serviceTargets).values({id:42,serviceId:1,serverId:5,runtimeId:null,status:'deploying'});
+    const trace: string[] = [];
+    network.writeDynamicConfig.mockImplementation(async (_db,opts) => { trace.push('route:'+opts.requireNode); });
+    network.agentOp.mockImplementation(async (_db,serverId,op,params) => {
+      if(op==='agent.ping') return {exitCode:0,lines:['ND-AGENT '+JSON.stringify({version:'0.19.0',caps:['docker.mutations','proxy.routingAck']})]};
+      const header={requestId:params.requestId,serviceId:params.serviceId,revision:params.revision,complete:true};
+      const target={id:'a'.repeat(64),name:serverId===4?'web-9':'web-t5-9',deploymentId:9};
+      if(op==='docker.runtimeFence'){trace.push('fence:'+serverId);return{exitCode:0,lines:['ND-RUNTIME-FENCE '+JSON.stringify(header)]};}
+      if(op==='docker.runtimeInventory'){trace.push('inventory:'+serverId);expect(params.expectedNames).toContain(target.name);return{exitCode:0,lines:['ND-RUNTIME-INVENTORY '+JSON.stringify({...header,items:[{...target,running:true}]})]};}
+      if(op==='docker.stopSet'){trace.push('stop:'+serverId);expect(params.targets).toEqual([target]);return{exitCode:0,lines:['ND-STOPPED-SET '+JSON.stringify({...header,items:[{...target,running:false}]})]};}
+      throw Error('Unexpected initial Stop operation '+op);
+    });
+    const instance=await app(),response=await instance.inject({method:'POST',url:'/1/stop',headers:asUser()});expect(response.statusCode).toBe(202);
+    vi.useFakeTimers({toFake:['Date','setTimeout','clearTimeout']});
+    expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{id:response.json().lifecycle.id,state:'completed'}]);
+    expect(trace).toEqual(['fence:4','fence:5','inventory:4','inventory:5','route:4','route:5','stop:4','stop:5']);
+    expect((await c.db.query.serviceTargets.findFirst({where:eq(serviceTargets.id,42)}))?.status).toBe('idle');
+  });
+
+  it.each(['queued', 'awaiting_ci', 'awaiting_approval', 'building', 'deploying'] as const)('cancels initial %s work and retains Stop while an older node cannot fence creation', async status => {
+    await c.db.update(services).set({ runtimeId: null, status: 'deploying' }).where(eq(services.id, 1));
+    await c.db.insert(deployments).values({ id: 9, serviceId: 1, status });
+    const instance = await app(), response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    expect(response.statusCode).toBe(202);
+    const again = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    expect(again.json().lifecycle.id).toBe(response.json().lifecycle.id);
+    expect(await reconcileNodeLifecycleIntents(c.db)).toEqual([{ id: response.json().lifecycle.id, state: 'held' }]);
+    const stored = (await c.db.select().from(nodeLifecycleIntents))[0]!;
+    expect(stored.reason).toMatch(/0[.]19[.]0/); expect(stored.runtimeId).toBeNull(); expect(stored.targets).toBeNull();
+    expect((await c.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('cancelled');
+    expect(effects).toEqual([]); expect(network.agentOp.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
+  });
+  it.each([true, false])('completes an unselected Stop only after fenced inventory, routing and physical effects; containers=%s', hasContainers => {
+    return (async () => {
+      await c.db.update(services).set({ runtimeId: null, status: 'deploying' }).where(eq(services.id, 1));
+      await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'building' });
+      const members = hasContainers ? [{ ...targets[0]!, deploymentId: 9, running: true }, { ...targets[1]!, deploymentId: 9, running: false }] : [];
+      const trace: string[] = [];
+      network.writeDynamicConfig.mockImplementation(async () => { trace.push('routing'); });
+      network.agentOp.mockImplementation(async (_db, _server, op, params) => {
+        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT '+JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'proxy.routingAck'] })] };
+        const header = { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true };
+        expect(params).not.toHaveProperty('deploymentId');
+        if (op === 'docker.runtimeFence') { trace.push('fence'); return { exitCode: 0, lines: ['ND-RUNTIME-FENCE '+JSON.stringify(header)] }; }
+        if (op === 'docker.runtimeInventory') { trace.push('inventory'); expect(params.expectedNames).toContain('web-9'); return { exitCode: 0, lines: ['ND-RUNTIME-INVENTORY '+JSON.stringify({ ...header, items: members })] }; }
+        if (op === 'docker.stopSet') { trace.push('stop'); expect(trace).toContain('routing'); expect(params.targets).toEqual(members.map(({ running: _running, ...item }) => item)); return { exitCode: 0, lines: ['ND-STOPPED-SET '+JSON.stringify({ ...header, items: params.targets.map((item: object) => ({ ...item, running: false })) })] }; }
+        throw Error('No legacy fallback during unselected Stop: '+op);
+      });
+      const instance = await app(), response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() }); expect(response.statusCode).toBe(202);
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{ id: response.json().lifecycle.id, state: 'completed' }]);
+      expect(trace).toEqual(['fence', 'inventory', 'routing', 'stop']);
+      const stored = (await c.db.select().from(nodeLifecycleIntents))[0]!; expect(stored.phase).toBe('completed'); expect(stored.runtimeId).toBeNull();
+      expect((await service()).status).toBe('stopped');
+    })();
+  });
+
+  it.each(['retry', 'supersede'] as const)('retains captured unselected Stop targets after routing loss: %s', async mode => {
+    await c.db.update(services).set({ runtimeId: null, status: 'deploying' }).where(eq(services.id, 1));
+    await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'building' });
+    const target = { ...targets[0]!, deploymentId: 9 };
+    const trace: string[] = [];
+    network.agentOp.mockImplementation(async (_db, _server, op, params) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT '+JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'] })] };
+      const header = { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true };
+      if (op === 'docker.runtimeFence') { trace.push('fence'); return { exitCode: 0, lines: ['ND-RUNTIME-FENCE '+JSON.stringify(header)] }; }
+      if (op === 'docker.runtimeInventory') { trace.push('inventory'); return { exitCode: 0, lines: ['ND-RUNTIME-INVENTORY '+JSON.stringify({ ...header, items: [{ ...target, running: true }] })] }; }
+      if (op === 'docker.stopSet') { trace.push('stop'); expect(params.targets).toEqual([target]); return { exitCode: 0, lines: ['ND-STOPPED-SET '+JSON.stringify({ ...header, items: [{ ...target, running: false }] })] }; }
+      throw Error('Unexpected unselected Stop operation: '+op);
+    });
+    const instance = await app(), response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    expect(response.statusCode).toBe(202); const id = response.json().lifecycle.id;
+    network.writeDynamicConfig.mockRejectedValueOnce(new Error('Routing unconfirmed'));
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{ id, state: 'held' }]);
+    expect(trace).toEqual(['fence', 'inventory']);
+    expect((await c.db.query.nodeLifecycleIntents.findFirst())!).toMatchObject({ phase: 'routing', targets: [target] });
+    if (mode === 'supersede') await c.db.update(services).set({ runtimeId: 'web-10', status: 'running' }).where(eq(services.id, 1));
+    const retry = await instance.inject({ method: 'POST', url: '/1/lifecycle/retry', headers: asUser() });
+    expect(retry.statusCode).toBe(mode === 'retry' ? 202 : 409);
+    if (mode === 'retry') {
+      expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{ id, state: 'completed' }]);
+      expect(trace).toEqual(['fence', 'inventory', 'stop']);
+    } else {
+      await vi.advanceTimersByTimeAsync(600_000);
+      await finish(reconcileNodeLifecycleIntents(c.db));
+      expect(trace).toEqual(['fence', 'inventory']); expect((await service()).status).toBe('running');
+    }
+  });
+
+  it('accepts a generation-independent Stop while the first node deployment is still building', async () => {
+    await c.db.update(services).set({ runtimeId: null, runtimeReplicas: 1, status: 'deploying' }).where(eq(services.id, 1));
+    await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'building' });
+    const instance = await app();
+    const response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({ pending: true, lifecycle: { action: 'stop', phase: 'fencing' } });
+    expect((await c.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('cancelled');
+    const intents = await c.db.select().from(nodeLifecycleIntents); expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({ runtimeId: null, deploymentId: null, action: 'stop' });
+    expect((await service()).status).toBe('stopped'); expect(effects).toEqual([]);
+  });
+  it('keeps Stop unavailable for a never-deployed idle service without active work', async () => {
+    await c.db.update(services).set({ runtimeId: null, runtimeReplicas: 1, status: 'idle' }).where(eq(services.id, 1));
+    const instance = await app();
+    const response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    expect(response.statusCode).toBe(404); expect(await c.db.select().from(nodeLifecycleIntents)).toHaveLength(0);
+    expect(network.agentOp).not.toHaveBeenCalled();
+  });
+
   it('completes a node Stop only after its fan-out node is stopped by immutable ordered effects', async () => {
     running = true;
     await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
