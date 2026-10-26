@@ -104,6 +104,75 @@ describe('spawnValidated', () => {
     }
   });
 
+
+  it.each([null, 0])('retains an expired command until close and reports timeout even if close code is %s', async code => {
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const lines: string[] = [];
+      const promise = spawnValidated('docker', ['start', 'owned-container'], line => lines.push(line), { timeoutMs: 1000 });
+      void promise.then(() => { settled = true; });
+      const child = childMocks.current!;
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(lines.some(line => line.includes('timed out after 1000ms'))).toBe(true);
+      expect(settled, 'No successor may overtake a child that has not closed').toBe(false);
+      child.emit('stdout:data', Buffer.from('final drain output'));
+      child.emit('close', code);
+      await expect(promise).resolves.toBe(124);
+      expect(lines.at(-1)).toBe('final drain output');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('retains a spawned child after an error until its close, including timeout escalation', async () => {
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const promise = spawnValidated('docker', ['start', 'owned-container'], () => {}, { timeoutMs: 1000 });
+      void promise.then(() => { settled = true; });
+      const child = childMocks.current!;
+      Object.assign(child.child, { pid: 2 ** 30, kill: vi.fn() });
+      const signal = vi.spyOn(process, 'kill').mockImplementation(() => true);
+      child.emit('error', new Error('post-spawn failure'));
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(signal).toHaveBeenCalledWith(-(2 ** 30), 'SIGTERM');
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(signal).toHaveBeenCalledWith(-(2 ** 30), 'SIGKILL');
+      child.emit('close', null);
+      await expect(promise).resolves.toBe(124);
+      signal.mockRestore();
+    } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
+  });
+
+
+  it('reports a post-spawn error only after close even when the exit code is zero', async () => {
+    let settled = false;
+    const promise = spawnValidated('docker', ['start', 'owned-container'], () => {});
+    void promise.then(() => { settled = true; });
+    const child = childMocks.current!;
+    Object.assign(child.child, { pid: 2 ** 30 });
+    child.emit('error', new Error('post-spawn failure'));
+    await Promise.resolve(); expect(settled).toBe(false);
+    child.emit('close', 0); await expect(promise).resolves.toBe(127);
+  });
+
+  it('keeps timeout escalation armed when a spawned child emits an error after the deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const promise = spawnValidated('docker', ['start', 'owned-container'], () => {}, { timeoutMs: 1000 });
+      void promise.then(() => { settled = true; });
+      const child = childMocks.current!; Object.assign(child.child, { pid: 2 ** 30 });
+      const signal = vi.spyOn(process, 'kill').mockImplementation(() => true);
+      await vi.advanceTimersByTimeAsync(1001); child.emit('error', new Error('termination error'));
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(settled).toBe(false); expect(signal).toHaveBeenCalledWith(-(2 ** 30), 'SIGKILL');
+      child.emit('close', null); await expect(promise).resolves.toBe(124);
+    } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
+  });
+
   it('resolves 127 on a spawn error', async () => {
     const promise = spawnValidated('docker', ['ps'], () => {});
     childMocks.current!.emit('error', new Error('ENOENT'));

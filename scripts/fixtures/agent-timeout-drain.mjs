@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { BINARIES, spawnValidated } from '/app/apps/server/dist/lib/spawnValidated.js';
+import { createKeyedOperationGuard } from '/app/apps/server/dist/lib/keyedOperationGuard.js';
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+// Isolated executable substitution exercises the production helper with a real Node child.
+BINARIES.docker=process.execPath;
+let ready,expired;const started=new Promise(r=>ready=r),timeout=new Promise(r=>expired=r);
+let pid,finished=false,successor=false;const lines=[];
+const guard=createKeyedOperationGuard();
+const first=guard('service:7',()=>spawnValidated('docker',['-e',"process.on('SIGTERM',()=>console.log('TERM_IGNORED')); console.log('READY '+process.pid); setInterval(()=>{},1000)"],line=>{lines.push(line);if(line.startsWith('READY ')){pid=Number(line.slice(6));ready();}if(line.includes('timed out after'))expired();},{timeoutMs:1000})).then(code=>{finished=true;return code;});
+await started;const second=guard('service:7',async()=>{successor=true;});
+await timeout;await pause(100);
+const alive=()=>{try{process.kill(pid,0);return true;}catch{return false;}};
+const witness={afterDeadline:{finished,successor,childAlive:alive()},pid};
+const code=await first;await second;
+const deadline=Date.now()+6500;while(alive()&&Date.now()<deadline)await pause(25);
+witness.exitCode=code;witness.childAliveAfterCleanup=alive();witness.termIgnored=lines.includes('TERM_IGNORED');
+console.log(JSON.stringify(witness));
+assert.equal(witness.afterDeadline.finished,false,'A timed-out command must remain pending until child close');
+assert.equal(witness.afterDeadline.successor,false,'A successor must not overtake the still-running child');
+assert.equal(witness.afterDeadline.childAlive,true,'The child must actually ignore SIGTERM for this proof');
+assert.equal(witness.exitCode,124);assert.equal(witness.childAliveAfterCleanup,false);assert.equal(witness.termIgnored,true);

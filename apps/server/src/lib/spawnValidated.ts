@@ -119,7 +119,7 @@ export function spawnValidated(
     child.stdin?.end(opts.stdin);
   }
   return new Promise<number>((resolve) => {
-    let finished = false;
+    let finished = false, timedOut = false, errored = false;
     const finish = (code: number) => {
       if (!finished) {
         finished = true;
@@ -128,8 +128,11 @@ export function spawnValidated(
     };
     child.stdin?.on('error', () => { /* child gone */ });
     const cancelTimeout = armTimeout(child, opts.timeoutMs ?? OP_TIMEOUT_MS, () => {
-      onLine(`Operation timed out after ${opts.timeoutMs ?? OP_TIMEOUT_MS}ms — killed`);
-      finish(TIMEOUT_EXIT);
+      timedOut = true;
+      onLine(`Operation timed out after ${opts.timeoutMs ?? OP_TIMEOUT_MS}ms — stopping`);
+      // Keep mutation ownership until close: SIGTERM may be ignored and the
+      // existing timeout arm escalates to SIGKILL after five seconds.
+
     });
     const outSplitter = makeLineSplitter();
     const errSplitter = makeLineSplitter();
@@ -139,7 +142,10 @@ export function spawnValidated(
     child.stderr?.on('data', (d: Buffer) => {
       for (const l of errSplitter.feed(d)) onLine(l);
     });
-    child.on('error', () => { cancelTimeout(); finish(127); });
+    child.on('error', () => {
+      errored = true;
+      if (child.pid === undefined && !timedOut) { cancelTimeout(); finish(127); }
+    });
     child.on('close', (code) => {
       cancelTimeout();
       for (const tail of [outSplitter.flush(), errSplitter.flush()]) {
@@ -150,7 +156,7 @@ export function spawnValidated(
       // the agent's callers the op had succeeded while exec.ts's run() and
       // capture() treat the same condition as failure (r035). Numeric exit
       // codes pass through untouched.
-      finish(code ?? 1);
+      finish(timedOut ? TIMEOUT_EXIT : errored ? 127 : code ?? 1);
     });
   });
 }

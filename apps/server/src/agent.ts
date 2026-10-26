@@ -28,7 +28,7 @@ import { agentChildTimeoutMs, tokenMatches } from './lib/agentClient.js';
 import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/agentSeal.js';
 import { spawnValidated } from './lib/spawnValidated.js';
 import { abortDeployment, AGENT_CAP_OP_CANCEL, CANCELLABLE_AGENT_OPS, runInDeployScope } from './lib/deployAbort.js';
-import { runLegacyNodeLifecycle } from './lib/nodeLifecycle.js';
+import { runLegacyNodeLifecycle, runNodeCreation } from './lib/nodeLifecycle.js';
 
 /**
  * Agent mode (NINEDEPLOY_AGENT=1): a minimal HTTP surface for the core to run
@@ -1410,6 +1410,11 @@ export async function runOp(
   // r660: repository paths are symlink-walked under the directory the op
   // runs in before any argv exists.
   const argv = def.build(guardWorkspacePaths(op, params, cwd ?? process.cwd()));
+  if (op === 'docker.runEnv' && params['serviceId'] !== undefined) {
+    return runNodeCreation(joinPath(process.cwd(), WORK_DIR, '.lifecycle'), Number(params['serviceId']), (remaining, current) => {
+      current(); return spawnValidated(def.exe, argv, onLine, { ...(cwd === undefined ? {} : { cwd }), timeoutMs: remaining() });
+    });
+  }
   if (op === 'docker.start' || op === 'docker.stop') {
     return runLegacyNodeLifecycle(joinPath(process.cwd(), WORK_DIR, '.lifecycle'), op === 'docker.start' ? 'start' : 'stop',
       str(params, 'name')!, op === 'docker.stop' ? Number(argv[2]) : 5, onLine);

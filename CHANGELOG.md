@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Drain already-admitted managed node creation under the same persistent lock as lifecycle effects, covering runSpec create/network/Start and runEnv. A timed-out Docker child now retains ownership until close, including SIGKILL escalation; an acknowledged Stop cannot be overtaken by that still-running child. Delayed request admission and complete handoff coordination remain separate R2 work.
 - Bind ordered Start, Stop and Restart commands to the accepted primary and additional-node placements. Capture immutable container IDs per node, verify each node's generation and lifecycle receipt, require all serving targets to pass readiness, and confirm routing on every participant before completion. Offline nodes and uncertain receipts keep the original command pending; newer commands and changed placements supersede stale continuations.
 - Render one backend for each additional-node target, matching the container actually created there, instead of copying the primary node's replica count into nonexistent target replica addresses.
 - Add a two-daemon, sealed-agent and Traefik lifecycle smoke to the release gate, covering readiness refusal, offline recovery, lost effect/routing responses and a newer Stop.

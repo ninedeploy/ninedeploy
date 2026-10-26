@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { runNodeCreation } from '../lib/nodeLifecycle.js';
 import {
   runtimeOptions as runtimeOptionsSchema,
   dockerLabelKeyProblem,
@@ -277,22 +279,29 @@ export function runSpecArgv(spec: RunSpec, verb: 'run' | 'create'): string[] {
 async function runSpecOp(params: Params, onLine: (line: string) => void): Promise<number> {
   const spec = parseRunSpec(params);
   assertFileMountsWritten(spec.fileMounts);
-  if (spec.extraNetworks.length === 0) return spawnValidated('docker', runSpecArgv(spec, 'run'), onLine);
-  // Several networks: create, connect each, then start — `docker run` takes
-  // one `--network` on every daemon this supports. A failure removes the
-  // half-made container so a retry starts clean.
-  const created = await spawnValidated('docker', runSpecArgv(spec, 'create'), onLine);
-  if (created !== 0) return created;
-  for (const net of spec.extraNetworks) {
-    const connected = await spawnValidated('docker', ['network', 'connect', net, spec.name], onLine);
-    if (connected !== 0) {
-      await spawnValidated('docker', ['rm', '-f', spec.name], () => undefined);
-      return connected;
+  const execute = async (remaining?: () => number, current: () => void = () => {}) => {
+    const docker = async (args: string[], sink: (line: string) => void) => {
+      current();
+      const result = await (remaining ? spawnValidated('docker', args, sink, { timeoutMs: remaining() }) : spawnValidated('docker', args, sink));
+      current(); return result;
+    };
+    if (spec.extraNetworks.length === 0) return docker(runSpecArgv(spec, 'run'), onLine);
+    // Keep create, every network connection, Start and failure cleanup inside
+    // the same service lock; Stop must drain this whole admitted sequence.
+    const created = await docker(runSpecArgv(spec, 'create'), onLine);
+    if (created !== 0) return created;
+    for (const net of spec.extraNetworks) {
+      const connected = await docker(['network', 'connect', net, spec.name], onLine);
+      if (connected !== 0) { await docker(['rm', '-f', spec.name], () => undefined); return connected; }
     }
-  }
-  const started = await spawnValidated('docker', ['start', spec.name], onLine);
-  if (started !== 0) await spawnValidated('docker', ['rm', '-f', spec.name], () => undefined);
-  return started;
+    const started = await docker(['start', spec.name], onLine);
+    if (started !== 0) await docker(['rm', '-f', spec.name], () => undefined);
+    return started;
+  };
+  const serviceId = spec.labels.find(([key]) => key === 'ninedeploy.service')?.[1];
+  return serviceId !== undefined && spec.labels.some(([key, value]) => key === 'ninedeploy.managed' && value === 'service')
+    ? runNodeCreation(join(process.cwd(), '.agent-work', '.lifecycle'), Number(serviceId), execute)
+    : execute();
 }
 
 export const runSpecOps: AgentOpModule = {
