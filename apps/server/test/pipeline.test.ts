@@ -292,6 +292,63 @@ describe('explicit Stop during primary readiness', () => {
   const originalBuild = h.builder.buildAndRun.getMockImplementation()!;
   const originalHealth = h.builder.isHealthy.getMockImplementation()!;
   afterEach(() => { h.builder.buildAndRun.mockReset().mockImplementation(originalBuild); h.builder.isHealthy.mockReset().mockImplementation(originalHealth); });
+  it.each(['running', 'failed', 'superseded', 'cancelled', 'deploying', 'awaiting_ci', 'awaiting_approval'] as const)('does not replay a non-claimable deployment: %s', async status => {
+    const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
+    h.builder.buildAndRun.mockClear(); h.builder.stop.mockClear(); h.builder.isHealthy.mockClear(); h.writeDynamicConfig.mockClear();
+    const hooks = { call: vi.fn(async () => undefined) }, events = { emit: vi.fn() };
+    try {
+      await f.db.update(services).set({ image: 'fixture:1', port: 8080 }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status });
+      const before = await f.db.query.services.findFirst({ where: eq(services.id, 1) });
+      await runDeployment(f.db, 9, { hooks, events } as never);
+      expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+      expect(h.builder.stop).not.toHaveBeenCalled(); expect(h.builder.isHealthy).not.toHaveBeenCalled();
+      expect(h.writeDynamicConfig).not.toHaveBeenCalled(); expect(hooks.call).not.toHaveBeenCalled(); expect(events.emit).not.toHaveBeenCalled();
+      expect(await f.db.query.services.findFirst({ where: eq(services.id, 1) })).toEqual(before);
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe(status);
+    } finally { f.close(); }
+  });
+  it.each(['queued', 'building'] as const)('still executes an eligible deployment: %s', async status => {
+    const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
+    h.builder.buildAndRun.mockClear(); h.builder.isHealthy.mockReset().mockResolvedValue(true);
+    try {
+      await f.db.update(services).set({ image: 'fixture:1', port: 8080 }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status });
+      await runDeployment(f.db, 9);
+      expect(h.builder.buildAndRun).toHaveBeenCalledTimes(1);
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('running');
+    } finally { f.close(); }
+  });
+  it.each(['running', 'failed', 'superseded', 'deploying', 'awaiting_ci', 'awaiting_approval'] as const)('abandons a deployment that loses its conditional claim to %s', async status => {
+    const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
+    h.builder.buildAndRun.mockClear(); h.builder.stop.mockClear(); h.builder.isHealthy.mockClear(); h.writeDynamicConfig.mockClear();
+    const hooks = { call: vi.fn(async (name: string) => {
+      if (name === 'deploy:before') await f.db.update(deployments).set({ status }).where(eq(deployments.id, 9));
+    }) };
+    try {
+      await f.db.update(services).set({ image: 'fixture:1', port: 8080 }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+      const before = await f.db.query.services.findFirst({ where: eq(services.id, 1) });
+      await runDeployment(f.db, 9, { hooks } as never);
+      expect(h.builder.buildAndRun).not.toHaveBeenCalled(); expect(h.builder.stop).not.toHaveBeenCalled();
+      expect(h.builder.isHealthy).not.toHaveBeenCalled(); expect(h.writeDynamicConfig).not.toHaveBeenCalled();
+      expect(hooks.call.mock.calls.map(call => call[0])).toEqual(['deploy:before']);
+      expect(await f.db.query.services.findFirst({ where: eq(services.id, 1) })).toEqual(before);
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe(status);
+    } finally { f.close(); }
+  });
+  it('refuses a completed node deployment before any agent call or log-end notification', async () => {
+    const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
+    h.agentOp.mockClear(); const ended = vi.fn(), unsubscribe = logBus.subscribe(9, () => {}, ended);
+    try {
+      await f.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await f.db.update(services).set({ serverId: 4 }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'running' });
+      await runDeployment(f.db, 9);
+      expect(h.agentOp).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled();
+      expect(logBus.isWriting(9)).toBe(false);
+    } finally { unsubscribe(); f.close(); }
+  });
   it('preserves Stop that commits immediately after the queued deployment claim', async () => {
     const { observabilityDb } = await import('./fixtures/observability.js'); const f = await observabilityDb();
     h.builder.buildAndRun.mockClear(); h.builder.isHealthy.mockReset().mockResolvedValue(true);
@@ -3088,7 +3145,7 @@ describe('r239: kernel service lifecycle events', () => {
   it('emits service.deploying and service.deployed with the linked projects', async () => {
     const { db } = makeDb();
     baseSetup(db, { image: 'nginx:latest' });
-    db.query.deployments.findFirst.mockResolvedValue({ ...dep, status: 'running' });
+    db.query.deployments.findFirst.mockResolvedValueOnce(dep).mockResolvedValue({ ...dep, status: 'running' });
     db.query.serviceProjects.findMany.mockResolvedValue([{ serviceId: 1, projectId: 9 }, { serviceId: 1, projectId: 4 }]);
     const emit = vi.fn();
     await runDeployment(db as never, 1, { useBuildKit: false, events: { emit } as never });

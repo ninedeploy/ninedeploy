@@ -666,15 +666,21 @@ type PipelineKernelCtx = {
 export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx): Promise<void> {
   let primaryRecovery: PrimaryRecoveryLease | SwarmRecoveryLease | undefined;
   const events = kernelCtx?.events;
+  let ownsLog = false, announce = true;
+  const beginLog = () => { if (!ownsLog) { logBus.beginRun(deploymentId); ownsLog = true; } };
   // F881: this run writes the deploy log until its final settle below (incl.
   // the proxy swap/revert and F861's failUnsettledDeployment line). Both
   // awaits between here and the end() are .catch()ed, so end() always runs.
-  logBus.beginRun(deploymentId);
-  if (events) await emitDeploying(db, deploymentId, events).catch(() => undefined);
   try {
+    const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
+    if (!dep || !['queued', 'building'].includes(dep.status)) return;
+    beginLog();
+    if (events) await emitDeploying(db, deploymentId, events).catch(() => undefined);
     // The scope lets the cancel route stop the running step (lib/deployAbort.ts).
-    await runInDeployScope(deploymentId, () => runDeploymentCore(db, deploymentId, kernelCtx, lease => { primaryRecovery = lease; }));
+    const result = await runInDeployScope(deploymentId, () => runDeploymentCore(db, deploymentId, dep, kernelCtx, lease => { primaryRecovery = lease; }));
+    if (result === false) announce = false;
   } catch (err) {
+    beginLog();
     if (err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost || primaryRecovery && 'managerNodeId' in primaryRecovery.row) {
       const reason = err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost ? err.message : 'Swarm transition remains unconfirmed; retained for recovery';
       logBus.publish(deploymentId, reason); await primaryRecovery?.release(reason); return;
@@ -695,8 +701,10 @@ export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: Pi
       if (!primaryRecovery.lost()) await primaryRecovery.completeIfSafe().catch(() => {});
       await primaryRecovery.release();
     }
-    if (!primaryRecovery?.lost() && (kernelCtx?.hooks || events)) await announceOutcome(db, deploymentId, kernelCtx).catch(() => undefined);
-    logBus.end(deploymentId);
+    if (ownsLog) {
+      if (announce && !primaryRecovery?.lost() && (kernelCtx?.hooks || events)) await announceOutcome(db, deploymentId, kernelCtx).catch(() => undefined);
+      logBus.end(deploymentId);
+    }
   }
 }
 
@@ -764,9 +772,7 @@ async function announceOutcome(db: DB, deploymentId: number, kernelCtx: Pipeline
   }
 }
 
-async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx, trackPrimary?: (lease: PrimaryRecoveryLease | SwarmRecoveryLease) => void): Promise<void> {
-  const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId) });
-  if (!dep) return;
+async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deployments.$inferSelect, kernelCtx?: PipelineKernelCtx, trackPrimary?: (lease: PrimaryRecoveryLease | SwarmRecoveryLease) => void): Promise<void | false> {
   const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
   if (!service) return;
   if (await primaryRecoveryPending(db, service.id)) throw new PrimaryRecoveryPending();
@@ -814,6 +820,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, kernelCtx?: Pipel
     .set({ status: 'building', startedAt: new Date(), configSnapshot })
     .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ['queued', 'building'])))
     .returning({ id: deployments.id });
+  if (claimed.length === 0 && !await isCancelled(db, deploymentId)) {
+    log('⏹ Deployment no longer claimable; stale attempt ignored');
+    return false;
+  }
   if (claimed.length > 0) {
     await db.update(services).set({ status: 'deploying' }).where(and(eq(services.id, service.id),
       exists(db.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'building'))))));
