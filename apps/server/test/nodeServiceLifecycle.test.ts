@@ -25,7 +25,7 @@ beforeEach(async () => {
     port: 3000, healthCheck: 'http-strict', healthTimeoutSeconds: 10 });
   network.agentOp.mockImplementation(async (_db, serverId, op, params) => {
     expect(serverId).toBe(4);
-    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'] })}`] };
+    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.18.3', caps: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'] })}`] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: [running ? 'running|172.22.0.2' : 'exited|'] };
     if (op === 'docker.identity') {
       const target = available.find(t => t.name === params.name);
@@ -68,7 +68,7 @@ describe('public ordered node lifecycle', () => {
     network.agentOp.mockImplementation(async (...args) => {
       if (args[1] !== 5) return original(...args);
       const op = args[2], params = args[3];
-      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'] })] };
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.18.3', caps: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'] })] };
       if (op === 'docker.identity') return { exitCode: 0, lines: ['ND-CONTAINER ' + JSON.stringify(params.name === target.name || params.name === target.id ? { ...target, managed: 'service', serviceId: '1', deploymentId: '9' } : null)] };
       if (op === 'docker.inspect') return { exitCode: 0, lines: [fanoutRunning ? 'running|172.23.0.2' : 'exited|'] };
       if (op === 'docker.lifecycle') {
@@ -169,12 +169,12 @@ describe('public ordered node lifecycle', () => {
     network.agentOp.mockResolvedValue({ exitCode: 0, lines: ['ND-AGENT {"version":"0.18.2","caps":[]}'] });
     const instance = await app();
     const response = await instance.inject({ method: 'POST', url: `/1/${action}`, headers: asUser() });
-    expect(response.statusCode).toBe(422); expect(response.json().error).toMatchObject({ code: 'node_agent_outdated', message: expect.stringContaining('0.19.0') });
+    expect(response.statusCode).toBe(422); expect(response.json().error).toMatchObject({ code: 'node_agent_outdated', message: expect.stringContaining('0.18.3') });
     expect(await c.db.select().from(nodeLifecycleIntents)).toHaveLength(0); expect(effects).toEqual([]);
   });
 
   it.each(['start', 'restart'] as const)('refuses %s when the node owner disables ordered lifecycle', async action => {
-    network.agentOp.mockResolvedValue({ exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.recovery","docker.readiness","proxy.routingAck"]}'] });
+    network.agentOp.mockResolvedValue({ exitCode: 0, lines: ['ND-AGENT {"version":"0.18.3","caps":["docker.recovery","docker.readiness","proxy.routingAck"]}'] });
     const instance = await app();
     const response = await instance.inject({ method: 'POST', url: `/1/${action}`, headers: asUser() });
     expect(response.statusCode).toBe(403); expect(response.json().error.code).toBe('node_feature_disabled');

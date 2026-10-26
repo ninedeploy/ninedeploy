@@ -8,7 +8,7 @@ const spec = { serviceId: 7, deploymentId: 9, targets: [{ name: 'web-9', id: 'a'
 const db = {} as DB;
 let patch: Record<string, unknown>, caps: string[], version: string, mutate: (() => void) | undefined;
 beforeEach(() => {
-  patch = {}; caps = ['docker.metrics']; version = '0.19.0'; mutate = undefined;
+  patch = {}; caps = ['docker.metrics']; version = '0.18.3'; mutate = undefined;
   io.sealed.mockReset().mockResolvedValue(true);
   io.op.mockReset().mockImplementation(async (_db, server, op, params) => {
     if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version, caps })}`] };
@@ -37,8 +37,8 @@ describe('selected-node resource evidence', () => {
     await expect(readNodeContainerMetrics(db, 2, spec, options())).rejects.toThrow(/unencrypted/);
     expect(io.op).not.toHaveBeenCalled();
     io.sealed.mockResolvedValue(true); caps = []; version = '0.18.2';
-    await expect(readNodeContainerMetrics(db, 2, spec, options())).rejects.toThrow(/Update.*v0.19.0/);
-    version = '0.19.0';
+    await expect(readNodeContainerMetrics(db, 2, spec, options())).rejects.toThrow(/Update.*v0.18.3/);
+    version = '0.18.3';
     await expect(readNodeContainerMetrics(db, 2, spec, options())).rejects.toThrow(/owner turned it off.*NINEDEPLOY_AGENT_CONTAINER_METRICS=off/);
     expect(io.op.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
   });

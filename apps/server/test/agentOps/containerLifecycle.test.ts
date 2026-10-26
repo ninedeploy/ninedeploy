@@ -49,7 +49,7 @@ describe('registered node lifecycle capability', () => {
   });
   it('distinguishes an old agent from owner-disabled lifecycle operations', () => {
     const option = { cap: 'docker.lifecycle' as const, feature: 'control immutable container state' };
-    expect(capabilityRefusalFor({ version: '0.18.2', caps: new Set() }, '#7', option)).toMatchObject({ code: 'node_agent_outdated', message: expect.stringMatching(/v0.19.0/) });
-    expect(capabilityRefusalFor({ version: '0.19.0', caps: new Set() }, '#7', option)).toMatchObject({ code: 'node_feature_disabled', message: expect.stringMatching(/NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE=off/) });
+    expect(capabilityRefusalFor({ version: '0.18.2', caps: new Set() }, '#7', option)).toMatchObject({ code: 'node_agent_outdated', message: expect.stringMatching(/v0.18.3/) });
+    expect(capabilityRefusalFor({ version: '0.18.3', caps: new Set() }, '#7', option)).toMatchObject({ code: 'node_feature_disabled', message: expect.stringMatching(/NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE=off/) });
   });
 });

@@ -13,7 +13,7 @@ function fixture({ failAt = '', invalidImage = false, foreign = '', disabled = f
   const calls: Array<{ op: string; params: Record<string, unknown> }> = [], containers = new Map<string, { id: string; name: string }>();
   const agent = vi.fn(async (op: string, params: Record<string, unknown>) => {
     calls.push({ op, params });
-    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: disabled ? [] : ['docker.recovery', 'docker.readiness', 'docker.lifecycle', 'docker.probe', 'docker.runSpec', 'docker.runtimeOptions', 'docker.ports'] })}`] };
+    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.18.3', caps: disabled ? [] : ['docker.recovery', 'docker.readiness', 'docker.lifecycle', 'docker.probe', 'docker.runSpec', 'docker.runtimeOptions', 'docker.ports'] })}`] };
     if (op === 'docker.identity') {
       const name = String(params.name), found = containers.get(name) ?? [...containers.values()].find(c => c.id === name);
       const value = name === foreign ? { id: 'e'.repeat(64), name, managed: 'service', serviceId: '99', deploymentId: '99' }
@@ -53,7 +53,7 @@ it('refuses multiple replicas on an older agent that cannot fence competing life
   f.agent.mockImplementation(async (op, params) => op === 'agent.ping'
     ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.18.2","caps":["docker.recovery","docker.readiness","docker.probe"]}'] }
     : original(op, params));
-  await expect(createRemoteDockerBuilder(f.agent).buildAndRun(context(2))).rejects.toThrow(/0\.19\.0/);
+  await expect(createRemoteDockerBuilder(f.agent).buildAndRun(context(2))).rejects.toThrow(/0\.18\.3/);
   expect(f.calls.some(c => c.op === 'file.writeEnv' || c.op.startsWith('docker.run'))).toBe(false);
 });
 
