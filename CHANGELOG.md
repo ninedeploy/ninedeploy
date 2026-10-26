@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ignore stale pipeline invocations for non-claimable deployment rows before build, routing, hooks or lifecycle outcomes; stop continuations that lose the conditional queued/building claim. Preserve eligible worker handoffs, explicit Stop cleanup and log-writer ownership.
+
 - Clear an additional node's pending deployment status after its generation-independent Stop completes. Lost routing confirmation retains the captured targets for retry, while a newer runtime selection prevents the old Stop from resuming.
 - Offer Stop during the first plain-Docker node deployment, show the pending verification state, refresh cancelled deployment history and hide Start while no node runtime has been selected.
 
