@@ -314,6 +314,12 @@ jobs:
     needs: publish-image
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # Each cohort owns isolated Docker fixtures; promotion needs all cohorts.
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases]
     permissions:
       # releases API read (previous release) + pulling the GHCR images.
       contents: read
@@ -354,6 +360,7 @@ jobs:
       # exactly that), and no server was ever offered such a tag. Strictly
       # below: a re-run of an older tag must not "upgrade" downwards.
       - name: Find the previous published release
+        if: matrix.suite == 'upgrade-journey'
         id: previous
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -378,60 +385,73 @@ jobs:
       # The slow-deploy seed pulls python:3.12 inside DinD; the script only
       # waits for it to reach `building`, but the whole run is bounded here.
       - name: Upgrade smoke (previous release → this tag, same data volume)
-        if: steps.previous.outputs.from != ''
+        if: matrix.suite == 'upgrade-journey' && steps.previous.outputs.from != ''
         timeout-minutes: 30
         env:
           FROM_TAG: ${{ steps.previous.outputs.from }}
         run: node scripts/smoke-upgrade.mjs --from="$FROM_TAG" --to="$RELEASE_TAG"
 
       - name: User-journey smoke on the pushed image
+        if: matrix.suite == 'upgrade-journey'
         timeout-minutes: 20
         run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Node readiness, resource history and log drain smoke on the pushed image
+        if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10
         run: node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --node-operations-only --no-swarm
 
       - name: Verify node readiness with and without image HEALTHCHECK
+        if: matrix.suite == 'agent-runtime'
         run: node scripts/smoke-container-readiness.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Verify immutable node resource metrics on an isolated daemon
+        if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10
         run: node scripts/smoke-container-metrics.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Verify durable node lifecycle ordering and hard-crash recovery
+        if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10
         run: node scripts/smoke-container-lifecycle.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Verify immutable Stop across retained deployment generations
+        if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10
         run: node scripts/smoke-container-generation-stop.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Verify admitted creation drains before lifecycle completion
+        if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10
         run: node scripts/smoke-agent-creation-drain.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Verify durable panel node lifecycle readiness, routing and recovery
+        if: matrix.suite == 'panel-lifecycle'
         timeout-minutes: 10
         run: node scripts/smoke-node-lifecycle-controller.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Verify ordered lifecycle across two independent nodes
+        if: matrix.suite == 'panel-lifecycle'
         timeout-minutes: 10
         run: node scripts/smoke-node-lifecycle-fanout.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Public node canary lifecycle smoke on the pushed image
+        if: matrix.suite == 'public-canary'
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Public ordered node Start, Stop, Restart and panel-crash recovery
+        if: matrix.suite == 'public-lifecycle'
         timeout-minutes: 15
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --lifecycle-only
 
       - name: Node replica database SQL readiness, rollback and cancellation
+        if: matrix.suite == 'replica-databases'
         timeout-minutes: 10
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --replica-databases-only
 
       - name: Recorded Compose release restore smoke on the pushed image
+        if: matrix.suite == 'upgrade-journey'
         timeout-minutes: 10
         run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only
 
