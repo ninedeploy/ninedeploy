@@ -9,9 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.4] - 2026-10-26
+
+Supersedes the unpublished 0.18.3 candidate while preserving its Git tag and version image. Includes the deployment safety and node recovery maintenance package documented below; remaining R2 coordination still targets 0.19.0.
+
+### Fixed
+
+- Match the public lifecycle smoke owner-disabled refusal to the actual 0.18.3 agent capability floor, including subsequent maintenance releases. The previous 0.19.0-only test boundary held 0.18.3 publication after its upgrade, canary and node lifecycle checks passed. Regression tests compare the smoke policy with the production capability contract.
+
 ## [0.18.3] - 2026-10-26
 
-Maintenance release for deployment safety, durable node lifecycle recovery and confirmed replica routing. The remaining R2 feature work targets 0.19.0.
+Unpublished maintenance candidate for deployment safety, durable node lifecycle recovery and confirmed replica routing. The remaining R2 feature work targets 0.19.0.
 
 ### Added
 
