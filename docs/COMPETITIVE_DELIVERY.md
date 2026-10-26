@@ -2,9 +2,25 @@
 
 Baseline: NineDeploy 0.17.1, main abf5a39a. This is an implementation and acceptance tracker, not a statement of competitor parity.
 
-Current published release: **0.18.2 = the completed runtime, node and observability increments plus R1 (public node canary)**. Next feature release: **0.19.0 (R2: remaining runtime support)**. R3–R6 remain separate planned milestones; publish validated maintenance fixes between feature releases.
+Current published release: **0.18.4 = R1 (public node canary) plus the completed deployment-safety and durable node-lifecycle maintenance package**. Next feature release: **0.19.0 (R2: remaining runtime support)**. R3–R6 remain separate planned milestones; publish validated maintenance fixes between feature releases.
 
 The v0.18.0 tag and image remain available as an unpublished candidate. The hosted smoke caught a setup race: readiness was changed during primary retirement, so the safety journal retained both generations and held the next deployment. The corrected smoke waits for settlement before the next readiness case. The 0.18.1 tag was also withheld after a repeated real canary smoke exposed agent operation capacity exhaustion; its workflow was cancelled before producing a registry image. Commit d8615abc separates bounded operation capacity from the invalid-request rejection budget. Published 0.18.2 preserves both earlier Git tags and the v0.18.0 image.
+
+## 0.18.4 publication acceptance — 2026-10-26
+
+Published [v0.18.4](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.18.4) from `44d1eb1fff996126a1cfe9cecf1810a56c766e0e`. All [release workflow](https://github.com/ninedeploy/ninedeploy/actions/runs/40359090810) jobs passed, including image publication/signing, every published-image smoke, GitHub Release promotion and the reusable npm publication job. The immutable local candidate passed **15,139 tests in 903 files, all 11 tasks uncached**, followed by the repository tag gate.
+
+Downloaded all five GitHub assets and verified the archive/install checksums, checksum signature and exact source archive commit. The signed version image and `latest` resolve to `sha256:1cbafcc764598c28cf781a312086d6c51fa8dfde0fa74c29b3fe44c2329c6518`; both linux/amd64 and linux/arm64 OCI revisions match the source commit. All five public npm tarballs passed SHA-512 integrity and package identity checks, and the installed public CLI returned **0.18.4**. Evidence: `.temp_files/release-0.18.4-20261026-cf626eda/artifact-verification-state.json`.
+
+The v0.18.3 tag and version image remain an unpublished candidate: its final public lifecycle smoke used the old 0.19.0 capability threshold instead of the maintenance support floor. The corrected policy passed twelve production-contract parity tests and seven actual public lifecycle scenarios on the same image before 0.18.4 preparation. Earlier candidate tags/images are preserved. Development protocol commit `ec10b5ce` and the future parallel smoke configuration remain outside the immutable 0.18.4 release; production deploy/scale/wake coordination and R2 acceptance are still open.
+
+## Next R2 increment: generation-independent Stop
+
+The next production integration starts with Stop during the first node deployment, before a serving runtime has been selected. The current public API returns 404 for that active-work state. A proof using the real API and migrated SQLite reproduced the missing R2 contract with **one expected failure and 35 passing controls**, including the unchanged 404 for a never-deployed idle service. Evidence: `.temp_files/r2-runtime-mutation-admission-20261026-35eb0b01/generation-independent-stop-proof/verification-state.json`. This is an implementation gap, not an accepted fix.
+
+Required acceptance is a durable 202 Stop that atomically cancels active work, advances shared service authority, drains admitted creation, inventories all managed immutable generations on accepted participant nodes, confirms routing withdrawal and completes only after every captured target is stopped. Missing runtime/deployment anchors must remain nullable rather than using invented identities. Offline or unsupported agents retain a visible pending reason. The implementation needs the corresponding journal/schema migration, owner-bound node discovery, public cancellation/retry coverage and an actual delayed-creation/native-Docker proof.
+
+Then connect deployment preparation, database-network changes and retirement, followed by scale and wake, to the same durable service owner. Preserve queued-work cancellation and legitimate subsequent deployments. Node autoscaling/sleep/wake, remaining Swarm/mixed-agent acceptance and final uncached 0.19.0 upgrade/promotion/package gates follow. R3–R6 remain separate feature releases.
 
 ## 0.18.2 publication acceptance — 2026-10-25
 
@@ -16,7 +32,7 @@ Both linux/amd64 and linux/arm64 registry manifest/config identities were verifi
 
 The next release workflow partitions the existing fourteen published-image smoke commands into six isolated cohorts: upgrade/journey/Compose, agent runtime, panel lifecycle, public canary, public lifecycle and replica databases. At most three runners execute concurrently. Every cohort remains required for promotion; `fail-fast: false` lets the other cohorts finish their evidence when one fails, while the aggregate matrix still blocks `latest`, GitHub Release and npm promotion on any failure. Previous-published-release discovery runs only in the upgrade cohort. Existing commands, timeout budgets and the requested tag checkout are retained.
 
-All 43 focused tests in three files passed, including complete command coverage with and without a previous release, one cohort per command, read-only smoke permissions and mandatory promotion dependencies. The official checksum-verified actionlint 1.7.12 returned zero. The four new matrix tests failed against the original serialized configuration before passing against the final workflow. Hosted parallel execution and its actual duration are **NOT RUN / NOT MEASURED** until a subsequent release uses this configuration. The running 0.18.4 workflow remains pinned to `44d1eb1f` and keeps its original serial smokes. Evidence: `.temp_files/r2-runtime-mutation-admission-20261026-35eb0b01/release-matrix-proof/`.
+All 43 focused tests in three files passed, including complete command coverage with and without a previous release, one cohort per command, read-only smoke permissions and mandatory promotion dependencies. The official checksum-verified actionlint 1.7.12 returned zero. The four new matrix tests failed against the original serialized configuration before passing against the final workflow. Hosted parallel execution and its actual duration are **NOT RUN / NOT MEASURED** until a subsequent release uses this configuration. The completed 0.18.4 workflow was pinned to `44d1eb1f` and used its original serial smokes. Evidence: `.temp_files/r2-runtime-mutation-admission-20261026-35eb0b01/release-matrix-proof/`.
 
 ## R2 ordered mutation protocol checkpoint — 2026-10-26
 
