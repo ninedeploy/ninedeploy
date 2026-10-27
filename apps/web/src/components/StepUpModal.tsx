@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { useT } from '../lib/i18n.js';
 import { Button, Field, Input, Modal } from './ui.js';
 
 /**
@@ -31,6 +32,7 @@ export function StepUpModal({
   onConfirm: (password: string | undefined) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [password, setPassword] = useState('');
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -45,15 +47,15 @@ export function StepUpModal({
         </div>
         {children}
         <Field
-          label="Your password"
-          hint="Accounts that sign in only through SSO: leave it empty within 10 minutes of signing in."
+          label={t('Your password')}
+          hint={t('Accounts that sign in only through SSO: leave it empty within 10 minutes of signing in.')}
           error={error ?? undefined}
         >
-          <Input type="password" aria-label="Your password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Input type="password" aria-label={t('Your password')} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button type="submit" variant="danger" disabled={pending}>
             {confirmLabel}

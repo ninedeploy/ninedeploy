@@ -1,5 +1,6 @@
 import type { Phases } from '@ninedeploy/schemas';
 import { ChipInput, Field } from '../../../components/ui.js';
+import { useT } from '../../../lib/i18n.js';
 
 export function PhasesSection({
   value,
@@ -8,11 +9,12 @@ export function PhasesSection({
   value: Phases | undefined;
   onChange: (next: Phases | undefined) => void;
 }) {
+  const t = useT();
   return (
     <div className="space-y-5">
       <Field
-        label="Setup-phase packages (nixpkgs)"
-        hint="Extra tools Nixpacks installs in the build image (e.g. python310, imagemagick)"
+        label={t('Setup-phase packages (nixpkgs)')}
+        hint={t('Extra tools Nixpacks installs in the build image (e.g. python310, imagemagick)')}
       >
         <ChipInput
           value={value?.setup?.pkgs ?? []}
@@ -21,8 +23,8 @@ export function PhasesSection({
         />
       </Field>
       <Field
-        label="Build-phase extra commands"
-        hint="Run after the default install + build; for generated assets, codegen, etc."
+        label={t('Build-phase extra commands')}
+        hint={t('Run after the default install + build; for generated assets, codegen, etc.')}
       >
         <ChipInput
           value={value?.build?.cmds ?? []}

@@ -7,6 +7,7 @@ import { Link } from 'react-router';
 import type { OnboardingStepId } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
 import { useOpenDeploy } from '../lib/deployLauncher.js';
+import { msg, useT } from '../lib/i18n.js';
 import { cn } from './ui.js';
 
 interface StepCopy {
@@ -20,58 +21,58 @@ interface StepCopy {
 
 const STEPS: Record<OnboardingStepId, StepCopy> = {
   auto_url: {
-    title: 'Give services a URL',
-    hint: 'Free sslip.io test URLs or your wildcard domain — no DNS work per app.',
-    cta: 'Set up',
+    title: msg('Give services a URL'),
+    hint: msg('Free sslip.io test URLs or your wildcard domain — no DNS work per app.'),
+    cta: msg('Set up'),
     icon: Link2,
     to: '/settings?section=security',
   },
   git_source: {
-    title: 'Connect your Git provider',
-    hint: 'GitHub App, GitLab, Gitea or Bitbucket — private repos and push-to-deploy.',
-    cta: 'Connect',
+    title: msg('Connect your Git provider'),
+    hint: msg('GitHub App, GitLab, Gitea or Bitbucket — private repos and push-to-deploy.'),
+    cta: msg('Connect'),
     icon: GitBranch,
     to: '/sources',
   },
   first_service: {
-    title: 'Create your first service',
-    hint: 'From a Git repo, a Docker image, a Compose file or one of 300+ templates.',
-    cta: 'New service',
+    title: msg('Create your first service'),
+    hint: msg('From a Git repo, a Docker image, a Compose file or one of 300+ templates.'),
+    cta: msg('New service'),
     icon: Rocket,
     to: 'deploy',
   },
   first_deploy: {
-    title: 'See it go live',
-    hint: 'The first successful build and health check.',
-    cta: 'Open queue',
+    title: msg('See it go live'),
+    hint: msg('The first successful build and health check.'),
+    cta: msg('Open queue'),
     icon: Server,
     to: '/deploys',
   },
   custom_domain: {
-    title: 'Add your own domain',
-    hint: 'Point a DNS record here and attach it to a service.',
-    cta: 'Domains',
+    title: msg('Add your own domain'),
+    hint: msg('Point a DNS record here and attach it to a service.'),
+    cta: msg('Domains'),
     icon: Globe,
     to: '/domains',
   },
   https: {
-    title: 'Turn on HTTPS',
-    hint: "Set a Let's Encrypt email; certificates are issued and renewed automatically.",
-    cta: 'Set email',
+    title: msg('Turn on HTTPS'),
+    hint: msg("Set a Let's Encrypt email; certificates are issued and renewed automatically."),
+    cta: msg('Set email'),
     icon: Lock,
     to: '/settings?section=security',
   },
   notifications: {
-    title: 'Get notified',
-    hint: 'Deploy results and alerts in Slack, Discord, Telegram, email and more.',
-    cta: 'Add channel',
+    title: msg('Get notified'),
+    hint: msg('Deploy results and alerts in Slack, Discord, Telegram, email and more.'),
+    cta: msg('Add channel'),
     icon: Bell,
     to: '/settings?section=notifications',
   },
   backups: {
-    title: 'Back up your data',
-    hint: 'An S3 destination for database, volume and panel backups.',
-    cta: 'Add destination',
+    title: msg('Back up your data'),
+    hint: msg('An S3 destination for database, volume and panel backups.'),
+    cta: msg('Add destination'),
     icon: HardDrive,
     to: '/backups',
   },
@@ -83,6 +84,7 @@ const STEPS: Record<OnboardingStepId, StepCopy> = {
  * collapsed by default once the required steps are done.
  */
 export function GettingStartedCard() {
+  const t = useT();
   const qc = useQueryClient();
   const openDeploy = useOpenDeploy();
   const q = useQuery({ queryKey: ['onboarding'], queryFn: () => api.onboarding.get(), refetchInterval: 15_000 });
@@ -103,7 +105,7 @@ export function GettingStartedCard() {
         disabled={dismiss.isPending}
         className="text-xs text-slate-500 transition hover:text-slate-300"
       >
-        Setup: {data.completed} of {data.total} done · Show checklist
+        {t('Setup: {done} of {total} done · Show checklist', { done: data.completed, total: data.total })}
       </button>
     );
   }
@@ -112,12 +114,12 @@ export function GettingStartedCard() {
   const nextStep = data.steps.find((s) => !s.done && !s.optional) ?? data.steps.find((s) => !s.done);
 
   return (
-    <section aria-label="Getting started" className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+    <section aria-label={t('Getting started')} className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300">Getting started</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300">{t('Getting started')}</p>
           <h2 className="text-base font-semibold text-white">
-            {data.ready ? 'Your panel is ready — a few extras left' : 'Set up your panel'}
+            {data.ready ? t('Your panel is ready — a few extras left') : t('Set up your panel')}
           </h2>
           <div className="mt-2 flex items-center gap-3">
             <div
@@ -126,12 +128,12 @@ export function GettingStartedCard() {
               aria-valuemin={0}
               aria-valuemax={data.total}
               aria-valuenow={data.completed}
-              aria-label="Setup progress"
+              aria-label={t('Setup progress')}
             >
               <div className="h-full rounded-full bg-indigo-500 transition-all duration-500" style={{ width: `${Math.max(4, pct)}%` }} />
             </div>
             <span className="shrink-0 text-xs tabular-nums text-slate-400">
-              {data.completed} of {data.total}
+              {t('{done} of {total}', { done: data.completed, total: data.total })}
             </span>
           </div>
         </div>
@@ -139,7 +141,7 @@ export function GettingStartedCard() {
           type="button"
           onClick={() => setExpanded(!open)}
           aria-expanded={open}
-          aria-label={open ? 'Collapse checklist' : 'Expand checklist'}
+          aria-label={open ? t('Collapse checklist') : t('Expand checklist')}
           className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
         >
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -148,8 +150,8 @@ export function GettingStartedCard() {
           type="button"
           onClick={() => dismiss.mutate(true)}
           disabled={dismiss.isPending}
-          aria-label="Hide the checklist"
-          title="Hide the checklist (a link on the Dashboard brings it back)"
+          aria-label={t('Hide the checklist')}
+          title={t('Hide the checklist (a link on the Dashboard brings it back)')}
           className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
         >
           <X size={16} />
@@ -159,7 +161,8 @@ export function GettingStartedCard() {
       {open && (
         <ol className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
           {data.steps.map((s) => {
-            const copy = STEPS[s.id];
+            const step = STEPS[s.id];
+            const copy = { ...step, title: t(step.title), hint: t(step.hint), cta: t(step.cta) };
             const Icon = copy.icon;
             const isNext = s.id === nextStep?.id;
             const cta = (
@@ -191,7 +194,7 @@ export function GettingStartedCard() {
                 <div className="min-w-0 flex-1">
                   <div className={cn('flex items-center gap-1.5 text-sm font-medium', s.done ? 'text-slate-500 line-through' : 'text-slate-200')}>
                     {copy.title}
-                    {s.optional && !s.done && <span className="text-[10px] font-normal text-slate-500 no-underline">optional</span>}
+                    {s.optional && !s.done && <span className="text-[10px] font-normal text-slate-500 no-underline">{t('optional')}</span>}
                   </div>
                   {!s.done && <div className="truncate text-xs text-slate-500">{copy.hint}</div>}
                 </div>

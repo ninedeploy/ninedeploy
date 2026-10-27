@@ -6,6 +6,7 @@ import { api } from '../../lib/api.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Badge, Button, Card, CardBody, ConfirmDialog, ErrorCard, Skeleton, Textarea } from '../../components/ui.js';
+import { fill, useT, type Translate } from '../../lib/i18n.js';
 
 const EXAMPLE = `http:
   routers:
@@ -33,11 +34,11 @@ interface Findings {
 const STATUS_TONE = { none: 'neutral', applied: 'emerald', rejected: 'rose' } as const;
 
 /** The findings a NineDeployError carries in `details` (the SDK lifts them off the refusal body). */
-function refusal(err: unknown): Findings {
+function refusal(err: unknown, t: Translate): Findings {
   const details = (err as { details?: { errors?: TraefikCustomConfigIssue[]; warnings?: TraefikCustomConfigIssue[] } }).details;
   return {
     kind: 'refused',
-    message: err instanceof Error ? err.message : 'The config was not saved',
+    message: err instanceof Error ? err.message : t('The config was not saved'),
     errors: details?.errors ?? [],
     warnings: details?.warnings ?? [],
   };
@@ -50,6 +51,7 @@ function refusal(err: unknown): Findings {
  * scan; a config the live proxy rejects is reverted to the last good version.
  */
 export function CustomConfigCard() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const state = useQuery({ queryKey: ['traefik-custom-config'], queryFn: () => api.traefik.customConfig.get() });
@@ -64,20 +66,20 @@ export function CustomConfigCard() {
   const validate = useMutation({
     mutationFn: (text: string) => api.traefik.customConfig.validate(text),
     onSuccess: (res) => setFindings({ kind: res.ok ? 'valid' : 'invalid', errors: res.errors, warnings: res.warnings }),
-    onError: (err) => toast(err instanceof Error ? err.message : 'Validation failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Validation failed'), 'error'),
   });
 
   const save = useMutation({
     mutationFn: (text: string) => api.traefik.customConfig.set(text),
     onSuccess: (res) => {
       setFindings({ kind: 'saved', errors: [], warnings: res.warnings });
-      toast('Custom config applied', 'success');
+      toast(t('Custom config applied'), 'success');
       void qc.invalidateQueries({ queryKey: ['traefik-custom-config'] });
       void qc.invalidateQueries({ queryKey: ['traefik'] });
     },
     onError: (err) => {
-      setFindings(refusal(err));
-      toast(err instanceof Error ? err.message : 'The config was not saved', 'error');
+      setFindings(refusal(err, t));
+      toast(err instanceof Error ? err.message : t('The config was not saved'), 'error');
       // A rejected save changes the stored status (and maybe restores the last good version).
       void qc.invalidateQueries({ queryKey: ['traefik-custom-config'] });
     },
@@ -88,11 +90,11 @@ export function CustomConfigCard() {
     onSuccess: (res) => {
       setContent('');
       setFindings(null);
-      toast(res.cleared ? 'Custom config removed' : 'There was no custom config', 'success');
+      toast(res.cleared ? t('Custom config removed') : t('There was no custom config'), 'success');
       void qc.invalidateQueries({ queryKey: ['traefik-custom-config'] });
       void qc.invalidateQueries({ queryKey: ['traefik'] });
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not remove the custom config', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not remove the custom config'), 'error'),
   });
 
   if (state.isLoading) {
@@ -105,7 +107,7 @@ export function CustomConfigCard() {
     );
   }
   if (state.isError || !state.data) {
-    return <ErrorCard title="Couldn't load the custom config" error={state.error} onRetry={() => void state.refetch()} />;
+    return <ErrorCard title={t("Couldn't load the custom config")} error={state.error} onRetry={() => void state.refetch()} />;
   }
 
   const current = state.data;
@@ -117,41 +119,52 @@ export function CustomConfigCard() {
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] p-4">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
-          <FileCode2 size={14} /> Custom dynamic config
+          <FileCode2 size={14} /> {t('Custom dynamic config')}
         </h2>
         <div className="flex items-center gap-2 text-xs text-slate-500" data-testid="custom-config-status">
           <Badge tone={STATUS_TONE[current.status]}>{current.status}</Badge>
-          {current.updatedAt && <span>saved {formatDateTime(current.updatedAt)}</span>}
+          {current.updatedAt && <span>{t('saved {date}', { date: formatDateTime(current.updatedAt) })}</span>}
           {current.sha256 && <span className="font-mono">{current.sha256.slice(0, 12)}</span>}
         </div>
       </div>
       <CardBody className="space-y-4">
         <div className="space-y-1 text-xs text-slate-500">
           <p>
-            Extra Traefik routers, services and middlewares, kept in <code className="font-mono">custom.yml</code> beside the
-            generated routes. Allowed: <code className="font-mono">http</code> (routers, middlewares, services,
-            serversTransports), <code className="font-mono">tcp</code> (routers, services, middlewares) and{' '}
-            <code className="font-mono">tls.options</code>.
+            {fill(
+              t('Extra Traefik routers, services and middlewares, kept in {file} beside the generated routes. Allowed: {http} (routers, middlewares, services, serversTransports), {tcp} (routers, services, middlewares) and {tlsOptions}.'),
+              {
+                file: <code className="font-mono">custom.yml</code>,
+                http: <code className="font-mono">http</code>,
+                tcp: <code className="font-mono">tcp</code>,
+                tlsOptions: <code className="font-mono">tls.options</code>,
+              },
+            )}
           </p>
           <p>
-            Every name you define must start with <code className="font-mono">custom-</code> or{' '}
-            <code className="font-mono">custom_</code>. Routers use the <code className="font-mono">web</code> /{' '}
-            <code className="font-mono">websecure</code> entry points (TCP: <code className="font-mono">websecure</code>), stay
-            below the panel router's priority, and may only use the <code className="font-mono">letsencrypt</code> resolver.
-            Refused: <code className="font-mono">udp</code>, <code className="font-mono">tls.certificates</code> /{' '}
-            <code className="font-mono">tls.stores</code> (upload certificates instead), plugins, file paths (certFile, keyFile,
-            CA files), YAML aliases and merge keys. Node proxies do not receive it.
+            {fill(
+              t("Every name you define must start with {dash} or {underscore}. Routers use the {web} / {websecure} entry points (TCP: {websecure}), stay below the panel router's priority, and may only use the {letsencrypt} resolver. Refused: {udp}, {tlsCertificates} / {tlsStores} (upload certificates instead), plugins, file paths (certFile, keyFile, CA files), YAML aliases and merge keys. Node proxies do not receive it."),
+              {
+                dash: <code className="font-mono">custom-</code>,
+                underscore: <code className="font-mono">custom_</code>,
+                web: <code className="font-mono">web</code>,
+                websecure: <code className="font-mono">websecure</code>,
+                letsencrypt: <code className="font-mono">letsencrypt</code>,
+                udp: <code className="font-mono">udp</code>,
+                tlsCertificates: <code className="font-mono">tls.certificates</code>,
+                tlsStores: <code className="font-mono">tls.stores</code>,
+              },
+            )}
           </p>
         </div>
 
         {current.status === 'rejected' && current.lastError && (
           <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-300" data-testid="custom-config-last-error">
-            Last save rejected: {current.lastError}
+            {t('Last save rejected: {error}', { error: current.lastError })}
           </p>
         )}
 
         <Textarea
-          aria-label="Custom config YAML"
+          aria-label={t('Custom config YAML')}
           value={text}
           onChange={(e) => setContent(e.target.value)}
           rows={16}
@@ -164,22 +177,22 @@ export function CustomConfigCard() {
         <div className="flex flex-wrap justify-end gap-2">
           {current.content !== null && (
             <Button size="sm" variant="ghost" onClick={() => setConfirmClear(true)} disabled={busy}>
-              <Trash2 size={12} /> Clear
+              <Trash2 size={12} /> {t('Clear')}
             </Button>
           )}
           <Button size="sm" variant="secondary" onClick={() => validate.mutate(text)} disabled={busy || empty}>
-            <CheckCircle2 size={12} /> {validate.isPending ? 'Validating…' : 'Validate'}
+            <CheckCircle2 size={12} /> {validate.isPending ? t('Validating…') : t('Validate')}
           </Button>
           <Button size="sm" onClick={() => save.mutate(text)} disabled={busy || empty}>
-            <Save size={12} /> {save.isPending ? 'Applying…' : 'Save & apply'}
+            <Save size={12} /> {save.isPending ? t('Applying…') : t('Save & apply')}
           </Button>
         </div>
       </CardBody>
       <ConfirmDialog
         open={confirmClear}
-        title="Remove the custom config?"
-        message="Traefik drops every custom router, service and middleware. Generated routes are not affected."
-        confirmLabel="Remove"
+        title={t('Remove the custom config?')}
+        message={t('Traefik drops every custom router, service and middleware. Generated routes are not affected.')}
+        confirmLabel={t('Remove')}
         onConfirm={() => clear.mutate()}
         onClose={() => setConfirmClear(false)}
       />
@@ -205,20 +218,21 @@ function IssueList({ label, issues, tone }: { label: string; issues: TraefikCust
 }
 
 function FindingsList({ findings }: { findings: Findings }) {
+  const t = useT();
   const headline =
     findings.kind === 'valid'
-      ? 'The config passes the panel rules (Traefik checks it again on save).'
+      ? t('The config passes the panel rules (Traefik checks it again on save).')
       : findings.kind === 'saved'
-        ? 'Applied.'
+        ? t('Applied.')
         : findings.kind === 'invalid'
-          ? 'The config breaks the panel rules.'
+          ? t('The config breaks the panel rules.')
           : findings.message;
   const tone = findings.kind === 'valid' || findings.kind === 'saved' ? 'text-emerald-300' : 'text-rose-300';
   return (
     <div className="space-y-2 rounded-lg border border-white/[0.06] p-3" data-testid="custom-config-findings">
       <p className={`text-xs ${tone}`}>{headline}</p>
-      <IssueList label="Errors" issues={findings.errors} tone="text-rose-300" />
-      <IssueList label="Warnings" issues={findings.warnings} tone="text-amber-300" />
+      <IssueList label={t('Errors')} issues={findings.errors} tone="text-rose-300" />
+      <IssueList label={t('Warnings')} issues={findings.warnings} tone="text-amber-300" />
     </div>
   );
 }

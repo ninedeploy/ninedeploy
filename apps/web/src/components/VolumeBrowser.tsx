@@ -22,6 +22,7 @@ import { api } from '../lib/api.js';
 import { useToast } from './Toast.js';
 import { Button, Card, ErrorCard, Skeleton, cn } from './ui.js';
 import { formatBytes } from '../lib/format.js';
+import { useT } from '../lib/i18n.js';
 
 export type FileCategory = 'text' | 'image' | 'binary';
 
@@ -109,6 +110,7 @@ export function VolumeBrowser(props: VolumeBrowserProps) {
   return <VolumeBrowserSession key={`${props.serverId ?? 'panel'}:${props.volume}`} {...props} />;
 }
 function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps) {
+  const t = useT();
   const hostArgs: [] | [{ serverId: number }] = serverId == null ? [] : [{ serverId }];
   const fileKey = serverId == null ? ['volume-files', volume] : ['volume-files', serverId, volume];
   const qc = useQueryClient();
@@ -130,18 +132,18 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
     onSuccess: (_r, path) => {
       setEditing(null);
       refresh();
-      toast(`Deleted ${path.split('/').pop()}`, 'success');
+      toast(t('Deleted {name}', { name: path.split('/').pop() ?? '' }), 'success');
     },
-    onError: () => toast('Delete failed', 'error'),
+    onError: () => toast(t('Delete failed'), 'error'),
   });
 
   const mkdir = useMutation({
     mutationFn: (path: string) => api.volumes.mkdir(volume, { path }, ...hostArgs),
     onSuccess: () => {
       refresh();
-      toast('Folder created', 'success');
+      toast(t('Folder created'), 'success');
     },
-    onError: () => toast('Could not create the folder', 'error'),
+    onError: () => toast(t('Could not create the folder'), 'error'),
   });
 
   const open = useMutation({
@@ -163,7 +165,7 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
         dirty: false,
       });
     },
-    onError: () => toast('Could not read the file (binary or >1 MB?)', 'error'),
+    onError: () => toast(t('Could not read the file (binary or >1 MB?)'), 'error'),
   });
 
   // r251: the save carries the exact (path, text) it writes, and only marks
@@ -179,9 +181,9 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
     onSuccess: (_res, v) => {
       setEditing((cur) => (cur && cur.path === v.path && cur.text === v.text ? { ...cur, dirty: false } : cur));
       refresh();
-      toast('Saved', 'success');
+      toast(t('Saved'), 'success');
     },
-    onError: () => toast('Save failed', 'error'),
+    onError: () => toast(t('Save failed'), 'error'),
   });
 
   const crumbs = cwd ? cwd.split('/') : [];
@@ -200,7 +202,7 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" {...backdropProps}>
       <div
         role="dialog"
-        aria-label={`Files in ${volume}`}
+        aria-label={t('Files in {volume}', { volume })}
         className="flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950/95"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
@@ -209,16 +211,16 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
         <div className="flex flex-wrap items-center gap-3 border-b border-white/[0.06] px-4 py-3">
           <HardDrive size={15} className="text-amber-400" />
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300">{volume}</span>
-          {serverId != null && <span className="shrink-0 text-xs text-slate-400">Node #{serverId}</span>}
+          {serverId != null && <span className="shrink-0 text-xs text-slate-400">{t('Node #{id}', { id: serverId })}</span>}
           <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5">
             {editing ? (
               <>
                 <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>
-                  <ArrowLeft size={13} /> Back
+                  <ArrowLeft size={13} /> {t('Back')}
                 </Button>
                 {editing.category === 'text' ? (
                   <Button size="sm" onClick={() => save.mutate({ path: editing.path, text: editing.text })} disabled={save.isPending || !editing.dirty}>
-                    <Save size={13} /> {save.isPending ? 'Saving…' : editing.dirty ? 'Save' : 'Saved'}
+                    <Save size={13} /> {save.isPending ? t('Saving…') : editing.dirty ? t('Save') : t('Saved')}
                   </Button>
                 ) : (
                   <Button
@@ -226,7 +228,7 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
                     variant="secondary"
                     onClick={() => downloadBase64File(editing.path, editing.base64, editing.category)}
                   >
-                    <Download size={13} /> Download
+                    <Download size={13} /> {t('Download')}
                   </Button>
                 )}
               </>
@@ -236,30 +238,30 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
                   size="sm"
                   variant="secondary"
                   onClick={() => {
-                    const name = prompt('New folder name');
+                    const name = prompt(t('New folder name'));
                     if (name) mkdir.mutate(cwd ? `${cwd}/${name}` : name);
                   }}
                 >
-                  <FolderPlus size={13} /> Folder
+                  <FolderPlus size={13} /> {t('Folder')}
                 </Button>
                 <Button
                   size="sm"
                   variant="secondary"
                   onClick={() => {
-                    const name = prompt('New file name');
+                    const name = prompt(t('New file name'));
                     if (!name) return;
                     const path = cwd ? `${cwd}/${name}` : name;
                     setEditing({ path, category: 'text', text: '', base64: '', dirty: true });
                   }}
                 >
-                  <FilePlus2 size={13} /> File
+                  <FilePlus2 size={13} /> {t('File')}
                 </Button>
                 <label className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/5 active:scale-[0.98]">
-                  <Upload size={13} /> Upload
+                  <Upload size={13} /> {t('Upload')}
                   <input
                     type="file"
                     className="hidden"
-                    aria-label="Upload file to volume"
+                    aria-label={t('Upload file to volume')}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -270,14 +272,14 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
                         const path = cwd ? `${cwd}/${file.name}` : file.name;
                         api.volumes.writeFile(volume, { path, contentBase64: base64 }, ...hostArgs).then(() => {
                           refresh();
-                          toast(`Uploaded ${file.name}`, 'success');
-                        }).catch(() => toast('Upload failed', 'error'));
+                          toast(t('Uploaded {name}', { name: file.name }), 'success');
+                        }).catch(() => toast(t('Upload failed'), 'error'));
                       };
                       reader.readAsDataURL(file);
                     }}
                   />
                 </label>
-                <Button size="sm" variant="secondary" aria-label="Refresh volume files" onClick={refresh} disabled={dir.isFetching}>
+                <Button size="sm" variant="secondary" aria-label={t('Refresh volume files')} onClick={refresh} disabled={dir.isFetching}>
                   <RefreshCw size={13} className={dir.isFetching ? 'animate-spin' : undefined} />
                 </Button>
               </>
@@ -286,7 +288,7 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
               type="button"
               onClick={onClose}
               className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 hover:bg-white/5 hover:text-slate-200"
-              aria-label="Close volume browser"
+              aria-label={t('Close volume browser')}
             >
               <X size={14} />
             </button>
@@ -322,7 +324,7 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
               spellCheck={false}
               onChange={(e) => setEditing({ ...editing, text: e.target.value, dirty: true })}
               className="flex-1 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed text-slate-200 outline-none"
-              aria-label="File editor"
+              aria-label={t('File editor')}
             />
           ) : editing.category === 'image' ? (
             <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
@@ -336,7 +338,7 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
               <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
                 <FileImage size={14} className="text-emerald-400" />
                 <span className="font-mono text-slate-200">{editing.path.split('/').pop()}</span>
-                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">Image Preview · Read-only</span>
+                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">{t('Image Preview · Read-only')}</span>
               </div>
             </div>
           ) : (
@@ -347,17 +349,17 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
                 </div>
                 <h3 className="mt-3 font-mono text-sm font-semibold text-slate-100">{editing.path.split('/').pop()}</h3>
                 <p className="mt-1 text-xs text-slate-400">
-                  This file is recognized as a binary / archive or compiled asset.
+                  {t('This file is recognized as a binary / archive or compiled asset.')}
                 </p>
                 <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-left text-xs text-amber-300/90">
-                  Direct text editing is disabled to protect against data corruption. You can download the raw binary file to your computer.
+                  {t('Direct text editing is disabled to protect against data corruption. You can download the raw binary file to your computer.')}
                 </div>
                 <div className="mt-4 flex justify-center">
                   <Button
                     size="sm"
                     onClick={() => downloadBase64File(editing.path, editing.base64, 'binary')}
                   >
-                    <Download size={13} /> Download File
+                    <Download size={13} /> {t('Download File')}
                   </Button>
                 </div>
               </Card>
@@ -366,9 +368,9 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
         ) : dir.isLoading ? (
           <div className="flex-1 space-y-2 p-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-9 w-full" />)}</div>
         ) : dir.isError ? (
-          <div className="flex-1 overflow-y-auto p-4"><ErrorCard title="Could not load volume files" error={dir.error} onRetry={() => void dir.refetch()} /></div>
+          <div className="flex-1 overflow-y-auto p-4"><ErrorCard title={t('Could not load volume files')} error={dir.error} onRetry={() => void dir.refetch()} /></div>
         ) : entriesEmpty ? (
-          <div className="grid flex-1 place-items-center text-sm text-slate-500">Empty directory</div>
+          <div className="grid flex-1 place-items-center text-sm text-slate-500">{t('Empty directory')}</div>
         ) : (
           <div className="flex-1 overflow-y-auto p-2">
             {dir.data!.entries.map((e) => {
@@ -404,12 +406,12 @@ function VolumeBrowserSession({ volume, serverId, onClose }: VolumeBrowserProps)
                   <button
                     type="button"
                     onClick={() => {
-                      if (confirm(`Delete ${e.name}?${e.type === 'dir' ? ' (folder and everything in it)' : ''}`)) {
+                      if (confirm(e.type === 'dir' ? t('Delete {name}? (folder and everything in it)', { name: e.name }) : t('Delete {name}?', { name: e.name }))) {
                         del.mutate(full);
                       }
                     }}
                     className="shrink-0 text-slate-700 opacity-0 transition hover:text-rose-400 group-hover:opacity-100"
-                    aria-label={`Delete ${e.name}`}
+                    aria-label={t('Delete {name}', { name: e.name })}
                   >
                     <Trash2 size={13} />
                   </button>

@@ -5,6 +5,7 @@ import { api, authedFetch } from '../lib/api.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, PageHeader, Skeleton, StatusBadge, cn } from '../components/ui.js';
 import { downloadBlob, formatBytes, formatDateTime } from '../lib/format.js';
+import { useT } from '../lib/i18n.js';
 
 type PendingAction =
   | { kind: 'restore'; databaseId: number; id: number; name: string }
@@ -12,6 +13,7 @@ type PendingAction =
   | { kind: 'remove-destination'; id: number; name: string };
 
 export function Backups() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [pending, setPending] = useState<PendingAction | null>(null);
@@ -20,37 +22,37 @@ export function Backups() {
     mutationFn: (b: { databaseId: number; id: number }) => api.backups.restore(b.databaseId, b.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['backups'] });
-      toast('Restore started — the database will restart with the snapshot data', 'success');
+      toast(t('Restore started — the database will restart with the snapshot data'), 'success');
     },
-    onError: () => toast('Restore failed', 'error'),
+    onError: () => toast(t('Restore failed'), 'error'),
   });
   const remove = useMutation({
     mutationFn: (id: number) => api.backups.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['backups'] });
-      toast('Backup deleted', 'success');
+      toast(t('Backup deleted'), 'success');
     },
-    onError: () => toast('Could not delete the backup', 'error'),
+    onError: () => toast(t('Could not delete the backup'), 'error'),
   });
   const destRemove = useMutation({
     mutationFn: (id: number) => api.backupDestinations.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['backup-destinations'] });
-      toast('Destination removed', 'success');
+      toast(t('Destination removed'), 'success');
     },
-    onError: () => toast('Could not remove the destination', 'error'),
+    onError: () => toast(t('Could not remove the destination'), 'error'),
   });
 
   const download = async (id: number) => {
     try {
       const res = await authedFetch(`/v1/backups/${id}/download`);
       if (!res.ok) {
-        toast('Download failed', 'error');
+        toast(t('Download failed'), 'error');
         return;
       }
       downloadBlob(await res.blob(), `backup-${id}.dump`);
     } catch {
-      toast('Download failed', 'error');
+      toast(t('Download failed'), 'error');
     }
   };
 
@@ -58,27 +60,27 @@ export function Backups() {
     <div>
       <PageHeader
         icon={<HardDrive size={18} />}
-        title="Backups"
-        subtitle="Database and volume snapshots — back up, restore and download. Daily auto-backups keep the latest 7 per database."
+        title={t('Backups')}
+        subtitle={t('Database and volume snapshots — back up, restore and download. Daily auto-backups keep the latest 7 per database.')}
       />
 
       {list.isLoading ? (
         <Card className="p-5"><Skeleton className="h-8 w-full" /></Card>
       ) : list.isError ? (
-        <ErrorCard title="Couldn't load backups" error={list.error} onRetry={() => list.refetch()} />
+        <ErrorCard title={t("Couldn't load backups")} error={list.error} onRetry={() => list.refetch()} />
       ) : !list.data || list.data.length === 0 ? (
         <Card>
-          <EmptyState icon={<HardDrive size={26} />} title="No backups yet" hint="Use the Backup button on a database to create a snapshot." />
+          <EmptyState icon={<HardDrive size={26} />} title={t('No backups yet')} hint={t('Use the Backup button on a database to create a snapshot.')} />
         </Card>
       ) : (
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-3 font-medium">Resource</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Size</th>
-                <th className="px-5 py-3 font-medium">Created</th>
+                <th className="px-5 py-3 font-medium">{t('Resource')}</th>
+                <th className="px-5 py-3 font-medium">{t('Status')}</th>
+                <th className="px-5 py-3 font-medium">{t('Size')}</th>
+                <th className="px-5 py-3 font-medium">{t('Created')}</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -88,7 +90,7 @@ export function Backups() {
                   <td className="px-5 py-3">
                     {b.scope === 'volumes' ? (
                       <div className="leading-tight">
-                        <div className="font-medium text-slate-200">{b.label ?? 'Volume snapshot'}</div>
+                        <div className="font-medium text-slate-200">{b.label ?? t('Volume snapshot')}</div>
                         {b.volumeName && <div className="font-mono text-[10px] text-slate-600">{b.volumeName}</div>}
                       </div>
                     ) : (
@@ -109,17 +111,17 @@ export function Backups() {
                         disabled={!b.databaseId}
                         className="rounded p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-indigo-300 disabled:opacity-40"
                         title={
-                          b.databaseId ? 'Restore'
-                            : b.scope === 'volumes' ? 'Volume snapshots are restored from the Volumes page'
-                              : 'The source database no longer exists'
+                          b.databaseId ? t('Restore')
+                            : b.scope === 'volumes' ? t('Volume snapshots are restored from the Volumes page')
+                              : t('The source database no longer exists')
                         }
                       >
                         <RotateCcw size={14} />
                       </button>
-                      <button type="button" onClick={() => download(b.id)} className="rounded p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-sky-300" title="Download">
+                      <button type="button" onClick={() => download(b.id)} className="rounded p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-sky-300" title={t('Download')}>
                         <Download size={14} />
                       </button>
-                      <button type="button" onClick={() => setPending({ kind: 'delete', id: b.id })} className="rounded p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-rose-400" title="Delete">
+                      <button type="button" onClick={() => setPending({ kind: 'delete', id: b.id })} className="rounded p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-rose-400" title={t('Delete')}>
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -134,18 +136,18 @@ export function Backups() {
       <ConfirmDialog
         open={pending != null}
         title={
-          pending?.kind === 'restore' ? 'Restore backup'
-          : pending?.kind === 'delete' ? 'Delete backup'
-          : 'Remove destination'
+          pending?.kind === 'restore' ? t('Restore backup')
+          : pending?.kind === 'delete' ? t('Delete backup')
+          : t('Remove destination')
         }
         message={
           pending?.kind === 'restore'
-            ? `Restore ${pending.name || 'the database'} from this backup? Current data will be overwritten.`
+            ? t('Restore {name} from this backup? Current data will be overwritten.', { name: pending.name || t('the database') })
             : pending?.kind === 'delete'
-              ? 'Delete this backup? The snapshot file is removed permanently.'
-              : `Remove "${pending?.name}" as an off-site destination? Existing remote copies stay in the bucket.`
+              ? t('Delete this backup? The snapshot file is removed permanently.')
+              : t('Remove "{name}" as an off-site destination? Existing remote copies stay in the bucket.', { name: pending?.name ?? '' })
         }
-        confirmLabel={pending?.kind === 'restore' ? 'Restore' : 'Delete'}
+        confirmLabel={pending?.kind === 'restore' ? t('Restore') : t('Delete')}
         onConfirm={() => {
           // The dialog only renders its confirm button while `pending` is set.
           const p = pending!;
@@ -163,6 +165,7 @@ export function Backups() {
 
 // ── S3-compatible backup destinations (admin) ─────────────────────────────
 function DestinationsCard({ onRemove }: { onRemove: (id: number, name: string) => void }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({ name: '', endpoint: '', region: '', bucket: '', prefix: '', accessKeyId: '', secretAccessKey: '' });
@@ -175,19 +178,19 @@ function DestinationsCard({ onRemove }: { onRemove: (id: number, name: string) =
       setShowForm(false);
       setForm({ name: '', endpoint: '', region: '', bucket: '', prefix: '', accessKeyId: '', secretAccessKey: '' });
       qc.invalidateQueries({ queryKey: ['backup-destinations'] });
-      toast('Destination saved', 'success');
+      toast(t('Destination saved'), 'success');
     },
-    onError: () => toast('Could not save the destination', 'error'),
+    onError: () => toast(t('Could not save the destination'), 'error'),
   });
   const test = useMutation({
     mutationFn: (id: number) => api.backupDestinations.test(id),
-    onSuccess: () => toast('Destination reachable — credentials work', 'success'),
-    onError: (err) => toast(err instanceof Error ? err.message : 'Test failed', 'error'),
+    onSuccess: () => toast(t('Destination reachable — credentials work'), 'success'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Test failed'), 'error'),
   });
   const toggle = useMutation({
     mutationFn: (d: { id: number; active: boolean }) => api.backupDestinations.update(d.id, { active: !d.active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['backup-destinations'] }),
-    onError: () => toast('Could not change the destination', 'error'),
+    onError: () => toast(t('Could not change the destination'), 'error'),
   });
   // The parent owns the destructive-confirm flow for removal (onRemove).
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
@@ -197,13 +200,13 @@ function DestinationsCard({ onRemove }: { onRemove: (id: number, name: string) =
     <Card className="mt-5">
       <div className="p-5">
         <div className="mb-3 flex items-center justify-between">
-          <div className="text-sm font-medium text-slate-300">Off-site destinations (S3-compatible)</div>
+          <div className="text-sm font-medium text-slate-300">{t('Off-site destinations (S3-compatible)')}</div>
           <Button size="sm" variant="secondary" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? 'Close' : 'Add destination'}
+            {showForm ? t('Close') : t('Add destination')}
           </Button>
         </div>
         <p className="mb-3 text-xs text-slate-500">
-          Completed backups are also uploaded (still encrypted) to the active destination. Restore works from the remote copy when the local file is gone.
+          {t('Completed backups are also uploaded (still encrypted) to the active destination. Restore works from the remote copy when the local file is gone.')}
         </p>
 
         {showForm && (
@@ -214,16 +217,16 @@ function DestinationsCard({ onRemove }: { onRemove: (id: number, name: string) =
             }}
             className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2"
           >
-            <Field label="Name"><Input value={form.name} onChange={set('name')} placeholder="minio-offsite" className="h-9" /></Field>
-            <Field label="Endpoint URL"><Input value={form.endpoint} onChange={set('endpoint')} placeholder="https://s3.example.com" className="h-9 font-mono text-xs" /></Field>
-            <Field label="Region"><Input value={form.region} onChange={set('region')} placeholder="us-east-1" className="h-9" /></Field>
-            <Field label="Bucket"><Input value={form.bucket} onChange={set('bucket')} placeholder="ninedeploy-backups" className="h-9 font-mono text-xs" /></Field>
-            <Field label="Prefix"><Input value={form.prefix} onChange={set('prefix')} placeholder="ninedeploy" className="h-9 font-mono text-xs" /></Field>
-            <Field label="Access key ID"><Input value={form.accessKeyId} onChange={set('accessKeyId')} className="h-9 font-mono text-xs" /></Field>
-            <Field label="Secret access key"><Input type="password" value={form.secretAccessKey} onChange={set('secretAccessKey')} className="h-9 font-mono text-xs" /></Field>
+            <Field label={t('Name')}><Input value={form.name} onChange={set('name')} placeholder="minio-offsite" className="h-9" /></Field>
+            <Field label={t('Endpoint URL')}><Input value={form.endpoint} onChange={set('endpoint')} placeholder="https://s3.example.com" className="h-9 font-mono text-xs" /></Field>
+            <Field label={t('Region')}><Input value={form.region} onChange={set('region')} placeholder="us-east-1" className="h-9" /></Field>
+            <Field label={t('Bucket')}><Input value={form.bucket} onChange={set('bucket')} placeholder="ninedeploy-backups" className="h-9 font-mono text-xs" /></Field>
+            <Field label={t('Prefix')}><Input value={form.prefix} onChange={set('prefix')} placeholder="ninedeploy" className="h-9 font-mono text-xs" /></Field>
+            <Field label={t('Access key ID')}><Input value={form.accessKeyId} onChange={set('accessKeyId')} className="h-9 font-mono text-xs" /></Field>
+            <Field label={t('Secret access key')}><Input type="password" value={form.secretAccessKey} onChange={set('secretAccessKey')} className="h-9 font-mono text-xs" /></Field>
             <div className="flex items-end">
               <Button type="submit" size="sm" disabled={!canCreate || create.isPending}>
-                {create.isPending ? 'Saving…' : 'Save destination'}
+                {create.isPending ? t('Saving…') : t('Save destination')}
               </Button>
             </div>
           </form>
@@ -233,9 +236,9 @@ function DestinationsCard({ onRemove }: { onRemove: (id: number, name: string) =
           {list.isLoading ? (
             <Skeleton className="h-8 w-full" />
           ) : list.isError ? (
-            <ErrorCard title="Couldn't load destinations" error={list.error} onRetry={() => list.refetch()} />
+            <ErrorCard title={t("Couldn't load destinations")} error={list.error} onRetry={() => list.refetch()} />
           ) : !list.data || list.data.length === 0 ? (
-            <p className="py-2 text-xs text-slate-600">No destinations — backups stay local only.</p>
+            <p className="py-2 text-xs text-slate-600">{t('No destinations — backups stay local only.')}</p>
           ) : (
             list.data.map((d) => (
               <div key={d.id} className="group flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2 ring-1 ring-inset ring-white/5">
@@ -253,12 +256,12 @@ function DestinationsCard({ onRemove }: { onRemove: (id: number, name: string) =
                       d.active ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20' : 'bg-slate-500/15 text-slate-400 ring-slate-500/20',
                     )}
                   >
-                    {d.active ? 'active' : 'paused'}
+                    {d.active ? t('active') : t('paused')}
                   </button>
-                  <button type="button" onClick={() => test.mutate(d.id)} className="text-xs text-slate-500 hover:text-indigo-300" title="Test connection">
-                    test
+                  <button type="button" onClick={() => test.mutate(d.id)} className="text-xs text-slate-500 hover:text-indigo-300" title={t('Test connection')}>
+                    {t('test')}
                   </button>
-                  <button type="button" onClick={() => onRemove(d.id, d.name)} className="text-slate-600 transition hover:text-rose-400" title="Remove destination">
+                  <button type="button" onClick={() => onRemove(d.id, d.name)} className="text-slate-600 transition hover:text-rose-400" title={t('Remove destination')}>
                     <Trash2 size={13} />
                   </button>
                 </div>

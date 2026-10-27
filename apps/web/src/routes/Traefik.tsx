@@ -10,8 +10,10 @@ import { CertificatesCard } from './traefik/CertificatesCard.js';
 import { CustomConfigCard } from './traefik/CustomConfigCard.js';
 import { TrafficAnalyticsCard } from './traefik/TrafficAnalyticsCard.js';
 import { Http3Card } from './traefik/Http3Card.js';
+import { useT } from '../lib/i18n.js';
 
 export function Traefik() {
+  const t = useT();
   const { user: me } = useAuth();
   const isAdmin = me?.isOperator === true;
 
@@ -39,14 +41,14 @@ export function Traefik() {
       <PageHeader
         icon={<Globe size={18} />}
         title="Traefik"
-        subtitle="Reverse proxy, SSL certificates, and routing configuration."
+        subtitle={t('Reverse proxy, SSL certificates, and routing configuration.')}
       />
 
       {/* Status Banner */}
       {info.isLoading ? (
         <Skeleton className="mb-6 h-20 w-full" />
       ) : info.isError ? (
-        <ErrorCard title="Couldn't load Traefik status" error={info.error} onRetry={() => info.refetch()} />
+        <ErrorCard title={t("Couldn't load Traefik status")} error={info.error} onRetry={() => info.refetch()} />
       ) : (
         <StatusBanner status={info.data!.status} isAdmin={isAdmin} />
       )}
@@ -56,14 +58,14 @@ export function Traefik() {
         active={activeTab}
         onChange={setActiveTab}
         tabs={[
-          { id: 'overview', label: 'Overview' },
-          { id: 'certificates', label: `Certificates${info.data?.certificates?.length ? ` (${info.data.certificates.length})` : ''}` },
-          { id: 'routers', label: `Routers${info.data?.routers?.length ? ` (${info.data.routers.length})` : ''}` },
-          { id: 'logs', label: 'Logs' },
+          { id: 'overview', label: t('Overview') },
+          { id: 'certificates', label: `${t('Certificates')}${info.data?.certificates?.length ? ` (${info.data.certificates.length})` : ''}` },
+          { id: 'routers', label: `${t('Routers')}${info.data?.routers?.length ? ` (${info.data.routers.length})` : ''}` },
+          { id: 'logs', label: t('Logs') },
           // 0.14: the custom dynamic config is operator-only (as are its routes).
-          ...(isAdmin ? [{ id: 'custom', label: 'Custom config' }] : []),
+          ...(isAdmin ? [{ id: 'custom', label: t('Custom config') }] : []),
           // 0.15: opt-in traffic analytics, operator-only like its routes.
-          ...(isAdmin ? [{ id: 'traffic', label: 'Traffic' }] : []),
+          ...(isAdmin ? [{ id: 'traffic', label: t('Traffic') }] : []),
         ]}
       />
 
@@ -82,10 +84,10 @@ export function Traefik() {
         {activeTab === 'logs' &&
           (!isAdmin ? (
             <Card className="p-10 text-center text-sm text-slate-500">
-              Traefik logs are available to instance operators only.
+              {t('Traefik logs are available to instance operators only.')}
             </Card>
           ) : logs.isError && !logs.data ? (
-            <ErrorCard title="Couldn't load Traefik logs" error={logs.error} onRetry={() => void logs.refetch()} />
+            <ErrorCard title={t("Couldn't load Traefik logs")} error={logs.error} onRetry={() => void logs.refetch()} />
           ) : (
             <LogsTab logs={logs.data?.logs ?? []} isLoading={logs.isLoading} />
           ))}
@@ -97,24 +99,25 @@ export function Traefik() {
 }
 
 function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boolean }) {
+  const t = useT();
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const restart = useMutation({
     mutationFn: () => api.traefik.restart(),
     onSuccess: () => {
-      toast('Traefik restarted successfully', 'success');
+      toast(t('Traefik restarted successfully'), 'success');
       qc.invalidateQueries({ queryKey: ['traefik'] });
     },
-    onError: () => toast('Failed to restart Traefik', 'error'),
+    onError: () => toast(t('Failed to restart Traefik'), 'error'),
   });
 
   const backup = useMutation({
     mutationFn: () => api.traefik.backupCerts(),
     onSuccess: () => {
-      toast('Certificates backed up successfully', 'success');
+      toast(t('Certificates backed up successfully'), 'success');
     },
-    onError: () => toast('Failed to backup certificates', 'error'),
+    onError: () => toast(t('Failed to backup certificates'), 'error'),
   });
 
   const update = useMutation({
@@ -127,10 +130,10 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
     onSuccess: (data) => {
       // r346: the server reports newVersion: null when the registry lookup
       // fails (the pull still happened) — that used to read "updated to vnull".
-      toast(data.newVersion ? `Traefik updated to v${data.newVersion}` : 'Traefik updated to the latest image', 'success');
+      toast(data.newVersion ? t('Traefik updated to v{version}', { version: data.newVersion }) : t('Traefik updated to the latest image'), 'success');
       qc.invalidateQueries({ queryKey: ['traefik'] });
     },
-    onError: (err) => toast(`Failed to update Traefik: ${err.message}`, 'error'),
+    onError: (err) => toast(t('Failed to update Traefik: {error}', { error: err.message }), 'error'),
   });
 
   return (
@@ -150,7 +153,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">
-                {status.running ? 'Traefik Running' : 'Traefik Stopped'}
+                {status.running ? t('Traefik Running') : t('Traefik Stopped')}
               </h2>
               <StatusBadge status={status.running ? 'running' : 'stopped'} />
             </div>
@@ -167,7 +170,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
               {status.uptime && (
                 <span className="flex items-center gap-1">
                   <Clock size={12} />
-                  Uptime: {status.uptime}
+                  {t('Uptime: {uptime}', { uptime: status.uptime })}
                 </span>
               )}
               <span className="flex items-center gap-1">
@@ -189,7 +192,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
                 className="h-8 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
               >
                 <Upload size={14} className={cn('mr-1.5', update.isPending && 'animate-bounce')} />
-                {update.isPending ? 'Updating…' : `Update to v${status.versionLatest}`}
+                {update.isPending ? t('Updating…') : t('Update to v{version}', { version: status.versionLatest ?? '' })}
               </Button>
             )}
             <Button
@@ -200,7 +203,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
               className="h-8"
             >
               <Download size={14} className="mr-1.5" />
-              {backup.isPending ? 'Backing up…' : 'Backup Certs'}
+              {backup.isPending ? t('Backing up…') : t('Backup Certs')}
             </Button>
             <Button
               size="sm"
@@ -210,7 +213,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
               className="h-8"
             >
               <RefreshCw size={14} className={cn('mr-1.5', restart.isPending && 'animate-spin')} />
-              {restart.isPending ? 'Restarting…' : 'Restart'}
+              {restart.isPending ? t('Restarting…') : t('Restart')}
             </Button>
           </div>
         )}
@@ -221,7 +224,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
         <div className="border-t border-amber-500/20 bg-amber-500/5 px-5 py-3">
           <div className="flex items-center gap-2 text-sm text-amber-400">
             <AlertCircle size={14} />
-            A newer Traefik version is available (v{status.versionLatest}). Click &quot;Update&quot; to upgrade.
+            {t('A newer Traefik version is available (v{version}). Click "Update" to upgrade.', { version: status.versionLatest ?? '' })}
           </div>
         </div>
       )}
@@ -230,7 +233,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
         <div className="border-t border-white/5 bg-rose-500/5 px-5 py-3">
           <div className="flex items-center gap-2 text-sm text-rose-400">
             <AlertCircle size={14} />
-            Traefik is not running. Domain routing will be unavailable.
+            {t('Traefik is not running. Domain routing will be unavailable.')}
           </div>
         </div>
       )}
@@ -239,6 +242,7 @@ function StatusBanner({ status, isAdmin }: { status: TraefikStatus; isAdmin: boo
 }
 
 function OverviewTab({ data, isLoading }: { data: TraefikInfo | undefined; isLoading: boolean }) {
+  const t = useT();
   if (isLoading) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -264,53 +268,54 @@ function OverviewTab({ data, isLoading }: { data: TraefikInfo | undefined; isLoa
     <div className="nd-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card className="p-5">
         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
-          <Shield size={14} className="text-indigo-400" /> Certificates
+          <Shield size={14} className="text-indigo-400" /> {t('Certificates')}
         </div>
         <div className="mt-2 text-2xl font-semibold">{data.certificates.length}</div>
         <div className="mt-1 flex items-center gap-2 text-xs">
-          <span className="text-emerald-400">{certStats.valid} valid</span>
-          {certStats.expiring > 0 && <span className="text-amber-400">{certStats.expiring} expiring</span>}
-          {certStats.critical > 0 && <span className="text-rose-400">{certStats.critical} critical</span>}
+          <span className="text-emerald-400">{t('{n} valid', { n: certStats.valid })}</span>
+          {certStats.expiring > 0 && <span className="text-amber-400">{t('{n} expiring', { n: certStats.expiring })}</span>}
+          {certStats.critical > 0 && <span className="text-rose-400">{t('{n} critical', { n: certStats.critical })}</span>}
         </div>
       </Card>
 
       <Card className="p-5">
         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
-          <Globe size={14} className="text-indigo-400" /> Routers
+          <Globe size={14} className="text-indigo-400" /> {t('Routers')}
         </div>
         <div className="mt-2 text-2xl font-semibold">{data.routers.length}</div>
         <div className="mt-1 text-xs text-slate-500">
-          {data.routers.filter((r) => r.tls).length} with TLS
+          {t('{n} with TLS', { n: data.routers.filter((r) => r.tls).length })}
         </div>
       </Card>
 
       <Card className="p-5">
         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
-          <Server size={14} className="text-indigo-400" /> Services
+          <Server size={14} className="text-indigo-400" /> {t('Services')}
         </div>
         <div className="mt-2 text-2xl font-semibold">{data.services.length}</div>
-        <div className="mt-1 text-xs text-slate-500">load balanced</div>
+        <div className="mt-1 text-xs text-slate-500">{t('load balanced')}</div>
       </Card>
 
       <Card className="p-5">
         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
-          <Activity size={14} className="text-indigo-400" /> Middlewares
+          <Activity size={14} className="text-indigo-400" /> {t('Middlewares')}
         </div>
         <div className="mt-2 text-2xl font-semibold">{data.middlewares.length}</div>
-        <div className="mt-1 text-xs text-slate-500">redirects / headers</div>
+        <div className="mt-1 text-xs text-slate-500">{t('redirects / headers')}</div>
       </Card>
     </div>
   );
 }
 
 function CertificatesTab({ certificates }: { certificates: TraefikCertificate[] }) {
+  const t = useT();
   if (certificates.length === 0) {
     return (
       <Card className="p-10 text-center">
         <Shield size={32} className="mx-auto mb-3 text-slate-600" />
-        <p className="text-sm text-slate-500">No SSL certificates configured.</p>
+        <p className="text-sm text-slate-500">{t('No SSL certificates configured.')}</p>
         <p className="mt-1 text-xs text-slate-600">
-          Enable SSL on domains to automatically provision Let's Encrypt certificates.
+          {t("Enable SSL on domains to automatically provision Let's Encrypt certificates.")}
         </p>
       </Card>
     );
@@ -321,10 +326,10 @@ function CertificatesTab({ certificates }: { certificates: TraefikCertificate[] 
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-            <th className="px-5 py-3">Domain</th>
-            <th className="px-5 py-3">Issuer</th>
-            <th className="px-5 py-3">Expires</th>
-            <th className="px-5 py-3">Status</th>
+            <th className="px-5 py-3">{t('Domain')}</th>
+            <th className="px-5 py-3">{t('Issuer')}</th>
+            <th className="px-5 py-3">{t('Expires')}</th>
+            <th className="px-5 py-3">{t('Status')}</th>
           </tr>
         </thead>
         <tbody>
@@ -369,14 +374,15 @@ function CertificateBadge({ daysUntilExpiry }: { daysUntilExpiry: number | null 
 }
 
 function RoutersTab({ data }: { data: TraefikInfo }) {
+  const t = useT();
   return (
     <div className="space-y-4">
       {data.routers.length === 0 ? (
         <Card className="p-10 text-center">
           <Globe size={32} className="mx-auto mb-3 text-slate-600" />
-          <p className="text-sm text-slate-500">No routers configured.</p>
+          <p className="text-sm text-slate-500">{t('No routers configured.')}</p>
           <p className="mt-1 text-xs text-slate-600">
-            Add domains to services to create routing rules.
+            {t('Add domains to services to create routing rules.')}
           </p>
         </Card>
       ) : (
@@ -415,7 +421,7 @@ function RoutersTab({ data }: { data: TraefikInfo }) {
       {data.services.length > 0 && (
         <>
           <h3 className="mt-6 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            <Server size={14} /> Backend Services
+            <Server size={14} /> {t('Backend Services')}
           </h3>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data.services.map((svc) => (
@@ -433,6 +439,7 @@ function RoutersTab({ data }: { data: TraefikInfo }) {
 }
 
 function LogsTab({ logs, isLoading }: { logs: string[]; isLoading: boolean }) {
+  const t = useT();
   if (isLoading) {
     return (
       <Card className="p-5">
@@ -444,11 +451,11 @@ function LogsTab({ logs, isLoading }: { logs: string[]; isLoading: boolean }) {
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-white/5 px-4 py-2">
-        <span className="text-xs font-medium text-slate-400">Recent Logs</span>
+        <span className="text-xs font-medium text-slate-400">{t('Recent Logs')}</span>
       </div>
       <div className="max-h-96 overflow-auto">
         {logs.length === 0 ? (
-          <div className="p-10 text-center text-sm text-slate-500">No logs available.</div>
+          <div className="p-10 text-center text-sm text-slate-500">{t('No logs available.')}</div>
         ) : (
           <pre className="p-4 font-mono text-[11px] leading-relaxed text-slate-400">
             {logs.map((line, i) => (

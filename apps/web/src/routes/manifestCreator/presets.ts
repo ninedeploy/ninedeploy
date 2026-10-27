@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 import { recommendedRuntimeVersion } from '@ninedeploy/schemas';
+import { msg } from '../../lib/i18n.js';
 
 export interface ManifestPreset {
   id: string;
@@ -213,8 +214,8 @@ const API_WITH_DB: NinedeployManifest = {
 export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'empty',
-    label: 'Blank',
-    description: 'Start from scratch — just the version field',
+    label: msg('Blank'),
+    description: msg('Start from scratch — just the version field'),
     icon: FileCode,
     meta: [],
     manifest: EMPTY,
@@ -222,7 +223,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'node-npm',
     label: `Node ${NODE_VERSION} (npm)`,
-    description: 'Active LTS Node with npm ci + npm run build',
+    description: msg('Active LTS Node with npm ci + npm run build'),
     icon: Package,
     meta: [`Node ${NODE_VERSION}`, ':3000'],
     manifest: NODE_NPM,
@@ -230,7 +231,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'node-pnpm',
     label: `Node ${NODE_VERSION} (pnpm)`,
-    description: 'pnpm with frozen lockfile',
+    description: msg('pnpm with frozen lockfile'),
     icon: Boxes,
     meta: [`Node ${NODE_VERSION}`, ':3000'],
     manifest: NODE_PNPM,
@@ -238,7 +239,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'node-api',
     label: 'Node API (Express)',
-    description: 'No build step — node server.js with a health endpoint',
+    description: msg('No build step — node server.js with a health endpoint'),
     icon: Server,
     meta: [`Node ${NODE_VERSION}`, ':3000', '/healthz'],
     manifest: NODE_API,
@@ -246,15 +247,15 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'nextjs',
     label: 'Next.js',
-    description: 'next build + next start behind the router',
+    description: msg('next build + next start behind the router'),
     icon: Zap,
     meta: [`Node ${NODE_VERSION}`, ':3000'],
     manifest: NEXTJS,
   },
   {
     id: 'static',
-    label: 'Static SPA (Vite)',
-    description: 'Pre-built dist/ served as a static SPA',
+    label: msg('Static SPA (Vite)'),
+    description: msg('Pre-built dist/ served as a static SPA'),
     icon: Globe,
     meta: ['SPA fallback', 'dist/'],
     manifest: STATIC_VITE,
@@ -270,7 +271,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'fastapi',
     label: 'FastAPI',
-    description: 'uvicorn ASGI server with a /health probe',
+    description: msg('uvicorn ASGI server with a /health probe'),
     icon: Flame,
     meta: [`Python ${PYTHON_VERSION}`, ':8000', '/health'],
     manifest: FASTAPI,
@@ -278,7 +279,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'django',
     label: 'Django',
-    description: 'gunicorn WSGI; migrate + collectstatic on build',
+    description: msg('gunicorn WSGI; migrate + collectstatic on build'),
     icon: Server,
     meta: [`Python ${PYTHON_VERSION}`, ':8000'],
     manifest: DJANGO,
@@ -286,7 +287,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'go',
     label: `Go ${GO_VERSION}`,
-    description: 'go build → ./app binary',
+    description: msg('go build → ./app binary'),
     icon: Cog,
     meta: [':8080', 'go build'],
     manifest: GO,
@@ -294,7 +295,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'rust',
     label: 'Rust',
-    description: 'cargo build --release → release binary',
+    description: msg('cargo build --release → release binary'),
     icon: Cog,
     meta: ['cargo', ':8080'],
     manifest: RUST,
@@ -302,7 +303,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'rails',
     label: 'Ruby on Rails',
-    description: 'bundle install + rails server (unpinned)',
+    description: msg('bundle install + rails server (unpinned)'),
     icon: Gem,
     meta: ['ruby', ':3000'],
     manifest: RAILS,
@@ -310,7 +311,7 @@ export const PRESETS: readonly ManifestPreset[] = [
   {
     id: 'laravel',
     label: 'Laravel (PHP)',
-    description: 'composer --no-dev with config/route cache',
+    description: msg('composer --no-dev with config/route cache'),
     icon: Flame,
     meta: ['php', ':8080'],
     manifest: LARAVEL,
@@ -325,24 +326,24 @@ export const PRESETS: readonly ManifestPreset[] = [
   },
   {
     id: 'monorepo',
-    label: 'Monorepo service',
-    description: 'baseDir + watch paths + PR previews wired up',
+    label: msg('Monorepo service'),
+    description: msg('baseDir + watch paths + PR previews wired up'),
     icon: FolderKanban,
     meta: ['apps/web', 'watch paths', 'PR previews'],
     manifest: MONOREPO,
   },
   {
     id: 'worker',
-    label: 'Background worker',
-    description: 'No port — queue consumer with drain hook + alerts',
+    label: msg('Background worker'),
+    description: msg('No port — queue consumer with drain hook + alerts'),
     icon: Bot,
     meta: ['no port', '512 MiB'],
     manifest: WORKER,
   },
   {
     id: 'api-db',
-    label: 'API + managed DB',
-    description: 'DB attach, backups, alerts — the full ops setup',
+    label: msg('API + managed DB'),
+    description: msg('DB attach, backups, alerts — the full ops setup'),
     icon: Database,
     meta: [':3000', 'backups', 'alerts'],
     manifest: API_WITH_DB,

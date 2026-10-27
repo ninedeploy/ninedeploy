@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { useTagScope } from '../lib/projects.js';
 import { useAuth } from '../lib/auth.js';
 import { useWorkspace } from '../lib/workspace.js';
+import { useT } from '../lib/i18n.js';
 import { useToast } from './Toast.js';
 import { Badge, Button, cn } from './ui.js';
 import type { LabelColor } from '@ninedeploy/sdk';
@@ -29,6 +30,7 @@ const COLOR_HEX: Record<LabelColor, string> = {
  * of the dropdown so a stale URL doesn't show empty placeholders.
  */
 export function TopBarFilters() {
+  const t = useT();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -70,7 +72,7 @@ export function TopBarFilters() {
 
   const createLabel = async () => {
     if (!newLabel.trim()) {
-      toast('Label name is required', 'error');
+      toast(t('Label name is required'), 'error');
       return;
     }
     setBusy(true);
@@ -86,9 +88,9 @@ export function TopBarFilters() {
       await Promise.all([refetchLabels(), queryClient.invalidateQueries({ queryKey: ['labels'] })]);
       scope.setLabelIds([...scope.labelIds, created.id]);
       setNewLabel('');
-      toast(`Label "${created.name}" created`, 'success');
+      toast(t('Label "{name}" created', { name: created.name }), 'success');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not create label', 'error');
+      toast(err instanceof Error ? err.message : t('Could not create label'), 'error');
     } finally {
       setBusy(false);
     }
@@ -98,7 +100,7 @@ export function TopBarFilters() {
     <div className="flex items-center gap-2 flex-wrap text-xs">
       <span className="flex items-center gap-1 text-slate-500 mr-1">
         <Filter size={12} />
-        Filter
+        {t('Filter')}
       </span>
 
       {/* Workspace chip — operates on the global workspace context; this */}
@@ -115,17 +117,17 @@ export function TopBarFilters() {
               : 'border-slate-700 bg-slate-900/60 text-slate-400',
           )}
         >
-          <span>Workspace</span>
-          <span className="font-semibold">{currentWorkspace ? currentWorkspace.name : 'All'}</span>
+          <span>{t('Workspace')}</span>
+          <span className="font-semibold">{currentWorkspace ? currentWorkspace.name : t('All')}</span>
           <ChevronDown size={11} className="opacity-70" />
         </button>
         {openGroup === 'workspaces' && (
           <Popover onClose={() => setOpenGroup(null)}>
             <div className="px-3 py-2 text-[11px] uppercase tracking-wide text-slate-500">
-              Filter by additional workspaces
+              {t('Filter by additional workspaces')}
             </div>
             {workspaces.length === 0 ? (
-              <Empty>No workspaces</Empty>
+              <Empty>{t('No workspaces')}</Empty>
             ) : (
               <ul className="max-h-72 overflow-auto">
                 {workspaces.map((w) => {
@@ -163,7 +165,7 @@ export function TopBarFilters() {
                   setOpenGroup(null);
                 }}
               >
-                Clear
+                {t('Clear')}
               </Button>
             </div>
           </Popover>
@@ -190,14 +192,14 @@ export function TopBarFilters() {
               : 'border-slate-700 bg-slate-900/60 text-slate-400',
           )}
         >
-          <span>Project</span>
-          <span className="font-semibold">{scope.projectIds.length || 'Any'}</span>
+          <span>{t('Project')}</span>
+          <span className="font-semibold">{scope.projectIds.length || t('Any')}</span>
           <ChevronDown size={11} className="opacity-70" />
         </button>
         {openGroup === 'projects' && (
           <Popover onClose={() => setOpenGroup(null)}>
             {projects.length === 0 ? (
-              <Empty>No projects in this workspace</Empty>
+              <Empty>{t('No projects in this workspace')}</Empty>
             ) : (
               <ul className="max-h-72 overflow-auto py-1">
                 {projects.map((p) => {
@@ -237,7 +239,7 @@ export function TopBarFilters() {
                   setOpenGroup(null);
                 }}
               >
-                Clear
+                {t('Clear')}
               </Button>
             </div>
           </Popover>
@@ -249,7 +251,7 @@ export function TopBarFilters() {
         return (
           <ActiveChip
             key={id}
-            label={p?.name ?? `Project #${String(id)}`}
+            label={p?.name ?? t('Project #{id}', { id: String(id) })}
             tone="emerald"
             onRemove={() => toggle('projectIds', id)}
           />
@@ -269,14 +271,14 @@ export function TopBarFilters() {
           )}
         >
           <Tag size={10} />
-          <span>Label</span>
-          <span className="font-semibold">{scope.labelIds.length || 'Any'}</span>
+          <span>{t('Label')}</span>
+          <span className="font-semibold">{scope.labelIds.length || t('Any')}</span>
           <ChevronDown size={11} className="opacity-70" />
         </button>
         {openGroup === 'labels' && (
           <Popover onClose={() => setOpenGroup(null)} widthClass="w-72">
             {labels.length === 0 ? (
-              <Empty>No labels yet</Empty>
+              <Empty>{t('No labels yet')}</Empty>
             ) : (
               <ul className="max-h-64 overflow-auto py-1">
                 {labels.map((l) => {
@@ -298,7 +300,7 @@ export function TopBarFilters() {
                         <Badge tone="amber" className={cn('border', tone)}>
                           {l.name}
                         </Badge>
-                        {l.workspaceId == null && <span className="text-[10px] text-slate-500">global</span>}
+                        {l.workspaceId == null && <span className="text-[10px] text-slate-500">{t('global')}</span>}
                       </button>
                     </li>
                   );
@@ -309,12 +311,12 @@ export function TopBarFilters() {
               <>
                 <Divider />
                 <div className="px-3 py-2 space-y-1.5">
-                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Create new label</div>
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">{t('Create new label')}</div>
                   <div className="flex items-center gap-1.5">
                     <input
                       value={newLabel}
                       onChange={(e) => setNewLabel(e.target.value)}
-                      placeholder="e.g. production"
+                      placeholder={t('e.g. production')}
                       className="flex-1 rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-1 text-xs outline-none focus:border-amber-500"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') createLabel();
@@ -346,7 +348,7 @@ export function TopBarFilters() {
                   setOpenGroup(null);
                 }}
               >
-                Clear
+                {t('Clear')}
               </Button>
             </div>
           </Popover>
@@ -358,12 +360,12 @@ export function TopBarFilters() {
         const tone = l ? COLOR_HEX[(l.color as LabelColor) ?? 'indigo'] ?? COLOR_HEX.indigo : COLOR_HEX.indigo;
         return (
           <Badge key={id} tone="amber" className={cn('inline-flex items-center gap-1 border px-2 py-0.5', tone)}>
-            {l?.name ?? `Label #${String(id)}`}
+            {l?.name ?? t('Label #{id}', { id: String(id) })}
             <button
               type="button"
               onClick={() => toggle('labelIds', id)}
               className="ml-0.5 -mr-1 rounded-full p-0.5 hover:bg-white/10"
-              aria-label="Remove label filter"
+              aria-label={t('Remove label filter')}
             >
               <X size={10} />
             </button>
@@ -377,7 +379,7 @@ export function TopBarFilters() {
           onClick={() => scope.clearAll()}
           className="ml-1 text-[10px] uppercase tracking-wide text-slate-500 hover:text-rose-300 transition"
         >
-          Clear all
+          {t('Clear all')}
         </button>
       )}
     </div>
@@ -393,12 +395,13 @@ function Popover({
   onClose: () => void;
   widthClass?: string;
 }) {
+  const t = useT();
   return (
     <div className={`absolute right-0 z-30 mt-1 ${widthClass} rounded-lg border border-slate-700 bg-slate-900/95 shadow-2xl backdrop-blur`}>
       <div onClick={(e) => e.stopPropagation()}>{children}</div>
       <button
         type="button"
-        aria-label="Close"
+        aria-label={t('Close')}
         onClick={onClose}
         className="absolute -top-2 -right-2 hidden h-4 w-4 items-center justify-center rounded-full bg-slate-800 text-slate-500"
       />
@@ -415,6 +418,7 @@ function ActiveChip({
   tone?: 'indigo' | 'emerald';
   onRemove: () => void;
 }) {
+  const t = useT();
   const palette =
     tone === 'emerald'
       ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
@@ -426,7 +430,7 @@ function ActiveChip({
         type="button"
         onClick={onRemove}
         className="-mr-1 ml-0.5 rounded-full p-0.5 hover:bg-white/10"
-        aria-label="Remove"
+        aria-label={t('Remove')}
       >
         <X size={10} />
       </button>

@@ -25,8 +25,10 @@ import {
   Select,
   Skeleton,
 } from '../components/ui.js';
+import { useT } from '../lib/i18n.js';
 
 export function Activity() {
+  const t = useT();
   const { user } = useAuth();
   const [entityFilter, setEntityFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
@@ -129,15 +131,15 @@ export function Activity() {
   // Well-known actions get a human-readable badge; anything unknown falls
   // through to the raw action name so new backend events are never invisible.
   const ACTION_LABELS: Record<string, string> = {
-    'alert.oom': 'Out of memory',
-    'ai.diagnose': 'AI diagnosis',
-    'ai.analyze_logs': 'AI log analysis',
-    'ai.suggest': 'AI manifest',
-    'service.oom': 'Out of memory',
+    'alert.oom': t('Out of memory'),
+    'ai.diagnose': t('AI diagnosis'),
+    'ai.analyze_logs': t('AI log analysis'),
+    'ai.suggest': t('AI manifest'),
+    'service.oom': t('Out of memory'),
     // 0.16.11 scale to zero (service.wake carries meta.trigger: request, manual, start or restart).
-    'service.sleep': 'Asleep',
-    'service.sleep_now': 'Put to sleep',
-    'service.wake': 'Woke up',
+    'service.sleep': t('Asleep'),
+    'service.sleep_now': t('Put to sleep'),
+    'service.wake': t('Woke up'),
   };
   const actionLabel = (action: string) => ACTION_LABELS[action] ?? action;
 
@@ -163,15 +165,15 @@ export function Activity() {
   // After every hook: a member reaching /activity directly gets the honest
   // one-liner, not a fabricated "No activity recorded" over a hidden 403.
   if (!user?.isOperator) {
-    return <PageHeader title="Activity" subtitle="The audit ledger — operators only." />;
+    return <PageHeader title={t('Activity')} subtitle={t('The audit ledger — operators only.')} />;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
         icon={<ActivityIcon size={20} className="text-indigo-400" />}
-        title="Activity & Audit Logs"
-        subtitle="Full immutable ledger of platform operations, lifecycle events, and user actions."
+        title={t('Activity & Audit Logs')}
+        subtitle={t('Full immutable ledger of platform operations, lifecycle events, and user actions.')}
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -184,14 +186,14 @@ export function Activity() {
               }`}
             >
               <Zap size={13} className={autoRefresh ? 'fill-emerald-400' : ''} />
-              {autoRefresh ? 'Live Stream On' : 'Paused'}
+              {autoRefresh ? t('Live Stream On') : t('Paused')}
             </button>
             <Button
               variant="secondary"
               size="sm"
               onClick={() => activityQuery.refetch()}
               disabled={activityQuery.isFetching}
-              title="Refresh audit logs"
+              title={t('Refresh audit logs')}
             >
               <RefreshCw size={13} className={activityQuery.isFetching ? 'animate-spin' : ''} />
             </Button>
@@ -202,7 +204,7 @@ export function Activity() {
               disabled={filteredEntries.length === 0}
             >
               <Download size={13} className="mr-1.5" />
-              Export CSV
+              {t('Export CSV')}
             </Button>
             <Button
               variant="secondary"
@@ -211,7 +213,7 @@ export function Activity() {
               disabled={filteredEntries.length === 0}
             >
               <Download size={13} className="mr-1.5" />
-              Export JSON
+              {t('Export JSON')}
             </Button>
           </div>
         }
@@ -224,7 +226,7 @@ export function Activity() {
             <div className="relative">
               <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <Input
-                placeholder="Search audit trail..."
+                placeholder={t('Search audit trail...')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 text-xs"
@@ -236,7 +238,7 @@ export function Activity() {
                 onChange={(e) => setEntityFilter(e.target.value)}
                 className="text-xs"
               >
-                <option value="">All Entities</option>
+                <option value="">{t('All Entities')}</option>
                 {uniqueEntities.map((ent) => (
                   <option key={ent} value={ent}>
                     {ent}
@@ -250,7 +252,7 @@ export function Activity() {
                 onChange={(e) => setActionFilter(e.target.value)}
                 className="text-xs"
               >
-                <option value="">All Actions</option>
+                <option value="">{t('All Actions')}</option>
                 {uniqueActions.map((act) => (
                   <option key={act} value={act}>
                     {act}
@@ -260,7 +262,7 @@ export function Activity() {
             </div>
             <div className="flex items-center gap-2">
               <Input
-                placeholder="User ID (e.g. 1)"
+                placeholder={t('User ID (e.g. 1)')}
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
                 className="text-xs"
@@ -277,7 +279,7 @@ export function Activity() {
                   }}
                   className="text-xs text-slate-400 hover:text-slate-200 shrink-0"
                 >
-                  Clear
+                  {t('Clear')}
                 </Button>
               )}
             </div>
@@ -298,7 +300,7 @@ export function Activity() {
           // claim the ledger is empty (r472 — an outage read as "no activity").
           <CardBody className="p-6">
             <ErrorCard
-              title="Couldn't load the audit ledger"
+              title={t("Couldn't load the audit ledger")}
               error={activityQuery.error}
               onRetry={() => activityQuery.refetch()}
             />
@@ -307,8 +309,8 @@ export function Activity() {
           <CardBody className="p-12">
             <EmptyState
               icon={<Clock size={28} />}
-              title="No activity recorded"
-              hint="Audit log events and lifecycle updates will appear here automatically."
+              title={t('No activity recorded')}
+              hint={t('Audit log events and lifecycle updates will appear here automatically.')}
             />
           </CardBody>
         ) : (
@@ -316,11 +318,11 @@ export function Activity() {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-white/[0.06] bg-white/[0.01] text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-3">Timestamp</th>
-                  <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3">Entity</th>
-                  <th className="px-4 py-3">Actor / User</th>
-                  <th className="px-4 py-3 text-right">Details</th>
+                  <th className="px-4 py-3">{t('Timestamp')}</th>
+                  <th className="px-4 py-3">{t('Action')}</th>
+                  <th className="px-4 py-3">{t('Entity')}</th>
+                  <th className="px-4 py-3">{t('Actor / User')}</th>
+                  <th className="px-4 py-3 text-right">{t('Details')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
@@ -356,9 +358,9 @@ export function Activity() {
                             {row.userEmail && <span className="block max-w-[14rem] truncate text-[11px] font-normal text-slate-500">({row.userEmail})</span>}
                           </span>
                         ) : row.userId ? (
-                          <span className="text-slate-400">User #{row.userId}</span>
+                          <span className="text-slate-400">{t('User #{id}', { id: row.userId })}</span>
                         ) : (
-                          <span className="text-slate-500 italic">System Automation</span>
+                          <span className="text-slate-500 italic">{t('System Automation')}</span>
                         )}
                       </div>
                     </td>
@@ -370,10 +372,10 @@ export function Activity() {
                           onClick={() => setInspectEntry(row)}
                           className="h-7 px-2 text-[11px] text-indigo-400 hover:text-indigo-300"
                         >
-                          <Eye size={12} className="mr-1" /> Inspect
+                          <Eye size={12} className="mr-1" /> {t('Inspect')}
                         </Button>
                       ) : (
-                        <span className="text-[11px] text-slate-600">None</span>
+                        <span className="text-[11px] text-slate-600">{t('None')}</span>
                       )}
                     </td>
                   </tr>
@@ -390,7 +392,7 @@ export function Activity() {
               onClick={() => activityQuery.fetchNextPage()}
               disabled={activityQuery.isFetchingNextPage}
             >
-              {activityQuery.isFetchingNextPage ? 'Loading…' : 'Load older entries'}
+              {activityQuery.isFetchingNextPage ? t('Loading…') : t('Load older entries')}
             </Button>
           </CardBody>
         )}
@@ -399,40 +401,40 @@ export function Activity() {
       {/* Inspect Meta Modal */}
       {inspectEntry && (
         <Modal
-          title={`Audit Payload #${inspectEntry.id}`}
+          title={t('Audit Payload #{id}', { id: inspectEntry.id })}
           wide
           onClose={() => setInspectEntry(null)}
           footer={
             <Button variant="secondary" size="sm" onClick={() => setInspectEntry(null)}>
-              Dismiss
+              {t('Dismiss')}
             </Button>
           }
         >
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 text-xs">
               <div>
-                <span className="text-slate-500">Action:</span>
+                <span className="text-slate-500">{t('Action:')}</span>
                 <p className="font-mono font-medium text-slate-200 mt-0.5">{inspectEntry.action}</p>
               </div>
               <div>
-                <span className="text-slate-500">Target Entity:</span>
-                <p className="font-mono font-medium text-slate-200 mt-0.5">{inspectEntry.entity ?? 'None'}</p>
+                <span className="text-slate-500">{t('Target Entity:')}</span>
+                <p className="font-mono font-medium text-slate-200 mt-0.5">{inspectEntry.entity ?? t('None')}</p>
               </div>
               <div>
-                <span className="text-slate-500">Timestamp:</span>
+                <span className="text-slate-500">{t('Timestamp:')}</span>
                 <p className="font-mono text-slate-300 mt-0.5">{new Date(inspectEntry.ts).toISOString()}</p>
               </div>
               <div>
-                <span className="text-slate-500">Actor:</span>
+                <span className="text-slate-500">{t('Actor:')}</span>
                 <p className="text-slate-300 mt-0.5">
-                  {inspectEntry.userName ? `${inspectEntry.userName} (${inspectEntry.userEmail})` : inspectEntry.userId ? `User #${inspectEntry.userId}` : 'System'}
+                  {inspectEntry.userName ? `${inspectEntry.userName} (${inspectEntry.userEmail})` : inspectEntry.userId ? t('User #{id}', { id: inspectEntry.userId }) : t('System')}
                 </p>
               </div>
             </div>
 
             <div>
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">
-                JSON Metadata &amp; Parameters
+                {t('JSON Metadata & Parameters')}
               </span>
               <pre className="max-h-72 overflow-auto rounded-xl border border-white/[0.08] bg-black/40 p-3 font-mono text-xs text-indigo-200">
                 {JSON.stringify(inspectEntry.meta, null, 2)}

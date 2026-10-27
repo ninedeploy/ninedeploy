@@ -4,8 +4,10 @@ import { ExternalLink, GitBranch, Heart, Layers, Package, RefreshCw, Shield, Spa
 import { api } from '../lib/api.js';
 import { usePanelUpdate } from '../lib/usePanelUpdate.js';
 import { Button, ConfirmDialog, Card, CardBody, Skeleton } from '../components/ui.js';
+import { fill, useT } from '../lib/i18n.js';
 
 export function About() {
+  const t = useT();
   const about = useQuery({ queryKey: ['about'], queryFn: () => api.about.get(), staleTime: 60000 });
   const queryClient = useQueryClient();
   const update = useQuery({ queryKey: ['update-check'], queryFn: () => api.system.updateCheck(), staleTime: 60000 });
@@ -64,18 +66,18 @@ export function About() {
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-300 transition hover:bg-amber-500/25"
-                title={`Upgrade to ${update.data.latest}`}
+                title={t('Upgrade to {version}', { version: update.data.latest })}
               >
-                <Sparkles size={12} /> {update.data.latest} available
+                <Sparkles size={12} /> {t('{version} available', { version: update.data.latest })}
               </a>
             )}
             {data.stats && (
               <>
-                <Badge icon={<GitBranch size={12} />} label={`${data.stats.services} services`} />
-                <Badge icon={<Terminal size={12} />} label={`${data.stats.deployments} deploys`} />
-                <Badge label={`${data.stats.databases} databases`} />
-                <Badge label={`${data.stats.users} users`} />
-                <Badge icon={<Layers size={12} />} label={`${(data.stats as any).plugins} plugins`} />
+                <Badge icon={<GitBranch size={12} />} label={t('{n} services', { n: data.stats.services })} />
+                <Badge icon={<Terminal size={12} />} label={t('{n} deploys', { n: data.stats.deployments })} />
+                <Badge label={t('{n} databases', { n: data.stats.databases })} />
+                <Badge label={t('{n} users', { n: data.stats.users })} />
+                <Badge icon={<Layers size={12} />} label={t('{n} plugins', { n: (data.stats as any).plugins })} />
               </>
             )}
           </div>
@@ -87,7 +89,7 @@ export function About() {
         <CardBody>
           <div className="mb-4 flex items-center gap-2">
             <Sparkles size={16} className="text-indigo-400" />
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">What's New — v{latest.version}</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{t("What's New — v{version}", { version: latest.version })}</h2>
             <span className="ml-auto text-xs text-slate-600">{latest.date}</span>
           </div>
           <p className="mb-3 text-sm font-medium text-slate-300">{latest.title}</p>
@@ -105,7 +107,7 @@ export function About() {
       {/* Tech Stack */}
       <Card className="mb-5">
         <CardBody>
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Tech Stack</h2>
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Tech Stack')}</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {data.techStack.map((group) => (
               <div key={group.category} className="rounded-lg bg-white/[0.02] p-3">
@@ -122,7 +124,7 @@ export function About() {
       {/* Links */}
       <Card className="mb-5">
         <CardBody>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Links</h2>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Links')}</h2>
           <div className="flex flex-wrap gap-2">
             <a href={data.repo} target="_blank" rel="noreferrer"
               className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm text-slate-300 transition hover:bg-white/[0.08]">
@@ -130,7 +132,7 @@ export function About() {
             </a>
             <a href={data.docs} target="_blank" rel="noreferrer"
               className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm text-slate-300 transition hover:bg-white/[0.08]">
-              <ExternalLink size={15} /> Docs
+              <ExternalLink size={15} /> {t('Docs')}
             </a>
           </div>
         </CardBody>
@@ -139,7 +141,7 @@ export function About() {
       {/* Update info */}
       <Card>
         <CardBody>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Updates</h2>
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Updates')}</h2>
           {update.isLoading ? (
             <Skeleton className="h-5 w-40" />
           ) : update.data ? (
@@ -147,37 +149,37 @@ export function About() {
               <>
                 <p className="mb-3 text-sm text-slate-400">
                   {update.data.reason === 'disabled'
-                    ? 'Update checks are switched off on this instance (NINEDEPLOY_UPDATE_CHECK_URL=disabled).'
-                    : 'Could not reach GitHub from this server to look up the latest release.'}
+                    ? t('Update checks are switched off on this instance (NINEDEPLOY_UPDATE_CHECK_URL=disabled).')
+                    : t('Could not reach GitHub from this server to look up the latest release.')}
                 </p>
                 {update.data.detail && update.data.reason !== 'disabled' && (
                   <p className="mb-3 break-words font-mono text-[11px] leading-relaxed text-slate-500">{update.data.detail}</p>
                 )}
                 <Button size="sm" onClick={recheck} disabled={rechecking}>
-                  <RefreshCw size={14} className={rechecking ? 'animate-spin' : undefined} /> Check again
+                  <RefreshCw size={14} className={rechecking ? 'animate-spin' : undefined} /> {t('Check again')}
                 </Button>
               </>
             ) : (
               <>
                 <p className="mb-2 text-sm text-slate-400">
-                  You're running <span className="font-mono font-medium text-indigo-300">v{update.data.current}</span>.{' '}
+                  {fill(t("You're running {version}."), { version: <span className="font-mono font-medium text-indigo-300">v{update.data.current}</span> })}{' '}
                   {update.data.updateAvailable
-                    ? <>A new release is out: <span className="font-mono font-medium text-amber-300">{update.data.latest}</span>.</>
-                    : 'This is the latest release.'}
+                    ? fill(t('A new release is out: {version}.'), { version: <span className="font-mono font-medium text-amber-300">{update.data.latest}</span> })
+                    : t('This is the latest release.')}
                 </p>
                 <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                   <span>
-                    Checked {new Date(update.data.checkedAt).toLocaleString()}
-                    {update.data.source ? ` via ${update.data.source}` : ''}
+                    {t('Checked {time}', { time: new Date(update.data.checkedAt).toLocaleString() })}
+                    {update.data.source ? ` ${t('via {source}', { source: update.data.source })}` : ''}
                   </span>
                   <button type="button" onClick={recheck} disabled={rechecking}
                     className="inline-flex items-center gap-1 font-medium text-slate-400 transition hover:text-slate-200 disabled:opacity-50">
-                    <RefreshCw size={11} className={rechecking ? 'animate-spin' : undefined} /> Check now
+                    <RefreshCw size={11} className={rechecking ? 'animate-spin' : undefined} /> {t('Check now')}
                   </button>
                 </div>
                 {update.data.stale && (
                   <p className="mb-3 break-words text-xs text-amber-300/80">
-                    The latest check could not reach GitHub, so this is the last release seen.
+                    {t('The latest check could not reach GitHub, so this is the last release seen.')}
                     {update.data.detail ? <span className="mt-1 block font-mono text-[11px] text-slate-500">{update.data.detail}</span> : null}
                   </p>
                 )}
@@ -185,7 +187,7 @@ export function About() {
             )
           ) : (
             <p className="mb-3 text-sm text-slate-400">
-              You're running <span className="font-mono font-medium text-indigo-300">v{data.version}</span>.
+              {fill(t("You're running {version}."), { version: <span className="font-mono font-medium text-indigo-300">v{data.version}</span> })}
             </p>
           )}
           {upd.ready && !upd.supported ? (
@@ -194,21 +196,21 @@ export function About() {
             <div className="mb-3 flex flex-wrap items-center gap-3">
               {update.data?.updateAvailable && update.data.latest && upd.available && (
                 <Button size="sm" disabled={upd.starting || upd.phase === 'updating'} onClick={() => setConfirmOpen(true)}>
-                  Update &amp; Restart
+                  {t('Update & Restart')}
                 </Button>
               )}
               <span className="text-xs text-slate-500">
                 {upd.phase === 'updating'
-                  ? 'Updating — the panel rebuilds and restarts itself; this page reconnects automatically.'
+                  ? t('Updating — the panel rebuilds and restarts itself; this page reconnects automatically.')
                   : upd.phase === 'done'
-                    ? 'Update complete — every surface of the panel now runs the new release.'
+                    ? t('Update complete — every surface of the panel now runs the new release.')
                     : upd.phase === 'failed'
-                      ? 'The last attempt failed mid-way; the previous release keeps running.'
-                      : 'One click runs the installer for you: data snapshot, rebuild, migrations, restart.'}
+                      ? t('The last attempt failed mid-way; the previous release keeps running.')
+                      : t('One click runs the installer for you: data snapshot, rebuild, migrations, restart.')}
               </span>
             </div>
           )}
-          <p className="text-xs text-slate-500">To upgrade, re-run the installer (defaults to the latest release tag):</p>
+          <p className="text-xs text-slate-500">{t('To upgrade, re-run the installer (defaults to the latest release tag):')}</p>
           <pre className="mt-2 overflow-auto rounded-lg bg-black/30 p-3 font-mono text-xs text-slate-300 ring-1 ring-inset ring-white/5">
 {`curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash
 # or, on an existing install:
@@ -219,15 +221,15 @@ export function About() {
 
       {/* Footer */}
       <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-slate-600">
-        Built with <Heart size={11} className="text-rose-500" /> using TypeScript, React, Fastify &amp; Docker
+        {fill(t('Built with {heart} using TypeScript, React, Fastify & Docker'), { heart: <Heart size={11} className="text-rose-500" /> })}
       </div>
 
       {/* Same confirmation as the layout banner's update button */}
       {upd.supported && (
         <ConfirmDialog
           open={confirmOpen}
-          title={`Update NineDeploy to ${update.data?.latest ?? ''}`}
-          confirmLabel="Update and Restart"
+          title={t('Update NineDeploy to {version}', { version: update.data?.latest ?? '' })}
+          confirmLabel={t('Update and Restart')}
           onClose={() => setConfirmOpen(false)}
           onConfirm={() => {
             if (update.data?.latest) upd.startUpdating(update.data.latest);
@@ -235,13 +237,13 @@ export function About() {
           message={
             <div className="space-y-2">
               <p>
-                This runs the official installer against this installation: snapshot the database, fetch{' '}
-                <span className="font-mono font-medium">{update.data?.latest}</span>, clear build output, rebuild everything,
-                run database migrations and restart the panel service.
+                {fill(
+                  t('This runs the official installer against this installation: snapshot the database, fetch {version}, clear build output, rebuild everything, run database migrations and restart the panel service.'),
+                  { version: <span className="font-mono font-medium">{update.data?.latest}</span> },
+                )}
               </p>
               <p className="text-slate-400">
-                The panel goes down mid-way and comes back on the new release — plan for roughly 5–15 minutes of downtime,
-                longer on slow mirrors. Deployed services keep running throughout.
+                {t('The panel goes down mid-way and comes back on the new release — plan for roughly 5–15 minutes of downtime, longer on slow mirrors. Deployed services keep running throughout.')}
               </p>
             </div>
           }

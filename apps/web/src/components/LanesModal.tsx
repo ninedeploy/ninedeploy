@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { api } from '../lib/api.js';
 import { useWorkspace } from '../lib/workspace.js';
 import { useToast } from './Toast.js';
+import { useT } from '../lib/i18n.js';
 import { Button, Input, Modal, Skeleton, Spinner, Switch } from './ui.js';
 
 /**
@@ -13,6 +14,7 @@ import { Button, Input, Modal, Skeleton, Spinner, Switch } from './ui.js';
  * failures surface as toasts instead of being pre-filtered here.
  */
 export function LanesModal({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { currentWorkspace } = useWorkspace();
@@ -38,9 +40,9 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
     onSuccess: (env) => {
       invalidate();
       setName('');
-      toast(`Lane "${env.name}" created`, 'info');
+      toast(t('Lane "{name}" created', { name: env.name }), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Create failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Create failed'), 'error'),
   });
 
   const rename = useMutation({
@@ -48,9 +50,9 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
     onSuccess: (env) => {
       invalidate();
       setEditingId(null);
-      toast(`Lane renamed to "${env.name}"`, 'info');
+      toast(t('Lane renamed to "{name}"', { name: env.name }), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Rename failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Rename failed'), 'error'),
   });
 
   const remove = useMutation({
@@ -58,9 +60,9 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
     onSuccess: () => {
       invalidate();
       setConfirmDeleteId(null);
-      toast('Lane deleted', 'info');
+      toast(t('Lane deleted'), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Delete failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Delete failed'), 'error'),
   });
 
   // 0.16.13: the two lane switches. Admin-only on the server; a member's
@@ -73,24 +75,23 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
     onSuccess: (env, input) => {
       invalidate();
       if (input.protected !== undefined) {
-        toast(input.protected ? `"${env.name}" is protected` : `"${env.name}" is no longer protected`, 'info');
+        toast(input.protected ? t('"{name}" is protected', { name: env.name }) : t('"{name}" is no longer protected', { name: env.name }), 'info');
       } else {
         toast(
-          input.requireApproval ? `Deploys into "${env.name}" now wait for approval` : `Deploys into "${env.name}" no longer wait for approval`,
+          input.requireApproval ? t('Deploys into "{name}" now wait for approval', { name: env.name }) : t('Deploys into "{name}" no longer wait for approval', { name: env.name }),
           'info',
         );
       }
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Could not change the lane', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Could not change the lane'), 'error'),
   });
 
   const busy = create.isPending || rename.isPending || remove.isPending || toggle.isPending;
 
   return (
-    <Modal title="Deployment lanes" onClose={onClose}>
+    <Modal title={t('Deployment lanes')} onClose={onClose}>
       <p className="mb-4 text-xs text-slate-500">
-        Lanes group services per workspace — production, staging, … — and power the promote flow on the deploy tab. A protected
-        lane keeps its variable values and logs for workspace admins; with approval on, each deploy into it waits for one.
+        {t('Lanes group services per workspace — production, staging, … — and power the promote flow on the deploy tab. A protected lane keeps its variable values and logs for workspace admins; with approval on, each deploy into it waits for one.')}
       </p>
 
       {lanes.isLoading ? (
@@ -101,7 +102,7 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
       ) : !lanes.data || lanes.data.length === 0 ? (
         <div className="mb-4 flex items-center gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-3 text-xs text-slate-500">
           <Layers size={14} className="shrink-0 text-slate-600" />
-          No lanes yet — services live in a single undifferentiated pool until you create one.
+          {t('No lanes yet — services live in a single undifferentiated pool until you create one.')}
         </div>
       ) : (
         <ul className="mb-4 space-y-1.5">
@@ -122,14 +123,14 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
                     value={editName}
                     onChange={(ev) => setEditName(ev.target.value)}
                     className="h-8 text-xs"
-                    aria-label="Lane name"
+                    aria-label={t('Lane name')}
                     autoFocus
                   />
                   <Button type="submit" size="sm" disabled={!editName.trim() || busy}>
-                    Save
+                    {t('Save')}
                   </Button>
                   <Button type="button" variant="secondary" size="sm" onClick={() => setEditingId(null)}>
-                    Cancel
+                    {t('Cancel')}
                   </Button>
                 </form>
               ) : (
@@ -137,34 +138,34 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
                   <span className="min-w-0">
                     <span className="block truncate text-sm text-slate-200">{e.name}</span>
                     <span className="text-[11px] text-slate-500">
-                      {e.serviceCount} service{e.serviceCount === 1 ? '' : 's'}
+                      {e.serviceCount === 1 ? t('{n} service', { n: e.serviceCount }) : t('{n} services', { n: e.serviceCount })}
                     </span>
                     {/* Absent on panels before 0.16.13. */}
                     {e.protected !== undefined && (
                       <span className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
                         <label
                           className="flex items-center gap-2 text-[11px] text-slate-400"
-                          title="Variable values, deploy and runtime logs and mounted files of this lane's services are for workspace admins only"
+                          title={t("Variable values, deploy and runtime logs and mounted files of this lane's services are for workspace admins only")}
                         >
                           <Switch
                             checked={!!e.protected}
                             disabled={busy}
-                            label={`Protect ${e.name}`}
+                            label={t('Protect {name}', { name: e.name })}
                             onChange={(v) => toggle.mutate({ id: e.id, protected: v })}
                           />
-                          Protected
+                          {t('Protected')}
                         </label>
                         <label
                           className="flex items-center gap-2 text-[11px] text-slate-400"
-                          title="Every deploy into this lane waits for a workspace admin to approve it; an admin's own deploys go straight through"
+                          title={t("Every deploy into this lane waits for a workspace admin to approve it; an admin's own deploys go straight through")}
                         >
                           <Switch
                             checked={!!e.requireApproval}
                             disabled={busy}
-                            label={`Require approval for ${e.name}`}
+                            label={t('Require approval for {name}', { name: e.name })}
                             onChange={(v) => toggle.mutate({ id: e.id, requireApproval: v })}
                           />
-                          Require approval
+                          {t('Require approval')}
                         </label>
                       </span>
                     )}
@@ -172,7 +173,7 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
                   <span className="flex shrink-0 items-center gap-1">
                     {confirmDeleteId === e.id ? (
                       <>
-                        <span className="text-[11px] text-rose-300">Delete lane?</span>
+                        <span className="text-[11px] text-rose-300">{t('Delete lane?')}</span>
                         <Button
                           type="button"
                           size="sm"
@@ -180,10 +181,10 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
                           disabled={busy}
                           onClick={() => remove.mutate(e.id)}
                         >
-                          {remove.isPending ? <Spinner className="h-3 w-3" /> : 'Yes, delete'}
+                          {remove.isPending ? <Spinner className="h-3 w-3" /> : t('Yes, delete')}
                         </Button>
                         <Button type="button" size="sm" variant="secondary" onClick={() => setConfirmDeleteId(null)}>
-                          Keep
+                          {t('Keep')}
                         </Button>
                       </>
                     ) : (
@@ -195,8 +196,8 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
                             setEditName(e.name);
                           }}
                           className="rounded p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
-                          title={`Rename ${e.name}`}
-                          aria-label={`Rename ${e.name}`}
+                          title={t('Rename {name}', { name: e.name })}
+                          aria-label={t('Rename {name}', { name: e.name })}
                         >
                           <Pencil size={12} />
                         </button>
@@ -204,8 +205,8 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
                           type="button"
                           onClick={() => setConfirmDeleteId(e.id)}
                           className="rounded p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-rose-300"
-                          title={`Delete ${e.name}`}
-                          aria-label={`Delete ${e.name}`}
+                          title={t('Delete {name}', { name: e.name })}
+                          aria-label={t('Delete {name}', { name: e.name })}
                         >
                           <Trash2 size={12} />
                         </button>
@@ -229,13 +230,13 @@ export function LanesModal({ onClose }: { onClose: () => void }) {
         <Input
           value={name}
           onChange={(ev) => setName(ev.target.value)}
-          placeholder="New lane name (e.g. staging)"
+          placeholder={t('New lane name (e.g. staging)')}
           className="text-xs"
-          aria-label="New lane name"
+          aria-label={t('New lane name')}
           maxLength={80}
         />
         <Button type="submit" size="sm" disabled={!currentWorkspace || !name.trim() || create.isPending}>
-          {create.isPending ? <Spinner className="h-3 w-3" /> : <Plus size={14} />} Create lane
+          {create.isPending ? <Spinner className="h-3 w-3" /> : <Plus size={14} />} {t('Create lane')}
         </Button>
       </form>
     </Modal>

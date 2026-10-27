@@ -7,6 +7,7 @@ import { formatBytes, formatRelative } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Badge, Button, Card, CardBody, ErrorCard, Field, Input, Modal, Skeleton, Switch } from '../../components/ui.js';
 import { TrafficChart, TrafficRangePicker, TrafficScopeTable, TrafficTotals } from '../../components/traffic/TrafficChart.js';
+import { fill, useT } from '../../lib/i18n.js';
 
 const STATUS_TONE: Record<TrafficSettingsView['status'], 'neutral' | 'amber' | 'emerald' | 'rose'> = {
   off: 'neutral',
@@ -23,6 +24,7 @@ const STATUS_TONE: Record<TrafficSettingsView['status'], 'neutral' | 'amber' | '
  * guessing.
  */
 export function TrafficAnalyticsCard() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [range, setRange] = useState<TrafficRange>('24h');
@@ -44,7 +46,7 @@ export function TrafficAnalyticsCard() {
       qc.setQueryData(['traffic-settings'], view);
       qc.invalidateQueries({ queryKey: ['traffic-summary'] });
       setRetention(null);
-      toast('Traffic analytics settings saved', 'success');
+      toast(t('Traffic analytics settings saved'), 'success');
     },
     onError: (err: unknown) => {
       // Without an HTTP status the answer never arrived (Traefik was being
@@ -52,7 +54,7 @@ export function TrafficAnalyticsCard() {
       const status = (err as { status?: number } | null)?.status;
       void qc.invalidateQueries({ queryKey: ['traffic-settings'] });
       toast(
-        status ? (err as Error).message : 'The proxy restarted before the panel could answer; re-reading the settings.',
+        status ? (err as Error).message : t('The proxy restarted before the panel could answer; re-reading the settings.'),
         status ? 'error' : 'info',
       );
     },
@@ -60,7 +62,7 @@ export function TrafficAnalyticsCard() {
   });
 
   if (settings.isError && !settings.data) {
-    return <ErrorCard title="Couldn't load the traffic settings" error={settings.error} onRetry={() => settings.refetch()} />;
+    return <ErrorCard title={t("Couldn't load the traffic settings")} error={settings.error} onRetry={() => settings.refetch()} />;
   }
   const view = settings.data;
 
@@ -71,16 +73,15 @@ export function TrafficAnalyticsCard() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
-                <BarChart3 size={15} className="text-slate-500" /> Traffic analytics
+                <BarChart3 size={15} className="text-slate-500" /> {t('Traffic analytics')}
                 {view && <Badge tone={STATUS_TONE[view.status]}>{view.status}</Badge>}
               </div>
               <p className="mt-1 max-w-2xl text-xs text-slate-500">
-                Counts requests per domain from Traefik's access log: status classes, latency and bytes. No client IP, path,
-                query string or header is ever written. Off by default.
+                {t("Counts requests per domain from Traefik's access log: status classes, latency and bytes. No client IP, path, query string or header is ever written. Off by default.")}
               </p>
             </div>
             <Switch
-              label="Traffic analytics"
+              label={t('Traffic analytics')}
               checked={enabled}
               disabled={!view || save.isPending}
               onChange={(on) => setConfirm(on)}
@@ -89,16 +90,16 @@ export function TrafficAnalyticsCard() {
           {view && (
             <div className="grid gap-3 text-xs text-slate-400 sm:grid-cols-4">
               <div>
-                Last ingest: <span className="text-slate-300">{view.lastIngestAt ? formatRelative(view.lastIngestAt) : '—'}</span>
+                {fill(t('Last ingest: {value}'), { value: <span className="text-slate-300">{view.lastIngestAt ? formatRelative(view.lastIngestAt) : '—'}</span> })}
               </div>
               <div>
-                Log file: <span className="text-slate-300">{formatBytes(view.logBytes)}</span>
+                {fill(t('Log file: {value}'), { value: <span className="text-slate-300">{formatBytes(view.logBytes)}</span> })}
               </div>
               <div>
-                Malformed lines: <span className="text-slate-300">{view.malformedLines}</span>
+                {fill(t('Malformed lines: {value}'), { value: <span className="text-slate-300">{view.malformedLines}</span> })}
               </div>
               <div>
-                Docker log driver: <span className="text-slate-300">{view.dockerLogDriver ?? 'unknown'}</span>
+                {fill(t('Docker log driver: {value}'), { value: <span className="text-slate-300">{view.dockerLogDriver ?? t('unknown')}</span> })}
               </div>
             </div>
           )}
@@ -111,19 +112,19 @@ export function TrafficAnalyticsCard() {
                 if (retention !== null) save.mutate({ retentionDays: Number(retention) });
               }}
             >
-              <Field label="Keep hourly rows (days)" hint="Minute rows are kept for 48 hours.">
+              <Field label={t('Keep hourly rows (days)')} hint={t('Minute rows are kept for 48 hours.')}>
                 <Input
                   type="number"
                   min={1}
                   max={400}
-                  aria-label="Keep hourly rows (days)"
+                  aria-label={t('Keep hourly rows (days)')}
                   className="w-28"
                   value={retention ?? String(view.retentionDays)}
                   onChange={(e) => setRetention(e.target.value)}
                 />
               </Field>
               <Button type="submit" size="sm" variant="secondary" disabled={retention === null || save.isPending}>
-                Save
+                {t('Save')}
               </Button>
             </form>
           )}
@@ -134,26 +135,26 @@ export function TrafficAnalyticsCard() {
         <Card>
           <CardBody className="space-y-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-slate-200">Instance traffic</h3>
+              <h3 className="text-sm font-medium text-slate-200">{t('Instance traffic')}</h3>
               <TrafficRangePicker value={range} onChange={setRange} />
             </div>
             {summary.isLoading ? (
               <Skeleton className="h-40 w-full" />
             ) : summary.isError || !summary.data ? (
-              <ErrorCard title="Couldn't load the traffic summary" error={summary.error} onRetry={() => summary.refetch()} />
+              <ErrorCard title={t("Couldn't load the traffic summary")} error={summary.error} onRetry={() => summary.refetch()} />
             ) : (
               <>
                 <TrafficTotals totals={summary.data.totals} />
                 <TrafficChart series={summary.data.series} />
                 <div>
-                  <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Top domains</h4>
-                  <TrafficScopeTable rows={summary.data.topDomains} empty="No domain traffic in this range." />
+                  <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">{t('Top domains')}</h4>
+                  <TrafficScopeTable rows={summary.data.topDomains} empty={t('No domain traffic in this range.')} />
                 </div>
                 <div>
-                  <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Panel and custom routes</h4>
+                  <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">{t('Panel and custom routes')}</h4>
                   <TrafficScopeTable
                     rows={[summary.data.panel, summary.data.custom].filter((r) => r !== null)}
-                    empty="No panel or custom-route traffic in this range."
+                    empty={t('No panel or custom-route traffic in this range.')}
                   />
                 </div>
               </>
@@ -164,15 +165,15 @@ export function TrafficAnalyticsCard() {
 
       {confirm !== null && (
         <Modal
-          title={confirm ? 'Enable traffic analytics?' : 'Disable traffic analytics?'}
+          title={confirm ? t('Enable traffic analytics?') : t('Disable traffic analytics?')}
           onClose={() => setConfirm(null)}
           footer={
             <>
               <Button variant="ghost" onClick={() => setConfirm(null)}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button disabled={save.isPending} onClick={() => save.mutate({ enabled: confirm })}>
-                {confirm ? 'Enable and restart Traefik' : 'Disable and restart Traefik'}
+                {confirm ? t('Enable and restart Traefik') : t('Disable and restart Traefik')}
               </Button>
             </>
           }
@@ -180,9 +181,8 @@ export function TrafficAnalyticsCard() {
           <div className="flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <p>
-              This recreates the Traefik container once: expect about 1–2 seconds of refused connections on every domain,
-              including this panel if it is served through Traefik.
-              {confirm ? '' : ' Collected rollups are kept until retention removes them; the raw log is deleted.'}
+              {t('This recreates the Traefik container once: expect about 1–2 seconds of refused connections on every domain, including this panel if it is served through Traefik.')}
+              {confirm ? '' : ` ${t('Collected rollups are kept until retention removes them; the raw log is deleted.')}`}
             </p>
           </div>
         </Modal>

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { Loader2, Rocket } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { useT } from '../lib/i18n.js';
 
 /**
  * Top-bar badge that mirrors the in-flight deploy count.
@@ -13,6 +14,7 @@ import { api } from '../lib/api.js';
  * top bar.
  */
 export function DeployQueueBadge() {
+  const t = useT();
   const queue = useQuery({
     queryKey: ['deploys-queue-badge'],
     queryFn: () => api.deploys.queue(),
@@ -25,11 +27,13 @@ export function DeployQueueBadge() {
   const { building, deploying, queued } = data.byStatus;
   const ci = data.byStatus.awaiting_ci ?? 0;
   const live = building + deploying;
+  const queuedText = t('{n} queued', { n: queued });
+  const ciText = t('{n} waiting for CI', { n: ci });
   const activeLabel =
     live > 0
-      ? `${live} live${queued > 0 ? ` · ${queued} queued` : ''}`
-      : queued > 0 ? `${queued} queued` : '';
-  const label = [activeLabel, ci > 0 ? `${ci} waiting for CI` : ''].filter(Boolean).join(' · ');
+      ? `${t('{n} live', { n: live })}${queued > 0 ? ` · ${queuedText}` : ''}`
+      : queued > 0 ? queuedText : '';
+  const label = [activeLabel, ci > 0 ? ciText : ''].filter(Boolean).join(' · ');
 
   // The tone follows the most-urgent state in the queue: a live build
   // is the loudest signal, a queued line is the next one to watch.
@@ -42,7 +46,7 @@ export function DeployQueueBadge() {
     <Link
       to="/deploys"
       className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium ring-1 ring-inset transition ${tone}`}
-      title={`${building} building · ${deploying} deploying · ${queued} queued${ci > 0 ? ` · ${ci} waiting for CI` : ''}`}
+      title={`${t('{n} building', { n: building })} · ${t('{n} deploying', { n: deploying })} · ${queuedText}${ci > 0 ? ` · ${ciText}` : ''}`}
     >
       {live > 0 ? <Loader2 size={12} className="animate-spin" /> : <Rocket size={12} />}
       <span>{label}</span>

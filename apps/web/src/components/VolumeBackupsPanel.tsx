@@ -6,8 +6,10 @@ import { api, authedFetch } from '../lib/api.js';
 import { Button, Card, Input } from './ui.js';
 import { downloadBlob, formatBytes, formatDateTime } from '../lib/format.js';
 import { useToast } from './Toast.js';
+import { fill, useT } from '../lib/i18n.js';
 
 export function VolumeBackupsPanel({ volumeName }: { volumeName: string }) {
+  const t = useT();
   const qc = useQueryClient();
   const [restoringId, setRestoringId] = useState<number | null>(null);
   const [label, setLabel] = useState('');
@@ -35,7 +37,7 @@ export function VolumeBackupsPanel({ volumeName }: { volumeName: string }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Archive size={16} className="text-amber-400" />
-          <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wide">Volume Backups ({list.length})</h3>
+          <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wide">{t('Volume Backups ({n})', { n: list.length })}</h3>
         </div>
         <div className="flex items-center gap-2">
           {/* Optional name for THIS snapshot — ends up on the row and in the
@@ -43,8 +45,8 @@ export function VolumeBackupsPanel({ volumeName }: { volumeName: string }) {
           <Input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="Label (optional)"
-            aria-label="Snapshot label"
+            placeholder={t('Label (optional)')}
+            aria-label={t('Snapshot label')}
             maxLength={40}
             className="h-8 w-36 font-mono text-xs"
             data-testid="snapshot-label-input"
@@ -57,34 +59,34 @@ export function VolumeBackupsPanel({ volumeName }: { volumeName: string }) {
             data-testid="trigger-backup-button"
           >
             {trigger.isPending ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
-            Backup now
+            {t('Backup now')}
           </Button>
         </div>
       </div>
 
       {trigger.isError && (
         <Card className="p-3 border-rose-500/30 bg-rose-500/[0.04]">
-          <p className="text-xs text-rose-300">Backup failed: {(trigger.error as Error).message}</p>
+          <p className="text-xs text-rose-300">{t('Backup failed: {error}', { error: (trigger.error as Error).message })}</p>
         </Card>
       )}
 
       {restore.isError && (
         <Card className="p-3 border-rose-500/30 bg-rose-500/[0.04]">
-          <p className="text-xs text-rose-300">Restore failed: {(restore.error as Error).message}</p>
+          <p className="text-xs text-rose-300">{t('Restore failed: {error}', { error: (restore.error as Error).message })}</p>
         </Card>
       )}
 
       {backups.isLoading ? (
         <Card className="p-4 text-center text-slate-500 text-xs">
           <Loader2 size={16} className="mx-auto animate-spin mb-1" />
-          Loading backups…
+          {t('Loading backups…')}
         </Card>
       ) : list.length === 0 ? (
         <Card className="p-6 text-center">
           <History size={20} className="mx-auto mb-2 text-slate-600" />
-          <p className="text-sm font-medium text-slate-300">No backups yet</p>
+          <p className="text-sm font-medium text-slate-300">{t('No backups yet')}</p>
           <p className="text-xs text-slate-500 mt-1">
-            Click <em>Backup now</em> to snapshot the volume, or wire up a scheduled <em>backup</em> job for the service.
+            {fill(t('Click {now} to snapshot the volume, or wire up a scheduled {job} job for the service.'), { now: <em>{t('Backup now')}</em>, job: <em>backup</em> })}
           </p>
         </Card>
       ) : (
@@ -129,6 +131,7 @@ function BackupRow({
   onRestore: () => void;
   isRestoring: boolean;
 }) {
+  const t = useT();
   const date = new Date(backup.createdAt);
   const { toast } = useToast();
   // r202: a plain <a href> sends no Authorization header (the panel's session
@@ -139,12 +142,12 @@ function BackupRow({
     try {
       const res = await authedFetch(api.volumeBackups.downloadUrl(volumeName, backup.id));
       if (!res.ok) {
-        toast('Download failed', 'error');
+        toast(t('Download failed'), 'error');
         return;
       }
       downloadBlob(await res.blob(), `${volumeName}-backup-${backup.id}.tar.gz`, 'application/gzip');
     } catch {
-      toast('Download failed', 'error');
+      toast(t('Download failed'), 'error');
     }
   };
   return (
@@ -156,7 +159,7 @@ function BackupRow({
                 indistinguishable at a glance. */}
             <span className="flex items-center gap-1 text-xs font-semibold text-slate-200">
               <Tag size={11} className="shrink-0 text-slate-500" />
-              {backup.label ?? 'Snapshot'}
+              {backup.label ?? t('Snapshot')}
             </span>
             <span className="font-mono text-[11px] text-slate-500">
               {/* r409: local time like every other timestamp in the app — the
@@ -166,7 +169,7 @@ function BackupRow({
             <StatusBadge status={backup.status} />
             {backup.hasRemoteCopy && (
               <span className="inline-flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] text-sky-300 ring-1 ring-inset ring-sky-500/20">
-                <ShieldCheck size={10} /> Off-site
+                <ShieldCheck size={10} /> {t('Off-site')}
               </span>
             )}
           </div>
@@ -178,8 +181,8 @@ function BackupRow({
             type="button"
             onClick={() => void download()}
             className="text-slate-400 hover:text-indigo-300 transition-colors"
-            title="Download tar.gz"
-            aria-label="Download tar.gz"
+            title={t('Download tar.gz')}
+            aria-label={t('Download tar.gz')}
             data-testid={`download-backup-${backup.id}`}
           >
             <Download size={14} />
@@ -187,7 +190,7 @@ function BackupRow({
           {restoring ? (
             <div className="flex items-center gap-1">
               <Button size="sm" variant="ghost" onClick={onCancelRestore} className="text-xs h-6 px-2">
-                <X size={11} /> Cancel
+                <X size={11} /> {t('Cancel')}
               </Button>
               <Button
                 size="sm"
@@ -198,7 +201,7 @@ function BackupRow({
                 data-testid={`confirm-restore-${backup.id}`}
               >
                 {isRestoring ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                Confirm
+                {t('Confirm')}
               </Button>
             </div>
           ) : (
@@ -207,10 +210,10 @@ function BackupRow({
               variant="ghost"
               onClick={onConfirmRestore}
               className="text-xs h-6 px-2 text-rose-400"
-              title="Restore this backup to the volume"
+              title={t('Restore this backup to the volume')}
               data-testid={`restore-button-${backup.id}`}
             >
-              <RotateCcw size={12} /> Restore
+              <RotateCcw size={12} /> {t('Restore')}
             </Button>
           )}
         </div>

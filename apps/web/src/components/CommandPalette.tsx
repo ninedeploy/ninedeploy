@@ -10,6 +10,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
 import { deployHref } from '../lib/deployLauncher.js';
+import { msg, useT } from '../lib/i18n.js';
 import { ICON_MAP } from './Layout.js';
 import { cn, useDialogFocus } from './ui.js';
 
@@ -25,32 +26,33 @@ interface Cmd {
 }
 
 const NAV_COMMANDS: Cmd[] = [
-  { type: 'Navigate', label: 'Hub', sub: 'Template gallery', to: '/hub', icon: Sparkles },
-  { type: 'Navigate', label: 'Dashboard', sub: 'Overview & health', to: '/', icon: LayoutDashboard },
-  { type: 'Navigate', label: 'Services', sub: 'All services', to: '/services', icon: Server },
-  { type: 'Navigate', label: 'Manifest Creator', sub: 'Build a .ninedeploy manifest', to: '/manifest-creator', icon: FileCode },
-  { type: 'Navigate', label: 'Workspaces', sub: 'Tenants, members & invitations', to: '/workspaces', icon: Building2 },
-  { type: 'Navigate', label: 'Projects', sub: 'Group services by purpose', to: '/projects', icon: FolderKanban },
-  { type: 'Navigate', label: 'Labels', sub: 'Free-form service tags', to: '/labels', icon: Tag },
-  { type: 'Navigate', label: 'Databases', sub: 'Managed databases', to: '/databases', icon: Database },
-  { type: 'Navigate', label: 'Domains', sub: 'Domain routing & SSL', to: '/domains', icon: Globe },
-  { type: 'Navigate', label: 'Tunnels', sub: 'Cloudflare tunnels', to: '/tunnels', icon: Cloud },
-  { type: 'Navigate', label: 'Volumes', sub: 'Persistent storage', to: '/volumes', icon: Layers, operatorOnly: true },
-  { type: 'Navigate', label: 'Networks', sub: 'Docker networks', to: '/networks', icon: Network },
-  { type: 'Navigate', label: 'Traefik', sub: 'Ingress, routers & middlewares', to: '/traefik', icon: Shield },
-  { type: 'Navigate', label: 'Docker', sub: 'Containers, images & system', to: '/docker', icon: Container, operatorOnly: true },
-  { type: 'Navigate', label: 'Topology', sub: 'Service graph', to: '/topology', icon: Network },
-  { type: 'Navigate', label: 'Backups', sub: 'Database snapshots', to: '/backups', icon: HardDrive },
-  { type: 'Navigate', label: 'Sources', sub: 'Private repo credentials', to: '/sources', icon: KeyRound, operatorOnly: true },
-  { type: 'Navigate', label: 'Users', sub: 'Team management', to: '/users', icon: Users, operatorOnly: true },
-  { type: 'Navigate', label: 'Monitoring', sub: 'Resource metrics', to: '/monitoring', icon: Activity },
-  { type: 'Navigate', label: 'Activity', sub: 'Audit logs & platform events', to: '/activity', icon: Activity, operatorOnly: true },
-  { type: 'Navigate', label: 'Servers', sub: 'Remote hosts running the agent', to: '/servers', icon: HardDrive, operatorOnly: true },
-  { type: 'Navigate', label: 'About', sub: 'System information', to: '/about', icon: HelpCircle },
-  { type: 'Navigate', label: 'Settings', sub: 'System info', to: '/settings', icon: SettingsIcon },
+  { type: msg('Navigate'), label: msg('Hub'), sub: msg('Template gallery'), to: '/hub', icon: Sparkles },
+  { type: msg('Navigate'), label: msg('Dashboard'), sub: msg('Overview & health'), to: '/', icon: LayoutDashboard },
+  { type: msg('Navigate'), label: msg('Services'), sub: msg('All services'), to: '/services', icon: Server },
+  { type: msg('Navigate'), label: msg('Manifest Creator'), sub: msg('Build a .ninedeploy manifest'), to: '/manifest-creator', icon: FileCode },
+  { type: msg('Navigate'), label: msg('Workspaces'), sub: msg('Tenants, members & invitations'), to: '/workspaces', icon: Building2 },
+  { type: msg('Navigate'), label: msg('Projects'), sub: msg('Group services by purpose'), to: '/projects', icon: FolderKanban },
+  { type: msg('Navigate'), label: msg('Labels'), sub: msg('Free-form service tags'), to: '/labels', icon: Tag },
+  { type: msg('Navigate'), label: msg('Databases'), sub: msg('Managed databases'), to: '/databases', icon: Database },
+  { type: msg('Navigate'), label: msg('Domains'), sub: msg('Domain routing & SSL'), to: '/domains', icon: Globe },
+  { type: msg('Navigate'), label: msg('Tunnels'), sub: msg('Cloudflare tunnels'), to: '/tunnels', icon: Cloud },
+  { type: msg('Navigate'), label: msg('Volumes'), sub: msg('Persistent storage'), to: '/volumes', icon: Layers, operatorOnly: true },
+  { type: msg('Navigate'), label: msg('Networks'), sub: msg('Docker networks'), to: '/networks', icon: Network },
+  { type: msg('Navigate'), label: msg('Traefik'), sub: msg('Ingress, routers & middlewares'), to: '/traefik', icon: Shield },
+  { type: msg('Navigate'), label: msg('Docker'), sub: msg('Containers, images & system'), to: '/docker', icon: Container, operatorOnly: true },
+  { type: msg('Navigate'), label: msg('Topology'), sub: msg('Service graph'), to: '/topology', icon: Network },
+  { type: msg('Navigate'), label: msg('Backups'), sub: msg('Database snapshots'), to: '/backups', icon: HardDrive },
+  { type: msg('Navigate'), label: msg('Sources'), sub: msg('Private repo credentials'), to: '/sources', icon: KeyRound, operatorOnly: true },
+  { type: msg('Navigate'), label: msg('Users'), sub: msg('Team management'), to: '/users', icon: Users, operatorOnly: true },
+  { type: msg('Navigate'), label: msg('Monitoring'), sub: msg('Resource metrics'), to: '/monitoring', icon: Activity },
+  { type: msg('Navigate'), label: msg('Activity'), sub: msg('Audit logs & platform events'), to: '/activity', icon: Activity, operatorOnly: true },
+  { type: msg('Navigate'), label: msg('Servers'), sub: msg('Remote hosts running the agent'), to: '/servers', icon: HardDrive, operatorOnly: true },
+  { type: msg('Navigate'), label: msg('About'), sub: msg('System information'), to: '/about', icon: HelpCircle },
+  { type: msg('Navigate'), label: msg('Settings'), sub: msg('System info'), to: '/settings', icon: SettingsIcon },
 ];
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [query, setQuery] = useState('');
@@ -81,16 +83,16 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const results = useMemo<Cmd[]>(() => {
     const dynamic: Cmd[] = [
       ...(services.data ?? []).map((s) => ({
-        type: 'Service', label: s.name, sub: `${s.type} · ${s.status}`, to: `/services/${s.id}`, icon: Server,
+        type: t('Service'), label: s.name, sub: `${s.type} · ${s.status}`, to: `/services/${s.id}`, icon: Server,
       })),
       ...(databases.data ?? []).map((d) => ({
-        type: 'Database', label: d.name, sub: `${d.engine} · ${d.status}`, to: `/databases/${d.id}`, icon: Database,
+        type: t('Database'), label: d.name, sub: `${d.engine} · ${d.status}`, to: `/databases/${d.id}`, icon: Database,
       })),
-      ...(templates.data ?? []).map((t) => ({
-        type: 'Template', label: `Deploy ${t.name}`, sub: t.tagline, to: '/hub', icon: Sparkles,
+      ...(templates.data ?? []).map((tpl) => ({
+        type: t('Template'), label: t('Deploy {name}', { name: tpl.name }), sub: tpl.tagline, to: '/hub', icon: Sparkles,
       })),
       ...(plugins.data ?? []).map((p) => ({
-        type: 'Plugin', label: p.name, sub: `v${p.version} · ${p.status}`, to: '/settings', icon: Layers,
+        type: t('Plugin'), label: p.name, sub: `v${p.version} · ${p.status}`, to: '/settings', icon: Layers,
       })),
       // r566: the palette navigates in-app, so only same-origin plugin paths
       // are offered (no javascript:, data:, //host).
@@ -98,7 +100,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         const target = menuTarget(m.route);
         if (target?.kind !== 'internal') return [];
         return [{
-          type: 'Extension', label: m.label, sub: target.to, to: target.to, icon: m.icon && ICON_MAP[m.icon.toLowerCase()] ? ICON_MAP[m.icon.toLowerCase()]! : Globe,
+          type: t('Extension'), label: m.label, sub: target.to, to: target.to, icon: m.icon && ICON_MAP[m.icon.toLowerCase()] ? ICON_MAP[m.icon.toLowerCase()]! : Globe,
         }];
       }),
     ];
@@ -106,19 +108,20 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     // First in the list: opening the palette is the fastest way to start a
     // deploy, and "deploy" / "new" / "create" should all find it.
     const newService: Cmd = {
-      type: 'Action', label: 'Deploy new service', sub: 'New resource: Git repo, Docker image, Compose, database or one-click app',
+      type: t('Action'), label: t('Deploy new service'), sub: t('New resource: Git repo, Docker image, Compose, database or one-click app'),
       to: '/new', icon: Plus,
     };
     // Straight into the wizard for one source; still found by "deploy"/"new".
     const quickActions: Cmd[] = [
-      { type: 'Action', label: 'Deploy a Git repository', sub: 'Nixpacks, Railpack, buildpacks, Dockerfile or static', to: deployHref(location.pathname, location.search, 'git'), icon: GitBranch },
-      { type: 'Action', label: 'Deploy a Docker image', sub: 'From Docker Hub, GHCR or a private registry', to: deployHref(location.pathname, location.search, 'image'), icon: Container },
-      { type: 'Action', label: 'Deploy a Compose stack', sub: 'Paste a docker-compose.yml', to: deployHref(location.pathname, location.search, 'compose'), icon: Layers, operatorOnly: true },
-      { type: 'Action', label: 'Create a database', sub: 'PostgreSQL, MySQL, Redis, MongoDB and more', to: '/new', icon: Database },
+      { type: t('Action'), label: t('Deploy a Git repository'), sub: t('Nixpacks, Railpack, buildpacks, Dockerfile or static'), to: deployHref(location.pathname, location.search, 'git'), icon: GitBranch },
+      { type: t('Action'), label: t('Deploy a Docker image'), sub: t('From Docker Hub, GHCR or a private registry'), to: deployHref(location.pathname, location.search, 'image'), icon: Container },
+      { type: t('Action'), label: t('Deploy a Compose stack'), sub: t('Paste a docker-compose.yml'), to: deployHref(location.pathname, location.search, 'compose'), icon: Layers, operatorOnly: true },
+      { type: t('Action'), label: t('Create a database'), sub: t('PostgreSQL, MySQL, Redis, MongoDB and more'), to: '/new', icon: Database },
     ];
     const all = [
       newService,
-      ...NAV_COMMANDS.filter((c) => !c.operatorOnly || user?.isOperator === true),
+      ...NAV_COMMANDS.filter((c) => !c.operatorOnly || user?.isOperator === true)
+        .map((c) => ({ ...c, type: t(c.type), label: t(c.label), sub: t(c.sub) })),
       ...quickActions.filter((c) => !c.operatorOnly || user?.isOperator === true),
       ...dynamic,
     ];
@@ -147,7 +150,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       .sort((a, b) => a.r - b.r)
       .slice(0, 24)
       .map((e) => e.c);
-  }, [query, location.pathname, location.search, user?.isOperator, services.data, databases.data, templates.data, plugins.data, menus.data]);
+  }, [t, query, location.pathname, location.search, user?.isOperator, services.data, databases.data, templates.data, plugins.data, menus.data]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on query — the selection must reset whenever the search text changes, even though the body only touches the setter.
   useEffect(() => {
@@ -169,12 +172,12 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh]">
-      <button type="button" aria-label="Close palette" tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <button type="button" aria-label={t('Close palette')} tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
+        aria-label={t('Command palette')}
         className="nd-fade relative w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl"
       >
         {/* Search input */}
@@ -185,23 +188,23 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
             // biome-ignore lint/a11y/noAutofocus: command-palette search should grab focus on open (the palette is modal; the user just pressed ⌘K).
             autoFocus
             role="combobox"
-            aria-label="Search commands"
+            aria-label={t('Search commands')}
             aria-autocomplete="list"
             aria-expanded={results.length > 0}
             aria-controls={listboxId}
             aria-activedescendant={results.length > 0 ? optionId(selected) : undefined}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search services, databases, templates, or jump to…"
+            placeholder={t('Search services, databases, templates, or jump to…')}
             className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none"
           />
           <kbd className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-slate-500">ESC</kbd>
         </div>
 
         {/* Results */}
-        <div id={listboxId} role="listbox" aria-label="Results" className="max-h-[50vh] overflow-auto p-2">
+        <div id={listboxId} role="listbox" aria-label={t('Results')} className="max-h-[50vh] overflow-auto p-2">
           {results.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-600">No results for "{query}"</p>
+            <p className="py-8 text-center text-sm text-slate-600">{t('No results for "{query}"', { query })}</p>
           ) : (
             results.map((cmd, i) => {
               const Icon = cmd.icon;
@@ -241,8 +244,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-white/5 px-4 py-2 text-[10px] text-slate-600">
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1"><kbd className="rounded bg-white/[0.06] px-1 py-0.5">↑↓</kbd> navigate</span>
-            <span className="flex items-center gap-1"><kbd className="rounded bg-white/[0.06] px-1 py-0.5">↵</kbd> select</span>
+            <span className="flex items-center gap-1"><kbd className="rounded bg-white/[0.06] px-1 py-0.5">↑↓</kbd> {t('navigate')}</span>
+            <span className="flex items-center gap-1"><kbd className="rounded bg-white/[0.06] px-1 py-0.5">↵</kbd> {t('select')}</span>
           </div>
           <span className="flex items-center gap-1"><Rocket size={10} /> NineDeploy</span>
         </div>

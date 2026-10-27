@@ -4,6 +4,7 @@ import { Cable, Network, Plus, ShieldAlert, Trash2, Unplug } from 'lucide-react'
 import { api } from '../lib/api.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorCard, PageHeader, Skeleton } from '../components/ui.js';
+import { fill, useT } from '../lib/i18n.js';
 
 type NetworkRow = {
   name: string;
@@ -21,6 +22,7 @@ const isLikelyManagedContainer = (name: string): boolean =>
 
 /** Docker network management: list, create, delete, attach/detach containers. */
 export function Networks() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const list = useQuery({ queryKey: ['networks'], queryFn: () => api.networks.list(), refetchInterval: 15000 });
@@ -40,18 +42,18 @@ export function Networks() {
       setNewName('');
       setShowCreate(false);
       invalidate();
-      toast('Network created', 'success');
+      toast(t('Network created'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Create failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Create failed'), 'error'),
   });
 
   const remove = useMutation({
     mutationFn: (name: string) => api.networks.remove(name),
     onSuccess: () => {
       invalidate();
-      toast('Network deleted', 'success');
+      toast(t('Network deleted'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Delete failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Delete failed'), 'error'),
   });
 
   const attach = useMutation({
@@ -61,18 +63,18 @@ export function Networks() {
       setAttachTo(null);
       setContainer('');
       invalidate();
-      toast('Container attached', 'success');
+      toast(t('Container attached'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Attach failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Attach failed'), 'error'),
   });
 
   const detach = useMutation({
     mutationFn: (input: { network: string; container: string }) => api.networks.detach(input),
     onSuccess: () => {
       invalidate();
-      toast('Container detached', 'success');
+      toast(t('Container detached'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Detach failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Detach failed'), 'error'),
   });
 
   const networks = list.data?.networks ?? [];
@@ -82,11 +84,11 @@ export function Networks() {
     <div>
       <PageHeader
         icon={<Network size={18} />}
-        title="Docker Networks"
-        subtitle={`${networks.length} user-defined networks`}
+        title={t('Docker Networks')}
+        subtitle={t('{n} user-defined networks', { n: networks.length })}
         actions={
           <Button size="sm" onClick={() => setShowCreate((v) => !v)}>
-            <Plus size={13} /> New network
+            <Plus size={13} /> {t('New network')}
           </Button>
         }
       />
@@ -95,7 +97,7 @@ export function Networks() {
         <Card className="mb-5 p-5">
           <div className="flex max-w-lg items-end gap-3">
             <label className="flex-1">
-              <span className="mb-1 block text-xs text-slate-500">Name</span>
+              <span className="mb-1 block text-xs text-slate-500">{t('Name')}</span>
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -104,7 +106,7 @@ export function Networks() {
               />
             </label>
             <label>
-              <span className="mb-1 block text-xs text-slate-500">Driver</span>
+              <span className="mb-1 block text-xs text-slate-500">{t('Driver')}</span>
               <select
                 value={newDriver}
                 onChange={(e) => setNewDriver(e.target.value as 'bridge' | 'overlay')}
@@ -119,7 +121,7 @@ export function Networks() {
               onClick={() => create.mutate()}
               disabled={create.isPending || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(newName)}
             >
-              {create.isPending ? 'Creating…' : 'Create'}
+              {create.isPending ? t('Creating…') : t('Create')}
             </Button>
           </div>
         </Card>
@@ -128,11 +130,11 @@ export function Networks() {
       {attachTo && (
         <Card className="mb-5 p-5">
           <p className="mb-3 text-sm text-slate-300">
-            Attach a container to <span className="font-mono text-indigo-300">{attachTo}</span>
+            {fill(t('Attach a container to {network}'), { network: <span className="font-mono text-indigo-300">{attachTo}</span> })}
           </p>
           <div className="flex max-w-lg items-end gap-3">
             <label className="flex-1">
-              <span className="mb-1 block text-xs text-slate-500">Container name</span>
+              <span className="mb-1 block text-xs text-slate-500">{t('Container name')}</span>
               <input
                 value={container}
                 onChange={(e) => setContainer(e.target.value)}
@@ -141,10 +143,10 @@ export function Networks() {
               />
             </label>
             <Button size="sm" onClick={() => attach.mutate()} disabled={attach.isPending || !container}>
-              <Cable size={13} /> {attach.isPending ? 'Attaching…' : 'Attach'}
+              <Cable size={13} /> {attach.isPending ? t('Attaching…') : t('Attach')}
             </Button>
             <button type="button" onClick={() => setAttachTo(null)} className="text-xs text-slate-400 hover:underline">
-              Cancel
+              {t('Cancel')}
             </button>
           </div>
           {attachLooksManaged && (
@@ -154,8 +156,9 @@ export function Networks() {
             >
               <ShieldAlert size={13} className="mt-0.5 shrink-0" />
               <span>
-                <span className="font-mono">{container}</span> looks like a NineDeploy-managed container. The
-                server will reject this attach — managed containers must stay on their reserved networks.
+                {fill(t('{container} looks like a NineDeploy-managed container. The server will reject this attach — managed containers must stay on their reserved networks.'), {
+                  container: <span className="font-mono">{container}</span>,
+                })}
               </span>
             </div>
           )}
@@ -165,10 +168,10 @@ export function Networks() {
       {list.isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : list.isError ? (
-        <ErrorCard title="Couldn't load networks" error={list.error} onRetry={() => list.refetch()} />
+        <ErrorCard title={t("Couldn't load networks")} error={list.error} onRetry={() => list.refetch()} />
       ) : networks.length === 0 ? (
         <Card>
-          <EmptyState icon={<Network size={26} />} title="No user-defined networks" hint="Create one to connect containers across services." />
+          <EmptyState icon={<Network size={26} />} title={t('No user-defined networks')} hint={t('Create one to connect containers across services.')} />
         </Card>
       ) : (
         <div className="space-y-3">
@@ -180,20 +183,24 @@ export function Networks() {
                     <span className="font-medium text-slate-100">{n.name}</span>
                     <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-500">{n.driver}</span>
                     {n.isManaged && (
-                      <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300">managed</span>
+                      <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300">{t('managed')}</span>
                     )}
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    {n.members.length === 0 ? 'No attached containers' : `${n.members.length} container${n.members.length === 1 ? '' : 's'} attached`}
+                    {n.members.length === 0
+                      ? t('No attached containers')
+                      : n.members.length === 1
+                        ? t('{n} container attached', { n: n.members.length })
+                        : t('{n} containers attached', { n: n.members.length })}
                   </p>
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => setAttachTo(n.name)}>
-                    <Cable size={13} /> Attach
+                    <Cable size={13} /> {t('Attach')}
                   </Button>
                   {!n.isManaged && (
                     <Button size="sm" variant="danger" onClick={() => setPendingDelete(n)} disabled={remove.isPending}>
-                      <Trash2 size={13} /> Delete
+                      <Trash2 size={13} /> {t('Delete')}
                     </Button>
                   )}
                 </div>
@@ -208,15 +215,15 @@ export function Networks() {
                       {m}
                       {isLikelyManagedContainer(m) && (
                         <span
-                          title="NineDeploy-managed container"
+                          title={t('NineDeploy-managed container')}
                           className="rounded bg-indigo-500/15 px-1 text-[9px] font-medium text-indigo-300"
                         >
-                          managed
+                          {t('managed')}
                         </span>
                       )}
                       <button
                         type="button"
-                        title="Detach"
+                        title={t('Detach')}
                         onClick={() => detach.mutate({ network: n.name, container: m })}
                         className="text-slate-600 opacity-0 transition-opacity group-hover:opacity-100 hover:text-rose-400"
                       >
@@ -233,19 +240,19 @@ export function Networks() {
 
       <ConfirmDialog
         open={pendingDelete != null}
-        title="Delete network"
+        title={t('Delete network')}
         message={
           pendingDelete ? (
             <div className="space-y-3">
               <p>
-                Network{' '}
-                <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[11px]">{pendingDelete.name}</code>{' '}
-                will be removed. Every attached container will be disconnected from it.
+                {fill(t('Network {name} will be removed. Every attached container will be disconnected from it.'), {
+                  name: <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[11px]">{pendingDelete.name}</code>,
+                })}
               </p>
               {pendingDelete.members.length > 0 && (
                 <div>
                   <p className="mb-1.5 text-xs uppercase tracking-wider text-slate-500">
-                    Containers that will lose connectivity
+                    {t('Containers that will lose connectivity')}
                   </p>
                   <ul className="flex flex-wrap gap-1.5">
                     {pendingDelete.members.map((m) => (
@@ -255,7 +262,7 @@ export function Networks() {
                       >
                         {m}
                         {isLikelyManagedContainer(m) && (
-                          <span className="rounded bg-amber-500/15 px-1 text-[9px] font-medium text-amber-300">managed</span>
+                          <span className="rounded bg-amber-500/15 px-1 text-[9px] font-medium text-amber-300">{t('managed')}</span>
                         )}
                       </li>
                     ))}
@@ -267,7 +274,7 @@ export function Networks() {
             ''
           )
         }
-        confirmLabel="Delete"
+        confirmLabel={t('Delete')}
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.name)}
         onClose={() => setPendingDelete(null)}
       />

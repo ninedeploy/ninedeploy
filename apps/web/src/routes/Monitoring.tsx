@@ -40,8 +40,10 @@ import { Sparkline } from '../components/Sparkline.js';
 import { UptimeSection } from '../components/uptime/UptimeSection.js';
 import { ObservabilityCard } from '../components/ObservabilityCard.js';
 import { formatBytes, formatRelative, toInt } from '../lib/format.js';
+import { fill, msg, useT } from '../lib/i18n.js';
 
 export function Monitoring() {
+  const t = useT();
   const { user: me } = useAuth();
   const [selectedServerId, setSelectedServerId] = useState<string>('local');
   const [filterType, setFilterType] = useState<'all' | 'service' | 'database' | 'high-usage'>('all');
@@ -124,14 +126,14 @@ export function Monitoring() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <PageHeader
           icon={<Activity size={20} />}
-          title="Live Monitoring & Telemetry"
-          subtitle="Real-time host, cluster nodes, container metrics, allocation breakdown, and alerts."
+          title={t('Live Monitoring & Telemetry')}
+          subtitle={t('Real-time host, cluster nodes, container metrics, allocation breakdown, and alerts.')}
         />
         {serverList.length > 0 && (
           <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] p-1.5 ring-1 ring-inset ring-white/10">
             <Server size={14} className="text-indigo-400 ml-1.5" />
-            <span className="text-xs font-semibold text-slate-300">Cluster:</span>
-            <span className="text-xs text-emerald-400 font-mono font-medium">{onlineServersCount}/{serverList.length + 1} Nodes Online</span>
+            <span className="text-xs font-semibold text-slate-300">{t('Cluster:')}</span>
+            <span className="text-xs text-emerald-400 font-mono font-medium">{t('{online}/{total} Nodes Online', { online: onlineServersCount, total: serverList.length + 1 })}</span>
           </div>
         )}
       </div>
@@ -144,10 +146,10 @@ export function Monitoring() {
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
               <Server size={16} className="text-indigo-400" />
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Cluster Nodes & Remote Agents</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">{t('Cluster Nodes & Remote Agents')}</h3>
             </div>
             <Link to="/servers" className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium">
-              Manage Servers <ArrowUpRight size={12} />
+              {t('Manage Servers')} <ArrowUpRight size={12} />
             </Link>
           </div>
 
@@ -169,22 +171,22 @@ export function Monitoring() {
                     <Server size={14} />
                   </span>
                   <div>
-                    <div className="text-xs font-bold text-slate-200">Local Host (Primary)</div>
-                    <div className="text-[10px] font-mono text-slate-500">127.0.0.1 · Master Daemon</div>
+                    <div className="text-xs font-bold text-slate-200">{t('Local Host (Primary)')}</div>
+                    <div className="text-[10px] font-mono text-slate-500">127.0.0.1 · {t('Master Daemon')}</div>
                   </div>
                 </div>
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  active
+                  {t('active')}
                 </span>
               </div>
               <div className="mt-3 flex items-center justify-between border-t border-white/[0.06] pt-2 text-[11px] text-slate-400 font-mono">
                 {/* Both arms are rendered by the host-present and host-null
                     snapshot tests; the instrumenter cannot see this span. */}
                 {/* v8 ignore start */}
-                <span>{host ? `${host.cpuCores} cores` : '—'}</span>
+                <span>{host ? t('{n} cores', { n: host.cpuCores }) : '—'}</span>
                 {/* v8 ignore stop */}
-                <span>{containers.length} workloads</span>
+                <span>{t('{n} workloads', { n: containers.length })}</span>
               </div>
             </button>
 
@@ -223,8 +225,8 @@ export function Monitoring() {
                     </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between border-t border-white/[0.06] pt-2 text-[11px] text-slate-400 font-mono">
-                    <span>Remote Agent</span>
-                    <span>{s.lastSeenAt ? 'paired' : 'standby'}</span>
+                    <span>{t('Remote Agent')}</span>
+                    <span>{s.lastSeenAt ? t('paired') : t('standby')}</span>
                   </div>
                 </button>
               );
@@ -240,21 +242,21 @@ export function Monitoring() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           icon={<Cpu size={18} className="text-indigo-400" />}
-          label={viewingNode ? 'Node CPU' : 'Host CPU'}
-          value={host ? `${host.cpuCores} cores` : '—'}
-          sub={host ? `load avg: ${host.load1.toFixed(2)} · total load: ${totalCpuUsage.toFixed(1)}%` : ''}
+          label={viewingNode ? t('Node CPU') : t('Host CPU')}
+          value={host ? t('{n} cores', { n: host.cpuCores }) : '—'}
+          sub={host ? t('load avg: {load} · total load: {total}%', { load: host.load1.toFixed(2), total: totalCpuUsage.toFixed(1) }) : ''}
           tone="indigo"
         />
         <BarCard
           icon={<MemoryStick size={18} className="text-violet-400" />}
-          label={viewingNode ? 'Node Memory' : 'Host Memory'}
+          label={viewingNode ? t('Node Memory') : t('Host Memory')}
           pct={memPct}
           text={host ? `${formatBytes(host.memUsedBytes)} / ${formatBytes(host.memTotalBytes)}` : '—'}
-          sub={`${totalMemUsageMb.toFixed(0)} MB container allocation`}
+          sub={t('{n} MB container allocation', { n: totalMemUsageMb.toFixed(0) })}
         />
         <BarCard
           icon={<HardDrive size={18} className="text-amber-400" />}
-          label={viewingNode ? 'Node Disk' : 'Disk Storage'}
+          label={viewingNode ? t('Node Disk') : t('Disk Storage')}
           pct={diskPct}
           text={
             viewingNode
@@ -268,32 +270,35 @@ export function Monitoring() {
           sub={
             viewingNode
               ? nodeStats.isError
-                ? 'agent unreachable'
+                ? t('agent unreachable')
                 : nodeDisk && nodeDisk.totalBytes > 0
-                  ? `${formatBytes(nodeDisk.totalBytes - nodeDisk.usedBytes)} free`
+                  ? t('{size} free', { size: formatBytes(nodeDisk.totalBytes - nodeDisk.usedBytes) })
                   : ''
               : panelDisk
-                ? `${formatBytes(panelDisk.diskTotalBytes - panelDisk.diskUsedBytes)} free`
+                ? t('{size} free', { size: formatBytes(panelDisk.diskTotalBytes - panelDisk.diskUsedBytes) })
                 : ''
           }
         />
         <StatCard
           icon={<Gauge size={18} className="text-emerald-400" />}
-          label="Active Workloads"
+          label={t('Active Workloads')}
           value={`${containers.length}`}
-          sub={`${containers.filter((c) => c.kind === 'service').length} services · ${containers.filter((c) => c.kind === 'database').length} databases`}
+          sub={t('{services} services · {databases} databases', {
+            services: containers.filter((c) => c.kind === 'service').length,
+            databases: containers.filter((c) => c.kind === 'database').length,
+          })}
           tone="emerald"
         />
       </div>
       {viewingNode && (
         <p className="-mt-4 text-xs text-slate-500">
-          Showing live telemetry from the selected node&apos;s agent (refreshes every 8 s).
-          {nodeStats.isError && ' The agent is currently unreachable — cards show placeholders until it answers.'}
+          {t("Showing live telemetry from the selected node's agent (refreshes every 8 s).")}
+          {nodeStats.isError && ` ${t('The agent is currently unreachable — cards show placeholders until it answers.')}`}
         </p>
       )}
       {!viewingNode && !host && !(me?.isOperator ?? false) && (
         <p className="-mt-4 text-xs text-slate-500">
-          Host-level metrics (CPU, memory, disk) are visible to operators only — your own services&apos; live usage is listed below.
+          {t("Host-level metrics (CPU, memory, disk) are visible to operators only — your own services' live usage is listed below.")}
         </p>
       )}
 
@@ -304,10 +309,14 @@ export function Monitoring() {
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2">
                 <Layers size={16} className="text-indigo-400" />
-                <h3 className="text-sm font-semibold text-slate-100">Resource Consumption Breakdown</h3>
+                <h3 className="text-sm font-semibold text-slate-100">{t('Resource Consumption Breakdown')}</h3>
               </div>
               <span className="text-xs text-slate-500 font-mono">
-                {containers.length} containers · {totalCpuUsage.toFixed(1)}% total CPU · {(totalMemUsageMb / 1024).toFixed(2)} GB RAM
+                {t('{n} containers · {cpu}% total CPU · {ram} GB RAM', {
+                  n: containers.length,
+                  cpu: totalCpuUsage.toFixed(1),
+                  ram: (totalMemUsageMb / 1024).toFixed(2),
+                })}
               </span>
             </div>
 
@@ -332,7 +341,7 @@ export function Monitoring() {
                       {/* CPU Bar */}
                       <div>
                         <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                          <span>CPU Load</span>
+                          <span>{t('CPU Load')}</span>
                           <span className="font-mono font-medium text-slate-300">{c.cpuPct.toFixed(1)}%</span>
                         </div>
                         <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
@@ -343,7 +352,7 @@ export function Monitoring() {
                       {/* Memory Bar */}
                       <div>
                         <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                          <span>Memory Usage</span>
+                          <span>{t('Memory Usage')}</span>
                           <span className="font-mono font-medium text-slate-300">{c.memMb.toFixed(0)} MB {c.memLimitMb > 0 ? `(${memPctBar}%)` : ''}</span>
                         </div>
                         <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
@@ -365,7 +374,7 @@ export function Monitoring() {
           <div className="flex items-center gap-2">
             <Radio size={16} className="text-emerald-400 animate-pulse" />
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-              Live Workload Telemetry ({filteredContainers.length})
+              {t('Live Workload Telemetry ({n})', { n: filteredContainers.length })}
             </h2>
           </div>
 
@@ -376,7 +385,7 @@ export function Monitoring() {
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search workloads…"
+                placeholder={t('Search workloads…')}
                 className="h-8 w-44 pl-8 text-xs font-mono"
               />
             </div>
@@ -388,28 +397,28 @@ export function Monitoring() {
                 onClick={() => setFilterType('all')}
                 className={cn('rounded px-2 py-1 transition font-medium', filterType === 'all' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-slate-200')}
               >
-                All
+                {t('All')}
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType('service')}
                 className={cn('rounded px-2 py-1 transition font-medium', filterType === 'service' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-slate-200')}
               >
-                Services
+                {t('Services')}
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType('database')}
                 className={cn('rounded px-2 py-1 transition font-medium', filterType === 'database' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-slate-200')}
               >
-                Databases
+                {t('Databases')}
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType('high-usage')}
                 className={cn('rounded px-2 py-1 transition font-medium flex items-center gap-1', filterType === 'high-usage' ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:text-slate-200')}
               >
-                <Flame size={12} /> Hot
+                <Flame size={12} /> {t('Hot')}
               </button>
             </div>
 
@@ -419,7 +428,7 @@ export function Monitoring() {
                 type="button"
                 onClick={() => setViewMode('grid')}
                 className={cn('rounded p-1 transition', viewMode === 'grid' ? 'bg-white/10 text-slate-100' : 'text-slate-500 hover:text-slate-300')}
-                title="Card Grid View"
+                title={t('Card Grid View')}
               >
                 <LayoutGrid size={14} />
               </button>
@@ -427,7 +436,7 @@ export function Monitoring() {
                 type="button"
                 onClick={() => setViewMode('table')}
                 className={cn('rounded p-1 transition', viewMode === 'table' ? 'bg-white/10 text-slate-100' : 'text-slate-500 hover:text-slate-300')}
-                title="DevOps Matrix Table View"
+                title={t('DevOps Matrix Table View')}
               >
                 <List size={14} />
               </button>
@@ -445,13 +454,13 @@ export function Monitoring() {
             ))}
           </div>
         ) : stats.isError ? (
-          <ErrorCard title="Couldn't load metrics" error={stats.error} onRetry={() => stats.refetch()} />
+          <ErrorCard title={t("Couldn't load metrics")} error={stats.error} onRetry={() => stats.refetch()} />
         ) : filteredContainers.length === 0 ? (
           <Card className="p-10">
             <EmptyState
               icon={<Gauge size={28} />}
-              title="No workloads found"
-              hint={searchQuery ? `No active workload matches "${searchQuery}".` : 'No running workloads in this filter category.'}
+              title={t('No workloads found')}
+              hint={searchQuery ? t('No active workload matches "{query}".', { query: searchQuery }) : t('No running workloads in this filter category.')}
             />
           </Card>
         ) : viewMode === 'grid' ? (
@@ -466,13 +475,13 @@ export function Monitoring() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400">
-                    <th className="py-3 px-4 font-semibold">Workload</th>
-                    <th className="py-3 px-4 font-semibold">Type / Engine</th>
-                    <th className="py-3 px-4 font-semibold">CPU Load</th>
-                    <th className="py-3 px-4 font-semibold">Memory</th>
-                    <th className="py-3 px-4 font-semibold">Limit (MB)</th>
-                    <th className="py-3 px-4 font-semibold">Sparkline</th>
-                    <th className="py-3 px-4 text-right font-semibold">Action</th>
+                    <th className="py-3 px-4 font-semibold">{t('Workload')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('Type / Engine')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('CPU Load')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('Memory')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('Limit (MB)')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('Sparkline')}</th>
+                    <th className="py-3 px-4 text-right font-semibold">{t('Action')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono">
@@ -491,7 +500,7 @@ export function Monitoring() {
                         {/* The engine fallback renders in the table-view test;
                             the instrumenter cannot see this cell's arms. */}
                         {/* v8 ignore start */}
-                        <td className="py-3 px-4 text-slate-400">{c.engine ?? (isService ? 'Service' : 'Database')}</td>
+                        <td className="py-3 px-4 text-slate-400">{c.engine ?? (isService ? t('Service') : t('Database'))}</td>
                         {/* v8 ignore stop */}
                         <td className="py-3 px-4 text-slate-200 font-semibold">{c.cpuPct.toFixed(2)}%</td>
                         <td className="py-3 px-4 text-slate-300">{c.memMb.toFixed(0)} MB</td>
@@ -534,23 +543,23 @@ type AlertMetric = 'cpu' | 'memory' | 'cert-expiry' | 'disk' | 'server_offline';
  * and operator, and whether the server only samples it host-wide.
  */
 const METRIC_META: Record<AlertMetric, { label: string; option: string; unit: string; threshold: number; operator: '>' | '<'; hostOnly: boolean }> = {
-  cpu: { label: 'CPU', option: 'cpu %', unit: '%', threshold: 80, operator: '>', hostOnly: false },
-  memory: { label: 'Memory', option: 'memory MiB', unit: 'MiB', threshold: 512, operator: '>', hostOnly: false },
+  cpu: { label: 'CPU', option: msg('cpu %'), unit: '%', threshold: 80, operator: '>', hostOnly: false },
+  memory: { label: 'Memory', option: msg('memory MiB'), unit: 'MiB', threshold: 512, operator: '>', hostOnly: false },
   // fewer days remaining is the danger
-  'cert-expiry': { label: 'Cert expiry', option: 'cert-expiry days', unit: 'days', threshold: 14, operator: '<', hostOnly: true },
+  'cert-expiry': { label: 'Cert expiry', option: msg('cert-expiry days'), unit: 'days', threshold: 14, operator: '<', hostOnly: true },
   // Worst of the panel host and every node that reports disk.
-  disk: { label: 'Disk', option: 'disk % used', unit: '%', threshold: 85, operator: '>', hostOnly: true },
+  disk: { label: 'Disk', option: msg('disk % used'), unit: '%', threshold: 85, operator: '>', hostOnly: true },
   // Minutes the longest-unseen remote node has gone without contact.
-  server_offline: { label: 'Server offline', option: 'server offline min', unit: 'min', threshold: 5, operator: '>', hostOnly: true },
+  server_offline: { label: 'Server offline', option: msg('server offline min'), unit: 'min', threshold: 5, operator: '>', hostOnly: true },
 };
 const METRICS = Object.keys(METRIC_META) as AlertMetric[];
 
 const ALERT_STATUS_UI: Record<string, { label: string; cls: string }> = {
-  ok: { label: 'OK', cls: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20' },
-  breaching: { label: 'BREACHING', cls: 'bg-amber-500/15 text-amber-300 ring-amber-500/20' },
-  firing: { label: 'FIRING', cls: 'bg-rose-500/15 text-rose-300 ring-rose-500/20 animate-pulse' },
+  ok: { label: msg('OK'), cls: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20' },
+  breaching: { label: msg('BREACHING'), cls: 'bg-amber-500/15 text-amber-300 ring-amber-500/20' },
+  firing: { label: msg('FIRING'), cls: 'bg-rose-500/15 text-rose-300 ring-rose-500/20 animate-pulse' },
 };
-const PAUSED_UI = { label: 'PAUSED', cls: 'bg-slate-500/15 text-slate-400 ring-slate-500/20' };
+const PAUSED_UI = { label: msg('PAUSED'), cls: 'bg-slate-500/15 text-slate-400 ring-slate-500/20' };
 
 /** Human duration for a run of 30s collector samples ("~1m", "~5m"). */
 function windowHint(windows: number): string {
@@ -559,6 +568,7 @@ function windowHint(windows: number): string {
 }
 
 function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const rules = useQuery({ queryKey: ['alerts'], queryFn: () => api.alerts.list(), refetchInterval: 15_000 });
@@ -585,27 +595,27 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
     onSuccess: () => {
       setName('');
       void qc.invalidateQueries({ queryKey: ['alerts'] });
-      toast('Alert rule created', 'success');
+      toast(t('Alert rule created'), 'success');
     },
-    onError: () => toast('Could not create the alert rule', 'error'),
+    onError: () => toast(t('Could not create the alert rule'), 'error'),
   });
 
   const remove = useMutation({
     mutationFn: (id: number) => api.alerts.remove(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['alerts'] });
-      toast('Alert rule deleted', 'success');
+      toast(t('Alert rule deleted'), 'success');
     },
-    onError: () => toast('Could not delete the alert rule', 'error'),
+    onError: () => toast(t('Could not delete the alert rule'), 'error'),
   });
 
   const toggle = useMutation({
     mutationFn: (r: { id: number; enabled: boolean }) => api.alerts.update(r.id, { enabled: r.enabled }),
     onSuccess: (_data, vars) => {
       void qc.invalidateQueries({ queryKey: ['alerts'] });
-      toast(vars.enabled ? 'Alert rule enabled' : 'Alert rule paused', 'success');
+      toast(vars.enabled ? t('Alert rule enabled') : t('Alert rule paused'), 'success');
     },
-    onError: () => toast('Could not update the alert rule', 'error'),
+    onError: () => toast(t('Could not update the alert rule'), 'error'),
   });
 
   const rulesList = rules.data ?? [];
@@ -632,21 +642,21 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
     <>
       <div className="mb-3 mt-8 flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <BellRing size={14} /> Alert Rules
+          <BellRing size={14} /> {t('Alert Rules')}
         </h2>
         {rulesList.length > 0 && (
           <div className="flex items-center gap-1.5 text-[11px] font-medium">
             {firingCount > 0 && (
               <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-rose-300 ring-1 ring-inset ring-rose-500/20">
-                {firingCount} firing
+                {t('{n} firing', { n: firingCount })}
               </span>
             )}
             {breachingCount > 0 && (
               <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300 ring-1 ring-inset ring-amber-500/20">
-                {breachingCount} breaching
+                {t('{n} breaching', { n: breachingCount })}
               </span>
             )}
-            <span className="text-slate-500">{rulesList.length} rules</span>
+            <span className="text-slate-500">{t('{n} rules', { n: rulesList.length })}</span>
           </div>
         )}
       </div>
@@ -655,19 +665,21 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
         {/* Explain what actually happens behind the table — the rules are
             evaluated by the collector's real state machine, not this page. */}
         <p className="mb-3 border-b border-white/5 pb-3 text-[11px] leading-relaxed text-slate-500">
-          Evaluated every 30s by the metrics collector. A breach must persist for the configured samples before the
-          rule fires; fired alerts re-notify after a 30 min cooldown and recover automatically when the metric returns
-          within its threshold. Notifications are delivered to your configured channels under{' '}
-          <Link to="/settings" className="text-indigo-400 hover:text-indigo-300">Settings</Link>.
+          {fill(
+            t('Evaluated every 30s by the metrics collector. A breach must persist for the configured samples before the rule fires; fired alerts re-notify after a 30 min cooldown and recover automatically when the metric returns within its threshold. Notifications are delivered to your configured channels under {settings}.'),
+            { settings: <Link to="/settings" className="text-indigo-400 hover:text-indigo-300">{t('Settings')}</Link> },
+          )}
         </p>
 
         {rules.isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : rules.isError ? (
-          <ErrorCard title="Couldn't load alert rules" error={rules.error} onRetry={() => rules.refetch()} />
+          <ErrorCard title={t("Couldn't load alert rules")} error={rules.error} onRetry={() => rules.refetch()} />
         ) : rulesList.length === 0 ? (
           <p className="py-4 text-center text-sm text-slate-500">
-            No alert rules yet{isAdmin ? ' — add one below to get notified when a metric crosses a threshold.' : '.'}
+            {isAdmin
+              ? t('No alert rules yet — add one below to get notified when a metric crosses a threshold.')
+              : t('No alert rules yet.')}
           </p>
         ) : (
           <ul className="divide-y divide-white/5">
@@ -681,7 +693,7 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                     className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wider ring-1 ring-inset', ui.cls)}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                    {ui.label}
+                    {t(ui.label)}
                   </span>
 
                   <div className="min-w-40 flex-1 basis-56">
@@ -690,24 +702,30 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                       <span
                         title={
                           r.serviceId
-                            ? 'Scoped to one service'
+                            ? t('Scoped to one service')
                             : r.metric === 'disk'
-                              ? 'Evaluated across the panel host and every remote node'
+                              ? t('Evaluated across the panel host and every remote node')
                               : r.metric === 'server_offline'
-                                ? 'Evaluated across every connected remote node'
-                                : 'Evaluated against host metrics'
+                                ? t('Evaluated across every connected remote node')
+                                : t('Evaluated against host metrics')
                         }
                         className={cn(
                           'rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset',
                           r.serviceId ? 'bg-indigo-500/10 text-indigo-300 ring-indigo-500/20' : 'bg-white/[0.04] text-slate-400 ring-white/10',
                         )}
                       >
-                        {r.serviceId ? (serviceNames.get(r.serviceId) ?? `service #${r.serviceId}`) : 'host-wide'}
+                        {r.serviceId ? (serviceNames.get(r.serviceId) ?? t('service #{id}', { id: r.serviceId })) : t('host-wide')}
                       </span>
                     </div>
                     <div className="mt-0.5 text-[11px] text-slate-500">
-                      Fires after {r.durationWindows} sample{r.durationWindows > 1 ? 's' : ''} ({windowHint(r.durationWindows)})
-                      {firedMinutesAgo ? ` · fired ${firedMinutesAgo}` : r.lastEvaluatedAt ? ` · checked ${formatRelative(r.lastEvaluatedAt)}` : ' · not evaluated yet'}
+                      {r.durationWindows > 1
+                        ? t('Fires after {n} samples ({window})', { n: r.durationWindows, window: windowHint(r.durationWindows) })
+                        : t('Fires after {n} sample ({window})', { n: r.durationWindows, window: windowHint(r.durationWindows) })}
+                      {firedMinutesAgo
+                        ? ` · ${t('fired {when}', { when: firedMinutesAgo })}`
+                        : r.lastEvaluatedAt
+                          ? ` · ${t('checked {when}', { when: formatRelative(r.lastEvaluatedAt) })}`
+                          : ` · ${t('not evaluated yet')}`}
                     </div>
                   </div>
 
@@ -716,7 +734,7 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                     {meta.unit === '%' ? '%' : ` ${meta.unit}`}
                   </code>
 
-                  <div className="w-16 shrink-0 text-right tabular-nums" title="Latest sampled value for this rule">
+                  <div className="w-16 shrink-0 text-right tabular-nums" title={t('Latest sampled value for this rule')}>
                     {r.lastValue == null ? (
                       <span className="text-sm text-slate-600">—</span>
                     ) : (
@@ -733,14 +751,14 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                         size="sm"
                         variant="ghost"
                         className="h-7 w-7 p-0"
-                        title={r.enabled ? 'Pause this rule' : 'Re-enable this rule'}
+                        title={r.enabled ? t('Pause this rule') : t('Re-enable this rule')}
                         onClick={() => toggle.mutate({ id: r.id, enabled: !r.enabled })}
                         disabled={toggle.isPending}
                       >
                         {r.enabled ? <Pause size={13} /> : <Play size={13} />}
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => remove.mutate(r.id)}>
-                        Delete
+                        {t('Delete')}
                       </Button>
                     </div>
                   )}
@@ -754,32 +772,32 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
           <form onSubmit={onSubmit} className="mt-4 space-y-2 border-t border-white/5 pt-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <label className="block">
-                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">Rule name</span>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="rule name" className="h-8 text-xs" />
+                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">{t('Rule name')}</span>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('rule name')} className="h-8 text-xs" />
               </label>
               <label className="block">
-                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">Metric</span>
+                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">{t('Metric')}</span>
                 <Select value={metric} onChange={(e) => pickMetric(e.target.value as AlertMetric)} className="h-8 text-xs">
                   {METRICS.map((m) => (
-                    <option key={m} value={m}>{METRIC_META[m].option}</option>
+                    <option key={m} value={m}>{t(METRIC_META[m].option)}</option>
                   ))}
                 </Select>
               </label>
               <label className="block">
-                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">When</span>
+                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">{t('When')}</span>
                 <Select value={operator} onChange={(e) => setOperator(e.target.value as typeof operator)} className="h-8 text-xs">
                   <option value=">">&gt;</option>
                   <option value="<">&lt;</option>
                 </Select>
               </label>
               <label className="block">
-                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">Threshold</span>
+                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">{t('Threshold')}</span>
                 <Input
                   type="number"
                   min={0}
                   value={threshold}
                   onChange={(e) => setThreshold(e.target.value)}
-                  placeholder={`threshold (${METRIC_META[metric].unit})`}
+                  placeholder={t('threshold ({unit})', { unit: METRIC_META[metric].unit })}
                   className="h-8 font-mono text-xs"
                 />
               </label>
@@ -788,33 +806,33 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                 onChange={(e) => setServiceId(e.target.value)}
                 disabled={METRIC_META[metric].hostOnly}
                 className="mt-auto h-8 text-xs"
-                title={METRIC_META[metric].hostOnly ? `${metric} rules are host-wide` : 'Scope (empty = host-wide)'}
+                title={METRIC_META[metric].hostOnly ? t('{metric} rules are host-wide', { metric }) : t('Scope (empty = host-wide)')}
               >
-                <option value="">host-wide</option>
+                <option value="">{t('host-wide')}</option>
                 {(services.data ?? []).map((svc) => (
                   <option key={svc.id} value={svc.id}>{svc.name}</option>
                 ))}
               </Select>
               <label className="block">
-                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">Fire after</span>
+                <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-slate-500">{t('Fire after')}</span>
                 <Input
                   type="number"
                   min={1}
                   max={120}
                   value={windows}
                   onChange={(e) => setWindows(e.target.value)}
-                  placeholder="windows"
+                  placeholder={t('windows')}
                   className="h-8 font-mono text-xs"
-                  title="Consecutive 30s samples before firing"
+                  title={t('Consecutive 30s samples before firing')}
                 />
               </label>
             </div>
             {!canSubmit && (
-              <p className="text-[11px] text-slate-500">A rule needs a name and a numeric threshold before it can be added.</p>
+              <p className="text-[11px] text-slate-500">{t('A rule needs a name and a numeric threshold before it can be added.')}</p>
             )}
             <div className="flex justify-end">
               <Button type="submit" size="sm" variant="ghost" className="h-8 px-3 text-xs" disabled={!canSubmit || create.isPending}>
-                {create.isPending ? '…' : 'Add rule'}
+                {create.isPending ? '…' : t('Add rule')}
               </Button>
             </div>
           </form>
@@ -880,6 +898,7 @@ function BarCard({
 }
 
 function ContainerCard({ c }: { c: import('@ninedeploy/sdk').ContainerStat }) {
+  const t = useT();
   const isService = c.kind === 'service';
   return (
     <Card className="p-5">
@@ -912,7 +931,7 @@ function ContainerCard({ c }: { c: import('@ninedeploy/sdk').ContainerStat }) {
           <div className="text-2xl font-semibold tabular-nums">{c.cpuPct.toFixed(2)}<span className="ml-0.5 text-sm text-slate-500">%</span></div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-500">Memory</div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">{t('Memory')}</div>
           <div className="text-lg font-medium tabular-nums text-slate-200">
             {c.memMb.toFixed(0)}<span className="ml-0.5 text-xs text-slate-500">MB</span>
             {c.memLimitMb > 0 && <span className="ml-1 text-xs text-slate-600">/ {c.memLimitMb}</span>}
@@ -933,6 +952,7 @@ function ServiceSpark({ id }: { id: number }) {
 }
 
 function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id: number; memLimitMb: number }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [cpuCap, setCpuCap] = useState('');
@@ -964,9 +984,9 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
       // r342: the service / database detail pages cache the row (limits
       // included) under their own keys.
       qc.invalidateQueries({ queryKey: kind === 'service' ? ['service', id] : ['database-detail', id] });
-      toast('Limits updated successfully', 'success');
+      toast(t('Limits updated successfully'), 'success');
     },
-    onError: () => toast('Could not update the limits', 'error'),
+    onError: () => toast(t('Could not update the limits'), 'error'),
   });
 
   // local form submit
@@ -988,28 +1008,28 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
 
   return (
     <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()} className="mt-4 flex items-center gap-1.5 border-t border-white/5 pt-3">
-      <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500">Limits</span>
+      <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500">{t('Limits')}</span>
       <Input
         value={cpuCap}
         onChange={(e) => setCpuCap(e.target.value)}
         placeholder="cpus"
-        aria-label="CPU cap in cores"
-        title="CPU cap in cores — blank keeps the current value, 0 removes it"
+        aria-label={t('CPU cap in cores')}
+        title={t('CPU cap in cores — blank keeps the current value, 0 removes it')}
         className="h-7 min-w-0 flex-1 px-2 font-mono text-[11px]"
       />
       <Input
         value={cpu}
         onChange={(e) => setCpu(e.target.value)}
         placeholder="shares"
-        aria-label="CPU shares"
-        title="Relative CPU weight — blank keeps the current value, 0 removes it"
+        aria-label={t('CPU shares')}
+        title={t('Relative CPU weight — blank keeps the current value, 0 removes it')}
         className="h-7 min-w-0 flex-1 px-2 font-mono text-[11px]"
       />
       <Input
         value={mem}
         onChange={(e) => setMem(e.target.value)}
         placeholder="mem MB"
-        aria-label="Memory limit in MB"
+        aria-label={t('Memory limit in MB')}
         className="h-7 min-w-0 flex-1 px-2 font-mono text-[11px]"
       />
       <Button
@@ -1019,7 +1039,7 @@ function LimitsRow({ kind, id, memLimitMb }: { kind: 'service' | 'database'; id:
         className="h-7 shrink-0 px-2.5 text-[11px] font-medium text-indigo-300 hover:text-white"
         disabled={save.isPending}
       >
-        {save.isPending ? 'Saving…' : 'Save'}
+        {save.isPending ? t('Saving…') : t('Save')}
       </Button>
     </form>
   );

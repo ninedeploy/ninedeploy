@@ -3,6 +3,7 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { FileCode, GitPullRequest, KeyRound, Layers, Lock, Plus, Rows3, Save, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { downloadBlob } from '../lib/format.js';
+import { fill, useT } from '../lib/i18n.js';
 import { useToast } from './Toast.js';
 import { Button, Card, CardBody, ErrorCard, Input, Skeleton, Textarea, cn } from './ui.js';
 
@@ -76,6 +77,7 @@ export function EnvCard({
   variant?: 'service' | 'preview' | 'project';
   previewsEnabled?: boolean;
 }) {
+  const t = useT();
   const preview = variant === 'preview';
   const shared = variant === 'project';
   const envApi = preview ? api.previewEnv : shared ? api.projectEnv : api.env;
@@ -120,7 +122,7 @@ export function EnvCard({
       setSecret(false);
       invalidate();
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not add the variable', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not add the variable'), 'error'),
   });
   const update = useMutation({
     // isSecret is passed through explicitly: the server preserves the stored
@@ -128,12 +130,12 @@ export function EnvCard({
     mutationFn: (v: { id: number; key: string; value: string; isSecret: boolean }) =>
       envApi.update(serviceId, v.id, { key: v.key, value: v.value, isSecret: v.isSecret }),
     onSuccess: invalidate,
-    onError: () => toast('Could not save the variable', 'error'),
+    onError: () => toast(t('Could not save the variable'), 'error'),
   });
   const remove = useMutation({
     mutationFn: (id: number) => envApi.remove(serviceId, id),
     onSuccess: invalidate,
-    onError: () => toast('Could not delete the variable', 'error'),
+    onError: () => toast(t('Could not delete the variable'), 'error'),
   });
   const saveRaw = useMutation({
     mutationFn: async () => {
@@ -161,10 +163,10 @@ export function EnvCard({
     // the pre-edit values for variables that had in fact been saved.
     onSettled: invalidate,
     onSuccess: ({ added, updated, removed }) => {
-      toast(`Saved ${added} added · ${updated} updated · ${removed} removed`, 'success');
+      toast(t('Saved {added} added · {updated} updated · {removed} removed', { added, updated, removed }), 'success');
       setRawMode(false);
     },
-    onError: () => toast('Could not apply the .env edit — some values may be saved', 'error'),
+    onError: () => toast(t('Could not apply the .env edit — some values may be saved'), 'error'),
   });
 
   const onAdd = (e: FormEvent) => {
@@ -180,15 +182,15 @@ export function EnvCard({
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
             {preview ? (
               <>
-                <GitPullRequest size={15} className="text-slate-500" /> Preview deployments
+                <GitPullRequest size={15} className="text-slate-500" /> {t('Preview deployments')}
               </>
             ) : shared ? (
               <>
-                <Layers size={15} className="text-slate-500" /> Shared variables
+                <Layers size={15} className="text-slate-500" /> {t('Shared variables')}
               </>
             ) : (
               <>
-                <KeyRound size={15} className="text-slate-500" /> Environment
+                <KeyRound size={15} className="text-slate-500" /> {t('Environment')}
               </>
             )}
           </div>
@@ -199,7 +201,7 @@ export function EnvCard({
               older panels: the dashboard may be newer than its server. */}
           {(env.data ?? []).some((v) => v.hidden) && (
             <p className="w-full text-[11px] leading-relaxed text-violet-300/80">
-              This service is in a protected lane: its values are for workspace admins. You can still set new values.
+              {t('This service is in a protected lane: its values are for workspace admins. You can still set new values.')}
             </p>
           )}
           {literalNewlines &&
@@ -207,7 +209,7 @@ export function EnvCard({
               Object.values(drafts).some((d) => d.includes('\n')) ||
               (env.data ?? []).some((v) => v.value.includes('\n'))) && (
               <p className="w-full text-[11px] leading-relaxed text-slate-400">
-                Multi-line values (PEM keys, JSON documents) are delivered with real line breaks on panels ≥0.10.21; on older panels they arrived as a literal <code className="font-mono">\n</code> — base64-encode them there, or upgrade the server.
+                {fill(t('Multi-line values (PEM keys, JSON documents) are delivered with real line breaks on panels ≥0.10.21; on older panels they arrived as a literal {nl} — base64-encode them there, or upgrade the server.'), { nl: <code className="font-mono">\n</code> })}
               </p>
             )}
           <div className="flex flex-wrap items-center gap-2">
@@ -224,9 +226,9 @@ export function EnvCard({
               }}
               disabled={(env.data?.length ?? 0) === 0}
               className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200 disabled:opacity-30"
-              title="Download non-secret env vars as a .env file"
+              title={t('Download non-secret env vars as a .env file')}
             >
-              <FileCode size={12} /> Export
+              <FileCode size={12} /> {t('Export')}
             </button>
             <button
               type="button"
@@ -235,20 +237,20 @@ export function EnvCard({
               className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] hover:text-slate-200 disabled:opacity-30"
               title={
                 rawMode
-                  ? 'Back to the variable table'
+                  ? t('Back to the variable table')
                   : envLoaded
-                    ? 'Paste or edit the whole .env file as text'
-                    : 'Unavailable until the current variables load'
+                    ? t('Paste or edit the whole .env file as text')
+                    : t('Unavailable until the current variables load')
               }
             >
               {rawMode ? <Rows3 size={12} /> : <FileCode size={12} />}
-              {rawMode ? 'Table view' : 'Edit as .env'}
+              {rawMode ? t('Table view') : t('Edit as .env')}
             </button>
             {!rawMode && (env.data?.length ?? 0) > 5 && (
               <Input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter keys…"
+                placeholder={t('Filter keys…')}
                 className="h-7 w-36 text-xs sm:w-44"
               />
             )}
@@ -258,16 +260,17 @@ export function EnvCard({
         {rawMode ? (
           <>
             <p className="mb-2 text-[11px] text-slate-600">
-              One <code className="rounded bg-white/5 px-1 font-mono text-[10px]">KEY=VALUE</code> per line;{' '}
-              <code className="rounded bg-white/5 px-1 font-mono text-[10px]">#</code> comments, quoting and{' '}
-              <code className="rounded bg-white/5 px-1 font-mono text-[10px]">export</code> are fine. Missing keys are deleted, new
-              keys are added (non-secret — mark secrets in table view).
+              {fill(t('One {kv} per line; {hash} comments, quoting and {export} are fine. Missing keys are deleted, new keys are added (non-secret — mark secrets in table view).'), {
+                kv: <code className="rounded bg-white/5 px-1 font-mono text-[10px]">KEY=VALUE</code>,
+                hash: <code className="rounded bg-white/5 px-1 font-mono text-[10px]">#</code>,
+                export: <code className="rounded bg-white/5 px-1 font-mono text-[10px]">export</code>,
+              })}
             </p>
             <Textarea
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
               spellCheck={false}
-              aria-label="Raw .env content"
+              aria-label={t('Raw .env content')}
               className="min-h-64 font-mono text-xs leading-relaxed"
             />
             {parsed.errors.length > 0 && (
@@ -279,14 +282,14 @@ export function EnvCard({
             )}
             <div className="mt-2 flex items-center justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setRawMode(false)} disabled={saveRaw.isPending}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button
                 size="sm"
                 onClick={() => saveRaw.mutate()}
                 disabled={parsed.errors.length > 0 || saveRaw.isPending}
               >
-                <Save size={13} /> Apply {parsed.entries.length} var{parsed.entries.length === 1 ? '' : 's'}
+                <Save size={13} /> {parsed.entries.length === 1 ? t('Apply {n} var', { n: parsed.entries.length }) : t('Apply {n} vars', { n: parsed.entries.length })}
               </Button>
             </div>
           </>
@@ -295,25 +298,24 @@ export function EnvCard({
             {preview ? (
               <div className="mb-2 space-y-1 text-[11px] leading-relaxed text-slate-500">
                 <p>
-                  Values here reach only this service&apos;s pull-request previews, never the service itself. They override
-                  the non-secret values a preview inherits. Previews never receive this service&apos;s secrets, project-shared
-                  secrets or vault references — PR branches are untrusted code, so use test or staging credentials here.
+                  {t("Values here reach only this service's pull-request previews, never the service itself. They override the non-secret values a preview inherits. Previews never receive this service's secrets, project-shared secrets or vault references — PR branches are untrusted code, so use test or staging credentials here.")}
                 </p>
                 {!previewsEnabled && (
-                  <p className="text-amber-300/80">PR previews are off for this service — turn them on under Settings.</p>
+                  <p className="text-amber-300/80">{t('PR previews are off for this service — turn them on under Settings.')}</p>
                 )}
               </div>
             ) : shared ? (
               <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
-                Every service in this project receives these on its next deploy. A service&apos;s own variable with the same
-                name wins. PR previews get the non-secret ones only. Values may reference an external secret store:{' '}
-                <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_INFISICAL}</code>
+                {fill(t("Every service in this project receives these on its next deploy. A service's own variable with the same name wins. PR previews get the non-secret ones only. Values may reference an external secret store: {ref}"), {
+                  ref: <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_INFISICAL}</code>,
+                })}
               </p>
             ) : (
               <p className="mb-2 text-[11px] text-slate-600">
-                Values may reference an external secret store and are resolved at deploy time:{' '}
-                <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_INFISICAL}</code>{' '}
-                / <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_DOPPLER}</code>
+                {fill(t('Values may reference an external secret store and are resolved at deploy time: {a} / {b}'), {
+                  a: <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_INFISICAL}</code>,
+                  b: <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-500">{REF_DOPPLER}</code>,
+                })}
               </p>
             )}
 
@@ -323,7 +325,7 @@ export function EnvCard({
                 <Input
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
-                  placeholder={secret ? 'secret value' : 'value'}
+                  placeholder={secret ? t('secret value') : t('value')}
                   type={secret ? 'password' : 'text'}
                   className="h-9 min-w-0 flex-[3] font-mono text-xs"
                 />
@@ -333,7 +335,7 @@ export function EnvCard({
               </div>
               <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-400">
                 <input type="checkbox" checked={secret} onChange={(e) => setSecret(e.target.checked)} className="accent-indigo-500" />
-                <Lock size={11} /> Secret (encrypted, hidden in UI)
+                <Lock size={11} /> {t('Secret (encrypted, hidden in UI)')}
               </label>
             </form>
 
@@ -342,9 +344,9 @@ export function EnvCard({
                 <Skeleton className="h-8 w-full" />
               ) : env.isError && !env.data ? (
                 // r562: a failed load is not an empty list.
-                <ErrorCard title="Could not load environment variables" error={env.error} onRetry={() => void env.refetch()} />
+                <ErrorCard title={t('Could not load environment variables')} error={env.error} onRetry={() => void env.refetch()} />
               ) : !env.data || env.data.length === 0 ? (
-                <p className="py-2 text-xs text-slate-600">No environment variables.</p>
+                <p className="py-2 text-xs text-slate-600">{t('No environment variables.')}</p>
               ) : (
                 env.data
                   .filter((v) => !filter || v.key.toLowerCase().includes(filter.toLowerCase()))
@@ -357,12 +359,12 @@ export function EnvCard({
                       <div key={v.id} className="flex items-center gap-2 rounded-lg bg-white/[0.02] px-2 py-1.5 ring-1 ring-inset ring-white/5">
                         <div className="w-32 shrink-0 sm:w-48" title={v.key}>
                           <div className="truncate font-mono text-[11px] font-medium text-slate-200">{v.key}</div>
-                          {v.isSecret && <span className="text-[9px] uppercase tracking-wide text-amber-400/80">secret</span>}
+                          {v.isSecret && <span className="text-[9px] uppercase tracking-wide text-amber-400/80">{t('secret')}</span>}
                         </div>
                         <Input
                           value={dirty ? draft : v.value}
                           type={v.isSecret || v.hidden ? 'password' : 'text'}
-                          placeholder={v.isSecret ? '•••• hidden' : v.hidden ? '•••• protected lane' : ''}
+                          placeholder={v.isSecret ? t('•••• hidden') : v.hidden ? t('•••• protected lane') : ''}
                           onChange={(e) => setDrafts((d) => ({ ...d, [v.id]: e.target.value }))}
                           className="h-7 min-w-0 flex-1 font-mono text-[11px]"
                         />
@@ -370,11 +372,11 @@ export function EnvCard({
                           onClick={() => update.mutate({ id: v.id, key: v.key, value: draft, isSecret: v.isSecret })}
                           disabled={!dirty}
                           className={cn('shrink-0 text-slate-600 transition', dirty ? 'hover:text-emerald-400' : 'opacity-30')}
-                          title="Save"
+                          title={t('Save')}
                         >
                           <Save size={13} />
                         </button>
-                        <button type="button" onClick={() => remove.mutate(v.id)} className="shrink-0 text-slate-600 transition hover:text-rose-400" title="Delete">
+                        <button type="button" onClick={() => remove.mutate(v.id)} className="shrink-0 text-slate-600 transition hover:text-rose-400" title={t('Delete')}>
                           <Trash2 size={13} />
                         </button>
                       </div>

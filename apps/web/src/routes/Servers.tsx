@@ -29,27 +29,29 @@ import { useAuth } from '../lib/auth.js';
 import { EnrolmentTokenCard, useEnrolmentToken } from '../components/EnrolmentTokenCard.js';
 import { ServerNodePanel, hasNodeDetails, isSwarmMember } from '../components/ServerNodePanel.js';
 import { errorCode, errorMessage } from '../lib/multiNode.js';
+import { fill, useT } from '../lib/i18n.js';
 
 /**
  * 0.15: what a node's agent offers terminals (`GET /v1/servers` → `terminal`).
  * A 0.14 panel omits the field; an agent before v0.15.0 reports no terminal.
  */
 export function TerminalCapabilityBadges({ cap }: { cap: NodeTerminalCapability | undefined }) {
+  const t = useT();
   if (!cap) return <span className="text-xs text-slate-600">—</span>;
   if (!cap.container) {
     return (
       <div className="space-y-0.5">
-        <Badge>no terminal</Badge>
+        <Badge>{t('no terminal')}</Badge>
         <div className="max-w-[16rem] text-[11px] text-slate-500">
-          {cap.reason ?? 'The node agent does not offer terminals.'} Update the agent to v0.15.0 for node terminals.
+          {cap.reason ?? t('The node agent does not offer terminals.')} {t('Update the agent to v0.15.0 for node terminals.')}
         </div>
       </div>
     );
   }
   return (
     <div className="flex flex-wrap gap-1">
-      <Badge tone="emerald">shell</Badge>
-      {cap.host ? <Badge tone="amber">host shell</Badge> : <Badge>host shell off</Badge>}
+      <Badge tone="emerald">{t('shell')}</Badge>
+      {cap.host ? <Badge tone="amber">{t('host shell')}</Badge> : <Badge>{t('host shell off')}</Badge>}
     </div>
   );
 }
@@ -59,6 +61,7 @@ export function TerminalCapabilityBadges({ cap }: { cap: NodeTerminalCapability 
  * zero-touch auto-discovery announcements, or manual token pairing.
  */
 export function Servers() {
+  const t = useT();
   const qc = useQueryClient();
   const { user } = useAuth();
   const isOperator = user?.isOperator === true;
@@ -122,9 +125,9 @@ export function Servers() {
       setHost('');
       setPort('4600');
       qc.invalidateQueries({ queryKey: ['servers'] });
-      toast('Server registered — copy the agent token now', 'success');
+      toast(t('Server registered — copy the agent token now'), 'success');
     },
-    onError: () => toast('Could not register the server', 'error'),
+    onError: () => toast(t('Could not register the server'), 'error'),
   });
 
   const sshTestMutation = useMutation({
@@ -141,13 +144,13 @@ export function Servers() {
     onSuccess: (res) => {
       setProbeResult(res);
       if (res.ok) {
-        toast(`SSH probe successful (${res.latencyMs}ms)`, 'success');
+        toast(t('SSH probe successful ({ms}ms)', { ms: String(res.latencyMs) }), 'success');
       } else {
         toast(res.message, 'error');
       }
     },
     onError: (err) => {
-      const msg = err instanceof Error ? err.message : 'SSH probe failed';
+      const msg = err instanceof Error ? err.message : t('SSH probe failed');
       setProbeResult({ ok: false, message: msg });
       toast(msg, 'error');
     },
@@ -175,11 +178,11 @@ export function Servers() {
       setBootstrapRunning(false);
       setBootstrapResult(res);
       qc.invalidateQueries({ queryKey: ['servers'] });
-      toast(`Server "${sshName}" successfully onboarded!`, 'success');
+      toast(t('Server "{name}" successfully onboarded!', { name: sshName }), 'success');
     },
     onError: (err) => {
       setBootstrapRunning(false);
-      const msg = err instanceof Error ? err.message : 'Bootstrap failed';
+      const msg = err instanceof Error ? err.message : t('Bootstrap failed');
       setBootstrapResult({
         ok: false,
         error: msg,
@@ -201,39 +204,39 @@ export function Servers() {
     mutationFn: (id: number) => api.servers.remove(id, { force: true }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['servers'] });
-      toast('Server removed', 'success');
+      toast(t('Server removed'), 'success');
     },
     // Multi-node: a node that hosts databases or is in the swarm is refused
     // (409 `server_hosts_databases` / `server_swarm_member`) even with force;
     // the server's message says what to do first.
-    onError: (err) => toast(errorCode(err) ? errorMessage(err, 'Could not remove the server') : 'Could not remove the server', 'error'),
+    onError: (err) => toast(errorCode(err) ? errorMessage(err, t('Could not remove the server')) : t('Could not remove the server'), 'error'),
   });
 
   const test = useMutation({
     mutationFn: (id: number) => api.servers.test(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['servers'] });
-      toast('Agent reachable — marked online', 'success');
+      toast(t('Agent reachable — marked online'), 'success');
     },
-    onError: () => toast('Agent unreachable', 'error'),
+    onError: () => toast(t('Agent unreachable'), 'error'),
   });
 
   const approve = useMutation({
     mutationFn: (id: number) => api.servers.approve(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['servers'] });
-      toast('Server approved and connected to cluster', 'success');
+      toast(t('Server approved and connected to cluster'), 'success');
     },
-    onError: (err) => toast(`Approval failed: ${err instanceof Error ? err.message : 'unreachable'}`, 'error'),
+    onError: (err) => toast(t('Approval failed: {reason}', { reason: err instanceof Error ? err.message : t('unreachable') }), 'error'),
   });
 
   const reject = useMutation({
     mutationFn: (id: number) => api.servers.reject(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['servers'] });
-      toast('Server rejected', 'success');
+      toast(t('Server rejected'), 'success');
     },
-    onError: () => toast('Could not reject server', 'error'),
+    onError: () => toast(t('Could not reject server'), 'error'),
   });
 
   const serverLogsQuery = useQuery({
@@ -294,56 +297,56 @@ export function Servers() {
   // operator console over operator-only routes — a member landing here
   // directly saw the whole console rendered around a 403 error card.
   if (!isOperator) {
-    return <PageHeader icon={<ServerIcon size={18} />} title="Servers & Cluster" subtitle="Remote node management — operators only." />;
+    return <PageHeader icon={<ServerIcon size={18} />} title={t('Servers & Cluster')} subtitle={t('Remote node management — operators only.')} />;
   }
 
   return (
     <div className="max-w-4xl space-y-6">
       <PageHeader
         icon={<ServerIcon size={18} />}
-        title="Servers & Cluster"
-        subtitle="Remote nodes with SSH auto-onboarding. Services, builds, volumes and databases can run on a node; each feature needs a recent enough node agent."
+        title={t('Servers & Cluster')}
+        subtitle={t('Remote nodes with SSH auto-onboarding. Services, builds, volumes and databases can run on a node; each feature needs a recent enough node agent.')}
       />
 
       {/* Cluster Capacity Overview */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="p-4 bg-slate-900/60 border-white/[0.08]">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span>Cluster Nodes</span>
+            <span>{t('Cluster Nodes')}</span>
             <ServerIcon size={15} className="text-indigo-400" />
           </div>
           <div className="text-xl font-bold text-slate-100 flex items-baseline gap-2">
-            {totalNodes} <span className="text-xs font-normal text-slate-400">({onlineNodes} healthy)</span>
+            {totalNodes} <span className="text-xs font-normal text-slate-400">{t('({n} healthy)', { n: onlineNodes })}</span>
           </div>
           <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-400">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            1 Primary Master + {registeredServers.length} Edge Nodes
+            {t('1 Primary Master + {n} Edge Nodes', { n: registeredServers.length })}
           </div>
         </Card>
 
         <Card className="p-4 bg-slate-900/60 border-white/[0.08]">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span>Edge Infrastructure</span>
+            <span>{t('Edge Infrastructure')}</span>
             <HardDrive size={15} className="text-blue-400" />
           </div>
           <div className="text-xl font-bold text-slate-100 flex items-baseline gap-2">
-            {registeredServers.length} <span className="text-xs font-normal text-slate-400">registered</span>
+            {registeredServers.length} <span className="text-xs font-normal text-slate-400">{t('registered')}</span>
           </div>
           <div className="mt-2 text-[11px] text-slate-400">
-            SSH Automated & Auto-Discovery
+            {t('SSH Automated & Auto-Discovery')}
           </div>
         </Card>
 
         <Card className="p-4 bg-slate-900/60 border-white/[0.08]">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span>Cluster Health</span>
+            <span>{t('Cluster Health')}</span>
             <CheckCircle2 size={15} className="text-emerald-400" />
           </div>
           <div className="text-xl font-bold text-emerald-400 flex items-baseline gap-2">
             {Math.round((onlineNodes / totalNodes) * 100)}%
           </div>
           <div className="mt-2 text-[11px] text-slate-400">
-            Traefik Auto-Proxy & Mesh Active
+            {t('Traefik Auto-Proxy & Mesh Active')}
           </div>
         </Card>
       </div>
@@ -355,7 +358,7 @@ export function Servers() {
             <div className="flex items-center gap-2">
               <Sparkles className="text-indigo-400" size={16} />
               <h3 className="text-xs font-semibold uppercase tracking-wider text-indigo-300">
-                Zero-Touch Auto-Join Command
+                {t('Zero-Touch Auto-Join Command')}
               </h3>
             </div>
             <Button
@@ -365,18 +368,19 @@ export function Servers() {
               className="text-xs h-7"
             >
               <Copy size={12} className="mr-1" />
-              {autoCopied ? 'Copied Auto-Join Command!' : 'Copy Auto-Join Command'}
+              {autoCopied ? t('Copied Auto-Join Command!') : t('Copy Auto-Join Command')}
             </Button>
           </div>
           <p className="text-xs text-slate-400 mb-3">
-            Run this single command on any remote VPS / edge server. It will automatically announce itself to this NineDeploy instance and show up below for 1-click approval:
+            {t('Run this single command on any remote VPS / edge server. It will automatically announce itself to this NineDeploy instance and show up below for 1-click approval:')}
           </p>
           <code className="block break-all rounded-lg bg-black/40 p-3 font-mono text-[11px] text-indigo-200/90 ring-1 ring-white/5">
             {autoJoinCommand}
           </code>
           <p className="mt-2 text-[11px] text-slate-500">
-            <code className="text-indigo-300">&lt;enrolment-token&gt;</code> is the enrolment token below — the copy
-            button fills it in. Without one, announcing nodes are refused.
+            {fill(t('{token} is the enrolment token below — the copy button fills it in. Without one, announcing nodes are refused.'), {
+              token: <code className="text-indigo-300">&lt;enrolment-token&gt;</code>,
+            })}
           </p>
           {isOperator && <EnrolmentTokenCard />}
         </div>
@@ -389,11 +393,11 @@ export function Servers() {
             <div className="flex items-center gap-2 mb-2">
               <Radio className="text-amber-400 animate-pulse" size={18} />
               <h3 className="text-sm font-semibold text-amber-200">
-                Discovered Nodes Pending Approval ({pendingServers.length})
+                {t('Discovered Nodes Pending Approval ({n})', { n: pendingServers.length })}
               </h3>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              The following remote servers announced themselves and are requesting to join the cluster. Verify the host address before approving:
+              {t('The following remote servers announced themselves and are requesting to join the cluster. Verify the host address before approving:')}
             </p>
             <div className="space-y-3">
               {pendingServers.map((s) => (
@@ -402,7 +406,7 @@ export function Servers() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-slate-100">{s.name}</span>
                       <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20">
-                        Pending Approval
+                        {t('Pending Approval')}
                       </span>
                     </div>
                     <p className="font-mono text-xs text-slate-400 mt-0.5">
@@ -417,7 +421,7 @@ export function Servers() {
                       className="bg-emerald-600 hover:bg-emerald-500 text-white"
                     >
                       <CheckCircle2 size={14} className="mr-1" />
-                      {approve.isPending ? 'Verifying…' : 'Approve & Connect'}
+                      {approve.isPending ? t('Verifying…') : t('Approve & Connect')}
                     </Button>
                     <Button
                       size="sm"
@@ -426,7 +430,7 @@ export function Servers() {
                       disabled={reject.isPending}
                     >
                       <XCircle size={14} className="mr-1" />
-                      Reject
+                      {t('Reject')}
                     </Button>
                   </div>
                 </div>
@@ -441,7 +445,7 @@ export function Servers() {
           <div className="p-5 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-medium text-amber-200">
-                Copy these now — the agent token is shown only once. Run this on the target host:
+                {t('Copy these now — the agent token is shown only once. Run this on the target host:')}
               </p>
               <div className="flex rounded-lg bg-black/40 p-0.5 text-xs">
                 <button
@@ -449,14 +453,14 @@ export function Servers() {
                   onClick={() => setCmdTab('docker')}
                   className={cn('rounded px-2.5 py-1 transition', cmdTab === 'docker' ? 'bg-indigo-500 text-white font-medium' : 'text-slate-400 hover:text-slate-200')}
                 >
-                  Docker (Recommended)
+                  {t('Docker (Recommended)')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setCmdTab('npx')}
                   className={cn('rounded px-2.5 py-1 transition', cmdTab === 'npx' ? 'bg-indigo-500 text-white font-medium' : 'text-slate-400 hover:text-slate-200')}
                 >
-                  Node (source checkout)
+                  {t('Node (source checkout)')}
                 </button>
               </div>
             </div>
@@ -467,10 +471,10 @@ export function Servers() {
 
             <div className="flex gap-2">
               <Button size="sm" variant="secondary" onClick={() => void copy(activeCommand)}>
-                {copied ? 'Copied!' : 'Copy command'}
+                {copied ? t('Copied!') : t('Copy command')}
               </Button>
               <button type="button" onClick={() => setRevealed(null)} className="text-xs text-amber-200/70 hover:underline">
-                Done
+                {t('Done')}
               </button>
             </div>
           </div>
@@ -491,7 +495,7 @@ export function Servers() {
                 )}
               >
                 <Terminal size={14} />
-                SSH Zero-Touch Onboarding
+                {t('SSH Zero-Touch Onboarding')}
               </button>
               <button
                 type="button"
@@ -502,7 +506,7 @@ export function Servers() {
                 )}
               >
                 <HardDrive size={14} />
-                Manual Token Registration
+                {t('Manual Token Registration')}
               </button>
             </div>
             <button
@@ -510,7 +514,7 @@ export function Servers() {
               onClick={() => setOpen(false)}
               className="text-xs text-slate-500 hover:text-slate-300"
             >
-              Close Form
+              {t('Close Form')}
             </button>
           </div>
 
@@ -525,7 +529,7 @@ export function Servers() {
               className="space-y-4"
             >
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Node Name">
+                <Field label={t('Node Name')}>
                   <Input
                     value={sshName}
                     onChange={(e) => setSshName(e.target.value)}
@@ -534,7 +538,7 @@ export function Servers() {
                     required
                   />
                 </Field>
-                <Field label="Server Host / IP">
+                <Field label={t('Server Host / IP')}>
                   <Input
                     value={sshHost}
                     onChange={(e) => setSshHost(e.target.value)}
@@ -543,7 +547,7 @@ export function Servers() {
                     required
                   />
                 </Field>
-                <Field label="SSH Port">
+                <Field label={t('SSH Port')}>
                   <Input
                     value={sshPort}
                     onChange={(e) => setSshPort(e.target.value)}
@@ -551,7 +555,7 @@ export function Servers() {
                     className="h-9 font-mono text-xs"
                   />
                 </Field>
-                <Field label="SSH Username">
+                <Field label={t('SSH Username')}>
                   <Input
                     value={sshUser}
                     onChange={(e) => setSshUser(e.target.value)}
@@ -563,7 +567,7 @@ export function Servers() {
 
               {/* Authentication Type Selector */}
               <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-300">Authentication Method</label>
+                <label className="block text-xs font-medium text-slate-300">{t('Authentication Method')}</label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -576,7 +580,7 @@ export function Servers() {
                     )}
                   >
                     <Key size={14} />
-                    SSH Private Key
+                    {t('SSH Private Key')}
                   </button>
                   <button
                     type="button"
@@ -589,13 +593,13 @@ export function Servers() {
                     )}
                   >
                     <Lock size={14} />
-                    SSH Password
+                    {t('SSH Password')}
                   </button>
                 </div>
               </div>
 
               {authType === 'key' ? (
-                <Field label="SSH Private Key">
+                <Field label={t('SSH Private Key')}>
                   <textarea
                     value={sshKey}
                     onChange={(e) => setSshKey(e.target.value)}
@@ -605,7 +609,7 @@ export function Servers() {
                   />
                 </Field>
               ) : (
-                <Field label="SSH Password">
+                <Field label={t('SSH Password')}>
                   <Input
                     type="password"
                     value={sshPassword}
@@ -617,7 +621,7 @@ export function Servers() {
               )}
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Agent Port (Inbound)">
+                <Field label={t('Agent Port (Inbound)')}>
                   <Input
                     value={agentPort}
                     onChange={(e) => setAgentPort(e.target.value)}
@@ -634,14 +638,14 @@ export function Servers() {
                     className="h-4 w-4 rounded border-white/20 bg-black/40 text-indigo-600 focus:ring-0"
                   />
                   <label htmlFor="install-docker-checkbox" className="text-xs text-slate-300 select-none">
-                    Install Docker if missing (<code className="text-indigo-300">get.docker.com</code>)
+                    {fill(t('Install Docker if missing ({url})'), { url: <code className="text-indigo-300">get.docker.com</code> })}
                   </label>
                 </div>
               </div>
 
               <Field
-                label="Expected host key fingerprint (optional)"
-                hint="SHA256:… from ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub on the host. Empty: the first key is trusted and recorded."
+                label={t('Expected host key fingerprint (optional)')}
+                hint={t('SHA256:… from ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub on the host. Empty: the first key is trusted and recorded.')}
               >
                 <Input
                   value={hostKeyFingerprint}
@@ -667,11 +671,11 @@ export function Servers() {
                   </div>
                   {probeResult.ok && (
                     <div className="mt-1.5 flex flex-wrap gap-3 text-[11px] text-slate-400">
-                      <span>OS: <strong className="text-slate-200">{probeResult.os}</strong></span>
-                      <span>Docker: <strong className="text-slate-200">{probeResult.dockerInstalled ? probeResult.dockerVersion : 'Not Installed'}</strong></span>
-                      <span>Latency: <strong className="text-slate-200">{probeResult.latencyMs}ms</strong></span>
+                      <span>{t('OS:')} <strong className="text-slate-200">{probeResult.os}</strong></span>
+                      <span>Docker: <strong className="text-slate-200">{probeResult.dockerInstalled ? probeResult.dockerVersion : t('Not Installed')}</strong></span>
+                      <span>{t('Latency:')} <strong className="text-slate-200">{probeResult.latencyMs}ms</strong></span>
                       {probeResult.hostKeyFingerprint && (
-                        <span>Host key: <strong className="font-mono text-slate-200">{probeResult.hostKeyFingerprint}</strong>{probeResult.hostKeyTrust ? ` (${probeResult.hostKeyTrust})` : ''}</span>
+                        <span>{t('Host key:')} <strong className="font-mono text-slate-200">{probeResult.hostKeyFingerprint}</strong>{probeResult.hostKeyTrust ? ` (${probeResult.hostKeyTrust})` : ''}</span>
                       )}
                     </div>
                   )}
@@ -688,7 +692,7 @@ export function Servers() {
                   disabled={!sshHost.trim() || sshTestMutation.isPending}
                 >
                   {sshTestMutation.isPending ? <RefreshCw size={14} className="animate-spin mr-1" /> : <Sparkles size={14} className="mr-1" />}
-                  Test SSH Connection
+                  {t('Test SSH Connection')}
                 </Button>
                 <div className="flex items-center gap-2">
                   <Button
@@ -698,10 +702,10 @@ export function Servers() {
                     className="bg-indigo-600 hover:bg-indigo-500 text-white"
                   >
                     <Terminal size={14} className="mr-1" />
-                    Start Automated Onboarding
+                    {t('Start Automated Onboarding')}
                   </Button>
                   <button type="button" onClick={handleResetSshForm} className="text-xs text-slate-500 hover:underline">
-                    Cancel
+                    {t('Cancel')}
                   </button>
                 </div>
               </div>
@@ -714,20 +718,20 @@ export function Servers() {
               }}
               className="grid grid-cols-1 gap-3 sm:grid-cols-3"
             >
-              <Field label="Name">
+              <Field label={t('Name')}>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="edge-1" autoComplete="off" spellCheck={false} className="h-9" />
               </Field>
-              <Field label="Host">
+              <Field label={t('Host')}>
                 <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="10.0.0.5" autoComplete="off" spellCheck={false} className="h-9 font-mono text-xs" />
               </Field>
-              <Field label="Agent port">
+              <Field label={t('Agent port')}>
                 <Input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" autoComplete="off" className="h-9 font-mono text-xs" />
               </Field>
               <div className="sm:col-span-3 flex gap-2">
                 <Button type="submit" size="sm" disabled={!name.trim() || !host.trim() || create.isPending}>
-                  {create.isPending ? 'Registering…' : 'Register server'}
+                  {create.isPending ? t('Registering…') : t('Register server')}
                 </Button>
-                <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500 hover:underline">Cancel</button>
+                <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500 hover:underline">{t('Cancel')}</button>
               </div>
             </form>
           )}
@@ -736,15 +740,15 @@ export function Servers() {
 
       {/* Connected Servers List Table */}
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-200">Connected Nodes ({registeredServers.length})</h2>
+        <h2 className="text-sm font-semibold text-slate-200">{t('Connected Nodes ({n})', { n: registeredServers.length })}</h2>
         <div className="flex items-center gap-2">
           {hostShellsOn && (
-            <Button size="sm" variant="secondary" onClick={() => setHostShell({ serverId: null, name: 'panel host' })} title="Open a root shell on the panel host">
-              <Terminal size={14} /> Panel host shell
+            <Button size="sm" variant="secondary" onClick={() => setHostShell({ serverId: null, name: t('panel host') })} title={t('Open a root shell on the panel host')}>
+              <Terminal size={14} /> {t('Panel host shell')}
             </Button>
           )}
           <Button size="sm" variant="secondary" onClick={() => setOpen((v) => !v)}>
-            <Plus size={14} /> {open ? 'Hide form' : 'Add server'}
+            <Plus size={14} /> {open ? t('Hide form') : t('Add server')}
           </Button>
         </div>
       </div>
@@ -753,7 +757,7 @@ export function Servers() {
         <TerminalPanel
           key={hostShell.serverId ?? 'panel'}
           target={{ kind: 'host', serverId: hostShell.serverId }}
-          title={`${hostShell.name} · host shell`}
+          title={t('{name} · host shell', { name: hostShell.name })}
           onClose={() => setHostShell(null)}
         />
       )}
@@ -761,18 +765,18 @@ export function Servers() {
       {list.isLoading ? (
         <Card className="p-5"><Skeleton className="h-10 w-full" /></Card>
       ) : list.isError ? (
-        <ErrorCard title="Couldn't load servers" error={list.error} onRetry={() => list.refetch()} />
+        <ErrorCard title={t("Couldn't load servers")} error={list.error} onRetry={() => list.refetch()} />
       ) : registeredServers.length === 0 ? (
-        <Card><EmptyState icon={<HardDrive size={26} />} title="No remote servers" hint="Everything deploys on this host. Use SSH Onboarding or run the auto-join command on a node." /></Card>
+        <Card><EmptyState icon={<HardDrive size={26} />} title={t('No remote servers')} hint={t('Everything deploys on this host. Use SSH Onboarding or run the auto-join command on a node.')} /></Card>
       ) : (
         <Card className="@container overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-5 py-3 font-medium">Server</th>
-              <th className="px-5 py-3 font-medium">Address</th>
-              <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium">Terminal</th>
+              <th className="px-5 py-3 font-medium">{t('Server')}</th>
+              <th className="px-5 py-3 font-medium">{t('Address')}</th>
+              <th className="px-5 py-3 font-medium">{t('Status')}</th>
+              <th className="px-5 py-3 font-medium">{t('Terminal')}</th>
               <th className="px-5 py-3" />
             </tr>
           </thead>
@@ -801,38 +805,38 @@ export function Servers() {
                         type="button"
                         onClick={() => setHostShell({ serverId: s.id, name: s.name })}
                         className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"
-                        title="Open a root shell on this node"
+                        title={t('Open a root shell on this node')}
                       >
                         <Terminal size={13} />
-                        host shell
+                        {t('host shell')}
                       </button>
                     )}
                     <Link
                       to="/monitoring"
                       className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"
-                      title="View live metrics"
+                      title={t('View live metrics')}
                     >
                       <Activity size={13} />
-                      metrics
+                      {t('metrics')}
                     </Link>
                     <button
                       type="button"
                       onClick={() => setActiveLogServer({ id: s.id, name: s.name })}
                       className="text-xs text-slate-500 hover:text-indigo-300 flex items-center gap-1"
-                      title="View bootstrap logs"
+                      title={t('View bootstrap logs')}
                     >
                       <FileText size={13} />
-                      logs
+                      {t('logs')}
                     </button>
-                    <button type="button" onClick={() => test.mutate(s.id)} className="text-xs text-slate-500 hover:text-indigo-300" title="Test connectivity">
-                      test
+                    <button type="button" onClick={() => test.mutate(s.id)} className="text-xs text-slate-500 hover:text-indigo-300" title={t('Test connectivity')}>
+                      {t('test')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setPendingDelete({ id: s.id, name: s.name })}
                       disabled={isSwarmMember(s)}
                       className="text-slate-600 transition hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-600"
-                      title={isSwarmMember(s) ? 'In the swarm: make it leave first' : 'Remove server'}
+                      title={isSwarmMember(s) ? t('In the swarm: make it leave first') : t('Remove server')}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -866,16 +870,19 @@ export function Servers() {
               handleResetSshForm();
             }
           }}
-          title="Zero-Touch Server Onboarding"
+          title={t('Zero-Touch Server Onboarding')}
         >
           <div className="space-y-4">
             <p className="text-xs text-slate-400">
-              Automated provisioning pipeline for node <strong className="text-slate-200">{sshName}</strong> ({sshHost}):
+              {fill(t('Automated provisioning pipeline for node {name} ({host}):'), {
+                name: <strong className="text-slate-200">{sshName}</strong>,
+                host: sshHost,
+              })}
             </p>
 
             {bootstrapResult?.hostKeyFingerprint && (
               <p className="text-xs text-slate-400">
-                SSH host key: <strong className="font-mono text-slate-200">{bootstrapResult.hostKeyFingerprint}</strong>
+                {t('SSH host key:')} <strong className="font-mono text-slate-200">{bootstrapResult.hostKeyFingerprint}</strong>
               </p>
             )}
             {bootstrapResult?.warnings?.map((w) => (
@@ -908,7 +915,7 @@ export function Servers() {
             {bootstrapRunning && (
               <div className="flex items-center gap-2 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-xs text-indigo-300">
                 <RefreshCw size={15} className="animate-spin shrink-0" />
-                <span>Bootstrapping remote server over SSH, installing Docker and NineDeploy Agent…</span>
+                <span>{t('Bootstrapping remote server over SSH, installing Docker and NineDeploy Agent…')}</span>
               </div>
             )}
 
@@ -931,7 +938,7 @@ export function Servers() {
                   handleResetSshForm();
                 }}
               >
-                {bootstrapResult?.ok ? 'Done' : 'Dismiss'}
+                {bootstrapResult?.ok ? t('Done') : t('Dismiss')}
               </Button>
             </div>
           </div>
@@ -942,7 +949,7 @@ export function Servers() {
       {activeLogServer != null && (
         <Modal
           onClose={() => setActiveLogServer(null)}
-          title={`Bootstrap Logs: ${activeLogServer?.name || ''}`}
+          title={t('Bootstrap Logs: {name}', { name: activeLogServer?.name || '' })}
         >
           <div className="space-y-3">
             {serverLogsQuery.isLoading ? (
@@ -954,11 +961,11 @@ export function Servers() {
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-slate-400">No bootstrap execution logs recorded for this node.</p>
+              <p className="text-xs text-slate-400">{t('No bootstrap execution logs recorded for this node.')}</p>
             )}
             <div className="flex justify-end">
               <Button size="sm" variant="secondary" onClick={() => setActiveLogServer(null)}>
-                Close Logs
+                {t('Close Logs')}
               </Button>
             </div>
           </div>
@@ -967,9 +974,9 @@ export function Servers() {
 
       <ConfirmDialog
         open={pendingDelete != null}
-        title="Remove server"
-        message={`Remove "${pendingDelete?.name}"? Services already deployed there keep running but can no longer be managed from here.`}
-        confirmLabel="Remove"
+        title={t('Remove server')}
+        message={t('Remove "{name}"? Services already deployed there keep running but can no longer be managed from here.', { name: String(pendingDelete?.name) })}
+        confirmLabel={t('Remove')}
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
         onClose={() => setPendingDelete(null)}
       />

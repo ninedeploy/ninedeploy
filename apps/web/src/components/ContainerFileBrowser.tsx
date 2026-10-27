@@ -19,6 +19,7 @@ import {
 import { useState } from 'react';
 import { api } from '../lib/api.js';
 import { formatBytes } from '../lib/format.js';
+import { useT } from '../lib/i18n.js';
 import { useToast } from './Toast.js';
 import { Button, Card, ErrorCard, Input, Skeleton, cn } from './ui.js';
 import { getFileCategory, type FileCategory } from './VolumeBrowser.js';
@@ -63,6 +64,7 @@ function ContainerFileBrowserState({
   initialPath = '/',
   serverId,
 }: ContainerFileBrowserProps) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [cwd, setCwd] = useState(initialPath.startsWith('/') ? initialPath : `/${initialPath}`);
@@ -85,18 +87,18 @@ function ContainerFileBrowserState({
     onSuccess: (_r, path) => {
       setEditing(null);
       refresh();
-      toast(`Deleted ${path.split('/').pop()}`, 'success');
+      toast(t('Deleted {name}', { name: path.split('/').pop() ?? '' }), 'success');
     },
-    onError: () => toast('Delete failed', 'error'),
+    onError: () => toast(t('Delete failed'), 'error'),
   });
 
   const mkdir = useMutation({
     mutationFn: (path: string) => api.containers.mkdir(container, { path }, ...hostOptions),
     onSuccess: () => {
       refresh();
-      toast('Folder created', 'success');
+      toast(t('Folder created'), 'success');
     },
-    onError: () => toast('Could not create folder', 'error'),
+    onError: () => toast(t('Could not create folder'), 'error'),
   });
 
   const open = useMutation({
@@ -118,7 +120,7 @@ function ContainerFileBrowserState({
         dirty: false,
       });
     },
-    onError: () => toast('Could not read file (binary or >1 MB)', 'error'),
+    onError: () => toast(t('Could not read file (binary or >1 MB)'), 'error'),
   });
 
   // r251: the save carries the exact (path, text) it writes, and only marks
@@ -134,9 +136,9 @@ function ContainerFileBrowserState({
     onSuccess: (_res, v) => {
       setEditing((cur) => (cur && cur.path === v.path && cur.text === v.text ? { ...cur, dirty: false } : cur));
       refresh();
-      toast('File saved', 'success');
+      toast(t('File saved'), 'success');
     },
-    onError: () => toast('Save failed', 'error'),
+    onError: () => toast(t('Save failed'), 'error'),
   });
 
   const handleUpload = (file: File) => {
@@ -149,9 +151,9 @@ function ContainerFileBrowserState({
         .writeFile(container, { path: fullPath, contentBase64: base64 }, ...hostOptions)
         .then(() => {
           refresh();
-          toast(`Uploaded ${file.name}`, 'success');
+          toast(t('Uploaded {name}', { name: file.name }), 'success');
         })
-        .catch(() => toast('Upload failed', 'error'));
+        .catch(() => toast(t('Upload failed'), 'error'));
     };
     reader.readAsDataURL(file);
   };
@@ -168,18 +170,18 @@ function ContainerFileBrowserState({
         <div className="flex items-center gap-2 text-xs font-mono text-slate-300">
           <Box size={14} className="text-indigo-400" />
           <span className="font-semibold text-slate-200">{container}</span>
-          {serverId != null && <span className="text-slate-400">Node #{serverId}</span>}
+          {serverId != null && <span className="text-slate-400">{t('Node #{id}', { id: serverId })}</span>}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {editing ? (
             <>
               <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>
-                <ArrowLeft size={13} /> Back
+                <ArrowLeft size={13} /> {t('Back')}
               </Button>
               {editing.category === 'text' ? (
                 <Button size="sm" onClick={() => save.mutate({ path: editing.path, text: editing.text })} disabled={save.isPending || !editing.dirty}>
-                  <Save size={13} /> {save.isPending ? 'Saving…' : editing.dirty ? 'Save' : 'Saved'}
+                  <Save size={13} /> {save.isPending ? t('Saving…') : editing.dirty ? t('Save') : t('Saved')}
                 </Button>
               ) : (
                 <Button
@@ -187,7 +189,7 @@ function ContainerFileBrowserState({
                   variant="secondary"
                   onClick={() => downloadBase64(editing.path, editing.base64, editing.category)}
                 >
-                  <Download size={13} /> Download
+                  <Download size={13} /> {t('Download')}
                 </Button>
               )}
             </>
@@ -198,7 +200,7 @@ function ContainerFileBrowserState({
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Filter files…"
+                  placeholder={t('Filter files…')}
                   className="h-8 w-44 pl-8 font-mono text-xs"
                 />
               </div>
@@ -206,37 +208,37 @@ function ContainerFileBrowserState({
                 size="sm"
                 variant="secondary"
                 onClick={() => {
-                  const name = prompt('New folder name');
+                  const name = prompt(t('New folder name'));
                   if (name) mkdir.mutate(cwd === '/' ? `/${name}` : `${cwd}/${name}`);
                 }}
               >
-                <FolderPlus size={13} /> Folder
+                <FolderPlus size={13} /> {t('Folder')}
               </Button>
               <Button
                 size="sm"
                 variant="secondary"
                 onClick={() => {
-                  const name = prompt('New file name');
+                  const name = prompt(t('New file name'));
                   if (!name) return;
                   const path = cwd === '/' ? `/${name}` : `${cwd}/${name}`;
                   setEditing({ path, category: 'text', text: '', base64: '', dirty: true });
                 }}
               >
-                <FilePlus2 size={13} /> File
+                <FilePlus2 size={13} /> {t('File')}
               </Button>
               <label className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/5 active:scale-[0.98]">
-                <Upload size={13} /> Upload
+                <Upload size={13} /> {t('Upload')}
                 <input
                   type="file"
                   className="hidden"
-                  aria-label="Upload file to container"
+                  aria-label={t('Upload file to container')}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleUpload(file);
                   }}
                 />
               </label>
-              <Button size="sm" variant="secondary" onClick={refresh} disabled={dir.isFetching} title="Refresh directory">
+              <Button size="sm" variant="secondary" onClick={refresh} disabled={dir.isFetching} title={t('Refresh directory')}>
                 <RefreshCw size={13} className={dir.isFetching ? 'animate-spin' : undefined} />
               </Button>
             </>
@@ -294,14 +296,14 @@ function ContainerFileBrowserState({
             <div className="flex flex-1 flex-col">
               <div className="flex items-center justify-between border-b border-white/5 bg-slate-900/30 px-4 py-1.5 font-mono text-[11px] text-slate-400">
                 <span>{editing.path}</span>
-                <span>{editing.text.split('\n').length} lines · UTF-8</span>
+                <span>{t('{n} lines · UTF-8', { n: editing.text.split('\n').length })}</span>
               </div>
               <textarea
                 value={editing.text}
                 spellCheck={false}
                 onChange={(e) => setEditing({ ...editing, text: e.target.value, dirty: true })}
                 className="flex-1 resize-none bg-slate-950/90 p-4 font-mono text-xs leading-relaxed text-slate-200 outline-none"
-                aria-label="Container file editor"
+                aria-label={t('Container file editor')}
               />
             </div>
           ) : editing.category === 'image' ? (
@@ -316,7 +318,7 @@ function ContainerFileBrowserState({
               <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
                 <FileImage size={14} className="text-emerald-400" />
                 <span className="font-mono text-slate-200">{editing.path.split('/').pop()}</span>
-                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">Image Preview · Read-only</span>
+                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">{t('Image Preview · Read-only')}</span>
               </div>
             </div>
           ) : (
@@ -326,13 +328,13 @@ function ContainerFileBrowserState({
                   <Lock size={22} />
                 </div>
                 <h3 className="mt-3 font-mono text-sm font-semibold text-slate-100">{editing.path.split('/').pop()}</h3>
-                <p className="mt-1 text-xs text-slate-400">Binary or compiled asset file</p>
+                <p className="mt-1 text-xs text-slate-400">{t('Binary or compiled asset file')}</p>
                 <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-left text-xs text-amber-300/90">
-                  Direct text editing is disabled to protect against binary corruption. Download the raw file below.
+                  {t('Direct text editing is disabled to protect against binary corruption. Download the raw file below.')}
                 </div>
                 <div className="mt-4 flex justify-center">
                   <Button size="sm" onClick={() => downloadBase64(editing.path, editing.base64, 'binary')}>
-                    <Download size={13} /> Download File
+                    <Download size={13} /> {t('Download File')}
                   </Button>
                 </div>
               </Card>
@@ -345,10 +347,10 @@ function ContainerFileBrowserState({
             ))}
           </div>
         ) : dir.isError ? (
-          <ErrorCard title="Could not load container files" error={dir.error} onRetry={() => void dir.refetch()} />
+          <ErrorCard title={t('Could not load container files')} error={dir.error} onRetry={() => void dir.refetch()} />
         ) : entries.length === 0 ? (
           <div className="grid flex-1 place-items-center text-sm text-slate-500">
-            {query ? 'No matching files found' : 'Empty directory (drop files here to upload)'}
+            {query ? t('No matching files found') : t('Empty directory (drop files here to upload)')}
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-2">
@@ -395,12 +397,12 @@ function ContainerFileBrowserState({
                   <button
                     type="button"
                     onClick={() => {
-                      if (confirm(`Delete ${e.name}?${e.type === 'dir' ? ' (folder and contents)' : ''}`)) {
+                      if (confirm(e.type === 'dir' ? t('Delete {name}? (folder and contents)', { name: e.name }) : t('Delete {name}?', { name: e.name }))) {
                         del.mutate(full);
                       }
                     }}
                     className="shrink-0 text-slate-700 opacity-0 transition hover:text-rose-400 group-hover:opacity-100"
-                    aria-label={`Delete ${e.name}`}
+                    aria-label={t('Delete {name}', { name: e.name })}
                   >
                     <Trash2 size={13} />
                   </button>

@@ -20,6 +20,7 @@ import {
   validateMonitorForm,
 } from '../../lib/uptime.js';
 import { useToast } from '../Toast.js';
+import { useT } from '../../lib/i18n.js';
 import { Button, Field, Input, Modal, Select, Switch, cn } from '../ui.js';
 
 /**
@@ -37,6 +38,7 @@ export function MonitorFormModal({
   prefill?: Partial<MonitorForm>;
   onClose: () => void;
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const mode = monitor ? 'edit' : 'create';
@@ -53,11 +55,11 @@ export function MonitorFormModal({
       monitor ? uptimeApi.monitors.update(monitor.id, body) : uptimeApi.monitors.create(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: uptimeKeys.monitors });
-      toast(monitor ? 'Monitor saved' : 'Monitor created', 'success');
+      toast(monitor ? t('Monitor saved') : t('Monitor created'), 'success');
       onClose();
     },
     onError: (err: Error) => {
-      const message = err.message || 'Could not save the monitor';
+      const message = err.message || t('Could not save the monitor');
       setServerError(message);
       toast(message, 'error');
     },
@@ -86,22 +88,22 @@ export function MonitorFormModal({
 
   return (
     <Modal
-      title={monitor ? `Edit ${monitor.name}` : 'New monitor'}
+      title={monitor ? t('Edit {name}', { name: monitor.name }) : t('New monitor')}
       onClose={onClose}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button onClick={() => submit()} disabled={save.isPending}>
-            {save.isPending ? 'Saving…' : monitor ? 'Save monitor' : 'Create monitor'}
+            {save.isPending ? t('Saving…') : monitor ? t('Save monitor') : t('Create monitor')}
           </Button>
         </>
       }
     >
-      <form onSubmit={submit} className="space-y-4" aria-label="Monitor">
+      <form onSubmit={submit} className="space-y-4" aria-label={t('Monitor')}>
         <fieldset className="grid min-w-0 grid-cols-2 gap-2">
-          <legend className="sr-only">Check kind</legend>
+          <legend className="sr-only">{t('Check kind')}</legend>
           {(['http', 'tcp'] as const).map((k) => (
             <button
               key={k}
@@ -113,30 +115,34 @@ export function MonitorFormModal({
                 form.kind === k ? 'bg-indigo-500/15 text-indigo-300 ring-indigo-500/20' : 'bg-white/[0.03] text-slate-400 ring-white/10 hover:bg-white/[0.06]',
               )}
             >
-              <span className="block text-sm font-semibold">{k === 'http' ? 'HTTP(S)' : 'TCP port'}</span>
-              {k === 'http' ? 'Status code, optional keyword' : 'The port accepts a connection'}
+              <span className="block text-sm font-semibold">{k === 'http' ? 'HTTP(S)' : t('TCP port')}</span>
+              {k === 'http' ? t('Status code, optional keyword') : t('The port accepts a connection')}
             </button>
           ))}
         </fieldset>
 
-        <Field label="Name" error={errors.name}>
+        <Field label={t('Name')} error={errors.name}>
           <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="API health" maxLength={100} />
         </Field>
 
-        <Field label={http ? 'URL' : 'Host and port'} error={errors.target} hint={http ? 'Checked from the panel host.' : 'An IPv6 address goes in brackets: [::1]:5432'}>
+        <Field
+          label={http ? 'URL' : t('Host and port')}
+          error={errors.target}
+          hint={http ? t('Checked from the panel host.') : t('An IPv6 address goes in brackets: [::1]:5432')}
+        >
           <Input value={form.target} onChange={(e) => set('target', e.target.value)} placeholder={targetPlaceholder(form.kind)} className="font-mono text-xs" spellCheck={false} />
         </Field>
 
         {http && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label="Method" error={errors.method}>
+            <Field label={t('Method')} error={errors.method}>
               <Select value={form.method} onChange={(e) => set('method', e.target.value as MonitorForm['method'])}>
                 <option value="GET">GET</option>
                 <option value="HEAD">HEAD</option>
               </Select>
             </Field>
             <div className="sm:col-span-2">
-              <Field label="Expected status" error={errors.expectedStatus} hint="Codes and ranges, such as 200-299,301">
+              <Field label={t('Expected status')} error={errors.expectedStatus} hint={t('Codes and ranges, such as 200-299,301')}>
                 <Input value={form.expectedStatus} onChange={(e) => set('expectedStatus', e.target.value)} className="font-mono text-xs" />
               </Field>
             </div>
@@ -144,14 +150,18 @@ export function MonitorFormModal({
         )}
 
         {http && (
-          <Field label="Keyword (optional)" error={errors.keyword} hint="Text the response body must contain. Needs GET.">
+          <Field label={t('Keyword (optional)')} error={errors.keyword} hint={t('Text the response body must contain. Needs GET.')}>
             <Input value={form.keyword} onChange={(e) => set('keyword', e.target.value)} placeholder="ok" />
           </Field>
         )}
 
-        <Field label="Service (optional)" hint="Members who can see the service see its monitor; without one only operators do." error={errors.serviceId}>
+        <Field
+          label={t('Service (optional)')}
+          hint={t('Members who can see the service see its monitor; without one only operators do.')}
+          error={errors.serviceId}
+        >
           <Select value={form.serviceId} onChange={(e) => set('serviceId', e.target.value)}>
-            <option value="">No service</option>
+            <option value="">{t('No service')}</option>
             {(services.data ?? []).map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -161,8 +171,8 @@ export function MonitorFormModal({
         </Field>
 
         <div className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 ring-1 ring-inset ring-white/5">
-          <span className="text-sm text-slate-300">Enabled</span>
-          <Switch checked={form.enabled} onChange={(v) => set('enabled', v)} label="Enabled" />
+          <span className="text-sm text-slate-300">{t('Enabled')}</span>
+          <Switch checked={form.enabled} onChange={(v) => set('enabled', v)} label={t('Enabled')} />
         </div>
 
         <div className="rounded-lg border border-white/[0.06]">
@@ -172,33 +182,37 @@ export function MonitorFormModal({
             aria-expanded={advanced}
             className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-200"
           >
-            {advanced ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Advanced
+            {advanced ? <ChevronDown size={13} /> : <ChevronRight size={13} />} {t('Advanced')}
           </button>
           {advanced && (
             <div className="space-y-3 border-t border-white/5 p-3">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Interval (s)" error={errors.intervalSeconds} hint={`${MONITOR_INTERVAL_MIN}–${MONITOR_INTERVAL_MAX}`}>
+                <Field label={t('Interval (s)')} error={errors.intervalSeconds} hint={`${MONITOR_INTERVAL_MIN}–${MONITOR_INTERVAL_MAX}`}>
                   <Input type="number" min={MONITOR_INTERVAL_MIN} max={MONITOR_INTERVAL_MAX} value={form.intervalSeconds} onChange={(e) => set('intervalSeconds', e.target.value)} />
                 </Field>
-                <Field label="Timeout (s)" error={errors.timeoutSeconds} hint={`1–${MONITOR_TIMEOUT_MAX}`}>
+                <Field label={t('Timeout (s)')} error={errors.timeoutSeconds} hint={`1–${MONITOR_TIMEOUT_MAX}`}>
                   <Input type="number" min={1} max={MONITOR_TIMEOUT_MAX} value={form.timeoutSeconds} onChange={(e) => set('timeoutSeconds', e.target.value)} />
                 </Field>
-                <Field label="Failures before down" error={errors.failuresBeforeDown} hint={`1–${MONITOR_FAILURES_MAX} in a row`}>
+                <Field
+                  label={t('Failures before down')}
+                  error={errors.failuresBeforeDown}
+                  hint={t('1–{max} in a row', { max: MONITOR_FAILURES_MAX })}
+                >
                   <Input type="number" min={1} max={MONITOR_FAILURES_MAX} value={form.failuresBeforeDown} onChange={(e) => set('failuresBeforeDown', e.target.value)} />
                 </Field>
               </div>
               {http && (
                 <>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm text-slate-300">Follow redirects</span>
-                    <Switch checked={form.followRedirects} onChange={(v) => set('followRedirects', v)} label="Follow redirects" />
+                    <span className="text-sm text-slate-300">{t('Follow redirects')}</span>
+                    <Switch checked={form.followRedirects} onChange={(v) => set('followRedirects', v)} label={t('Follow redirects')} />
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="min-w-0 text-sm text-slate-300">
-                      Verify TLS certificate
-                      <span className="block text-[11px] text-slate-500">Off accepts a self-signed or expired certificate.</span>
+                      {t('Verify TLS certificate')}
+                      <span className="block text-[11px] text-slate-500">{t('Off accepts a self-signed or expired certificate.')}</span>
                     </span>
-                    <Switch checked={form.verifyTls} onChange={(v) => set('verifyTls', v)} label="Verify TLS certificate" />
+                    <Switch checked={form.verifyTls} onChange={(v) => set('verifyTls', v)} label={t('Verify TLS certificate')} />
                   </div>
                 </>
               )}

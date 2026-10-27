@@ -18,6 +18,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Plus, X } from 'lucide-react';
 import { rejectPanelAutofill } from '../lib/autofill.js';
+import { msg, useT } from '../lib/i18n.js';
 
 export const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
 
@@ -342,13 +343,36 @@ const STATUS_TONES: Record<string, string> = {
   unverifiable: 'bg-slate-500/15 text-slate-300 ring-slate-500/20',
 };
 
-/** Statuses whose wire name is not the words to show. */
-const STATUS_LABELS: Record<string, string> = { awaiting_approval: 'awaiting approval', awaiting_ci: 'waiting for CI' };
+/**
+ * The words shown for each known status (the wire name, unless it reads
+ * badly). An unknown status renders as sent, untranslated.
+ */
+const STATUS_LABELS: Record<string, string> = {
+  running: msg('running'),
+  idle: msg('idle'),
+  superseded: msg('superseded'),
+  deploying: msg('deploying'),
+  error: msg('error'),
+  stopped: msg('stopped'),
+  deleting: msg('deleting'),
+  queued: msg('queued'),
+  building: msg('building'),
+  failed: msg('failed'),
+  active: msg('active'),
+  pending: msg('pending'),
+  asleep: msg('asleep'),
+  awaiting_approval: msg('awaiting approval'),
+  awaiting_ci: msg('waiting for CI'),
+  passed: msg('passed'),
+  unverifiable: msg('unverifiable'),
+};
 
 /** States with work in flight: their dot pulses. */
 const BUSY_STATUSES = new Set(['deploying', 'building', 'queued', 'pending', 'deleting']);
 
 export function StatusBadge({ status, title }: { status: string; title?: string }) {
+  const t = useT();
+  const label = Object.hasOwn(STATUS_LABELS, status) ? STATUS_LABELS[status] : undefined;
   return (
     <span
       title={title}
@@ -364,16 +388,17 @@ export function StatusBadge({ status, title }: { status: string; title?: string 
           (status === 'running' || status === 'active') && 'nd-dot-live',
         )}
       />
-      {STATUS_LABELS[status] ?? status}
+      {label !== undefined ? t(label) : status}
     </span>
   );
 }
 
 // ── Spinner ───────────────────────────────────────────────────────────────
 export function Spinner({ className }: { className?: string }) {
+  const t = useT();
   return (
     <svg className={cn('animate-spin', className)} viewBox="0 0 24 24" fill="none" width="1em" height="1em" role="status">
-      <title>Loading</title>
+      <title>{t('Loading')}</title>
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>
@@ -444,17 +469,18 @@ export function EmptyState({ icon, title, hint, action }: { icon?: ReactNode; ti
 }
 
 // ── Error state ───────────────────────────────────────────────────────────
-export function ErrorCard({ title = 'Something went wrong', error, onRetry }: { title?: string; error?: unknown; onRetry?: () => void }) {
+export function ErrorCard({ title, error, onRetry }: { title?: string; error?: unknown; onRetry?: () => void }) {
+  const t = useT();
   return (
     <Card className="border-rose-500/20 bg-rose-500/[0.04]">
       <CardBody className="flex flex-col items-start gap-3">
         <div>
-          <p className="text-sm font-medium text-rose-200">{title}</p>
-          <p className="mt-1 text-xs text-rose-300/70">{error instanceof Error ? error.message : 'Unexpected error'}</p>
+          <p className="text-sm font-medium text-rose-200">{title ?? t('Something went wrong')}</p>
+          <p className="mt-1 text-xs text-rose-300/70">{error instanceof Error ? error.message : t('Unexpected error')}</p>
         </div>
         {onRetry && (
           <Button variant="secondary" size="sm" onClick={onRetry}>
-            Try again
+            {t('Try again')}
           </Button>
         )}
       </CardBody>
@@ -602,6 +628,7 @@ export function Modal({
   // Hooks must be called unconditionally — the early return for `!open`
   // would violate the rules of hooks (and is also why we keep the open
   // check at the JSX level further down).
+  const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
   const isOpen = open !== false;
   useDialogFocus(panelRef, isOpen, onClose, initialFocusRef);
@@ -610,7 +637,7 @@ export function Modal({
     <div className="fixed inset-0 z-[9999] flex items-end justify-center sm:items-center p-4 sm:p-6">
       <button
         type="button"
-        aria-label="Close dialog"
+        aria-label={t('Close dialog')}
         tabIndex={-1}
         aria-hidden="true"
         onClick={onClose}
@@ -631,7 +658,7 @@ export function Modal({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close dialog"
+            aria-label={t('Close dialog')}
             className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-slate-200 transition"
           >
             ✕
@@ -674,7 +701,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Delete',
+  confirmLabel,
   confirmWord,
   confirmDisabled = false,
   onConfirm,
@@ -689,6 +716,7 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [word, setWord] = useState('');
   // A double-click on Confirm fires onConfirm twice before React re-renders
   // — for mutations like Update & Restart, each click spawns its own updater.
@@ -709,10 +737,10 @@ export function ConfirmDialog({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button variant="danger" disabled={confirmDisabled || fired || (confirmWord != null && word !== confirmWord)} onClick={() => { setFired(true); onConfirm(); onClose(); }}>
-            {confirmLabel}
+            {confirmLabel ?? t('Delete')}
           </Button>
         </>
       }
@@ -720,7 +748,7 @@ export function ConfirmDialog({
       <div className="text-sm text-slate-300">{message}</div>
       {confirmWord != null && (
         <div className="mt-4">
-          <Field label={`Type "${confirmWord}" to confirm`}>
+          <Field label={t('Type "{word}" to confirm', { word: confirmWord })}>
             <Input value={word} onChange={(e) => setWord(e.target.value)} placeholder={confirmWord} autoComplete="off" />
           </Field>
         </div>
@@ -869,6 +897,7 @@ export function ChipInput({
   pattern,
   disabled,
 }: ChipInputProps) {
+  const t = useT();
   const [draft, setDraft] = useState('');
   const id = useId();
   const commit = useCallback(
@@ -914,7 +943,7 @@ export function ChipInput({
             {chip}
             <button
               type="button"
-              aria-label={`Remove ${chip}`}
+              aria-label={t('Remove {name}', { name: chip })}
               className="rounded-sm p-0.5 text-indigo-300 hover:bg-indigo-500/30 hover:text-indigo-100"
               onClick={() => onChange(value.filter((c) => c !== chip))}
             >
@@ -966,11 +995,12 @@ export interface KeyValueEditorProps {
 export function KeyValueEditor({
   value,
   onChange,
-  keyPlaceholder = 'key',
-  valuePlaceholder = 'value',
-  addLabel = 'Add',
+  keyPlaceholder,
+  valuePlaceholder,
+  addLabel,
   validateKey,
 }: KeyValueEditorProps) {
+  const t = useT();
   const entries = useMemo(() => Object.entries(value), [value]);
   const setRow = (key: string, newKey: string, newValue: string) => {
     const next: Record<string, string> = {};
@@ -1011,7 +1041,7 @@ export function KeyValueEditor({
           <Input
             aria-label={`key ${k || '(empty)'}`}
             defaultValue={k}
-            placeholder={keyPlaceholder}
+            placeholder={keyPlaceholder ?? t('key')}
             className="h-8 flex-1 font-mono text-xs"
             onBlur={(e) => {
               const next = e.target.value.trim();
@@ -1023,13 +1053,13 @@ export function KeyValueEditor({
           <Input
             aria-label={`value for ${k || '(empty)'}`}
             defaultValue={v}
-            placeholder={valuePlaceholder}
+            placeholder={valuePlaceholder ?? t('value')}
             className="h-8 flex-1 font-mono text-xs"
             onBlur={(e) => setRow(k, k, e.target.value)}
           />
           <button
             type="button"
-            aria-label={`Delete ${k || 'row'}`}
+            aria-label={k ? t('Delete {name}', { name: k }) : t('Delete row')}
             onClick={() => deleteRow(k)}
             className="rounded-md p-1.5 text-slate-400 hover:bg-rose-500/15 hover:text-rose-300"
           >
@@ -1038,7 +1068,7 @@ export function KeyValueEditor({
         </div>
       ))}
       <Button type="button" variant="ghost" size="sm" onClick={addRow}>
-        <Plus size={12} /> {addLabel}
+        <Plus size={12} /> {addLabel ?? t('Add')}
       </Button>
     </div>
   );
@@ -1069,9 +1099,10 @@ export function ListEditor<T>({
   createNew,
   renderItem,
   itemLabel,
-  addLabel = 'Add',
-  emptyMessage = 'No items yet.',
+  addLabel,
+  emptyMessage,
 }: ListEditorProps<T>) {
+  const t = useT();
   const setItem = (index: number, next: T) => {
     const copy = value.slice();
     copy[index] = next;
@@ -1096,7 +1127,7 @@ export function ListEditor<T>({
     <div className="space-y-2">
       {value.length === 0 ? (
         <div className="rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-3 py-4 text-center text-xs text-slate-500">
-          {emptyMessage}
+          {emptyMessage ?? t('No items yet.')}
         </div>
       ) : (
         value.map((item, i) => (
@@ -1108,12 +1139,12 @@ export function ListEditor<T>({
           >
             <div className="mb-2 flex items-center justify-between">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                {itemLabel ? `${itemLabel(item, i)}` : `Item ${i + 1}`}
+                {itemLabel ? `${itemLabel(item, i)}` : t('Item {n}', { n: i + 1 })}
               </div>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  aria-label={`Move up`}
+                  aria-label={t('Move up')}
                   onClick={() => moveItem(i, -1)}
                   disabled={i === 0}
                   className="rounded-md p-1 text-slate-400 hover:bg-white/10 hover:text-slate-200 disabled:opacity-30"
@@ -1122,7 +1153,7 @@ export function ListEditor<T>({
                 </button>
                 <button
                   type="button"
-                  aria-label={`Move down`}
+                  aria-label={t('Move down')}
                   onClick={() => moveItem(i, 1)}
                   disabled={i === value.length - 1}
                   className="rounded-md p-1 text-slate-400 hover:bg-white/10 hover:text-slate-200 disabled:opacity-30"
@@ -1131,7 +1162,7 @@ export function ListEditor<T>({
                 </button>
                 <button
                   type="button"
-                  aria-label={`Remove`}
+                  aria-label={t('Remove')}
                   onClick={() => removeItem(i)}
                   className="rounded-md p-1 text-slate-400 hover:bg-rose-500/15 hover:text-rose-300"
                 >
@@ -1144,7 +1175,7 @@ export function ListEditor<T>({
         ))
       )}
       <Button type="button" variant="ghost" size="sm" onClick={() => onChange([...value, createNew()])}>
-        <Plus size={12} /> {addLabel}
+        <Plus size={12} /> {addLabel ?? t('Add')}
       </Button>
     </div>
   );

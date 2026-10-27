@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { HardDrive } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { useT } from '../lib/i18n.js';
 import { Skeleton, cn } from './ui.js';
 
 const CAP_MB = 512; // visual reference for the bar fill
@@ -14,6 +15,7 @@ function fmt(bytes: number): string {
 }
 
 export function StorageGauge({ databaseId }: { databaseId: number }) {
+  const t = useT();
   const q = useQuery({
     queryKey: ['storage', databaseId],
     queryFn: () => api.backups.storage(databaseId),
@@ -26,7 +28,7 @@ export function StorageGauge({ databaseId }: { databaseId: number }) {
     <div>
       <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-500">
         <span className="flex items-center gap-1">
-          <HardDrive size={11} /> Volume
+          <HardDrive size={11} /> {t('Volume')}
         </span>
         <span className="font-medium text-slate-300">{q.isLoading ? '…' : fmt(bytes)}</span>
       </div>

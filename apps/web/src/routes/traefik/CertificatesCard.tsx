@@ -6,6 +6,7 @@ import { api } from '../../lib/api.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Badge, Button, Card, CardBody, ConfirmDialog, ErrorCard, Field, Input, Modal, Skeleton, Textarea } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 
 const DAY_MS = 86_400_000;
 /** Matches the inventory's "expiring soon" default. */
@@ -25,10 +26,11 @@ export function daysLeft(notAfter: string, now = Date.now()): number {
 }
 
 function ExpiryBadge({ cert }: { cert: CustomCertificate }) {
+  const t = useT();
   const days = daysLeft(cert.notAfter);
-  if (cert.expired || days < 0) return <Badge tone="rose">expired</Badge>;
-  if (days <= EXPIRING_DAYS) return <Badge tone="amber">{days}d left</Badge>;
-  return <Badge tone="emerald">valid</Badge>;
+  if (cert.expired || days < 0) return <Badge tone="rose">{t('expired')}</Badge>;
+  if (days <= EXPIRING_DAYS) return <Badge tone="amber">{t('{days}d left', { days })}</Badge>;
+  return <Badge tone="emerald">{t('valid')}</Badge>;
 }
 
 /** Read a picked PEM file into the form field (the file never leaves the browser except in the request). */
@@ -44,6 +46,7 @@ function readPicked(e: ChangeEvent<HTMLInputElement>, apply: (text: string) => v
  * one, and the form forgets it after a successful save.
  */
 export function CertificatesCard() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const list = useQuery({ queryKey: ['traefik-custom-certificates'], queryFn: () => api.traefik.customCertificates.list() });
@@ -58,11 +61,12 @@ export function CertificatesCard() {
     void qc.invalidateQueries({ queryKey: ['traefik'] });
   };
 
-  const saved = (res: CustomCertificateSaved, verb: string) => {
+  const saved = (res: CustomCertificateSaved, uploaded: boolean) => {
     setForm(EMPTY);
     setEditing(null);
     refresh();
-    toast(`Certificate ${verb}: ${res.hostnames.join(', ')}`, 'success');
+    const hosts = res.hostnames.join(', ');
+    toast(uploaded ? t('Certificate uploaded: {hosts}', { hosts }) : t('Certificate replaced: {hosts}', { hosts }), 'success');
     for (const w of res.warnings) toast(w, 'info');
   };
 
@@ -75,17 +79,17 @@ export function CertificatesCard() {
             certPem: f.certPem,
             keyPem: f.keyPem,
           }),
-    onSuccess: (res, { target }) => saved(res, target === 'new' ? 'uploaded' : 'replaced'),
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not save the certificate', 'error'),
+    onSuccess: (res, { target }) => saved(res, target === 'new'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not save the certificate'), 'error'),
   });
 
   const remove = useMutation({
     mutationFn: (cert: CustomCertificate) => api.traefik.customCertificates.delete(cert.id),
     onSuccess: (_res, cert) => {
       refresh();
-      toast(`Certificate "${cert.name}" deleted`, 'success');
+      toast(t('Certificate "{name}" deleted', { name: cert.name }), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not delete the certificate', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not delete the certificate'), 'error'),
   });
 
   const open = (target: 'new' | CustomCertificate) => {
@@ -103,7 +107,7 @@ export function CertificatesCard() {
     );
   }
   if (list.isError || !list.data) {
-    return <ErrorCard title="Couldn't load the uploaded certificates" error={list.error} onRetry={() => void list.refetch()} />;
+    return <ErrorCard title={t("Couldn't load the uploaded certificates")} error={list.error} onRetry={() => void list.refetch()} />;
   }
 
   const certs = list.data;
@@ -114,17 +118,17 @@ export function CertificatesCard() {
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] p-4">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
-          <FileKey2 size={14} /> Uploaded certificates
+          <FileKey2 size={14} /> {t('Uploaded certificates')}
         </h2>
         <Button size="sm" onClick={() => open('new')}>
-          <Upload size={12} /> Upload certificate
+          <Upload size={12} /> {t('Upload certificate')}
         </Button>
       </div>
       {certs.length === 0 ? (
         <CardBody>
-          <p className="text-sm text-slate-500">No uploaded certificates. Domains use Let's Encrypt.</p>
+          <p className="text-sm text-slate-500">{t("No uploaded certificates. Domains use Let's Encrypt.")}</p>
           <p className="mt-1 text-xs text-slate-600">
-            Upload a certificate (e.g. a purchased wildcard) and every SSL domain it fully covers is served with it instead.
+            {t('Upload a certificate (e.g. a purchased wildcard) and every SSL domain it fully covers is served with it instead.')}
           </p>
         </CardBody>
       ) : (
@@ -132,11 +136,11 @@ export function CertificatesCard() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-3">Name</th>
-                <th className="px-5 py-3">Hostnames</th>
-                <th className="px-5 py-3">Issuer</th>
-                <th className="px-5 py-3">Expires</th>
-                <th className="px-5 py-3">Covers</th>
+                <th className="px-5 py-3">{t('Name')}</th>
+                <th className="px-5 py-3">{t('Hostnames')}</th>
+                <th className="px-5 py-3">{t('Issuer')}</th>
+                <th className="px-5 py-3">{t('Expires')}</th>
+                <th className="px-5 py-3">{t('Covers')}</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -157,17 +161,17 @@ export function CertificatesCard() {
                   </td>
                   <td className="px-5 py-3 font-mono text-xs text-slate-400">
                     {cert.coveredDomains.length === 0 ? (
-                      <span className="text-slate-600">no domains</span>
+                      <span className="text-slate-600">{t('no domains')}</span>
                     ) : (
                       cert.coveredDomains.map((d) => <div key={d.id}>{d.hostname}</div>)
                     )}
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => open(cert)} aria-label={`Replace ${cert.name}`}>
+                      <Button size="sm" variant="ghost" onClick={() => open(cert)} aria-label={t('Replace {name}', { name: cert.name })}>
                         <Pencil size={12} />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setDeleting(cert)} aria-label={`Delete ${cert.name}`}>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleting(cert)} aria-label={t('Delete {name}', { name: cert.name })}>
                         <Trash2 size={12} />
                       </Button>
                     </div>
@@ -181,24 +185,24 @@ export function CertificatesCard() {
 
       {editing && (
         <Modal
-          title={isNew ? 'Upload certificate' : `Replace "${(editing as CustomCertificate).name}"`}
+          title={isNew ? t('Upload certificate') : t('Replace "{name}"', { name: (editing as CustomCertificate).name })}
           onClose={() => setEditing(null)}
           footer={
             <>
               <Button variant="ghost" onClick={() => setEditing(null)}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button onClick={() => save.mutate({ target: editing, f: form })} disabled={invalid || save.isPending}>
-                {save.isPending ? 'Saving…' : isNew ? 'Upload' : 'Replace'}
+                {save.isPending ? t('Saving…') : isNew ? t('Upload') : t('Replace')}
               </Button>
             </>
           }
         >
           <div className="space-y-3">
-            <Field label="Name" hint={isNew ? undefined : 'blank = keep'}>
+            <Field label={t('Name')} hint={isNew ? undefined : t('blank = keep')}>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="wildcard-example-com" />
             </Field>
-            <Field label="Certificate chain (PEM)" hint="leaf first">
+            <Field label={t('Certificate chain (PEM)')} hint={t('leaf first')}>
               <Textarea
                 rows={6}
                 className="font-mono text-[11px]"
@@ -210,11 +214,11 @@ export function CertificatesCard() {
             <input
               type="file"
               accept=".pem,.crt,.cer"
-              aria-label="Certificate file"
+              aria-label={t('Certificate file')}
               className="text-xs text-slate-500"
               onChange={(e) => readPicked(e, (text) => setForm((f) => ({ ...f, certPem: text })))}
             />
-            <Field label="Private key (PEM)" hint="unencrypted; never shown again">
+            <Field label={t('Private key (PEM)')} hint={t('unencrypted; never shown again')}>
               <Textarea
                 rows={5}
                 className="font-mono text-[11px]"
@@ -226,12 +230,12 @@ export function CertificatesCard() {
             <input
               type="file"
               accept=".pem,.key"
-              aria-label="Private key file"
+              aria-label={t('Private key file')}
               className="text-xs text-slate-500"
               onChange={(e) => readPicked(e, (text) => setForm((f) => ({ ...f, keyPem: text })))}
             />
             <p className="text-[11px] text-slate-500">
-              RSA ≥ 2048, ECDSA P-256/P-384 or Ed25519. A www pair needs both names covered.
+              {t('RSA ≥ 2048, ECDSA P-256/P-384 or Ed25519. A www pair needs both names covered.')}
             </p>
           </div>
         </Modal>
@@ -239,8 +243,8 @@ export function CertificatesCard() {
 
       <ConfirmDialog
         open={deleting !== null}
-        title="Delete this certificate?"
-        message={`Domains served with "${deleting?.name ?? ''}" fall back to Let's Encrypt.`}
+        title={t('Delete this certificate?')}
+        message={t('Domains served with "{name}" fall back to Let\'s Encrypt.', { name: deleting?.name ?? '' })}
         onConfirm={() => deleting && remove.mutate(deleting)}
         onClose={() => setDeleting(null)}
       />

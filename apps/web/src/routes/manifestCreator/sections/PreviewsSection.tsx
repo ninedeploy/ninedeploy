@@ -1,5 +1,6 @@
 import type { Previews } from '@ninedeploy/schemas';
 import { Field, Input, Switch } from '../../../components/ui.js';
+import { useT } from '../../../lib/i18n.js';
 
 // r602: previews must render inside the panel's wildcard zone and name both
 // the PR and the service, or the panel skips the preview domain.
@@ -12,6 +13,7 @@ export function PreviewsSection({
   value: Previews | undefined;
   onChange: (next: Previews | undefined) => void;
 }) {
+  const t = useT();
   const enabled = value?.enabled ?? false;
   const pattern = value?.pattern ?? '';
   // The schema hard-fails a preview config whose pattern lost its {n}
@@ -21,9 +23,9 @@ export function PreviewsSection({
     <div className="space-y-4">
       <div className="flex items-center justify-between rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
         <div>
-          <div className="text-sm font-medium text-slate-100">Enable preview environments</div>
+          <div className="text-sm font-medium text-slate-100">{t('Enable preview environments')}</div>
           <div className="text-xs text-slate-500">
-            Each PR gets a unique hostname derived from the pattern below.
+            {t('Each PR gets a unique hostname derived from the pattern below.')}
           </div>
         </div>
         <Switch
@@ -43,9 +45,9 @@ export function PreviewsSection({
         />
       </div>
       <Field
-        label="Hostname pattern"
-        hint="Must contain {n} — replaced by the PR number"
-        error={patternInvalid ? 'The pattern must contain the {n} placeholder.' : undefined}
+        label={t('Hostname pattern')}
+        hint={t('Must contain {n} — replaced by the PR number', { n: '{n}' })}
+        error={patternInvalid ? t('The pattern must contain the {n} placeholder.', { n: '{n}' }) : undefined}
       >
         <Input
           value={value?.pattern ?? ''}
@@ -61,7 +63,7 @@ export function PreviewsSection({
           }
         />
       </Field>
-      <Field label="Max active previews" hint="Older ones are torn down to stay under the cap">
+      <Field label={t('Max active previews')} hint={t('Older ones are torn down to stay under the cap')}>
         <Input
           type="number"
           min={1}

@@ -10,8 +10,10 @@ import { errorMessage, registeredNodes } from '../lib/multiNode.js';
 import { formatBytes } from '../lib/format.js';
 import { VolumeBrowser } from '../components/VolumeBrowser.js';
 import { VolumeBackupsPanel } from '../components/VolumeBackupsPanel.js';
+import { fill, useT } from '../lib/i18n.js';
 
 export function Volumes() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -45,18 +47,18 @@ export function Volumes() {
     mutationFn: (name: string) => (nodeId == null ? api.volumes.remove(name) : api.volumes.remove(name, { serverId: nodeId })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['volumes'] });
-      toast('Volume deleted', 'success');
+      toast(t('Volume deleted'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Delete failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Delete failed'), 'error'),
   });
   const prune = useMutation({
     mutationFn: () => api.volumes.prune(),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['volumes'] });
-      toast(`Pruned ${data.deleted} retained volume(s) (freed ${formatBytes(data.freedBytes)})`, 'success');
+      toast(t('Pruned {n} retained volume(s) (freed {size})', { n: data.deleted, size: formatBytes(data.freedBytes) }), 'success');
       setConfirmPrune(false);
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Prune failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Prune failed'), 'error'),
   });
   const [newName, setNewName] = useState('');
   const create = useMutation({
@@ -64,12 +66,12 @@ export function Volumes() {
     onSuccess: (res) => {
       setNewName('');
       qc.invalidateQueries({ queryKey: ['volumes'] });
-      toast(`Volume ${res.name} created`, 'success');
+      toast(t('Volume {name} created', { name: res.name }), 'success');
     },
-    onError: (err) => toast(errorMessage(err, 'Could not create the volume'), 'error'),
+    onError: (err) => toast(errorMessage(err, t('Could not create the volume')), 'error'),
   });
   const newNameValid = /^nd-(?:svc|db)-[a-z0-9][a-z0-9_.-]*$/.test(newName.trim());
-  const hostName = nodeId == null ? 'panel host' : (nodes.find((n) => n.id === nodeId)?.name ?? `node #${nodeId}`);
+  const hostName = nodeId == null ? t('panel host') : (nodes.find((n) => n.id === nodeId)?.name ?? t('node #{id}', { id: nodeId }));
   const total = (list.data ?? []).reduce((s, v) => s + v.sizeBytes, 0);
   const max = Math.max(1, ...(list.data ?? []).map((v) => v.sizeBytes));
   const retainedList = (list.data ?? []).filter((v) => !v.owner);
@@ -77,15 +79,15 @@ export function Volumes() {
   const retainedBytes = retainedList.reduce((s, v) => s + v.sizeBytes, 0);
 
   if (!user?.isOperator) {
-    return <PageHeader icon={<Layers size={18} />} title="Volumes & Storage" subtitle="Instance-wide storage inventory — operators only." />;
+    return <PageHeader icon={<Layers size={18} />} title={t('Volumes & Storage')} subtitle={t('Instance-wide storage inventory — operators only.')} />;
   }
 
   return (
     <div>
       <PageHeader
         icon={<Layers size={18} />}
-        title="Volumes & Storage"
-        subtitle={`${(list.data?.length ?? 0)} volumes · ${formatBytes(total)} used${retained > 0 ? ` · ${retained} retained (${formatBytes(retainedBytes)})` : ''}`}
+        title={t('Volumes & Storage')}
+        subtitle={`${t('{n} volumes · {size} used', { n: list.data?.length ?? 0, size: formatBytes(total) })}${retained > 0 ? ` · ${t('{n} retained ({size})', { n: retained, size: formatBytes(retainedBytes) })}` : ''}`}
         actions={
           retained > 0 && nodeId == null ? (
             <Button
@@ -95,7 +97,7 @@ export function Volumes() {
               className="text-xs"
               disabled={prune.isPending}
             >
-              <Trash2 size={13} /> Prune retained ({retained})
+              <Trash2 size={13} /> {t('Prune retained ({n})', { n: retained })}
             </Button>
           ) : undefined
         }
@@ -104,11 +106,11 @@ export function Volumes() {
       <DockerResources />
 
       <div className="mb-3 mt-8 flex flex-wrap items-end justify-between gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Persistent volumes</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Persistent volumes')}</h2>
         <div className="flex flex-wrap items-end gap-2">
           {nodes.length > 0 && (
             <Select
-              aria-label="Volume host"
+              aria-label={t('Volume host')}
               value={hostId}
               onChange={(e) => {
                 setHostId(e.target.value);
@@ -117,11 +119,11 @@ export function Volumes() {
               }}
               className="h-8 w-56 text-xs"
             >
-              <option value="">Panel host</option>
+              <option value="">{t('Panel host')}</option>
               {nodes.map((n) => (
                 <option key={n.id} value={String(n.id)} disabled={n.features?.volumes === false}>
                   {n.name}
-                  {n.features?.volumes === false ? ' (update the agent)' : n.status === 'online' ? '' : ` — ${n.status}`}
+                  {n.features?.volumes === false ? ` (${t('update the agent')})` : n.status === 'online' ? '' : ` — ${n.status}`}
                 </option>
               ))}
             </Select>
@@ -134,21 +136,21 @@ export function Volumes() {
             }}
           >
             <Input
-              aria-label="New volume name"
+              aria-label={t('New volume name')}
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="nd-svc-app-data"
               className="h-8 w-48 font-mono text-xs"
             />
-            <Button type="submit" size="sm" variant="secondary" disabled={!newNameValid || create.isPending} title={`Create a managed volume on the ${hostName}`}>
-              <Plus size={13} /> Create
+            <Button type="submit" size="sm" variant="secondary" disabled={!newNameValid || create.isPending} title={t('Create a managed volume on the {host}', { host: hostName })}>
+              <Plus size={13} /> {t('Create')}
             </Button>
           </form>
         </div>
       </div>
       {nodeId != null && (
         <p className="mb-3 text-xs text-slate-500">
-          Volumes on <span className="text-slate-300">{hostName}</span>, through its agent. Browse files on the selected node; volume snapshots are available on the panel host.
+          {fill(t('Volumes on {host}, through its agent. Browse files on the selected node; volume snapshots are available on the panel host.'), { host: <span className="text-slate-300">{hostName}</span> })}
         </p>
       )}
       {list.isLoading ? (
@@ -156,9 +158,9 @@ export function Volumes() {
           {[0, 1, 2].map((i) => <Card key={i} className="p-5"><Skeleton className="h-12 w-full" /></Card>)}
         </div>
       ) : list.isError ? (
-        <ErrorCard title="Couldn't load volumes" error={list.error} onRetry={() => list.refetch()} />
+        <ErrorCard title={t("Couldn't load volumes")} error={list.error} onRetry={() => list.refetch()} />
       ) : !list.data || list.data.length === 0 ? (
-        <Card><EmptyState icon={<HardDrive size={26} />} title="No volumes" hint="Deploy a service with a volume or create a database." /></Card>
+        <Card><EmptyState icon={<HardDrive size={26} />} title={t('No volumes')} hint={t('Deploy a service with a volume or create a database.')} /></Card>
       ) : (
         <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.data.map((v) => {
@@ -182,16 +184,16 @@ export function Volumes() {
                           <Link
                             to={ownerHref}
                             className="group inline-flex items-center gap-1 font-semibold leading-tight text-slate-100 transition hover:text-indigo-400"
-                            title={`Navigate to ${v.owner?.kind}: ${v.owner?.name}`}
+                            title={t('Navigate to {kind}: {name}', { kind: v.owner?.kind ?? '', name: v.owner?.name ?? '' })}
                           >
                             <span className="truncate">{v.owner?.name}</span>
                             <ArrowUpRight size={13} className="text-slate-400 opacity-80 group-hover:text-indigo-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0" />
                           </Link>
                         ) : (
-                          <div className="font-semibold leading-tight text-slate-100">{v.owner?.name ?? 'Retained'}</div>
+                          <div className="font-semibold leading-tight text-slate-100">{v.owner?.name ?? t('Retained')}</div>
                         )}
                         <div className="font-mono text-[10px] text-slate-500">
-                          {isRetained ? 'no active owner' : `${v.owner!.kind}${v.owner!.engine ? ` · ${v.owner!.engine}` : ''}`}
+                          {isRetained ? t('no active owner') : `${v.owner!.kind}${v.owner!.engine ? ` · ${v.owner!.engine}` : ''}`}
                         </div>
                       </div>
                     </div>
@@ -206,14 +208,14 @@ export function Volumes() {
                 <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={cn('rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide', v.inUse ? 'bg-rose-500/10 text-rose-300' : isRetained ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/10 text-emerald-300/80')}>
-                      {v.inUse ? 'in use · locked' : isRetained ? 'retained · reusable' : 'attached · stopped'}
+                      {v.inUse ? t('in use · locked') : isRetained ? t('retained · reusable') : t('attached · stopped')}
                     </span>
                     {ownerHref && (
                       <Link
                         to={ownerHref}
                         className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition"
                       >
-                        <span>{v.owner?.kind === 'database' ? 'DB' : 'Service'}</span>
+                        <span>{v.owner?.kind === 'database' ? t('DB') : t('Service')}</span>
                         <ExternalLink size={10} />
                       </Link>
                     )}
@@ -223,7 +225,7 @@ export function Volumes() {
                     <button type="button"
                       onClick={() => setBrowsing({ name: v.name, ...(nodeId == null ? {} : { serverId: nodeId }) })}
                       className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-[var(--nd-accent)]"
-                      title="Browse files in this volume"
+                      title={t('Browse files in this volume')}
                     >
                       <FolderOpen size={14} />
                     </button>
@@ -233,9 +235,9 @@ export function Volumes() {
                         'rounded-lg p-1.5 transition hover:bg-white/5',
                         snapshotting === v.name ? 'text-amber-300' : 'text-slate-500 hover:text-amber-300',
                       )}
-                      title="Snapshots — back up, restore or download this volume"
+                      title={t('Snapshots — back up, restore or download this volume')}
                       aria-expanded={snapshotting === v.name}
-                      aria-label={`Snapshots for ${v.name}`}
+                      aria-label={t('Snapshots for {name}', { name: v.name })}
                     >
                       <Archive size={14} />
                     </button>}
@@ -243,12 +245,12 @@ export function Volumes() {
                       <button type="button"
                         onClick={() => setPendingDelete(v.name)}
                         className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400"
-                        title="Delete volume (destructive)"
+                        title={t('Delete volume (destructive)')}
                       >
                         <Trash2 size={14} />
                       </button>
                     )}
-                    {v.inUse && <span title={`Attached to a running ${v.owner?.kind ?? 'workload'} — stop it first`}><Lock size={13} className="text-slate-600 ml-1" /></span>}
+                    {v.inUse && <span title={t('Attached to a running {kind} — stop it first', { kind: v.owner?.kind ?? t('workload') })}><Lock size={13} className="text-slate-600 ml-1" /></span>}
                   </div>
                 </div>
               </Card>
@@ -260,7 +262,7 @@ export function Volumes() {
         <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.02] p-4">
           <div className="mb-3 flex items-center justify-between">
             <p className="font-mono text-[11px] text-slate-400">{snapshotting}</p>
-            <Button size="sm" variant="secondary" onClick={() => setSnapshotting(null)}>Close</Button>
+            <Button size="sm" variant="secondary" onClick={() => setSnapshotting(null)}>{t('Close')}</Button>
           </div>
           <VolumeBackupsPanel volumeName={snapshotting} />
         </div>
@@ -268,16 +270,19 @@ export function Volumes() {
       {browsing && <VolumeBrowser volume={browsing.name} serverId={browsing.serverId} onClose={() => setBrowsing(null)} />}
 
       <p className="mt-3 text-xs text-slate-600">
-        Deleting a database keeps its volume (marked <span className="text-amber-400">retained</span>) so data survives — recreating the same database reuses it. Remove a volume here only to free disk. <Link to="/backups" className="text-indigo-400 hover:underline">Backups</Link>.
+        {fill(t('Deleting a database keeps its volume (marked {retained}) so data survives — recreating the same database reuses it. Remove a volume here only to free disk. {link}.'), {
+          retained: <span className="text-amber-400">{t('retained')}</span>,
+          link: <Link to="/backups" className="text-indigo-400 hover:underline">{t('Backups')}</Link>,
+        })}
       </p>
 
       <ConfirmDialog
         open={pendingDelete != null}
-        title="Delete volume"
+        title={t('Delete volume')}
         message={pendingDelete
-          ? <>Volume <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[11px]">{pendingDelete}</code> and all data in it will be removed permanently. This cannot be undone.</>
+          ? fill(t('Volume {name} and all data in it will be removed permanently. This cannot be undone.'), { name: <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[11px]">{pendingDelete}</code> })
           : ''}
-        confirmLabel="Delete"
+        confirmLabel={t('Delete')}
         confirmWord={pendingDelete ?? undefined}
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete)}
         onClose={() => setPendingDelete(null)}
@@ -285,9 +290,9 @@ export function Volumes() {
 
       <ConfirmDialog
         open={confirmPrune}
-        title="Prune retained volumes"
-        message={`Permanently delete ${retained} retained volume(s) and free ${formatBytes(retainedBytes)} of disk space? This cannot be undone.`}
-        confirmLabel="Prune all"
+        title={t('Prune retained volumes')}
+        message={t('Permanently delete {n} retained volume(s) and free {size} of disk space? This cannot be undone.', { n: retained, size: formatBytes(retainedBytes) })}
+        confirmLabel={t('Prune all')}
         onConfirm={() => prune.mutate()}
         onClose={() => setConfirmPrune(false)}
       />
@@ -296,6 +301,7 @@ export function Volumes() {
 }
 
 function DockerResources() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const res = useQuery({ queryKey: ['docker-resources'], queryFn: () => api.system.resources(), refetchInterval: 20000 });
@@ -303,9 +309,9 @@ function DockerResources() {
     mutationFn: () => api.system.pruneImages(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['docker-resources'] });
-      toast('Image prune finished', 'success');
+      toast(t('Image prune finished'), 'success');
     },
-    onError: () => toast('Prune failed', 'error'),
+    onError: () => toast(t('Prune failed'), 'error'),
   });
   const s = res.data?.imagesSummary;
 
@@ -313,22 +319,22 @@ function DockerResources() {
     <Card className="p-5">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-          <Package size={15} className="text-slate-500" /> Docker resources
+          <Package size={15} className="text-slate-500" /> {t('Docker resources')}
         </div>
         <Button size="sm" variant="secondary" onClick={() => prune.mutate()} disabled={prune.isPending}>
-          <Trash2 size={13} /> Prune images
+          <Trash2 size={13} /> {t('Prune images')}
         </Button>
       </div>
       <div className="nd-stagger grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Network" value={res.data?.network ?? '—'} />
-        <Metric label="Containers" value={String(res.data?.containers ?? '—')} />
-        <Metric label="Volumes" value={String(res.data?.volumes ?? '—')} />
-        <Metric label="Images" value={s ? `${s.active}/${s.total} active` : '—'} />
+        <Metric label={t('Network')} value={res.data?.network ?? '—'} />
+        <Metric label={t('Containers')} value={String(res.data?.containers ?? '—')} />
+        <Metric label={t('Volumes')} value={String(res.data?.volumes ?? '—')} />
+        <Metric label={t('Images')} value={s ? t('{active}/{total} active', { active: s.active, total: s.total }) : '—'} />
       </div>
       {s && (
         <p className="mt-3 text-xs text-slate-500">
-          Images use <span className="text-slate-300">{s.size}</span>
-          {s.reclaimable && s.reclaimable !== '0B' && <> · <span className="text-amber-400">{s.reclaimable}</span> reclaimable</>}.
+          {fill(t('Images use {size}'), { size: <span className="text-slate-300">{s.size}</span> })}
+          {s.reclaimable && s.reclaimable !== '0B' && <> · {fill(t('{size} reclaimable'), { size: <span className="text-amber-400">{s.reclaimable}</span> })}</>}.
         </p>
       )}
     </Card>

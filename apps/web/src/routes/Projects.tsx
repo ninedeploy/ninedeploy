@@ -9,6 +9,7 @@ import { useTagScope } from '../lib/projects.js';
 import { useToast } from '../components/Toast.js';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, Textarea } from '../components/ui.js';
 import { formatDateTime } from '../lib/format.js';
+import { useT } from '../lib/i18n.js';
 import type { ProjectEntry } from '@ninedeploy/sdk';
 import { ProjectAccessModal } from '../components/access/ProjectAccessModal.js';
 import { EnvCard } from '../components/EnvCard.js';
@@ -24,6 +25,7 @@ import { EnvCard } from '../components/EnvCard.js';
  * around just because you reorganise the project hierarchy.
  */
 export function Projects() {
+  const t = useT();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -106,16 +108,16 @@ export function Projects() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setShowForm(false);
-      toast(editing ? 'Project updated' : 'Project created', 'success');
+      toast(editing ? t('Project updated') : t('Project created'), 'success');
     },
     onError: (err: unknown) => {
-      toast(err instanceof Error ? err.message : 'Could not save the project', 'error');
+      toast(err instanceof Error ? err.message : t('Could not save the project'), 'error');
     },
   });
   const submitForm = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      toast('Name is required', 'error');
+      toast(t('Name is required'), 'error');
       return;
     }
     saveMutation.mutate();
@@ -127,10 +129,10 @@ export function Projects() {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       queryClient.invalidateQueries({ queryKey: ['services'] });
       setPendingDelete(null);
-      toast('Project deleted — services inside it were detached, not removed', 'success');
+      toast(t('Project deleted — services inside it were detached, not removed'), 'success');
     },
     onError: (err: unknown) => {
-      toast(err instanceof Error ? err.message : 'Could not delete the project', 'error');
+      toast(err instanceof Error ? err.message : t('Could not delete the project'), 'error');
     },
   });
 
@@ -138,11 +140,11 @@ export function Projects() {
     <div className="space-y-6 max-w-5xl">
       <PageHeader
         icon={<FolderKanban size={18} />}
-        title="Projects"
-        subtitle="Group services and shared environment variables by purpose. A service can be tagged into many projects."
+        title={t('Projects')}
+        subtitle={t('Group services and shared environment variables by purpose. A service can be tagged into many projects.')}
         actions={
           <Button onClick={openCreate} disabled={!operator && workspaces.length === 0}>
-            <Plus size={16} /> New project
+            <Plus size={16} /> {t('New project')}
           </Button>
         }
       />
@@ -151,8 +153,8 @@ export function Projects() {
         <Card>
           <EmptyState
             icon={<FolderKanban size={26} />}
-            title="No workspaces yet"
-            hint="Projects need a workspace to live in. Ask an operator to invite you into one first."
+            title={t('No workspaces yet')}
+            hint={t('Projects need a workspace to live in. Ask an operator to invite you into one first.')}
           />
         </Card>
       )}
@@ -160,19 +162,19 @@ export function Projects() {
       {isLoading ? (
         <Card className="p-5"><Skeleton className="h-10 w-full" /></Card>
       ) : isError ? (
-        <ErrorCard title="Couldn't load projects" error={error} onRetry={() => refetch()} />
+        <ErrorCard title={t("Couldn't load projects")} error={error} onRetry={() => refetch()} />
       ) : projects.length === 0 ? (
         <Card>
           <EmptyState
             icon={<FolderKanban size={26} />}
-            title="No projects yet"
+            title={t('No projects yet')}
             hint={operator
-              ? 'Create your first project to start grouping services and shared env vars.'
-              : 'No projects in this workspace yet. Ask an operator to create one.'}
+              ? t('Create your first project to start grouping services and shared env vars.')
+              : t('No projects in this workspace yet. Ask an operator to create one.')}
             action={
               operator ? (
                 <Button onClick={openCreate}>
-                  <Plus size={16} /> Create project
+                  <Plus size={16} /> {t('Create project')}
                 </Button>
               ) : null
             }
@@ -183,10 +185,10 @@ export function Projects() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-3 font-medium">Name</th>
-                <th className="px-5 py-3 font-medium">Scope</th>
-                <th className="px-5 py-3 font-medium">Resources</th>
-                <th className="px-5 py-3 font-medium">Updated</th>
+                <th className="px-5 py-3 font-medium">{t('Name')}</th>
+                <th className="px-5 py-3 font-medium">{t('Scope')}</th>
+                <th className="px-5 py-3 font-medium">{t('Resources')}</th>
+                <th className="px-5 py-3 font-medium">{t('Updated')}</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -216,12 +218,12 @@ export function Projects() {
                     </td>
                     <td className="px-5 py-3">
                       <Badge tone={ws ? 'indigo' : 'neutral'} className="text-[10px] uppercase">
-                        {ws ? ws.name : 'No workspace'}
+                        {ws ? ws.name : t('No workspace')}
                       </Badge>
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-300">
-                      <span title={`${String(p.serviceCount)} service(s), ${String(p.databaseCount)} database(s)`}>
-                        {p.serviceCount} svc · {p.databaseCount} db
+                      <span title={t('{s} service(s), {d} database(s)', { s: String(p.serviceCount), d: String(p.databaseCount) })}>
+                        {t('{s} svc · {d} db', { s: p.serviceCount, d: p.databaseCount })}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-500">
@@ -233,9 +235,9 @@ export function Projects() {
                           variant="secondary"
                           size="sm"
                           onClick={() => openEnv(p.id)}
-                          title="Shared variables: every service in this project receives them"
+                          title={t('Shared variables: every service in this project receives them')}
                           className="h-7 w-7 p-0"
-                          aria-label="Shared variables"
+                          aria-label={t('Shared variables')}
                         >
                           <KeyRound size={13} />
                         </Button>
@@ -244,9 +246,9 @@ export function Projects() {
                             variant="secondary"
                             size="sm"
                             onClick={() => setAccessFor(p)}
-                            title="Who has access"
+                            title={t('Who has access')}
                             className="h-7 w-7 p-0"
-                            aria-label="Project access"
+                            aria-label={t('Project access')}
                           >
                             <Users size={13} />
                           </Button>
@@ -256,9 +258,9 @@ export function Projects() {
                             variant="secondary"
                             size="sm"
                             onClick={() => openEdit(p)}
-                            title="Edit project"
+                            title={t('Edit project')}
                             className="h-7 w-7 p-0"
-                            aria-label="Edit project"
+                            aria-label={t('Edit project')}
                           >
                             <Edit2 size={13} />
                           </Button>
@@ -268,9 +270,9 @@ export function Projects() {
                             variant="danger"
                             size="sm"
                             onClick={() => setPendingDelete(p)}
-                            title="Delete project"
+                            title={t('Delete project')}
                             className="h-7 w-7 p-0"
-                            aria-label="Delete project"
+                            aria-label={t('Delete project')}
                           >
                             <Trash2 size={13} />
                           </Button>
@@ -289,24 +291,24 @@ export function Projects() {
       {showForm && (
         <Modal
           onClose={closeForm}
-          title={editing ? 'Edit project' : 'New project'}
+          title={editing ? t('Edit project') : t('New project')}
         >
           <form onSubmit={submitForm} className="space-y-4">
-            <Field label="Name">
+            <Field label={t('Name')}>
               <Input
                 required
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Acme Web"
+                placeholder={t('e.g. Acme Web')}
                 maxLength={63}
               />
             </Field>
             <Field
-              label="Slug"
+              label={t('Slug')}
               hint={editing
-                ? 'The unique identifier. It is fixed once the project exists.'
-                : 'Optional. Lower-case, hyphen-separated. Generated from the name when empty.'}
+                ? t('The unique identifier. It is fixed once the project exists.')
+                : t('Optional. Lower-case, hyphen-separated. Generated from the name when empty.')}
             >
               <Input
                 value={slug}
@@ -317,25 +319,25 @@ export function Projects() {
                 maxLength={63}
               />
             </Field>
-            <Field label="Description" hint="A short note about what this project is for. Optional.">
+            <Field label={t('Description')} hint={t('A short note about what this project is for. Optional.')}>
               <Textarea
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Frontend, marketing site, and any related infra."
+                placeholder={t('Frontend, marketing site, and any related infra.')}
                 maxLength={500}
               />
             </Field>
             <Field
-              label="Workspace"
-              hint="Pick a workspace to scope this project. Operators may also leave it unscoped (shared)."
+              label={t('Workspace')}
+              hint={t('Pick a workspace to scope this project. Operators may also leave it unscoped (shared).')}
             >
               <select
                 value={String(workspaceId)}
                 onChange={(e) => setWorkspaceId(e.target.value === '' ? '' : Number(e.target.value))}
                 className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
               >
-                <option value="">No workspace (operator-shared)</option>
+                <option value="">{t('No workspace (operator-shared)')}</option>
                 {workspaces.map((w) => (
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
@@ -343,10 +345,10 @@ export function Projects() {
             </Field>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="secondary" onClick={closeForm}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button type="submit" disabled={saveMutation.isPending || !name.trim()}>
-                {saveMutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create project'}
+                {saveMutation.isPending ? t('Saving…') : editing ? t('Save changes') : t('Create project')}
               </Button>
             </div>
           </form>
@@ -355,17 +357,19 @@ export function Projects() {
 
       <ConfirmDialog
         open={pendingDelete != null}
-        title="Delete project"
+        title={t('Delete project')}
         message={
           pendingDelete
             ? // F922: the server refuses (409) deleting a workspace project
               // that still holds databases; only a personal one detaches them.
               pendingDelete.workspaceId != null && pendingDelete.databaseCount > 0
-              ? `"${pendingDelete.name}" still holds ${pendingDelete.databaseCount} database${pendingDelete.databaseCount === 1 ? '' : 's'}: a workspace project cannot be deleted while it holds databases — delete them first. Services inside it are detached when it is deleted — they are NOT deleted.`
-              : `Delete "${pendingDelete.name}"? Services and databases inside it are detached (their projectId is set to null) — they are NOT deleted.`
+              ? pendingDelete.databaseCount === 1
+                ? t('"{name}" still holds {n} database: a workspace project cannot be deleted while it holds databases — delete them first. Services inside it are detached when it is deleted — they are NOT deleted.', { name: pendingDelete.name, n: pendingDelete.databaseCount })
+                : t('"{name}" still holds {n} databases: a workspace project cannot be deleted while it holds databases — delete them first. Services inside it are detached when it is deleted — they are NOT deleted.', { name: pendingDelete.name, n: pendingDelete.databaseCount })
+              : t('Delete "{name}"? Services and databases inside it are detached (their projectId is set to null) — they are NOT deleted.', { name: pendingDelete.name })
             : ''
         }
-        confirmLabel="Delete"
+        confirmLabel={t('Delete')}
         onConfirm={() => pendingDelete && deleteMutation.mutate(pendingDelete.id)}
         onClose={() => setPendingDelete(null)}
       />
@@ -373,7 +377,7 @@ export function Projects() {
       {accessFor && <ProjectAccessModal project={accessFor} onClose={() => setAccessFor(null)} />}
 
       {envProject && (
-        <Modal wide onClose={() => openEnv(null)} title={`${envProject.name} · shared variables`}>
+        <Modal wide onClose={() => openEnv(null)} title={t('{name} · shared variables', { name: envProject.name })}>
           <EnvCard serviceId={envProject.id} variant="project" />
         </Modal>
       )}

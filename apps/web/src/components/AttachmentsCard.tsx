@@ -4,6 +4,7 @@ import { Activity, Database, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
 import { useToast } from './Toast.js';
+import { useT } from '../lib/i18n.js';
 import { Button, Card, CardBody, Input, Select, Skeleton, StatusBadge, Tooltip, cn } from './ui.js';
 
 function aliasFor(engine: string | undefined): string {
@@ -57,6 +58,7 @@ export function isPreviewCopyName(name: string | undefined): boolean {
 }
 
 export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: number; isPreview?: boolean }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [dbId, setDbId] = useState<string>('');
@@ -74,12 +76,12 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
     },
     // r211: the server refuses non-admins (403) and duplicates (400); both
     // were swallowed, so Attach looked like a dead button.
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not attach the database', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not attach the database'), 'error'),
   });
   const detach = useMutation({
     mutationFn: (id: number) => api.attachments.remove(serviceId, id),
     onSuccess: invalidate,
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not detach the database', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not detach the database'), 'error'),
   });
   const [testingDb, setTestingDb] = useState<number | null>(null);
 
@@ -89,9 +91,9 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
     setTestingDb(databaseId);
     try {
       await api.databases.logs(databaseId);
-      toast(`Connection to ${name} (${alias}) verified OK`, 'success');
+      toast(t('Connection to {name} ({alias}) verified OK', { name, alias }), 'success');
     } catch (err) {
-      toast(err instanceof Error ? `Could not reach ${name}: ${err.message}` : `Could not reach ${name}`, 'error');
+      toast(err instanceof Error ? t('Could not reach {name}: {error}', { name, error: err.message }) : t('Could not reach {name}', { name }), 'error');
     } finally {
       setTestingDb(null);
     }
@@ -110,9 +112,9 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
               <Database size={15} />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-slate-100">Attached Databases</h3>
+              <h3 className="text-sm font-semibold text-slate-100">{t('Attached Databases')}</h3>
               <p className="text-[11px] text-slate-400">
-                Directly inject connection strings into this application container.
+                {t('Directly inject connection strings into this application container.')}
               </p>
             </div>
           </div>
@@ -120,7 +122,7 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
             to="/databases"
             className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition"
           >
-            <Plus size={12} /> New DB
+            <Plus size={12} /> {t('New DB')}
           </Link>
         </div>
 
@@ -131,9 +133,9 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
               value={dbId}
               onChange={(e) => setDbId(e.target.value)}
               className="h-9 w-full text-xs"
-              aria-label="Select database to attach"
+              aria-label={t('Select database to attach')}
             >
-              <option value="">Select database to attach…</option>
+              <option value="">{t('Select database to attach…')}</option>
               {available.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name} ({d.engine})
@@ -148,7 +150,7 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
                   onChange={(e) => setAlias(e.target.value)}
                   placeholder={defaultPlaceholder}
                   className="h-9 w-full font-mono text-xs"
-                  title="Environment variable alias (e.g. DATABASE_URL, REDIS_URL)"
+                  title={t('Environment variable alias (e.g. DATABASE_URL, REDIS_URL)')}
                 />
               </div>
               <Button
@@ -158,13 +160,13 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
                 onClick={() => attach.mutate()}
                 className="h-9 shrink-0 px-4 text-xs font-semibold"
               >
-                Attach
+                {t('Attach')}
               </Button>
             </div>
           </div>
           {available.length === 0 && (
             <p className="text-[11px] text-amber-300/90 flex items-center gap-1.5 pt-0.5">
-              <span>⚠️</span> No active databases running. Launch a database in the Databases tab first.
+              <span>⚠️</span> {t('No active databases running. Launch a database in the Databases tab first.')}
             </p>
           )}
         </div>
@@ -179,9 +181,9 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
           ) : !attachments.data || attachments.data.length === 0 ? (
             <div className="rounded-xl border border-dashed border-white/10 p-4 text-center">
               <Database size={20} className="mx-auto text-slate-600 mb-1" />
-              <p className="text-xs font-medium text-slate-400">No databases attached.</p>
+              <p className="text-xs font-medium text-slate-400">{t('No databases attached.')}</p>
               <p className="text-[11px] text-slate-500">
-                Attach a managed database above to auto-wire connection environment variables.
+                {t('Attach a managed database above to auto-wire connection environment variables.')}
               </p>
             </div>
           ) : (
@@ -203,12 +205,12 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
                         {a.database.name}
                       </Link>
                     ) : (
-                      <span className="truncate text-xs font-semibold text-slate-100">database</span>
+                      <span className="truncate text-xs font-semibold text-slate-100">{t('database')}</span>
                     )}
                     {isPreview && isPreviewCopyName(a.database?.name) && (
-                      <Tooltip content="Removed with the preview">
+                      <Tooltip content={t('Removed with the preview')}>
                         <span className="rounded border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-300">
-                          Preview copy
+                          {t('Preview copy')}
                         </span>
                       </Tooltip>
                     )}
@@ -227,11 +229,11 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
                   <div className="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => void testConnection(a.databaseId, a.database?.name ?? 'database', a.envAlias)}
+                      onClick={() => void testConnection(a.databaseId, a.database?.name ?? t('database'), a.envAlias)}
                       disabled={testingDb === a.databaseId}
                       className="rounded-lg p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition disabled:opacity-50"
-                      title="Test database connectivity"
-                      aria-label="Test connection"
+                      title={t('Test database connectivity')}
+                      aria-label={t('Test connection')}
                     >
                       <Activity size={13} className={testingDb === a.databaseId ? 'animate-pulse' : ''} />
                     </button>
@@ -239,7 +241,7 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
                       <Link
                         to={`/databases/${a.databaseId}`}
                         className="rounded-lg p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-white/5 transition"
-                        title="Open database details"
+                        title={t('Open database details')}
                       >
                         <ExternalLink size={13} />
                       </Link>
@@ -249,8 +251,8 @@ export function AttachmentsCard({ serviceId, isPreview = false }: { serviceId: n
                       onClick={() => detach.mutate(a.id)}
                       disabled={detach.isPending}
                       className="rounded-lg p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
-                      title="Detach"
-                      aria-label="Detach"
+                      title={t('Detach')}
+                      aria-label={t('Detach')}
                     >
                       <Trash2 size={13} />
                     </button>

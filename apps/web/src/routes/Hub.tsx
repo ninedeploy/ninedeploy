@@ -10,8 +10,10 @@ import { useAuth } from '../lib/auth.js';
 import { copyText } from '../lib/format.js';
 import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, cn, useEscapeToClose } from '../components/ui.js';
 import { DeployWizard } from '../components/DeployWizard.js';
+import { useT } from '../lib/i18n.js';
 
 export function Hub() {
+  const t = useT();
   const [activeTab, setActiveTab] = useState<'templates' | 'marketplace'>('templates');
   const list = useQuery({ queryKey: ['templates'], queryFn: () => api.templates.list() });
   const marketplace = useQuery({
@@ -60,19 +62,19 @@ export function Hub() {
 
   const categories = useMemo(() => {
     const set = new Set<string>(['All']);
-    (list.data ?? []).forEach((t) => {
-      set.add(t.category);
+    (list.data ?? []).forEach((tpl) => {
+      set.add(tpl.category);
     });
     return Array.from(set);
   }, [list.data]);
 
   const filteredTemplates = (list.data ?? []).filter(
-    (t) =>
-      (category === 'All' || t.category === category) &&
-      (verification === 'all' || (verification === 'verified' ? t.runtimeVerified === true : t.runtimeVerified !== true)) &&
-      ((t.name ?? '').toLowerCase().includes(query.toLowerCase()) || (t.tagline ?? '').toLowerCase().includes(query.toLowerCase())),
+    (tpl) =>
+      (category === 'All' || tpl.category === category) &&
+      (verification === 'all' || (verification === 'verified' ? tpl.runtimeVerified === true : tpl.runtimeVerified !== true)) &&
+      ((tpl.name ?? '').toLowerCase().includes(query.toLowerCase()) || (tpl.tagline ?? '').toLowerCase().includes(query.toLowerCase())),
   );
-  const verifiedCount = (list.data ?? []).filter((t) => t.runtimeVerified === true).length;
+  const verifiedCount = (list.data ?? []).filter((tpl) => tpl.runtimeVerified === true).length;
   const communityCount = (list.data ?? []).length - verifiedCount;
 
   const filteredMarketplace = (marketplace.data?.catalog ?? []).filter(
@@ -86,15 +88,15 @@ export function Hub() {
     <div>
       <PageHeader
         icon={<Sparkles size={18} />}
-        title="Hub"
-        subtitle="Curated one-click apps with transparent runtime certification."
+        title={t('Hub')}
+        subtitle={t('Curated one-click apps with transparent runtime certification.')}
         actions={
           customSource ? (
             <span
               className="rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/20"
-              title={`Custom registry: ${customSource}`}
+              title={t('Custom registry: {source}', { source: customSource })}
             >
-              custom registry
+              {t('custom registry')}
             </span>
           ) : undefined
         }
@@ -116,7 +118,7 @@ export function Hub() {
           )}
         >
           <Rocket size={15} />
-          <span>App Templates</span>
+          <span>{t('App Templates')}</span>
           <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-slate-400">
             {list.data?.length ?? 0}
           </span>
@@ -136,7 +138,7 @@ export function Hub() {
           )}
         >
           <Store size={15} />
-          <span>Extension Marketplace</span>
+          <span>{t('Extension Marketplace')}</span>
           {marketplace.data?.catalog && (
             <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-slate-400">
               {marketplace.data.catalog.length}
@@ -152,16 +154,16 @@ export function Hub() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={activeTab === 'templates' ? 'Search templates…' : 'Search extensions…'}
+            placeholder={activeTab === 'templates' ? t('Search templates…') : t('Search extensions…')}
             className="h-9 pl-8"
           />
         </div>
         {activeTab === 'templates' && (
           <div className="flex flex-wrap items-center gap-1.5">
             {([
-              ['all', `All ${list.data?.length ?? 0}`],
-              ['verified', `Verified ${verifiedCount}`],
-              ['community', `Community ${communityCount}`],
+              ['all', t('All {n}', { n: list.data?.length ?? 0 })],
+              ['verified', t('Verified {n}', { n: verifiedCount })],
+              ['community', t('Community {n}', { n: communityCount })],
             ] as const).map(([value, label]) => (
               <button
                 type="button"
@@ -188,7 +190,7 @@ export function Hub() {
                   category === c ? 'bg-indigo-500 text-white' : 'bg-white/[0.04] text-slate-400 hover:bg-white/[0.08]',
                 )}
               >
-                {c}
+                {c === 'All' ? t('All') : c}
               </button>
             ))}
           </div>
@@ -206,34 +208,36 @@ export function Hub() {
             ))}
           </div>
         ) : list.isError ? (
-          <ErrorCard title="Couldn't load templates" error={list.error} onRetry={() => list.refetch()} />
+          <ErrorCard title={t("Couldn't load templates")} error={list.error} onRetry={() => list.refetch()} />
         ) : filteredTemplates.length === 0 ? (
           <Card>
             <EmptyState
               icon={<Search size={26} />}
-              title="No templates match"
+              title={t('No templates match')}
               hint={
                 query
-                  ? `Nothing matches "${query}" in ${category === 'All' ? 'any category' : category}.`
-                  : `No templates in ${category}.`
+                  ? category === 'All'
+                    ? t('Nothing matches "{query}" in any category.', { query })
+                    : t('Nothing matches "{query}" in {category}.', { query, category })
+                  : t('No templates in {category}.', { category })
               }
             />
           </Card>
         ) : (
           <div className="nd-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredTemplates.map((t) => (
+            {filteredTemplates.map((tpl) => (
               <Card
-                key={t.id}
+                key={tpl.id}
                 interactive
                 role="button"
                 tabIndex={0}
-                onClick={() => setSelected(t.id)}
+                onClick={() => setSelected(tpl.id)}
                 // r292: role="button" promises keyboard activation too.
                 onKeyDown={(e) => {
                   if (e.target !== e.currentTarget) return;
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    setSelected(t.id);
+                    setSelected(tpl.id);
                   }
                 }}
                 className="group p-5"
@@ -241,37 +245,37 @@ export function Hub() {
                 <div className="flex items-start gap-3">
                   {/* The app's own emoji, as on the New page; a box only when it has none. */}
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-slate-400 ring-1 ring-inset ring-white/10 transition group-hover:ring-indigo-500/40">
-                    {t.emoji ? <span className="text-xl leading-none" aria-hidden="true">{t.emoji}</span> : <Package size={20} />}
+                    {tpl.emoji ? <span className="text-xl leading-none" aria-hidden="true">{tpl.emoji}</span> : <Package size={20} />}
                   </span>
                   <div className="min-w-0 flex-1">
                     {/* Name on its own line, badges under it: beside the badges a long
                         name broke into three lines and a badge touched the card edge. */}
-                    <span className="block truncate font-semibold text-slate-100" title={t.name}>{t.name}</span>
+                    <span className="block truncate font-semibold text-slate-100" title={tpl.name}>{tpl.name}</span>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      {t.runtimeVerified ? (
+                      {tpl.runtimeVerified ? (
                         <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
-                          <ShieldCheck size={9} /> verified
+                          <ShieldCheck size={9} /> {t('verified')}
                         </span>
                       ) : (
                         <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase text-amber-300 ring-1 ring-inset ring-amber-500/20">
-                          community
+                          {t('community')}
                         </span>
                       )}
-                      {t.featured && (
+                      {tpl.featured && (
                         <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-medium uppercase text-indigo-300">
-                          featured
+                          {t('featured')}
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-slate-400">{t.tagline}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-slate-400">{tpl.tagline}</p>
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="rounded-md bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-400">
-                    {t.category}
+                    {tpl.category}
                   </span>
                   <span className="flex items-center gap-1 text-xs text-indigo-300 opacity-0 transition group-hover:opacity-100">
-                    <Rocket size={12} /> Deploy
+                    <Rocket size={12} /> {t('Deploy')}
                   </span>
                 </div>
               </Card>
@@ -290,13 +294,13 @@ export function Hub() {
             ))}
           </div>
         ) : marketplace.isError ? (
-          <ErrorCard title="Couldn't load marketplace" error={marketplace.error} onRetry={() => marketplace.refetch()} />
+          <ErrorCard title={t("Couldn't load marketplace")} error={marketplace.error} onRetry={() => marketplace.refetch()} />
         ) : filteredMarketplace.length === 0 ? (
           <Card>
             <EmptyState
               icon={<Store size={26} />}
-              title="No extensions match"
-              hint={query ? `Nothing matches "${query}" in extensions.` : 'No extensions found.'}
+              title={t('No extensions match')}
+              hint={query ? t('Nothing matches "{query}" in extensions.', { query }) : t('No extensions found.')}
             />
           </Card>
         ) : (
@@ -316,11 +320,11 @@ export function Hub() {
                     </div>
                     {m.isOfficial ? (
                       <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
-                        <ShieldCheck size={10} /> Official
+                        <ShieldCheck size={10} /> {t('Official')}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded bg-slate-500/10 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 ring-1 ring-inset ring-white/10">
-                        Community
+                        {t('Community')}
                       </span>
                     )}
                   </div>
@@ -329,7 +333,7 @@ export function Hub() {
                     <span className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-slate-400">{m.category}</span>
                     {m.configSchema && m.configSchema.length > 0 && (
                       <span className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-slate-400">
-                        {m.configSchema.length} settings
+                        {t('{n} settings', { n: m.configSchema.length })}
                       </span>
                     )}
                   </div>
@@ -338,7 +342,7 @@ export function Hub() {
                 <div className="mt-4 flex items-center justify-end border-t border-white/[0.06] pt-3">
                   {m.isInstalled ? (
                     <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400">
-                      <CheckCircle2 size={13} /> Installed
+                      <CheckCircle2 size={13} /> {t('Installed')}
                     </span>
                   ) : (
                     <Button
@@ -348,11 +352,11 @@ export function Hub() {
                     >
                       {installingId === m.id ? (
                         <>
-                          <RefreshCw size={12} className="animate-spin" /> Installing…
+                          <RefreshCw size={12} className="animate-spin" /> {t('Installing…')}
                         </>
                       ) : (
                         <>
-                          <Download size={12} /> Install
+                          <Download size={12} /> {t('Install')}
                         </>
                       )}
                     </Button>
@@ -415,6 +419,7 @@ function TemplateDetail({
   onClose: () => void;
   onDeploy: (t: Template) => void;
 }) {
+  const t = useT();
   const detail = useQuery({ queryKey: ['template', id], queryFn: () => api.templates.get(id) });
   const [subTab, setSubTab] = useState<'overview' | 'compose'>('overview');
   const [copied, setCopied] = useState(false);
@@ -435,7 +440,7 @@ function TemplateDetail({
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6">
       <button
         type="button"
-        aria-label="Close template details"
+        aria-label={t('Close template details')}
         tabIndex={-1}
         aria-hidden="true"
         onClick={onClose}
@@ -445,7 +450,7 @@ function TemplateDetail({
         role="dialog"
         aria-modal="true"
         aria-labelledby={detail.data ? titleId : undefined}
-        aria-label={detail.data ? undefined : 'Template details'}
+        aria-label={detail.data ? undefined : t('Template details')}
         className="nd-fade relative w-full max-w-lg overflow-hidden rounded-t-2xl border border-white/10 bg-slate-950 shadow-2xl sm:rounded-2xl"
       >
         {detail.isLoading || !detail.data ? (
@@ -467,7 +472,7 @@ function TemplateDetail({
               <button
                 type="button"
                 onClick={onClose}
-                aria-label="Close"
+                aria-label={t('Close')}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"
               >
                 <X size={16} />
@@ -486,7 +491,7 @@ function TemplateDetail({
                     : 'border-transparent text-slate-400 hover:text-slate-200',
                 )}
               >
-                Overview
+                {t('Overview')}
               </button>
               <button
                 type="button"
@@ -498,14 +503,14 @@ function TemplateDetail({
                     : 'border-transparent text-slate-400 hover:text-slate-200',
                 )}
               >
-                Compose YAML
+                {t('Compose YAML')}
               </button>
             </div>
 
             <div className="max-h-[50vh] space-y-4 overflow-auto p-5">
               {!detail.data.runtimeVerified && (
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.08] p-3 text-xs leading-relaxed text-amber-200">
-                  Community template: its manifest is validated and curated, but this exact image has not yet passed NineDeploy's isolated runtime smoke test. Review the image, environment and requirements before deploying.
+                  {t("Community template: its manifest is validated and curated, but this exact image has not yet passed NineDeploy's isolated runtime smoke test. Review the image, environment and requirements before deploying.")}
                 </div>
               )}
               {subTab === 'overview' ? (
@@ -519,14 +524,14 @@ function TemplateDetail({
                   )}
 
                   <div className="grid grid-cols-3 gap-3 text-center">
-                    <Spec label="Image" value={detail.data.image.split('/').pop()!} />
-                    <Spec label="Port" value={`:${detail.data.port}`} />
-                    <Spec label="Persist" value={detail.data.volumeMount ? 'Volume' : 'Ephemeral'} />
+                    <Spec label={t('Image')} value={detail.data.image.split('/').pop()!} />
+                    <Spec label={t('Port')} value={`:${detail.data.port}`} />
+                    <Spec label={t('Persist')} value={detail.data.volumeMount ? t('Volume') : t('Ephemeral')} />
                   </div>
 
                   {detail.data.env && detail.data.env.length > 0 && (
                     <div>
-                      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">Environment</p>
+                      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">{t('Environment')}</p>
                       <div className="space-y-1">
                         {detail.data.env.map((e) => (
                           <div
@@ -535,7 +540,7 @@ function TemplateDetail({
                           >
                             <span className="text-slate-300">{e.key}</span>
                             <span className={cn(e.secret ? 'text-amber-400/80' : 'text-slate-500')}>
-                              {e.secret ? '••• secret' : e.value}
+                              {e.secret ? t('••• secret') : e.value}
                             </span>
                           </div>
                         ))}
@@ -557,13 +562,13 @@ function TemplateDetail({
               ) : (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-400">docker-compose.yml preview</span>
+                    <span className="text-xs font-medium text-slate-400">{t('docker-compose.yml preview')}</span>
                     <button
                       type="button"
                       onClick={() => copyCompose(generateComposeYaml(detail.data))}
                       className="flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200"
                     >
-                      {copied ? 'Copied!' : 'Copy YAML'}
+                      {copied ? t('Copied!') : t('Copy YAML')}
                     </button>
                   </div>
                   <pre className="overflow-x-auto rounded-lg bg-black/50 p-3 font-mono text-xs text-slate-300 ring-1 ring-inset ring-white/5">
@@ -579,7 +584,7 @@ function TemplateDetail({
                 onClick={() => detail.data && onDeploy(detail.data)}
                 disabled={!detail.data}
               >
-                <Rocket size={16} /> Configure &amp; deploy
+                <Rocket size={16} /> {t('Configure & deploy')}
               </Button>
             </div>
           </>

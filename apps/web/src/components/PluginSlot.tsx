@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { ExternalLink, Puzzle } from 'lucide-react';
 import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
+import { useT } from '../lib/i18n.js';
 
 export interface PluginSlotProps {
   slot:
@@ -19,6 +20,7 @@ export interface PluginSlotProps {
 }
 
 export function PluginSlot({ slot, className = '' }: PluginSlotProps) {
+  const t = useT();
   // r566: the shared, typed menus query — filtered here, not cached per slot.
   const menusQuery = usePluginMenus();
   const items = (menusQuery.data ?? []).filter((item) => item.slot === slot);
@@ -66,7 +68,7 @@ export function PluginSlot({ slot, className = '' }: PluginSlotProps) {
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
               >
-                Open <ExternalLink size={12} />
+                {t('Open')} <ExternalLink size={12} />
               </a>
             )}
             {target?.kind === 'internal' && (
@@ -74,7 +76,7 @@ export function PluginSlot({ slot, className = '' }: PluginSlotProps) {
                 to={target.to}
                 className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
               >
-                View
+                {t('View')}
               </Link>
             )}
           </div>

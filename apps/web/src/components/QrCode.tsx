@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
+import { useT } from '../lib/i18n.js';
 
 interface QrCodeProps {
   value: string;
@@ -8,7 +9,8 @@ interface QrCodeProps {
   alt?: string;
 }
 
-export function QrCode({ value, size = 180, className = '', alt = 'QR Code' }: QrCodeProps) {
+export function QrCode({ value, size = 180, className = '', alt }: QrCodeProps) {
+  const t = useT();
   const [dataUrl, setDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export function QrCode({ value, size = 180, className = '', alt = 'QR Code' }: Q
         className={`grid place-items-center rounded-xl bg-white/5 animate-pulse ${className}`}
         style={{ width: size, height: size }}
       >
-        <span className="text-[10px] text-slate-500 font-mono">Generating QR…</span>
+        <span className="text-[10px] text-slate-500 font-mono">{t('Generating QR…')}</span>
       </div>
     );
   }
@@ -56,7 +58,7 @@ export function QrCode({ value, size = 180, className = '', alt = 'QR Code' }: Q
     <div className={`inline-flex flex-col items-center gap-1.5 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-black/5 ${className}`}>
       <img
         src={dataUrl}
-        alt={alt}
+        alt={alt ?? t('QR Code')}
         className="block rounded-lg"
         style={{ width: size, height: size }}
       />

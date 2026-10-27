@@ -1,12 +1,13 @@
 import type { Run, RestartPolicy } from '@ninedeploy/schemas';
 import { Field, Input, Select } from '../../../components/ui.js';
+import { msg, useT } from '../../../lib/i18n.js';
 
 const RESTART_OPTIONS: ReadonlyArray<{ value: RestartPolicy; label: string }> = [
-  { value: 'unless-stopped', label: 'unless-stopped (default)' },
+  { value: 'unless-stopped', label: msg('unless-stopped (default)') },
   { value: 'always', label: 'always' },
   { value: 'no', label: 'no' },
-  { value: 'on-failure', label: 'on-failure (default retry)' },
-  { value: 'on-failure:5', label: 'on-failure:5 (cap at 5 restarts)' },
+  { value: 'on-failure', label: msg('on-failure (default retry)') },
+  { value: 'on-failure:5', label: msg('on-failure:5 (cap at 5 restarts)') },
 ];
 
 export function RunSection({
@@ -16,6 +17,7 @@ export function RunSection({
   value: Run | undefined;
   onChange: (next: Run | undefined) => void;
 }) {
+  const t = useT();
   const update = (patch: Partial<Run>) => onChange({ ...(value ?? {}), ...patch });
   const port = value?.port;
   const healthcheck = value?.healthcheck ?? '';
@@ -24,9 +26,9 @@ export function RunSection({
   return (
     <div className="space-y-4">
       <Field
-        label="Container port"
-        hint="The port the app listens on inside the container"
-        error={portInvalid ? 'Port must be between 1 and 65535.' : undefined}
+        label={t('Container port')}
+        hint={t('The port the app listens on inside the container')}
+        error={portInvalid ? t('Port must be between 1 and 65535.') : undefined}
       >
         <Input
           type="number"
@@ -42,9 +44,9 @@ export function RunSection({
         />
       </Field>
       <Field
-        label="Healthcheck path"
-        hint="HTTP path probed for liveness (must start with /)"
-        error={healthcheckInvalid ? 'Healthcheck path must start with "/".' : undefined}
+        label={t('Healthcheck path')}
+        hint={t('HTTP path probed for liveness (must start with /)')}
+        error={healthcheckInvalid ? t('Healthcheck path must start with "/".') : undefined}
       >
         <Input
           value={value?.healthcheck ?? ''}
@@ -52,14 +54,14 @@ export function RunSection({
           onChange={(e) => update({ healthcheck: e.target.value || undefined })}
         />
       </Field>
-      <Field label="Restart policy">
+      <Field label={t('Restart policy')}>
         <Select
           value={value?.restart ?? 'unless-stopped'}
           onChange={(e) => update({ restart: e.target.value as RestartPolicy })}
         >
           {RESTART_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
-              {opt.label}
+              {t(opt.label)}
             </option>
           ))}
         </Select>

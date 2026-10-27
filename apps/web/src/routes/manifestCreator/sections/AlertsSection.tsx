@@ -1,12 +1,13 @@
 import type { Alert, AlertWhen } from '@ninedeploy/schemas';
 import { Field, Input, ListEditor, Select } from '../../../components/ui.js';
+import { msg, useT } from '../../../lib/i18n.js';
 
 const WHEN_OPTIONS: ReadonlyArray<{ value: AlertWhen; label: string; needsThreshold: boolean }> = [
-  { value: 'deployFailed', label: 'Deploy failed', needsThreshold: false },
-  { value: 'restartLoop', label: 'Restart loop (container keeps exiting)', needsThreshold: false },
-  { value: 'highMemory', label: 'High memory usage', needsThreshold: true },
-  { value: 'highCpu', label: 'High CPU usage', needsThreshold: true },
-  { value: 'certExpiry', label: 'TLS certificate expiring soon', needsThreshold: false },
+  { value: 'deployFailed', label: msg('Deploy failed'), needsThreshold: false },
+  { value: 'restartLoop', label: msg('Restart loop (container keeps exiting)'), needsThreshold: false },
+  { value: 'highMemory', label: msg('High memory usage'), needsThreshold: true },
+  { value: 'highCpu', label: msg('High CPU usage'), needsThreshold: true },
+  { value: 'certExpiry', label: msg('TLS certificate expiring soon'), needsThreshold: false },
 ];
 
 const createAlert = (): Alert => ({ when: 'deployFailed', channel: 'oncall' });
@@ -18,20 +19,21 @@ export function AlertsSection({
   value: Alert[] | undefined;
   onChange: (next: Alert[] | undefined) => void;
 }) {
+  const t = useT();
   const items = value ?? [];
   return (
     <ListEditor<Alert>
       value={items}
       onChange={(next) => onChange(next.length > 0 ? next : undefined)}
       createNew={createAlert}
-      addLabel="Add alert"
-      emptyMessage="No alerts — the service uses platform defaults only."
+      addLabel={t('Add alert')}
+      emptyMessage={t('No alerts — the service uses platform defaults only.')}
       itemLabel={(a) => a.when}
       renderItem={(alert, update) => {
         const needsThreshold = WHEN_OPTIONS.find((o) => o.value === alert.when)?.needsThreshold ?? false;
         return (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label="When">
+            <Field label={t('When')}>
               <Select
                 value={alert.when}
                 onChange={(e) => {
@@ -55,12 +57,12 @@ export function AlertsSection({
               >
                 {WHEN_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {t(opt.label)}
                   </option>
                 ))}
               </Select>
             </Field>
-            <Field label="Channel name">
+            <Field label={t('Channel name')}>
               <Input
                 value={alert.channel}
                 placeholder="oncall"
@@ -68,7 +70,7 @@ export function AlertsSection({
               />
             </Field>
             {needsThreshold ? (
-              <Field label="Threshold (%)">
+              <Field label={t('Threshold (%)')}>
                 <Input
                   type="number"
                   min={1}
@@ -82,7 +84,7 @@ export function AlertsSection({
               </Field>
             ) : (
               <div className="flex items-end pb-2 text-xs text-slate-500">
-                No threshold needed for this trigger
+                {t('No threshold needed for this trigger')}
               </div>
             )}
           </div>

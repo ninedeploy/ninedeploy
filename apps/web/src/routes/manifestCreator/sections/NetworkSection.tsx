@@ -1,5 +1,6 @@
 import type { Network } from '@ninedeploy/schemas';
 import { ChipInput, Field, Input } from '../../../components/ui.js';
+import { useT } from '../../../lib/i18n.js';
 
 export function NetworkSection({
   value,
@@ -8,11 +9,12 @@ export function NetworkSection({
   value: Network | undefined;
   onChange: (next: Network | undefined) => void;
 }) {
+  const t = useT();
   return (
     <div className="space-y-4">
       <Field
-        label="Publish port"
-        hint="Direct host port mapping (for domain-less external access). Leave empty when only Traefik routes."
+        label={t('Publish port')}
+        hint={t('Direct host port mapping (for domain-less external access). Leave empty when only Traefik routes.')}
       >
         <Input
           type="number"
@@ -29,7 +31,7 @@ export function NetworkSection({
           }}
         />
       </Field>
-      <Field label="Network aliases" hint="Internal network names this service joins">
+      <Field label={t('Network aliases')} hint={t('Internal network names this service joins')}>
         <ChipInput
           value={value?.aliases ?? []}
           onChange={(aliases) => onChange({ ...(value ?? {}), aliases })}

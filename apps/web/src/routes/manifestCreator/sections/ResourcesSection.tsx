@@ -1,5 +1,6 @@
 import type { Resources } from '@ninedeploy/schemas';
 import { cn, Field, Input } from '../../../components/ui.js';
+import { useT } from '../../../lib/i18n.js';
 
 /** One-click memory caps — covers the sizes most small services use. */
 const MEM_CHIPS = [256, 512, 1024, 2048] as const;
@@ -54,6 +55,7 @@ export function ResourcesSection({
   value: Resources | undefined;
   onChange: (next: Resources | undefined) => void;
 }) {
+  const t = useT();
   const patch = (next: Partial<Resources>) => {
     const merged = { ...(value ?? {}), ...next };
     // All fields unset → drop the whole block so the YAML stays minimal.
@@ -66,14 +68,14 @@ export function ResourcesSection({
   return (
     <div className="space-y-4">
       <Field
-        label="CPU limit (cores, hard cap)"
-        hint="Caps the container even without contention; 0.5 = half a core (maps to docker --cpus)"
+        label={t('CPU limit (cores, hard cap)')}
+        hint={t('Caps the container even without contention; 0.5 = half a core (maps to docker --cpus)')}
       >
         <Input
           type="text"
           inputMode="decimal"
           value={value?.cpuLimitMilli ? String(value.cpuLimitMilli / 1000) : ''}
-          placeholder="e.g. 0.5"
+          placeholder={t('e.g. 0.5')}
           onChange={(e) => {
             const n = e.target.value ? Number(e.target.value.replace(',', '.')) : undefined;
             patch({ cpuLimitMilli: n != null && Number.isFinite(n) && n > 0 ? Math.round(n * 1000) : undefined });
@@ -81,8 +83,8 @@ export function ResourcesSection({
         />
       </Field>
       <Field
-        label="CPU shares"
-        hint="Relative weight under contention (default 1024); 1024 ≈ 1 vCPU on Docker's weighted scheduler"
+        label={t('CPU shares')}
+        hint={t("Relative weight under contention (default 1024); 1024 ≈ 1 vCPU on Docker's weighted scheduler")}
       >
         <div className="space-y-2">
           <Input
@@ -97,17 +99,17 @@ export function ResourcesSection({
             }}
           />
           <ChipRow
-            label="Quick pick:"
+            label={t('Quick pick:')}
             options={CPU_CHIPS}
             current={value?.cpuShares}
-            nameFor={(n) => `Set CPU shares to ${n}`}
+            nameFor={(n) => t('Set CPU shares to {n}', { n })}
             onPick={(cpuShares) => patch({ cpuShares })}
           />
         </div>
       </Field>
       <Field
-        label="Replicas (docker services)"
-        hint="1-10 identical containers; Traefik round-robins and health-checks each one. Applied when the panel's own value is still the default 1."
+        label={t('Replicas (docker services)')}
+        hint={t("1-10 identical containers; Traefik round-robins and health-checks each one. Applied when the panel's own value is still the default 1.")}
       >
         <Input
           type="number"
@@ -122,8 +124,8 @@ export function ResourcesSection({
         />
       </Field>
       <Field
-        label="Memory (MiB)"
-        hint="0 = unlimited; 512 MiB is a sensible default for a small Node service"
+        label={t('Memory (MiB)')}
+        hint={t('0 = unlimited; 512 MiB is a sensible default for a small Node service')}
       >
         <div className="space-y-2">
           <Input
@@ -138,10 +140,10 @@ export function ResourcesSection({
             }}
           />
           <ChipRow
-            label="Quick pick:"
+            label={t('Quick pick:')}
             options={MEM_CHIPS}
             current={value?.memMb}
-            nameFor={(n) => `Set memory to ${n} MiB`}
+            nameFor={(n) => t('Set memory to {n} MiB', { n })}
             onPick={(memMb) => patch({ memMb })}
           />
         </div>

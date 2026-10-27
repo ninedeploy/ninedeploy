@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Database } from '@ninedeploy/schemas';
 import { api } from '../../../lib/api.js';
 import { cn, Field, Input } from '../../../components/ui.js';
+import { useT } from '../../../lib/i18n.js';
 
 export function DatabaseSection({
   value,
@@ -14,6 +15,7 @@ export function DatabaseSection({
   // making the operator type a slug from memory. The query failing (no
   // permission, offline) just means no suggestions — manual entry keeps
   // working either way.
+  const t = useT();
   const databases = useQuery({
     queryKey: ['databases-for-manifest'],
     queryFn: () => api.databases.list(),
@@ -25,14 +27,14 @@ export function DatabaseSection({
     <div className="space-y-4">
       {suggestions.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-slate-500">Managed databases:</span>
+          <span className="text-[11px] text-slate-500">{t('Managed databases:')}</span>
           {suggestions.map((db) => {
             const active = ref === db.slug;
             return (
               <button
                 key={db.slug}
                 type="button"
-                aria-label={`Use ${db.slug} (${db.engine})`}
+                aria-label={t('Use {slug} ({engine})', { slug: db.slug, engine: db.engine })}
                 aria-pressed={active}
                 onClick={() => onChange({ ref: db.slug, env: value?.env ?? 'DATABASE_URL' })}
                 className={cn(
@@ -50,8 +52,8 @@ export function DatabaseSection({
         </div>
       )}
       <Field
-        label="Managed DB slug"
-        hint="The slug of a managed database in this instance (run `ninedeploy databases list` to find one)"
+        label={t('Managed DB slug')}
+        hint={t('The slug of a managed database in this instance (run `ninedeploy databases list` to find one)')}
       >
         <Input
           value={ref}
@@ -67,8 +69,8 @@ export function DatabaseSection({
         />
       </Field>
       <Field
-        label="Connection-string env key"
-        hint="The key the app reads for the connection (default: DATABASE_URL)"
+        label={t('Connection-string env key')}
+        hint={t('The key the app reads for the connection (default: DATABASE_URL)')}
       >
         <Input
           value={value?.env ?? ''}

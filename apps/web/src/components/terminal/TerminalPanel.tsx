@@ -7,6 +7,7 @@ import { KeyRound, Maximize2, Minimize2, RefreshCw, Terminal as TerminalIcon, Tr
 import type { TerminalConnection, TerminalTargetInput } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { Button, Input, cn } from '../ui.js';
+import { useT } from '../../lib/i18n.js';
 
 /**
  * An interactive terminal over `/v1/terminals` (0.15, protocol v1).
@@ -36,6 +37,7 @@ const YELLOW = (s: string) => `\x1b[33m${s}\x1b[0m`;
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(n || min)));
 
 export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
+  const t = useT();
   // The raw xterm host is an IMPERATIVE node, deliberately outside React's
   // tree: toggling fullscreen MOVES this node between the inline host and the
   // overlay host, so the terminal, its socket and its scrollback survive.
@@ -73,7 +75,7 @@ export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
     fitRef.current = fit;
     term.open(termHost);
     fit.fit();
-    term.writeln(`Opening ${title}…`);
+    term.writeln(t('Opening {title}…', { title }));
     setStatus('connecting');
 
     let disposed = false;
@@ -107,7 +109,7 @@ export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
           onClose: ({ code, message }) => {
             if (disposed) return;
             setStatus('closed');
-            const detail = code === 1000 && exit?.code != null ? `The shell exited with code ${exit.code}.` : message;
+            const detail = code === 1000 && exit?.code != null ? t('The shell exited with code {code}.', { code: exit.code }) : message;
             term.write(`\r\n${RED(`*** ${detail} ***`)}\r\n`);
           },
         });
@@ -183,13 +185,13 @@ export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
 
   const statusLabel =
     status === 'connected' ? (
-      <span className="text-emerald-300">● connected</span>
+      <span className="text-emerald-300">● {t('connected')}</span>
     ) : status === 'closed' || status === 'failed' ? (
-      <span className="text-rose-300">× {status}</span>
+      <span className="text-rose-300">× {status === 'closed' ? t('closed') : t('failed')}</span>
     ) : awaitingPassword ? (
-      <span className="text-amber-300">○ password required</span>
+      <span className="text-amber-300">○ {t('password required')}</span>
     ) : (
-      <span className="text-slate-400">○ connecting</span>
+      <span className="text-slate-400">○ {t('connecting')}</span>
     );
 
   const titlebar = (
@@ -213,21 +215,21 @@ export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
           size="sm"
           variant="ghost"
           onClick={handleReconnect}
-          title="Open a new session"
+          title={t('Open a new session')}
           className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200"
         >
           <RefreshCw size={12} className={cn(status === 'connecting' && 'animate-spin')} />
-          <span className="hidden sm:inline">Reconnect</span>
+          <span className="hidden sm:inline">{t('Reconnect')}</span>
         </Button>
-        <Button size="sm" variant="ghost" onClick={handleClear} title="Clear terminal output" className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200">
+        <Button size="sm" variant="ghost" onClick={handleClear} title={t('Clear terminal output')} className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200">
           <Trash2 size={12} />
-          <span className="hidden sm:inline">Clear</span>
+          <span className="hidden sm:inline">{t('Clear')}</span>
         </Button>
         <Button
           size="sm"
           variant="ghost"
           onClick={() => setFullscreen((v) => !v)}
-          title={fullscreen ? 'Restore window size (Esc)' : 'Expand full screen'}
+          title={fullscreen ? t('Restore window size (Esc)') : t('Expand full screen')}
           className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200"
         >
           {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
@@ -237,11 +239,11 @@ export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
             size="sm"
             variant="ghost"
             onClick={onClose}
-            title="Close terminal"
+            title={t('Close terminal')}
             className="ml-1 h-7 px-2 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
           >
             <X size={13} />
-            <span>close</span>
+            <span>{t('close')}</span>
           </Button>
         )}
       </div>
@@ -254,19 +256,18 @@ export function TerminalPanel({ target, title, onClose }: TerminalPanelProps) {
     <form onSubmit={submitPassword} className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <KeyRound size={22} className="text-amber-300" />
       <p className="max-w-md text-xs text-slate-300">
-        A host shell is a root shell on the server. Confirm your password to open one. Accounts that sign in only
-        through SSO: leave it empty within 10 minutes of signing in.
+        {t('A host shell is a root shell on the server. Confirm your password to open one. Accounts that sign in only through SSO: leave it empty within 10 minutes of signing in.')}
       </p>
       <Input
         type="password"
-        aria-label="Your password"
+        aria-label={t('Your password')}
         autoComplete="current-password"
         value={passwordDraft}
         onChange={(e) => setPasswordDraft(e.target.value)}
         className="max-w-xs"
       />
       <Button type="submit" size="sm">
-        Open host shell
+        {t('Open host shell')}
       </Button>
     </form>
   );

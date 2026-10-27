@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ProjectAccessVia } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
+import { msg, useT } from '../../lib/i18n.js';
 import { Badge, Modal, Skeleton } from '../ui.js';
 
 const VIA_LABEL: Record<ProjectAccessVia, string> = {
-  operator: 'instance operator',
-  seat: 'workspace seat',
-  grant: 'access grant',
-  creator: 'creator',
+  operator: msg('instance operator'),
+  seat: msg('workspace seat'),
+  grant: msg('access grant'),
+  creator: msg('creator'),
 };
 
 const VIA_TONE: Record<ProjectAccessVia, 'rose' | 'indigo' | 'sky' | 'neutral'> = {
@@ -24,28 +25,28 @@ const VIA_TONE: Record<ProjectAccessVia, 'rose' | 'indigo' | 'sky' | 'neutral'> 
  * a role.
  */
 export function ProjectAccessModal({ project, onClose }: { project: { id: number; name: string }; onClose: () => void }) {
+  const t = useT();
   const q = useQuery({ queryKey: ['project-access', project.id], queryFn: () => api.access.project(project.id) });
   const status = (q.error as { status?: number } | null)?.status;
 
   return (
-    <Modal title={`Access to ${project.name}`} onClose={onClose} wide>
+    <Modal title={t('Access to {name}', { name: project.name })} onClose={onClose} wide>
       {q.isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : q.isError ? (
         <p className="text-sm text-slate-400">
           {status === 403 || status === 404
-            ? 'Only a project admin can see who has access to this project.'
+            ? t('Only a project admin can see who has access to this project.')
             : q.error instanceof Error
               ? q.error.message
-              : 'Could not load the access list.'}
+              : t('Could not load the access list.')}
         </p>
       ) : (q.data ?? []).length === 0 ? (
-        <p className="text-sm text-slate-500">Nobody besides instance operators reaches this project.</p>
+        <p className="text-sm text-slate-500">{t('Nobody besides instance operators reaches this project.')}</p>
       ) : (
         <div className="space-y-2">
           <p className="text-xs text-slate-500">
-            Grants are managed under Workspaces → Project &amp; environment access. A grant on an environment of this project's
-            services is not listed here.
+            {t("Grants are managed under Workspaces → Project & environment access. A grant on an environment of this project's services is not listed here.")}
           </p>
           {(q.data ?? []).map((e) => (
             <div key={e.user.id} className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
@@ -54,7 +55,7 @@ export function ProjectAccessModal({ project, onClose }: { project: { id: number
                 <div className="mt-1 flex flex-wrap gap-1">
                   {e.via.map((v) => (
                     <Badge key={v} tone={VIA_TONE[v]}>
-                      {VIA_LABEL[v]}
+                      {t(VIA_LABEL[v])}
                     </Badge>
                   ))}
                 </div>

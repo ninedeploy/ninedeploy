@@ -1,5 +1,6 @@
 import { Server } from 'lucide-react';
 import type { ManagedDatabase } from '@ninedeploy/sdk';
+import { useT } from '../lib/i18n.js';
 import { Badge } from './ui.js';
 
 /** The multi-node fields of a database response (absent before 0.15.3; null on the panel host). */
@@ -16,8 +17,9 @@ export function isNodeDatabase(db: DatabasePlacement): boolean {
  * databases.
  */
 export function NodeDatabaseBadge({ db }: { db: DatabasePlacement }) {
+  const t = useT();
   if (!isNodeDatabase(db)) return null;
-  const name = db.serverName ?? `node #${db.serverId}`;
+  const name = db.serverName ?? t('node #{id}', { id: String(db.serverId) });
   return (
     <span className="inline-flex items-center gap-1">
       <Badge tone="sky">
@@ -25,11 +27,11 @@ export function NodeDatabaseBadge({ db }: { db: DatabasePlacement }) {
         {name}
       </Badge>
       {db.reachable === true ? (
-        <Badge tone="emerald">reachable</Badge>
+        <Badge tone="emerald">{t('reachable')}</Badge>
       ) : db.reachable === false ? (
-        <Badge tone="rose">unreachable</Badge>
+        <Badge tone="rose">{t('unreachable')}</Badge>
       ) : (
-        <Badge>not probed yet</Badge>
+        <Badge>{t('not probed yet')}</Badge>
       )}
     </span>
   );
@@ -42,6 +44,7 @@ export function NodeDatabaseBadge({ db }: { db: DatabasePlacement }) {
  * (`remote_database`).
  */
 export function NodeUnavailableCard({ title, db }: { title: string; db: DatabasePlacement }) {
+  const t = useT();
   return (
     <div
       aria-disabled="true"
@@ -50,8 +53,10 @@ export function NodeUnavailableCard({ title, db }: { title: string; db: Database
     >
       <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">{title}</h2>
       <p className="mt-2 text-xs leading-relaxed text-slate-500">
-        Not available for a database on a node ({db.serverName ?? `node #${db.serverId}`}) yet: it needs a port on the node and a
-        proxy path through the panel. Create the database on the panel host if you need it.
+        {t(
+          'Not available for a database on a node ({node}) yet: it needs a port on the node and a proxy path through the panel. Create the database on the panel host if you need it.',
+          { node: db.serverName ?? t('node #{id}', { id: String(db.serverId) }) },
+        )}
       </p>
     </div>
   );

@@ -1,12 +1,13 @@
 import type { Volume } from '@ninedeploy/schemas';
 import { cn, Field, Input } from '../../../components/ui.js';
+import { msg, useT } from '../../../lib/i18n.js';
 
 /** One-click schedules for the most common backup cadences. */
 const SCHEDULE_CHIPS: ReadonlyArray<{ label: string; cron: string }> = [
-  { label: 'Daily 03:00', cron: '0 3 * * *' },
-  { label: 'Every 6h', cron: '0 */6 * * *' },
-  { label: 'Weekly Sun 04:00', cron: '0 4 * * 0' },
-  { label: 'Monthly 1st 05:00', cron: '0 5 1 * *' },
+  { label: msg('Daily 03:00'), cron: '0 3 * * *' },
+  { label: msg('Every 6h'), cron: '0 */6 * * *' },
+  { label: msg('Weekly Sun 04:00'), cron: '0 4 * * 0' },
+  { label: msg('Monthly 1st 05:00'), cron: '0 5 1 * *' },
 ];
 
 export function VolumeSection({
@@ -16,12 +17,13 @@ export function VolumeSection({
   value: Volume | undefined;
   onChange: (next: Volume | undefined) => void;
 }) {
+  const t = useT();
   const schedule = value?.backups?.schedule ?? '';
   return (
     <div className="space-y-4">
       <Field
-        label="Mount path"
-        hint="Container path where the persistent volume is mounted (e.g. /data)"
+        label={t('Mount path')}
+        hint={t('Container path where the persistent volume is mounted (e.g. /data)')}
       >
         <Input
           value={value?.mount ?? ''}
@@ -31,11 +33,10 @@ export function VolumeSection({
       </Field>
       <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
         <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Off-site backups
+          {t('Off-site backups')}
         </div>
         <p className="mb-3 text-[11px] text-slate-500">
-          Cron schedule in standard 5-field format. Backups are written to the
-          configured S3 destination; retention deletes older copies.
+          {t('Cron schedule in standard 5-field format. Backups are written to the configured S3 destination; retention deletes older copies.')}
         </p>
         <div className="mb-3 flex flex-wrap gap-1.5">
           {SCHEDULE_CHIPS.map((chip) => {
@@ -61,13 +62,13 @@ export function VolumeSection({
                     : 'bg-white/[0.03] text-slate-400 ring-white/[0.08] hover:bg-white/[0.06] hover:text-slate-200',
                 )}
               >
-                {chip.label}
+                {t(chip.label)}
               </button>
             );
           })}
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Cron schedule">
+          <Field label={t('Cron schedule')}>
             <Input
               value={schedule}
               placeholder="0 3 * * *"
@@ -89,7 +90,7 @@ export function VolumeSection({
               }}
             />
           </Field>
-          <Field label="Retention (days)">
+          <Field label={t('Retention (days)')}>
             <Input
               type="number"
               min={1}

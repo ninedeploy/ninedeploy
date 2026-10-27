@@ -59,6 +59,7 @@ import {
   cn,
 } from '../components/ui.js';
 import { downloadBlob, useCopy } from '../lib/format.js';
+import { fill, useT } from '../lib/i18n.js';
 import { PRESETS } from './manifestCreator/presets.js';
 import { lintManifest } from './manifestCreator/secretScan.js';
 import { YAML_TOKEN_CLASS, highlightYaml } from './manifestCreator/highlightYaml.js';
@@ -219,6 +220,7 @@ const SECTION_RENDERERS: Record<
 };
 
 export function ManifestCreator() {
+  const t = useT();
   const { manifest, replace, reset, undo, redo, canUndo, canRedo } = useManifestForm();
   const [activeId, setActiveId] = useState<SectionId>(
     () => (loadActiveSection(SECTIONS.map((s) => s.id)) as SectionId | null) ?? 'runtime',
@@ -293,13 +295,13 @@ export function ManifestCreator() {
     () =>
       PRESETS.map((p) => ({
         id: p.id,
-        label: p.label,
-        description: p.description,
+        label: t(p.label),
+        description: t(p.description),
         manifest: p.manifest,
         icon: <p.icon size={15} />,
         meta: p.meta,
       })),
-    [],
+    [t],
   );
   const currentPresetId = useMemo(() => {
     const current = JSON.stringify(manifest);
@@ -334,7 +336,7 @@ export function ManifestCreator() {
 
   const onImportFile = (file: File) => {
     file.text().then(runImport).catch(() => {
-      setImportErrors([`Could not read "${file.name}".`]);
+      setImportErrors([t('Could not read "{name}".', { name: file.name })]);
     });
   };
 
@@ -349,7 +351,7 @@ export function ManifestCreator() {
       setAiOpen(false);
       setAiDescription('');
     } catch (err) {
-      setAiError(err instanceof Error ? err.message : 'AI assist failed');
+      setAiError(err instanceof Error ? err.message : t('AI assist failed'));
     } finally {
       setAiBusy(false);
     }
@@ -359,52 +361,52 @@ export function ManifestCreator() {
     <div>
       <PageHeader
         icon={<FileCode size={18} />}
-        title="Manifest Creator"
-        subtitle="Project-side editor for .ninedeploy. The file is committed to the repo and read by the docker builder at deploy time."
+        title={t('Manifest Creator')}
+        subtitle={t('Project-side editor for .ninedeploy. The file is committed to the repo and read by the docker builder at deploy time.')}
         actions={
           <>
-            <Tooltip content="Import an existing .ninedeploy file">
+            <Tooltip content={t('Import an existing .ninedeploy file')}>
               <Button variant="secondary" size="md" onClick={() => setImportOpen(true)}>
-                <Upload size={14} /> Import
+                <Upload size={14} /> {t('Import')}
               </Button>
             </Tooltip>
-            <Tooltip content="Describe the app and let AI fill the manifest">
+            <Tooltip content={t('Describe the app and let AI fill the manifest')}>
               <Button variant="secondary" size="md" onClick={() => setAiOpen(true)}>
-                <Sparkles size={14} /> AI fill
+                <Sparkles size={14} /> {t('AI fill')}
               </Button>
             </Tooltip>
-            <Tooltip content="Undo the last change">
-              <Button variant="ghost" size="md" onClick={undo} disabled={!canUndo} aria-label="Undo">
+            <Tooltip content={t('Undo the last change')}>
+              <Button variant="ghost" size="md" onClick={undo} disabled={!canUndo} aria-label={t('Undo')}>
                 <Undo2 size={14} />
               </Button>
             </Tooltip>
-            <Tooltip content="Redo an undone change">
-              <Button variant="ghost" size="md" onClick={redo} disabled={!canRedo} aria-label="Redo">
+            <Tooltip content={t('Redo an undone change')}>
+              <Button variant="ghost" size="md" onClick={redo} disabled={!canRedo} aria-label={t('Redo')}>
                 <Redo2 size={14} />
               </Button>
             </Tooltip>
-            <Tooltip content="Copy the current YAML to the clipboard">
+            <Tooltip content={t('Copy the current YAML to the clipboard')}>
               <Button variant="secondary" size="md" onClick={() => copy(yaml)}>
                 {copied ? (
                   <>
-                    <Check size={14} /> Copied
+                    <Check size={14} /> {t('Copied')}
                   </>
                 ) : (
                   <>
-                    <Copy size={14} /> Copy YAML
+                    <Copy size={14} /> {t('Copy YAML')}
                   </>
                 )}
               </Button>
             </Tooltip>
             <Button variant="secondary" size="md" onClick={downloadFile}>
-              <Download size={14} /> Download
+              <Download size={14} /> {t('Download')}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setPreviewOpen(true)}>
-              <Code2 size={14} /> Preview
+              <Code2 size={14} /> {t('Preview')}
             </Button>
-            <Tooltip content="Reset to an empty manifest (can be undone)">
+            <Tooltip content={t('Reset to an empty manifest (can be undone)')}>
               <Button variant="ghost" size="md" onClick={reset}>
-                <RefreshCw size={14} /> Reset
+                <RefreshCw size={14} /> {t('Reset')}
               </Button>
             </Tooltip>
           </>
@@ -416,7 +418,9 @@ export function ManifestCreator() {
         <div className="mb-5 rounded-xl border border-rose-500/30 bg-rose-500/[0.06] p-3" role="alert">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-rose-300">
             <AlertTriangle size={14} />
-            {issues.length} validation issue{issues.length === 1 ? '' : 's'}
+            {issues.length === 1
+              ? t('{n} validation issue', { n: issues.length })
+              : t('{n} validation issues', { n: issues.length })}
           </div>
           <ul className="mt-1.5 space-y-0.5">
             {issues.map((issue, i) => (
@@ -431,7 +435,7 @@ export function ManifestCreator() {
             <div className="mt-2 flex flex-wrap gap-1.5">
               {brokenSections.map((s) => (
                 <Button key={s.id} variant="secondary" size="sm" onClick={() => setActiveId(s.id)}>
-                  Fix in {s.label}
+                  {t('Fix in {section}', { section: t(s.label) })}
                 </Button>
               ))}
             </div>
@@ -440,7 +444,7 @@ export function ManifestCreator() {
       ) : touched ? (
         <div className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] px-3 py-2 text-xs text-emerald-200">
           <CheckCircle2 size={14} className="shrink-0" />
-          Manifest is valid — {configuredCount} of {SECTIONS.length} sections configured.
+          {t('Manifest is valid — {n} of {total} sections configured.', { n: configuredCount, total: SECTIONS.length })}
         </div>
       ) : null}
 
@@ -450,11 +454,11 @@ export function ManifestCreator() {
             <div className="flex items-center gap-2">
               <Sparkles size={14} className="text-indigo-300" />
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Start from a preset
+                {t('Start from a preset')}
               </span>
             </div>
             <span className="text-[11px] text-slate-500">
-              Applying a preset replaces the draft — Undo brings it back.
+              {t('Applying a preset replaces the draft — Undo brings it back.')}
             </span>
           </div>
           <PresetSelector
@@ -471,7 +475,7 @@ export function ManifestCreator() {
             {SECTION_GROUPS.map((group) => (
               <div key={group.id}>
                 <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                  {group.label}
+                  {t(group.label)}
                 </div>
                 <div className="space-y-0.5">
                   {group.sectionIds.map((id) => {
@@ -485,7 +489,7 @@ export function ManifestCreator() {
                         key={section.id}
                         type="button"
                         data-section={section.id}
-                        aria-label={`${section.label} section`}
+                        aria-label={t('{section} section', { section: t(section.label) })}
                         onClick={() => setActiveId(section.id)}
                         className={cn(
                           'flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition',
@@ -500,8 +504,8 @@ export function ManifestCreator() {
                           aria-hidden
                         />
                         <span className="flex-1">
-                          <span className="block font-medium">{section.label}</span>
-                          <span className="block text-[11px] text-slate-500">{section.blurb}</span>
+                          <span className="block font-medium">{t(section.label)}</span>
+                          <span className="block text-[11px] text-slate-500">{t(section.blurb)}</span>
                         </span>
                         {sectionIssueCount > 0 ? (
                           <span className="mt-0.5 rounded-full bg-rose-500/20 px-1.5 text-[10px] font-semibold text-rose-300 ring-1 ring-inset ring-rose-500/30">
@@ -528,7 +532,7 @@ export function ManifestCreator() {
           <div className="mt-3">
             <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
               <span>
-                {configuredCount}/{SECTIONS.length} sections configured
+                {t('{n}/{total} sections configured', { n: configuredCount, total: SECTIONS.length })}
               </span>
               <span>{Math.round((configuredCount / SECTIONS.length) * 100)}%</span>
             </div>
@@ -542,7 +546,7 @@ export function ManifestCreator() {
 
           <div className="mt-3 text-[11px] text-slate-500">
             <Badge tone={lint.length > 0 ? 'rose' : 'emerald'} className="mb-1.5">
-              {lint.length > 0 ? `${lint.length} secret risk` : 'no secret risks'}
+              {lint.length > 0 ? t('{n} secret risk', { n: lint.length }) : t('no secret risks')}
             </Badge>
             {lint.length > 0 && (
               <ul className="space-y-0.5">
@@ -564,8 +568,8 @@ export function ManifestCreator() {
                 <active.icon size={14} />
               </span>
               <div>
-                <h2 className="text-sm font-semibold text-slate-100">{active.label}</h2>
-                <p className="text-xs text-slate-500">{active.blurb}</p>
+                <h2 className="text-sm font-semibold text-slate-100">{t(active.label)}</h2>
+                <p className="text-xs text-slate-500">{t(active.blurb)}</p>
               </div>
             </div>
             {activeIssues.length > 0 && (
@@ -587,7 +591,7 @@ export function ManifestCreator() {
       </div>
 
       <Modal
-        title=".ninedeploy preview"
+        title={t('.ninedeploy preview')}
         onClose={() => setPreviewOpen(false)}
         wide
         open={previewOpen}
@@ -596,8 +600,9 @@ export function ManifestCreator() {
           {lint.length > 0 ? (
             <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
               <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-rose-300">
-                {lint.length} potential secret risk
-                {lint.length === 1 ? '' : 's'}
+                {lint.length === 1
+                  ? t('{n} potential secret risk', { n: lint.length })
+                  : t('{n} potential secret risks', { n: lint.length })}
               </div>
               <ul className="space-y-0.5">
                 {lint.map((h, i) => (
@@ -610,7 +615,7 @@ export function ManifestCreator() {
             </div>
           ) : (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-200">
-              No obvious secrets — the file is safe to commit.
+              {t('No obvious secrets — the file is safe to commit.')}
             </div>
           )}
           <pre className="max-h-[60vh] overflow-auto rounded-lg border border-white/10 bg-black/50 p-3 text-xs leading-relaxed text-slate-200">
@@ -635,18 +640,20 @@ export function ManifestCreator() {
                 yamlBytes > NINEDEPLOY_MANIFEST_MAX_BYTES ? 'text-rose-300' : 'text-slate-500',
               )}
             >
-              {yamlBytes} / {Math.round(NINEDEPLOY_MANIFEST_MAX_BYTES / 1024)} KiB — the loader
-              refuses files above the cap.
+              {t('{bytes} / {max} KiB — the loader refuses files above the cap.', {
+                bytes: yamlBytes,
+                max: Math.round(NINEDEPLOY_MANIFEST_MAX_BYTES / 1024),
+              })}
             </span>
             <div className="flex gap-2">
               <Button variant="secondary" size="sm" onClick={() => copy(yaml)}>
-                {copied ? <Check size={12} /> : <Copy size={12} />} Copy
+                {copied ? <Check size={12} /> : <Copy size={12} />} {t('Copy')}
               </Button>
               <Button variant="secondary" size="sm" onClick={downloadFile}>
-                <Download size={12} /> Download
+                <Download size={12} /> {t('Download')}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setPreviewOpen(false)}>
-                <X size={12} /> Close
+                <X size={12} /> {t('Close')}
               </Button>
             </div>
           </div>
@@ -654,7 +661,7 @@ export function ManifestCreator() {
       </Modal>
 
       <Modal
-        title="Import .ninedeploy YAML"
+        title={t('Import .ninedeploy YAML')}
         onClose={() => {
           setImportOpen(false);
           setImportErrors(null);
@@ -664,12 +671,13 @@ export function ManifestCreator() {
       >
         <div className="space-y-3">
           <p className="text-xs text-slate-500">
-            Paste the contents of an existing <code className="font-mono">.ninedeploy</code> file —
-            it is validated with the same schema the deploy pipeline uses, then loaded into the
-            form.
+            {fill(
+              t('Paste the contents of an existing {file} file — it is validated with the same schema the deploy pipeline uses, then loaded into the form.'),
+              { file: <code className="font-mono">.ninedeploy</code> },
+            )}
           </p>
           <Textarea
-            aria-label="YAML to import"
+            aria-label={t('YAML to import')}
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
             placeholder={'version: "1"\nruntime:\n  type: node\n  version: "22"\n…'}
@@ -679,7 +687,7 @@ export function ManifestCreator() {
           {importErrors && (
             <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3" role="alert">
               <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-rose-300">
-                Could not import
+                {t('Could not import')}
               </div>
               <ul className="space-y-0.5">
                 {importErrors.map((message, i) => (
@@ -696,12 +704,12 @@ export function ManifestCreator() {
               size="sm"
               onClick={() => fileInputRef.current?.click()}
             >
-              <Upload size={12} /> Choose file…
+              <Upload size={12} /> {t('Choose file…')}
             </Button>
             <input
               ref={fileInputRef}
               type="file"
-              aria-label="Import from file"
+              aria-label={t('Import from file')}
               accept=".ninedeploy,.yml,.yaml,.txt"
               className="hidden"
               onChange={(e) => {
@@ -720,10 +728,10 @@ export function ManifestCreator() {
                   setImportErrors(null);
                 }}
               >
-                <X size={12} /> Cancel
+                <X size={12} /> {t('Cancel')}
               </Button>
               <Button size="sm" onClick={() => runImport(importText)}>
-                <Check size={12} /> Import YAML
+                <Check size={12} /> {t('Import YAML')}
               </Button>
             </div>
           </div>
@@ -731,7 +739,7 @@ export function ManifestCreator() {
       </Modal>
 
       <Modal
-        title="Fill with AI"
+        title={t('Fill with AI')}
         onClose={() => {
           setAiOpen(false);
           setAiError(null);
@@ -746,15 +754,13 @@ export function ManifestCreator() {
           }}
         >
           <p className="text-xs text-slate-500">
-            Describe the app in plain language — stack, port, health endpoint, env vars. The
-            suggestion is validated against the manifest schema before it reaches this form and is
-            merged over your draft (Undo brings the old draft back).
+            {t('Describe the app in plain language — stack, port, health endpoint, env vars. The suggestion is validated against the manifest schema before it reaches this form and is merged over your draft (Undo brings the old draft back).')}
           </p>
           <Textarea
-            aria-label="App description"
+            aria-label={t('App description')}
             value={aiDescription}
             onChange={(e) => setAiDescription(e.target.value)}
-            placeholder={'A Node 20 Express API listening on port 3000, healthcheck at /healthz, needs DATABASE_URL, cap it at 512 MiB.'}
+            placeholder={t('A Node 20 Express API listening on port 3000, healthcheck at /healthz, needs DATABASE_URL, cap it at 512 MiB.')}
             rows={5}
           />
           {aiError && (
@@ -772,10 +778,10 @@ export function ManifestCreator() {
                 setAiError(null);
               }}
             >
-              <X size={12} /> Cancel
+              <X size={12} /> {t('Cancel')}
             </Button>
             <Button type="submit" size="sm" disabled={aiBusy || aiDescription.trim().length < 10}>
-              <Sparkles size={12} /> {aiBusy ? 'Thinking…' : 'Generate manifest'}
+              <Sparkles size={12} /> {aiBusy ? t('Thinking…') : t('Generate manifest')}
             </Button>
           </div>
         </form>

@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { copyText } from '../lib/format.js';
 import { Button, Card, EmptyState, Input, PageHeader, Skeleton } from '../components/ui.js';
+import { useT } from '../lib/i18n.js';
 
 function fmtEventTime(raw: string): string {
   const seconds = Number(raw);
@@ -14,6 +15,7 @@ function fmtEventTime(raw: string): string {
 
 /** Unified Docker dashboard: disk/images + live container inspector + daemon event feed. */
 export function DockerDashboard() {
+  const t = useT();
   const { user } = useAuth();
   const isAdmin = user?.isOperator === true;
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
@@ -101,26 +103,26 @@ export function DockerDashboard() {
     <div className="space-y-6">
       <PageHeader
         icon={<Container size={18} />}
-        title="Docker Dashboard"
-        subtitle="Host-level images, disk usage, live container inspect manifests and the daemon event feed"
+        title={t('Docker Dashboard')}
+        subtitle={t('Host-level images, disk usage, live container inspect manifests and the daemon event feed')}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="p-5">
-          <div className="flex items-center gap-2 text-xs text-slate-500"><Container size={13} /> Containers</div>
+          <div className="flex items-center gap-2 text-xs text-slate-500"><Container size={13} /> {t('Containers')}</div>
           <div className="mt-2 text-2xl font-semibold text-slate-100">{r ? r.containers : <Skeleton className="h-8 w-16" />}</div>
         </Card>
         <Card className="p-5">
-          <div className="flex items-center gap-2 text-xs text-slate-500"><Cpu size={13} /> Volumes</div>
+          <div className="flex items-center gap-2 text-xs text-slate-500"><Cpu size={13} /> {t('Volumes')}</div>
           <div className="mt-2 text-2xl font-semibold text-slate-100">{r ? r.volumes : <Skeleton className="h-8 w-16" />}</div>
         </Card>
         <Card className="p-5">
-          <div className="flex items-center gap-2 text-xs text-slate-500"><ImageIcon size={13} /> Images</div>
+          <div className="flex items-center gap-2 text-xs text-slate-500"><ImageIcon size={13} /> {t('Images')}</div>
           <div className="mt-2 text-2xl font-semibold text-slate-100">
             {r ? (
               <span>
                 {r.imagesSummary.total}
-                <span className="ml-2 text-sm font-normal text-slate-500">{r.imagesSummary.active} active · {r.imagesSummary.reclaimable} reclaimable</span>
+                <span className="ml-2 text-sm font-normal text-slate-500">{t('{active} active · {reclaimable} reclaimable', { active: r.imagesSummary.active, reclaimable: r.imagesSummary.reclaimable })}</span>
               </span>
             ) : (
               <Skeleton className="h-8 w-32" />
@@ -128,7 +130,7 @@ export function DockerDashboard() {
           </div>
         </Card>
         <Card className="p-5">
-          <div className="flex items-center gap-2 text-xs text-slate-500"><Radio size={13} /> Shared network</div>
+          <div className="flex items-center gap-2 text-xs text-slate-500"><Radio size={13} /> {t('Shared network')}</div>
           <div className="mt-2 truncate font-mono text-lg text-slate-300">{r?.network ?? '—'}</div>
         </Card>
       </div>
@@ -137,8 +139,8 @@ export function DockerDashboard() {
       <Card className="p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-100">Live Containers & Diagnostics</h2>
-            <p className="text-xs text-slate-400">Inspect container runtime manifest, dynamic Traefik tags, and raw Docker inspect state</p>
+            <h2 className="text-sm font-semibold text-slate-100">{t('Live Containers & Diagnostics')}</h2>
+            <p className="text-xs text-slate-400">{t('Inspect container runtime manifest, dynamic Traefik tags, and raw Docker inspect state')}</p>
           </div>
           {canInspect ? (
             <form
@@ -153,16 +155,16 @@ export function DockerDashboard() {
               <Input
                 value={manualContainer}
                 onChange={(e) => setManualContainer(e.target.value)}
-                placeholder="Inspect container name…"
+                placeholder={t('Inspect container name…')}
                 className="h-8 min-w-0 flex-1 text-xs font-mono sm:w-48 sm:flex-none"
               />
               <Button type="submit" variant="secondary" size="sm" className="h-8 text-xs">
-                <Search size={13} className="mr-1" /> Inspect
+                <Search size={13} className="mr-1" /> {t('Inspect')}
               </Button>
             </form>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-2.5 py-1 text-[11px] text-slate-400">
-              <Shield size={12} /> Admin access required for the inspector
+              <Shield size={12} /> {t('Admin access required for the inspector')}
             </span>
           )}
         </div>
@@ -170,7 +172,7 @@ export function DockerDashboard() {
         {stats.isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : containerStats.length === 0 ? (
-          <p className="text-xs text-slate-500">No active containers found on host daemon.</p>
+          <p className="text-xs text-slate-500">{t('No active containers found on host daemon.')}</p>
         ) : (
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {containerStats.map((c) => (
@@ -200,7 +202,7 @@ export function DockerDashboard() {
                   onClick={() => setSelectedContainer(c.name)}
                   className="h-7 text-[11px]"
                 >
-                  <FileCode size={12} className="mr-1" /> Inspect
+                  <FileCode size={12} className="mr-1" /> {t('Inspect')}
                 </Button>
               </div>
             ))}
@@ -225,7 +227,7 @@ export function DockerDashboard() {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-400">Generated Docker Compose YAML, Traefik tags, and Docker inspect output</p>
+                <p className="text-xs text-slate-400">{t('Generated Docker Compose YAML, Traefik tags, and Docker inspect output')}</p>
               </div>
             </div>
 
@@ -239,7 +241,7 @@ export function DockerDashboard() {
                 }}
                 disabled={composeQuery.isFetching}
               >
-                <RefreshCw size={13} className={composeQuery.isFetching ? 'animate-spin mr-1' : 'mr-1'} /> Refresh
+                <RefreshCw size={13} className={composeQuery.isFetching ? 'animate-spin mr-1' : 'mr-1'} /> {t('Refresh')}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setSelectedContainer(null)}>
                 <X size={15} />
@@ -257,7 +259,7 @@ export function DockerDashboard() {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Code2 size={13} /> Compose Manifest
+              <Code2 size={13} /> {t('Compose Manifest')}
             </button>
             <button
               type="button"
@@ -268,7 +270,7 @@ export function DockerDashboard() {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Shield size={13} /> Traefik Tags ({Object.keys(traefikTags).length})
+              <Shield size={13} /> {t('Traefik Tags ({n})', { n: Object.keys(traefikTags).length })}
             </button>
             <button
               type="button"
@@ -279,7 +281,7 @@ export function DockerDashboard() {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Terminal size={13} /> Docker Inspect
+              <Terminal size={13} /> {t('Docker Inspect')}
             </button>
           </div>
 
@@ -288,7 +290,7 @@ export function DockerDashboard() {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-mono text-slate-400">docker-compose.runtime.yml</span>
                 <Button variant="secondary" size="sm" onClick={handleCopyYaml} className="h-7 text-xs">
-                  {copiedYaml ? <><Check size={12} className="mr-1 text-emerald-400" /> Copied</> : <><Copy size={12} className="mr-1" /> Copy Compose</>}
+                  {copiedYaml ? <><Check size={12} className="mr-1 text-emerald-400" /> {t('Copied')}</> : <><Copy size={12} className="mr-1" /> {t('Copy Compose')}</>}
                 </Button>
               </div>
               <pre className="p-4 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed bg-black/50 rounded-xl border border-white/5 max-h-80 overflow-y-auto">
@@ -300,7 +302,7 @@ export function DockerDashboard() {
           {activeSubTab === 'traefik' && (
             <div className="space-y-2 max-h-80 overflow-y-auto">
               {Object.keys(traefikTags).length === 0 ? (
-                <p className="text-xs text-slate-500 p-4 text-center">No Traefik tags discovered on container labels.</p>
+                <p className="text-xs text-slate-500 p-4 text-center">{t('No Traefik tags discovered on container labels.')}</p>
               ) : (
                 Object.entries(traefikTags).map(([key, value]) => (
                   <div key={key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-white/5 bg-black/40 p-2.5 font-mono text-xs">
@@ -317,7 +319,7 @@ export function DockerDashboard() {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-mono text-slate-400">docker-inspect.json</span>
                 <Button variant="secondary" size="sm" onClick={handleCopyJson} className="h-7 text-xs">
-                  {copiedJson ? <><Check size={12} className="mr-1 text-emerald-400" /> Copied</> : <><Copy size={12} className="mr-1" /> Copy JSON</>}
+                  {copiedJson ? <><Check size={12} className="mr-1 text-emerald-400" /> {t('Copied')}</> : <><Copy size={12} className="mr-1" /> {t('Copy JSON')}</>}
                 </Button>
               </div>
               <pre className="p-4 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed bg-black/50 rounded-xl border border-white/5 max-h-80 overflow-y-auto">
@@ -330,9 +332,9 @@ export function DockerDashboard() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card className="p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Top images</h2>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Top images')}</h2>
           {!r || r.images.length === 0 ? (
-            <p className="text-xs text-slate-600">No images.</p>
+            <p className="text-xs text-slate-600">{t('No images.')}</p>
           ) : (
             <ul className="space-y-1">
               {r.images.slice(0, 15).map((img, i) => (
@@ -349,11 +351,11 @@ export function DockerDashboard() {
         </Card>
 
         <Card className="p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Daemon events (last hour)</h2>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Daemon events (last hour)')}</h2>
           {events.isLoading ? (
             <Skeleton className="h-24 w-full" />
           ) : !events.data || events.data.events.length === 0 ? (
-            <EmptyState icon={<Radio size={22} />} title="No recent events" hint="Auto-refreshes every 20s." />
+            <EmptyState icon={<Radio size={22} />} title={t('No recent events')} hint={t('Auto-refreshes every 20s.')} />
           ) : (
             <ul className="max-h-96 space-y-1 overflow-y-auto">
               {events.data.events.map((e, i) => (

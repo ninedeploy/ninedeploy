@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n.js';
 import { TerminalPanel } from './terminal/TerminalPanel.js';
 
 interface ContainerTerminalProps {
@@ -16,6 +17,7 @@ interface ContainerTerminalProps {
  * legacy `/v1/services/:id/exec` socket is no longer used by the panel.
  */
 export function ContainerTerminal({ serviceId, serviceName, replica, serverId, onClose }: ContainerTerminalProps) {
+  const t = useT();
   return (
     <TerminalPanel
       target={{
@@ -24,7 +26,7 @@ export function ContainerTerminal({ serviceId, serviceName, replica, serverId, o
         ...(replica !== undefined ? { replica } : {}),
         ...(serverId !== undefined ? { serverId } : {}),
       }}
-      title={serviceName ? `${serviceName} · shell` : 'container shell'}
+      title={serviceName ? t('{name} · shell', { name: serviceName }) : t('container shell')}
       onClose={onClose}
     />
   );

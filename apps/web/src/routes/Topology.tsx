@@ -45,6 +45,7 @@ import type { TopologyGraph } from '@ninedeploy/sdk';
 import { Button, ErrorCard, PageHeader, StatusBadge, cn } from '../components/ui.js';
 import { downloadBlob, formatBytes } from '../lib/format.js';
 import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
+import { msg, useT } from '../lib/i18n.js';
 
 // ── Layout constants ──────────────────────────────────────────────────────
 // A deterministic 4-tier column layout: networks (top) → ingress/services
@@ -136,6 +137,7 @@ type GatewayData = {
 // ── Custom Rich Node Components ───────────────────────────────────────────
 
 function ServiceNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as ServiceData;
   const isRunning = data.status === 'running';
 
@@ -184,7 +186,7 @@ function ServiceNode(props: NodeProps) {
             <span className="text-sky-300 font-semibold">{data.memMb}M</span>
           )}
           {data.cpuPct == null && (
-            <span className="text-slate-500">active</span>
+            <span className="text-slate-500">{t('active')}</span>
           )}
         </div>
       </div>
@@ -194,6 +196,7 @@ function ServiceNode(props: NodeProps) {
 }
 
 function DatabaseNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as DatabaseData;
   const isRunning = data.status === 'running';
 
@@ -231,8 +234,8 @@ function DatabaseNode(props: NodeProps) {
       </div>
 
       <div className="mt-3 flex items-center justify-between rounded-xl bg-emerald-500/[0.06] px-2.5 py-1.5 font-mono text-[10px] ring-1 ring-inset ring-emerald-500/15">
-        <span className="text-emerald-300/80">Managed DB</span>
-        <span className="text-emerald-200 font-semibold">{data.port ? `:${data.port}` : 'Internal Mesh'}</span>
+        <span className="text-emerald-300/80">{t('Managed DB')}</span>
+        <span className="text-emerald-200 font-semibold">{data.port ? `:${data.port}` : t('Internal Mesh')}</span>
       </div>
     </div>
   );
@@ -259,6 +262,7 @@ function DomainNode(props: NodeProps) {
 }
 
 function VolumeNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as VolumeData;
   return (
     <div className="rounded-xl border border-amber-500/40 bg-slate-900/95 px-3 py-2 shadow-lg backdrop-blur-md transition hover:border-amber-400">
@@ -273,7 +277,7 @@ function VolumeNode(props: NodeProps) {
               {data.name.replace(/^(nd-(svc|db)-|-data$)/g, '')}
             </span>
             {data.isProtected !== false && (
-              <span className="text-[9px] text-emerald-400 font-mono" title="Protected">🛡️</span>
+              <span className="text-[9px] text-emerald-400 font-mono" title={t('Protected')}>🛡️</span>
             )}
           </div>
           {data.sizeBytes != null && (
@@ -286,6 +290,7 @@ function VolumeNode(props: NodeProps) {
 }
 
 function NetworkNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as NetworkData;
   // Fixed width: a long name is truncated (full name on hover) so nodes in
   // the grid never overlap.
@@ -299,7 +304,7 @@ function NetworkNode(props: NodeProps) {
         <div className="min-w-0">
           <span className="block truncate font-mono text-xs font-bold text-slate-200">{data.name}</span>
           <span className="block truncate font-mono text-[10px] text-cyan-300">
-            {data.containers} container{data.containers === 1 ? '' : 's'}
+            {data.containers === 1 ? t('{n} container', { n: data.containers }) : t('{n} containers', { n: data.containers })}
           </span>
         </div>
       </div>
@@ -309,21 +314,27 @@ function NetworkNode(props: NodeProps) {
 
 /** The "+N more networks" tile; a click shows them all (and folds them back). */
 function NetworkSummaryNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as NetworkSummaryData;
   return (
     <div
       className="w-44 cursor-pointer rounded-xl border border-dashed border-cyan-500/40 bg-slate-900/80 px-3 py-2 text-center shadow-lg backdrop-blur-md transition hover:border-cyan-400"
-      title={data.expanded ? 'Show only the networks your services and databases use' : 'Show every network on the host'}
+      title={data.expanded ? t('Show only the networks your services and databases use') : t('Show every network on the host')}
     >
       <span className="font-mono text-xs font-semibold text-cyan-300">
-        {data.expanded ? 'Show fewer networks' : `+${data.hidden} more network${data.hidden === 1 ? '' : 's'}`}
+        {data.expanded
+          ? t('Show fewer networks')
+          : data.hidden === 1
+            ? t('+{n} more network', { n: data.hidden })
+            : t('+{n} more networks', { n: data.hidden })}
       </span>
-      <span className="block text-[10px] text-slate-500">{data.expanded ? 'hide unused' : 'not used by these services'}</span>
+      <span className="block text-[10px] text-slate-500">{data.expanded ? t('hide unused') : t('not used by these services')}</span>
     </div>
   );
 }
 
 function GatewayNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as GatewayData;
   return (
     <div className="w-56 rounded-2xl border-2 border-sky-500/50 bg-slate-900/95 p-3.5 shadow-2xl shadow-sky-500/10 backdrop-blur-md">
@@ -342,7 +353,7 @@ function GatewayNode(props: NodeProps) {
         <StatusBadge status={data.running ? 'running' : 'stopped'} />
       </div>
       <div className="mt-2.5 rounded-lg bg-sky-500/[0.08] px-2 py-1 font-mono text-[10px] text-sky-200 flex justify-between">
-        <span>Active SSL Routes</span>
+        <span>{t('Active SSL Routes')}</span>
         <span className="font-bold">{data.activeRoutes}</span>
       </div>
     </div>
@@ -696,18 +707,21 @@ const defaultEdgeOptions = {
 };
 
 // ── Legend (rendered inside the React Flow viewport) ──────────────────────
+const LEGEND_ITEMS: Array<{ color: string; label: string; dashed?: boolean }> = [
+  { color: '#38bdf8', label: msg('Domain → Gateway') },
+  { color: '#0ea5e9', label: msg('Gateway → Service') },
+  { color: '#10b981', label: msg('Service → Database') },
+  { color: '#f59e0b', label: msg('Volume Mount'), dashed: true },
+  { color: '#06b6d4', label: msg('Network Bridge'), dashed: true },
+];
+
 function TopologyLegend() {
-  const items: Array<{ color: string; label: string; dashed?: boolean }> = [
-    { color: '#38bdf8', label: 'Domain → Gateway' },
-    { color: '#0ea5e9', label: 'Gateway → Service' },
-    { color: '#10b981', label: 'Service → Database' },
-    { color: '#f59e0b', label: 'Volume Mount', dashed: true },
-    { color: '#06b6d4', label: 'Network Bridge', dashed: true },
-  ];
+  const t = useT();
+  const items = LEGEND_ITEMS;
   return (
     <div className="rounded-xl border border-white/10 bg-slate-950/85 px-3 py-2 shadow-xl backdrop-blur-md">
       <div className="flex items-center gap-1.5 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-        <Layers size={11} /> Edge Legend
+        <Layers size={11} /> {t('Edge Legend')}
       </div>
       <div className="space-y-1">
         {items.map((it) => (
@@ -720,7 +734,7 @@ function TopologyLegend() {
                   : it.color,
               }}
             />
-            <span className="truncate">{it.label}</span>
+            <span className="truncate">{t(it.label)}</span>
           </div>
         ))}
       </div>
@@ -731,6 +745,7 @@ function TopologyLegend() {
 // ── Main Topology Page Component ──────────────────────────────────────────
 
 export function Topology() {
+  const t = useT();
   const { user } = useAuth();
   const graph = useQuery({ queryKey: ['topology'], queryFn: () => api.topology.get() });
   const volumesQuery = useQuery({
@@ -810,8 +825,8 @@ export function Topology() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <PageHeader
           icon={<Waypoints size={20} className="text-indigo-400" />}
-          title="Infrastructure Topology & Flow"
-          subtitle="Real-time interactive blueprint of routed domains, Traefik proxy, services, databases, persistent volumes and network bridges."
+          title={t('Infrastructure Topology & Flow')}
+          subtitle={t('Real-time interactive blueprint of routed domains, Traefik proxy, services, databases, persistent volumes and network bridges.')}
         />
 
         <div className="flex flex-wrap items-center gap-2">
@@ -825,7 +840,7 @@ export function Topology() {
                 layerFilter === 'all' ? 'bg-indigo-500/20 text-indigo-300 font-semibold shadow' : 'text-slate-400 hover:text-slate-200',
               )}
             >
-              All Layers
+              {t('All Layers')}
             </button>
             <button
               type="button"
@@ -835,7 +850,7 @@ export function Topology() {
                 layerFilter === 'compute' ? 'bg-indigo-500/20 text-indigo-300 font-semibold shadow' : 'text-slate-400 hover:text-slate-200',
               )}
             >
-              Compute & DBs
+              {t('Compute & DBs')}
             </button>
             <button
               type="button"
@@ -845,7 +860,7 @@ export function Topology() {
                 layerFilter === 'storage' ? 'bg-amber-500/20 text-amber-300 font-semibold shadow' : 'text-slate-400 hover:text-slate-200',
               )}
             >
-              Storage
+              {t('Storage')}
             </button>
             <button
               type="button"
@@ -855,7 +870,7 @@ export function Topology() {
                 layerFilter === 'network' ? 'bg-sky-500/20 text-sky-300 font-semibold shadow' : 'text-slate-400 hover:text-slate-200',
               )}
             >
-              Network
+              {t('Network')}
             </button>
           </div>
 
@@ -863,13 +878,13 @@ export function Topology() {
           <div className="flex items-center gap-1.5">
             <select
               id="topology-focus"
-              aria-label="Focus service"
+              aria-label={t('Focus service')}
               value={focus ?? ''}
               onChange={(e) => setFocus(e.target.value ? Number(e.target.value) : null)}
               disabled={graph.isLoading}
               className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             >
-              <option value="">All Services Focus</option>
+              <option value="">{t('All Services Focus')}</option>
               {(graph.data?.services ?? []).map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -878,7 +893,7 @@ export function Topology() {
             </select>
             {focus != null && (
               <Button size="sm" variant="secondary" onClick={() => setFocus(null)} className="text-xs">
-                Reset
+                {t('Reset')}
               </Button>
             )}
             <Button
@@ -897,18 +912,18 @@ export function Topology() {
                 /* v8 ignore stop */
               }}
               disabled={!graph.data || graph.isLoading}
-              title="Export Architecture Manifest (JSON)"
+              title={t('Export Architecture Manifest (JSON)')}
               className="text-xs flex items-center gap-1.5"
             >
               <Download size={13} />
-              <span className="hidden sm:inline">Export</span>
+              <span className="hidden sm:inline">{t('Export')}</span>
             </Button>
             <Button
               size="sm"
               variant="secondary"
               onClick={() => graph.refetch()}
               disabled={graph.isFetching}
-              title="Refresh topology graph"
+              title={t('Refresh topology graph')}
             >
               <RefreshCw size={13} className={graph.isFetching ? 'animate-spin' : ''} />
             </Button>
@@ -922,19 +937,19 @@ export function Topology() {
           <div className="grid h-full place-items-center text-sm text-slate-400 font-mono">
             <div className="flex items-center gap-2">
               <RefreshCw size={16} className="animate-spin text-indigo-400" />
-              <span>Building topology mesh…</span>
+              <span>{t('Building topology mesh…')}</span>
             </div>
           </div>
         ) : graph.isError ? (
           <div className="grid h-full place-items-center p-6">
-            <ErrorCard title="Couldn't load infrastructure topology" error={graph.error} onRetry={() => graph.refetch()} />
+            <ErrorCard title={t('Couldn\'t load infrastructure topology')} error={graph.error} onRetry={() => graph.refetch()} />
           </div>
         ) : !hasGraphComponents ? (
           <div className="grid h-full place-items-center text-sm text-slate-400 font-mono">
             <div className="text-center space-y-2">
               <Boxes size={32} className="mx-auto text-slate-600" />
-              <p className="font-semibold text-slate-300">No active topology components</p>
-              <p className="text-xs text-slate-500">Deploy a service or provision a database to see live routing and data links.</p>
+              <p className="font-semibold text-slate-300">{t('No active topology components')}</p>
+              <p className="text-xs text-slate-500">{t('Deploy a service or provision a database to see live routing and data links.')}</p>
             </div>
           </div>
         ) : (
@@ -969,7 +984,7 @@ export function Topology() {
                   type="button"
                   onClick={() => setSelectedNode(null)}
                   className="rounded-lg p-1 text-slate-400 hover:text-slate-200 hover:bg-white/10 transition"
-                  aria-label="Close Inspector"
+                  aria-label={t('Close Inspector')}
                 >
                   ✕
                 </button>
@@ -978,50 +993,50 @@ export function Topology() {
               <div className="space-y-2.5 text-xs">
                 {selectedNode.data?.status && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Runtime Status</span>
+                    <span className="text-slate-400">{t('Runtime Status')}</span>
                     <StatusBadge status={selectedNode.data.status} />
                   </div>
                 )}
                 {selectedNode.data?.port && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Internal Port</span>
+                    <span className="text-slate-400">{t('Internal Port')}</span>
                     <span className="font-mono text-slate-200">:{selectedNode.data.port}</span>
                   </div>
                 )}
                 {selectedNode.data?.engine && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Database Engine</span>
+                    <span className="text-slate-400">{t('Database Engine')}</span>
                     <span className="font-mono text-emerald-300 uppercase font-semibold">{selectedNode.data.engine}</span>
                   </div>
                 )}
                 {selectedNode.data?.cpuPct != null && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Live CPU Usage</span>
+                    <span className="text-slate-400">{t('Live CPU Usage')}</span>
                     <span className="font-mono text-indigo-300 font-bold">{selectedNode.data.cpuPct}%</span>
                   </div>
                 )}
                 {selectedNode.data?.memMb != null && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Live Memory (RAM)</span>
+                    <span className="text-slate-400">{t('Live Memory (RAM)')}</span>
                     <span className="font-mono text-sky-300 font-bold">{selectedNode.data.memMb} MB</span>
                   </div>
                 )}
                 {selectedNode.data?.sizeBytes != null && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Volume Storage</span>
+                    <span className="text-slate-400">{t('Volume Storage')}</span>
                     <span className="font-mono text-amber-300 font-bold">{formatBytes(selectedNode.data.sizeBytes)}</span>
                   </div>
                 )}
                 {selectedNode.data?.activeRoutes != null && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Active Proxy Routes</span>
-                    <span className="font-mono text-sky-200">{selectedNode.data.activeRoutes} routes</span>
+                    <span className="text-slate-400">{t('Active Proxy Routes')}</span>
+                    <span className="font-mono text-sky-200">{t('{n} routes', { n: selectedNode.data.activeRoutes })}</span>
                   </div>
                 )}
                 {selectedNode.data?.containers != null && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Attached Containers</span>
-                    <span className="font-mono text-cyan-200">{selectedNode.data.containers} container(s)</span>
+                    <span className="text-slate-400">{t('Attached Containers')}</span>
+                    <span className="font-mono text-cyan-200">{t('{n} container(s)', { n: selectedNode.data.containers })}</span>
                   </div>
                 )}
               </div>
@@ -1033,7 +1048,7 @@ export function Topology() {
                   to={`/services/${selectedNode.data.id}`}
                   className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/30"
                 >
-                  <span>Open Service Workspace</span>
+                  <span>{t('Open Service Workspace')}</span>
                   <ArrowUpRight size={13} />
                 </Link>
               )}
@@ -1042,7 +1057,7 @@ export function Topology() {
                   to={`/databases/${selectedNode.data.id}`}
                   className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-600/30"
                 >
-                  <span>Open Database Studio</span>
+                  <span>{t('Open Database Studio')}</span>
                   <ArrowUpRight size={13} />
                 </Link>
               )}
@@ -1051,7 +1066,7 @@ export function Topology() {
                   to="/traefik"
                   className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500 transition shadow-lg shadow-sky-600/30"
                 >
-                  <span>Open Traefik Control Center</span>
+                  <span>{t('Open Traefik Control Center')}</span>
                   <ArrowUpRight size={13} />
                 </Link>
               )}
@@ -1060,7 +1075,7 @@ export function Topology() {
                   to="/volumes"
                   className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-500 transition shadow-lg shadow-amber-600/30"
                 >
-                  <span>Manage All Volumes</span>
+                  <span>{t('Manage All Volumes')}</span>
                   <ArrowUpRight size={13} />
                 </Link>
               )}
@@ -1104,6 +1119,7 @@ function TopologyCanvasWithClick(props: {
   edges: Edge[];
   onSelectNode: (node: { id: string; type?: string; data: any }) => void;
 }) {
+  const t = useT();
   const colorMode = useThemeMode();
   const [nodes, setNodes] = useState<Node[]>(props.nodes);
   const [edges, setEdges] = useState<Edge[]>(props.edges);
@@ -1204,7 +1220,7 @@ function TopologyCanvasWithClick(props: {
           <button
             type="button"
             onClick={handleZoomIn}
-            title="Zoom in"
+            title={t('Zoom in')}
             className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white"
           >
             <ZoomIn size={14} />
@@ -1212,7 +1228,7 @@ function TopologyCanvasWithClick(props: {
           <button
             type="button"
             onClick={handleZoomOut}
-            title="Zoom out"
+            title={t('Zoom out')}
             className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white"
           >
             <ZoomOut size={14} />
@@ -1221,7 +1237,7 @@ function TopologyCanvasWithClick(props: {
           <button
             type="button"
             onClick={handleFit}
-            title="Fit to view"
+            title={t('Fit to view')}
             className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white"
           >
             <Maximize2 size={14} />
@@ -1230,10 +1246,10 @@ function TopologyCanvasWithClick(props: {
           <button
             type="button"
             onClick={handleRearrange}
-            title="Re-arrange layout"
+            title={t('Re-arrange layout')}
             className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-mono font-semibold text-indigo-300 transition hover:bg-indigo-500/15"
           >
-            <Wand2 size={12} /> Re-arrange
+            <Wand2 size={12} /> {t('Re-arrange')}
           </button>
         </div>
       </Panel>

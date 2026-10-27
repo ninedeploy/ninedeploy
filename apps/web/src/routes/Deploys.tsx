@@ -15,25 +15,26 @@ import {
   Skeleton,
 } from '../components/ui.js';
 import { useToast } from '../components/Toast.js';
+import { type Translate, msg, useT } from '../lib/i18n.js';
 
 const STATUS_BADGE: Record<QueueItem['status'], { label: string; tone: 'amber' | 'sky' | 'indigo' }> = {
-  queued: { label: 'Queued', tone: 'amber' },
-  building: { label: 'Building', tone: 'sky' },
-  deploying: { label: 'Deploying', tone: 'indigo' },
-  awaiting_ci: { label: 'Waiting for CI', tone: 'amber' },
+  queued: { label: msg('Queued'), tone: 'amber' },
+  building: { label: msg('Building'), tone: 'sky' },
+  deploying: { label: msg('Deploying'), tone: 'indigo' },
+  awaiting_ci: { label: msg('Waiting for CI'), tone: 'amber' },
 };
 
 const POLL_MS = 3_000;
 
-function relativeAge(iso: string): string {
+function relativeAge(iso: string, t: Translate): string {
   const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 0) return 'just now';
+  if (diff < 0) return t('just now');
   const sec = Math.round(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
+  if (sec < 60) return t('{n}s ago', { n: sec });
   const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return t('{n}m ago', { n: min });
   const hr = Math.round(min / 60);
-  return `${hr}h ago`;
+  return t('{n}h ago', { n: hr });
 }
 
 function commitLabel(item: QueueItem): string {
@@ -48,6 +49,7 @@ function commitLabel(item: QueueItem): string {
  * route), so the queue below stays the page's main content.
  */
 function ApprovalsCard() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const approvals = useQuery({
@@ -64,16 +66,16 @@ function ApprovalsCard() {
     onSuccess: (_res, input) => {
       qc.invalidateQueries({ queryKey: ['approvals'] });
       qc.invalidateQueries({ queryKey: ['deploys-queue'] });
-      toast(input.decision === 'approve' ? `Deployment #${input.id} approved` : `Deployment #${input.id} rejected`, 'info');
+      toast(input.decision === 'approve' ? t('Deployment #{id} approved', { id: input.id }) : t('Deployment #{id} rejected', { id: input.id }), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Could not record the decision', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Could not record the decision'), 'error'),
   });
   const items = approvals.data?.items ?? [];
   if (items.length === 0) return null;
   return (
     <Card className="mb-5 border-violet-500/20">
       <CardBody>
-        <div className="mb-3 text-sm font-medium text-slate-200">Waiting for approval</div>
+        <div className="mb-3 text-sm font-medium text-slate-200">{t('Waiting for approval')}</div>
         <ul className="space-y-2">
           {items.map((d) => (
             <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2">
@@ -85,7 +87,7 @@ function ApprovalsCard() {
                   #{d.id} · {d.commitSha ? d.commitSha.slice(0, 7) : d.imageDigest ? d.imageDigest.slice(0, 15) : '—'}
                 </span>
                 <span className="ml-2 text-[11px] text-slate-500">
-                  {d.message ? d.message.split('\n')[0] : d.trigger} · {relativeAge(d.createdAt)}
+                  {d.message ? d.message.split('\n')[0] : d.trigger} · {relativeAge(d.createdAt, t)}
                 </span>
               </span>
               {d.mayReview ? (
@@ -96,18 +98,18 @@ function ApprovalsCard() {
                     disabled={decide.isPending}
                     onClick={() => decide.mutate({ serviceId: d.serviceId, id: d.id, decision: 'reject' })}
                   >
-                    Reject
+                    {t('Reject')}
                   </Button>
                   <Button
                     size="sm"
                     disabled={decide.isPending}
                     onClick={() => decide.mutate({ serviceId: d.serviceId, id: d.id, decision: 'approve' })}
                   >
-                    Approve
+                    {t('Approve')}
                   </Button>
                 </span>
               ) : (
-                <span className="text-[11px] text-slate-500">a workspace admin decides</span>
+                <span className="text-[11px] text-slate-500">{t('a workspace admin decides')}</span>
               )}
             </li>
           ))}
@@ -118,6 +120,7 @@ function ApprovalsCard() {
 }
 
 export function Deploys() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -161,22 +164,22 @@ export function Deploys() {
   const cancel = useMutation({
     mutationFn: (item: QueueItem) => api.deploys.cancel(item.serviceId, item.id),
     onSuccess: (_res, item) => {
-      toast(`Cancelled #${item.id}`, 'info');
+      toast(t('Cancelled #{id}', { id: item.id }), 'info');
       qc.invalidateQueries({ queryKey: ['deploys-queue'] });
     },
-    onError: () => toast('Cancel failed', 'error'),
+    onError: () => toast(t('Cancel failed'), 'error'),
   });
 
   const remove = useMutation({
     mutationFn: (item: QueueItem) => api.deploys.remove(item.serviceId, item.id),
     onSuccess: (_res, item) => {
-      toast(`Removed #${item.id}`, 'info');
+      toast(t('Removed #{id}', { id: item.id }), 'info');
       qc.invalidateQueries({ queryKey: ['deploys-queue'] });
     },
     // The server refuses in-flight (cancel it first) and `running` (the
     // build that is currently serving traffic). Surface the specific
     // reason from the API so the operator knows what to do next.
-    onError: (err: Error) => toast(err.message ?? 'Remove failed', 'error'),
+    onError: (err: Error) => toast(err.message ?? t('Remove failed'), 'error'),
   });
 
   const data = queue.data;
@@ -188,16 +191,16 @@ export function Deploys() {
     <>
       <PageHeader
         icon={<Rocket size={18} />}
-        title="Deploys"
-        subtitle="What is running right now, and what is queued behind it."
+        title={t('Deploys')}
+        subtitle={t('What is running right now, and what is queued behind it.')}
         actions={
           <div className="flex items-center gap-2">
-            <Badge tone="sky">{counts.building} building</Badge>
-            <Badge tone="indigo">{counts.deploying} deploying</Badge>
-            <Badge tone="amber">{counts.queued} queued</Badge>
-            {!!counts.awaiting_ci && <Badge tone="amber">{counts.awaiting_ci} waiting for CI</Badge>}
+            <Badge tone="sky">{t('{n} building', { n: counts.building })}</Badge>
+            <Badge tone="indigo">{t('{n} deploying', { n: counts.deploying })}</Badge>
+            <Badge tone="amber">{t('{n} queued', { n: counts.queued })}</Badge>
+            {!!counts.awaiting_ci && <Badge tone="amber">{t('{n} waiting for CI', { n: counts.awaiting_ci })}</Badge>}
             <span className="text-xs text-slate-500">
-              auto-refresh {POLL_MS / 1000}s
+              {t('auto-refresh {n}s', { n: POLL_MS / 1000 })}
             </span>
           </div>
         }
@@ -209,12 +212,12 @@ export function Deploys() {
         <Skeleton className="h-32" />
       ) : queue.isError && !data ? (
         // r562: a failed load is not "nothing in flight".
-        <ErrorCard title="Could not load the deploy queue" error={queue.error} onRetry={() => void queue.refetch()} />
+        <ErrorCard title={t('Could not load the deploy queue')} error={queue.error} onRetry={() => void queue.refetch()} />
       ) : total === 0 ? (
         <EmptyState
           icon={<Rocket size={26} />}
-          title="Nothing in flight"
-          hint="Trigger a deploy from a service's Deploys tab to see it land here."
+          title={t('Nothing in flight')}
+          hint={t("Trigger a deploy from a service's Deploys tab to see it land here.")}
         />
       ) : (
         <Card>
@@ -223,13 +226,13 @@ export function Deploys() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/[0.08] text-left text-[11px] uppercase tracking-widest text-slate-500">
-                    <th className="py-2 pr-4 font-normal">Service</th>
-                    <th className="py-2 pr-4 font-normal">Status</th>
-                    <th className="py-2 pr-4 font-normal">Commit</th>
-                    <th className="py-2 pr-4 font-normal">Message</th>
-                    <th className="py-2 pr-4 font-normal">Trigger</th>
-                    <th className="py-2 pr-4 font-normal">Age</th>
-                    <th className="py-2 pr-4 text-right font-normal">Actions</th>
+                    <th className="py-2 pr-4 font-normal">{t('Service')}</th>
+                    <th className="py-2 pr-4 font-normal">{t('Status')}</th>
+                    <th className="py-2 pr-4 font-normal">{t('Commit')}</th>
+                    <th className="py-2 pr-4 font-normal">{t('Message')}</th>
+                    <th className="py-2 pr-4 font-normal">{t('Trigger')}</th>
+                    <th className="py-2 pr-4 font-normal">{t('Age')}</th>
+                    <th className="py-2 pr-4 text-right font-normal">{t('Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -237,7 +240,8 @@ export function Deploys() {
                     // The queue serializer can race a cancel or gain a status
                     // this build has never heard of; render it instead of
                     // letting the page crash on a missing map entry.
-                    const badge = STATUS_BADGE[item.status] ?? { label: item.status, tone: 'amber' as const };
+                    const known = STATUS_BADGE[item.status];
+                    const badge = known ? { label: t(known.label), tone: known.tone } : { label: item.status, tone: 'amber' as const };
                     return (
                       <tr
                         key={item.id}
@@ -252,7 +256,7 @@ export function Deploys() {
                           </Link>
                           {item.position !== null && (
                             <div className="mt-0.5 text-[11px] text-slate-500">
-                              queue #{item.position} of {item.position + item.aheadInService}
+                              {t('queue #{n} of {total}', { n: item.position, total: item.position + item.aheadInService })}
                             </div>
                           )}
                         </td>
@@ -289,8 +293,8 @@ export function Deploys() {
                         </td>
                         <td className="py-3 pr-4 text-slate-400">
                           {item.startedAt
-                            ? `started ${relativeAge(item.startedAt)}`
-                            : `enqueued ${relativeAge(item.createdAt)}`}
+                            ? t('started {age}', { age: relativeAge(item.startedAt, t) })
+                            : t('enqueued {age}', { age: relativeAge(item.createdAt, t) })}
                         </td>
                         <td className="py-3 pr-0 text-right">
                           <div className="flex items-center justify-end gap-1.5">
@@ -299,17 +303,17 @@ export function Deploys() {
                               variant="secondary"
                               onClick={() => cancel.mutate(item)}
                               disabled={cancel.isPending}
-                              title="Stop the pipeline at the next step boundary"
+                              title={t('Stop the pipeline at the next step boundary')}
                             >
                               <StopCircle size={12} />
-                              Cancel
+                              {t('Cancel')}
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={() => remove.mutate(item)}
                               disabled={remove.isPending}
-                              title="Remove from history (refused for in-flight or serving-traffic deploys)"
+                              title={t('Remove from history (refused for in-flight or serving-traffic deploys)')}
                             >
                               <Trash2 size={12} />
                               <X size={12} className="ml-0.5 opacity-60" />

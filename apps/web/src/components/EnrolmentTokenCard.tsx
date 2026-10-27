@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Eye, EyeOff, KeyRound, RefreshCw } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useCopy } from '../lib/format.js';
+import { useT } from '../lib/i18n.js';
 import { useToast } from './Toast.js';
 import { Button, ConfirmDialog } from './ui.js';
 
@@ -38,6 +39,7 @@ export function useEnrolmentToken(enabled: boolean) {
  * `<enrolment-token-from-settings>` that no Settings screen showed.
  */
 export function EnrolmentTokenCard() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { copied, copy } = useCopy();
@@ -50,7 +52,7 @@ export function EnrolmentTokenCard() {
     onSuccess: (next) => {
       qc.setQueryData(ENROLMENT_QUERY_KEY, next);
       setRevealed(true);
-      toast('New enrolment token generated — agents started with the old one can no longer announce', 'success');
+      toast(t('New enrolment token generated — agents started with the old one can no longer announce'), 'success');
     },
     onError: (err) => toast(err.message, 'error'),
   });
@@ -60,7 +62,7 @@ export function EnrolmentTokenCard() {
       qc.setQueryData(ENROLMENT_QUERY_KEY, { enabled: false, token: null });
       setConfirmDisable(false);
       setRevealed(false);
-      toast('Enrolment disabled — new nodes can no longer announce themselves', 'success');
+      toast(t('Enrolment disabled — new nodes can no longer announce themselves'), 'success');
     },
     onError: (err) => toast(err.message, 'error'),
   });
@@ -70,12 +72,12 @@ export function EnrolmentTokenCard() {
   return (
     <div className="mt-4 rounded-lg border border-white/[0.08] bg-slate-900/60 p-3" data-testid="enrolment-card">
       <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-300">
-        <KeyRound size={13} className="text-indigo-400" /> Enrolment token
+        <KeyRound size={13} className="text-indigo-400" /> {t('Enrolment token')}
       </div>
       {state.isLoading ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-slate-500">{t('Loading…')}</p>
       ) : state.error ? (
-        <p className="text-xs text-rose-300">Could not load the enrolment token: {state.error.message}</p>
+        <p className="text-xs text-rose-300">{t('Could not load the enrolment token: {error}', { error: state.error.message })}</p>
       ) : token ? (
         <div className="flex flex-wrap items-center gap-2">
           <code className="min-w-0 flex-1 break-all rounded bg-black/40 px-2 py-1.5 font-mono text-[11px] text-slate-200">
@@ -83,10 +85,10 @@ export function EnrolmentTokenCard() {
           </code>
           <Button size="sm" variant="secondary" onClick={() => setRevealed((r) => !r)} className="h-7 text-xs">
             {revealed ? <EyeOff size={12} /> : <Eye size={12} />}
-            {revealed ? 'Hide' : 'Reveal'}
+            {revealed ? t('Hide') : t('Reveal')}
           </Button>
           <Button size="sm" variant="secondary" onClick={() => void copy(token)} className="h-7 text-xs">
-            <Copy size={12} /> {copied ? 'Copied' : 'Copy token'}
+            <Copy size={12} /> {copied ? t('Copied') : t('Copy token')}
           </Button>
           <Button
             size="sm"
@@ -95,27 +97,27 @@ export function EnrolmentTokenCard() {
             disabled={rotate.isPending}
             className="h-7 text-xs"
           >
-            <RefreshCw size={12} /> Rotate
+            <RefreshCw size={12} /> {t('Rotate')}
           </Button>
           <Button size="sm" variant="danger" onClick={() => setConfirmDisable(true)} className="h-7 text-xs">
-            Disable
+            {t('Disable')}
           </Button>
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-amber-200">
-            Enrolment is off: announcing nodes are refused until you generate a token.
+            {t('Enrolment is off: announcing nodes are refused until you generate a token.')}
           </p>
           <Button size="sm" onClick={() => rotate.mutate()} disabled={rotate.isPending} className="h-7 text-xs">
-            Generate token
+            {t('Generate token')}
           </Button>
         </div>
       )}
       <ConfirmDialog
         open={confirmDisable}
-        title="Disable node enrolment?"
-        message="New nodes will be refused when they announce themselves. Nodes that are already registered keep working."
-        confirmLabel="Disable"
+        title={t('Disable node enrolment?')}
+        message={t('New nodes will be refused when they announce themselves. Nodes that are already registered keep working.')}
+        confirmLabel={t('Disable')}
         onConfirm={() => disable.mutate()}
         onClose={() => setConfirmDisable(false)}
       />

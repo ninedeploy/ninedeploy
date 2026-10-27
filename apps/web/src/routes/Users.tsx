@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth.js';
 import { useToast } from '../components/Toast.js';
 import { Card, ConfirmDialog, EmptyState, ErrorCard, PageHeader, Skeleton, cn } from '../components/ui.js';
 import { formatDateTime, useCopy } from '../lib/format.js';
+import { fill, useT } from '../lib/i18n.js';
 
 /**
  * People view (post team-overhaul).
@@ -16,6 +17,7 @@ import { formatDateTime, useCopy } from '../lib/format.js';
  * changes go through the workspace membership page (`/workspaces`).
  */
 export function Users() {
+  const t = useT();
   const qc = useQueryClient();
   const { user: me } = useAuth();
   const { toast } = useToast();
@@ -45,17 +47,17 @@ export function Users() {
       setAddEmail('');
       setAddName('');
       setAddPassword('');
-      toast(`User ${u.email} created — invite them into a workspace from /workspaces`, 'success');
+      toast(t('User {email} created — invite them into a workspace from /workspaces', { email: u.email }), 'success');
     },
-    onError: () => toast('Could not create the user (email taken?)', 'error'),
+    onError: () => toast(t('Could not create the user (email taken?)'), 'error'),
   });
   const submitCreate = () => {
     if (!/^\S+@\S+\.\S+$/.test(addEmail.trim())) {
-      toast('Enter a valid email', 'error');
+      toast(t('Enter a valid email'), 'error');
       return;
     }
     if (addPassword.length < 8) {
-      toast('Password must be at least 8 characters', 'error');
+      toast(t('Password must be at least 8 characters'), 'error');
       return;
     }
     createUser.mutate();
@@ -65,9 +67,9 @@ export function Users() {
     mutationFn: (id: number) => api.users.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
-      toast('User deleted', 'success');
+      toast(t('User deleted'), 'success');
     },
-    onError: () => toast('Could not delete the user', 'error'),
+    onError: () => toast(t('Could not delete the user'), 'error'),
   });
 
   // ── Operator password reset ────────────────────────────────────────────
@@ -78,13 +80,13 @@ export function Users() {
     onSuccess: () => {
       setResetFor(null);
       setResetPw('');
-      toast('Password reset — the user must sign in again', 'success');
+      toast(t('Password reset — the user must sign in again'), 'success');
     },
-    onError: () => toast('Password reset failed', 'error'),
+    onError: () => toast(t('Password reset failed'), 'error'),
   });
   const submitReset = () => {
     if (resetPw.length < 8) {
-      toast('Password must be at least 8 characters', 'error');
+      toast(t('Password must be at least 8 characters'), 'error');
       return;
     }
     // The Save button only renders while a reset row is open, so resetFor is set.
@@ -118,44 +120,43 @@ export function Users() {
   const resetLink = useMutation({
     mutationFn: (id: number) => api.users.resetLink(id),
     onSuccess: (res) => setRevealedLink(res),
-    onError: () => toast('Could not generate the reset link', 'error'),
+    onError: () => toast(t('Could not generate the reset link'), 'error'),
   });
   const copyLink = async (url: string) => {
     const ok = await copy(url);
-    if (ok) toast('Reset link copied', 'success');
-    else toast('Copy failed — select the link manually', 'error');
+    if (ok) toast(t('Reset link copied'), 'success');
+    else toast(t('Copy failed — select the link manually'), 'error');
   };
 
   // r472: people management is operator-only server-side — a member landing
   // here directly gets the honest one-liner instead of an error card.
   if (!me?.isOperator) {
-    return <PageHeader icon={<UsersIcon size={18} />} title="People" subtitle="Instance user management — operators only." />;
+    return <PageHeader icon={<UsersIcon size={18} />} title={t('People')} subtitle={t('Instance user management — operators only.')} />;
   }
 
   return (
     <div className="max-w-3xl">
       <PageHeader
         icon={<UsersIcon size={18} />}
-        title="People"
-        subtitle="Manage operators and team members. Roles live in workspaces, not here."
+        title={t('People')}
+        subtitle={t('Manage operators and team members. Roles live in workspaces, not here.')}
       />
 
       {revealedLink && (
         <Card className="mb-4 border-amber-500/30">
           <div className="p-4">
             <p className="text-xs font-medium text-amber-200">
-              Copy this one-time link now — it is shown only once and expires{' '}
-              {formatDateTime(revealedLink.expiresAt)}.
+              {t('Copy this one-time link now — it is shown only once and expires {date}.', { date: formatDateTime(revealedLink.expiresAt) })}
             </p>
             <div className="mt-2 flex items-center gap-2">
               <code className="min-w-0 flex-1 truncate rounded bg-black/40 px-2 py-1.5 font-mono text-[11px] text-amber-100">
                 {revealedLink.url}
               </code>
               <button type="button" onClick={() => copyLink(revealedLink.url)} className="shrink-0 text-xs font-medium text-amber-200 hover:text-amber-100">
-                Copy
+                {t('Copy')}
               </button>
               <button type="button" onClick={() => setRevealedLink(null)} className="shrink-0 text-xs text-amber-200/70 hover:underline">
-                Done
+                {t('Done')}
               </button>
             </div>
           </div>
@@ -167,29 +168,29 @@ export function Users() {
         <div className="p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              <UserPlus size={14} /> Add user
+              <UserPlus size={14} /> {t('Add user')}
             </h2>
             <button type="button"
               onClick={() => setShowAdd(!showAdd)}
               className="rounded-lg bg-white/[0.04] px-3 py-1.5 text-xs text-slate-400 transition hover:bg-white/[0.08] hover:text-slate-200"
             >
-              {showAdd ? 'Cancel' : 'New user…'}
+              {showAdd ? t('Cancel') : t('New user…')}
             </button>
           </div>
           {showAdd && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <input value={addEmail} onChange={(e) => setAddEmail(e.target.value)}
-                placeholder="email@example.com" aria-label="New user email"
+                placeholder="email@example.com" aria-label={t('New user email')}
                 className="w-56 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs outline-none focus:border-indigo-500" />
               <input value={addName} onChange={(e) => setAddName(e.target.value)}
-                placeholder="name (optional)" aria-label="New user name"
+                placeholder={t('name (optional)')} aria-label={t('New user name')}
                 className="w-40 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs outline-none focus:border-indigo-500" />
               <input value={addPassword} onChange={(e) => setAddPassword(e.target.value)}
-                type="password" placeholder="password (min 8)" aria-label="New user password"
+                type="password" placeholder={t('password (min 8)')} aria-label={t('New user password')}
                 className="w-44 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs outline-none focus:border-indigo-500" />
               <button type="button" onClick={submitCreate} disabled={createUser.isPending}
                 className="rounded-lg bg-[var(--nd-accent)] px-4 py-1.5 text-xs font-semibold text-black transition hover:brightness-110 disabled:opacity-50">
-                {createUser.isPending ? 'Creating…' : 'Create user'}
+                {createUser.isPending ? t('Creating…') : t('Create user')}
               </button>
             </div>
           )}
@@ -199,17 +200,17 @@ export function Users() {
       {list.isLoading ? (
         <Card className="p-5"><Skeleton className="h-10 w-full" /></Card>
       ) : list.isError ? (
-        <ErrorCard title="Couldn't load users" error={list.error} onRetry={() => list.refetch()} />
+        <ErrorCard title={t("Couldn't load users")} error={list.error} onRetry={() => list.refetch()} />
       ) : !list.data || list.data.length === 0 ? (
-        <Card><EmptyState icon={<UsersIcon size={26} />} title="No users" /></Card>
+        <Card><EmptyState icon={<UsersIcon size={26} />} title={t('No users')} /></Card>
       ) : (
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-3 font-medium">User</th>
-                <th className="px-5 py-3 font-medium">Workspaces</th>
-                <th className="px-5 py-3 font-medium">Access</th>
+                <th className="px-5 py-3 font-medium">{t('User')}</th>
+                <th className="px-5 py-3 font-medium">{t('Workspaces')}</th>
+                <th className="px-5 py-3 font-medium">{t('Access')}</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -225,7 +226,7 @@ export function Users() {
                         </div>
                         <div>
                           <div className="font-medium text-slate-200">
-                            {u.email} {isMe && <span className="text-xs text-slate-500">(you)</span>}
+                            {u.email} {isMe && <span className="text-xs text-slate-500">{t('(you)')}</span>}
                           </div>
                           {u.name && <div className="text-xs text-slate-500">{u.name}</div>}
                         </div>
@@ -234,7 +235,7 @@ export function Users() {
                     <td className="px-5 py-3">
                       <span className="inline-flex items-center gap-1.5 text-xs text-slate-300">
                         <Building2 size={11} className="text-slate-500" />
-                        {u.workspaceCount} {u.workspaceCount === 1 ? 'workspace' : 'workspaces'}
+                        {u.workspaceCount === 1 ? t('{n} workspace', { n: u.workspaceCount }) : t('{n} workspaces', { n: u.workspaceCount })}
                       </span>
                     </td>
                     <td className="px-5 py-3">
@@ -247,12 +248,12 @@ export function Users() {
                         )}
                         title={
                           u.isOperator
-                            ? 'Instance operator — full access, including host-privileged deploys'
-                            : 'Regular user — access comes from workspace membership only'
+                            ? t('Instance operator — full access, including host-privileged deploys')
+                            : t('Regular user — access comes from workspace membership only')
                         }
                       >
                         {u.isOperator ? <ShieldCheck size={11} /> : null}
-                        {u.isOperator ? 'Operator' : 'Member'}
+                        {u.isOperator ? t('Operator') : t('Member')}
                       </span>
                       {!isMe && (
                         <button
@@ -262,11 +263,11 @@ export function Users() {
                           className="ml-2 text-xs text-slate-500 underline-offset-2 transition hover:text-indigo-300 hover:underline"
                           title={
                             u.isOperator
-                              ? 'Revoke instance-operator access'
-                              : 'Grant instance-operator access (full control of this server)'
+                              ? t('Revoke instance-operator access')
+                              : t('Grant instance-operator access (full control of this server)')
                           }
                         >
-                          {u.isOperator ? 'Revoke' : 'Make operator'}
+                          {u.isOperator ? t('Revoke') : t('Make operator')}
                         </button>
                       )}
                     </td>
@@ -280,22 +281,22 @@ export function Users() {
                                   type="password"
                                   value={resetPw}
                                   onChange={(e) => setResetPw(e.target.value)}
-                                  placeholder="new password (min 8)"
+                                  placeholder={t('new password (min 8)')}
                                   className="w-44 rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-1 text-xs outline-none focus:border-indigo-500"
                                 />
                                 <button type="button"
                                   onClick={submitReset}
                                   disabled={resetPassword.isPending}
                                   className="text-xs font-medium text-emerald-400 transition hover:brightness-125"
-                                  title="Apply the new password"
+                                  title={t('Apply the new password')}
                                 >
-                                  {resetPassword.isPending ? 'Saving…' : 'Save'}
+                                  {resetPassword.isPending ? t('Saving…') : t('Save')}
                                 </button>
                                 <button type="button"
                                   onClick={() => { setResetFor(null); setResetPw(''); }}
                                   className="text-xs text-slate-500 transition hover:text-slate-300"
                                 >
-                                  Cancel
+                                  {t('Cancel')}
                                 </button>
                               </span>
                             ) : (
@@ -303,7 +304,7 @@ export function Users() {
                                 <button type="button"
                                   onClick={() => { setResetFor(u.id); setResetPw(''); }}
                                   className="text-slate-600 transition hover:text-amber-400"
-                                  title="Reset password (signs the user out everywhere)"
+                                  title={t('Reset password (signs the user out everywhere)')}
                                 >
                                   <KeyRound size={14} />
                                 </button>
@@ -311,7 +312,7 @@ export function Users() {
                                   onClick={() => resetLink.mutate(u.id)}
                                   disabled={resetLink.isPending}
                                   className="text-slate-600 transition hover:text-indigo-300"
-                                  title="Generate a one-time reset link (no email needed)"
+                                  title={t('Generate a one-time reset link (no email needed)')}
                                 >
                                   <LinkIcon size={14} />
                                 </button>
@@ -320,7 +321,7 @@ export function Users() {
                             <button type="button"
                               onClick={() => setPendingDelete({ id: u.id, email: u.email, ownedWorkspaces: u.ownedWorkspaces })}
                               className="text-slate-600 transition hover:text-rose-400"
-                              title="Delete user"
+                              title={t('Delete user')}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -336,33 +337,34 @@ export function Users() {
         </Card>
       )}
       <p className="mt-3 text-xs text-slate-600">
-        New users are created without any workspace membership. Open{' '}
-        <code className="text-slate-400">/workspaces</code> to invite them into a workspace and pick a role.
+        {fill(t('New users are created without any workspace membership. Open {path} to invite them into a workspace and pick a role.'), {
+          path: <code className="text-slate-400">/workspaces</code>,
+        })}
       </p>
 
       <ConfirmDialog
         open={pendingDelete != null}
-        title="Delete user"
-        message={`Delete ${pendingDelete?.email}? Their sessions, API tokens and workspace memberships are removed.${
+        title={t('Delete user')}
+        message={`${t('Delete {email}? Their sessions, API tokens and workspace memberships are removed.', { email: pendingDelete?.email ?? '' })}${
           // r540: owned workspaces are handed to you, not deleted with the user.
           pendingDelete?.ownedWorkspaces?.length
-            ? ` Ownership of ${pendingDelete.ownedWorkspaces.map((w) => w.name).join(', ')} transfers to you.`
+            ? ` ${t('Ownership of {names} transfers to you.', { names: pendingDelete.ownedWorkspaces.map((w) => w.name).join(', ') })}`
             : ''
-        } Services and databases they own inside a workspace go to its owner.`}
-        confirmLabel="Delete"
+        } ${t('Services and databases they own inside a workspace go to its owner.')}`}
+        confirmLabel={t('Delete')}
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
         onClose={() => setPendingDelete(null)}
       />
 
       <ConfirmDialog
         open={pendingOperator != null}
-        title={pendingOperator?.grant ? 'Grant instance-operator?' : 'Revoke instance-operator?'}
+        title={pendingOperator?.grant ? t('Grant instance-operator?') : t('Revoke instance-operator?')}
         message={
           pendingOperator?.grant
-            ? `${pendingOperator.name} gains FULL control of this server: host-privileged deploys (PM2, compose, lifecycle hooks), the exec terminal, volumes and the Docker socket — on every workspace and service.`
-            : `${pendingOperator?.name} loses instance-operator access. Workspace-level roles are unaffected. Deploys that need host privilege will refuse for them afterwards.`
+            ? t('{name} gains FULL control of this server: host-privileged deploys (PM2, compose, lifecycle hooks), the exec terminal, volumes and the Docker socket — on every workspace and service.', { name: pendingOperator.name })
+            : t('{name} loses instance-operator access. Workspace-level roles are unaffected. Deploys that need host privilege will refuse for them afterwards.', { name: pendingOperator?.name ?? '' })
         }
-        confirmLabel={pendingOperator?.grant ? 'Grant' : 'Revoke'}
+        confirmLabel={pendingOperator?.grant ? t('Grant') : t('Revoke')}
         onConfirm={() => pendingOperator && setOperator.mutate({ id: pendingOperator.id, isOperator: pendingOperator.grant })}
         onClose={() => setPendingOperator(null)}
       />

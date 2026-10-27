@@ -18,9 +18,10 @@ import {
   runtimeVersionOptions,
 } from '@ninedeploy/schemas';
 import { Badge, Field, Input, Select } from '../../../components/ui.js';
+import { fill, msg, useT } from '../../../lib/i18n.js';
 
 const RUNTIME_TYPES: readonly { value: RuntimeType; label: string }[] = [
-  { value: 'auto', label: 'Auto-detect (let Nixpacks decide)' },
+  { value: 'auto', label: msg('Auto-detect (let Nixpacks decide)') },
   { value: 'node', label: 'Node.js' },
   { value: 'python', label: 'Python' },
   { value: 'go', label: 'Go' },
@@ -28,7 +29,7 @@ const RUNTIME_TYPES: readonly { value: RuntimeType; label: string }[] = [
   { value: 'php', label: 'PHP' },
   { value: 'java', label: 'Java' },
   { value: 'rust', label: 'Rust' },
-  { value: 'static', label: 'Static (no runtime pin)' },
+  { value: 'static', label: msg('Static (no runtime pin)') },
 ];
 
 /** Sentinel `<option>` value that switches the picker to the free-text input. */
@@ -42,9 +43,9 @@ const ADVISORY_TONE = {
 } as const;
 
 const ADVISORY_LABEL = {
-  error: 'End of life',
-  warn: 'Security fixes only',
-  info: 'Unverified',
+  error: msg('End of life'),
+  warn: msg('Security fixes only'),
+  info: msg('Unverified'),
 } as const;
 
 export function RuntimeSection({
@@ -54,6 +55,7 @@ export function RuntimeSection({
   value: Runtime | undefined;
   onChange: (next: Runtime | undefined) => void;
 }) {
+  const t = useT();
   const type = value?.type ?? 'auto';
   const version = value?.version ?? '';
   const options = runtimeVersionOptions(type);
@@ -91,45 +93,45 @@ export function RuntimeSection({
 
   return (
     <div className="space-y-4">
-      <Field label="Type" hint="What runtime Nixpacks should pin">
+      <Field label={t('Type')} hint={t('What runtime Nixpacks should pin')}>
         <Select value={type} onChange={(e) => changeType(e.target.value as RuntimeType)}>
           {RUNTIME_TYPES.map((opt) => (
             <option key={opt.value} value={opt.value}>
-              {opt.label}
+              {t(opt.label)}
             </option>
           ))}
         </Select>
       </Field>
 
       <Field
-        label="Version"
+        label={t('Version')}
         hint={
           recommended
-            ? `Recommended: ${recommended}. Older versions stay selectable — support status is shown below.`
-            : 'Major, major.minor, or major.minor.patch — e.g. 24 or 3.14'
+            ? t('Recommended: {version}. Older versions stay selectable — support status is shown below.', { version: recommended })
+            : t('Major, major.minor, or major.minor.patch — e.g. 24 or 3.14')
         }
       >
         <div className="space-y-2">
           {options.length > 0 && (
             <Select
-              aria-label="Runtime version"
+              aria-label={t('Runtime version')}
               value={showInput ? CUSTOM_OPTION : version}
               onChange={(e) => changeVersionOption(e.target.value)}
             >
-              <option value="">Let Nixpacks decide (no pin)</option>
+              <option value="">{t('Let Nixpacks decide (no pin)')}</option>
               {options.map((opt) => (
                 <option key={opt.version} value={opt.version}>
                   {opt.label}
-                  {opt.version === recommended ? ' — recommended' : ''}
+                  {opt.version === recommended ? t(' — recommended') : ''}
                 </option>
               ))}
-              <option value={CUSTOM_OPTION}>Other version…</option>
+              <option value={CUSTOM_OPTION}>{t('Other version…')}</option>
             </Select>
           )}
           {showInput && (
             <Input
               value={version}
-              placeholder="leave empty to let Nixpacks pick"
+              placeholder={t('leave empty to let Nixpacks pick')}
               onChange={(e) => emit(type, e.target.value.trim())}
             />
           )}
@@ -138,25 +140,28 @@ export function RuntimeSection({
 
       {advisory && (
         <div className="flex items-start gap-2 rounded-lg border border-slate-700/60 bg-slate-900/40 p-3">
-          <Badge tone={ADVISORY_TONE[advisory.level]}>{ADVISORY_LABEL[advisory.level]}</Badge>
+          <Badge tone={ADVISORY_TONE[advisory.level]}>{t(ADVISORY_LABEL[advisory.level])}</Badge>
           <p className="text-xs leading-relaxed text-slate-300">{advisory.message}</p>
         </div>
       )}
 
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] p-3">
         <p className="text-xs leading-relaxed text-slate-300">
-          <span className="font-semibold text-amber-300">Not applied at build time yet.</span>{' '}
-          The deploy pipeline applies this file's routes, alerts and database sections, but the
-          builder does not yet read <code className="text-slate-200">runtime</code>. Declare it for
-          documentation and forward compatibility; to pin a version today use your ecosystem's own
-          mechanism (<code className="text-slate-200">.nvmrc</code>,{' '}
-          <code className="text-slate-200">go.mod</code>,{' '}
-          <code className="text-slate-200">composer.json</code>).
+          <span className="font-semibold text-amber-300">{t('Not applied at build time yet.')}</span>{' '}
+          {fill(
+            t("The deploy pipeline applies this file's routes, alerts and database sections, but the builder does not yet read {runtime}. Declare it for documentation and forward compatibility; to pin a version today use your ecosystem's own mechanism ({nvmrc}, {gomod}, {composer})."),
+            {
+              runtime: <code className="text-slate-200">runtime</code>,
+              nvmrc: <code className="text-slate-200">.nvmrc</code>,
+              gomod: <code className="text-slate-200">go.mod</code>,
+              composer: <code className="text-slate-200">composer.json</code>,
+            },
+          )}
         </p>
       </div>
 
       <p className="text-[11px] text-slate-500">
-        Version catalog last reviewed {RUNTIME_CATALOG_REVIEWED}.
+        {t('Version catalog last reviewed {date}.', { date: RUNTIME_CATALOG_REVIEWED })}
       </p>
     </div>
   );

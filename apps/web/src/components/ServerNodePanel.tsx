@@ -9,6 +9,7 @@ import { errorCode, errorMessage, missingFeatures, NODE_FEATURES, swarmOptInLine
 import { useToast } from './Toast.js';
 import { Badge, Button, ConfirmDialog, Input, Switch } from './ui.js';
 import { DeploymentSupport } from './DeploymentSupport.js';
+import { fill, useT } from '../lib/i18n.js';
 
 /** True when the panel sent any multi-node field for this node (an older panel sends none). */
 export function hasNodeDetails(s: ServerListEntry): boolean {
@@ -69,17 +70,18 @@ function Section({ icon, title, children }: { icon: ReactNode; title: string; ch
 }
 
 function AgentRow({ server }: { server: ServerListEntry }) {
+  const t = useT();
   const agent = server.agent;
   const features = server.features;
   const missing = missingFeatures(features);
-  const version = agent?.version ?? (agent === null ? 'not checked yet' : agent ? 'unknown (older agent)' : '—');
+  const version = agent?.version ?? (agent === null ? t('not checked yet') : agent ? t('unknown (older agent)') : '—');
   return (
-    <Section icon={<Cpu size={12} />} title="Agent">
+    <Section icon={<Cpu size={12} />} title={t('Agent')}>
       <div className="flex flex-wrap items-center gap-2 text-slate-300">
         <span>
-          Version <span className="font-mono text-slate-100">{version}</span>
+          {t('Version')} <span className="font-mono text-slate-100">{version}</span>
         </span>
-        {agent?.checkedAt && <span className="text-[10px] text-slate-500">checked {formatRelative(agent.checkedAt)}</span>}
+        {agent?.checkedAt && <span className="text-[10px] text-slate-500">{t('checked {when}', { when: formatRelative(agent.checkedAt) })}</span>}
       </div>
       {features && (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -92,7 +94,7 @@ function AgentRow({ server }: { server: ServerListEntry }) {
       )}
       {agent && agent.capabilities.length > 0 && (
         <details className="mt-2 text-[11px] text-slate-500">
-          <summary className="cursor-pointer select-none">{agent.capabilities.length} capabilities</summary>
+          <summary className="cursor-pointer select-none">{t('{n} capabilities', { n: agent.capabilities.length })}</summary>
           <div className="mt-1 flex flex-wrap gap-1">
             {agent.capabilities.map((cap) => (
               <code key={cap} className="rounded bg-black/30 px-1 py-0.5 font-mono text-[10px] text-slate-300">
@@ -104,7 +106,7 @@ function AgentRow({ server }: { server: ServerListEntry }) {
       )}
       {missing.length > 0 && (
         <p className="mt-2 text-[11px] text-amber-300">
-          Update the agent on this node to use: {missing.join(', ')}.{features?.reason ? ` ${features.reason}` : ''}
+          {t('Update the agent on this node to use: {features}.', { features: missing.join(', ') })}{features?.reason ? ` ${features.reason}` : ''}
         </p>
       )}
     </Section>
@@ -112,6 +114,7 @@ function AgentRow({ server }: { server: ServerListEntry }) {
 }
 
 function BuildServerRow({ server }: { server: ServerListEntry }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [concurrency, setConcurrency] = useState(String(server.buildConcurrency ?? BUILD_CONCURRENCY_MIN));
@@ -121,24 +124,24 @@ function BuildServerRow({ server }: { server: ServerListEntry }) {
       void qc.invalidateQueries({ queryKey: ['servers'] });
       if (!res.isBuildServer && res.buildServiceIds.length > 0) {
         toast(
-          `${server.name} is no longer a build server; ${res.buildServiceIds.length} service(s) still build there and their next deploy fails until you change their Build on.`,
+          t('{name} is no longer a build server; {n} service(s) still build there and their next deploy fails until you change their Build on.', { name: server.name, n: res.buildServiceIds.length }),
           'info',
         );
       } else {
-        toast(res.isBuildServer ? `${server.name} builds images (up to ${res.buildConcurrency} at once)` : `${server.name} is no longer a build server`, 'success');
+        toast(res.isBuildServer ? t('{name} builds images (up to {n} at once)', { name: server.name, n: String(res.buildConcurrency) }) : t('{name} is no longer a build server', { name: server.name }), 'success');
       }
     },
-    onError: (err) => toast(errorMessage(err, 'Could not change the build-server role'), 'error'),
+    onError: (err) => toast(errorMessage(err, t('Could not change the build-server role')), 'error'),
   });
   const parsed = Number(concurrency);
   const valid = Number.isInteger(parsed) && parsed >= BUILD_CONCURRENCY_MIN && parsed <= BUILD_CONCURRENCY_MAX;
   const isBuildServer = server.isBuildServer === true;
   return (
-    <Section icon={<Hammer size={12} />} title="Build server">
+    <Section icon={<Hammer size={12} />} title={t('Build server')}>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-slate-300">{isBuildServer ? 'Builds images for other services' : 'Off: builds only its own services'}</span>
+        <span className="text-slate-300">{isBuildServer ? t('Builds images for other services') : t('Off: builds only its own services')}</span>
         <Switch
-          label={`Build server ${server.name}`}
+          label={t('Build server {name}', { name: server.name })}
           checked={isBuildServer}
           disabled={save.isPending}
           onChange={(on) => save.mutate({ isBuildServer: on })}
@@ -153,9 +156,9 @@ function BuildServerRow({ server }: { server: ServerListEntry }) {
           }}
         >
           <label className="flex flex-col gap-1 text-[11px] text-slate-500">
-            Concurrent builds ({BUILD_CONCURRENCY_MIN}–{BUILD_CONCURRENCY_MAX})
+            {t('Concurrent builds ({min}–{max})', { min: BUILD_CONCURRENCY_MIN, max: BUILD_CONCURRENCY_MAX })}
             <Input
-              aria-label={`Build concurrency for ${server.name}`}
+              aria-label={t('Build concurrency for {name}', { name: server.name })}
               type="number"
               min={BUILD_CONCURRENCY_MIN}
               max={BUILD_CONCURRENCY_MAX}
@@ -165,18 +168,19 @@ function BuildServerRow({ server }: { server: ServerListEntry }) {
             />
           </label>
           <Button type="submit" size="sm" variant="secondary" disabled={!valid || save.isPending || parsed === server.buildConcurrency}>
-            Save
+            {t('Save')}
           </Button>
         </form>
       )}
       {server.features?.imageTransfer === false && (
-        <p className="mt-2 text-[11px] text-amber-300">This agent cannot hand built images over yet: update it before services build here.</p>
+        <p className="mt-2 text-[11px] text-amber-300">{t('This agent cannot hand built images over yet: update it before services build here.')}</p>
       )}
     </Section>
   );
 }
 
 function SwarmRow({ server, managerAddr, warnings }: { server: ServerListEntry; managerAddr?: string | null; warnings: readonly string[] }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -196,61 +200,62 @@ function SwarmRow({ server, managerAddr, warnings }: { server: ServerListEntry; 
     mutationFn: () => api.servers.swarmJoin(server.id),
     onSuccess: (res) => {
       settle(res);
-      toast(`${server.name} joined the swarm`, 'success');
+      toast(t('{name} joined the swarm', { name: server.name }), 'success');
     },
-    onError: (err) => fail(err, 'Could not join the swarm'),
+    onError: (err) => fail(err, t('Could not join the swarm')),
   });
   const leave = useMutation({
     mutationFn: () => api.servers.swarmLeave(server.id),
     onSuccess: (res) => {
       settle(res);
-      toast(res.drained ? `${server.name} left the swarm` : `${server.name} left the swarm before its tasks moved`, res.drained ? 'success' : 'info');
+      toast(res.drained ? t('{name} left the swarm', { name: server.name }) : t('{name} left the swarm before its tasks moved', { name: server.name }), res.drained ? 'success' : 'info');
     },
-    onError: (err) => fail(err, 'Could not leave the swarm'),
+    onError: (err) => fail(err, t('Could not leave the swarm')),
   });
   const busy = join.isPending || leave.isPending;
   const allWarnings = [...warnings, ...resultWarnings];
 
   return (
-    <Section icon={<Network size={12} />} title="Swarm">
+    <Section icon={<Network size={12} />} title={t('Swarm')}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-slate-300">
           {member ? (
             <>
-              <Badge tone="indigo">{server.swarmRole ?? 'member'}</Badge>
+              <Badge tone="indigo">{server.swarmRole ?? t('member')}</Badge>
               <span className="font-mono text-[10px] text-slate-500" title={server.swarmNodeId ?? ''}>
                 {(server.swarmNodeId ?? '').slice(0, 12)}
               </span>
             </>
           ) : (
-            <Badge>not in the swarm</Badge>
+            <Badge>{t('not in the swarm')}</Badge>
           )}
         </div>
         {member ? (
           <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirmLeave(true)}>
-            {leave.isPending ? 'Leaving…' : 'Leave'}
+            {leave.isPending ? t('Leaving…') : t('Leave')}
           </Button>
         ) : (
           <Button size="sm" variant="secondary" disabled={busy || server.features?.swarm === false} onClick={() => join.mutate()}>
-            {join.isPending ? 'Joining…' : 'Join'}
+            {join.isPending ? t('Joining…') : t('Join')}
           </Button>
         )}
       </div>
       {!member && (
         <p className="mt-2 text-[11px] text-slate-500">
-          Joining is opt-in on the node: its owner sets <code className="font-mono text-slate-300">{swarmOptInLine(managerAddr)}</code> in the
-          agent's environment and restarts the agent.
+          {fill(t("Joining is opt-in on the node: its owner sets {line} in the agent's environment and restarts the agent."), {
+            line: <code className="font-mono text-slate-300">{swarmOptInLine(managerAddr)}</code>,
+          })}
         </p>
       )}
       {server.features?.swarm === false && !member && (
-        <p className="mt-1 text-[11px] text-amber-300">The agent on this node predates Swarm: update it first.</p>
+        <p className="mt-1 text-[11px] text-amber-300">{t('The agent on this node predates Swarm: update it first.')}</p>
       )}
       {refusal && (
         <div role="alert" className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/[0.06] p-2 text-[11px] text-rose-200">
           {refusal.message}
           {refusal.code === 'node_swarm_not_enabled' && (
             <div className="mt-1 text-rose-100">
-              On the node: <code className="font-mono">{swarmOptInLine(managerAddr)}</code>
+              {t('On the node:')} <code className="font-mono">{swarmOptInLine(managerAddr)}</code>
             </div>
           )}
         </div>
@@ -263,9 +268,9 @@ function SwarmRow({ server, managerAddr, warnings }: { server: ServerListEntry; 
       ))}
       <ConfirmDialog
         open={confirmLeave}
-        title="Leave the swarm"
-        message={`Drain "${server.name}" and take it out of the swarm? Its Swarm tasks move to the other members first; this can take a few minutes.`}
-        confirmLabel="Leave"
+        title={t('Leave the swarm')}
+        message={t('Drain "{name}" and take it out of the swarm? Its Swarm tasks move to the other members first; this can take a few minutes.', { name: server.name })}
+        confirmLabel={t('Leave')}
         onConfirm={() => leave.mutate()}
         onClose={() => setConfirmLeave(false)}
       />
@@ -274,18 +279,19 @@ function SwarmRow({ server, managerAddr, warnings }: { server: ServerListEntry; 
 }
 
 function HostedRow({ server }: { server: ServerListEntry }) {
+  const t = useT();
   const count = server.databases ?? 0;
   return (
-    <Section icon={<Database size={12} />} title="Hosted here">
+    <Section icon={<Database size={12} />} title={t('Hosted here')}>
       {server.databases !== undefined && (
         <p className="text-slate-300">
-          {count === 0 ? 'No managed databases' : `${count} managed database${count === 1 ? '' : 's'}`}
-          {count > 0 && <span className="text-slate-500"> · remove is refused until they are deleted or moved</span>}
+          {count === 0 ? t('No managed databases') : count === 1 ? t('{n} managed database', { n: count }) : t('{n} managed databases', { n: count })}
+          {count > 0 && <span className="text-slate-500"> · {t('remove is refused until they are deleted or moved')}</span>}
         </p>
       )}
       {isSwarmMember(server) && (
         <p className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-300">
-          <Boxes size={12} /> In the swarm: make it leave before you remove it.
+          <Boxes size={12} /> {t('In the swarm: make it leave before you remove it.')}
         </p>
       )}
     </Section>

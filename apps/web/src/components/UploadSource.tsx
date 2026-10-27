@@ -5,16 +5,20 @@ import { useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
 import { formatRelative } from '../lib/format.js';
 import { useToast } from './Toast.js';
+import { type Translate, fill, translate, useT } from '../lib/i18n.js';
 import { Button, Card, CardBody, Field, Input, Modal, Skeleton } from './ui.js';
 
 /** The panel's limit for one upload (POST /v1/services/:id/source). */
 export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 /** Why a picked file cannot be uploaded, or null. */
-export function archiveProblem(file: { name: string; size: number }): string | null {
-  if (!/\.(zip|tar\.gz|tgz)$/i.test(file.name)) return 'Pick a .zip or a .tar.gz archive.';
-  if (file.size > UPLOAD_MAX_BYTES) return `The archive is ${(file.size / 1024 / 1024).toFixed(1)} MiB; the limit is 100 MiB. Leave node_modules and build output out.`;
-  if (file.size === 0) return 'The file is empty.';
+export function archiveProblem(
+  file: { name: string; size: number },
+  t: Translate = (text, vars) => translate('en', text, vars),
+): string | null {
+  if (!/\.(zip|tar\.gz|tgz)$/i.test(file.name)) return t('Pick a .zip or a .tar.gz archive.');
+  if (file.size > UPLOAD_MAX_BYTES) return t('The archive is {size} MiB; the limit is 100 MiB. Leave node_modules and build output out.', { size: (file.size / 1024 / 1024).toFixed(1) });
+  if (file.size === 0) return t('The file is empty.');
   return null;
 }
 
@@ -31,12 +35,13 @@ const CLI_HINT = 'ninedeploy deploy up ./my-app --create my-app';
  * otherwise Nixpacks).
  */
 export function UploadSourceModal({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [name, setName] = useState('');
   const [port, setPort] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const problem = file ? archiveProblem(file) : null;
+  const problem = file ? archiveProblem(file, t) : null;
 
   const go = useMutation({
     mutationFn: async () => {
@@ -51,13 +56,13 @@ export function UploadSourceModal({ onClose }: { onClose: () => void }) {
       return svc;
     },
     onSuccess: (svc) => {
-      toast(`${svc.name} created — deploying your upload`, 'success');
+      toast(t('{name} created — deploying your upload', { name: svc.name }), 'success');
       onClose();
       navigate(`/services/${svc.id}`);
     },
     onError: (err: Error & { serviceId?: number }) => {
       toast(
-        err.serviceId != null ? `Service created, but the upload failed: ${err.message}` : err.message || 'Could not create the service',
+        err.serviceId != null ? t('Service created, but the upload failed: {error}', { error: err.message }) : err.message || t('Could not create the service'),
         'error',
       );
       if (err.serviceId != null) {
@@ -74,30 +79,29 @@ export function UploadSourceModal({ onClose }: { onClose: () => void }) {
   const portBad = port.trim() !== '' && !(Number.isInteger(Number(port)) && Number(port) >= 1 && Number(port) <= 65535);
 
   return (
-    <Modal title="Upload source" onClose={onClose}>
+    <Modal title={t('Upload source')} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <p className="text-xs leading-relaxed text-slate-400">
-          Deploy a folder without a Git repository: zip it (or make a .tar.gz) and upload it. A Dockerfile in it is used;
-          otherwise Nixpacks detects the stack. Upload a new version any time from the service&apos;s Deploys tab.
+          {t("Deploy a folder without a Git repository: zip it (or make a .tar.gz) and upload it. A Dockerfile in it is used; otherwise Nixpacks detects the stack. Upload a new version any time from the service's Deploys tab.")}
         </p>
-        <Field label="Service name">
+        <Field label={t('Service name')}>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-app" maxLength={100} />
         </Field>
-        <Field label="Archive" hint=".zip or .tar.gz, up to 100 MiB. A single top-level folder becomes the root." error={problem ?? undefined}>
-          <Input type="file" accept=".zip,.tar.gz,.tgz,application/zip,application/gzip" aria-label="Archive" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <Field label={t('Archive')} hint={t('.zip or .tar.gz, up to 100 MiB. A single top-level folder becomes the root.')} error={problem ?? undefined}>
+          <Input type="file" accept=".zip,.tar.gz,.tgz,application/zip,application/gzip" aria-label={t('Archive')} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </Field>
-        <Field label="Container port" hint="Optional. Nixpacks apps default to 3000." error={portBad ? 'Not a port number.' : undefined}>
+        <Field label={t('Container port')} hint={t('Optional. Nixpacks apps default to 3000.')} error={portBad ? t('Not a port number.') : undefined}>
           <Input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" placeholder="3000" className="font-mono" />
         </Field>
         <p className="text-[11px] text-slate-500">
-          From a terminal: <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-300">{CLI_HINT}</code>
+          {fill(t('From a terminal: {cmd}'), { cmd: <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-300">{CLI_HINT}</code> })}
         </p>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button type="submit" disabled={!name.trim() || !file || !!problem || portBad || go.isPending}>
-            <Upload size={14} /> {go.isPending ? 'Uploading…' : 'Create and deploy'}
+            <Upload size={14} /> {go.isPending ? t('Uploading…') : t('Create and deploy')}
           </Button>
         </div>
       </form>
@@ -111,6 +115,7 @@ export function UploadSourceModal({ onClose }: { onClose: () => void }) {
  * deployment rebuilds the upload it was made from, while it is kept.
  */
 export function UploadSourceCard({ serviceId }: { serviceId: number }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [problem, setProblem] = useState<string | null>(null);
@@ -119,16 +124,16 @@ export function UploadSourceCard({ serviceId }: { serviceId: number }) {
   const send = useMutation({
     mutationFn: async (file: File) => api.services.uploadSource(serviceId, await bytesOf(file)),
     onSuccess: (res) => {
-      toast(res.deploymentId != null ? `Uploaded ${res.sha.slice(0, 7)} — deployment #${res.deploymentId} queued` : `Uploaded ${res.sha.slice(0, 7)}`, 'success');
+      toast(res.deploymentId != null ? t('Uploaded {sha} — deployment #{id} queued', { sha: res.sha.slice(0, 7), id: res.deploymentId }) : t('Uploaded {name}', { name: res.sha.slice(0, 7) }), 'success');
       qc.invalidateQueries({ queryKey: ['source-uploads', serviceId] });
       qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
     },
-    onError: (err: Error) => toast(err.message || 'Upload failed', 'error'),
+    onError: (err: Error) => toast(err.message || t('Upload failed'), 'error'),
   });
 
   const pick = (file: File | undefined) => {
     if (!file) return;
-    const p = archiveProblem(file);
+    const p = archiveProblem(file, t);
     setProblem(p);
     if (!p) send.mutate(file);
   };
@@ -138,14 +143,14 @@ export function UploadSourceCard({ serviceId }: { serviceId: number }) {
       <CardBody>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <FileArchive size={15} className="text-slate-500" /> Uploaded source
+            <FileArchive size={15} className="text-slate-500" /> {t('Uploaded source')}
           </div>
           <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-400">
-            <Upload size={13} /> {send.isPending ? 'Uploading…' : 'Upload new version'}
+            <Upload size={13} /> {send.isPending ? t('Uploading…') : t('Upload new version')}
             <input
               type="file"
               accept=".zip,.tar.gz,.tgz,application/zip,application/gzip"
-              aria-label="Upload new version"
+              aria-label={t('Upload new version')}
               className="sr-only"
               disabled={send.isPending}
               onChange={(e) => {
@@ -156,14 +161,15 @@ export function UploadSourceCard({ serviceId }: { serviceId: number }) {
           </label>
         </div>
         <p className="mb-2 text-[11px] text-slate-500">
-          This service builds from uploaded archives (.zip / .tar.gz, up to 100 MiB). Or from a terminal:{' '}
-          <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-300">ninedeploy deploy up . --service {serviceId}</code>
+          {fill(t('This service builds from uploaded archives (.zip / .tar.gz, up to 100 MiB). Or from a terminal: {cmd}'), {
+            cmd: <code className="rounded bg-white/5 px-1 font-mono text-[10px] text-slate-300">ninedeploy deploy up . --service {serviceId}</code>,
+          })}
         </p>
         {problem && <p className="mb-2 text-[11px] text-rose-300/90">{problem}</p>}
         {uploads.isLoading ? (
           <Skeleton className="h-8 w-full" />
         ) : (uploads.data?.uploads.length ?? 0) === 0 ? (
-          <p className="text-xs text-amber-300/90">Nothing uploaded yet — upload an archive to deploy this service.</p>
+          <p className="text-xs text-amber-300/90">{t('Nothing uploaded yet — upload an archive to deploy this service.')}</p>
         ) : (
           <ul className="space-y-1">
             {uploads.data!.uploads.map((u, i) => (
@@ -172,7 +178,7 @@ export function UploadSourceCard({ serviceId }: { serviceId: number }) {
                 <span>{u.format}</span>
                 <span>{(u.bytes / 1024 / 1024).toFixed(1)} MiB</span>
                 <span className="text-slate-500">{formatRelative(u.uploadedAt)}</span>
-                {i === 0 && <span className="rounded bg-emerald-500/10 px-1.5 text-[10px] text-emerald-300">latest</span>}
+                {i === 0 && <span className="rounded bg-emerald-500/10 px-1.5 text-[10px] text-emerald-300">{t('latest')}</span>}
               </li>
             ))}
           </ul>

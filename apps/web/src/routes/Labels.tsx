@@ -9,6 +9,7 @@ import { useTagScope } from '../lib/projects.js';
 import { useToast } from '../components/Toast.js';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, cn } from '../components/ui.js';
 import { formatDateTime } from '../lib/format.js';
+import { useT } from '../lib/i18n.js';
 import type { Label, LabelColor } from '@ninedeploy/sdk';
 
 /**
@@ -52,6 +53,7 @@ function colorOf(raw: string | null | undefined): LabelColor {
 }
 
 export function Labels() {
+  const t = useT();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -111,10 +113,10 @@ export function Labels() {
     onSuccess: () => {
       invalidate();
       setShowForm(false);
-      toast(editing ? 'Label updated' : 'Label created', 'success');
+      toast(editing ? t('Label updated') : t('Label created'), 'success');
     },
     onError: (err: unknown) => {
-      toast(err instanceof Error ? err.message : 'Could not save the label', 'error');
+      toast(err instanceof Error ? err.message : t('Could not save the label'), 'error');
     },
   });
 
@@ -124,17 +126,17 @@ export function Labels() {
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['services'] });
       setPendingDelete(null);
-      toast('Label deleted — the services that carried it were untouched', 'success');
+      toast(t('Label deleted — the services that carried it were untouched'), 'success');
     },
     onError: (err: unknown) => {
-      toast(err instanceof Error ? err.message : 'Could not delete the label', 'error');
+      toast(err instanceof Error ? err.message : t('Could not delete the label'), 'error');
     },
   });
 
   const submitForm = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      toast('Name is required', 'error');
+      toast(t('Name is required'), 'error');
       return;
     }
     saveMutation.mutate();
@@ -144,11 +146,11 @@ export function Labels() {
     <div className="space-y-6 max-w-5xl">
       <PageHeader
         icon={<Tag size={18} />}
-        title="Labels"
-        subtitle="Free-form tags for slicing services outside the project hierarchy — production, staging, team-x. A service can carry any number of them."
+        title={t('Labels')}
+        subtitle={t('Free-form tags for slicing services outside the project hierarchy — production, staging, team-x. A service can carry any number of them.')}
         actions={
           <Button onClick={openCreate}>
-            <Plus size={16} /> New label
+            <Plus size={16} /> {t('New label')}
           </Button>
         }
       />
@@ -156,14 +158,14 @@ export function Labels() {
       {isLoading ? (
         <Card className="p-5"><Skeleton className="h-10 w-full" /></Card>
       ) : isError ? (
-        <ErrorCard title="Couldn't load labels" error={error} onRetry={() => refetch()} />
+        <ErrorCard title={t("Couldn't load labels")} error={error} onRetry={() => refetch()} />
       ) : labels.length === 0 ? (
         <Card>
           <EmptyState
             icon={<Tag size={26} />}
-            title="No labels yet"
-            hint="Create a label here, or add one inline from the tag filter in the top bar. Assign it to a service from the service's Tags card."
-            action={<Button onClick={openCreate}><Plus size={16} /> Create label</Button>}
+            title={t('No labels yet')}
+            hint={t("Create a label here, or add one inline from the tag filter in the top bar. Assign it to a service from the service's Tags card.")}
+            action={<Button onClick={openCreate}><Plus size={16} /> {t('Create label')}</Button>}
           />
         </Card>
       ) : (
@@ -171,10 +173,10 @@ export function Labels() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-3 font-medium">Label</th>
-                <th className="px-5 py-3 font-medium">Scope</th>
-                <th className="px-5 py-3 font-medium">Services</th>
-                <th className="px-5 py-3 font-medium">Updated</th>
+                <th className="px-5 py-3 font-medium">{t('Label')}</th>
+                <th className="px-5 py-3 font-medium">{t('Scope')}</th>
+                <th className="px-5 py-3 font-medium">{t('Services')}</th>
+                <th className="px-5 py-3 font-medium">{t('Updated')}</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -195,7 +197,7 @@ export function Labels() {
                           navigate('/services');
                         }}
                         className="text-left"
-                        title={`Show services labelled "${l.name}"`}
+                        title={t('Show services labelled "{name}"', { name: l.name })}
                       >
                         <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium', tone)}>
                           <Tag size={11} /> {l.name}
@@ -204,10 +206,10 @@ export function Labels() {
                     </td>
                     <td className="px-5 py-3">
                       <Badge tone={ws ? 'indigo' : 'neutral'} className="text-[10px] uppercase">
-                        {ws ? ws.name : 'No workspace'}
+                        {ws ? ws.name : t('No workspace')}
                       </Badge>
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-300">{l.serviceCount} svc</td>
+                    <td className="px-5 py-3 text-xs text-slate-300">{t('{n} svc', { n: l.serviceCount })}</td>
                     <td className="px-5 py-3 text-xs text-slate-500">{formatDateTime(l.updatedAt)}</td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -215,9 +217,9 @@ export function Labels() {
                           variant="secondary"
                           size="sm"
                           onClick={() => openEdit(l)}
-                          title="Edit label"
+                          title={t('Edit label')}
                           className="h-7 w-7 p-0"
-                          aria-label="Edit label"
+                          aria-label={t('Edit label')}
                         >
                           <Edit2 size={13} />
                         </Button>
@@ -225,9 +227,9 @@ export function Labels() {
                           variant="danger"
                           size="sm"
                           onClick={() => setPendingDelete(l)}
-                          title="Delete label"
+                          title={t('Delete label')}
                           className="h-7 w-7 p-0"
-                          aria-label="Delete label"
+                          aria-label={t('Delete label')}
                         >
                           <Trash2 size={13} />
                         </Button>
@@ -242,19 +244,19 @@ export function Labels() {
       )}
 
       {showForm && (
-        <Modal onClose={closeForm} title={editing ? 'Edit label' : 'New label'}>
+        <Modal onClose={closeForm} title={editing ? t('Edit label') : t('New label')}>
           <form onSubmit={submitForm} className="space-y-4">
-            <Field label="Name">
+            <Field label={t('Name')}>
               <Input
                 required
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. production"
+                placeholder={t('e.g. production')}
                 maxLength={40}
               />
             </Field>
-            <Field label="Colour" hint="Used for the chip in the top-bar filter and on every service card.">
+            <Field label={t('Colour')} hint={t('Used for the chip in the top-bar filter and on every service card.')}>
               <div className="flex flex-wrap gap-2">
                 {COLOR_CHOICES.map((c) => (
                   <button
@@ -275,15 +277,15 @@ export function Labels() {
             </Field>
             {!editing && (
               <Field
-                label="Workspace"
-                hint="Labels are workspace-scoped. Operators may also leave a label unscoped so it is shared across the instance."
+                label={t('Workspace')}
+                hint={t('Labels are workspace-scoped. Operators may also leave a label unscoped so it is shared across the instance.')}
               >
                 <select
                   value={String(workspaceId)}
                   onChange={(e) => setWorkspaceId(e.target.value === '' ? '' : Number(e.target.value))}
                   className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
                 >
-                  {operator && <option value="">No workspace (operator-shared)</option>}
+                  {operator && <option value="">{t('No workspace (operator-shared)')}</option>}
                   {workspaces.map((w) => (
                     <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
@@ -291,9 +293,9 @@ export function Labels() {
               </Field>
             )}
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" onClick={closeForm}>Cancel</Button>
+              <Button type="button" variant="secondary" onClick={closeForm}>{t('Cancel')}</Button>
               <Button type="submit" disabled={saveMutation.isPending || !name.trim()}>
-                {saveMutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create label'}
+                {saveMutation.isPending ? t('Saving…') : editing ? t('Save changes') : t('Create label')}
               </Button>
             </div>
           </form>
@@ -302,13 +304,13 @@ export function Labels() {
 
       <ConfirmDialog
         open={pendingDelete != null}
-        title="Delete label"
+        title={t('Delete label')}
         message={
           pendingDelete
-            ? `Delete "${pendingDelete.name}"? It is removed from the ${pendingDelete.serviceCount} service(s) carrying it — those services are NOT deleted.`
+            ? t('Delete "{name}"? It is removed from the {n} service(s) carrying it — those services are NOT deleted.', { name: pendingDelete.name, n: pendingDelete.serviceCount })
             : ''
         }
-        confirmLabel="Delete"
+        confirmLabel={t('Delete')}
         onConfirm={() => pendingDelete && deleteMutation.mutate(pendingDelete.id)}
         onClose={() => setPendingDelete(null)}
       />

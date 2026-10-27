@@ -4,6 +4,7 @@ import { Zap } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Card, CardBody, ConfirmDialog, Switch } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 
 /**
  * Traefik → Overview, 0.16.1 (operator only): HTTP/3. Traefik has always
@@ -13,6 +14,7 @@ import { Card, CardBody, ConfirmDialog, Switch } from '../../components/ui.js';
  * so a lost answer re-reads the switch instead of guessing.
  */
 export function Http3Card() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [confirm, setConfirm] = useState<boolean | null>(null);
@@ -22,13 +24,13 @@ export function Http3Card() {
     mutationFn: (enabled: boolean) => api.traefik.http3.set(enabled),
     onSuccess: (view) => {
       qc.setQueryData(['traefik-http3'], view);
-      toast(view.enabled ? 'HTTP/3 on: Traefik now listens on 443/udp' : 'HTTP/3 off: 443/udp closed', 'success');
+      toast(view.enabled ? t('HTTP/3 on: Traefik now listens on 443/udp') : t('HTTP/3 off: 443/udp closed'), 'success');
     },
     onError: (err: unknown) => {
       const status = (err as { status?: number } | null)?.status;
       void qc.invalidateQueries({ queryKey: ['traefik-http3'] });
       toast(
-        status ? (err as Error).message : 'The proxy restarted before the panel could answer; re-reading the setting.',
+        status ? (err as Error).message : t('The proxy restarted before the panel could answer; re-reading the setting.'),
         status ? 'error' : 'info',
       );
     },
@@ -44,17 +46,16 @@ export function Http3Card() {
             <Zap size={15} className="text-slate-500" /> HTTP/3 (QUIC)
           </div>
           <p className="mt-1 max-w-2xl text-xs text-slate-500">
-            Publishes 443/udp so browsers can reach your domains over HTTP/3. Open UDP 443 in the cloud provider's firewall too.
-            Nodes keep their proxy as it is. Off by default.
+            {t("Publishes 443/udp so browsers can reach your domains over HTTP/3. Open UDP 443 in the cloud provider's firewall too. Nodes keep their proxy as it is. Off by default.")}
           </p>
         </div>
         <Switch label="HTTP/3" checked={state.data.enabled} disabled={save.isPending} onChange={(on) => setConfirm(on)} />
       </CardBody>
       <ConfirmDialog
         open={confirm !== null}
-        title={confirm ? 'Turn HTTP/3 on?' : 'Turn HTTP/3 off?'}
-        message="Traefik is recreated with the new port list: about a second of refused connections on every domain."
-        confirmLabel={confirm ? 'Turn on' : 'Turn off'}
+        title={confirm ? t('Turn HTTP/3 on?') : t('Turn HTTP/3 off?')}
+        message={t('Traefik is recreated with the new port list: about a second of refused connections on every domain.')}
+        confirmLabel={confirm ? t('Turn on') : t('Turn off')}
         onConfirm={() => save.mutate(confirm === true)}
         onClose={() => setConfirm(null)}
       />

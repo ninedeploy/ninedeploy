@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { Badge, Button, Card, CardBody, ConfirmDialog, EmptyState, ErrorCard, PageHeader, Skeleton } from '../components/ui.js';
 import { useToast } from '../components/Toast.js';
 import { useAuth } from '../lib/auth.js';
+import { msg, useT } from '../lib/i18n.js';
 
 function fmtBytes(n: number | null | undefined): string {
   if (n == null || n <= 0) return '—';
@@ -18,6 +19,12 @@ function fmtBytes(n: number | null | undefined): string {
   }
   return `${v >= 10 ? Math.round(v) : v.toFixed(1)} ${units[u]}`;
 }
+
+const SEVERITY_LABEL: Record<DoctorFinding['severity'], string> = {
+  critical: msg('critical'),
+  warn: msg('warn'),
+  info: msg('info'),
+};
 
 const SEVERITY_TONE: Record<DoctorFinding['severity'], 'rose' | 'amber' | 'sky'> = {
   critical: 'rose',
@@ -32,6 +39,7 @@ function needsConfirm(finding: DoctorFinding): boolean {
 }
 
 export function Doctor() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -48,17 +56,17 @@ export function Doctor() {
   const fix = useMutation({
     mutationFn: (findingId: string) => api.doctor.fix({ findingId }),
     onSuccess: (res) => {
-      toast(`Fixed: ${res.action}`, 'info');
+      toast(t('Fixed: {action}', { action: String(res.action) }), 'info');
       // The fix response already carries the post-fix report — seed the cache
       // with it instead of invalidating, which would trigger a THIRD full
       // scan (fix already scans before and after executing) per click.
       qc.setQueryData(['doctor-report'], res.report);
     },
-    onError: (err: Error) => toast(err.message ?? 'Fix failed', 'error'),
+    onError: (err: Error) => toast(err.message ?? t('Fix failed'), 'error'),
   });
 
   if (!user?.isOperator) {
-    return <PageHeader title="Doctor" subtitle="Host-wide analysis and cleanup — operators only." />;
+    return <PageHeader title={t('Doctor')} subtitle={t('Host-wide analysis and cleanup — operators only.')} />;
   }
 
   const report = scan.data;
@@ -73,12 +81,12 @@ export function Doctor() {
     <div className="space-y-4">
       <PageHeader
         icon={<Stethoscope className="h-6 w-6" />}
-        title="Doctor"
-        subtitle="Dead containers, orphaned volumes & networks, desynced rows, reclaimable bloat — analyzed fresh on every scan. Fixes re-validate against live state before touching anything."
+        title={t('Doctor')}
+        subtitle={t('Dead containers, orphaned volumes & networks, desynced rows, reclaimable bloat — analyzed fresh on every scan. Fixes re-validate against live state before touching anything.')}
         actions={
           <Button variant="secondary" onClick={() => scan.refetch()} disabled={scan.isFetching}>
             {scan.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Scan
+            {t('Scan')}
           </Button>
         }
       />
@@ -87,7 +95,7 @@ export function Doctor() {
 
       {/* r562: a failed scan rendered as a blank page under the header. */}
       {scan.isError && !report && (
-        <ErrorCard title="The Doctor scan failed" error={scan.error} onRetry={() => void scan.refetch()} />
+        <ErrorCard title={t('The Doctor scan failed')} error={scan.error} onRetry={() => void scan.refetch()} />
       )}
 
       {report && (
@@ -96,20 +104,24 @@ export function Doctor() {
             <span className="flex items-center gap-2 text-sm font-medium">
               {report.healthy ? (
                 <>
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500" /> All clear — no warnings
+                  <CheckCircle2 className="h-5 w-5 text-emerald-500" /> {t('All clear — no warnings')}
                 </>
               ) : (
                 <>
-                  <Stethoscope className="h-5 w-5 text-amber-500" /> {report.totals.findings} finding(s)
+                  <Stethoscope className="h-5 w-5 text-amber-500" /> {t('{n} finding(s)', { n: report.totals.findings })}
                 </>
               )}
             </span>
             <span className="text-sm text-slate-400">
-              Disk {report.host.diskUsedPercent}% · Images {fmtBytes(report.host.dockerImagesBytes)} · Volumes{' '}
-              {fmtBytes(report.host.dockerVolumesBytes)} · Build cache {fmtBytes(report.host.dockerBuildCacheBytes)}
+              {t('Disk {disk}% · Images {images} · Volumes {volumes} · Build cache {cache}', {
+                disk: report.host.diskUsedPercent,
+                images: fmtBytes(report.host.dockerImagesBytes),
+                volumes: fmtBytes(report.host.dockerVolumesBytes),
+                cache: fmtBytes(report.host.dockerBuildCacheBytes),
+              })}
             </span>
             <span className="text-sm text-slate-400">
-              Reclaimable: <strong>{fmtBytes(report.totals.reclaimableBytes)}</strong>
+              {t('Reclaimable:')} <strong>{fmtBytes(report.totals.reclaimableBytes)}</strong>
             </span>
           </CardBody>
         </Card>
@@ -118,8 +130,8 @@ export function Doctor() {
       {report && findings.length === 0 && (
         <EmptyState
           icon={<CheckCircle2 className="h-8 w-8 text-emerald-500" />}
-          title="Nothing to fix"
-          hint="No dead containers, orphan volumes, desynced rows or bloat were found on this host."
+          title={t('Nothing to fix')}
+          hint={t('No dead containers, orphan volumes, desynced rows or bloat were found on this host.')}
         />
       )}
 
@@ -127,14 +139,14 @@ export function Doctor() {
         grouped[sev].length ? (
           <div key={sev} className="space-y-2">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-              {sev} ({grouped[sev].length})
+              {t(SEVERITY_LABEL[sev])} ({grouped[sev].length})
             </h3>
             {grouped[sev].map((f) => (
               <Card key={f.id}>
                 <CardBody className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={SEVERITY_TONE[f.severity]}>{f.severity}</Badge>
+                      <Badge tone={SEVERITY_TONE[f.severity]}>{t(SEVERITY_LABEL[f.severity])}</Badge>
                       <span className="font-medium">{f.title}</span>
                       {f.sizeBytes != null && f.sizeBytes > 0 && <Badge tone="neutral">{fmtBytes(f.sizeBytes)}</Badge>}
                     </div>
@@ -148,7 +160,7 @@ export function Doctor() {
                       disabled={fix.isPending}
                     >
                       {fix.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
-                      Fix
+                      {t('Fix')}
                     </Button>
                   )}
                 </CardBody>
@@ -160,13 +172,16 @@ export function Doctor() {
 
       <ConfirmDialog
         open={confirming !== null}
-        title={confirming ? `Fix: ${confirming.action}` : ''}
+        title={confirming ? t('Fix: {action}', { action: String(confirming.action) }) : ''}
         message={
           confirming?.action
-            ? `This will ${confirming.action.replaceAll('_', ' ')} ${confirming.target.name ?? confirming.target.id ?? ''}. For volumes this DESTROYS the data permanently. The action re-validates live state before executing.`
+            ? t('This will {action} {target}. For volumes this DESTROYS the data permanently. The action re-validates live state before executing.', {
+                action: confirming.action.replaceAll('_', ' '),
+                target: confirming.target.name ?? confirming.target.id ?? '',
+              })
             : ''
         }
-        confirmLabel="Fix it"
+        confirmLabel={t('Fix it')}
         onConfirm={() => {
           if (confirming) fix.mutate(confirming.id);
           setConfirming(null);

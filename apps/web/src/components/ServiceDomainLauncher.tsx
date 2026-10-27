@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, Globe, Lock, Route } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../lib/api.js';
+import { useT } from '../lib/i18n.js';
 import { Modal, cn } from './ui.js';
 
 type LaunchableDomain = {
@@ -33,6 +34,7 @@ export function ServiceDomainLauncher({
   className?: string;
   label?: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const allDomains = useQuery({
     queryKey: ['domains-all'],
@@ -47,8 +49,8 @@ export function ServiceDomainLauncher({
     <>
       <button
         type="button"
-        aria-label={`Open ${serviceName} domain${domains.length === 1 ? '' : 's'}`}
-        title={`${domains.length} domain${domains.length === 1 ? '' : 's'} — open site`}
+        aria-label={domains.length === 1 ? t('Open {name} domain', { name: serviceName }) : t('Open {name} domains', { name: serviceName })}
+        title={domains.length === 1 ? t('{n} domain — open site', { n: 1 }) : t('{n} domains — open site', { n: domains.length })}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.preventDefault();
@@ -61,20 +63,20 @@ export function ServiceDomainLauncher({
         )}
       >
         <ExternalLink size={14} />
-        {label && <span>Open site</span>}
+        {label && <span>{t('Open site')}</span>}
         {domains.length > 1 && <span className="rounded-full bg-cyan-300/15 px-1.5 font-mono text-[10px]">{domains.length}</span>}
       </button>
 
       {open && (
-        <Modal title={`Open ${serviceName}`} onClose={() => setOpen(false)}>
+        <Modal title={t('Open {name}', { name: serviceName })} onClose={() => setOpen(false)}>
           <div className="mb-4 flex items-start gap-3 rounded-xl border border-cyan-500/15 bg-cyan-500/[0.06] p-3.5">
             <Globe size={17} className="mt-0.5 shrink-0 text-cyan-400" />
             <div>
               <p className="text-sm font-medium text-slate-200">
-                {domains.length === 1 ? 'This page will open in a new tab.' : 'Choose the page to open in a new tab.'}
+                {domains.length === 1 ? t('This page will open in a new tab.') : t('Choose the page to open in a new tab.')}
               </p>
               <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                The protocol and route path come from this service&apos;s current NineDeploy domain configuration.
+                {t("The protocol and route path come from this service's current NineDeploy domain configuration.")}
               </p>
             </div>
           </div>
@@ -90,20 +92,20 @@ export function ServiceDomainLauncher({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-mono text-xs text-slate-200">{url}</p>
-                    <p className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-500">{domain.ssl ? 'HTTPS' : 'HTTP'} route</p>
+                    <p className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-500">{t('{protocol} route', { protocol: domain.ssl ? 'HTTPS' : 'HTTP' })}</p>
                   </div>
                   {wildcard ? (
-                    <span className="shrink-0 text-[10px] text-slate-500" title="Use a concrete hostname covered by this wildcard">Wildcard</span>
+                    <span className="shrink-0 text-[10px] text-slate-500" title={t('Use a concrete hostname covered by this wildcard')}>{t('Wildcard')}</span>
                   ) : (
                     <a
                       href={url}
                       target="_blank"
                       rel="noreferrer"
-                      aria-label={`Open ${url} in a new tab`}
+                      aria-label={t('Open {url} in a new tab', { url })}
                       onClick={() => setOpen(false)}
                       className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-500 px-3 text-xs font-medium text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-400"
                     >
-                      Open <ExternalLink size={13} />
+                      {t('Open')} <ExternalLink size={13} />
                     </a>
                   )}
                 </div>

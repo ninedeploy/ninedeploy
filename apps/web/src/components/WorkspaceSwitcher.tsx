@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { Building2, Check, ChevronDown, Plus, Users } from 'lucide-react';
 import { Link } from 'react-router';
+import { useT } from '../lib/i18n.js';
 import { useWorkspace } from '../lib/workspace.js';
 import { Badge, Button, Modal, Field, Input, Textarea, cn } from './ui.js';
 
 export function WorkspaceSwitcher() {
+  const t = useT();
   const { workspaces, currentWorkspace, switchWorkspace, createWorkspace } = useWorkspace();
   const [open, setOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -25,7 +27,7 @@ export function WorkspaceSwitcher() {
       setShowModal(false);
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create workspace');
+      setError(err instanceof Error ? err.message : t('Failed to create workspace'));
     } finally {
       setBusy(false);
     }
@@ -42,7 +44,7 @@ export function WorkspaceSwitcher() {
           className="flex h-7 items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 text-xs font-medium text-slate-300 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.08] focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
         >
           <Building2 size={13} className="text-indigo-400" />
-          <span className="max-w-[120px] truncate">{currentWorkspace?.name ?? 'Workspace'}</span>
+          <span className="max-w-[120px] truncate">{currentWorkspace?.name ?? t('Workspace')}</span>
           {currentWorkspace?.myRole && (
             <Badge tone="neutral" className="text-[10px] uppercase tracking-wider py-0 px-1">
               {currentWorkspace.myRole}
@@ -56,13 +58,13 @@ export function WorkspaceSwitcher() {
             <button
               type="button"
               tabIndex={-1}
-              aria-label="Close workspace menu"
+              aria-label={t('Close workspace menu')}
               onClick={() => setOpen(false)}
               className="fixed inset-0 z-30"
             />
             <div className="absolute left-0 top-full mt-1.5 z-40 w-64 rounded-xl border border-white/10 bg-slate-900 p-1.5 shadow-2xl backdrop-blur-md nd-fade">
               <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Workspaces
+                {t('Workspaces')}
               </div>
               <div className="max-h-56 overflow-y-auto space-y-0.5 py-1">
                 {workspaces.map((ws) => {
@@ -83,7 +85,7 @@ export function WorkspaceSwitcher() {
                       <div className="min-w-0 flex-1">
                         <div className="truncate">{ws.name}</div>
                         <div className="text-[10px] text-slate-500">
-                          {ws.myRole} · {ws.memberCount ?? 1} {ws.memberCount === 1 ? 'member' : 'members'}
+                          {ws.myRole} · {ws.memberCount === 1 ? t('{n} member', { n: 1 }) : t('{n} members', { n: ws.memberCount ?? 1 })}
                         </div>
                       </div>
                       {active && <Check size={14} className="shrink-0 text-indigo-400" />}
@@ -102,7 +104,7 @@ export function WorkspaceSwitcher() {
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 transition"
                 >
                   <Plus size={13} className="text-slate-400" />
-                  <span>Create Workspace</span>
+                  <span>{t('Create Workspace')}</span>
                 </button>
                 <Link
                   to="/workspaces"
@@ -110,7 +112,7 @@ export function WorkspaceSwitcher() {
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 transition"
                 >
                   <Users size={13} className="text-slate-400" />
-                  <span>Manage Workspace &amp; Team</span>
+                  <span>{t('Manage Workspace & Team')}</span>
                 </Link>
               </div>
             </div>
@@ -119,32 +121,32 @@ export function WorkspaceSwitcher() {
       </div>
 
       {showModal && (
-        <Modal title="Create New Workspace" onClose={() => setShowModal(false)}>
+        <Modal title={t('Create New Workspace')} onClose={() => setShowModal(false)}>
           <form onSubmit={handleCreate} className="space-y-4">
-            <Field label="Workspace Name">
+            <Field label={t('Workspace Name')}>
               <Input
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Acme Production"
+                placeholder={t('e.g. Acme Production')}
                 autoFocus
               />
             </Field>
-            <Field label="Description (optional)">
+            <Field label={t('Description (optional)')}>
               <Textarea
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Workspace for production workloads and team members."
+                placeholder={t('Workspace for production workloads and team members.')}
               />
             </Field>
             {error && <p className="text-xs text-rose-400">{error}</p>}
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button type="submit" disabled={busy || !name.trim()}>
-                {busy ? 'Creating…' : 'Create Workspace'}
+                {busy ? t('Creating…') : t('Create Workspace')}
               </Button>
             </div>
           </form>

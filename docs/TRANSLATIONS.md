@@ -28,14 +28,13 @@ Use string literals inside `t()` and `msg()`. The test reads them from the sourc
 
 ## What is translated so far
 
-- the navigation and top bar;
-- the events drawer;
-- sign-in and password reset;
-- Settings → Appearance;
-- the dashboard;
-- the services list and every service detail tab except the Network tab;
-- the deploy, database and notification wizards;
-- the databases list and database detail page;
-- every Settings section.
+Every page and shared component of the panel, except two: the service **Network** tab and the **Domains** page, which are next.
 
-The other pages are still English and move over route by route. Server error messages, help drawer topics and the CLI stay English.
+These stay English on purpose:
+
+- server error messages;
+- values the API receives or returns, such as statuses, roles and enum values;
+- product names, code, commands and example values;
+- help drawer topics and the CLI.
+
+The public pages (sign-in, password reset, invitation and domain-transfer acceptance) carry the language switch under their card. If the panel crashes, the error screen reads the stored language choice directly, because it sits outside the language provider.

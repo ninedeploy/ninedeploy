@@ -9,6 +9,7 @@ import { formatRelative } from '../../lib/format.js';
 import { formatResponseMs, type MonitorForm, serviceMonitorTarget } from '../../lib/uptime.js';
 import { uptimeApi, uptimeKeys } from '../../lib/uptimeApi.js';
 import { Button, Card, CardBody } from '../ui.js';
+import { useT } from '../../lib/i18n.js';
 import { MonitorFormModal } from './MonitorFormModal.js';
 import { MonitorStatusBadge, UptimeValue } from './MonitorBits.js';
 
@@ -18,6 +19,7 @@ import { MonitorStatusBadge, UptimeValue } from './MonitorBits.js';
  * operators always see it, with "Add monitor" prefilled for the service.
  */
 export function ServiceUptimeCard({ serviceId, svc }: { serviceId: number; svc: Pick<Service, 'name'> & { autoUrl?: string | null } }) {
+  const t = useT();
   const { user } = useAuth();
   const isOperator = user?.isOperator === true;
   const qc = useQueryClient();
@@ -47,27 +49,27 @@ export function ServiceUptimeCard({ serviceId, svc }: { serviceId: number; svc: 
         <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <HeartPulse size={16} className="text-indigo-400" />
-            <span className="text-sm font-semibold text-slate-100">Uptime</span>
+            <span className="text-sm font-semibold text-slate-100">{t('Uptime')}</span>
           </div>
           <div className="flex items-center gap-2">
             <Link to="/monitoring" className="text-xs text-indigo-400 hover:text-indigo-300">
-              All monitors
+              {t('All monitors')}
             </Link>
             {isOperator && (
               <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => void openNew()}>
-                <Plus size={12} /> Add monitor
+                <Plus size={12} /> {t('Add monitor')}
               </Button>
             )}
           </div>
         </div>
         {monitors.isLoading ? (
-          <p className="text-xs text-slate-500">Loading monitors…</p>
+          <p className="text-xs text-slate-500">{t('Loading monitors…')}</p>
         ) : list.length === 0 ? (
           <p className="text-xs leading-relaxed text-slate-500">
-            No monitors for this service. Add one to check its URL from the panel every minute and get notified when it goes down.
+            {t('No monitors for this service. Add one to check its URL from the panel every minute and get notified when it goes down.')}
           </p>
         ) : (
-          <ul className="space-y-1.5" aria-label="Service monitors">
+          <ul className="space-y-1.5" aria-label={t('Service monitors')}>
             {list.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/[0.02] px-3 py-2 ring-1 ring-inset ring-white/5">
                 <MonitorStatusBadge status={m.status} />

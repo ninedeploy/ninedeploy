@@ -28,6 +28,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
+import { msg } from '../../lib/i18n.js';
 
 const STORAGE_KEY = 'ninedeploy.manifest.draft';
 /** The last-open section is persisted separately so a reload keeps context. */
@@ -188,44 +189,44 @@ export interface ManifestSection {
 export const SECTIONS: readonly ManifestSection[] = [
   {
     id: 'runtime',
-    label: 'Runtime',
-    blurb: 'Language + version pin (Node, Python, Go, …)',
+    label: msg('Runtime'),
+    blurb: msg('Language + version pin (Node, Python, Go, …)'),
     icon: Container,
     isFilled: (m) => m.runtime != null,
   },
   {
     id: 'build',
-    label: 'Build',
-    blurb: 'Install, build, start commands and baseDir',
+    label: msg('Build'),
+    blurb: msg('Install, build, start commands and baseDir'),
     icon: Hammer,
     isFilled: (m) => m.build != null && Object.keys(m.build).length > 0,
   },
   {
     id: 'run',
-    label: 'Run',
-    blurb: 'Container port, healthcheck, restart policy',
+    label: msg('Run'),
+    blurb: msg('Container port, healthcheck, restart policy'),
     icon: CirclePlay,
     isFilled: (m) => m.run != null,
   },
   {
     id: 'static',
-    label: 'Static',
-    blurb: 'SPA fallback for static frontends',
+    label: msg('Static'),
+    blurb: msg('SPA fallback for static frontends'),
     icon: Globe,
     isFilled: (m) => m.static != null,
   },
   {
     id: 'env',
-    label: 'Environment',
-    blurb: 'Required env keys + managed-DB aliases',
+    label: msg('Environment'),
+    blurb: msg('Required env keys + managed-DB aliases'),
     icon: KeyRound,
     isFilled: (m) =>
       m.env != null && (m.env.required.length > 0 || Object.keys(m.env.aliases ?? {}).length > 0),
   },
   {
     id: 'phases',
-    label: 'Phases',
-    blurb: 'Extra nixpkgs + build-step cmds',
+    label: msg('Phases'),
+    blurb: msg('Extra nixpkgs + build-step cmds'),
     icon: Layers,
     isFilled: (m) =>
       m.phases != null &&
@@ -233,65 +234,65 @@ export const SECTIONS: readonly ManifestSection[] = [
   },
   {
     id: 'resources',
-    label: 'Resources',
-    blurb: 'CPU shares + memory cap',
+    label: msg('Resources'),
+    blurb: msg('CPU shares + memory cap'),
     icon: Cpu,
     isFilled: (m) => m.resources != null,
   },
   {
     id: 'hooks',
-    label: 'Hooks',
-    blurb: 'preBuild / postBuild / preStop scripts',
+    label: msg('Hooks'),
+    blurb: msg('preBuild / postBuild / preStop scripts'),
     icon: Webhook,
     isFilled: (m) =>
       m.hooks != null && (m.hooks.preBuild != null || m.hooks.postBuild != null || m.hooks.preStop != null),
   },
   {
     id: 'watch',
-    label: 'Watch',
-    blurb: 'Monorepo watch-paths for auto-deploy',
+    label: msg('Watch'),
+    blurb: msg('Monorepo watch-paths for auto-deploy'),
     icon: GitBranch,
     isFilled: (m) => m.watch != null && m.watch.paths.length > 0,
   },
   {
     id: 'routing',
-    label: 'Routing',
-    blurb: 'Domain + path + SSL + headers',
+    label: msg('Routing'),
+    blurb: msg('Domain + path + SSL + headers'),
     icon: Compass,
     isFilled: (m) => m.routes != null && m.routes.length > 0,
   },
   {
     id: 'previews',
-    label: 'PR previews',
-    blurb: 'Hostname template for preview envs',
+    label: msg('PR previews'),
+    blurb: msg('Hostname template for preview envs'),
     icon: GitPullRequest,
     isFilled: (m) => m.previews != null && m.previews.enabled,
   },
   {
     id: 'volume',
-    label: 'Volume',
-    blurb: 'Mount path + backup schedule',
+    label: msg('Volume'),
+    blurb: msg('Mount path + backup schedule'),
     icon: HardDrive,
     isFilled: (m) => m.volume != null,
   },
   {
     id: 'database',
-    label: 'Database',
-    blurb: 'Attach a managed DB by slug',
+    label: msg('Database'),
+    blurb: msg('Attach a managed DB by slug'),
     icon: Database,
     isFilled: (m) => m.database != null,
   },
   {
     id: 'network',
-    label: 'Network',
-    blurb: 'publishPort + internal network aliases',
+    label: msg('Network'),
+    blurb: msg('publishPort + internal network aliases'),
     icon: Cable,
     isFilled: (m) => m.network != null,
   },
   {
     id: 'notifications',
-    label: 'Notifications',
-    blurb: 'Channel routing for deploy/fail/alert',
+    label: msg('Notifications'),
+    blurb: msg('Channel routing for deploy/fail/alert'),
     icon: Bell,
     isFilled: (m) =>
       m.notifications != null &&
@@ -301,8 +302,8 @@ export const SECTIONS: readonly ManifestSection[] = [
   },
   {
     id: 'alerts',
-    label: 'Alerts',
-    blurb: 'Deploy-fail / restart-loop / high-mem rules',
+    label: msg('Alerts'),
+    blurb: msg('Deploy-fail / restart-loop / high-mem rules'),
     icon: Boxes,
     isFilled: (m) => m.alerts != null && m.alerts.length > 0,
   },
@@ -323,27 +324,27 @@ export interface SectionGroup {
 export const SECTION_GROUPS: readonly SectionGroup[] = [
   {
     id: 'core',
-    label: 'Core',
+    label: msg('Core'),
     sectionIds: ['runtime', 'build', 'run', 'static', 'env'],
   },
   {
     id: 'pipeline',
-    label: 'Build pipeline',
+    label: msg('Build pipeline'),
     sectionIds: ['phases', 'hooks', 'watch'],
   },
   {
     id: 'operations',
-    label: 'Operations',
+    label: msg('Operations'),
     sectionIds: ['resources', 'volume', 'network', 'database'],
   },
   {
     id: 'traffic',
-    label: 'Traffic',
+    label: msg('Traffic'),
     sectionIds: ['routing', 'previews'],
   },
   {
     id: 'observability',
-    label: 'Observability',
+    label: msg('Observability'),
     sectionIds: ['notifications', 'alerts'],
   },
 ] as const;

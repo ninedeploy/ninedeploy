@@ -1,31 +1,33 @@
 import type { ServerListEntry } from '@ninedeploy/sdk';
 import { NODE_CANARY_CAPABILITIES } from '@ninedeploy/schemas';
+import { useT } from '../lib/i18n.js';
 
 /** Availability for plain Docker workloads; Compose and Swarm differ. */
 export function DeploymentSupport({ node }: { node?: ServerListEntry }) {
+  const t = useT();
   const features: Array<[string, boolean | undefined]> = [
-    ['HTTP/TCP readiness', node ? node.features?.readinessProbe : true],
-    ['Log drains', node ? node.features?.logDrains : true],
-    ['Canary releases', node ? node.agent == null ? undefined : NODE_CANARY_CAPABILITIES.every(cap => node.agent!.capabilities.includes(cap)) : true],
-    ['Autoscaling', !node],
-    ['Scale to zero', !node],
-    ['Container file browser', node ? node.features?.containerTools : true],
-    ['Volume file browser', node ? node.features?.volumeFiles : true],
+    [t('HTTP/TCP readiness'), node ? node.features?.readinessProbe : true],
+    [t('Log drains'), node ? node.features?.logDrains : true],
+    [t('Canary releases'), node ? node.agent == null ? undefined : NODE_CANARY_CAPABILITIES.every(cap => node.agent!.capabilities.includes(cap)) : true],
+    [t('Autoscaling'), !node],
+    [t('Scale to zero'), !node],
+    [t('Container file browser'), node ? node.features?.containerTools : true],
+    [t('Volume file browser'), node ? node.features?.volumeFiles : true],
   ];
   return (
-    <section className="mt-3 rounded-lg border border-white/10 p-3 text-xs" aria-label="Deployment support">
-      <p className="mb-2 font-medium text-slate-300">Docker features on {node?.name ?? 'this panel host'}</p>
+    <section className="mt-3 rounded-lg border border-white/10 p-3 text-xs" aria-label={t('Deployment support')}>
+      <p className="mb-2 font-medium text-slate-300">{t('Docker features on {node}', { node: node?.name ?? t('this panel host') })}</p>
       <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
         {features.map(([name, supported]) => (
           <div key={name} className="flex items-center justify-between gap-2">
             <dt className="text-slate-400">{name}</dt>
             <dd className={supported ? 'text-emerald-300' : 'text-slate-500'}>
-              {supported === undefined ? 'Not reported' : supported ? 'Available' : 'Unavailable'}
+              {supported === undefined ? t('Not reported') : supported ? t('Available') : t('Unavailable')}
             </dd>
           </div>
         ))}
       </dl>
-      {node && <p className="mt-2 text-[11px] text-slate-500">Node canary requires one replica, HTTP readiness, a domain and no published host ports, with traffic observations enabled by the node owner. Deploys recheck support. Autoscaling and scale to zero currently run on the panel host.</p>}
+      {node && <p className="mt-2 text-[11px] text-slate-500">{t('Node canary requires one replica, HTTP readiness, a domain and no published host ports, with traffic observations enabled by the node owner. Deploys recheck support. Autoscaling and scale to zero currently run on the panel host.')}</p>}
     </section>
   );
 }

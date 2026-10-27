@@ -5,6 +5,7 @@ import { CheckCircle2, ExternalLink, GitBranch, XCircle } from 'lucide-react';
 import type { GithubApp } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
+import { fill, useT } from '../../lib/i18n.js';
 import { Button, Card, PageHeader, Spinner } from '../../components/ui.js';
 
 /**
@@ -17,28 +18,31 @@ import { Button, Card, PageHeader, Spinner } from '../../components/ui.js';
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 function Shell({ children }: { children: ReactNode }) {
+  const t = useT();
   return (
     <div>
-      <PageHeader icon={<GitBranch size={18} />} title="GitHub App" subtitle="Setup with GitHub" />
+      <PageHeader icon={<GitBranch size={18} />} title="GitHub App" subtitle={t('Setup with GitHub')} />
       <Card className="max-w-2xl p-6">{children}</Card>
     </div>
   );
 }
 
 function BackToSources() {
+  const t = useT();
   return (
     <Link to="/sources">
       <Button size="sm" variant="secondary">
-        Back to Sources
+        {t('Back to Sources')}
       </Button>
     </Link>
   );
 }
 
 function OperatorsOnly() {
+  const t = useT();
   return (
     <Shell>
-      <p className="text-sm text-slate-300">GitHub App setup is limited to instance operators.</p>
+      <p className="text-sm text-slate-300">{t('GitHub App setup is limited to instance operators.')}</p>
     </Shell>
   );
 }
@@ -49,6 +53,7 @@ function OperatorsOnly() {
  * load (the ref survives StrictMode's effect replay).
  */
 export function GithubAppCallback() {
+  const t = useT();
   const { user } = useAuth();
   const [params] = useSearchParams();
   const code = params.get('code') ?? '';
@@ -66,7 +71,7 @@ export function GithubAppCallback() {
   if (!code || !state) {
     return (
       <Shell>
-        <Failure message="GitHub did not return a setup code. Start the setup again from Sources." />
+        <Failure message={t('GitHub did not return a setup code. Start the setup again from Sources.')} />
       </Shell>
     );
   }
@@ -78,7 +83,7 @@ export function GithubAppCallback() {
         <Failure message={errorText(complete.error)} />
       ) : (
         <div className="flex items-center gap-2 text-sm text-slate-300">
-          <Spinner /> Saving the GitHub App…
+          <Spinner /> {t('Saving the GitHub App…')}
         </div>
       )}
     </Shell>
@@ -86,14 +91,16 @@ export function GithubAppCallback() {
 }
 
 function Registered({ app }: { app: GithubApp }) {
+  const t = useT();
   return (
     <div className="space-y-4" data-testid="github-app-registered">
       <div className="flex items-center gap-2 text-sm text-emerald-300">
-        <CheckCircle2 size={16} /> GitHub App <span className="font-semibold">{app.name}</span> is registered.
+        <CheckCircle2 size={16} /> {fill(t('GitHub App {name} is registered.'), { name: <span className="font-semibold">{app.name}</span> })}
       </div>
       <p className="text-xs leading-relaxed text-slate-400">
-        Next, install it on the account or organization whose repositories you deploy. GitHub brings you back here and the
-        installation appears as a source.
+        {t(
+          'Next, install it on the account or organization whose repositories you deploy. GitHub brings you back here and the installation appears as a source.',
+        )}
       </p>
       <div className="flex flex-wrap gap-2">
         {app.installUrl && (
@@ -101,7 +108,7 @@ function Registered({ app }: { app: GithubApp }) {
             href={app.installUrl}
             className="inline-flex h-8 items-center gap-1 rounded-md bg-indigo-500 px-3 text-xs font-medium text-white transition hover:bg-indigo-400"
           >
-            Install the App <ExternalLink size={11} />
+            {t('Install the App')} <ExternalLink size={11} />
           </a>
         )}
         <BackToSources />
@@ -127,6 +134,7 @@ function Failure({ message }: { message: string }) {
  * the page only asks the server to sync every App's installations from GitHub.
  */
 export function GithubAppInstalled() {
+  const t = useT();
   const { user } = useAuth();
   const sent = useRef(false);
   const isOperator = user?.isOperator === true;
@@ -157,13 +165,15 @@ export function GithubAppInstalled() {
       {sync.isSuccess ? (
         <div className="space-y-4" data-testid="github-app-synced">
           {sync.data.length === 0 ? (
-            <p className="text-sm text-slate-300">No GitHub App is registered on this panel yet.</p>
+            <p className="text-sm text-slate-300">{t('No GitHub App is registered on this panel yet.')}</p>
           ) : (
             <ul className="space-y-1.5 text-sm">
               {sync.data.map((r) => (
                 <li key={r.app.id} className={r.error ? 'text-rose-300' : 'text-slate-300'}>
                   <span className="font-medium">{r.app.name}</span>:{' '}
-                  {r.error ? `sync failed: ${r.error}` : `${r.created} new installation(s), ${r.sourcesCreated} new source(s)`}
+                  {r.error
+                    ? t('sync failed: {error}', { error: r.error })
+                    : t('{created} new installation(s), {sources} new source(s)', { created: r.created, sources: r.sourcesCreated })}
                 </li>
               ))}
             </ul>
@@ -174,7 +184,7 @@ export function GithubAppInstalled() {
         <Failure message={errorText(sync.error)} />
       ) : (
         <div className="flex items-center gap-2 text-sm text-slate-300">
-          <Spinner /> Syncing installations from GitHub…
+          <Spinner /> {t('Syncing installations from GitHub…')}
         </div>
       )}
     </Shell>

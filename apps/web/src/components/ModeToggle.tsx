@@ -1,15 +1,17 @@
 import { useExperienceMode } from '../lib/mode.js';
+import { useT } from '../lib/i18n.js';
 import { Sparkles, Terminal } from 'lucide-react';
 import { cn } from './ui.js';
 
 export function ModeToggle({ className }: { className?: string }) {
+  const t = useT();
   const { isAdvanced, toggleMode } = useExperienceMode();
 
   return (
     <button
       type="button"
       onClick={toggleMode}
-      title={isAdvanced ? 'Switch to Simple Guided View' : 'Switch to Advanced DevOps Pro View'}
+      title={isAdvanced ? t('Switch to Simple Guided View') : t('Switch to Advanced DevOps Pro View')}
       className={cn(
         'relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-300 border shadow-xs select-none',
         isAdvanced
@@ -27,7 +29,7 @@ export function ModeToggle({ className }: { className?: string }) {
       ) : (
         <>
           <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="font-semibold">Simple View</span>
+          <span className="font-semibold">{t('Simple View')}</span>
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
         </>
       )}

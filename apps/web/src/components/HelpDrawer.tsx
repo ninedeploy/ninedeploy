@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { ChevronRight, HelpCircle, Lightbulb, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router';
 import { useHelp } from '../help/HelpContext.js';
+import { useT } from '../lib/i18n.js';
 import { HELP_TOPICS } from '../help/content.js';
 import { helpKeyForLocation } from '../help/keys.js';
 import type { HelpSection } from '../help/types.js';
@@ -11,14 +12,15 @@ import type { HelpSection } from '../help/types.js';
  * inside <HelpProvider> (see Layout).
  */
 export function HelpButton() {
+  const t = useT();
   const { openHelp } = useHelp();
   return (
     <button
       type="button"
       onClick={() => openHelp()}
       className="rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
-      title="Help (?)"
-      aria-label="Help"
+      title={t('Help (?)')}
+      aria-label={t('Help')}
     >
       <HelpCircle size={16} />
     </button>
@@ -31,6 +33,7 @@ export function HelpButton() {
  * lock and the per-page topic resolution.
  */
 export function HelpDrawer() {
+  const t = useT();
   const { open, topicId, openHelp, closeHelp } = useHelp();
   const location = useLocation();
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -80,7 +83,7 @@ export function HelpDrawer() {
     <div className="fixed inset-0 z-40 flex justify-end">
       <button
         type="button"
-        aria-label="Close help panel"
+        aria-label={t('Close help panel')}
         tabIndex={-1}
         aria-hidden="true"
         onClick={closeHelp}
@@ -89,18 +92,18 @@ export function HelpDrawer() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Help"
+        aria-label={t('Help')}
         className="nd-fade relative flex h-full w-96 max-w-[92vw] flex-col border-l border-white/10 bg-slate-950 shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <HelpCircle size={15} className="text-indigo-400" /> Help
+            <HelpCircle size={15} className="text-indigo-400" /> {t('Help')}
           </h2>
           <button
             type="button"
             ref={closeRef}
             onClick={closeHelp}
-            aria-label="Close help panel"
+            aria-label={t('Close help panel')}
             className="rounded-lg p-1 text-slate-500 hover:bg-white/5 hover:text-slate-300"
           >
             <X size={16} />
@@ -119,7 +122,7 @@ export function HelpDrawer() {
 
           {topic.related && topic.related.length > 0 && (
             <section className="mt-7">
-              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Related</h4>
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('Related')}</h4>
               <ul className="mt-2 space-y-1">
                 {topic.related.map((link) => (
                   <li key={link.helpId}>
@@ -144,7 +147,7 @@ export function HelpDrawer() {
             onClick={closeHelp}
             className="flex items-center justify-center gap-1.5 rounded-lg bg-white/[0.04] py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
           >
-            <span>Version, changelog & full docs</span>
+            <span>{t('Version, changelog & full docs')}</span>
           </Link>
         </div>
       </div>

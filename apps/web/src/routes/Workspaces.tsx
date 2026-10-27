@@ -15,6 +15,7 @@ import {
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { copyText } from '../lib/format.js';
+import { fill, useT } from '../lib/i18n.js';
 import { useWorkspace } from '../lib/workspace.js';
 import {
   Badge,
@@ -37,6 +38,7 @@ import type {
 } from '@ninedeploy/sdk';
 
 export function Workspaces() {
+  const t = useT();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -168,7 +170,7 @@ export function Workspaces() {
     try {
       await inviteMutation.mutateAsync({ email: inviteEmail.trim(), role: inviteRole });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to invite member');
+      setError(err instanceof Error ? err.message : t('Failed to invite member'));
     } finally {
       setBusy(false);
     }
@@ -204,7 +206,7 @@ export function Workspaces() {
         /* v8 ignore stop */
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update workspace');
+      setError(err instanceof Error ? err.message : t('Failed to update workspace'));
     } finally {
       setBusy(false);
     }
@@ -220,7 +222,7 @@ export function Workspaces() {
     try {
       await deleteWsMutation.mutateAsync();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete workspace');
+      setError(err instanceof Error ? err.message : t('Failed to delete workspace'));
     } finally {
       setBusy(false);
     }
@@ -233,10 +235,10 @@ export function Workspaces() {
         <div>
           <div className="flex items-center gap-2">
             <Building2 size={24} className="text-indigo-400" />
-            <h1 className="text-2xl font-bold tracking-tight">Workspaces &amp; Teams</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{t('Workspaces & Teams')}</h1>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Organize applications, manage team access, and assign workspace-level roles.
+            {t('Organize applications, manage team access, and assign workspace-level roles.')}
           </p>
         </div>
 
@@ -267,7 +269,7 @@ export function Workspaces() {
                   {detail.myRole}
                 </Badge>
               </div>
-              <p className="text-xs text-slate-500 font-mono">slug: {detail.slug}</p>
+              <p className="text-xs text-slate-500 font-mono">{t('slug: {slug}', { slug: detail.slug })}</p>
               {detail.description && (
                 <p className="text-sm text-slate-300 mt-2">{detail.description}</p>
               )}
@@ -283,26 +285,26 @@ export function Workspaces() {
                   setEditOpen(true);
                 }}
               >
-                Edit Details
+                {t('Edit Details')}
               </Button>
             )}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-white/5">
             <div>
-              <div className="text-xs text-slate-500">Total Members</div>
+              <div className="text-xs text-slate-500">{t('Total Members')}</div>
               <div className="text-xl font-bold text-white mt-0.5">{detail.memberCount ?? detail.members?.length ?? 1}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-500">Scoped Projects</div>
+              <div className="text-xs text-slate-500">{t('Scoped Projects')}</div>
               <div className="text-xl font-bold text-white mt-0.5">{detail.projectCount ?? 0}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-500">Your Permission</div>
+              <div className="text-xs text-slate-500">{t('Your Permission')}</div>
               <div className="text-sm font-semibold text-indigo-300 mt-1 capitalize">{detail.myRole}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-500">Created</div>
+              <div className="text-xs text-slate-500">{t('Created')}</div>
               <div className="text-sm text-slate-300 mt-1">
                 {new Date(detail.createdAt).toLocaleDateString()}
               </div>
@@ -316,7 +318,7 @@ export function Workspaces() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
           <div className="flex items-center gap-2">
             <Users size={18} className="text-indigo-400" />
-            <h2 className="text-base font-semibold text-white">Team Members</h2>
+            <h2 className="text-base font-semibold text-white">{t('Team Members')}</h2>
             <span className="text-xs text-slate-500">
               ({detail?.members?.length ?? 0})
             </span>
@@ -328,7 +330,7 @@ export function Workspaces() {
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
               <Input
                 type="text"
-                placeholder="Search member..."
+                placeholder={t('Search member...')}
                 value={memberSearch}
                 onChange={(e) => setMemberSearch(e.target.value)}
                 className="pl-7 h-8 text-xs font-mono"
@@ -339,11 +341,11 @@ export function Workspaces() {
               variant="secondary"
               size="sm"
               onClick={() => setShowRoleMatrix(!showRoleMatrix)}
-              title="View workspace role permissions guide"
+              title={t('View workspace role permissions guide')}
               className="text-xs h-8"
             >
               <HelpCircle size={13} />
-              <span>Roles Guide</span>
+              <span>{t('Roles Guide')}</span>
             </Button>
 
             {isAdmin && (
@@ -353,7 +355,7 @@ export function Workspaces() {
                 onClick={openInvite}
               >
                 <UserPlus size={14} />
-                <span>Invite Member</span>
+                <span>{t('Invite Member')}</span>
               </Button>
             )}
           </div>
@@ -364,7 +366,7 @@ export function Workspaces() {
           <div className="mb-5 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.04] p-4 text-xs space-y-3 nd-fade">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-indigo-200 flex items-center gap-1.5">
-                <ShieldCheck size={14} /> Workspace Role &amp; Permissions Matrix
+                <ShieldCheck size={14} /> {t('Workspace Role & Permissions Matrix')}
               </span>
               <button
                 type="button"
@@ -376,27 +378,27 @@ export function Workspaces() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1 font-mono text-[11px]">
               <div className="rounded-lg bg-black/40 p-2.5 border border-white/5 space-y-1">
-                <div className="font-bold text-indigo-300">👑 Owner</div>
-                <p className="text-slate-400 text-[10px] font-sans">Full ownership, workspace deletion, transfers, billing &amp; all admin privileges.</p>
+                <div className="font-bold text-indigo-300">👑 {t('Owner')}</div>
+                <p className="text-slate-400 text-[10px] font-sans">{t('Full ownership, workspace deletion, transfers, billing & all admin privileges.')}</p>
               </div>
               <div className="rounded-lg bg-black/40 p-2.5 border border-white/5 space-y-1">
-                <div className="font-bold text-emerald-300">🛡️ Admin</div>
-                <p className="text-slate-400 text-[10px] font-sans">Can create/delete projects, services &amp; databases, invite members and change roles.</p>
+                <div className="font-bold text-emerald-300">🛡️ {t('Admin')}</div>
+                <p className="text-slate-400 text-[10px] font-sans">{t('Can create/delete projects, services & databases, invite members and change roles.')}</p>
               </div>
               <div className="rounded-lg bg-black/40 p-2.5 border border-white/5 space-y-1">
-                <div className="font-bold text-sky-300">⚙️ Member</div>
-                <p className="text-slate-400 text-[10px] font-sans">Can deploy applications, edit environment variables, launch shells and view logs.</p>
+                <div className="font-bold text-sky-300">⚙️ {t('Member')}</div>
+                <p className="text-slate-400 text-[10px] font-sans">{t('Can deploy applications, edit environment variables, launch shells and view logs.')}</p>
               </div>
               <div className="rounded-lg bg-black/40 p-2.5 border border-white/5 space-y-1">
-                <div className="font-bold text-slate-300">👁️ Viewer</div>
-                <p className="text-slate-400 text-[10px] font-sans">Read-only access. Can inspect service status, topologies, metrics and logs.</p>
+                <div className="font-bold text-slate-300">👁️ {t('Viewer')}</div>
+                <p className="text-slate-400 text-[10px] font-sans">{t('Read-only access. Can inspect service status, topologies, metrics and logs.')}</p>
               </div>
             </div>
           </div>
         )}
 
         {isLoading ? (
-          <div className="py-8 text-center text-sm text-slate-500 font-mono">Loading team members…</div>
+          <div className="py-8 text-center text-sm text-slate-500 font-mono">{t('Loading team members…')}</div>
         ) : (
           <div className="divide-y divide-white/5">
             {detail?.members
@@ -425,7 +427,7 @@ export function Workspaces() {
                           </span>
                           {isMe && (
                             <Badge tone="neutral" className="text-[10px] py-0 px-1.5">
-                              You
+                              {t('You')}
                             </Badge>
                           )}
                         </div>
@@ -446,10 +448,10 @@ export function Workspaces() {
                           }
                           className="h-7 text-xs w-28"
                         >
-                          <option value="admin">Admin</option>
-                          <option value="member">Member</option>
-                          <option value="viewer">Viewer</option>
-                          {isOwner && <option value="owner">Transfer Owner</option>}
+                          <option value="admin">{t('Admin')}</option>
+                          <option value="member">{t('Member')}</option>
+                          <option value="viewer">{t('Viewer')}</option>
+                          {isOwner && <option value="owner">{t('Transfer Owner')}</option>}
                         </Select>
                       ) : (
                         <Badge
@@ -466,15 +468,15 @@ export function Workspaces() {
                           variant="danger"
                           size="sm"
                           className="h-7 px-2"
-                          title={isMe ? 'Leave Workspace' : 'Remove Member'}
+                          title={isMe ? t('Leave Workspace') : t('Remove Member')}
                           onClick={() => {
-                            if (confirm(isMe ? 'Leave this workspace?' : `Remove ${m.email}?`)) {
+                            if (confirm(isMe ? t('Leave this workspace?') : t('Remove {email}?', { email: m.email }))) {
                               removeMemberMutation.mutate(m.id);
                             }
                           }}
                         >
                           <UserMinus size={13} />
-                          <span className="text-xs">{isMe ? 'Leave' : 'Remove'}</span>
+                          <span className="text-xs">{isMe ? t('Leave') : t('Remove')}</span>
                         </Button>
                       )}
                     </div>
@@ -490,7 +492,7 @@ export function Workspaces() {
         <Card className="p-6">
           <div className="flex items-center gap-2 mb-4">
             <Mail size={18} className="text-amber-300" />
-            <h2 className="text-base font-semibold text-white">Pending Invitations</h2>
+            <h2 className="text-base font-semibold text-white">{t('Pending Invitations')}</h2>
             <span className="text-xs text-slate-500">({pendingInvites.length})</span>
           </div>
           <div className="divide-y divide-white/5">
@@ -504,8 +506,10 @@ export function Workspaces() {
                   <div className="space-y-0.5">
                     <div className="text-sm font-medium text-slate-200">{inv.email}</div>
                     <div className="text-[11px] text-slate-500">
-                      Invited by {inv.invitedByName ?? 'someone'} · expires{' '}
-                      {expires.toLocaleDateString()}
+                      {t('Invited by {name} · expires {date}', {
+                        name: inv.invitedByName ?? t('someone'),
+                        date: expires.toLocaleDateString(),
+                      })}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -526,7 +530,7 @@ export function Workspaces() {
                         revokeInvitationMutation.mutate(inv.id);
                       }}
                     >
-                      Revoke
+                      {t('Revoke')}
                     </Button>
                   </div>
                 </div>
@@ -545,9 +549,9 @@ export function Workspaces() {
         <Card className="p-6 border-rose-500/20 bg-rose-500/[0.02]">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h3 className="text-sm font-semibold text-rose-300">Delete Workspace</h3>
+              <h3 className="text-sm font-semibold text-rose-300">{t('Delete Workspace')}</h3>
               <p className="text-xs text-slate-400 mt-1">
-                Permanently delete this workspace and detach all scoped resources.
+                {t('Permanently delete this workspace and detach all scoped resources.')}
               </p>
             </div>
             <Button
@@ -559,7 +563,7 @@ export function Workspaces() {
               }}
             >
               <Trash2 size={14} />
-              <span>Delete Workspace</span>
+              <span>{t('Delete Workspace')}</span>
             </Button>
           </div>
         </Card>
@@ -567,16 +571,18 @@ export function Workspaces() {
 
       {/* Invite Member Dialog */}
       {inviteOpen && (
-        <Modal onClose={closeInvite} title={lastInvite ? 'Invitation Sent' : 'Invite Team Member'}>
+        <Modal onClose={closeInvite} title={lastInvite ? t('Invitation Sent') : t('Invite Team Member')}>
           {lastInvite ? (
             <div className="space-y-4">
               <p className="text-sm text-slate-300">
-                A pending invitation has been created for{' '}
-                <strong className="text-white">{lastInvite.email}</strong>. The recipient
-                joins this workspace by opening the accept link below while signed in
-                with that address — or after creating an account with it.
+                {fill(
+                  t(
+                    'A pending invitation has been created for {email}. The recipient joins this workspace by opening the accept link below while signed in with that address — or after creating an account with it.',
+                  ),
+                  { email: <strong className="text-white">{lastInvite.email}</strong> },
+                )}
               </p>
-              <Field label="Accept link">
+              <Field label={t('Accept link')}>
                 <div className="flex items-stretch gap-2">
                   <Input
                     readOnly
@@ -588,27 +594,27 @@ export function Workspaces() {
                     type="button"
                     variant="secondary"
                     onClick={() => copyAcceptUrl(lastInvite.acceptUrl)}
-                    title="Copy accept link"
+                    title={t('Copy accept link')}
                   >
                     <Copy size={14} />
-                    <span>{copied ? 'Copied' : 'Copy'}</span>
+                    <span>{copied ? t('Copied') : t('Copy')}</span>
                   </Button>
                 </div>
               </Field>
               <p className="text-[11px] text-slate-500">
-                The link expires on{' '}
-                {new Date(lastInvite.expiresAt).toLocaleString()}. An email was also
-                dispatched if a notification channel is configured.
+                {t('The link expires on {date}. An email was also dispatched if a notification channel is configured.', {
+                  date: new Date(lastInvite.expiresAt).toLocaleString(),
+                })}
               </p>
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" onClick={closeInvite}>
-                  Done
+                  {t('Done')}
                 </Button>
               </div>
             </div>
           ) : (
             <form onSubmit={handleInvite} className="space-y-4">
-              <Field label="User Email">
+              <Field label={t('User Email')}>
                 <Input
                   type="email"
                   required
@@ -619,32 +625,32 @@ export function Workspaces() {
                 />
               </Field>
 
-              <Field label="Workspace Role">
+              <Field label={t('Workspace Role')}>
                 <Select
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member' | 'viewer')}
                 >
-                  <option value="admin">Admin — Full control over workspace &amp; members</option>
-                  <option value="member">Member — Can manage and deploy applications</option>
-                  <option value="viewer">Viewer — Read-only access to resources</option>
+                  <option value="admin">{t('Admin — Full control over workspace & members')}</option>
+                  <option value="member">{t('Member — Can manage and deploy applications')}</option>
+                  <option value="viewer">{t('Viewer — Read-only access to resources')}</option>
                 </Select>
               </Field>
 
               <p className="text-[11px] text-slate-500">
                 {/* r604: whether the address has an account is not revealed here. */}
                 {user?.isOperator
-                  ? 'If the email already belongs to a user, they are added immediately; otherwise a pending invitation is created.'
-                  : 'A pending invitation is created for the address — whether or not it already has an account — and the recipient accepts it from the link.'}
+                  ? t('If the email already belongs to a user, they are added immediately; otherwise a pending invitation is created.')
+                  : t('A pending invitation is created for the address — whether or not it already has an account — and the recipient accepts it from the link.')}
               </p>
 
               {error && <p className="text-xs text-rose-400">{error}</p>}
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="secondary" onClick={closeInvite}>
-                  Cancel
+                  {t('Cancel')}
                 </Button>
                 <Button type="submit" disabled={busy || !inviteEmail.trim()}>
-                  {busy ? 'Inviting…' : 'Send Invite'}
+                  {busy ? t('Inviting…') : t('Send Invite')}
                 </Button>
               </div>
             </form>
@@ -654,9 +660,9 @@ export function Workspaces() {
 
       {/* Edit Workspace Dialog */}
       {editOpen && (
-        <Modal onClose={() => setEditOpen(false)} title="Edit Workspace">
+        <Modal onClose={() => setEditOpen(false)} title={t('Edit Workspace')}>
           <form onSubmit={handleUpdateWs} className="space-y-4">
-            <Field label="Workspace Name">
+            <Field label={t('Workspace Name')}>
               <Input
                 required
                 value={editName}
@@ -665,12 +671,12 @@ export function Workspaces() {
               />
             </Field>
 
-            <Field label="Description">
+            <Field label={t('Description')}>
               <Textarea
                 rows={2}
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Workspace description"
+                placeholder={t('Workspace description')}
               />
             </Field>
 
@@ -678,10 +684,10 @@ export function Workspaces() {
 
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="secondary" onClick={() => setEditOpen(false)}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button type="submit" disabled={busy || !editName.trim()}>
-                {busy ? 'Saving…' : 'Save Changes'}
+                {busy ? t('Saving…') : t('Save Changes')}
               </Button>
             </div>
           </form>
@@ -690,21 +696,22 @@ export function Workspaces() {
 
       {/* Delete Workspace Confirmation Dialog */}
       {deleteOpen && (
-        <Modal onClose={() => setDeleteOpen(false)} title="Delete Workspace">
+        <Modal onClose={() => setDeleteOpen(false)} title={t('Delete Workspace')}>
           <div className="space-y-4">
             <p className="text-sm text-slate-300">
-              Are you sure you want to permanently delete <strong className="text-white">{detail?.name}</strong>?
-              This action cannot be undone.
+              {fill(t('Are you sure you want to permanently delete {name}? This action cannot be undone.'), {
+                name: <strong className="text-white">{detail?.name}</strong>,
+              })}
             </p>
 
             {error && <p className="text-xs text-rose-400">{error}</p>}
 
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="secondary" onClick={() => setDeleteOpen(false)}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button variant="danger" disabled={busy} onClick={handleDeleteWs}>
-                {busy ? 'Deleting…' : 'Yes, Delete Workspace'}
+                {busy ? t('Deleting…') : t('Yes, Delete Workspace')}
               </Button>
             </div>
           </div>

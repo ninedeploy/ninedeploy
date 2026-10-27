@@ -2,6 +2,7 @@ import { CheckCircle2, Clock, Flame, Globe, Layers, Loader2, RefreshCw, Server, 
 import type React from 'react';
 import { useMemo } from 'react';
 import { cn } from './ui.js';
+import { msg, useT } from '../lib/i18n.js';
 
 export type StageId = 'PREPARE' | 'BUILD' | 'BOOT' | 'HEALTHCHECK' | 'CANARY' | 'PROXY_SWAP' | 'CLEANUP' | 'COMPLETE';
 export type StageStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
@@ -16,15 +17,15 @@ export interface PipelineStageInfo {
 }
 
 const STAGE_DEFS: Array<Omit<PipelineStageInfo, 'status' | 'detail'>> = [
-  { id: 'PREPARE', label: 'Prepare', description: 'Checkout workspace and repository', icon: Layers },
-  { id: 'BUILD', label: 'Build', description: 'Build with Dockerfile or Nixpacks', icon: Flame },
-  { id: 'BOOT', label: 'Boot', description: 'Start an isolated container', icon: Server },
-  { id: 'HEALTHCHECK', label: 'Health', description: 'Verify the HTTP health check', icon: ShieldCheck },
+  { id: 'PREPARE', label: msg('Prepare'), description: msg('Checkout workspace and repository'), icon: Layers },
+  { id: 'BUILD', label: msg('Build'), description: msg('Build with Dockerfile or Nixpacks'), icon: Flame },
+  { id: 'BOOT', label: msg('Boot'), description: msg('Start an isolated container'), icon: Server },
+  { id: 'HEALTHCHECK', label: msg('Health'), description: msg('Verify the HTTP health check'), icon: ShieldCheck },
   // 0.16.9: shown only for a deploy whose log carries a CANARY marker.
-  { id: 'CANARY', label: 'Canary', description: 'Shift a growing share of requests to the new release', icon: Split },
-  { id: 'PROXY_SWAP', label: 'Route', description: 'Shift live traffic with Traefik', icon: RefreshCw },
-  { id: 'CLEANUP', label: 'Cleanup', description: 'Gracefully stop the old container', icon: Clock },
-  { id: 'COMPLETE', label: 'Live', description: 'Serve production traffic', icon: Globe },
+  { id: 'CANARY', label: msg('Canary'), description: msg('Shift a growing share of requests to the new release'), icon: Split },
+  { id: 'PROXY_SWAP', label: msg('Route'), description: msg('Shift live traffic with Traefik'), icon: RefreshCw },
+  { id: 'CLEANUP', label: msg('Cleanup'), description: msg('Gracefully stop the old container'), icon: Clock },
+  { id: 'COMPLETE', label: msg('Live'), description: msg('Serve production traffic'), icon: Globe },
 ];
 
 export function parsePipelineStages(rawLogs: string, deployStatus?: string): PipelineStageInfo[] {
@@ -109,6 +110,7 @@ export function PipelineStepper({
   deployStatus?: string;
   onStageClick?: (stageId: StageId) => void;
 }) {
+  const t = useT();
   const stages = useMemo(() => parsePipelineStages(rawLogs, deployStatus), [rawLogs, deployStatus]);
   const isZeroDowntimeLive = deployStatus === 'running';
   const completedStages = stages.filter((stage) => stage.status === 'success').length;
@@ -123,22 +125,22 @@ export function PipelineStepper({
             <ShieldCheck size={16} />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-slate-200">Zero-downtime deployment</h4>
+            <h4 className="text-sm font-semibold text-slate-200">{t('Zero-downtime deployment')}</h4>
             <p className="mt-0.5 text-xs text-slate-500">
               {isZeroDowntimeLive
-                ? 'All traffic is now served by the new release.'
+                ? t('All traffic is now served by the new release.')
                 : deployStatus === 'failed'
-                  ? 'The deployment failed. Inspect its CI results and output for the failed step.'
+                  ? t('The deployment failed. Inspect its CI results and output for the failed step.')
                   : deployStatus === 'awaiting_ci'
-                    ? 'Waiting for required CI workflows on the pinned commit. The current release stays live.'
+                    ? t('Waiting for required CI workflows on the pinned commit. The current release stays live.')
                   : deployStatus === 'awaiting_approval'
-                    ? 'Waiting for a workspace admin to approve this deploy. The current release stays live.'
-                    : 'The current release stays live while the new container is prepared.'}
+                    ? t('Waiting for a workspace admin to approve this deploy. The current release stays live.')
+                    : t('The current release stays live while the new container is prepared.')}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] tabular-nums text-slate-500">{completedStages}/{stages.length} complete</span>
+          <span className="text-[11px] tabular-nums text-slate-500">{t('{done}/{total} complete', { done: completedStages, total: stages.length })}</span>
           <span className={cn(
             'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium',
             isZeroDowntimeLive
@@ -162,14 +164,14 @@ export function PipelineStepper({
               )}
             />
             {isZeroDowntimeLive
-              ? 'Live'
+              ? t('Live')
               : deployStatus === 'failed'
-                ? 'Failed'
+                ? t('Failed')
                 : deployStatus === 'awaiting_ci'
-                  ? 'Waiting for CI'
+                  ? t('Waiting for CI')
                 : deployStatus === 'awaiting_approval'
-                  ? 'Awaiting approval'
-                  : 'Deploying'}
+                  ? t('Awaiting approval')
+                  : t('Deploying')}
           </span>
         </div>
       </div>
@@ -188,8 +190,8 @@ export function PipelineStepper({
                 key={st.id}
                 type="button"
                 onClick={() => onStageClick?.(st.id)}
-                title={st.detail || st.description}
-                aria-label={`${st.label}: ${st.detail || st.description}`}
+                title={st.detail || t(st.description)}
+                aria-label={`${t(st.label)}: ${st.detail || t(st.description)}`}
                 className="group relative flex min-w-0 flex-col items-center px-1 text-center"
               >
                 {index > 0 && (
@@ -214,10 +216,10 @@ export function PipelineStepper({
                   isFailed && 'text-rose-300',
                   isPending && 'text-slate-500',
                 )}>
-                  {st.label}
+                  {t(st.label)}
                 </span>
                 <span className="mt-0.5 text-[9px] uppercase tracking-[0.08em] text-slate-600">
-                  {isSuccess ? 'Done' : isRunning ? 'Running' : isFailed ? 'Failed' : `Step ${index + 1}`}
+                  {isSuccess ? t('Done') : isRunning ? t('Running') : isFailed ? t('Failed') : t('Step {n}', { n: index + 1 })}
                 </span>
               </button>
             );

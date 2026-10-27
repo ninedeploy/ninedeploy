@@ -1,6 +1,7 @@
 import type { TrafficBucket, TrafficCounters, TrafficPercentiles, TrafficRange, TrafficScopeTotal } from '@ninedeploy/sdk';
 import { formatBytes } from '../../lib/format.js';
 import { cn } from '../ui.js';
+import { useT, type Translate } from '../../lib/i18n.js';
 
 /**
  * Traffic analytics views (0.15): a light inline-SVG chart (no chart
@@ -31,8 +32,9 @@ export function errorRate(c: TrafficCounters): string {
 }
 
 export function TrafficRangePicker({ value, onChange }: { value: TrafficRange; onChange: (r: TrafficRange) => void }) {
+  const t = useT();
   return (
-    <fieldset className="inline-flex rounded-lg border-0 bg-white/[0.04] p-0.5" aria-label="Range">
+    <fieldset className="inline-flex rounded-lg border-0 bg-white/[0.04] p-0.5" aria-label={t('Range')}>
       {TRAFFIC_RANGES.map((r) => (
         <button
           key={r}
@@ -49,13 +51,14 @@ export function TrafficRangePicker({ value, onChange }: { value: TrafficRange; o
 }
 
 export function TrafficTotals({ totals }: { totals: TrafficCounters & TrafficPercentiles }) {
+  const t = useT();
   const items = [
-    { label: 'Requests', value: totals.requests.toLocaleString() },
-    { label: '5xx rate', value: errorRate(totals) },
+    { label: t('Requests'), value: totals.requests.toLocaleString() },
+    { label: t('5xx rate'), value: errorRate(totals) },
     { label: 'p50', value: formatMs(totals.p50Ms) },
     { label: 'p95', value: formatMs(totals.p95Ms) },
     { label: 'p99', value: formatMs(totals.p99Ms) },
-    { label: 'Sent', value: formatBytes(totals.bytesOut) },
+    { label: t('Sent'), value: formatBytes(totals.bytesOut) },
   ];
   return (
     <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
@@ -73,8 +76,9 @@ const W = 600;
 const H = 140;
 
 export function TrafficChart({ series }: { series: TrafficBucket[] }) {
+  const t = useT();
   if (series.length === 0) {
-    return <div className="grid h-[140px] place-items-center text-xs text-slate-500">No requests in this range yet.</div>;
+    return <div className="grid h-[140px] place-items-center text-xs text-slate-500">{t('No requests in this range yet.')}</div>;
   }
   const maxReq = Math.max(1, ...series.map((b) => b.requests));
   const maxLat = Math.max(1, ...series.map(avgLatency));
@@ -86,12 +90,12 @@ export function TrafficChart({ series }: { series: TrafficBucket[] }) {
   return (
     <div className="space-y-2">
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[140px] w-full" role="img">
-        <title>Requests per bucket by status class, and the average latency</title>
+        <title>{t('Requests per bucket by status class, and the average latency')}</title>
         {series.map((b, i) => {
           let y = H;
           return (
             <g key={b.t}>
-              <title>{`${new Date(b.t).toLocaleString()}: ${b.requests} requests, avg ${formatMs(avgLatency(b))}`}</title>
+              <title>{t('{time}: {n} requests, avg {latency}', { time: new Date(b.t).toLocaleString(), n: b.requests, latency: formatMs(avgLatency(b)) })}</title>
               {CLASSES.map((c) => {
                 const h = (classCount(b, c.key) / maxReq) * (H - 4);
                 y -= h;
@@ -105,38 +109,39 @@ export function TrafficChart({ series }: { series: TrafficBucket[] }) {
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
         {CLASSES.map((c) => (
           <span key={c.key} className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm" style={{ background: c.color }} /> {c.label}
+            <span className="h-2 w-2 rounded-sm" style={{ background: c.color }} /> {c.key === 'other' ? t('other') : c.label}
           </span>
         ))}
         <span className="inline-flex items-center gap-1">
-          <span className="h-0.5 w-3 bg-indigo-300" /> avg latency (max {formatMs(maxLat)})
+          <span className="h-0.5 w-3 bg-indigo-300" /> {t('avg latency (max {max})', { max: formatMs(maxLat) })}
         </span>
-        <span className="ml-auto">peak {maxReq.toLocaleString()} req/bucket</span>
+        <span className="ml-auto">{t('peak {n} req/bucket', { n: maxReq.toLocaleString() })}</span>
       </div>
     </div>
   );
 }
 
-const scopeLabel = (s: TrafficScopeTotal) =>
-  s.host ?? (s.scopeKey === 'panel' ? 'panel' : s.scopeKey === 'custom' ? 'custom routes' : s.scopeKey);
+const scopeLabel = (s: TrafficScopeTotal, t: Translate) =>
+  s.host ?? (s.scopeKey === 'panel' ? t('panel') : s.scopeKey === 'custom' ? t('custom routes') : s.scopeKey);
 
 export function TrafficScopeTable({ rows, empty }: { rows: TrafficScopeTotal[]; empty: string }) {
+  const t = useT();
   if (rows.length === 0) return <p className="text-xs text-slate-500">{empty}</p>;
   return (
     <table className="w-full text-xs">
       <thead>
         <tr className="text-left uppercase tracking-wide text-slate-500">
-          <th className="py-2 font-medium">Host</th>
-          <th className="py-2 text-right font-medium">Requests</th>
+          <th className="py-2 font-medium">{t('Host')}</th>
+          <th className="py-2 text-right font-medium">{t('Requests')}</th>
           <th className="py-2 text-right font-medium">5xx</th>
           <th className="py-2 text-right font-medium">p95</th>
-          <th className="py-2 text-right font-medium">Sent</th>
+          <th className="py-2 text-right font-medium">{t('Sent')}</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.scopeKey} className="border-t border-white/5">
-            <td className="py-2 font-mono text-slate-300">{scopeLabel(r)}</td>
+            <td className="py-2 font-mono text-slate-300">{scopeLabel(r, t)}</td>
             <td className="py-2 text-right text-slate-300">{r.requests.toLocaleString()}</td>
             <td className="py-2 text-right text-slate-400">{errorRate(r)}</td>
             <td className="py-2 text-right text-slate-400">{formatMs(r.p95Ms)}</td>
