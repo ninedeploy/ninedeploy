@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Pull the published candidate image on every independent release smoke runner before a smoke inspects it.
+- Pull the published candidate image on every independent release smoke runner before a smoke inspects it, and check the complete secret-provider list in upgrade and user-journey smokes.
 
 ### Added
 
@@ -107,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.18.5] - 2026-10-27
 
-Unpublished candidate: its signed image and Git tag are preserved. A smoke runner did not pull the candidate image before inspecting it; 0.18.6 corrects the release workflow.
+Unpublished candidate: its signed image and Git tag are preserved. A smoke runner did not pull the candidate image before inspecting it, and the user-journey smoke expected an outdated secret-provider list; 0.18.6 corrects both release gates.
 
 ## [0.18.4] - 2026-10-26
 

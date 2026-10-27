@@ -4,7 +4,7 @@
     "date": "2026-10-27",
     "title": "Expanded integrations and deployment safety",
     "changes": [
-      "Pull the signed candidate image on each independent release smoke runner before inspecting or running it.",
+      "Fix independent release smoke runners and check the complete secret-provider list during upgrade and user-journey verification.",
       "Add self-hosted GitLab sources, DNS record providers, secret managers and additional notification channels.",
       "Add panel-host backup and restore support for ClickHouse, Meilisearch and RabbitMQ; RabbitMQ backups contain definitions, not queued messages.",
       "Add Paketo and Heroku buildpack support for panel builds and an offline Dokploy template converter.",
