@@ -111,7 +111,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     };
     // Straight into the wizard for one source; still found by "deploy"/"new".
     const quickActions: Cmd[] = [
-      { type: 'Action', label: 'Deploy a Git repository', sub: 'Nixpacks, Railpack, Dockerfile or static', to: deployHref(location.pathname, location.search, 'git'), icon: GitBranch },
+      { type: 'Action', label: 'Deploy a Git repository', sub: 'Nixpacks, Railpack, buildpacks, Dockerfile or static', to: deployHref(location.pathname, location.search, 'git'), icon: GitBranch },
       { type: 'Action', label: 'Deploy a Docker image', sub: 'From Docker Hub, GHCR or a private registry', to: deployHref(location.pathname, location.search, 'image'), icon: Container },
       { type: 'Action', label: 'Deploy a Compose stack', sub: 'Paste a docker-compose.yml', to: deployHref(location.pathname, location.search, 'compose'), icon: Layers, operatorOnly: true },
       { type: 'Action', label: 'Create a database', sub: 'PostgreSQL, MySQL, Redis, MongoDB and more', to: '/new', icon: Database },

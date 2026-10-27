@@ -28,7 +28,7 @@ interface AppSource {
 
 /** The ways to bring an application in — Coolify's "Applications" column. */
 const APP_SOURCES: AppSource[] = [
-  { kind: 'git', title: 'Git repository', hint: 'A public URL, or a private repo with a saved token or deploy key', icon: GitBranch, keywords: 'github gitlab gitea bitbucket public private repo nixpacks railpack node python go php ruby' },
+  { kind: 'git', title: 'Git repository', hint: 'A public URL, or a private repo with a saved token or deploy key', icon: GitBranch, keywords: 'github gitlab gitea bitbucket public private repo nixpacks railpack buildpacks paketo heroku node python go php ruby' },
   { kind: 'github-app', title: 'GitHub App', hint: 'Private repos, push-to-deploy, PR previews and commit statuses', icon: GitPullRequest, keywords: 'github app installation webhook preview pull request', operatorOnly: true },
   { kind: 'image', title: 'Docker image', hint: 'Run any image from Docker Hub, GHCR or a private registry', icon: Container, keywords: 'docker image registry ghcr dockerhub container prebuilt' },
   { kind: 'dockerfile', title: 'Dockerfile', hint: 'Build the Dockerfile in your repository', icon: FileCode, keywords: 'dockerfile docker build repo' },

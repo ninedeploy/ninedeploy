@@ -10,7 +10,8 @@ import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, htt
 
 export const serviceType = z.enum(['pm2', 'docker', 'compose']);
 export const serviceOrchestrator = z.enum(['container', 'swarm']);
-export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'railpack', 'static']);
+/** G4.4 added paketo and heroku (Cloud Native Buildpacks, panel host only). */
+export const buildPack = z.enum(['auto', 'nixpacks', 'dockerfile', 'railpack', 'static', 'paketo', 'heroku']);
 
 /**
  * 0.16.1: names of the service's environment variables a Dockerfile build

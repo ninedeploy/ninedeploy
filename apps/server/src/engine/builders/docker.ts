@@ -16,6 +16,7 @@ import { buildStaticSite } from './staticSite.js';
 import { buildProbeUrl, safeProbePath } from '../../lib/probeUrl.js';
 import { writeSecretFile, type SecretFile } from '../../lib/secretFile.js';
 import { pullableReleaseRef } from '../fanout.js';
+import { BUILDPACK_BUILDERS, isBuildpackPack, type BuildpackPack } from '../../lib/buildPacks.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
 import { deployAborted } from '../../lib/deployAbort.js';
@@ -755,6 +756,148 @@ async function buildWithRailpack(
 }
 
 /**
+ * G4.4: Cloud Native Buildpacks through the `pack` CLI — the `paketo` and
+ * `heroku` build packs. Each builder image is pinned by digest, the way the
+ * Nixpacks and Railpack CLIs are pinned by checksum; moving to a newer
+ * builder is a code change. Paketo's base builder is amd64 only, Heroku's is
+ * multi-arch.
+ *
+ * Builds run on the panel host only (nodes refuse with BUILDPACKS_NODE_REASON,
+ * lib/buildPacks.ts). The service env reaches the build through a 0600
+ * `--env-file`, never argv: `ps` on the host would otherwise list every
+ * secret. Unlike Nixpacks, buildpacks do not write build env into the image
+ * config (Paketo and Heroku only keep the `BP_*` / build-time values their
+ * buildpacks choose to export).
+ */
+export const PACK_CONTAINER_REASON =
+  'The paketo and heroku build packs need the pack CLI, and this NineDeploy container image has none. ' +
+  'Run an image built with it, or switch the build pack to auto, nixpacks, railpack or dockerfile (Service → Settings → Build) and redeploy.';
+const PACK_MISSING_REASON =
+  'The pack CLI (Cloud Native Buildpacks) is unavailable. Re-run the NineDeploy installer to provision it, or switch the build pack.';
+
+/** Deploy-time check: why `pack` cannot run here, or null. */
+export async function packUnavailableReason(
+  inContainer = existsSync('/.dockerenv'),
+  pack: string | null | undefined = null,
+  arch: string = process.arch,
+): Promise<string | null> {
+  // Paketo's base builder has no arm64 image; pack would fail mid-pull.
+  if (pack === 'paketo' && buildpacksPlatform(arch) !== 'linux/amd64') return PAKETO_ARCH_REASON;
+  try {
+    await capture('pack', ['version']);
+    return null;
+  } catch {
+    return inContainer ? PACK_CONTAINER_REASON : PACK_MISSING_REASON;
+  }
+}
+
+export const PAKETO_ARCH_REASON =
+  'The paketo build pack needs an amd64 panel host (Paketo publishes its base builder for amd64 only). Use the heroku build pack, which also builds on arm64.';
+
+/**
+ * The platform `pack build` targets: the panel host's own. Without it pack
+ * resolves a multi-arch builder or run image itself, and on Docker's
+ * containerd image store (the default since Docker 29) it then fails with
+ * "failed to fetch base layers" for the heroku builder.
+ */
+export function buildpacksPlatform(arch: string = process.arch): string {
+  return arch === 'arm64' ? 'linux/arm64' : 'linux/amd64';
+}
+
+/** `KEY=value` lines for `pack --env-file`; values with a newline cannot be expressed and are skipped with a note. */
+export function packEnvFile(env: Record<string, string>, log: (line: string) => void): string {
+  const lines: string[] = [];
+  const skipped: string[] = [];
+  for (const [key, value] of Object.entries(env)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (/[\r\n]/.test(value)) skipped.push(key);
+    else lines.push(`${key}=${value}`);
+  }
+  if (skipped.length > 0) log(`⚠ not passed to the buildpacks build (multi-line values): ${skipped.join(', ')}`);
+  return lines.length > 0 ? `${lines.join('\n')}\n` : '';
+}
+
+async function buildWithBuildpacks(
+  pack: BuildpackPack,
+  target: string,
+  baseDir: string,
+  workDir: string,
+  env: Record<string, string>,
+  log: (line: string) => void,
+): Promise<void> {
+  const unavailable = await packUnavailableReason(undefined, pack);
+  if (unavailable) throw new Error(unavailable);
+  const builder = BUILDPACK_BUILDERS[pack];
+  const envFile = writeSecretFile('nd-pack-env', 'build.env', packEnvFile(env, log));
+  try {
+    log(`📦 ${pack === 'paketo' ? 'Paketo' : 'Heroku'} buildpacks build: ${baseDir} (builder ${builder.split('@')[0]}) …`);
+    let imageStoreFault = false;
+    const sink = (line: string) => {
+      if (line.includes('failed to fetch base layers')) imageStoreFault = true;
+      log(line);
+    };
+    await run(
+      'pack',
+      [
+        'build', target,
+        '--path', path.join(workDir, baseDir),
+        '--builder', builder,
+        '--env-file', envFile.path,
+        // The builder is digest-pinned, so a cached copy is the same image.
+        '--pull-policy', 'if-not-present',
+        '--platform', buildpacksPlatform(),
+        // pack names its cache volumes after the full image name, tag
+        // included, and every deploy is tagged with its commit: one new pair
+        // of volumes per deploy, never removed. One pair per service instead.
+        ...buildpacksCacheArgs(target),
+        '--no-color',
+      ],
+      { cwd: workDir, heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Building ${target} with buildpacks` },
+      sink,
+    ).catch((err: unknown) => {
+      throw imageStoreFault ? new Error(BUILDPACKS_IMAGE_STORE_REASON) : err;
+    });
+  } finally {
+    envFile.cleanup();
+  }
+}
+
+/**
+ * `--cache` flags for a target `repo:tag`: build and launch volumes named
+ * after the repository only. Two flags: in one combined string pack names
+ * only the last cache and gives the other its tag-based default name.
+ */
+export function buildpacksCacheArgs(target: string): string[] {
+  const [build, launch] = buildpacksCacheVolumes(target);
+  return ['--cache', `type=build;format=volume;name=${build}`, '--cache', `type=launch;format=volume;name=${launch}`];
+}
+
+function buildpacksCacheVolumes(target: string): [string, string] {
+  const repo = target.replace(/:[^:/]*$/, '').replace(/[^A-Za-z0-9_.-]/g, '_');
+  return [`nd-pack-${repo}-build`, `nd-pack-${repo}-launch`];
+}
+
+/** Remove a service's buildpacks cache volumes; a missing one is fine. */
+export async function removeBuildpacksCache(target: string): Promise<void> {
+  for (const volume of buildpacksCacheVolumes(target)) {
+    await capture('docker', ['volume', 'rm', volume], { timeoutMs: DOCKER_READ_TIMEOUT_MS }).catch(() => undefined);
+  }
+}
+
+/**
+ * Buildpacks and Docker's containerd image store (the default for new
+ * installs since Docker 29) do not work together for every builder: the
+ * export fails with "failed to fetch base layers". Seen with the heroku
+ * builder whenever the build has env (paketo/spring-boot#586). There is no
+ * pack-side fix yet; the host's Docker has to use the classic store.
+ */
+export const BUILDPACKS_IMAGE_STORE_REASON =
+  "The buildpacks build failed with 'failed to fetch base layers': a known incompatibility between buildpacks and Docker's containerd image store, " +
+  'the default for new Docker 29 installs. Turn the containerd image store off on the panel host ' +
+  '("features": {"containerd-snapshotter": false} in /etc/docker/daemon.json, then restart Docker; images are pulled again) — ' +
+  'or use the paketo build pack, or another build pack.';
+
+/**
  * r274: first line of every nixpacks.toml the builder generates. The file is
  * written into the REUSED working dir and nothing removed it, so the next
  * deploy read it as "repo already ships a nixpacks.toml — keeping it" and
@@ -923,6 +1066,10 @@ export async function buildSourceImage(
     // connection — no host install/build commands run for it, so the
     // dispatch order places it before the nixpacks/Dockerfile checks.
     await buildWithRailpack(target, baseDir, workDir, env, log);
+    builtByPack = true;
+  } else if (isBuildpackPack(pack)) {
+    // G4.4: Cloud Native Buildpacks detect and build the app themselves.
+    await buildWithBuildpacks(pack, target, baseDir, workDir, env, log);
     builtByPack = true;
   } else if (pack === 'auto' && !hasDockerfile && !explicitDockerfilePath) {
     // Only auto-discover when the user did not already pin a path. A

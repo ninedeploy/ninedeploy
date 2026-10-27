@@ -582,6 +582,12 @@ describe('buildElsewhere / retention (design §6.3 steps 1, 2, 6)', () => {
       return { target: 'ninedeploy/web:abc1234-b7', builtWithNixpacks: false };
     });
     await expect(buildElsewhere(db, { kind: 'server', serverId: builder }, ctxFor(svc, { buildConfig: { buildPack: 'static' } }), { deps: { buildOnNode } })).rejects.toThrow(/static build pack/);
+    // G4.4: buildpacks build on the panel host only.
+    for (const pack of ['paketo', 'heroku']) {
+      await expect(buildElsewhere(db, { kind: 'server', serverId: builder }, ctxFor(svc, { buildConfig: { buildPack: pack } }), { deps: { buildOnNode } })).rejects.toThrow(
+        /paketo and heroku build packs build on the panel host only/,
+      );
+    }
     expect(buildOnNode).not.toHaveBeenCalled();
     h.reply = (_s, op) => (op === 'docker.imageInspect' ? { exitCode: 0, lines: [`${IMG}|2048`] } : undefined);
     const built = await buildElsewhere(db, { kind: 'server', serverId: builder }, ctxFor(svc), { deps: { buildOnNode } });

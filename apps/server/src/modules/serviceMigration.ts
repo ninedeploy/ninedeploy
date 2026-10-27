@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import {
-  buildConfigs, databaseAttachments, databases, type DB, type dbEngine, domains, envVars, services, webhooks,
+  buildConfigs, buildPack as buildPackValues, databaseAttachments, databases, type DB, type dbEngine, domains, envVars, services, webhooks,
 } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { createDomain, envVarName, gitBranch, gitRepoUrl, webhookCreate } from '@ninedeploy/schemas';
@@ -142,8 +142,8 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       type: raw.service.type,
       build: raw.buildConfig ?? null,
     });
-    if (raw.buildConfig && !['auto', 'nixpacks', 'dockerfile', 'railpack', 'static'].includes(raw.buildConfig.buildPack)) {
-      throw badRequest('Invalid bundle: buildConfig.buildPack must be auto, nixpacks, dockerfile, railpack or static');
+    if (raw.buildConfig && !(buildPackValues as readonly string[]).includes(raw.buildConfig.buildPack)) {
+      throw badRequest(`Invalid bundle: buildConfig.buildPack must be one of ${buildPackValues.join(', ')}`);
     }
     // F194: the same remote/ref rules POST and PATCH /services apply. The git
     // sinks rely on them (lib/git.ts: a leading-dash branch is read as an
@@ -244,7 +244,7 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
         const bc = bundle.buildConfig;
         await tx.insert(buildConfigs).values({
           serviceId: created.id,
-          buildPack: bc.buildPack as 'auto' | 'nixpacks' | 'dockerfile' | 'railpack' | 'static',
+          buildPack: bc.buildPack as (typeof buildPackValues)[number],
           baseDir: bc.baseDir || '/',
           installCmd: bc.installCmd,
           buildCmd: bc.buildCmd,

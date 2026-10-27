@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { dirname } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { containerExposedTcpPorts, dockerBuilder, nixpacksEnvArgs, RAILPACK_BUILDKIT_REASON, RAILPACK_CONTAINER_REASON, railpackRefusedForInstall, railpackUnavailableReason, sanitiseRuntimeLogs, writeEnvFile } from '../../src/engine/builders/docker.js';
+import { BUILDPACKS_IMAGE_STORE_REASON, buildpacksPlatform, PACK_CONTAINER_REASON, packEnvFile, packUnavailableReason, PAKETO_ARCH_REASON, containerExposedTcpPorts, dockerBuilder, nixpacksEnvArgs, RAILPACK_BUILDKIT_REASON, RAILPACK_CONTAINER_REASON, railpackRefusedForInstall, railpackUnavailableReason, sanitiseRuntimeLogs, writeEnvFile } from '../../src/engine/builders/docker.js';
+import { BUILDPACK_BUILDERS } from '../../src/lib/buildPacks.js';
 
 const h = vi.hoisted(() => {
   const run = vi.fn(async (_cmd: string, _args: unknown[], _opts: unknown, sink?: (line: string) => void) => {
@@ -1338,6 +1339,80 @@ describe('dockerBuilder.buildAndRun — static build pack', () => {
     // The container still starts from the railpack image.
     const runCall = h.run.mock.calls.find((c) => c[0] === 'docker' && (c[1] as string[])[0] === 'run');
     expect(runCall?.[1]).toContain('ninedeploy/web:abcdef1');
+  });
+
+  // G4.4: Cloud Native Buildpacks.
+  it('G4.4: builds paketo/heroku with the pinned builder, the host platform, per-service caches and an env FILE', async () => {
+    let envFileText = '';
+    h.run.mockImplementation(async (cmd: string, args: unknown[]) => {
+      if (cmd === 'pack') {
+        const a = args as string[];
+        envFileText = readFileSync(a[a.indexOf('--env-file') + 1]!, 'utf8');
+      }
+    });
+    for (const pack of ['paketo', 'heroku'] as const) {
+      h.run.mockClear();
+      const ctx = makeCtx({
+        service: { slug: 'web', image: null, port: 3000, repoUrl: 'https://github.com/acme/web', healthPath: '/', cpuShares: 0, memLimitMb: 0 },
+        workDir: '/work/web',
+        buildConfig: { buildPack: pack, baseDir: '/' },
+        env: { API_TOKEN: 'top-secret' },
+      });
+      await dockerBuilder.buildAndRun(ctx as never);
+      const packCalls = h.run.mock.calls.filter((c) => c[0] === 'pack');
+      expect(packCalls).toHaveLength(1);
+      const args = packCalls[0]![1] as string[];
+      expect(args.slice(0, 2)).toEqual(['build', 'ninedeploy/web:abcdef1']);
+      expect(args[args.indexOf('--builder') + 1]).toBe(BUILDPACK_BUILDERS[pack]);
+      expect(args[args.indexOf('--builder') + 1]).toMatch(/@sha256:[0-9a-f]{64}$/);
+      expect(args[args.indexOf('--platform') + 1]).toBe(buildpacksPlatform());
+      expect(args.filter((a) => a.startsWith('type='))).toEqual([
+        'type=build;format=volume;name=nd-pack-ninedeploy_web-build',
+        'type=launch;format=volume;name=nd-pack-ninedeploy_web-launch',
+      ]);
+      // Secrets never on argv.
+      expect(args.join(' ')).not.toContain('top-secret');
+      expect(envFileText).toBe('API_TOKEN=top-secret\n');
+      // Only one build, and the container runs the buildpacks image.
+      expect(h.run.mock.calls.filter((c) => c[0] === 'nixpacks' || c[0] === 'railpack' || (c[0] === 'docker' && (c[1] as string[])[0] === 'build'))).toEqual([]);
+      expect(h.run.mock.calls.find((c) => c[0] === 'docker' && (c[1] as string[])[0] === 'run')?.[1]).toContain('ninedeploy/web:abcdef1');
+    }
+  });
+
+  it('G4.4: names the containerd image-store fix when pack fails fetching base layers', async () => {
+    h.run.mockImplementation(async (cmd: string, _args: unknown[], _opts: unknown, sink?: (line: string) => void) => {
+      if (cmd === 'pack') {
+        sink?.('ERROR: failed to build: failed to fetch base layers: open /tmp/imgutil.local.image.1/blobs/sha256/77a6: no such file');
+        throw new Error('`pack build` exited with code 1');
+      }
+    });
+    const ctx = makeCtx({
+      service: { slug: 'web', image: null, port: 3000, repoUrl: 'https://github.com/acme/web', healthPath: '/', cpuShares: 0, memLimitMb: 0 },
+      workDir: '/work/web',
+      buildConfig: { buildPack: 'heroku', baseDir: '/' },
+    });
+    await expect(dockerBuilder.buildAndRun(ctx as never)).rejects.toThrow(BUILDPACKS_IMAGE_STORE_REASON);
+    // Any other failure surfaces unchanged.
+    h.run.mockImplementation(async (cmd: string) => {
+      if (cmd === 'pack') throw new Error('`pack build` exited with code 1');
+    });
+    await expect(dockerBuilder.buildAndRun(ctx as never)).rejects.toThrow('`pack build` exited with code 1');
+  });
+
+  it('G4.4: refuses before building when pack is missing, and paketo on arm64', async () => {
+    h.capture.mockRejectedValueOnce(new Error('spawn pack ENOENT'));
+    expect(await packUnavailableReason(true, 'heroku')).toBe(PACK_CONTAINER_REASON);
+    h.capture.mockRejectedValueOnce(new Error('spawn pack ENOENT'));
+    expect(await packUnavailableReason(false, 'heroku')).toMatch(/Re-run the NineDeploy installer/);
+    expect(await packUnavailableReason(false, 'heroku')).toBeNull();
+    expect(await packUnavailableReason(false, 'paketo', 'arm64')).toBe(PAKETO_ARCH_REASON);
+    expect(await packUnavailableReason(false, 'heroku', 'arm64')).toBeNull();
+    expect(buildpacksPlatform('arm64')).toBe('linux/arm64');
+    expect(buildpacksPlatform('x64')).toBe('linux/amd64');
+    const notes: string[] = [];
+    expect(packEnvFile({ A: '1', 'bad-key': 'x', B: 'with = sign', MULTI: 'a\nb' }, (l) => notes.push(l))).toBe('A=1\nB=with = sign\n');
+    expect(notes).toEqual(['⚠ not passed to the buildpacks build (multi-line values): MULTI']);
+    expect(packEnvFile({}, () => undefined)).toBe('');
   });
 
   it('r582: without BUILDKIT_HOST the builder refuses before running railpack build', async () => {

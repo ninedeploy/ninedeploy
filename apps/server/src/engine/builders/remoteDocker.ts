@@ -12,6 +12,7 @@ import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
 import { runRemoteContainer } from './remoteRun.js';
 import { verifyNodeReadiness } from '../../lib/nodeReadiness.js';
 import { discoverRemoteReplicas, retireRemoteReplicas } from './remoteReplicas.js';
+import { BUILDPACKS_NODE_REASON, isBuildpackPack } from '../../lib/buildPacks.js';
 
 // r267: moved to remoteRun.ts with the run phase (multi-node T1); re-exported
 // so every importer keeps its path.
@@ -184,6 +185,9 @@ export async function resolveNodeBuildPlan(workDir: string, buildConfig: PackCon
   const baseDir = checkout ? repoRelative(workDir, buildConfig?.baseDir ?? undefined) : legacy.context;
   if (pack === 'nixpacks') return { pack: 'nixpacks', baseDir };
   if (pack === 'railpack') return { pack: 'railpack', baseDir };
+  // G4.4: never the legacy Dockerfile plan below — that would quietly build
+  // something other than the buildpacks image the service asked for.
+  if (isBuildpackPack(pack)) throw new Error(BUILDPACKS_NODE_REASON);
   if (pack !== 'auto' || !checkout || buildConfig?.dockerfilePath?.trim() || legacyDockerfileExists(workDir, legacy)) return legacy;
   // docker.ts is loaded lazily: it imports fan-out, which imports this module.
   const { findDockerfileInRepo } = await import('./docker.js');

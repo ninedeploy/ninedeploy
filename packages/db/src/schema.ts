@@ -33,7 +33,8 @@ export const serviceStatus = [
   'error',
   'deleting',
 ] as const;
-export const buildPack = ['auto', 'nixpacks', 'dockerfile', 'railpack', 'static'] as const;
+// G4.4 added paketo and heroku (Cloud Native Buildpacks); the column is plain text, so no migration.
+export const buildPack = ['auto', 'nixpacks', 'dockerfile', 'railpack', 'static', 'paketo', 'heroku'] as const;
 export const deploymentStatus = [
   'queued',
   'building',

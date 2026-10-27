@@ -72,7 +72,8 @@ import { normaliseAllowlist } from '../lib/ipAllowlist.js';
 import { slugify, slugifyWithSuffix } from '../lib/slug.js';
 import { assertPrimaryVolumeNotAttachedElsewhere, assertSlugVolumeNotRetained } from '../lib/retainedSlugVolume.js';
 import { composeBuilder } from '../engine/builders/compose.js';
-import { dockerBuilder, railpackRefusedForInstall } from '../engine/builders/docker.js';
+import { dockerBuilder, railpackRefusedForInstall, removeBuildpacksCache } from '../engine/builders/docker.js';
+import { BUILDPACKS_NODE_REASON, isBuildpackPack } from '../lib/buildPacks.js';
 import { remoteHookRefusal } from '../lib/remoteDeploy.js';
 import { pm2Builder, pm2Restart, pm2Start, pm2Stop } from '../engine/builders/pm2.js';
 import { deleteLog } from '../engine/logs.js';
@@ -392,6 +393,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     if (input.build.buildPack === 'railpack' && !(await (await import('../engine/buildPlacement.js')).railpackBuildsOnCapableNode(app.db, { serverId: input.serverId ?? null }))) {
       const railpackRefusal = railpackRefusedForInstall();
       if (railpackRefusal) throw badRequest(railpackRefusal, 'railpack_unavailable');
+    }
+    // G4.4: a node-pinned service builds where it runs, and buildpacks build
+    // on the panel host only (Build on: panel can be chosen after creation).
+    if (input.serverId != null && isBuildpackPack(input.build.buildPack)) {
+      throw badRequest(BUILDPACKS_NODE_REASON, 'remote_deploy_unsupported');
     }
     // Inline compose stack: validate the pasted YAML with the SAME analysis
     // the wizard previewed, and settle the routed service now — the builder
@@ -931,6 +937,15 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       const railpackRefusal = railpackRefusedForInstall();
       if (railpackRefusal) throw badRequest(railpackRefusal, 'railpack_unavailable');
     }
+    // G4.4: switching a service a node builds to buildpacks (panel host only).
+    if (
+      isBuildpackPack(build?.buildPack) &&
+      !isBuildpackPack(currentBuild?.buildPack) &&
+      mergedServerId != null &&
+      existing.buildOn !== 'panel'
+    ) {
+      throw badRequest(BUILDPACKS_NODE_REASON, 'remote_deploy_unsupported');
+    }
     // Editing an inline stack's YAML. Only a service that already stores one
     // may receive it: `type` alone cannot distinguish an inline stack from a
     // git-repo compose service, whose file lives in the repository and would
@@ -1226,6 +1241,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     } catch (err) {
       req.log.warn({ err, slug: svc.slug }, 'failed to reap per-service bridge');
     }
+    // G4.4: its buildpacks cache volumes on the panel host, after the runtime
+    // is gone (absent unless it built with paketo or heroku).
+    await removeBuildpacksCache(`ninedeploy/${svc.slug}:latest`).catch(() => undefined);
     void audit(app.db, req.user!.id, 'service.delete', svc.name);
     app.kernel?.events.emit('service.deleted', {
       serviceId: svc.id,

@@ -53,7 +53,8 @@ export const COMMAND_HEALTHCHECK_PANEL_ONLY =
 import { analyzeRepo, summarizeInsights } from '../lib/frameworks.js';
 import { upsertInsights } from './repoInsights.js';
 import { connectionString, ENGINES } from './database.js';
-import { dockerBuilder, railpackUnavailableReason } from './builders/docker.js';
+import { dockerBuilder, packUnavailableReason, railpackUnavailableReason } from './builders/docker.js';
+import { isBuildpackPack } from '../lib/buildPacks.js';
 import { composeBuilder } from './builders/compose.js';
 import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
@@ -1128,6 +1129,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     if (!artifact && service.serverId == null && buildAway === null && service.type === 'docker' && !service.image && buildConfig?.buildPack === 'railpack') {
       const railpackRefusal = await railpackUnavailableReason();
       if (railpackRefusal) throw new Error(railpackRefusal);
+    }
+    // G4.4: the same before-the-checkout refusal for the pack CLI.
+    if (!artifact && service.serverId == null && buildAway === null && service.type === 'docker' && !service.image && isBuildpackPack(buildConfig?.buildPack)) {
+      const packRefusal = await packUnavailableReason(undefined, buildConfig?.buildPack);
+      if (packRefusal) throw new Error(packRefusal);
     }
 
     log('##[stage:PREPARE:running] Resolving repository, sources and workspace');

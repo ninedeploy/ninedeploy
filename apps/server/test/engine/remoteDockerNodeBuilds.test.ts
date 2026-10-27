@@ -66,6 +66,12 @@ const ctx = (workDir: string, buildConfig: Record<string, unknown>, over: Record
 describe('pack resolution on the panel checkout (parity with the local builder)', () => {
   const log = () => undefined;
 
+  it('G4.4: a buildpacks service never falls back to a Dockerfile build on a node', async () => {
+    for (const pack of ['paketo', 'heroku']) {
+      await expect(resolveNodeBuildPlan(repo(['Dockerfile']), { buildPack: pack }, log)).rejects.toThrow(/build on the panel host only/);
+    }
+  });
+
   it('the parity table: root Dockerfile, nested Dockerfile, pinned path, none', async () => {
     // Root Dockerfile: the local builder builds it from the root; so does the node (today's operands).
     expect(await resolveNodeBuildPlan(repo(['Dockerfile']), { buildPack: 'auto' }, log)).toEqual({ pack: 'dockerfile', dockerfile: 'Dockerfile', context: '.' });

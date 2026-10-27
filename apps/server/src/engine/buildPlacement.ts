@@ -22,6 +22,7 @@ import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { isUploadSourced, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
 import { type BuildSlots, buildSlotKey, createBuildSlots } from './buildSlots.js';
 import type { BuildContext } from './types.js';
+import { BUILDPACKS_NODE_REASON, isBuildpackPack } from '../lib/buildPacks.js';
 
 /**
  * Build placement (multi-node, design §6.2, §6.3): where a service's image is
@@ -124,6 +125,7 @@ export interface PlacedBuildDeps {
   ) => Promise<{ target: string; builtWithNixpacks: boolean }>;
   panelImageInfo?: typeof panelImageInfo;
   railpackUnavailableReason?: () => Promise<string | null>;
+  packUnavailableReason?: () => Promise<string | null>;
 }
 
 /**
@@ -202,6 +204,7 @@ export async function buildElsewhere(
         'The static build pack runs its build commands on the host itself and has no node implementation; build it on the panel (Build on: panel).',
       );
     }
+    if (isBuildpackPack(ctx.buildConfig?.buildPack)) throw new BuildPlacementError(BUILDPACKS_NODE_REASON);
     const refusal = await capabilityRefusal(agent, label, await agentTransportSealed(db, id), {
       cap: pushTarget ? ['image.manage'] : ['stream', 'image.manage'],
       feature: 'hand a built image over as a build server',
@@ -212,6 +215,11 @@ export async function buildElsewhere(
   } else if ((ctx.buildConfig?.buildPack ?? 'auto') === 'railpack') {
     // r520/r582 for the panel host: refuse before anything is built.
     const reason = await (opts.deps?.railpackUnavailableReason ?? (await import('./builders/docker.js')).railpackUnavailableReason)();
+    if (reason) throw new BuildPlacementError(reason);
+  } else if (isBuildpackPack(ctx.buildConfig?.buildPack)) {
+    // G4.4: the same for the pack CLI.
+    const pack = ctx.buildConfig?.buildPack;
+    const reason = await (opts.deps?.packUnavailableReason ?? ((await import('./builders/docker.js')).packUnavailableReason.bind(null, undefined, pack)))();
     if (reason) throw new BuildPlacementError(reason);
   }
 
@@ -332,7 +340,7 @@ export async function retainBuildHostTags(
 // ── fan-out (design §6.5, D2) ────────────────────────────────────────────────
 
 /** What the primary's source build ran: decides whether a target may rebuild it (D2). */
-export type PrimaryPack = 'dockerfile' | 'nixpacks' | 'railpack' | 'static';
+export type PrimaryPack = 'dockerfile' | 'nixpacks' | 'railpack' | 'static' | 'paketo' | 'heroku';
 
 /**
  * The pack the primary built with, from the panel's checkout and the local
@@ -346,7 +354,8 @@ export async function primaryBuildPack(
   const pack = buildConfig?.buildPack ?? 'auto';
   const dockerfile = (buildConfig?.dockerfilePath || 'Dockerfile').replace(/^\/+/, '') || 'Dockerfile';
   const context = (buildConfig?.baseDir || '.').replace(/^\/+/, '') || '.';
-  if (pack === 'static' || pack === 'nixpacks' || pack === 'railpack') return { pack, dockerfile, context };
+  // G4.4: a buildpacks primary cannot be rebuilt by a target either; its image is shipped.
+  if (pack === 'static' || pack === 'nixpacks' || pack === 'railpack' || isBuildpackPack(pack)) return { pack, dockerfile, context };
   if (pack !== 'auto' || !existsSync(path.join(workDir, '.git'))) return { pack: 'dockerfile', dockerfile, context };
   const { resolveNodeBuildPlan } = await import('./builders/remoteDocker.js');
   const plan = await resolveNodeBuildPlan(workDir, buildConfig, () => undefined);

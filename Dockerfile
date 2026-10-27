@@ -157,6 +157,23 @@ RUN case "$TARGETARCH" in \
   && railpack --version \
   && rm -f "/tmp/${RAILPACK_ASSET}"
 
+# G4.4: the pack CLI (Cloud Native Buildpacks), for the optional `paketo` and
+# `heroku` build packs. Same version and SHA-256 pins as install.sh — keep the
+# two in sync. pack drives the host's Docker daemon through the mounted socket
+# and copies the source in itself, so no path mapping or BuildKit is needed.
+ARG PACK_VERSION=0.40.9
+RUN case "$TARGETARCH" in \
+       amd64) PACK_ASSET="pack-v${PACK_VERSION}-linux.tgz"; PACK_SHA256="dc0ee1e931cf8a106d7555a01a214864f9acb60b77adf15d69b74df4404758e9" ;; \
+       arm64) PACK_ASSET="pack-v${PACK_VERSION}-linux-arm64.tgz"; PACK_SHA256="091ccb213823656c727731537ef8f1000eb4dc3ec61641506653e7f9d6da0c5e" ;; \
+       *) echo "Unsupported pack architecture: $TARGETARCH" >&2; exit 1 ;; \
+     esac \
+  && curl -fsSL "https://github.com/buildpacks/pack/releases/download/v${PACK_VERSION}/${PACK_ASSET}" -o "/tmp/${PACK_ASSET}" \
+  && echo "${PACK_SHA256}  /tmp/${PACK_ASSET}" | sha256sum -c - \
+  && tar -xzf "/tmp/${PACK_ASSET}" -C /usr/local/bin pack \
+  && chmod 0755 /usr/local/bin/pack \
+  && pack version \
+  && rm -f "/tmp/${PACK_ASSET}"
+
 # Node ≥ 26 images no longer bundle corepack — see stage 1. Keep in sync with
 # "packageManager" in package.json.
 ARG PNPM_VERSION=11.23.0

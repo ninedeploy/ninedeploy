@@ -1746,6 +1746,27 @@ describe('inline compose stacks', () => {
   });
 });
 
+// G4.4: the paketo and heroku build packs build on the panel host only.
+describe('G4.4: buildpacks on a node-built service', () => {
+  const operator = asUser({ id: 1, isOperator: true });
+
+  it('refuses switching a node-built service to buildpacks, but not one that builds on the panel', async () => {
+    for (const [buildOn, status] of [[null, 400], ['panel', 200]] as const) {
+      const pinned = svcRow({ id: 1, ownerUserId: 1, serverId: 3, runtimeId: 'web-9', buildOn });
+      const app = await buildTestApp({
+        db: createFakeDb({ findFirst: { services: pinned, buildConfigs: { serviceId: 1, buildPack: 'auto' } }, update: { services: [pinned] } }),
+      });
+      await app.register(servicesRoutes);
+      const res = await app.inject({ method: 'PATCH', url: '/1', headers: operator, payload: { build: { buildPack: 'paketo' } } });
+      expect(res.statusCode, `buildOn=${buildOn}: ${res.body}`).toBe(status);
+      if (status === 400) {
+        expect(res.json().error.code).toBe('remote_deploy_unsupported');
+        expect(res.json().error.message).toMatch(/build on the panel host only/);
+      }
+    }
+  });
+});
+
 // r522: deploy hooks run on the PANEL host (pipeline runHook), so a
 // node-pinned service carrying one ran it on the wrong machine. Saving that
 // combination is refused where it is introduced; an existing pinned service

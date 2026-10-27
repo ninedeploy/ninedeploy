@@ -13,6 +13,7 @@ import { badRequest, HttpError } from './errors.js';
 import { remoteDatabaseRefusal } from './remoteDatabaseRefusal.js';
 import { remoteVolumeRefusal } from './remoteVolumes.js';
 import { UPLOAD_SOURCE_PANEL_BUILD } from './sourceUpload.js';
+import { BUILDPACKS_NODE_REASON, isBuildpackPack } from './buildPacks.js';
 
 // r229/r269: moved to its own file (multi-node T1, a pure move) so node
 // databases relax it there; re-exported so every caller keeps this path.
@@ -344,6 +345,11 @@ export async function remoteServiceRefusalDetail(
     // from the panel's own checkout.
     if (type === 'docker') {
       const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
+      // G4.4: a node would build this; buildpacks build on the panel only
+      // (Build on: panel ships the image instead).
+      if (isBuildpackPack(build?.buildPack)) {
+        return unsupported(`Deployments to a remote server are not available for this service yet: ${BUILDPACKS_NODE_REASON}`);
+      }
       if ((build?.buildPack ?? 'auto') === 'nixpacks') {
         const p = await cloneProbe();
         const why = await capabilityRefusal(p.agent, p.nodeLabel, p.sealed, { cap: 'build.nixpacks', feature: 'build with Nixpacks', sealedRequired: false });

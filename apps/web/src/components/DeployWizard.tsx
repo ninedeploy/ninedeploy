@@ -25,7 +25,7 @@ const COMPOSE_PLACEHOLDER = [
 
 interface EnvRow { key: string; value: string; secret: boolean }
 
-export type BuildPack = 'auto' | 'nixpacks' | 'railpack' | 'dockerfile' | 'static';
+export type BuildPack = 'auto' | 'nixpacks' | 'railpack' | 'dockerfile' | 'static' | 'paketo' | 'heroku';
 
 /**
  * 0.16.1: what the /new resource picker (or a `?deploy=<kind>` link, see
@@ -45,6 +45,9 @@ const BUILD_PACKS: { id: BuildPack; label: string; hint: string }[] = [
   { id: 'railpack', label: 'Railpack', hint: "Railway's successor to Nixpacks — needs a BuildKit daemon (BUILDKIT_HOST) on the panel" },
   { id: 'dockerfile', label: 'Dockerfile', hint: 'Build the Dockerfile in the repository' },
   { id: 'static', label: 'Static site', hint: 'Build, then serve the output folder with nginx (SPA-ready)' },
+  // G4.4
+  { id: 'paketo', label: 'Paketo buildpacks', hint: 'Cloud Native Buildpacks with the Paketo builder — panel host only, amd64' },
+  { id: 'heroku', label: 'Heroku buildpacks', hint: 'Cloud Native Buildpacks with the Heroku builder — panel host only' },
 ];
 
 export function DeployWizard({ template, preset, onClose }: { template?: Template; preset?: DeployPreset; onClose: () => void }) {

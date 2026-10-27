@@ -125,6 +125,24 @@ describe('release delivery invariants', () => {
     expect(dockerfile.indexOf('ARG RAILPACK_VERSION')).toBeGreaterThan(dockerfile.indexOf('AS runtime'));
   });
 
+  it('G4.4: the pack CLI is pinned to the same version and checksums in the Dockerfile and install.sh', () => {
+    const dockerfile = readFileSync(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+    const installer = readFileSync(new URL('../../../install.sh', import.meta.url), 'utf8');
+    const version = /PACK_VERSION="\$\{NINEDEPLOY_PACK_VERSION:-([\d.]+)\}"/.exec(installer)?.[1];
+    const amd64 = /PACK_SHA_AMD64="([0-9a-f]{64})"/.exec(installer)?.[1];
+    const arm64 = /PACK_SHA_ARM64="([0-9a-f]{64})"/.exec(installer)?.[1];
+    expect(version && amd64 && arm64).toBeTruthy();
+    expect(dockerfile).toContain(`ARG PACK_VERSION=${version}`);
+    expect(dockerfile).toContain(`amd64) PACK_ASSET="pack-v\${PACK_VERSION}-linux.tgz"; PACK_SHA256="${amd64}"`);
+    expect(dockerfile).toContain(`arm64) PACK_ASSET="pack-v\${PACK_VERSION}-linux-arm64.tgz"; PACK_SHA256="${arm64}"`);
+    // Verified before it is unpacked, proven runnable, and in the runtime stage.
+    expect(dockerfile).toMatch(/PACK_SHA256\} {2}\/tmp\/\$\{PACK_ASSET\}" \| sha256sum -c -[\s\S]*tar -xzf "\/tmp\/\$\{PACK_ASSET\}" -C \/usr\/local\/bin pack/);
+    expect(dockerfile).toContain('&& pack version');
+    expect(dockerfile.indexOf('ARG PACK_VERSION')).toBeGreaterThan(dockerfile.indexOf('AS runtime'));
+    // The install.sh check compares before it installs.
+    expect(installer).toMatch(/if \[ "\$PACK_ACTUAL_SHA" != "\$PACK_SHA256" \]; then\s+rm -rf "\$PACK_STAGE"\s+return 1/);
+  });
+
   it('r476: no documented createClient example uses the nonexistent token option', () => {
     // The r472 audit found AI_MCP_CLI.md teaching an unauthenticated client;
     // r476 found the SAME bug family copied in README.md and website docs.

@@ -435,6 +435,8 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
                   than offering a 403 on save. */}
               <option value="static" disabled={!isAdmin}>static{!isAdmin ? ' (admin only — runs on the host)' : ''}</option>
               <option value="railpack">railpack</option>
+              <option value="paketo">paketo (buildpacks)</option>
+              <option value="heroku">heroku (buildpacks)</option>
             </Select>
           </Field>
           <Field label="Base directory"><Input value={form.baseDir} onChange={set('baseDir')} className="h-9 font-mono text-xs" /></Field>

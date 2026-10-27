@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Paketo and Heroku buildpacks (G4.4). Two new build packs, `paketo` and `heroku`, build with Cloud Native Buildpacks through the `pack` CLI.
+  - **Pinning:** the Dockerfile and `install.sh` install `pack` 0.40.9 checksum-verified, as they do Nixpacks and Railpack. Each builder image is pinned by digest. Paketo's base builder covers amd64 only; Heroku's covers amd64 and arm64.
+  - **Panel host only:** a service that a node builds is refused when it is saved, at deploy and in build placement. It never quietly falls back to a Dockerfile build. Choose **Build on: panel** to ship the image to the node.
+  - **Build env:** it goes through a private env file, never argv, and is not written into the image.
+  - **Caches:** each service keeps one pair of cache volumes, removed with the service. `pack`'s default would have left a new pair per deploy.
+  - **Platform:** builds target the panel host's platform.
+  - **Containerd image store:** Docker's containerd image store (the default for new Docker 29 installs) breaks the Heroku builder whenever the build has env. The deploy log names the fix.
+
+  Both builds were run for real against the pinned builders with Docker 29: a Node app built with Paketo, served its page, and its build env was absent from the image config. Heroku built on this host only without build env; with env it hit the containerd fault. No migration. See PRIVATE_REPO_GUIDE.md §6.
+
 - Dokploy template converter (G4.7). `scripts/buildDokployMirror.ts` turns a checkout of the Dokploy blueprint catalog (MIT) into a NineDeploy template bundle, next to the Coolify mirror.
   - **What it converts:** each blueprint's `.env` is folded into the compose file. Its generators become the matching `SERVICE_*` magic tokens: `${password:N}`, `${base64:N}`, `${hash:N}`, `${domain}`, `${username}` and `${email}`.
   - **What it skips:** any blueprint without a faithful equivalent, with the reason: file mounts, more than one routed service, `${uuid}` and `${jwt}`, among others.

@@ -42,7 +42,7 @@ export function BuildArgsField({
     <div className="col-span-full">
       <Field
         label="Build arguments"
-        hint="Variables a Dockerfile build receives as --build-arg (read them with ARG). Nixpacks and Railpack builds already see every variable."
+        hint="Variables a Dockerfile build receives as --build-arg (read them with ARG). Nixpacks, Railpack and buildpacks builds already see every variable."
         error={invalid.length > 0 ? `Not a variable name: ${invalid.join(', ')}` : undefined}
       >
         <Input

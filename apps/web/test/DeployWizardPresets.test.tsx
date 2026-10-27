@@ -125,6 +125,19 @@ describe('build pack, project, environment and domain', () => {
     expect(apiMock.api.services.create.mock.calls[0]![0].build).toMatchObject({ buildPack: 'static', outputDir: 'build' });
   });
 
+  it('G4.4: offers the buildpacks packs and sends the one chosen', async () => {
+    const user = userEvent.setup();
+    renderWizard({ type: 'docker', mode: 'repo' });
+    const options = [...(screen.getByLabelText('Build pack') as HTMLSelectElement).options].map((o) => o.value);
+    expect(options).toEqual(expect.arrayContaining(['paketo', 'heroku']));
+    await user.selectOptions(screen.getByLabelText('Build pack'), 'heroku');
+    await user.type(screen.getByPlaceholderText('my-app'), 'api');
+    await user.type(screen.getByPlaceholderText('https://github.com/you/repo'), 'https://github.com/acme/api');
+    await finish(user);
+    await waitFor(() => expect(apiMock.api.services.create).toHaveBeenCalled());
+    expect(apiMock.api.services.create.mock.calls[0]![0].build).toMatchObject({ buildPack: 'heroku' });
+  });
+
   it('tags the project and lane, then adds the domain before the first deploy', async () => {
     const user = userEvent.setup();
     renderWizard({ mode: 'repo' });

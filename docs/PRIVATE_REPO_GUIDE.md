@@ -323,12 +323,20 @@ If you ever need to override:
   use the containerd image store, or `NINEDEPLOY_AGENT_BUILDKIT_HOST` on the agent; otherwise
   build it on the panel. An older agent builds the repository Dockerfile instead
   ([MULTI_NODE.md §4](./MULTI_NODE.md)).
+- `buildPack: "paketo"` / `buildPack: "heroku"` (G4.4) — build with
+  [Cloud Native Buildpacks](https://buildpacks.io) through the `pack` CLI.
+  - **Builders:** the Paketo base builder (amd64 hosts only) or the Heroku builder (`heroku/builder:24`, amd64 and arm64). Each is pinned by digest, as the Nixpacks and Railpack CLIs are pinned by checksum.
+  - **Install:** both install modes ship `pack` 0.40.9, checksum-verified. An older container image has no `pack`, and the panel refuses the build pack with that reason.
+  - **Where it builds:** on the panel host only. A service that a node builds is refused when it is saved and again when it is deployed. Choose **Build on: panel** to build it there and ship the image to the node.
+  - **Build env:** every service variable reaches the build through a private env file, never a command line. Buildpacks do not write them into the image config. A value that spans several lines cannot be passed and is left out, with a note in the log.
+  - **Caches:** each service keeps one pair of cache volumes, `nd-pack-ninedeploy_<slug>-build` and `nd-pack-ninedeploy_<slug>-launch`. They are removed when the service is deleted.
+  - **Containerd image store:** buildpacks and Docker's containerd image store (the default for new Docker 29 installs) do not always work together. With the Heroku builder, any build env makes the export fail with `failed to fetch base layers`. The deploy log then names the fix: turn the containerd image store off on the panel host (`"features": {"containerd-snapshotter": false}` in `/etc/docker/daemon.json`, then restart Docker), or use `paketo`. Note that Railpack through a *node's* Docker needs that store on, so the two settings concern different hosts.
 
 The CLI's `deploy create-from-github` shows the analysis result and lets you override the choice interactively; the wizard does the same.
 
 ### Build-time variables (0.16.1)
 
-Nixpacks, Railpack and the static pack see every variable of the service while they build, so `NEXT_PUBLIC_*` values are inlined by `next build` without any setup. A **Dockerfile** build receives only the variables you name under **Service → Settings → Build → Build arguments** (`build.buildArgs` in the API), each as `--build-arg NAME=value`. The Dockerfile reads them with `ARG`:
+Nixpacks, Railpack, buildpacks (paketo, heroku) and the static pack see every variable of the service while they build, so `NEXT_PUBLIC_*` values are inlined by `next build` without any setup. A **Dockerfile** build receives only the variables you name under **Service → Settings → Build → Build arguments** (`build.buildArgs` in the API), each as `--build-arg NAME=value`. The Dockerfile reads them with `ARG`:
 
 ```dockerfile
 ARG NEXT_PUBLIC_API_URL

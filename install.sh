@@ -857,6 +857,46 @@ else
   info "Railpack optional binary not installed — the railpack build pack stays unavailable (harmless)."
 fi
 
+# G4.4: the pack CLI (Cloud Native Buildpacks) for the optional paketo and
+# heroku build packs. Same checksum-verified install as Railpack; keep the
+# version and SHA-256 pins in sync with the Dockerfile.
+PACK_VERSION="${NINEDEPLOY_PACK_VERSION:-0.40.9}"
+PACK_SHA_AMD64="dc0ee1e931cf8a106d7555a01a214864f9acb60b77adf15d69b74df4404758e9"
+PACK_SHA_ARM64="091ccb213823656c727731537ef8f1000eb4dc3ec61641506653e7f9d6da0c5e"
+
+install_pack() {
+  case "$(uname -m)" in
+    x86_64|amd64)
+      PACK_ASSET="pack-v${PACK_VERSION}-linux.tgz"
+      PACK_SHA256="$PACK_SHA_AMD64"
+      ;;
+    aarch64|arm64)
+      PACK_ASSET="pack-v${PACK_VERSION}-linux-arm64.tgz"
+      PACK_SHA256="$PACK_SHA_ARM64"
+      ;;
+    *) return 1 ;;
+  esac
+  PACK_STAGE=$(mktemp -d) || return 1
+  curl -fsSL "https://github.com/buildpacks/pack/releases/download/v${PACK_VERSION}/${PACK_ASSET}" \
+    -o "$PACK_STAGE/$PACK_ASSET" || { rm -rf "$PACK_STAGE"; return 1; }
+  PACK_ACTUAL_SHA=$(sha256sum "$PACK_STAGE/$PACK_ASSET" | awk '{print $1}')
+  if [ "$PACK_ACTUAL_SHA" != "$PACK_SHA256" ]; then
+    rm -rf "$PACK_STAGE"
+    return 1
+  fi
+  tar -xzf "$PACK_STAGE/$PACK_ASSET" -C "$PACK_STAGE" pack || { rm -rf "$PACK_STAGE"; return 1; }
+  sudo install -m 0755 "$PACK_STAGE/pack" /usr/local/bin/pack || { rm -rf "$PACK_STAGE"; return 1; }
+  rm -rf "$PACK_STAGE"
+}
+
+if command -v pack &>/dev/null; then
+  ok "pack $(pack version 2>/dev/null | head -1) available (optional paketo / heroku buildPack)"
+elif install_pack; then
+  ok "pack ${PACK_VERSION} installed (optional paketo / heroku buildPack)"
+else
+  info "pack optional binary not installed — the paketo and heroku build packs stay unavailable (harmless)."
+fi
+
 fi # end bare-metal-only prerequisites (Node, pnpm, Nixpacks)
 
 # Docker
