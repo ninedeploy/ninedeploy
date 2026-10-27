@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Pull the published candidate image on every independent release smoke runner before a smoke inspects it, and check the complete secret-provider list in upgrade and user-journey smokes.
+- Keep local Docker retirement journals under the writable panel data directory, preventing permission errors from blocking later deployments and canary rollouts.
 
 ### Added
 

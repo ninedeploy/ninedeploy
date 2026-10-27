@@ -1,4 +1,6 @@
+import { join } from 'node:path';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { config } from '../config.js';
 import { deployments, services, type DB, type Service } from '@ninedeploy/db';
 import { z } from 'zod';
 import { containerIdentityOps } from '../agentOps/containerIdentity.js';
@@ -74,7 +76,7 @@ export async function retirePreviousDocker(db: DB, group: PreviousDockerGenerati
     const grace = Math.max(0, Math.min(300, Math.floor(graceSeconds)));
     await unreferenced(); await run('docker', ['stop', '-t', String(grace), item.id], { timeoutMs: (grace + 10) * 1000 }, () => {}); await unreferenced();
     const lines: string[] = [];
-    await containerIdentityOps.ops['docker.retire']!.run({ id: item.id, name: item.name }, line => lines.push(line), { sealed: true });
+    await containerIdentityOps.ops['docker.retire']!.run({ id: item.id, name: item.name }, line => lines.push(line), { sealed: true, lifecycleJournalRoot: join(config.paths.dataDir, 'local-lifecycle') });
     if (!lines.includes(`ND-RETIRED ${item.id}`)) throw new Error('Previous Docker retirement is unconfirmed');
   }
 }

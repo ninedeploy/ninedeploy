@@ -34,13 +34,13 @@ export const containerIdentityOps: AgentOpModule = {
     },
     'docker.retire': {
       cap: 'docker.recovery', sealedOnly: true,
-      async run(params, onLine) {
+      async run(params, onLine, ctx) {
         const id = str(params, 'id'), name = str(params, 'name');
         if (!id || !/^[a-f0-9]{64}$/.test(id) || !name || name.length > 128 || !RE_NAME.test(name)) throw new Error('Invalid container generation');
         const supplied = params['graceSeconds'];
         const grace = supplied === undefined ? 5 : typeof supplied === 'string' && /^\d+$/.test(supplied) ? Number(supplied) : typeof supplied === 'number' ? supplied : NaN;
         if (!Number.isInteger(grace) || grace < 0 || grace > 300) throw new Error('Invalid retirement grace');
-        return guardLegacyNodeTarget(join(process.cwd(), '.agent-work', '.lifecycle'), id, async (target, remaining, current) => {
+        return guardLegacyNodeTarget(ctx.lifecycleJournalRoot ?? join(process.cwd(), '.agent-work', '.lifecycle'), id, async (target, remaining, current) => {
           if (!target) { onLine(`ND-RETIRED ${id}`); return 0; }
           if (target.name !== name) throw new Error('Container generation changed; retained');
           for (const args of [['stop', '-t', String(grace), id], ['rm', '-f', id]]) {

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { config } from '../config.js';
 import { and, eq, exists, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { deployments, primaryTransitions, services, serviceTargets, type DB, type PrimaryRuntimeSnapshot, type PrimaryTransition, type Service } from '@ninedeploy/db';
 import { containerIdentityOps } from '../agentOps/containerIdentity.js';
@@ -40,7 +42,7 @@ const fingerprint = (svc: Service) => JSON.stringify([svc.runtimeId, svc.status,
 /** The local controller uses the same operand-validated Docker primitives; no agent transport is involved. */
 async function localOp(op: string, params: Record<string, unknown>, sink: (line: string) => void) {
   const def = containerIdentityOps.ops[op] ?? observabilityOps.ops[op];
-  if (def) return def.run(params, sink, { sealed: true });
+  if (def) return def.run(params, sink, { sealed: true, lifecycleJournalRoot: join(config.paths.dataDir, 'local-lifecycle') });
   if (op === 'docker.inspect' && params.format === 'health' && /^[a-f0-9]{64}$/.test(String(params.name))) {
     sink(await capture('docker', ['inspect', String(params.name), '--format', '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{if .State.Health}}{{.State.Health.FailingStreak}}{{else}}0{{end}}|{{.RestartCount}}'], { timeoutMs: 10_000 }));
     return 0;

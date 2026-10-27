@@ -41,6 +41,8 @@ import { volumeFileOps } from './volumeFiles.js';
 export interface AgentOpContext {
   /** The request arrived inside a sealed envelope. */
   sealed: boolean;
+  /** Internal local-panel override; remote agent requests cannot supply this path. */
+  lifecycleJournalRoot?: string;
 }
 
 export interface AgentOpDef {
