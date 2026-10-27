@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Outgoing IP per project in the web UI (G1.5): Settings → Security has an operator-only *Outgoing IP per project* card that lists the egress rules and sets or removes one, picking the project and one of the panel host's IPv4 addresses. Traffic from that project's containers then leaves through that address (iptables SNAT). Until now this needed `ninedeploy egress` or the API.
+
 - Firebase push (FCM) channels in the web UI (G1.5): the notification wizard creates an FCM channel from a device registration token and a Firebase service account JSON, checking that the JSON has the fields the server needs before continuing. Until now only `ninedeploy notifications create-fcm` could create one.
 
 - Shipped-log search in the web UI (G1.5): a service's Activity Logs tab can search the lines its Loki log drain received, over a window from 15 minutes to 7 days, including lines of containers that no longer exist. Until now only `ninedeploy logs search` and the API could do this.

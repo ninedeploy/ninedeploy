@@ -8,6 +8,7 @@ import { useAuth } from '../../lib/auth.js';
 import { TerminalsCard } from './TerminalsCard.js';
 import { AutoUrlCard } from './AutoUrlCard.js';
 import { HostIpsCard } from './HostIpsCard.js';
+import { EgressIpCard } from './EgressIpCard.js';
 import { ApiTokensCard } from './ApiTokensCard.js';
 
 /** Security: open registration, ACME, template source, DNS-01 and wildcard domain. */
@@ -275,6 +276,7 @@ export function SecuritySection() {
 
       {/* 0.16.1: the host's IP addresses (label, primary, dedicate). */}
       {isOperator && <HostIpsCard />}
+      {isOperator && <EgressIpCard />}
 
       {isOperator && (
         <div className="mb-5">
