@@ -3,6 +3,10 @@ import {
   awsProviderConfig,
   awsProviderPut,
   awsSecretId,
+  azureProviderPut,
+  execProviderPut,
+  gcpProviderPut,
+  onePasswordProviderPut,
   secretProviderKind,
   secretProviderTestRequest,
   secretProviderTestResult,
@@ -136,6 +140,31 @@ describe('secret provider test and views', () => {
       lastTestError: null,
     };
     expect(secretProviderView.parse({ ...view, credentials: { token: 't' } })).toEqual(view);
-    expect(secretProviderKind.options).toEqual(['vault', 'aws']);
+    expect(secretProviderKind.options).toEqual(['vault', 'aws', 'gcp', 'azure', 'onepassword', 'exec']);
+  });
+});
+
+describe('additional secret providers', () => {
+  it('validates GCP project and optional service account credentials', () => {
+    expect(gcpProviderPut.parse({})).toEqual({ config: {} });
+    expect(gcpProviderPut.safeParse({ config: { projectId: 'project-1' }, credentials: { serviceAccountJson: '{}' } }).success).toBe(true);
+    expect(gcpProviderPut.safeParse({ config: { projectId: 'BAD' } }).success).toBe(false);
+    expect(gcpProviderPut.safeParse({ credentials: { serviceAccountJson: '' } }).success).toBe(false);
+  });
+
+  it('accepts only supported Azure vault URLs and GUID identifiers', () => {
+    const config = { vaultUrl: 'https://myvault.vault.azure.net/', tenantId: '12345678-1234-1234-1234-123456789abc', clientId: 'abcdef12-1234-1234-1234-123456789abc' };
+    expect(azureProviderPut.parse({ config, credentials: { clientSecret: 'secret' } }).config.vaultUrl).toBe('https://myvault.vault.azure.net');
+    expect(azureProviderPut.safeParse({ config: { ...config, vaultUrl: 'https://attacker.example' } }).success).toBe(false);
+    expect(azureProviderPut.safeParse({ config: { ...config, tenantId: 'not-a-guid' } }).success).toBe(false);
+  });
+
+  it('validates 1Password credentials and absolute exec commands', () => {
+    expect(onePasswordProviderPut.parse({ config: { address: 'https://connect.example/' }, credentials: { token: 'secret' } }).config.address).toBe('https://connect.example');
+    expect(onePasswordProviderPut.safeParse({ config: { address: 'https://connect.example' }, credentials: { token: '' } }).success).toBe(false);
+    expect(execProviderPut.parse({ config: { command: ['/usr/bin/secrets', '{name}'] } }).config.timeoutSeconds).toBe(10);
+    expect(execProviderPut.safeParse({ config: { command: ['relative'] } }).success).toBe(false);
+    expect(execProviderPut.safeParse({ config: { command: ['/bin/tool', 'bad\narg'] } }).success).toBe(false);
+    expect(execProviderPut.safeParse({ config: { command: ['/bin/tool'], timeoutSeconds: 61 } }).success).toBe(false);
   });
 });
