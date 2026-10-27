@@ -251,8 +251,18 @@ const MEILI_DB = 'data.ms';
 const MEILI_DUMP_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const MEILI_IMPORT_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
-function meiliCurl(t: Pick<EngineBackupTarget, 'cn' | 'password'>, ...args: string[]): string[] {
-  return ['exec', t.cn, 'curl', '-sS', '--fail-with-body', '-H', `Authorization: Bearer ${t.password}`, ...args];
+/**
+ * An authenticated call to the database's own API. The master key travels on
+ * curl's stdin (`-H @-`), never on argv: argv is visible to `ps` in the
+ * container and lands, unmasked, in exec error labels.
+ */
+function meiliApi(t: Pick<EngineBackupTarget, 'cn' | 'password'>, ...args: string[]): Promise<string> {
+  return capture(
+    'docker',
+    ['exec', '-i', t.cn, 'curl', '-sS', '--fail-with-body', '-H', '@-', ...args],
+    {},
+    Buffer.from(`Authorization: Bearer ${t.password}\n`),
+  );
 }
 
 /** The task fields a dump wait reads. */
@@ -268,13 +278,13 @@ export async function backupMeilisearch(
   log: Log,
   opts: { pollMs?: number; timeoutMs?: number } = {},
 ): Promise<void> {
-  const enqueued = JSON.parse(await capture('docker', meiliCurl(t, '-X', 'POST', 'http://localhost:7700/dumps'))) as { taskUid?: number };
+  const enqueued = JSON.parse(await meiliApi(t, '-X', 'POST', 'http://localhost:7700/dumps')) as { taskUid?: number };
   if (typeof enqueued.taskUid !== 'number') throw new Error('Meilisearch did not accept the dump request');
   log(`Meilisearch dump task ${enqueued.taskUid} enqueued`);
   const deadline = Date.now() + (opts.timeoutMs ?? MEILI_DUMP_TIMEOUT_MS);
   let task: MeiliTask = {};
   for (;;) {
-    task = JSON.parse(await capture('docker', meiliCurl(t, `http://localhost:7700/tasks/${enqueued.taskUid}`))) as MeiliTask;
+    task = JSON.parse(await meiliApi(t, `http://localhost:7700/tasks/${enqueued.taskUid}`)) as MeiliTask;
     if (task.status === 'succeeded' || task.status === 'failed' || task.status === 'canceled') break;
     if (Date.now() > deadline) throw new Error(`The Meilisearch dump task ${enqueued.taskUid} did not finish in time`);
     await sleep(opts.pollMs ?? 1000);

@@ -10,7 +10,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   run: vi.fn<(cmd: string, args: string[], opts: unknown, sink: (l: string) => void) => Promise<void>>(),
-  capture: vi.fn<(cmd: string, args: string[]) => Promise<string>>(),
+  capture: vi.fn<(cmd: string, args: string[], opts?: unknown, input?: Buffer) => Promise<string>>(),
   sleep: vi.fn(async () => undefined),
 }));
 vi.mock('../../src/lib/exec.js', () => ({ run: h.run, capture: h.capture, sleep: h.sleep }));
@@ -211,9 +211,10 @@ describe('Meilisearch', () => {
       .mockResolvedValueOnce('{"status":"processing"}')
       .mockResolvedValueOnce('{"status":"succeeded","details":{"dumpUid":"20261027-073410181"}}');
     await backupMeilisearch(meili, '/host/m.dump', log);
-    expect(h.capture.mock.calls[0]![1]).toEqual(
-      expect.arrayContaining(['exec', 'nd-db-meili', 'curl', 'Authorization: Bearer master', '-X', 'POST', 'http://localhost:7700/dumps']),
-    );
+    // The master key goes over stdin, never on argv.
+    expect(h.capture.mock.calls[0]![1]).toEqual(['exec', '-i', 'nd-db-meili', 'curl', '-sS', '--fail-with-body', '-H', '@-', '-X', 'POST', 'http://localhost:7700/dumps']);
+    expect(String(h.capture.mock.calls[0]![3])).toBe('Authorization: Bearer master\n');
+    expect(h.capture.mock.calls.flatMap(([, a]) => a).join(' ')).not.toContain('master');
     expect(h.capture.mock.calls[1]![1].at(-1)).toBe('http://localhost:7700/tasks/7');
     expect(h.sleep).toHaveBeenCalledTimes(1);
     expect(h.run.mock.calls[0]![1]).toEqual(['cp', 'nd-db-meili:/meili_data/dumps/20261027-073410181.dump', '/host/m.dump']);
