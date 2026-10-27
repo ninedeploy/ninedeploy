@@ -914,6 +914,28 @@ describe('createClient', () => {
       expect(last(calls)).toMatchObject({ url: '/v1/settings/dns-records/test', init: { method: 'POST' } });
     });
 
+    it('reads, configures, tests and removes DNS provider credentials through their documented routes', async () => {
+      const response = { ok: true, provider: 'route53', zones: ['example.com'] };
+      const { fetchMock, calls } = makeFetch(() => ok(response));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      expect(await client.settings.dnsProvider.get()).toEqual(response);
+      expect(last(calls)).toMatchObject({ url: '/v1/settings/dns-records/provider', init: { method: 'GET' } });
+      const input = { provider: 'route53' as const, credentials: { accessKeyId: 'fixture-id', secretAccessKey: 'fixture-secret' } };
+      expect(await client.settings.dnsProvider.set(input)).toEqual(response);
+      expect(last(calls)).toMatchObject({ url: '/v1/settings/dns-records/provider', init: { method: 'PUT' } });
+      expect(JSON.parse(last(calls).init.body ?? '{}')).toEqual(input);
+      expect(await client.settings.dnsProvider.test()).toEqual(response);
+      expect(last(calls)).toMatchObject({ url: '/v1/settings/dns-records/provider/test', init: { method: 'POST' } });
+      expect(await client.settings.dnsProvider.clear()).toEqual(response);
+      expect(last(calls)).toMatchObject({ url: '/v1/settings/dns-records/provider', init: { method: 'DELETE' } });
+    });
+
+    it('propagates an error when testing a DNS provider fails', async () => {
+      const { fetchMock } = makeFetch(() => err(403, { error: 'forbidden', message: 'Access denied' }));
+      const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
+      await expect(client.settings.dnsProvider.test()).rejects.toMatchObject({ status: 403 });
+    });
+
     it('exercises master-key read + rotate', async () => {
       const { fetchMock, calls } = makeFetch(() => ok({ ok: true }));
       const client = createClient({ baseUrl: 'http://api.test', fetch: fetchMock });
