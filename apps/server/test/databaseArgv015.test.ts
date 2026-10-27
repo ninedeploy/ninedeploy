@@ -129,6 +129,9 @@ afterAll(() => undefined);
 
 const FIXTURE = new URL('./fixtures/databaseArgv015.json', import.meta.url);
 const RECORD = process.env['NINEDEPLOY_RECORD_DB_ARGV'] === '1';
+// These six operations were unsupported in 0.15 and intentionally gained
+// implementations in G1.8. The historical fixture remains unchanged.
+const ADDED_BACKUP_OPERATIONS = new Set(['clickhouse backup', 'clickhouse restore', 'meilisearch backup', 'meilisearch restore', 'rabbitmq backup', 'rabbitmq restore']);
 
 /** A panel-host database row as v0.15.0 writes it. */
 function row(engineName: string, version: string | null, extra: Partial<Database> = {}): Database {
@@ -331,14 +334,25 @@ describe('v0.15.0 database argv fixture (panel host)', () => {
     if (RECORD) writeFileSync(FIXTURE, `${JSON.stringify(got, null, 2)}\n`);
     const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8')) as typeof got;
     expect(Object.keys(got)).toEqual(Object.keys(fixture));
-    for (const name of Object.keys(fixture)) expect(got[name], name).toEqual(fixture[name]);
+    for (const name of Object.keys(fixture)) if (!ADDED_BACKUP_OPERATIONS.has(name)) expect(got[name], name).toEqual(fixture[name]);
   });
 
   it('a panel-host row (server_id NULL) through databaseRuntime sends byte-identical argv (the upgrade proof)', async () => {
     const got = await recordArgv(runtimeImpl);
     const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8')) as typeof got;
     expect(Object.keys(got)).toEqual(Object.keys(fixture));
-    for (const name of Object.keys(fixture)) expect(got[name], name).toEqual(fixture[name]);
+    for (const name of Object.keys(fixture)) if (!ADDED_BACKUP_OPERATIONS.has(name)) expect(got[name], name).toEqual(fixture[name]);
+  });
+
+  it('keeps the six newly supported backup operations equivalent through panel dispatch', async () => {
+    const engine = await recordArgv(engineImpl), runtime = await recordArgv(runtimeImpl);
+    const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8')) as typeof engine;
+    for (const name of ADDED_BACKUP_OPERATIONS) {
+      expect(fixture[name]?.outcome, name).toEqual({ error: expect.stringContaining('not supported') });
+      expect(engine[name], name).toBeDefined();
+      expect(engine[name], name).not.toEqual(fixture[name]);
+      expect(runtime[name], name).toEqual(engine[name]);
+    }
   });
 
   it('a row written by 0.15 and read after migration 0072 takes the panel path with the same argv', async () => {
