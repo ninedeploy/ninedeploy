@@ -93,4 +93,18 @@ describe('DnsProviderCard (G3.5)', () => {
     await user.click(screen.getByRole('button', { name: 'Save and activate' }));
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('apiKey: apiKey starts with pk1_', 'error'));
   });
+
+  it('reports a failed zone request and a failed switch-off without hiding the provider', async () => {
+    const user = userEvent.setup();
+    mockOf(api.settings.dnsProvider.get).mockResolvedValue({ ...none, provider: 'hetzner', configured: 'hetzner' } as never);
+    mockOf(api.settings.dnsProvider.test).mockRejectedValueOnce(new Error('zone request failed'));
+    mockOf(api.settings.dnsProvider.clear).mockRejectedValueOnce(new Error('switch off failed'));
+    renderWithProviders(<DnsProviderCard />);
+    expect(await screen.findByText('Active: Hetzner DNS')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'List zones' }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('zone request failed', 'error'));
+    await user.click(screen.getByRole('button', { name: 'Switch off' }));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('switch off failed', 'error'));
+    expect(screen.getByText('Active: Hetzner DNS')).toBeInTheDocument();
+  });
 });

@@ -103,6 +103,39 @@ describe('SecretManagersCard — G3.2 providers', () => {
     expect(await screen.findByTestId('secret-provider-onepassword-result')).toHaveTextContent('OK: Token accepted');
   });
 
+  it('requires a new 1Password token when changing the Connect server', async () => {
+    sp.list.mockResolvedValue(KINDS.map(k => k === 'onepassword'
+      ? { ...blank(k), configured: true, enabled: true, hasCredential: true, config: { address: 'https://connect.example.com' } }
+      : blank(k)));
+    renderWithProviders(<SecretManagersCard />);
+    await screen.findByTestId('secret-provider-onepassword');
+    const o = panel('onepassword');
+    fireEvent.change(o.getByLabelText('Connect server'), { target: { value: 'https://new.example.com' } });
+    expect(o.getByRole('button', { name: /Save/ })).toBeDisabled();
+    fireEvent.change(o.getByLabelText('Access token'), { target: { value: 'new-token' } });
+    fireEvent.click(o.getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(sp.set).toHaveBeenCalledWith('onepassword', {
+      enabled: true, config: { address: 'https://new.example.com' }, credentials: { token: 'new-token' },
+    }));
+    await waitFor(() => expect(o.getByLabelText('Access token')).toHaveValue(''));
+  });
+
+  it('saves an optional GCP project and disables an out-of-range exec timeout', async () => {
+    renderWithProviders(<SecretManagersCard />);
+    await screen.findByTestId('secret-provider-gcp');
+    const g = panel('gcp');
+    fireEvent.change(g.getByLabelText('Project ID'), { target: { value: '  my-project  ' } });
+    fireEvent.change(g.getByLabelText('Service account key (JSON)'), { target: { value: '{"type":"service_account"}' } });
+    fireEvent.click(g.getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(sp.set).toHaveBeenCalledWith('gcp', {
+      enabled: true, config: { projectId: 'my-project' }, credentials: { serviceAccountJson: '{"type":"service_account"}' },
+    }));
+    const e = panel('exec');
+    fireEvent.change(e.getByLabelText('Command'), { target: { value: '/usr/bin/tool' } });
+    fireEvent.change(e.getByLabelText('Timeout (seconds)'), { target: { value: '61' } });
+    expect(e.getByRole('button', { name: /Save/ })).toBeDisabled();
+  });
+
   it('saves an exec argv one argument per line and needs an absolute path', async () => {
     renderWithProviders(<SecretManagersCard />);
     await screen.findByTestId('secret-provider-exec');
