@@ -49,6 +49,7 @@ import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
 import { BackupScheduleCard } from './database/BackupScheduleCard.js';
 import { ImportCard } from './database/ImportCard.js';
 import { PublicAccessCard } from './database/PublicAccessCard.js';
+import { PgbouncerCard } from './database/PgbouncerCard.js';
 import { isNodeDatabase, NodeDatabaseBadge, NodeUnavailableCard } from '../components/NodeDatabaseBadge.js';
 import { ManifestTab } from './service/ManifestTab.js';
 import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
@@ -959,7 +960,10 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
           <NodeUnavailableCard title="PgBouncer connection pooling" db={db} />
         </>
       ) : (
-        <PublicAccessCard db={db} />
+        <>
+          <PublicAccessCard db={db} />
+          {db.engine === 'postgres' && <PgbouncerCard db={db} />}
+        </>
       )}
 
       {/* Danger Zone */}

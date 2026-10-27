@@ -148,6 +148,10 @@ A managed postgres, mysql, mariadb, redis, valkey, keydb, dragonfly or mongo dat
 
 Public access exposes the database's **root (superuser) account**: create a limited user inside the database before you hand out an endpoint. The mechanism, the allow-list and port rules, the TLS modes and the rollback cleanup are described in [TRAEFIK_INGRESS.md §9](./TRAEFIK_INGRESS.md).
 
+### PgBouncer connection pooling
+
+A PostgreSQL database on the panel host can get a PgBouncer sidecar that pools client connections, which helps apps that open many short connections. Turn it on under **Database → Settings → PgBouncer connection pooling** (web UI since G1.5), with `ninedeploy databases pgbouncer <id> enable|disable|status`, or with `GET /v1/databases/:id/pgbouncer` and `POST …/pgbouncer/enable|disable`. The listen port defaults to 6432 and can be set when enabling. The card shows the pooled connection URL to point apps at. Reading the status needs `member` on the database, and the full password in the URL needs `admin`; enabling and disabling start or remove a container on the host, so they are operator-only. Databases on nodes have no PgBouncer yet (`422 remote_database`).
+
 ---
 
 ## 🛰️ 8. Databases on nodes (0.15.3)

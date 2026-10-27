@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PgBouncer in the web UI (G1.5): a PostgreSQL database on the panel host gets a *PgBouncer connection pooling* card showing the sidecar's state, port, pool mode and the pooled connection URL to copy. Instance operators can enable it (with an optional port) or disable it there; until now this was only possible through the CLI, SDK and API.
+
 - Self-hosted GitLab sources (G1.2): a `gitlab` source can now have a base URL, including a relative path such as `https://example.com/gitlab`, with the same https and private-address rules as Gitea. The project list, the branch picker and the live token test use that instance; without a base URL a source still means gitlab.com. GitLab branches are now actually listed, including projects in nested groups; until now they always fell back to `main`/`master`. Available in the web UI, `ninedeploy sources add --base-url` and the API. No migration.
 
 - R2 development: persist plain-Docker node deployment authority in a private journal atomically with actual admission. Preserve queued predecessors, retain the original owner across configuration-snapshot rewrites, refuse old ownership after Stop or a newer deployment, and retain node identity across removal. Migration 0104 preserves existing work and deployment API payloads. Physical prepare/network/retire and scale/wake integration remain open.
