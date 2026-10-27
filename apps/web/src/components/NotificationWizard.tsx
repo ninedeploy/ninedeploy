@@ -2,11 +2,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, Bell, Check, Mail, MessageCircle,
-  Plug, Send, Webhook, X, Zap,
+  Plug, Send, Smartphone, Webhook, X, Zap,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useToast } from './Toast.js';
-import { Button, Input, Modal, cn } from './ui.js';
+import { Button, Input, Modal, Textarea, cn } from './ui.js';
 
 const STEPS = ['Channel', 'Connect', 'Events', 'Test'];
 const TYPES = [
@@ -21,7 +21,26 @@ const TYPES = [
   { id: 'teams', label: 'Microsoft Teams', emoji: '👥', color: 'from-violet-500 to-indigo-600', icon: MessageCircle },
   { id: 'email', label: 'Email (SMTP)', emoji: '✉️', color: 'from-cyan-500 to-sky-600', icon: Mail },
   { id: 'resend', label: 'Email (Resend)', emoji: '📨', color: 'from-slate-500 to-zinc-700', icon: Mail },
+  // G1.5: FCM (G-22) was CLI-only; the target is a device token, the config the service account JSON.
+  { id: 'fcm', label: 'Firebase push (FCM)', emoji: '📱', color: 'from-orange-500 to-amber-600', icon: Smartphone },
 ] as const;
+
+/** The fields the server requires in an FCM service account (lib/fcm.ts `parseServiceAccount`). */
+export function fcmServiceAccountError(raw: string): string | null {
+  if (!raw.trim()) return 'Paste the service account JSON';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return 'Not valid JSON';
+  }
+  const sa = parsed as Record<string, unknown> | null;
+  if (!sa || typeof sa !== 'object' || Array.isArray(sa)) return 'Not a service account JSON object';
+  for (const key of ['project_id', 'client_email', 'private_key']) {
+    if (typeof sa[key] !== 'string' || !sa[key]) return `The service account has no ${key}`;
+  }
+  return null;
+}
 
 const EVENT_GROUPS = [
   { id: 'deploy', label: 'Deployments', emoji: '🚀', desc: 'Deploy, rollback, build logs' },
@@ -44,6 +63,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<typeof TYPES[number]['id'] | null>(null);
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
+  const [fcmServiceAccount, setFcmServiceAccount] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set(['deploy', 'service', 'alert']));
   const [testing, setTesting] = useState(false);
   const [tested, setTested] = useState<'ok' | 'fail' | null>(null);
@@ -56,6 +76,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
     type: type!,
     target,
     eventFilter: Array.from(selectedEvents).join(','),
+    ...(type === 'fcm' ? { configJson: fcmServiceAccount } : {}),
   });
 
   const finish = useMutation({
@@ -76,7 +97,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
     onError: () => toast('Could not save the channel', 'error'),
   });
 
-  const canNext = step === 0 ? !!type : step === 1 ? !!target.trim() : true;
+  const canNext = step === 0 ? !!type : step === 1 ? !!target.trim() && (type !== 'fcm' || fcmServiceAccountError(fcmServiceAccount) === null) : true;
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
@@ -170,7 +191,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                 const Icon = t.icon;
                 const active = type === t.id;
                 return (
-                  <button key={t.id} type="button" onClick={() => { setType(t.id); setName(''); setTarget(''); }}
+                  <button key={t.id} type="button" onClick={() => { setType(t.id); setName(''); setTarget(''); setFcmServiceAccount(''); }}
                     className={cn('group flex items-center gap-3 rounded-xl border p-3.5 text-left transition', active ? 'border-indigo-500/60 bg-indigo-500/[0.06]' : 'border-white/10 hover:border-white/20 hover:bg-white/[0.02]')}>
                     <div className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg', t.color)}>
                       <Icon size={18} />
@@ -188,6 +209,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                           : t.id === 'lark' ? 'Lark / Feishu bot'
                           : t.id === 'teams' ? 'Teams channel'
                           : t.id === 'resend' ? 'Resend email API'
+                          : t.id === 'fcm' ? 'Mobile / web push'
                           : 'SMTP email'}
                       </div>
                     </div>
@@ -301,6 +323,34 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                 <div>
                   <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://prod-00.westeurope.logic.azure.com:443/workflows/…" className="font-mono text-xs" autoFocus />
+                </div>
+              </>
+            )}
+            {type === 'fcm' && (
+              <>
+                <div className="rounded-xl bg-orange-500/[0.06] p-3 ring-1 ring-inset ring-orange-500/20">
+                  <p className="mb-1.5 text-xs font-medium text-orange-200">Firebase Cloud Messaging</p>
+                  <p className="text-[11px] text-slate-400">
+                    In the Firebase console: Project settings → Service accounts → Generate new private key. The JSON is stored encrypted; treat it as a secret.
+                  </p>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Device registration token</span>
+                  <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="fMEP0vJqS0-…" className="font-mono text-xs" autoFocus />
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Service account JSON</span>
+                  <Textarea
+                    value={fcmServiceAccount}
+                    onChange={(e) => setFcmServiceAccount(e.target.value)}
+                    aria-label="Service account JSON"
+                    placeholder='{"type": "service_account", "project_id": "…", …}'
+                    rows={5}
+                    className="font-mono text-[11px]"
+                  />
+                  {fcmServiceAccount.trim() && fcmServiceAccountError(fcmServiceAccount) && (
+                    <p className="mt-1 text-[11px] text-rose-400">{fcmServiceAccountError(fcmServiceAccount)}</p>
+                  )}
                 </div>
               </>
             )}

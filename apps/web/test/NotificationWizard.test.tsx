@@ -17,7 +17,7 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock('../src/lib/api.js', () => apiMock);
 
-import { NotificationWizard } from '../src/components/NotificationWizard.js';
+import { fcmServiceAccountError, NotificationWizard } from '../src/components/NotificationWizard.js';
 
 function renderWizard(onClose = vi.fn()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -48,6 +48,43 @@ describe('NotificationWizard', () => {
     expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
     await user.click(screen.getByText('Telegram'));
     expect(screen.getByRole('button', { name: /continue/i })).toBeEnabled();
+  });
+
+  // G1.5: FCM channels were CLI-only.
+  it('creates an FCM channel with its device token and service account JSON', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.click(screen.getByText('Firebase push (FCM)'));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.type(screen.getByPlaceholderText('fMEP0vJqS0-…'), 'device-token');
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
+    const sa = screen.getByLabelText('Service account JSON');
+    fireEvent.change(sa, { target: { value: '{"project_id":"p"}' } });
+    expect(screen.getByText('The service account has no client_email')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
+    const json = JSON.stringify({ project_id: 'p', client_email: 'a@p.iam.gserviceaccount.com', private_key: 'KEY' });
+    fireEvent.change(sa, { target: { value: json } });
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /send test/i }));
+    await waitFor(() =>
+      expect(apiMock.api.notifications.createChannel).toHaveBeenCalledWith({
+        name: 'fcm channel',
+        type: 'fcm',
+        target: 'device-token',
+        eventFilter: 'deploy,service,alert',
+        configJson: json,
+      }),
+    );
+  });
+
+  it('validates an FCM service account JSON', () => {
+    expect(fcmServiceAccountError(' ')).toBe('Paste the service account JSON');
+    expect(fcmServiceAccountError('{')).toBe('Not valid JSON');
+    expect(fcmServiceAccountError('[1]')).toBe('Not a service account JSON object');
+    expect(fcmServiceAccountError('null')).toBe('Not a service account JSON object');
+    expect(fcmServiceAccountError('{"project_id":"p","client_email":"e","private_key":""}')).toBe('The service account has no private_key');
+    expect(fcmServiceAccountError('{"project_id":"p","client_email":"e","private_key":"k"}')).toBeNull();
   });
 
   it('shows the telegram connect form', async () => {

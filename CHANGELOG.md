@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Firebase push (FCM) channels in the web UI (G1.5): the notification wizard creates an FCM channel from a device registration token and a Firebase service account JSON, checking that the JSON has the fields the server needs before continuing. Until now only `ninedeploy notifications create-fcm` could create one.
+
 - Shipped-log search in the web UI (G1.5): a service's Activity Logs tab can search the lines its Loki log drain received, over a window from 15 minutes to 7 days, including lines of containers that no longer exist. Until now only `ninedeploy logs search` and the API could do this.
 
 - Backup checks in the web UI (G1.5): each backup in a database's Backups tab has a **Check** button that runs the existing integrity drill, and a *Last check* column with the newest verdict (`passed`, `failed` or `unverifiable`). Until now drills ran only from the CLI and API.
