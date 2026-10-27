@@ -44,6 +44,7 @@ const CLICKHOUSE_SYSTEM_DATABASES = ['system', 'information_schema', 'INFORMATIO
 /** Plain identifiers only: they are quoted with backticks in the statements below. */
 const CLICKHOUSE_DB_NAME = /^[A-Za-z0-9_]+$/;
 const CLICKHOUSE_RESTORE_SUFFIX = '__nd_restore';
+const CLICKHOUSE_OLD_SUFFIX = '__nd_old';
 /** A BACKUP or RESTORE of a large database runs for as long as the copy takes. */
 const LONG_OPERATION_MS = 6 * 60 * 60 * 1000;
 
@@ -90,16 +91,27 @@ export function clickhouseArchiveDatabases(listing: string): string[] {
   return [...names].filter((n) => !CLICKHOUSE_SYSTEM_DATABASES.includes(n)).sort();
 }
 
+/** Whether a database exists right now. */
+async function clickhouseDatabaseExists(t: EngineBackupTarget, db: string): Promise<boolean> {
+  return (await capture('docker', clickhouseClient(t, `SELECT count() FROM system.databases WHERE name = '${db}'`))).trim() === '1';
+}
+
 /**
  * Restore every database in the archive. Each is first restored under a
- * temporary name; only when all of them succeeded are the live databases
- * dropped and the copies renamed into place, so a failed restore leaves the
- * current data untouched. Databases that are not in the backup are kept.
+ * temporary name. Only when all of them succeeded is each live database
+ * renamed aside (`<db>__nd_old`) and its copy renamed into place; the
+ * set-aside originals are dropped only after every swap succeeded. A failure
+ * while swapping renames the current database's original back, so no step
+ * ever leaves a database with neither its old nor its restored data.
+ * Databases that are not in the backup are kept.
  */
 export async function restoreClickhouse(t: EngineBackupTarget, file: string, log: Log): Promise<void> {
   const name = `nd-restore-${randomUUID()}.zip`;
   const archive = `${CLICKHOUSE_BACKUPS_DIR}/${name}`;
   const restored: string[] = [];
+  /** Databases whose original was renamed aside, and those whose restored copy is live. */
+  const setAside: string[] = [];
+  const promoted = new Set<string>();
   let swapped = false;
   try {
     await run('docker', ['cp', file, `${t.cn}:${archive}`], {}, log);
@@ -118,13 +130,34 @@ export async function restoreClickhouse(t: EngineBackupTarget, file: string, log
       await run('docker', clickhouseClient(t, `RESTORE DATABASE \`${db}\` AS \`${tmp}\` FROM File('${name}')`), { timeoutMs: LONG_OPERATION_MS }, log);
     }
     for (const db of dbs) {
-      await run('docker', clickhouseClient(t, `DROP DATABASE IF EXISTS \`${db}\` SYNC`), {}, log);
+      const old = `${db}${CLICKHOUSE_OLD_SUFFIX}`;
+      if (await clickhouseDatabaseExists(t, db)) {
+        await run('docker', clickhouseClient(t, `DROP DATABASE IF EXISTS \`${old}\` SYNC`), {}, log);
+        await run('docker', clickhouseClient(t, `RENAME DATABASE \`${db}\` TO \`${old}\``), {}, log);
+        setAside.push(db);
+      }
       await run('docker', clickhouseClient(t, `RENAME DATABASE \`${db}${CLICKHOUSE_RESTORE_SUFFIX}\` TO \`${db}\``), {}, log);
+      promoted.add(db);
     }
     swapped = true;
+    for (const db of setAside) {
+      await run('docker', clickhouseClient(t, `DROP DATABASE IF EXISTS \`${db}${CLICKHOUSE_OLD_SUFFIX}\` SYNC`), {}, log).catch(() => {
+        log(`⚠ could not drop the previous copy ${db}${CLICKHOUSE_OLD_SUFFIX}; drop it by hand`);
+      });
+    }
   } finally {
     if (!swapped) {
-      for (const tmp of restored) {
+      // An original that was set aside but whose copy never went live comes back.
+      for (const db of setAside.filter((d) => !promoted.has(d))) {
+        await run('docker', clickhouseClient(t, `RENAME DATABASE \`${db}${CLICKHOUSE_OLD_SUFFIX}\` TO \`${db}\``), {}, swallow).catch(() => {
+          log(`⚠ the original of ${db} is kept as ${db}${CLICKHOUSE_OLD_SUFFIX}; rename it back by hand`);
+        });
+      }
+      for (const db of setAside.filter((d) => promoted.has(d))) {
+        log(`⚠ ${db} was already restored before the failure; its previous data is kept as ${db}${CLICKHOUSE_OLD_SUFFIX}`);
+      }
+      // Copies that never went live hold nothing anyone uses.
+      for (const tmp of restored.filter((copy) => !promoted.has(copy.slice(0, -CLICKHOUSE_RESTORE_SUFFIX.length)))) {
         await run('docker', clickhouseClient(t, `DROP DATABASE IF EXISTS \`${tmp}\` SYNC`), {}, swallow).catch(() => undefined);
       }
     }
