@@ -161,16 +161,29 @@ describe('Porkbun', () => {
     expect(call(0).url).toBe('https://api.porkbun.com/api/json/v3/domain/listAll');
     expect(call(0).body()).toEqual({ apikey: 'pk1_a', secretapikey: 'sk1_b', start: '0' });
 
+    // An MX record at the name is no clash for an A record.
+    fetchMock.mockResolvedValueOnce(json({ status: 'SUCCESS', records: [{ name: 'www.example.com', type: 'MX' }, { name: 'example.com', type: 'A' }] }));
     fetchMock.mockResolvedValueOnce(json({ status: 'SUCCESS', id: 106926659 }));
     expect(await d.createRecord('example.com', { hostname: 'www.example.com', type: 'A', content: '1.2.3.4', ttl: 1 })).toMatchObject({ recordId: '106926659' });
-    expect(call(1).url).toBe('https://api.porkbun.com/api/json/v3/dns/create/example.com');
-    expect(call(1).body()).toMatchObject({ name: 'www', type: 'A', content: '1.2.3.4', ttl: '600' });
+    expect(call(1).url).toBe('https://api.porkbun.com/api/json/v3/dns/retrieve/example.com');
+    expect(call(2).url).toBe('https://api.porkbun.com/api/json/v3/dns/create/example.com');
+    expect(call(2).body()).toMatchObject({ name: 'www', type: 'A', content: '1.2.3.4', ttl: '600' });
 
     fetchMock.mockResolvedValueOnce(json({ status: 'SUCCESS' }));
     await d.deleteRecord('example.com', '106926659');
-    expect(call(2).url).toBe('https://api.porkbun.com/api/json/v3/dns/delete/example.com/106926659');
+    expect(call(3).url).toBe('https://api.porkbun.com/api/json/v3/dns/delete/example.com/106926659');
     fetchMock.mockResolvedValueOnce(json({ status: 'ERROR', message: 'Invalid record ID.' }, 400));
     await d.deleteRecord('example.com', '1');
+  });
+
+  it('never adds a record next to an existing one of the same type or a CNAME', async () => {
+    for (const [existing, type] of [['A', 'A'], ['CNAME', 'A'], ['A', 'CNAME']] as const) {
+      fetchMock.mockResolvedValueOnce(json({ status: 'SUCCESS', records: [{ name: 'WWW.example.com', type: existing }] }));
+      await expect(d.createRecord('example.com', { hostname: 'www.example.com', type, content: type === 'A' ? '1.2.3.4' : 'lb.example.net' })).rejects.toThrow(
+        `Porkbun already has a ${existing} record for www.example.com; it was left unchanged`,
+      );
+    }
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes('/dns/create/'))).toBe(true);
   });
 
   it('surfaces a refusal', async () => {
@@ -241,10 +254,16 @@ describe('OVH', () => {
 
   it('signs with the server clock and refreshes the zone after each change', async () => {
     const serverTime = 1_800_000_000;
-    fetchMock.mockResolvedValueOnce(json(String(serverTime))).mockResolvedValueOnce(json({ id: 5 })).mockResolvedValueOnce(json(''));
+    fetchMock
+      .mockResolvedValueOnce(json(String(serverTime)))
+      .mockResolvedValueOnce(json([]))
+      .mockResolvedValueOnce(json({ id: 5 }))
+      .mockResolvedValueOnce(json(''));
     expect(await d.createRecord('example.com', { hostname: 'api.example.com', type: 'CNAME', content: 'lb.example.net' })).toMatchObject({ recordId: '5' });
     expect(call(0).url).toBe('https://eu.api.ovh.com/1.0/auth/time');
-    const post = call(1);
+    // A CNAME clashes with any record at the name: one unfiltered lookup.
+    expect(call(1).url).toBe('https://eu.api.ovh.com/1.0/domain/zone/example.com/record?subDomain=api');
+    const post = call(2);
     expect(post.url).toBe('https://eu.api.ovh.com/1.0/domain/zone/example.com/record');
     expect(post.body()).toEqual({ fieldType: 'CNAME', subDomain: 'api', target: 'lb.example.net.', ttl: 0 });
     const ts = Number(post.init.headers['X-Ovh-Timestamp']);
@@ -252,22 +271,51 @@ describe('OVH', () => {
     const expected = `$1$${createHash('sha1').update(`appsecret+ckey+POST+${post.url}+${String(post.init.body)}+${ts}`).digest('hex')}`;
     expect(post.init.headers['X-Ovh-Signature']).toBe(expected);
     expect(ovhSignature(c, 'POST', post.url, String(post.init.body), ts)).toBe(expected);
-    expect(call(2).url).toBe('https://eu.api.ovh.com/1.0/domain/zone/example.com/refresh');
+    expect(call(3).url).toBe('https://eu.api.ovh.com/1.0/domain/zone/example.com/refresh');
 
     // The clock offset is reused; a missing record is fine and needs no refresh.
     fetchMock.mockResolvedValueOnce(json({ message: 'not found' }, 404));
     await d.deleteRecord('example.com', '5');
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(call(3).init.method).toBe('DELETE');
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(call(4).init.method).toBe('DELETE');
 
     fetchMock.mockResolvedValueOnce(json('')).mockResolvedValueOnce(json(''));
     await d.deleteRecord('example.com', '6');
-    expect(call(5).url).toContain('/refresh');
+    expect(call(6).url).toContain('/refresh');
 
     fetchMock.mockResolvedValueOnce(json(['example.com', 'example.org']));
     expect(await d.listZones()).toEqual([{ id: 'example.com', name: 'example.com' }, { id: 'example.org', name: 'example.org' }]);
     fetchMock.mockResolvedValueOnce(json({ message: 'This call has not been granted' }, 403));
     await expect(d.listZones()).rejects.toThrow('OVH API error: 403 This call has not been granted');
+  });
+});
+
+describe('OVH next to existing records', () => {
+  const d = new OvhProvider(async () => ({ endpoint: 'ovh-eu', applicationKey: 'appkey', applicationSecret: 'appsecret', consumerKey: 'ckey' }));
+
+  it('refuses an A record where an A or CNAME already sits, comparing the subDomain exactly', async () => {
+    // The clock offset is still cached from the suite above.
+    fetchMock
+      .mockResolvedValueOnce(json([11]))
+      .mockResolvedValueOnce(json([12]))
+      .mockResolvedValueOnce(json({ subDomain: 'www', fieldType: 'A' }))
+      .mockResolvedValueOnce(json({ subDomain: '', fieldType: 'CNAME' }));
+    await expect(d.createRecord('example.com', { hostname: 'example.com', type: 'A', content: '1.2.3.4' })).rejects.toThrow(
+      'OVH already has a CNAME record for example.com; it was left unchanged',
+    );
+    expect(String(fetchMock.mock.calls[0]![0])).toBe('https://eu.api.ovh.com/1.0/domain/zone/example.com/record?fieldType=A&subDomain=');
+    expect(String(fetchMock.mock.calls[1]![0])).toBe('https://eu.api.ovh.com/1.0/domain/zone/example.com/record?fieldType=CNAME&subDomain=');
+    expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit).method === 'POST')).toBe(false);
+  });
+
+  it('creates when the only matches belong to other names', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json([11]))
+      .mockResolvedValueOnce(json([]))
+      .mockResolvedValueOnce(json({ subDomain: 'www', fieldType: 'A' }))
+      .mockResolvedValueOnce(json({ id: 9 }))
+      .mockResolvedValueOnce(json(''));
+    expect((await d.createRecord('example.com', { hostname: 'example.com', type: 'A', content: '1.2.3.4' })).recordId).toBe('9');
   });
 });
 

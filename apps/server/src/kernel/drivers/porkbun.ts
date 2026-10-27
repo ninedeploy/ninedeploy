@@ -48,6 +48,16 @@ export class PorkbunProvider implements IDomainProvider {
   }
 
   async createRecord(zoneId: string, spec: DomainRecordSpec): Promise<DomainRecordResult> {
+    // Porkbun adds a record next to existing ones (an A record would join the
+    // round-robin), so refuse when the name already has one of this type, or
+    // a CNAME is involved on either side — the panel never edits records it
+    // did not create.
+    const { records } = await this.call<{ records?: Array<{ name: string; type: string }> }>(`/dns/retrieve/${encodeURIComponent(zoneId)}`);
+    const host = spec.hostname.toLowerCase();
+    const clash = (records ?? []).find(
+      (r) => r.name.toLowerCase().replace(/\.$/, '') === host && (r.type === spec.type || r.type === 'CNAME' || spec.type === 'CNAME'),
+    );
+    if (clash) throw new Error(`Porkbun already has a ${clash.type} record for ${spec.hostname}; it was left unchanged`);
     const { id } = await this.call<{ id: number | string }>(`/dns/create/${encodeURIComponent(zoneId)}`, {
       name: relativeName(spec.hostname, zoneId),
       type: spec.type,

@@ -92,10 +92,33 @@ export class OvhProvider implements IDomainProvider {
     return this.request('POST', `/domain/zone/${encodeURIComponent(zone)}/refresh`);
   }
 
+  /**
+   * A record at `subDomain` that a new `type` record would sit next to: one
+   * of the same type (OVH would add it to the round-robin) or a CNAME on
+   * either side. Each candidate is read back and its subDomain compared
+   * exactly, since the list filter is not trusted to scope the apex.
+   */
+  private async clashingRecord(zone: string, subDomain: string, type: string): Promise<string | null> {
+    const base = `/domain/zone/${encodeURIComponent(zone)}/record`;
+    const sub = `subDomain=${encodeURIComponent(subDomain)}`;
+    const ids = new Set<number>();
+    for (const q of type === 'CNAME' ? [sub] : [`fieldType=${type}&${sub}`, `fieldType=CNAME&${sub}`]) {
+      for (const id of await this.request<number[]>('GET', `${base}?${q}`)) ids.add(id);
+    }
+    for (const id of [...ids].slice(0, 50)) {
+      const r = await this.request<{ subDomain: string; fieldType: string }>('GET', `${base}/${id}`);
+      if (r.subDomain.toLowerCase() === subDomain && (type === 'CNAME' || r.fieldType === type || r.fieldType === 'CNAME')) return r.fieldType;
+    }
+    return null;
+  }
+
   async createRecord(zoneId: string, spec: DomainRecordSpec): Promise<DomainRecordResult> {
+    const subDomain = relativeName(spec.hostname, zoneId);
+    const clash = await this.clashingRecord(zoneId, subDomain, spec.type);
+    if (clash) throw new Error(`OVH already has a ${clash} record for ${spec.hostname}; it was left unchanged`);
     const created = await this.request<{ id: number }>('POST', `/domain/zone/${encodeURIComponent(zoneId)}/record`, {
       fieldType: spec.type,
-      subDomain: relativeName(spec.hostname, zoneId),
+      subDomain,
       target: spec.type === 'CNAME' ? absoluteTarget(spec.content) : spec.content,
       // 0 = the zone's default TTL.
       ttl: spec.ttl && spec.ttl >= 60 ? spec.ttl : 0,
