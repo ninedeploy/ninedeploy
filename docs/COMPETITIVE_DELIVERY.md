@@ -6,6 +6,14 @@ Current published release: **0.18.4 = R1 (public node canary) plus the completed
 
 The v0.18.0 tag and image remain available as an unpublished candidate. The hosted smoke caught a setup race: readiness was changed during primary retirement, so the safety journal retained both generations and held the next deployment. The corrected smoke waits for settlement before the next readiness case. The 0.18.1 tag was also withheld after a repeated real canary smoke exposed agent operation capacity exhaustion; its workflow was cancelled before producing a registry image. Commit d8615abc separates bounded operation capacity from the invalid-request rejection budget. Published 0.18.2 preserves both earlier Git tags and the v0.18.0 image.
 
+## 0.18.5 publication attempt — 2026-10-27
+
+The [v0.18.5 release workflow](https://github.com/ninedeploy/ninedeploy/actions/runs/40523299242) completed with failure; no GitHub Release was published. Its tag points to 054570746eb42c93df6b85b1da5b153fe6181f77, and its signed version image exists at digest sha256:bbecbae08e25b37859c5967b606fd6bee24b19b6e803ab57ea5661833bd0bbbf. Both are preserved. Published v0.18.4 remains the latest release.
+
+The exact candidate passed all 11 uncached local release tasks (15,597 tests in 925 files) and its main-branch hosted CI. The hosted image build and a local 0.18.4-to-0.18.5 upgrade passed. Publication was held by smoke failures: independent runners did not pull the image before inspection, the user-journey expected an outdated secret-provider list, and two node scenarios timed out waiting for cancelled or stopped candidate containers to be removed. The first two smoke-tooling changes are committed locally for the 0.18.6 candidate; the node cleanup failures still require diagnosis and safe verification. A local rerun of the user journey passed the provider step but later timed out waiting for a canary, so the complete journey is not yet verified.
+
+Do not infer publication or runtime safety from the tag, image, or the earlier green gates. A future candidate still needs a fresh full gate, hosted release smokes, and verification of the actual GitHub Release and published artifacts.
+
 ## 0.18.4 publication acceptance — 2026-10-26
 
 Published [v0.18.4](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.18.4) from `44d1eb1fff996126a1cfe9cecf1810a56c766e0e`. All [release workflow](https://github.com/ninedeploy/ninedeploy/actions/runs/40359090810) jobs passed, including image publication/signing, every published-image smoke, GitHub Release promotion and the reusable npm publication job. The immutable local candidate passed **15,139 tests in 903 files, all 11 tasks uncached**, followed by the repository tag gate.
