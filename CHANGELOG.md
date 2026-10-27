@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- R2 development: fence superseded node deployment continuations after delayed successful or rejected agent replies. Keep newer owners and moved services intact, recheck SQL publication/failure writes at execution, retain unresolved effects for the current owner and suppress obsolete outcome callbacks. An in-flight SQL response cannot reverse an already observed ownership loss. Ordered physical mutation integration remains open.
+
 - Ignore stale pipeline invocations for non-claimable deployment rows before build, routing, hooks or lifecycle outcomes; stop continuations that lose the conditional queued/building claim. Preserve eligible worker handoffs, explicit Stop cleanup and log-writer ownership.
 
 - Clear an additional node's pending deployment status after its generation-independent Stop completes. Lost routing confirmation retains the captured targets for retry, while a newer runtime selection prevents the old Stop from resuming.
