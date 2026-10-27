@@ -722,7 +722,9 @@ const DEPLOY_DONE = new Set(['running', 'failed', 'cancelled', 'superseded']);
 async function deployEnded(token, serviceId, depId, ms) {
   const end = Date.now() + ms;
   for (;;) {
-    const all = (await api(`/v1/services/${serviceId}/deploys`, { token })).json;
+    const response = await api(`/v1/services/${serviceId}/deploys`, { token });
+    if (response.status !== 200) fail(`deploy list for service #${serviceId} answered HTTP ${response.status}`);
+    const all = response.json;
     const d = (Array.isArray(all) ? all : (all?.deploys ?? [])).find((x) => x.id === depId);
     if (DEPLOY_DONE.has(d?.status)) return d.status;
     if (Date.now() > end) return d?.status ?? 'missing';
@@ -734,7 +736,9 @@ async function canaryRunning(token, serviceId, depId, ms) {
   for (;;) {
     const s = (await api(`/v1/services/${serviceId}/canary`, { token })).json;
     if (s?.active === true && s.deploymentId === depId && s.weight > 0) return s;
-    const all = (await api(`/v1/services/${serviceId}/deploys`, { token })).json;
+    const response = await api(`/v1/services/${serviceId}/deploys`, { token });
+    if (response.status !== 200) fail(`deploy list for service #${serviceId} answered HTTP ${response.status}`);
+    const all = response.json;
     const deployment = (Array.isArray(all) ? all : (all?.deploys ?? [])).find((x) => x.id === depId);
     if (['failed', 'cancelled', 'superseded'].includes(deployment?.status)) {
       fail(`canary deploy #${depId} ended ${deployment.status} before its traffic split`);
@@ -1652,6 +1656,8 @@ async function main() {
       // 0.16: the first admin needs the setup token (lib/setupToken.ts).
       '-e', 'NINEDEPLOY_SETUP_TOKEN=nd-smoke-setup-token',
       '-e', `NINEDEPLOY_MASTER_KEY=${key}`,
+      // This acceptance journey can exceed the default 15-minute access-token lifetime.
+      '-e', 'NINEDEPLOY_JWT_ACCESS_TTL=2h',
       '-e', `DOCKER_HOST=tcp://${DIND}:2375`,
       IMAGE]);
   } catch (err) {
