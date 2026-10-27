@@ -22,6 +22,7 @@ import { HelpProvider } from '../help/HelpContext.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { installPanelAutofillGuard } from '../lib/autofill.js';
 import { useBranding } from '../lib/branding.js';
+import { msg, useT } from '../lib/i18n.js';
 import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
 import { DeployLauncher, useNewResource } from '../lib/deployLauncher.js';
 
@@ -50,17 +51,17 @@ export const ICON_MAP: Record<string, LucideIcon> = {
 
 const GROUPS: NavGroup[] = [
   {
-    id: 'deploy', label: 'Deploy', icon: Rocket, items: [
-      { to: '/hub', label: 'Hub', icon: Sparkles },
-      { to: '/manifest-creator', label: 'Manifest Creator', icon: FileCode },
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/services', label: 'Services', icon: Server },
+    id: 'deploy', label: msg('Deploy'), icon: Rocket, items: [
+      { to: '/hub', label: msg('Hub'), icon: Sparkles },
+      { to: '/manifest-creator', label: msg('Manifest Creator'), icon: FileCode },
+      { to: '/dashboard', label: msg('Dashboard'), icon: LayoutDashboard },
+      { to: '/services', label: msg('Services'), icon: Server },
       // Global queue view: every in-flight (queued / building / deploying)
       // deploy across every service the caller can see, with one-click
       // cancel + remove. Sits in the Deploy group because that is what the
       // page is for; the per-service Deploys tab still owns the per-row
       // log and config diff.
-      { to: '/deploys', label: 'Queue', icon: ListOrdered },
+      { to: '/deploys', label: msg('Queue'), icon: ListOrdered },
     ],
   },
   {
@@ -68,49 +69,49 @@ const GROUPS: NavGroup[] = [
     // used to have no navigation entry at all — projects were reachable only
     // by typing the URL, and labels only as a side effect of the top-bar
     // filter, which offered no way to rename, recolour or delete one.
-    id: 'organize', label: 'Organize', icon: FolderKanban, items: [
-      { to: '/workspaces', label: 'Workspaces', icon: Building2 },
-      { to: '/projects', label: 'Projects', icon: FolderKanban },
-      { to: '/labels', label: 'Labels', icon: Tag },
+    id: 'organize', label: msg('Organize'), icon: FolderKanban, items: [
+      { to: '/workspaces', label: msg('Workspaces'), icon: Building2 },
+      { to: '/projects', label: msg('Projects'), icon: FolderKanban },
+      { to: '/labels', label: msg('Labels'), icon: Tag },
     ],
   },
   {
-    id: 'data', label: 'Data', icon: Database, items: [
-      { to: '/databases', label: 'Databases', icon: Database },
+    id: 'data', label: msg('Data'), icon: Database, items: [
+      { to: '/databases', label: msg('Databases'), icon: Database },
       // Instance-wide volume inventory is admin-only server-side (L-12) —
       // linking members to it only ever produced a 403 error card.
-      { to: '/volumes', label: 'Volumes', icon: Layers, operatorOnly: true },
-      { to: '/backups', label: 'Backups', icon: HardDrive },
+      { to: '/volumes', label: msg('Volumes'), icon: Layers, operatorOnly: true },
+      { to: '/backups', label: msg('Backups'), icon: HardDrive },
     ],
   },
   {
-    id: 'network', label: 'Network', icon: Globe, items: [
-      { to: '/domains', label: 'Domains', icon: Globe },
-      { to: '/traefik', label: 'Traefik', icon: Shield },
-      { to: '/networks', label: 'Networks', icon: Network, advancedOnly: true },
-      { to: '/tunnels', label: 'Tunnels', icon: Cloud, advancedOnly: true },
-      { to: '/topology', label: 'Topology', icon: Network },
+    id: 'network', label: msg('Network'), icon: Globe, items: [
+      { to: '/domains', label: msg('Domains'), icon: Globe },
+      { to: '/traefik', label: msg('Traefik'), icon: Shield },
+      { to: '/networks', label: msg('Networks'), icon: Network, advancedOnly: true },
+      { to: '/tunnels', label: msg('Tunnels'), icon: Cloud, advancedOnly: true },
+      { to: '/topology', label: msg('Topology'), icon: Network },
     ],
   },
   {
-    id: 'system', label: 'System', icon: SettingsIcon, items: [
+    id: 'system', label: msg('System'), icon: SettingsIcon, items: [
       // r472: these pages are operator-only server-side; the sidebar used to
       // show them to members anyway, and every one of them answered a 403
       // error card (Activity's even masqueraded as "No activity recorded").
-      { to: '/activity', label: 'Activity', icon: Clock, operatorOnly: true },
-      { to: '/monitoring', label: 'Monitoring', icon: Activity },
+      { to: '/activity', label: msg('Activity'), icon: Clock, operatorOnly: true },
+      { to: '/monitoring', label: msg('Monitoring'), icon: Activity },
       // Host-wide analysis + guarded cleanup (dead containers, orphan volumes,
       // row/runtime desync, reclaimable bloat). Operator-gated server-side, so
       // members don't get a sidebar link to a page that can only refuse them.
-      { to: '/doctor', label: 'Doctor', icon: Stethoscope, operatorOnly: true },
-      { to: '/docker', label: 'Docker', icon: Container, advancedOnly: true, operatorOnly: true },
-      { to: '/sources', label: 'Sources', icon: KeyRound, operatorOnly: true },
-      { to: '/servers', label: 'Servers', icon: HardDrive, advancedOnly: true, operatorOnly: true },
+      { to: '/doctor', label: msg('Doctor'), icon: Stethoscope, operatorOnly: true },
+      { to: '/docker', label: msg('Docker'), icon: Container, advancedOnly: true, operatorOnly: true },
+      { to: '/sources', label: msg('Sources'), icon: KeyRound, operatorOnly: true },
+      { to: '/servers', label: msg('Servers'), icon: HardDrive, advancedOnly: true, operatorOnly: true },
       // 0.15: terminal session history (every terminal route is operator-only).
-      { to: '/terminals', label: 'Terminals', icon: SquareTerminal, operatorOnly: true },
-      { to: '/users', label: 'Users', icon: Users, operatorOnly: true },
-      { to: '/settings', label: 'Settings', icon: SettingsIcon },
-      { to: '/about', label: 'About', icon: Info },
+      { to: '/terminals', label: msg('Terminals'), icon: SquareTerminal, operatorOnly: true },
+      { to: '/users', label: msg('Users'), icon: Users, operatorOnly: true },
+      { to: '/settings', label: msg('Settings'), icon: SettingsIcon },
+      { to: '/about', label: msg('About'), icon: Info },
     ],
   },
 ];
@@ -152,6 +153,7 @@ function findGroup(pathname: string, groups: NavGroup[] = GROUPS): string | null
 export function Layout() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const t = useT();
   const { isSimple } = useExperienceMode();
   const location = useLocation();
   const branding = useBranding();
@@ -199,7 +201,7 @@ export function Layout() {
       ...rawGroups,
       {
         id: 'extensions',
-        label: 'Extensions',
+        label: msg('Extensions'),
         icon: Layers,
         items: extensionItems,
       },
@@ -251,7 +253,7 @@ export function Layout() {
   const toggleGroup = (id: string) => setActiveGroup((prev) => (prev === id ? null : id));
 
   const currentItem = currentGroup?.items.find((i) => matchItem(i, location.pathname));
-  const pageTitle = currentItem?.label ?? 'Dashboard';
+  const pageTitle = t(currentItem?.label ?? 'Dashboard');
 
   return (
     <HelpProvider>
@@ -276,12 +278,12 @@ export function Layout() {
             the group icons rather than inside one of them. */}
         <button type="button"
           onClick={openDeploy}
-          aria-label="New resource"
+          aria-label={t('New resource')}
           className="group relative mb-3 grid h-10 w-10 place-items-center rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/25 transition hover:bg-indigo-400"
         >
           <Plus size={19} />
           <span className="pointer-events-none absolute left-full top-1/2 ml-2.5 z-50 -translate-y-1/2 whitespace-nowrap rounded-md border border-slate-700/80 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-100 shadow-2xl opacity-0 transition-all duration-150 group-hover:opacity-100">
-            New resource
+            {t('New resource')}
           </span>
         </button>
 
@@ -304,7 +306,7 @@ export function Layout() {
               {active && <span className="absolute -left-3 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-indigo-400" />}
               {/* Tooltip */}
               <span className="pointer-events-none absolute left-full top-1/2 ml-2.5 z-50 -translate-y-1/2 whitespace-nowrap rounded-md border border-slate-700/80 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-100 shadow-2xl opacity-0 transition-all duration-150 group-hover:opacity-100">
-                {g.label}
+                {t(g.label)}
               </span>
             </button>
           );
@@ -316,8 +318,8 @@ export function Layout() {
         {branding.supportEmail && (
           <a
             href={`mailto:${branding.supportEmail}`}
-            title={`Support: ${branding.supportEmail}`}
-            aria-label={`Contact support (${branding.supportEmail})`}
+            title={t('Support: {email}', { email: branding.supportEmail })}
+            aria-label={t('Contact support ({email})', { email: branding.supportEmail })}
             className="mb-2 grid h-9 w-9 place-items-center rounded-xl text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-200"
           >
             <LifeBuoy size={17} />
@@ -328,11 +330,11 @@ export function Layout() {
         <button type="button"
           onClick={logout}
           className="group relative grid h-9 w-9 place-items-center rounded-full bg-indigo-500/20 text-xs font-semibold text-indigo-300 ring-1 ring-inset ring-indigo-500/30 transition hover:bg-rose-500/20 hover:text-rose-300"
-          title="Sign out"
+          title={t('Sign out')}
         >
           {(user?.email ?? '?')[0]?.toUpperCase()}
           <span className="pointer-events-none absolute left-full top-1/2 ml-2.5 z-50 -translate-y-1/2 whitespace-nowrap rounded-md border border-slate-700/80 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-100 shadow-2xl opacity-0 transition-all duration-150 group-hover:opacity-100">
-            {user?.email} · Sign out
+            {user?.email} · {t('Sign out')}
           </span>
         </button>
       </div>
@@ -341,7 +343,7 @@ export function Layout() {
       {currentGroup && narrow && (
         <button
           type="button"
-          aria-label="Close the menu"
+          aria-label={t('Close the menu')}
           onClick={() => setActiveGroup(null)}
           className="nd-fade fixed inset-y-0 left-12 right-0 z-20 bg-black/50 backdrop-blur-[1px]"
         />
@@ -356,7 +358,7 @@ export function Layout() {
           {/* Group header */}
           <div className="flex items-center gap-2 px-4 pb-2 pt-4">
             <currentGroup.icon size={14} className="text-indigo-400" />
-            <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">{currentGroup.label}</span>
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">{t(currentGroup.label)}</span>
           </div>
 
           {/* Items */}
@@ -367,7 +369,7 @@ export function Layout() {
                 className="mb-2 flex w-full items-center gap-2.5 rounded-lg bg-indigo-500/15 px-2.5 py-2 text-sm font-medium text-indigo-200 ring-1 ring-inset ring-indigo-500/30 transition hover:bg-indigo-500/25 hover:text-white"
               >
                 <Plus size={16} className="text-indigo-300" />
-                New resource
+                {t('New resource')}
               </button>
             )}
             {currentGroup.items.map((item) => {
@@ -383,7 +385,7 @@ export function Layout() {
                   )}
                 >
                   <Icon size={16} className={active ? 'text-indigo-400' : 'text-slate-500'} />
-                  {item.label}
+                  {t(item.label)}
                 </Link>
               );
             })}
@@ -394,7 +396,7 @@ export function Layout() {
             onClick={() => setActiveGroup(null)}
             className="flex items-center gap-1.5 px-4 py-2.5 text-xs text-slate-600 transition hover:text-slate-400"
           >
-            <ChevronLeft size={13} /> Collapse
+            <ChevronLeft size={13} /> {t('Collapse')}
           </button>
         </div>
       )}
@@ -408,7 +410,7 @@ export function Layout() {
         <header className="shrink-0 border-b border-white/[0.06]">
           <div className="flex h-12 items-center justify-between gap-3 px-4 md:px-5">
             <div className="flex min-w-0 items-center gap-2 text-sm">
-              <span className="truncate font-medium text-slate-300">{currentGroup?.label ?? 'NineDeploy'}</span>
+              <span className="truncate font-medium text-slate-300">{currentGroup ? t(currentGroup.label) : 'NineDeploy'}</span>
               {currentItem && (
                 <>
                   <span className="text-slate-700">/</span>
@@ -420,11 +422,11 @@ export function Layout() {
               <button type="button"
                 onClick={openDeploy}
                 className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400"
-                title="New: deploy an app, start a database or install a one-click app"
-                aria-label="New resource"
+                title={t('New: deploy an app, start a database or install a one-click app')}
+                aria-label={t('New resource')}
               >
                 <Rocket size={13} />
-                <span className="hidden sm:inline">New</span>
+                <span className="hidden sm:inline">{t('New')}</span>
               </button>
               {/* Room on a phone: the mode switch lives in Settings too. */}
               <div className="hidden sm:block">
@@ -433,31 +435,31 @@ export function Layout() {
               <button type="button"
                 onClick={toggleTheme}
                 className="rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
-                title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                title={theme === 'dark' ? t('Light mode') : t('Dark mode')}
               >
                 {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
               </button>
               <button type="button"
                 onClick={() => setPaletteOpen(true)}
                 className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-500 transition hover:bg-white/[0.08] hover:text-slate-300"
-                title="Search (⌘K)"
+                title={t('Search (⌘K)')}
               >
                 <Search size={13} />
-                <span className="hidden sm:inline">Search</span>
+                <span className="hidden sm:inline">{t('Search')}</span>
                 <kbd className="hidden rounded bg-white/[0.06] px-1 py-0.5 text-[9px] sm:inline">⌘K</kbd>
               </button>
               <DeployQueueBadge />
               <button type="button"
                 onClick={() => setDrawerOpen(true)}
                 className="relative rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-300"
-                title="Activity"
+                title={t('Activity')}
               >
                 <Activity size={16} />
               </button>
               <HelpButton />
             </div>
           </div>
-          <fieldset className="m-0 flex min-h-10 min-w-0 flex-wrap items-center gap-2 border-t border-white/[0.04] px-4 py-1.5 text-sm md:px-5" aria-label="Scope filters">
+          <fieldset className="m-0 flex min-h-10 min-w-0 flex-wrap items-center gap-2 border-t border-white/[0.04] px-4 py-1.5 text-sm md:px-5" aria-label={t('Scope filters')}>
             <WorkspaceSwitcher />
             <TopBarFilters />
           </fieldset>
@@ -499,6 +501,7 @@ interface AppEvent { id: number; action: string; entity: string | null; ts: stri
 
 function ActivityDrawer({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
+  const t = useT();
   // r564: a modal drawer — focus moves in, is trapped, Escape closes, and
   // focus returns to the Events button (it used to stay behind the backdrop).
   const panelRef = useRef<HTMLDivElement>(null);
@@ -568,8 +571,8 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
 
   const fmtTime = (ts: string) => {
     const diff = Date.now() - new Date(ts).getTime();
-    if (diff < 60000) return 'just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 60000) return t('just now');
+    if (diff < 3600000) return t('{n}m ago', { n: Math.floor(diff / 60000) });
     return new Date(ts).toLocaleTimeString();
   };
 
@@ -595,10 +598,14 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
   };
 
   const filters = ['all', 'service', 'database', 'domain', 'deploy', 'backup', 'user'];
+  const FILTER_LABELS: Record<string, string> = {
+    all: msg('all'), service: msg('service'), database: msg('database'), domain: msg('domain'),
+    deploy: msg('deploy'), backup: msg('backup'), user: msg('user'),
+  };
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
-      <button type="button" aria-label="Close events drawer" tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <button type="button" aria-label={t('Close events drawer')} tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
         ref={panelRef}
         role="dialog"
@@ -608,14 +615,14 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
           <h2 id={titleId} className="flex items-center gap-2 text-sm font-semibold">
-            <Activity size={15} className="text-indigo-400" /> Events
+            <Activity size={15} className="text-indigo-400" /> {t('Events')}
             {connected ? (
-              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-medium text-emerald-300">● live</span>
+              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-medium text-emerald-300">● {t('live')}</span>
             ) : (
-              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium text-amber-300">● reconnecting</span>
+              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium text-amber-300">● {t('reconnecting')}</span>
             )}
           </h2>
-          <button type="button" onClick={onClose} aria-label="Close events" className="rounded-lg p-1 text-slate-500 hover:bg-white/5 hover:text-slate-300">
+          <button type="button" onClick={onClose} aria-label={t('Close events')} className="rounded-lg p-1 text-slate-500 hover:bg-white/5 hover:text-slate-300">
             <X size={16} />
           </button>
         </div>
@@ -627,14 +634,14 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
               onClick={() => setFilter(f)}
               className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium transition capitalize', filter === f ? 'bg-indigo-500 text-white' : 'bg-white/[0.04] text-slate-500 hover:bg-white/[0.08]')}
             >
-              {f}
+              {t(FILTER_LABELS[f] ?? f)}
             </button>
           ))}
         </div>
         {/* Events */}
         <div className="flex-1 overflow-auto p-2">
           {filtered.length === 0 ? (
-            <p className="py-8 text-center text-xs text-slate-600">No events yet.</p>
+            <p className="py-8 text-center text-xs text-slate-600">{t('No events yet.')}</p>
           ) : (
             <ul className="space-y-0.5">
               {filtered.map((e) => (
@@ -661,7 +668,7 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
               onClick={onClose}
               className="flex items-center justify-center gap-1.5 rounded-lg bg-white/[0.04] py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
             >
-              <span>View Full Audit Ledger</span>
+              <span>{t('View Full Audit Ledger')}</span>
               <ChevronRight size={13} />
             </Link>
           )}

@@ -76,7 +76,7 @@ it('shows an error card with retry when the dashboard query fails', async () => 
     mockOf(api.dashboard.get).mockResolvedValue(dashData as never);
     renderWithProviders(<Dashboard />);
     // 3 running + 1 unhealthy running -> attention banner
-    await screen.findByText('1 service need attention');
+    await screen.findByText('1 service needs attention');
     expect(screen.getByText(/3 running · 1 stopped · 1 errored · 5 containers · 1 databases/)).toBeInTheDocument();
     // stat cards
     expect(screen.getAllByText('5').length).toBeGreaterThan(0);
@@ -116,7 +116,7 @@ it('shows an error card with retry when the dashboard query fails', async () => 
       health: [dashData.health[1]!],
     } as never);
     renderWithProviders(<Dashboard />);
-    await screen.findByText('1 service need attention');
+    await screen.findByText('1 service needs attention');
   });
 
   it('pluralizes the attention banner', async () => {
@@ -161,7 +161,7 @@ it('shows an error card with retry when the dashboard query fails', async () => 
     mockOf(api.dashboard.get).mockResolvedValue(dashData as never);
     mockOf(api.services.importBundle).mockResolvedValue({ ok: true, serviceId: 77, slug: 'x', message: 'ok' } as never);
     renderWithProviders(<Dashboard />);
-    await screen.findByText('1 service need attention');
+    await screen.findByText('1 service needs attention');
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     expect(input).not.toBeNull();
     const file = new File([JSON.stringify({ name: 'x' })], 'bundle.json', { type: 'application/json' });
@@ -174,7 +174,7 @@ it('shows an error card with retry when the dashboard query fails', async () => 
   it('handles a broken import bundle', async () => {
     mockOf(api.dashboard.get).mockResolvedValue(dashData as never);
     renderWithProviders(<Dashboard />);
-    await screen.findByText('1 service need attention');
+    await screen.findByText('1 service needs attention');
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['not-json'], 'bundle.json', { type: 'application/json' });
     fireEvent.change(input, { target: { files: [file] } });
@@ -184,7 +184,7 @@ it('shows an error card with retry when the dashboard query fails', async () => 
   it('ignores a change event without a selected file', async () => {
     mockOf(api.dashboard.get).mockResolvedValue(dashData as never);
     renderWithProviders(<Dashboard />);
-    await screen.findByText('1 service need attention');
+    await screen.findByText('1 service needs attention');
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [] } });
     expect(api.services.importBundle).not.toHaveBeenCalled();
@@ -306,7 +306,7 @@ it('shows an error card with retry when the dashboard query fails', async () => 
   it('hides the first-deploy card once a service exists; the quick action still opens the wizard', async () => {
     mockOf(api.dashboard.get).mockResolvedValue(dashData as never);
     renderWithProviders(<><Dashboard /><LocationProbe /></>);
-    await screen.findByText('1 service need attention');
+    await screen.findByText('1 service needs attention');
     expect(screen.queryByText('Deploy your first app')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Deploy New Service/ }));
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/?deploy=new'));

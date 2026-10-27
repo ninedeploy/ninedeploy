@@ -6,6 +6,7 @@ import App from './App.js';
 import { AuthProvider } from './lib/auth.js';
 import { ProjectScopeProvider } from './lib/projects.js';
 import { ThemeProvider } from './lib/theme.js';
+import { LocaleProvider } from './lib/i18n.js';
 import { ToastProvider } from './components/Toast.js';
 import { AppErrorBoundary } from './components/AppErrorBoundary.js';
 import './index.css';
@@ -24,6 +25,7 @@ createRoot(rootEl).render(
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
+          <LocaleProvider>
           <ToastProvider>
             <BrowserRouter>
               <AuthProvider>
@@ -33,6 +35,7 @@ createRoot(rootEl).render(
               </AuthProvider>
             </BrowserRouter>
           </ToastProvider>
+          </LocaleProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </AppErrorBoundary>

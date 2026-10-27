@@ -3,8 +3,8 @@
 /**
  * Data model for the in-app help sidebar. Help topics are plain static data:
  * the drawer resolves a topic id from the current route (see `keys.ts`) and
- * renders these structures. Content ships in English, matching the rest of
- * the UI — no i18n layer exists in the app.
+ * renders these structures. Content ships in English only — the interface
+ * translation layer (lib/i18n.tsx) does not cover help topics yet.
  */
 
 /** One logical block of help content inside a topic. */

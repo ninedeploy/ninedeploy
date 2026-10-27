@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Turkish interface (G4.6). The web panel now has a translation layer and a Turkish locale.
+  - **Choosing a language:** pick it under Settings → Appearance → Language, or with the switch under the sign-in form. The choice is kept in the browser. Without one, a Turkish browser opens in Turkish.
+  - **Translated so far:** the navigation, the top bar, the events drawer, sign-in, password reset, Settings → Appearance and the dashboard. Other pages stay English until they are extracted, and they render English rather than raw keys.
+  - **Catalogue check:** a test fails on any untranslated string, unused entry or placeholder mismatch.
+
+  No new dependency and no migration. See TRANSLATIONS.md.
+
+### Changed
+
+- The dashboard banner for a single unhealthy service now reads "1 service needs attention".
+
 ## [0.18.5] - 2026-10-27
 
 ### Added

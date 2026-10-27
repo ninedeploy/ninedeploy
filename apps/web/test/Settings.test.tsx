@@ -172,7 +172,7 @@ describe('Settings', () => {
     mockOf(useTheme).mockReturnValue(theme as never);
     renderWithProviders(<Settings />);
     await openSection('Appearance');
-    await userEvent.click(await screen.findByRole('button', { name: /^light$/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /^light$/i }));
     expect(theme.setTheme).toHaveBeenCalledWith('light');
     await userEvent.click(screen.getByRole('button', { name: 'Blue' }));
     expect(theme.setAccent).toHaveBeenCalledWith('blue');

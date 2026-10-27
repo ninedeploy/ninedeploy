@@ -3,8 +3,10 @@ import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
 import { BrandMark, Button, Card, Field, Input } from '../components/ui.js';
+import { fill, useT } from '../lib/i18n.js';
 
 export function ForgotPassword() {
+  const t = useT();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
 
@@ -23,27 +25,28 @@ export function ForgotPassword() {
       <div className="w-full max-w-sm nd-fade">
         <div className="mb-7 flex flex-col items-center text-center">
           <BrandMark size={44} />
-          <h1 className="mt-4 text-xl font-semibold tracking-tight">Reset your password</h1>
-          <p className="text-sm text-slate-500">We'll send a one-time reset link.</p>
+          <h1 className="mt-4 text-xl font-semibold tracking-tight">{t('Reset your password')}</h1>
+          <p className="text-sm text-slate-500">{t("We'll send a one-time reset link.")}</p>
         </div>
 
         <Card className="p-6">
           {sent ? (
             <div className="space-y-4 text-center">
               <p className="text-sm text-slate-300">
-                If an account exists for <span className="font-mono text-slate-100">{email}</span>, a reset link is on
-                its way (valid for 30 minutes).
+                {fill(t('If an account exists for {email}, a reset link is on its way (valid for 30 minutes).'), {
+                  email: <span className="font-mono text-slate-100">{email}</span>,
+                })}
               </p>
               <p className="text-xs text-slate-500">
-                No email channel configured? Ask an admin to generate a reset link for you from the Users page.
+                {t('No email channel configured? Ask an admin to generate a reset link for you from the Users page.')}
               </p>
               <Link to="/login">
-                <Button variant="secondary" className="w-full">Back to sign in</Button>
+                <Button variant="secondary" className="w-full">{t('Back to sign in')}</Button>
               </Link>
             </div>
           ) : (
             <form onSubmit={onSubmit} className="space-y-4">
-              <Field label="Email">
+              <Field label={t('Email')}>
                 <Input
                   type="email"
                   required
@@ -55,14 +58,14 @@ export function ForgotPassword() {
               </Field>
               {request.isError && (
                 <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-                  {request.error instanceof Error ? request.error.message : 'Request failed'}
+                  {request.error instanceof Error ? request.error.message : t('Request failed')}
                 </p>
               )}
               <Button type="submit" className="w-full" disabled={request.isPending || !email.trim()}>
-                {request.isPending ? 'Please wait…' : 'Send reset link'}
+                {request.isPending ? t('Please wait…') : t('Send reset link')}
               </Button>
               <p className="text-center text-xs text-slate-500">
-                <Link to="/login" className="underline-offset-2 hover:underline">Back to sign in</Link>
+                <Link to="/login" className="underline-offset-2 hover:underline">{t('Back to sign in')}</Link>
               </p>
             </form>
           )}

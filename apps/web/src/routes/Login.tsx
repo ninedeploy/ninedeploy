@@ -6,6 +6,8 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { beginSso, safeReturnTo, ssoNavigation } from '../lib/sso.js';
 import { BrandMark, Button, Card, Field, Input } from '../components/ui.js';
+import { LanguageSwitch } from '../components/LanguageSwitch.js';
+import { useT } from '../lib/i18n.js';
 
 /** Bullets only, built at runtime: the login form's own masked input must
  *  not look like a stored credential to secret scanners (which key on the
@@ -31,6 +33,7 @@ function takeSetupTokenFragment(): string {
 export function Login() {
   const { user, login, setup, loginWithPasskey, ssoError } = useAuth();
   const navigate = useNavigate();
+  const t = useT();
   const location = useLocation();
   const [params] = useSearchParams();
   const passwordReset = params.get('reset') === 'ok';
@@ -86,7 +89,7 @@ export function Login() {
         setNeedsTotp(true);
         setError(null);
       } else {
-        setError(err instanceof Error ? err.message : 'Something went wrong');
+        setError(err instanceof Error ? err.message : t('Something went wrong'));
       }
     } finally {
       setBusy(false);
@@ -101,12 +104,12 @@ export function Login() {
       <div className="grid min-h-screen place-items-center px-6">
         <div className="w-full max-w-sm nd-fade">
           <Card className="p-6 text-center">
-            <h2 className="text-base font-semibold">Cannot reach the server</h2>
+            <h2 className="text-base font-semibold">{t('Cannot reach the server')}</h2>
             <p className="mt-1 text-sm text-slate-400">
-              The login state could not be determined. Check your connection and try again.
+              {t('The login state could not be determined. Check your connection and try again.')}
             </p>
             <Button className="mt-4" variant="secondary" onClick={() => status.refetch()}>
-              Retry
+              {t('Retry')}
             </Button>
           </Card>
         </div>
@@ -120,13 +123,13 @@ export function Login() {
         <div className="mb-7 flex flex-col items-center text-center">
           <BrandMark size={44} />
           <h1 className="mt-4 text-xl font-semibold tracking-tight">NineDeploy</h1>
-          <p className="text-sm text-slate-500">Self-hosted deploys, in one click.</p>
+          <p className="text-sm text-slate-500">{t('Self-hosted deploys, in one click.')}</p>
         </div>
 
         <Card className="p-6">
-          <h2 className="text-base font-semibold">{initialized ? 'Welcome back' : 'Create admin account'}</h2>
+          <h2 className="text-base font-semibold">{initialized ? t('Welcome back') : t('Create admin account')}</h2>
           <p className="mt-1 text-sm text-slate-400">
-            {initialized ? 'Sign in to manage your services.' : 'First run — set up the administrator account.'}
+            {initialized ? t('Sign in to manage your services.') : t('First run — set up the administrator account.')}
           </p>
 
           <form onSubmit={onSubmit} className="mt-5 space-y-4">
@@ -137,27 +140,27 @@ export function Login() {
             )}
             {passwordReset && (
               <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-                Password updated — sign in with your new password.
+                {t('Password updated — sign in with your new password.')}
               </p>
             )}
             {setupTokenRequired && (
-              <Field label="Setup token">
+              <Field label={t('Setup token')}>
                 <Input
                   required
                   value={setupToken}
                   onChange={(e) => setSetupToken(e.target.value)}
-                  placeholder="Printed by the installer"
+                  placeholder={t('Printed by the installer')}
                   autoComplete="off"
                   spellCheck={false}
                 />
               </Field>
             )}
             {!initialized && (
-              <Field label="Display name">
+              <Field label={t('Display name')}>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Admin" />
               </Field>
             )}
-            <Field label="Email">
+            <Field label={t('Email')}>
               <Input
                 type="email"
                 required
@@ -167,7 +170,7 @@ export function Login() {
                 autoComplete="email"
               />
             </Field>
-            <Field label="Password">
+            <Field label={t('Password')}>
               <Input
                 type="password"
                 required
@@ -179,7 +182,7 @@ export function Login() {
             </Field>
 
             {needsTotp && !useRecovery && (
-              <Field label="Two-factor code">
+              <Field label={t('Two-factor code')}>
                 <Input
                   inputMode="numeric"
                   maxLength={6}
@@ -193,7 +196,7 @@ export function Login() {
               </Field>
             )}
             {needsTotp && useRecovery && (
-              <Field label="Recovery code" hint="One of the codes you saved when you turned two-factor on. Each works once.">
+              <Field label={t('Recovery code')} hint={t('One of the codes you saved when you turned two-factor on. Each works once.')}>
                 <Input
                   required
                   maxLength={40}
@@ -216,20 +219,20 @@ export function Login() {
                 }}
                 className="text-xs text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
               >
-                {useRecovery ? 'Use the code from your authenticator app' : 'Lost your authenticator? Use a recovery code'}
+                {useRecovery ? t('Use the code from your authenticator app') : t('Lost your authenticator? Use a recovery code')}
               </button>
             )}
 
             {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{error}</p>}
 
             <Button type="submit" className="w-full" disabled={busy || status.isLoading}>
-              {busy ? 'Please wait…' : initialized ? (needsTotp ? 'Verify & sign in' : 'Sign in') : 'Create account'}
+              {busy ? t('Please wait…') : initialized ? (needsTotp ? t('Verify & sign in') : t('Sign in')) : t('Create account')}
             </Button>
 
             {initialized && (publicProviders.data?.length ?? 0) > 0 && (
               <div className="space-y-2 pt-1">
                 <div className="relative py-1 text-center">
-                  <span className="relative z-10 bg-slate-900 px-2 text-xs text-slate-600">or sign in with</span>
+                  <span className="relative z-10 bg-slate-900 px-2 text-xs text-slate-600">{t('or sign in with')}</span>
                   <span className="absolute inset-x-0 top-1/2 h-px bg-white/5" />
                 </div>
                 <div className="grid grid-cols-1 gap-2">
@@ -255,7 +258,7 @@ export function Login() {
 
             {initialized && (
               <div className="relative py-1 text-center">
-                <span className="relative z-10 bg-slate-900 px-2 text-xs text-slate-600">or</span>
+                <span className="relative z-10 bg-slate-900 px-2 text-xs text-slate-600">{t('or')}</span>
                 <span className="absolute inset-x-0 top-1/2 h-px bg-white/5" />
               </div>
             )}
@@ -272,22 +275,25 @@ export function Login() {
                     await loginWithPasskey();
                     navigate(from, { replace: true });
                   } catch (err) {
-                    setError(err instanceof Error && err.message ? err.message : 'Passkey sign-in cancelled');
+                    setError(err instanceof Error && err.message ? err.message : t('Passkey sign-in cancelled'));
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                <Fingerprint size={15} /> Use a passkey
+                <Fingerprint size={15} /> {t('Use a passkey')}
               </Button>
             )}
             {initialized && (
               <p className="text-center text-xs text-slate-500">
-                <Link to="/forgot-password" className="underline-offset-2 hover:underline">Forgot your password?</Link>
+                <Link to="/forgot-password" className="underline-offset-2 hover:underline">{t('Forgot your password?')}</Link>
               </p>
             )}
           </form>
         </Card>
+        <div className="mt-4 flex justify-center">
+          <LanguageSwitch />
+        </div>
       </div>
     </div>
   );

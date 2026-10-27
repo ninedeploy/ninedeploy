@@ -11,9 +11,18 @@ import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
 import { PluginSlot } from '../components/PluginSlot.js';
 import { useOpenDeploy } from '../lib/deployLauncher.js';
 import { GettingStartedCard } from '../components/GettingStartedCard.js';
+import { msg, useT } from '../lib/i18n.js';
+
+/** Service and deployment states as shown on the page (translated at render). */
+const STATUS_LABELS: Record<string, string> = {
+  idle: msg('idle'), deploying: msg('deploying'), running: msg('running'), stopped: msg('stopped'),
+  error: msg('error'), deleting: msg('deleting'), queued: msg('queued'), building: msg('building'),
+  superseded: msg('superseded'), failed: msg('failed'), cancelled: msg('cancelled'),
+};
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -44,9 +53,9 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ['projects'] });
       qc.invalidateQueries({ queryKey: ['deploys'] });
       const demo = res.services[0];
-      toast(`Next.js Demo created — first build queued for ${demo?.name ?? 'the demo service'}`, 'success');
+      toast(t('Next.js Demo created — first build queued for {name}', { name: demo?.name ?? t('the demo service') }), 'success');
     },
-    onError: () => toast('Could not create the demo', 'error'),
+    onError: () => toast(t('Could not create the demo'), 'error'),
   });
 
   const doImport = async (file: File) => {
@@ -61,8 +70,8 @@ export function Dashboard() {
       // Surface the API's actual reason (incompatible bundle version, bad
       // shape, …) — a bare "Import failed" turned every rejection into a
       // support ticket.
-      const message = err instanceof Error ? err.message : 'Import failed';
-      toast(`Import failed: ${message}`, 'error');
+      const message = err instanceof Error ? err.message : t('Import failed');
+      toast(t('Import failed: {message}', { message }), 'error');
     }
   };
 
@@ -85,7 +94,7 @@ export function Dashboard() {
   const data = dash.data;
   if (!data) {
     // Query failed (not loading) — show an actionable error instead of a blank page.
-    return <ErrorCard title="Couldn't load the dashboard" error={dash.error} onRetry={() => dash.refetch()} />;
+    return <ErrorCard title={t("Couldn't load the dashboard")} error={dash.error} onRetry={() => dash.refetch()} />;
   }
   const s = data.stats;
   // Unknown health (a remote node's runtime — the panel cannot probe it) is
@@ -109,10 +118,10 @@ export function Dashboard() {
           disabled={seedDemo.isPending}
         >
           <Sparkles size={13} className="text-indigo-400" />
-          {seedDemo.isPending ? 'Creating Demo…' : 'Load Next.js Demo'}
+          {seedDemo.isPending ? t('Creating Demo…') : t('Load Next.js Demo')}
         </Button>
         <Button variant="secondary" size="sm" onClick={() => importRef.current?.click()} disabled={importing}>
-          <Upload size={13} /> {importing ? 'Importing…' : 'Import service'}
+          <Upload size={13} /> {importing ? t('Importing…') : t('Import service')}
         </Button>
       </div>
       <FetchBar show={dash.isFetching} />
@@ -134,16 +143,21 @@ export function Dashboard() {
             {allHealthy ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
           </div>
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Dashboard</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('Dashboard')}</p>
             <h1 className="text-lg font-semibold">
-              {allHealthy ? 'All systems operational' : `${unhealthyCount} service${unhealthyCount > 1 ? 's' : ''} need attention`}
+              {allHealthy
+                ? t('All systems operational')
+                : unhealthyCount > 1
+                  ? t('{n} services need attention', { n: unhealthyCount })
+                  : t('{n} service needs attention', { n: unhealthyCount })}
             </h1>
             <p className="text-sm text-slate-400">
-              {s.running} running · {s.stopped} stopped · {s.errored} errored{s.containers !== null ? ` · ${s.containers} containers` : ''} · {s.dbRunning} databases
+              {t('{running} running · {stopped} stopped · {errored} errored', { running: s.running, stopped: s.stopped, errored: s.errored })}
+              {s.containers !== null ? ` · ${t('{n} containers', { n: s.containers })}` : ''} · {t('{n} databases', { n: s.dbRunning })}
             </p>
           </div>
           <div className="ml-auto hidden items-center gap-1.5 rounded-full bg-white/[0.04] px-3 py-1 text-xs text-slate-400 sm:flex">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> Live · refreshes every 3s
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> {t('Live · refreshes every 3s')}
           </div>
         </div>
       </div>
@@ -154,14 +168,14 @@ export function Dashboard() {
           <Card className="p-4 bg-white/[0.02]">
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="flex items-center gap-1.5 text-slate-400 font-medium">
-                <Cpu size={14} className="text-indigo-400" /> Host CPU Load
+                <Cpu size={14} className="text-indigo-400" /> {t('Host CPU Load')}
               </span>
               <span className="font-mono text-xs font-semibold text-slate-200">
-                {host.load1 != null ? host.load1.toFixed(2) : '0.00'} loadavg
+                {host.load1 != null ? host.load1.toFixed(2) : '0.00'} {t('loadavg')}
               </span>
             </div>
             <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1.5">
-              <span>{host.cpuCores} Cores</span>
+              <span>{t('{n} Cores', { n: host.cpuCores })}</span>
               <span className="text-indigo-300 font-medium">{Math.min(100, Math.round((host.load1 / Math.max(1, host.cpuCores)) * 100))}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
@@ -175,7 +189,7 @@ export function Dashboard() {
           <Card className="p-4 bg-white/[0.02]">
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="flex items-center gap-1.5 text-slate-400 font-medium">
-                <MemoryStick size={14} className="text-emerald-400" /> Memory (RAM)
+                <MemoryStick size={14} className="text-emerald-400" /> {t('Memory (RAM)')}
               </span>
               <span className="font-mono text-xs font-semibold text-slate-200">
                 {memPct}%
@@ -196,7 +210,7 @@ export function Dashboard() {
           <Card className="p-4 bg-white/[0.02]">
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="flex items-center gap-1.5 text-slate-400 font-medium">
-                <HardDrive size={14} className="text-amber-400" /> Disk Storage
+                <HardDrive size={14} className="text-amber-400" /> {t('Disk Storage')}
               </span>
               <span className="font-mono text-xs font-semibold text-slate-200">
                 {diskPct}%
@@ -218,13 +232,13 @@ export function Dashboard() {
 
       {/* Stats grid */}
       <div className="nd-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard icon={<Server size={15} />} label="Services" value={s.services} sub={`${s.running} running`} tone="indigo" />
-        <StatCard icon={<Database size={15} />} label="Databases" value={s.databases} sub={`${s.dbRunning} running`} tone="emerald" />
-        <StatCard icon={<Rocket size={15} />} label="Deploys" value={s.deployments} sub="total" tone="sky" />
-        <StatCard icon={<Globe size={15} />} label="Domains" value={s.domains} sub="routed" tone="amber" />
-        <StatCard icon={<Link2 size={15} />} label="Webhooks" value={s.webhooks} sub="active" tone="violet" />
+        <StatCard icon={<Server size={15} />} label={t('Services')} value={s.services} sub={t('{n} running', { n: s.running })} tone="indigo" />
+        <StatCard icon={<Database size={15} />} label={t('Databases')} value={s.databases} sub={t('{n} running', { n: s.dbRunning })} tone="emerald" />
+        <StatCard icon={<Rocket size={15} />} label={t('Deploys')} value={s.deployments} sub={t('total')} tone="sky" />
+        <StatCard icon={<Globe size={15} />} label={t('Domains')} value={s.domains} sub={t('routed')} tone="amber" />
+        <StatCard icon={<Link2 size={15} />} label={t('Webhooks')} value={s.webhooks} sub={t('active')} tone="violet" />
         {/* Whole-node container count is operator-only telemetry (r470) — members simply don't get the card. */}
-        {s.containers !== null && <StatCard icon={<Package size={15} />} label="Containers" value={s.containers} sub="docker" tone="slate" />}
+        {s.containers !== null && <StatCard icon={<Package size={15} />} label={t('Containers')} value={s.containers} sub="docker" tone="slate" />}
       </div>
 
       {/* Quick Actions Hub */}
@@ -236,8 +250,8 @@ export function Dashboard() {
                 <Rocket size={18} />
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors">Deploy New Service</h3>
-                <p className="truncate text-xs text-slate-400">Git repo, Dockerfile or image</p>
+                <h3 className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors">{t('Deploy New Service')}</h3>
+                <p className="truncate text-xs text-slate-400">{t('Git repo, Dockerfile or image')}</p>
               </div>
             </div>
           </Card>
@@ -250,7 +264,7 @@ export function Dashboard() {
                 <Database size={18} />
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-white group-hover:text-emerald-300 transition-colors">Managed Databases</h3>
+                <h3 className="text-sm font-semibold text-white group-hover:text-emerald-300 transition-colors">{t('Managed Databases')}</h3>
                 <p className="truncate text-xs text-slate-400">PostgreSQL, Redis, MySQL</p>
               </div>
             </div>
@@ -267,8 +281,8 @@ export function Dashboard() {
                   <Server size={18} />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-white group-hover:text-sky-300 transition-colors">Cluster Nodes</h3>
-                  <p className="truncate text-xs text-slate-400">Multi-server &amp; edge agents</p>
+                  <h3 className="text-sm font-semibold text-white group-hover:text-sky-300 transition-colors">{t('Cluster Nodes')}</h3>
+                  <p className="truncate text-xs text-slate-400">{t('Multi-server & edge agents')}</p>
                 </div>
               </div>
             </Card>
@@ -282,8 +296,8 @@ export function Dashboard() {
                 <Sparkles size={18} />
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-white group-hover:text-amber-300 transition-colors">Live Telemetry</h3>
-                <p className="truncate text-xs text-slate-400">CPU, memory &amp; container metrics</p>
+                <h3 className="text-sm font-semibold text-white group-hover:text-amber-300 transition-colors">{t('Live Telemetry')}</h3>
+                <p className="truncate text-xs text-slate-400">{t('CPU, memory & container metrics')}</p>
               </div>
             </div>
           </Card>
@@ -295,9 +309,9 @@ export function Dashboard() {
 
       {/* Service health grid */}
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Service Health</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Service Health')}</h2>
         {data.health.length === 0 ? (
-          <Card><CardBody><p className="py-6 text-center text-sm text-slate-500">No services yet. <button type="button" onClick={openDeploy} className="text-indigo-400 hover:underline">Deploy a new service</button> or start from a template in the <Link to="/hub" className="text-indigo-400 hover:underline">Hub</Link>.</p></CardBody></Card>
+          <Card><CardBody><p className="py-6 text-center text-sm text-slate-500">{t('No services yet.')} <button type="button" onClick={openDeploy} className="text-indigo-400 hover:underline">{t('Deploy a new service')}</button> {t('or start from a template in the')} <Link to="/hub" className="text-indigo-400 hover:underline">{t('Hub')}</Link>.</p></CardBody></Card>
         ) : (
           <div className="nd-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data.health.map((h) => {
@@ -354,7 +368,7 @@ export function Dashboard() {
                             isRemote ? 'text-indigo-400' :
                             h.status === 'stopped' ? 'text-slate-500' : 'text-amber-400',
                           )}>
-                            {asleep ? 'asleep' : isRunning && isHealthy === true ? 'healthy' : isRunning && isHealthy === false ? 'unhealthy' : isRemote ? 'on node' : h.status}
+                            {asleep ? t('asleep') : isRunning && isHealthy === true ? t('healthy') : isRunning && isHealthy === false ? t('unhealthy') : isRemote ? t('on node') : t(STATUS_LABELS[h.status] ?? h.status)}
                           </div>
                         </div>
                       </div>
@@ -397,12 +411,12 @@ export function Dashboard() {
 
       {/* Recent deployments */}
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Recent Activity</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Recent Activity')}</h2>
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
             <tbody>
               {data.recentDeploys.length === 0 ? (
-                <tr><td className="px-5 py-6 text-center text-slate-500">No deployments yet.</td></tr>
+                <tr><td className="px-5 py-6 text-center text-slate-500">{t('No deployments yet.')}</td></tr>
               ) : (
                 data.recentDeploys.map((d) => (
                   <tr key={d.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
@@ -421,7 +435,7 @@ export function Dashboard() {
                         d.status === 'building' || d.status === 'queued' || d.status === 'awaiting_ci' ? 'bg-amber-500/15 text-amber-300' :
                         d.status === 'awaiting_approval' ? 'bg-violet-500/15 text-violet-300' :
                         'bg-slate-500/15 text-slate-400',
-                      )}>{d.status === 'awaiting_approval' ? 'awaiting approval' : d.status === 'awaiting_ci' ? 'waiting for CI' : d.status}</span>
+                      )}>{d.status === 'awaiting_approval' ? t('awaiting approval') : d.status === 'awaiting_ci' ? t('waiting for CI') : t(STATUS_LABELS[d.status] ?? d.status)}</span>
                     </td>
                     <td className="px-5 py-3 text-right text-[10px] text-slate-600">
                       {d.finishedAt ? formatDateTime(d.finishedAt) : formatDateTime(d.createdAt)}
@@ -438,6 +452,7 @@ export function Dashboard() {
 }
 
 function FirstDeployCard({ onDeploy, onDemo, demoPending }: { onDeploy: () => void; onDemo: () => void; demoPending: boolean }) {
+  const t = useT();
   return (
     <div className="relative overflow-hidden rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/[0.10] via-indigo-500/[0.03] to-transparent p-6">
       <div className="flex items-start gap-4">
@@ -445,36 +460,36 @@ function FirstDeployCard({ onDeploy, onDemo, demoPending }: { onDeploy: () => vo
           <Rocket size={22} />
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300">Get started</p>
-          <h2 className="text-lg font-semibold text-white">Deploy your first app</h2>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300">{t('Get started')}</p>
+          <h2 className="text-lg font-semibold text-white">{t('Deploy your first app')}</h2>
           <p className="mt-0.5 text-sm text-slate-400">
-            Point NineDeploy at a Git repository, a Dockerfile or a container image — it builds it, gives it a URL and keeps it running.
+            {t('Point NineDeploy at a Git repository, a Dockerfile or a container image — it builds it, gives it a URL and keeps it running.')}
           </p>
         </div>
       </div>
       <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
         <button type="button" onClick={onDeploy} className="group rounded-xl border border-indigo-500/40 bg-indigo-500/15 p-4 text-left transition hover:bg-indigo-500/25">
           <GitBranch size={18} className="text-indigo-300" />
-          <div className="mt-2 text-sm font-semibold text-white">From your code</div>
-          <div className="text-xs text-slate-400">Git repo, Dockerfile or image</div>
+          <div className="mt-2 text-sm font-semibold text-white">{t('From your code')}</div>
+          <div className="text-xs text-slate-400">{t('Git repo, Dockerfile or image')}</div>
           <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-indigo-300">
-            Start deploy <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
+            {t('Start deploy')} <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
           </div>
         </button>
         <Link to="/hub" className="group rounded-xl border border-white/10 bg-white/[0.03] p-4 transition hover:bg-white/[0.06]">
           <Sparkles size={18} className="text-amber-300" />
-          <div className="mt-2 text-sm font-semibold text-white">From a template</div>
-          <div className="text-xs text-slate-400">One-click apps from the Hub</div>
+          <div className="mt-2 text-sm font-semibold text-white">{t('From a template')}</div>
+          <div className="text-xs text-slate-400">{t('One-click apps from the Hub')}</div>
           <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-300">
-            Browse templates <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
+            {t('Browse templates')} <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
           </div>
         </Link>
         <button type="button" onClick={onDemo} disabled={demoPending} className="group rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:bg-white/[0.06] disabled:opacity-60">
           <Package size={18} className="text-emerald-300" />
-          <div className="mt-2 text-sm font-semibold text-white">Try the demo</div>
-          <div className="text-xs text-slate-400">A sample Next.js app, built for you</div>
+          <div className="mt-2 text-sm font-semibold text-white">{t('Try the demo')}</div>
+          <div className="text-xs text-slate-400">{t('A sample Next.js app, built for you')}</div>
           <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-300">
-            {demoPending ? 'Creating demo…' : 'Load demo'} <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
+            {demoPending ? t('Creating demo…') : t('Load demo')} <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
           </div>
         </button>
       </div>

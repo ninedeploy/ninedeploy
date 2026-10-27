@@ -1,4 +1,5 @@
 import { type ReactNode, createContext, useContext, useEffect, useState } from 'react';
+import { msg } from './i18n.js';
 
 type Theme = 'dark' | 'light';
 type Accent = 'phosphor' | 'indigo' | 'blue' | 'emerald' | 'rose' | 'amber' | 'violet';
@@ -21,13 +22,13 @@ const ACCENT_KEY = 'ninedeploy.accent.v2';
 
 export const ACCENTS: Array<{ id: Accent; label: string; color: string }> = [
   // Brand accent — the logo teal used across the marketing website.
-  { id: 'phosphor', label: 'Phosphor', color: '#4ecdc4' },
-  { id: 'indigo', label: 'Indigo', color: '#6366f1' },
-  { id: 'blue', label: 'Blue', color: '#3b82f6' },
-  { id: 'emerald', label: 'Emerald', color: '#10b981' },
-  { id: 'rose', label: 'Rose', color: '#f43f5e' },
-  { id: 'amber', label: 'Amber', color: '#f59e0b' },
-  { id: 'violet', label: 'Violet', color: '#8b5cf6' },
+  { id: 'phosphor', label: msg('Phosphor'), color: '#4ecdc4' },
+  { id: 'indigo', label: msg('Indigo'), color: '#6366f1' },
+  { id: 'blue', label: msg('Blue'), color: '#3b82f6' },
+  { id: 'emerald', label: msg('Emerald'), color: '#10b981' },
+  { id: 'rose', label: msg('Rose'), color: '#f43f5e' },
+  { id: 'amber', label: msg('Amber'), color: '#f59e0b' },
+  { id: 'violet', label: msg('Violet'), color: '#8b5cf6' },
 ];
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
