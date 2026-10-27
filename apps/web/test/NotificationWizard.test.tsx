@@ -145,6 +145,23 @@ describe('NotificationWizard', () => {
     expect(screen.getByPlaceholderText('https://chat.googleapis.com/v1/spaces/…')).toBeInTheDocument();
   });
 
+  it.each([
+    ['Mattermost', 'mattermost', 'https://mattermost.example.com/hooks/…', 'https://mattermost.example.com/hooks/test'],
+    ['Google Chat', 'googlechat', 'https://chat.googleapis.com/v1/spaces/…', 'https://chat.googleapis.com/v1/spaces/test'],
+  ])('creates and tests a %s webhook channel', async (label, type, placeholder, url) => {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.click(screen.getByText(label));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.type(screen.getByPlaceholderText(placeholder), url);
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /send test/i }));
+    await waitFor(() => expect(apiMock.api.notifications.createChannel).toHaveBeenCalledWith(expect.objectContaining({ type, target: url })));
+    await waitFor(() => expect(apiMock.api.notifications.testChannel).toHaveBeenCalledWith(1));
+    expect(screen.getByText('Test message sent!')).toBeInTheDocument();
+  });
+
   it('validates an FCM service account JSON', () => {
     expect(fcmServiceAccountError(' ')).toBe('Paste the service account JSON');
     expect(fcmServiceAccountError('{')).toBe('Not valid JSON');
