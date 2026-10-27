@@ -354,6 +354,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Each matrix cohort gets a fresh Docker daemon. Several smoke scripts
+      # inspect or copy the image before docker run can pull it implicitly.
+      - name: Pull the published candidate image
+        run: docker pull "ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+
       # The upgrade starts from what installed servers actually run: the
       # highest PUBLISHED GitHub Release below this tag. Not `git tag` — a tag
       # can exist without a release (a run that failed this very gate leaves

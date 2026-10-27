@@ -53,4 +53,13 @@ describe('complete parallel release smoke gate', () => {
     expect(all['promote-release'].if).toBeUndefined(); expect(all['promote-release']['continue-on-error']).not.toBe(true);
     expect([all['publish-npm'].needs ?? []].flat()).toContain('promote-release');
   });
+  it('pulls the candidate on every fresh runner before any smoke command', () => {
+    const steps = jobs()['smoke-published-image'].steps!;
+    const pull = steps.findIndex(step => step.run === `docker pull "${image}"`);
+    expect(pull).toBeGreaterThanOrEqual(0);
+    expect(steps[pull]!.if).toBeUndefined();
+    for (const [index, step] of steps.entries()) {
+      if (step.run?.startsWith('node scripts/smoke-')) expect(index).toBeGreaterThan(pull);
+    }
+  });
 });
