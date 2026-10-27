@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.5] - 2026-10-27
+
 ### Added
 
 - Paketo and Heroku buildpacks (G4.4). Two new build packs, `paketo` and `heroku`, build with Cloud Native Buildpacks through the `pack` CLI.
