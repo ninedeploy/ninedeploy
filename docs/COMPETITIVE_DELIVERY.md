@@ -24,6 +24,12 @@ Downloaded all five GitHub assets and verified the archive/install checksums, ch
 
 The v0.18.3 tag and version image remain an unpublished candidate: its final public lifecycle smoke used the old 0.19.0 capability threshold instead of the maintenance support floor. The corrected policy passed twelve production-contract parity tests and seven actual public lifecycle scenarios on the same image before 0.18.4 preparation. Earlier candidate tags/images are preserved. Development protocol commit `ec10b5ce` and the future parallel smoke configuration remain outside the immutable 0.18.4 release; production deploy/scale/wake coordination and R2 acceptance are still open.
 
+## User-journey authentication checkpoint — 2026-10-27
+
+After a temporary permission correction in the disposable v0.18.5 panel container, the long user journey passed canary, autoscaling and wake checks, then failed with an approved deployment reported as missing. The fixture ran for 20 minutes 34 seconds; the default access token lasts 15 minutes. Expiration is consistent with the observed failure, but that run did not record its HTTP response, so the cause is not established. A separate fresh-session approval journey against the patched test image passed approval, deployment and webhook rejection.
+
+The user-journey fixture now sets a two-hour access-token lifetime for its isolated panel, and its deployment polling reports a non-200 HTTP status immediately instead of misclassifying it as a missing deployment. An executable before-proof reproduced a 401 as missing; the updated poller reports HTTP 401 and still recognizes a running deployment. A real fixture login confirmed a 7,200-second access token. The complete updated journey remains under test.
+
 ## Local retirement permission fix — 2026-10-27
 
 A non-root panel could not retire its previous local Docker generation because the shared agent operation wrote its lifecycle journal under the read-only application directory. In the v0.18.5 image, the real user journey left a prior transition in retiring with an EACCES mkdir error and the next deploy queued. Making that directory writable inside that disposable test container allowed retirement, canary promotion and canary cancellation to proceed.
