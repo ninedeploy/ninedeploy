@@ -9,6 +9,7 @@ import { withNodeServiceJournal, type NodeServiceJournal } from './nodeLifecycle
 import { spawnValidated } from './spawnValidated.js';
 
 const MODE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_protocol (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)';
+const PREPARE_SHAPE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL)';
 const INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"nonce":{{json (index .Config.Labels "ninedeploy.mutation")}},"specHash":{{json (index .Config.Labels "ninedeploy.spec")}},"status":{{json .State.Status}},"running":{{json .State.Running}},"networks":{{json .NetworkSettings.Networks}}}';
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
@@ -24,7 +25,7 @@ function head(journal: NodeServiceJournal) {
   if (row && (!Number.isSafeInteger(row.revision) || Number(row.revision) < 1 || typeof row.request_hash !== 'string' || !/^[a-f0-9]{64}$/.test(row.request_hash))) throw new Error('Invalid runtime journal; retained for review');
   return row;
 }
-async function claim(journal: NodeServiceJournal, input: Header, intent: object, legacyFence = false) {
+async function claim(journal: NodeServiceJournal, input: Header, intent: object, legacyFence = false, prepareShape?: string) {
   const payload = JSON.stringify(intent), hash = digest(payload);
   let compatible = false;
   await journal.write(async () => {
@@ -42,6 +43,15 @@ async function claim(journal: NodeServiceJournal, input: Header, intent: object,
     if (!previous || Number(previous.revision) < input.revision) journal.database.prepare(
       'INSERT INTO lifecycle_head(id,revision,request_hash,intent,receipt) VALUES(1,?,?,?,NULL) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,request_hash=excluded.request_hash,intent=excluded.intent,receipt=NULL',
     ).run(input.revision, hash, payload);
+    if (prepareShape) {
+      journal.database.exec(PREPARE_SHAPE_SCHEMA);
+      const old = journal.database.prepare('SELECT revision,request_hash,shape_hash FROM runtime_prepare_shape WHERE id=1').get();
+      if (old && Number(old.revision) === input.revision && (old.request_hash !== hash || old.shape_hash !== prepareShape)) {
+        throw new Error('Runtime preparation shape conflicts with a different intent');
+      }
+      journal.database.prepare('INSERT INTO runtime_prepare_shape(id,revision,request_hash,shape_hash) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,request_hash=excluded.request_hash,shape_hash=excluded.shape_hash')
+        .run(input.revision, hash, prepareShape);
+    }
     journal.database.prepare('INSERT INTO runtime_protocol(id,version) VALUES(1,1) ON CONFLICT(id) DO NOTHING').run();
   });
   return { hash, compatible };
@@ -157,15 +167,52 @@ export function createNodeRuntimeMutation(root: string) {
       // Validate every spec and fingerprint secrets before touching the journal or Docker.
       const specs = input.specs.map(raw => parseRunSpec(raw));
       for (const spec of specs) assertFileMountsWritten(spec.fileMounts);
-      const envHashes = specs.map(envDigest);
-      const fingerprints = specs.map((spec, index) => ({ name: spec.name, specHash: digest(JSON.stringify(canonical({
-        spec: { ...spec, labels: [...spec.labels].sort(labelOrder), userLabels: [...spec.userLabels].sort(labelOrder) }, envHash: envHashes[index],
-      }))) }));
       const serving = new Set(input.startNames ?? specs.map(spec => spec.name));
+      const normalSpecs = specs.map(spec => ({ ...spec, labels: [...spec.labels].sort(labelOrder), userLabels: [...spec.userLabels].sort(labelOrder) }));
+      const shape = digest(JSON.stringify(canonical({ requestId: input.requestId, serviceId: input.serviceId, deploymentId: input.deploymentId,
+        revision: input.revision, specs: normalSpecs, serving: specs.map(spec => serving.has(spec.name)) })));
+      const missing = Symbol('missing environment');
+      const envHashes = specs.map(spec => {
+        try { return envDigest(spec); }
+        catch (error) {
+          if (spec.envFile !== null && (error as NodeJS.ErrnoException).code === 'ENOENT') return missing;
+          throw error;
+        }
+      });
+      const fingerprints = normalSpecs.map((spec, index) => ({ name: spec.name, specHash: envHashes[index] === missing ? null :
+        digest(JSON.stringify(canonical({ spec, envHash: envHashes[index] }))) }));
+      if (envHashes.includes(missing)) {
+        // A completed receipt is immutable. Replaying it has no Docker effect,
+        // but requires a separately recorded hash of the complete request shape.
+        return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, journal => journal.write(async () => {
+          const modeTable = journal.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_protocol'").get();
+          const mode = modeTable ? journal.database.prepare('SELECT version FROM runtime_protocol WHERE id=1').get() : undefined;
+          if (mode && mode.version !== 1) throw new Error('Unsupported runtime journal protocol; retained for review');
+          const recorded = head(journal);
+          if (recorded && Number(recorded.revision) > input.revision) throw new Error('Runtime request is stale; superseded by a newer command');
+          const table = journal.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_prepare_shape'").get();
+          const saved = table ? journal.database.prepare('SELECT revision,request_hash,shape_hash FROM runtime_prepare_shape WHERE id=1').get() : undefined;
+          if (!mode || !recorded || Number(recorded.revision) !== input.revision || recorded.receipt === null || !saved ||
+            Number(saved.revision) !== input.revision || saved.request_hash !== recorded.request_hash || saved.shape_hash !== shape ||
+            digest(String(recorded.intent)) !== recorded.request_hash) throw new Error('Completed preparation receipt unavailable or request shape changed');
+          const intent = JSON.parse(String(recorded.intent)) as { kind?: unknown; requestId?: unknown; serviceId?: unknown; deploymentId?: unknown;
+            revision?: unknown; targets?: Array<{ name?: unknown; specHash?: unknown; running?: unknown }> };
+          if (intent.kind !== 'prepare' || intent.requestId !== input.requestId || intent.serviceId !== input.serviceId ||
+            intent.deploymentId !== input.deploymentId || intent.revision !== input.revision || !Array.isArray(intent.targets) ||
+            intent.targets.length !== specs.length || intent.targets.some((target, index) => target.name !== specs[index]!.name ||
+              target.running !== serving.has(specs[index]!.name) || typeof target.specHash !== 'string' || !/^[a-f0-9]{64}$/.test(target.specHash) ||
+              fingerprints[index]!.specHash !== null && target.specHash !== fingerprints[index]!.specHash)) throw new Error('Completed preparation intent changed');
+          const receipt = containerPrepareReply.parse(JSON.parse(String(recorded.receipt)));
+          if (receipt.requestId !== input.requestId || receipt.serviceId !== input.serviceId || receipt.deploymentId !== input.deploymentId ||
+            receipt.revision !== input.revision || receipt.items.length !== specs.length || specs.some(spec => !receipt.items.some(item =>
+              item.name === spec.name && item.deploymentId === input.deploymentId && item.running === serving.has(spec.name)))) throw new Error('Completed preparation receipt identity changed');
+          return receipt;
+        }));
+      }
       const intent = { kind: 'prepare', requestId: input.requestId, serviceId: input.serviceId, deploymentId: input.deploymentId, revision: input.revision,
         targets: fingerprints.map(item => ({ ...item, running: serving.has(item.name) })) };
       return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, async journal => {
-        const admitted = await claim(journal, input, intent);
+        const admitted = await claim(journal, input, intent, false, shape);
         return effect(journal, input, admitted.hash, value => containerPrepareReply.parse(value), async () => {
           const io = dockerIO(journal, onLine), previous: Array<DockerRow | null> = [];
           const attest = (row: DockerRow, index: number) => {

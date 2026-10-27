@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -67,6 +67,98 @@ describe('persistent runtime request admission', () => {
   it('replays a completed creation receipt across a fresh journal instance without creating or starting a replacement', async () => {
     const first = await runtime().prepare(prepare()); const count = io.spawn.mock.calls.length; rows = [];
     expect(await runtime().prepare(prepare())).toEqual(first); expect(io.spawn.mock.calls).toHaveLength(count);
+  });
+  it('replays a completed preparation receipt after its secret environment file is removed', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env');
+    writeFileSync(file, 'OWNER_SECRET=temporary-fixture');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]);
+    const first = await runtime().prepare(input); unlinkSync(file); io.spawn.mockClear();
+    expect(await runtime().prepare(input)).toEqual(first);
+    expect(effects()).toEqual([]);
+    expect(readFileSync(journalFile()).includes(Buffer.from('temporary-fixture'))).toBe(false);
+  });
+  it('refuses a changed request shape after the environment file is removed', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]);
+    await runtime().prepare(input); unlinkSync(file); io.spawn.mockClear();
+    await expect(runtime().prepare({ ...input, specs: [{ ...input.specs[0], cmd: ['different'] }] })).rejects.toThrow(/shape changed/);
+    expect(effects()).toEqual([]);
+  });
+  it('does not create a runtime when an initial environment file is missing', async () => {
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/missing.env' }]);
+    await expect(runtime().prepare(input)).rejects.toThrow(/receipt unavailable/);
+    expect(effects()).toEqual([]);
+    const db = new DatabaseSync(journalFile());
+    try { expect(db.prepare('SELECT * FROM lifecycle_head').get()).toBeUndefined(); }
+    finally { db.close(); }
+  });
+  it('does not replay an incomplete preparation after its environment disappears', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env', extraNetworks: ['nd-extra'] }]);
+    failNetwork = true; await expect(runtime().prepare(input)).rejects.toThrow(/network attachment/);
+    unlinkSync(file); io.spawn.mockClear();
+    await expect(runtime().prepare(input)).rejects.toThrow(/receipt unavailable/); expect(effects()).toEqual([]);
+  });
+  it('refuses a changed remaining environment in a partly cleaned replica set', async () => {
+    mkdirSync(join(root, '.agent-env')); const first = join(root, '.agent-env/first.env'), second = join(root, '.agent-env/second.env');
+    writeFileSync(first, 'KEY=first'); writeFileSync(second, 'KEY=second');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/first.env' }, { ...spec(10, 'web-10-r2'), envFile: '.agent-env/second.env' }]);
+    await runtime().prepare(input); unlinkSync(first); writeFileSync(second, 'KEY=changed'); io.spawn.mockClear();
+    await expect(runtime().prepare(input)).rejects.toThrow(/intent changed/); expect(effects()).toEqual([]);
+  });
+  it('does not accept a receipt after a newer service fence', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]); await runtime().prepare(input);
+    unlinkSync(file); await runtime().fence(fence(8)); io.spawn.mockClear();
+    await expect(runtime().prepare(input)).rejects.toThrow(/stale/); expect(effects()).toEqual([]);
+  });
+  it('backfills shape evidence for an old receipt only while its environment remains available', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]), first = await runtime().prepare(input);
+    let db = new DatabaseSync(journalFile()); try { db.exec('DROP TABLE runtime_prepare_shape'); } finally { db.close(); }
+    expect(await runtime().prepare(input)).toEqual(first);
+    db = new DatabaseSync(journalFile()); try { expect(db.prepare('SELECT * FROM runtime_prepare_shape').get()).toBeDefined(); db.exec('DROP TABLE runtime_prepare_shape'); } finally { db.close(); }
+    unlinkSync(file); io.spawn.mockClear();
+    await expect(runtime().prepare(input)).rejects.toThrow(/receipt unavailable/); expect(effects()).toEqual([]);
+  });
+  it('rolls back authority and performs no Docker effect if shape persistence fails', async () => {
+    const missing = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/missing.env' }]);
+    await expect(runtime().prepare(missing)).rejects.toThrow(/receipt unavailable/);
+    const db = new DatabaseSync(journalFile());
+    try {
+      db.exec("CREATE TABLE runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL); CREATE TRIGGER reject_shape BEFORE INSERT ON runtime_prepare_shape BEGIN SELECT RAISE(ABORT,'proof shape rejected'); END");
+    } finally { db.close(); }
+    mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web.env'), 'KEY=first'); io.spawn.mockClear();
+    await expect(runtime().prepare(prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]))).rejects.toThrow(/proof shape rejected/);
+    expect(effects()).toEqual([]);
+    const after = new DatabaseSync(journalFile()); try {
+      expect(after.prepare('SELECT * FROM lifecycle_head').get()).toBeUndefined();
+      expect(after.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_protocol'").get()).toBeUndefined();
+    } finally { after.close(); }
+  });
+  it('refuses a receipt if protocol adoption evidence is missing', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]); await runtime().prepare(input); unlinkSync(file);
+    const db = new DatabaseSync(journalFile()); try { db.exec('DELETE FROM runtime_protocol'); } finally { db.close(); }
+    io.spawn.mockClear(); await expect(runtime().prepare(input)).rejects.toThrow(/receipt unavailable/); expect(effects()).toEqual([]);
+  });
+  it('refuses replay from an unsupported journal protocol after environment cleanup', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]); await runtime().prepare(input); unlinkSync(file);
+    const db = new DatabaseSync(journalFile()); try { db.exec('UPDATE runtime_protocol SET version=2'); } finally { db.close(); }
+    io.spawn.mockClear(); await expect(runtime().prepare(input)).rejects.toThrow(/Unsupported runtime journal protocol/); expect(effects()).toEqual([]);
+  });
+  it('refuses altered shape evidence even while the environment file is present', async () => {
+    mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web.env'), 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]); await runtime().prepare(input);
+    const db = new DatabaseSync(journalFile()); try { db.prepare('UPDATE runtime_prepare_shape SET shape_hash=?').run('f'.repeat(64)); } finally { db.close(); }
+    io.spawn.mockClear(); await expect(runtime().prepare(input)).rejects.toThrow(/shape conflicts/); expect(effects()).toEqual([]);
+  });
+  it('refuses a forged stored receipt after environment cleanup', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]); await runtime().prepare(input); unlinkSync(file);
+    const db = new DatabaseSync(journalFile()); try { const row = db.prepare('SELECT receipt FROM lifecycle_head').get()!; const receipt = JSON.parse(String(row.receipt)); receipt.items[0].name = 'other-10'; db.prepare('UPDATE lifecycle_head SET receipt=?').run(JSON.stringify(receipt)); } finally { db.close(); }
+    io.spawn.mockClear(); await expect(runtime().prepare(input)).rejects.toThrow(/receipt identity changed/); expect(effects()).toEqual([]);
   });
   it.each([{ requestId: nonce(6) }, { specs: [{ ...spec(), cmd: ['changed'] }] }])('refuses a same-revision fork before Docker: %j', patch => {
     return (async () => { await runtime().prepare(prepare()); io.spawn.mockClear(); await expect(runtime().prepare({ ...prepare(), ...patch })).rejects.toThrow(/conflict/); expect(effects()).toEqual([]); })();

@@ -56,6 +56,17 @@ try{
  assert.equal(prepared.items.length,3);assert.equal(new Set(prepared.items.map(x=>x.id)).size,3);
  for(const item of prepared.items){const actual=state(item.id);assert.equal(actual.running,!item.name.endsWith('-r3'));assert.equal(item.running,actual.running);assert.ok(actual.networks.ninedeploy&&actual.networks['nd-extra']);}
  report('sealed-prepare-binds-three-immutable-replicas-and-keeps-spare-stopped');
+ const secretName='proof-replay-env';assert.equal(run('file.writeEnv',{name:secretName,env:{FIXTURE:'temporary'}}).status,200);
+ const secretBatch=batch(5,50,12);for(const spec of secretBatch.specs)spec.envFile='.agent-env/'+secretName+'.env';
+ const secretPrepared=receipt(run('docker.prepare',secretBatch),'ND-PREPARED ',secretBatch);
+ assert.equal(run('file.deleteEnv',{name:secretName}).status,200);
+ assert.deepEqual(receipt(run('docker.prepare',secretBatch),'ND-PREPARED ',secretBatch),secretPrepared);
+ for(const item of secretPrepared.items)assert.equal(state(item.id).running,item.running);
+ const fork={...secretBatch,specs:secretBatch.specs.map((spec,index)=>index===0?{...spec,cmd:['different']}:spec)};
+ refused(run('docker.prepare',fork),/shape changed/);
+ receipt(run('docker.runtimeFence',head(6,12)),'ND-RUNTIME-FENCE ',head(6,12));
+ refused(run('docker.prepare',secretBatch),/stale|superseded/);
+ report('completed-prepare-receipt-replays-after-secret-cleanup-and-refuses-forks');
  assert.equal(run('file.writeEnv',{name:'legacy-replay',env:{FIXTURE:'1'}}).status,200);
  const fence=head(6);receipt(run('docker.runtimeFence',fence),'ND-RUNTIME-FENCE ',fence);
  const targets=prepared.items.map(({running,...target})=>target),stop={...head(7),deploymentId:10,action:'stop',targets};
