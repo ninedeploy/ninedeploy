@@ -45,6 +45,7 @@ beforeEach(() => {
 });
 
 describe('ClickHouse', () => {
+  const liveOnly = (_cmd: string, args: string[]) => Promise.resolve(/__nd_(restore|old)'/.test(String(args.at(-1))) ? '0\n' : '1\n');
   it('backs up the user databases only, copies the archive out and removes it from the container', async () => {
     h.capture.mockResolvedValueOnce('app\ndefault\nsecond\n');
     await backupClickhouse(ch, '/host/b.zip', log);
@@ -84,7 +85,7 @@ describe('ClickHouse', () => {
   it('restores each database under a temporary name, then swaps them all in', async () => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n  metadata/second.sql\n');
     // Both databases exist live.
-    h.capture.mockResolvedValue('1\n');
+    h.capture.mockImplementation(liveOnly);
     await restoreClickhouse(ch, '/host/r.zip', log);
     const archiveCopy = h.run.mock.calls[0]![1];
     expect(archiveCopy[0]).toBe('cp');
@@ -92,14 +93,10 @@ describe('ClickHouse', () => {
     expect(h.run.mock.calls[1]![1]).toEqual(['exec', '-u', '0', 'nd-db-ch', 'chown', 'clickhouse:clickhouse', archive]);
     const name = path.posix.basename(archive);
     expect(chQueries()).toEqual([
-      'DROP DATABASE IF EXISTS `app__nd_restore` SYNC',
       `RESTORE DATABASE \`app\` AS \`app__nd_restore\` FROM File('${name}')`,
-      'DROP DATABASE IF EXISTS `second__nd_restore` SYNC',
       `RESTORE DATABASE \`second\` AS \`second__nd_restore\` FROM File('${name}')`,
-      'DROP DATABASE IF EXISTS `app__nd_old` SYNC',
       'RENAME DATABASE `app` TO `app__nd_old`',
       'RENAME DATABASE `app__nd_restore` TO `app`',
-      'DROP DATABASE IF EXISTS `second__nd_old` SYNC',
       'RENAME DATABASE `second` TO `second__nd_old`',
       'RENAME DATABASE `second__nd_restore` TO `second`',
       // The set-aside originals go only once every swap succeeded.
@@ -111,7 +108,7 @@ describe('ClickHouse', () => {
 
   it('renames an original back when its copy cannot be swapped in, and keeps an already swapped one', async () => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n  metadata/second.sql\n');
-    h.capture.mockResolvedValue('1\n');
+    h.capture.mockImplementation(liveOnly);
     h.run.mockImplementation(async (_c, args) => {
       if (String(args.at(-1)) === 'RENAME DATABASE `second__nd_restore` TO `second`') throw new Error('promotion failed');
     });
@@ -120,7 +117,6 @@ describe('ClickHouse', () => {
     const failedAt = queries.indexOf('RENAME DATABASE `second__nd_restore` TO `second`');
     expect(queries.slice(failedAt + 1)).toEqual([
       'RENAME DATABASE `second__nd_old` TO `second`',
-      'DROP DATABASE IF EXISTS `second__nd_restore` SYNC',
     ]);
     // Nothing set aside is dropped after a failure.
     expect(queries.slice(failedAt + 1).some((q) => q.includes('__nd_old` SYNC'))).toBe(false);
@@ -129,7 +125,7 @@ describe('ClickHouse', () => {
 
   it('says how to recover when an original cannot be renamed back', async () => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n');
-    h.capture.mockResolvedValue('1\n');
+    h.capture.mockImplementation(liveOnly);
     h.run.mockImplementation(async (_c, args) => {
       const q = String(args.at(-1));
       if (q === 'RENAME DATABASE `app__nd_restore` TO `app`' || q === 'RENAME DATABASE `app__nd_old` TO `app`') throw new Error('rename refused');
@@ -140,29 +136,30 @@ describe('ClickHouse', () => {
 
   it('only warns when a set-aside original cannot be dropped after a successful restore', async () => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n');
-    h.capture.mockResolvedValue('1\n');
+    h.capture.mockImplementation(liveOnly);
     let drops = 0;
     h.run.mockImplementation(async (_c, args) => {
-      if (String(args.at(-1)) === 'DROP DATABASE IF EXISTS `app__nd_old` SYNC' && ++drops === 2) throw new Error('busy');
+      if (String(args.at(-1)) === 'DROP DATABASE IF EXISTS `app__nd_old` SYNC' && ++drops === 1) throw new Error('busy');
     });
     await restoreClickhouse(ch, '/host/r.zip', log);
     expect(log).toHaveBeenCalledWith('⚠ could not drop the previous copy app__nd_old; drop it by hand');
   });
 
-  it('leaves the live databases alone when a restore fails, dropping only its temporary copies', async () => {
+  it('leaves the live databases and temporary copies alone when a restore fails', async () => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n  metadata/second.sql\n');
+    h.capture.mockImplementation(liveOnly);
     h.run.mockImplementation(async (_c, args) => {
       if (String(args.at(-1)).startsWith('RESTORE DATABASE `second`')) throw new Error('RESTORE failed');
     });
     await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('RESTORE failed');
     const queries = chQueries();
     expect(queries.some((q) => q === 'DROP DATABASE IF EXISTS `app` SYNC')).toBe(false);
-    expect(queries.slice(-2)).toEqual(['DROP DATABASE IF EXISTS `app__nd_restore` SYNC', 'DROP DATABASE IF EXISTS `second__nd_restore` SYNC']);
+    expect(queries.some(q => q?.startsWith('DROP DATABASE'))).toBe(false);
   });
 
   it('retains a recoverable database when promotion fails after the live database is removed', async () => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n');
-    h.capture.mockResolvedValue('1\n');
+    h.capture.mockImplementation(liveOnly);
     const databases = new Set(['app']);
     h.run.mockImplementation(async (_cmd, args) => {
       const query = String(args.at(-1));
@@ -178,6 +175,23 @@ describe('ClickHouse', () => {
     });
     await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('promotion failed');
     expect([...databases].some(name => name.startsWith('app'))).toBe(true);
+  });
+
+  it.each(['app__nd_old', 'app__nd_restore'])('refuses an existing recovery database %s without deleting it', async name => {
+    h.capture.mockResolvedValueOnce('  metadata/app.sql\n');
+    h.capture.mockImplementation(async (_cmd, args) => String(args.at(-1)).includes(`'${name}'`) ? '1\n' : '0\n');
+    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow(/already exists/);
+    expect(chQueries()).toEqual([]);
+  });
+
+  it('refuses unconfirmed recovery names and overlapping names in an archive before changing databases', async () => {
+    h.capture.mockResolvedValueOnce('  metadata/app.sql\n').mockResolvedValueOnce('unexpected');
+    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow(/existence is unconfirmed/);
+    expect(chQueries()).toEqual([]);
+    h.capture.mockReset();
+    h.capture.mockResolvedValueOnce('  metadata/app.sql\n  metadata/app__nd_old.sql\n');
+    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow(/conflict with recovery names/);
+    expect(chQueries()).toEqual([]);
   });
 
   it('refuses an archive with no database or with names it cannot quote', async () => {

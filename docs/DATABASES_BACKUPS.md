@@ -215,3 +215,5 @@ These three engines used to answer "backup not supported". Manual backups, sched
 
 ClickHouse database names must consist of letters, digits and `_`; a backup or restore refuses others instead of quoting them. Large ClickHouse and Meilisearch operations may run for hours; the limit is six hours per step.
 
+ClickHouse restore refuses to overwrite an existing `<name>__nd_restore` or `<name>__nd_old` database. A failed or interrupted restore can leave recovery databases behind; inspect their contents and resolve them manually before retrying. A failed promotion may require restoring the original name manually, and a partially completed multi-database restore is not an atomic transaction.
+

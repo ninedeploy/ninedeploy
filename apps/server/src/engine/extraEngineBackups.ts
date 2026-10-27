@@ -93,7 +93,9 @@ export function clickhouseArchiveDatabases(listing: string): string[] {
 
 /** Whether a database exists right now. */
 async function clickhouseDatabaseExists(t: EngineBackupTarget, db: string): Promise<boolean> {
-  return (await capture('docker', clickhouseClient(t, `SELECT count() FROM system.databases WHERE name = '${db}'`))).trim() === '1';
+  const count = (await capture('docker', clickhouseClient(t, `SELECT count() FROM system.databases WHERE name = '${db}'`))).trim();
+  if (count !== '0' && count !== '1') throw new Error(`ClickHouse database existence is unconfirmed for ${db}`);
+  return count === '1';
 }
 
 /**
@@ -108,7 +110,6 @@ async function clickhouseDatabaseExists(t: EngineBackupTarget, db: string): Prom
 export async function restoreClickhouse(t: EngineBackupTarget, file: string, log: Log): Promise<void> {
   const name = `nd-restore-${randomUUID()}.zip`;
   const archive = `${CLICKHOUSE_BACKUPS_DIR}/${name}`;
-  const restored: string[] = [];
   /** Databases whose original was renamed aside, and those whose restored copy is live. */
   const setAside: string[] = [];
   const promoted = new Set<string>();
@@ -122,17 +123,19 @@ export async function restoreClickhouse(t: EngineBackupTarget, file: string, log
     if (!dbs.length) throw new Error('The backup holds no ClickHouse database');
     const odd = dbs.filter((n) => !CLICKHOUSE_DB_NAME.test(n));
     if (odd.length) throw new Error(`The backup holds database names this restore cannot quote safely: ${odd.join(', ')}`);
+    const reserved = dbs.flatMap(db => [`${db}${CLICKHOUSE_RESTORE_SUFFIX}`, `${db}${CLICKHOUSE_OLD_SUFFIX}`]);
+    if (reserved.some(name => dbs.includes(name))) throw new Error('ClickHouse backup database names conflict with recovery names');
+    for (const name of reserved) {
+      if (await clickhouseDatabaseExists(t, name)) throw new Error(`ClickHouse recovery database ${name} already exists; retain it for review`);
+    }
     log(`Restoring ClickHouse databases: ${dbs.join(', ')}`);
     for (const db of dbs) {
       const tmp = `${db}${CLICKHOUSE_RESTORE_SUFFIX}`;
-      await run('docker', clickhouseClient(t, `DROP DATABASE IF EXISTS \`${tmp}\` SYNC`), {}, log);
-      restored.push(tmp);
       await run('docker', clickhouseClient(t, `RESTORE DATABASE \`${db}\` AS \`${tmp}\` FROM File('${name}')`), { timeoutMs: LONG_OPERATION_MS }, log);
     }
     for (const db of dbs) {
       const old = `${db}${CLICKHOUSE_OLD_SUFFIX}`;
       if (await clickhouseDatabaseExists(t, db)) {
-        await run('docker', clickhouseClient(t, `DROP DATABASE IF EXISTS \`${old}\` SYNC`), {}, log);
         await run('docker', clickhouseClient(t, `RENAME DATABASE \`${db}\` TO \`${old}\``), {}, log);
         setAside.push(db);
       }
@@ -156,10 +159,8 @@ export async function restoreClickhouse(t: EngineBackupTarget, file: string, log
       for (const db of setAside.filter((d) => promoted.has(d))) {
         log(`⚠ ${db} was already restored before the failure; its previous data is kept as ${db}${CLICKHOUSE_OLD_SUFFIX}`);
       }
-      // Copies that never went live hold nothing anyone uses.
-      for (const tmp of restored.filter((copy) => !promoted.has(copy.slice(0, -CLICKHOUSE_RESTORE_SUFFIX.length)))) {
-        await run('docker', clickhouseClient(t, `DROP DATABASE IF EXISTS \`${tmp}\` SYNC`), {}, swallow).catch(() => undefined);
-      }
+      // A failed or interrupted command may still have changed the server.
+      // Keep all remaining copies for inspection rather than guessing ownership.
     }
     await run('docker', ['exec', '-u', '0', t.cn, 'rm', '-f', archive], {}, swallow).catch(() => undefined);
   }
