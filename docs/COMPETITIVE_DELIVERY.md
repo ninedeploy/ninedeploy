@@ -24,6 +24,14 @@ Downloaded all five GitHub assets and verified the archive/install checksums, ch
 
 The v0.18.3 tag and version image remain an unpublished candidate: its final public lifecycle smoke used the old 0.19.0 capability threshold instead of the maintenance support floor. The corrected policy passed twelve production-contract parity tests and seven actual public lifecycle scenarios on the same image before 0.18.4 preparation. Earlier candidate tags/images are preserved. Development protocol commit `ec10b5ce` and the future parallel smoke configuration remain outside the immutable 0.18.4 release; production deploy/scale/wake coordination and R2 acceptance are still open.
 
+## Local retirement permission fix — 2026-10-27
+
+A non-root panel could not retire its previous local Docker generation because the shared agent operation wrote its lifecycle journal under the read-only application directory. In the v0.18.5 image, the real user journey left a prior transition in retiring with an EACCES mkdir error and the next deploy queued. Making that directory writable inside that disposable test container allowed retirement, canary promotion and canary cancellation to proceed.
+
+The panel now supplies a journal path under its writable data directory for local primary and previous-Docker retirement; remote agent operations retain their existing journal location. The regression failed before the change and passed afterwards with real SQLite, and the unchanged agent-path control passed. Five focused agent/recovery files passed 36 tests, primary recovery and canary passed 58 tests, and server typecheck passed. A wider five-file run timed out and is not counted as passing.
+
+A derivative of the v0.18.5 image containing the three freshly compiled modified server modules passed an isolated real-Docker initial deploy, redeploy, 50% canary promotion (30/30 requests, zero 5xx), and canary cancellation (5/5 requests to the retained generation), exit 0. This is a focused patched-image proof, not a full release-image certification. Evidence: `.temp_files/r2-prepare-receipt-replay-20261027-6096c41a/local-retire-fixed-image/`. The independent node Stop candidate-cleanup failure remains open.
+
 ## R2 completed node preparation receipt replay — 2026-10-27
 
 A completed ordered node preparation could not replay its receipt after its temporary environment file was deleted. The agent now records a hash of the normalized request shape alongside its journal head in the same transaction. If an environment file is absent, it returns only a previously completed receipt whose protocol version, request identity, shape, remaining environment fingerprints and receipt identities still match. A missing file on a new or incomplete request cannot create a runtime; an unknown request cannot create an empty journal. A legacy receipt without shape evidence remains held unless the original environment is still available to establish that evidence.
