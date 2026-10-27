@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { PluginSlot } from '../../components/PluginSlot.js';
 import { ServiceUptimeCard } from '../../components/uptime/ServiceUptimeCard.js';
 import { AutoscalePanel } from './AutoscalePanel.js';
+import { useT } from '../../lib/i18n.js';
 
 /** Health, metrics and runtime metadata for one service. */
 export function OverviewTab({ serviceId, svc }: { serviceId: number; svc: Service }) {
@@ -41,6 +42,7 @@ export function OverviewTab({ serviceId, svc }: { serviceId: number; svc: Servic
 
 // ── Repository contents (framework analysis) ──────────────────────────────
 function RepoInsightsCard({ serviceId }: { serviceId: number }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -53,9 +55,9 @@ function RepoInsightsCard({ serviceId }: { serviceId: number }) {
     mutationFn: () => api.insights.refresh(serviceId),
     onSuccess: (data) => {
       qc.setQueryData(['service-insights', serviceId], data);
-      toast('Repository analysis updated', 'success');
+      toast(t('Repository analysis updated'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Analysis failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Analysis failed'), 'error'),
   });
 
   const data = insights.data;
@@ -68,7 +70,7 @@ function RepoInsightsCard({ serviceId }: { serviceId: number }) {
         <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <GitBranch size={16} className="text-indigo-400" />
-            <span className="text-sm font-semibold text-slate-100">Repository Contents</span>
+            <span className="text-sm font-semibold text-slate-100">{t('Repository Contents')}</span>
           </div>
           <Button
             size="sm"
@@ -78,17 +80,16 @@ function RepoInsightsCard({ serviceId }: { serviceId: number }) {
             className="h-7 text-xs"
           >
             <RefreshCw size={12} className={refresh.isPending ? 'animate-spin' : undefined} />
-            {refresh.isPending ? 'Analyzing…' : data ? 'Re-analyze' : 'Analyze now'}
+            {refresh.isPending ? t('Analyzing…') : data ? t('Re-analyze') : t('Analyze now')}
           </Button>
         </div>
 
         {!data && !insights.isLoading && (
           <p className="py-1 text-xs leading-relaxed text-slate-500">
-            No analysis yet. Run an analysis to detect the framework, package manager and suggested deploy
-            settings — it also happens automatically on every deploy.
+            {t('No analysis yet. Run an analysis to detect the framework, package manager and suggested deploy settings — it also happens automatically on every deploy.')}
           </p>
         )}
-        {!data && insights.isLoading && <p className="py-1 text-xs text-slate-500">Loading analysis…</p>}
+        {!data && insights.isLoading && <p className="py-1 text-xs text-slate-500">{t('Loading analysis…')}</p>}
 
         {data && f && (
           <div className="space-y-3">
@@ -113,16 +114,16 @@ function RepoInsightsCard({ serviceId }: { serviceId: number }) {
             </div>
 
             <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-              <Fact label="Package manager" value={data.packageManager ?? '—'} />
-              <Fact label="Node engine" value={data.nodeVersion ?? '—'} />
-              <Fact label="Packages" value={`${data.dependencyCount} prod · ${data.devDependencyCount} dev`} />
-              <Fact label="Analyzed commit" value={data.commitSha ? data.commitSha.slice(0, 12) : '—'} />
+              <Fact label={t('Package manager')} value={data.packageManager ?? '—'} />
+              <Fact label={t('Node engine')} value={data.nodeVersion ?? '—'} />
+              <Fact label={t('Packages')} value={t('{prod} prod · {dev} dev', { prod: data.dependencyCount, dev: data.devDependencyCount })} />
+              <Fact label={t('Analyzed commit')} value={data.commitSha ? data.commitSha.slice(0, 12) : '—'} />
             </dl>
 
             {data.scripts && Object.keys(data.scripts).length > 0 && (
               <div className="rounded-lg border border-white/[0.06] bg-black/25 p-2.5">
                 <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  <FileCode2 size={11} /> package.json scripts
+                  <FileCode2 size={11} /> {t('package.json scripts')}
                 </div>
                 <div className="max-h-28 space-y-1 overflow-y-auto font-mono text-[11px]">
                   {Object.entries(data.scripts).slice(0, 8).map(([name, cmd]) => (
@@ -135,7 +136,7 @@ function RepoInsightsCard({ serviceId }: { serviceId: number }) {
               </div>
             )}
 
-            <p className="text-[11px] text-slate-600">Analyzed {analyzedAt} · manage presets in the Framework tab</p>
+            <p className="text-[11px] text-slate-600">{t('Analyzed {time} · manage presets in the Framework tab', { time: analyzedAt ?? '' })}</p>
           </div>
         )}
       </CardBody>
@@ -154,6 +155,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 // ── Metrics (CPU / memory sparklines) ─────────────────────────────────────
 function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
+  const t = useT();
   const isOnline = svc.status === 'running';
   const [historyMinutes, setHistoryMinutes] = useState(60);
 
@@ -188,14 +190,14 @@ function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
   const memLimit = liveStat?.memLimitMb || svc.memLimitMb || 0;
   /* v8 ignore stop */
 
-  const displayCpu = currentCpu != null ? `${currentCpu.toFixed(1)}%` : isOnline ? 'No data' : 'Offline';
+  const displayCpu = currentCpu != null ? `${currentCpu.toFixed(1)}%` : isOnline ? t('No data') : t('Offline');
   const displayMem = currentMem != null
     ? memLimit > 0
       ? `${currentMem.toFixed(1)} / ${memLimit} MiB`
       : `${currentMem.toFixed(1)} MiB`
     : isOnline
-      ? 'No data'
-      : 'Offline';
+      ? t('No data')
+      : t('Offline');
 
   return (
     <Card>
@@ -203,52 +205,52 @@ function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <Activity size={16} className="text-indigo-400" />
-            <span className="text-sm font-semibold text-slate-100">Resource Telemetry</span>
+            <span className="text-sm font-semibold text-slate-100">{t('Resource Telemetry')}</span>
           </div>
           <span className="whitespace-nowrap rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400">
-            {!isOnline ? 'Container Offline' : snapshot.isError ? 'Snapshot unavailable' : liveStat ? 'Updates every 3s' : 'No live sample'}
+            {!isOnline ? t('Container Offline') : snapshot.isError ? t('Snapshot unavailable') : liveStat ? t('Updates every 3s') : t('No live sample')}
           </span>
         </div>
 
-        {isOnline && snapshot.isError && <p role="alert" className="text-xs text-amber-200">Live resource sample is unavailable. Recorded history may still be available below.</p>}
+        {isOnline && snapshot.isError && <p role="alert" className="text-xs text-amber-200">{t('Live resource sample is unavailable. Recorded history may still be available below.')}</p>}
 
-        <label className="flex flex-wrap items-center gap-2 text-xs text-slate-400">History range
-          <Select aria-label="Service metric history range" value={String(historyMinutes)} onChange={(e) => setHistoryMinutes(Number(e.target.value))}>
-            <option value="60">1 hour</option><option value="1440">24 hours</option><option value="10080">7 days</option><option value="43200">30 days</option><option value="129600">90 days</option>
+        <label className="flex flex-wrap items-center gap-2 text-xs text-slate-400">{t('History range')}
+          <Select aria-label={t('Service metric history range')} value={String(historyMinutes)} onChange={(e) => setHistoryMinutes(Number(e.target.value))}>
+            <option value="60">{t('1 hour')}</option><option value="1440">{t('24 hours')}</option><option value="10080">{t('7 days')}</option><option value="43200">{t('30 days')}</option><option value="129600">{t('90 days')}</option>
           </Select>
-          <span>Available history follows the instance retention setting.</span>
+          <span>{t('Available history follows the instance retention setting.')}</span>
         </label>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
             {/* Label over value: side by side the value broke onto two lines ("4.5 / MiB"). */}
             <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-400">
-              <Cpu size={13} className="text-indigo-400" /> CPU Load
+              <Cpu size={13} className="text-indigo-400" /> {t('CPU Load')}
             </span>
             <span className="block whitespace-nowrap font-mono text-lg font-semibold tabular-nums text-slate-100">{displayCpu}</span>
-            {!liveStat && currentCpu != null && <p className="text-[10px] text-slate-400">Last recorded sample{cpu.isError ? ' · history refresh failed' : ''}</p>}
+            {!liveStat && currentCpu != null && <p className="text-[10px] text-slate-400">{t('Last recorded sample')}{cpu.isError ? ` · ${t('history refresh failed')}` : ''}</p>}
             <div className="overflow-hidden rounded-lg">
               {cpuPoints.length > 0 ? <Sparkline
                 points={cpuPoints}
                 color="#818cf8"
                 width={220}
                 height={44}
-              /> : <p className="flex h-11 items-center text-[10px] text-slate-500">{cpu.isError ? 'CPU history unavailable' : 'No CPU history yet'}</p>}
+              /> : <p className="flex h-11 items-center text-[10px] text-slate-500">{cpu.isError ? t('CPU history unavailable') : t('No CPU history yet')}</p>}
             </div>
           </div>
 
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
             <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-400">
-              <MemoryStick size={13} className="text-emerald-400" /> Memory Usage
+              <MemoryStick size={13} className="text-emerald-400" /> {t('Memory Usage')}
             </span>
             <span className="block whitespace-nowrap font-mono text-lg font-semibold tabular-nums text-slate-100">{displayMem}</span>
-            {!liveStat && currentMem != null && <p className="text-[10px] text-slate-400">Last recorded sample{mem.isError ? ' · history refresh failed' : ''}</p>}
+            {!liveStat && currentMem != null && <p className="text-[10px] text-slate-400">{t('Last recorded sample')}{mem.isError ? ` · ${t('history refresh failed')}` : ''}</p>}
             <div className="overflow-hidden rounded-lg">
               {memPoints.length > 0 ? <Sparkline
                 points={memPoints}
                 color="#34d399"
                 width={220}
                 height={44}
-              /> : <p className="flex h-11 items-center text-[10px] text-slate-500">{mem.isError ? 'Memory history unavailable' : 'No memory history yet'}</p>}
+              /> : <p className="flex h-11 items-center text-[10px] text-slate-500">{mem.isError ? t('Memory history unavailable') : t('No memory history yet')}</p>}
             </div>
           </div>
         </div>
@@ -259,19 +261,20 @@ function MetricsCard({ serviceId, svc }: { serviceId: number; svc: Service }) {
 
 // ── Runtime metadata ───────────────────────────────────────────────────────
 function RuntimeInfoCard({ svc }: { svc: Service }) {
+  const t = useT();
   const rows: Array<[string, string]> = [
-    ['Status', svc.status],
-    ['Runtime Container', svc.runtimeId ?? 'not deployed'],
-    ['Commit SHA', svc.commitSha ? svc.commitSha.slice(0, 12) : '—'],
-    ['Base Image', svc.image ?? '—'],
-    ['Internal Port', svc.port ? `:${svc.port}` : '—'],
-    ['Health Endpoint', svc.healthPath || '/'],
-    ['Git Credential', svc.repoUrl ? (svc.sourceName ?? 'public / none') : '—'],
-    ['CPU Limit', svc.cpuLimitMilli ? `${svc.cpuLimitMilli / 1000} cores` : svc.cpuShares ? `${svc.cpuShares} shares` : 'unlimited'],
-    ['Memory Limit', svc.memLimitMb ? `${svc.memLimitMb} MiB` : 'unlimited'],
+    [t('Status'), svc.status],
+    [t('Runtime Container'), svc.runtimeId ?? t('not deployed')],
+    [t('Commit SHA'), svc.commitSha ? svc.commitSha.slice(0, 12) : '—'],
+    [t('Base Image'), svc.image ?? '—'],
+    [t('Internal Port'), svc.port ? `:${svc.port}` : '—'],
+    [t('Health Endpoint'), svc.healthPath || '/'],
+    [t('Git Credential'), svc.repoUrl ? (svc.sourceName ?? t('public / none')) : '—'],
+    [t('CPU Limit'), svc.cpuLimitMilli ? t('{n} cores', { n: svc.cpuLimitMilli / 1000 }) : svc.cpuShares ? t('{n} shares', { n: svc.cpuShares }) : t('unlimited')],
+    [t('Memory Limit'), svc.memLimitMb ? `${svc.memLimitMb} MiB` : t('unlimited')],
     [
-      'Replicas',
-      svc.type !== 'docker' ? '—' : svc.autoscale ? `${svc.autoscale.minReplicas}–${svc.autoscale.maxReplicas}, autoscaled` : String(svc.replicas ?? 1),
+      t('Replicas'),
+      svc.type !== 'docker' ? '—' : svc.autoscale ? t('{min}–{max}, autoscaled', { min: svc.autoscale.minReplicas, max: svc.autoscale.maxReplicas }) : String(svc.replicas ?? 1),
     ],
   ];
 
@@ -281,7 +284,7 @@ function RuntimeInfoCard({ svc }: { svc: Service }) {
         <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <HardDrive size={16} className="text-emerald-400" />
-            <span className="text-sm font-semibold text-slate-100">Runtime & Architecture</span>
+            <span className="text-sm font-semibold text-slate-100">{t('Runtime & Architecture')}</span>
           </div>
           <StatusBadge status={svc.status} />
         </div>
@@ -302,6 +305,7 @@ function RuntimeInfoCard({ svc }: { svc: Service }) {
 
 // ── Deployment Quick Card ─────────────────────────────────────────────────
 function DeploymentQuickCard({ serviceId }: { serviceId: number }) {
+  const t = useT();
   const deploys = useQuery({
     // r250: the same key the service page and every deploy mutation use. Under
     // a key of its own this card never saw an invalidation,
@@ -318,11 +322,11 @@ function DeploymentQuickCard({ serviceId }: { serviceId: number }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal size={15} className="text-slate-400" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Latest Deployment</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{t('Latest Deployment')}</span>
           </div>
           {latestDeploy && (
             <span className="font-mono text-[11px] text-slate-500">
-              Trigger: {latestDeploy.trigger}
+              {t('Trigger: {trigger}', { trigger: latestDeploy.trigger })}
             </span>
           )}
         </div>
@@ -336,11 +340,11 @@ function DeploymentQuickCard({ serviceId }: { serviceId: number }) {
                   {/* Both arms render across the deployments tests; the
                       instrumenter cannot see this ternary. */}
                   {/* v8 ignore start */}
-                  {latestDeploy.commitSha ? `Commit ${latestDeploy.commitSha.slice(0, 7)}` : 'Manual Build'}
+                  {latestDeploy.commitSha ? t('Commit {sha}', { sha: latestDeploy.commitSha.slice(0, 7) }) : t('Manual Build')}
                   {/* v8 ignore stop */}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">{latestDeploy.message || 'Deployment triggered'}</p>
+              <p className="text-xs text-slate-400">{latestDeploy.message || t('Deployment triggered')}</p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -348,12 +352,12 @@ function DeploymentQuickCard({ serviceId }: { serviceId: number }) {
                 to={`/services/${serviceId}?tab=deploys`}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/[0.08] transition"
               >
-                <Terminal size={13} /> View Live Logs &rarr;
+                <Terminal size={13} /> {t('View Live Logs →')}
               </Link>
             </div>
           </div>
         ) : (
-          <p className="py-2 text-xs text-slate-500">No deployments yet for this service.</p>
+          <p className="py-2 text-xs text-slate-500">{t('No deployments yet for this service.')}</p>
         )}
       </CardBody>
     </Card>

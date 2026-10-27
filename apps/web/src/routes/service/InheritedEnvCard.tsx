@@ -2,6 +2,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Layers } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../../lib/api.js';
+import { useT } from '../../lib/i18n.js';
 import { Card, CardBody, cn } from '../../components/ui.js';
 
 /**
@@ -18,6 +19,7 @@ export function InheritedEnvCard({
   serviceId: number;
   projects: Array<{ id: number; name: string }>;
 }) {
+  const t = useT();
   const shared = useQueries({
     queries: projects.map((p) => ({
       queryKey: ['project-env', p.id],
@@ -36,18 +38,19 @@ export function InheritedEnvCard({
     <Card>
       <CardBody>
         <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
-          <Layers size={15} className="text-slate-500" /> From projects
+          <Layers size={15} className="text-slate-500" /> {t('From projects')}
         </div>
         <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
-          Shared variables of {projects.map((p) => p.name).join(', ')}. This service receives them on every deploy; its own
-          variable with the same name wins.
+          {t('Shared variables of {projects}. This service receives them on every deploy; its own variable with the same name wins.', {
+            projects: projects.map((p) => p.name).join(', '),
+          })}
         </p>
         {rows.length === 0 ? (
           <p className="py-1 text-xs text-slate-600">
-            {loading ? 'Loading…' : 'None yet.'}{' '}
+            {loading ? t('Loading…') : t('None yet.')}{' '}
             {!loading && (
               <Link to={`/projects?env=${projects[0]!.id}`} className="text-indigo-300 hover:underline">
-                Add shared variables
+                {t('Add shared variables')}
               </Link>
             )}
           </p>
@@ -67,17 +70,17 @@ export function InheritedEnvCard({
                     {v.key}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-400" title={v.isSecret ? undefined : v.value}>
-                    {v.isSecret ? '•••• secret' : v.value}
+                    {v.isSecret ? t('•••• secret') : v.value}
                   </span>
                   {overridden && (
-                    <span className="shrink-0 rounded bg-amber-500/10 px-1.5 text-[10px] text-amber-300" title="This service sets its own value">
-                      overridden
+                    <span className="shrink-0 rounded bg-amber-500/10 px-1.5 text-[10px] text-amber-300" title={t('This service sets its own value')}>
+                      {t('overridden')}
                     </span>
                   )}
                   <Link
                     to={`/projects?env=${v.project.id}`}
                     className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-slate-500 hover:text-indigo-300"
-                    title={`Edit in ${v.project.name}`}
+                    title={t('Edit in {project}', { project: v.project.name })}
                   >
                     {v.project.name} <ArrowUpRight size={10} />
                   </Link>

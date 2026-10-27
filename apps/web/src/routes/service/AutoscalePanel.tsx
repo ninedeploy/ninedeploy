@@ -4,6 +4,7 @@ import type { AutoscaleEvent, AutoscaleMetric } from '@ninedeploy/schemas';
 import { autoscaleApi, autoscaleKeys } from '../../lib/autoscaleApi.js';
 import { formatRelative } from '../../lib/format.js';
 import { Button, Card, CardBody } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 
 /** "62.5%" / "12 req/s"; a dash when the value could not be read. */
 export function autoscaleValue(value: number | null | undefined, metric: AutoscaleMetric | undefined): string {
@@ -31,6 +32,7 @@ function Stat({ label, value }: { label: string; value: string }) {
  * Keeps an unavailable status visible; cached figures are hidden on error.
  */
 export function AutoscalePanel({ serviceId, enabled }: { serviceId: number; enabled: boolean }) {
+  const t = useT();
   const q = useQuery({
     queryKey: autoscaleKeys.status(serviceId),
     queryFn: () => autoscaleApi.status(serviceId),
@@ -47,30 +49,30 @@ export function AutoscalePanel({ serviceId, enabled }: { serviceId: number; enab
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <Gauge size={16} className="text-indigo-200" />
-            <span className="text-sm font-semibold text-slate-100">Autoscaling</span>
+            <span className="text-sm font-semibold text-slate-100">{t('Autoscaling')}</span>
           </div>
-          <span className="whitespace-nowrap rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400">{q.isError ? 'Unavailable' : 'Updates every 15s'}</span>
+          <span className="whitespace-nowrap rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400">{q.isError ? t('Unavailable') : t('Updates every 15s')}</span>
         </div>
 
         {q.isError ? (
           <div role="alert" className="space-y-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200">
-            <p>Autoscaling status is unavailable. Current measurements and decisions could not be confirmed.</p>
-            <Button size="sm" variant="secondary" disabled={q.isFetching} onClick={() => void q.refetch()}>Retry status</Button>
+            <p>{t('Autoscaling status is unavailable. Current measurements and decisions could not be confirmed.')}</p>
+            <Button size="sm" variant="secondary" disabled={q.isFetching} onClick={() => void q.refetch()}>{t('Retry status')}</Button>
           </div>
-        ) : !view ? <p role="status" className="text-xs text-slate-400">Loading autoscaling status…</p> : <>
+        ) : !view ? <p role="status" className="text-xs text-slate-400">{t('Loading autoscaling status…')}</p> : <>
         <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
-          <Stat label="Containers serving" value={`${view.replicas} of ${view.minReplicas}–${view.maxReplicas}`} />
+          <Stat label={t('Containers serving')} value={t('{replicas} of {min}–{max}', { replicas: String(view.replicas), min: String(view.minReplicas), max: String(view.maxReplicas) })} />
           <Stat
-            label={`${view.metric} per container`}
-            value={`${autoscaleValue(view.value, view.metric)} · target ${autoscaleValue(view.target, view.metric)}`}
+            label={t('{metric} per container', { metric: String(view.metric) })}
+            value={t('{value} · target {target}', { value: autoscaleValue(view.value, view.metric), target: autoscaleValue(view.target, view.metric) })}
           />
-          <Stat label="Desired" value={view.desired != null ? String(view.desired) : '—'} />
+          <Stat label={t('Desired')} value={view.desired != null ? String(view.desired) : '—'} />
         </dl>
 
-        {view.holding && <p role="status" className="break-words rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200">Holding: {view.holding}.</p>}
+        {view.holding && <p role="status" className="break-words rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200">{t('Holding: {reason}.', { reason: view.holding })}</p>}
         <p className="break-words text-xs text-slate-400">
-          <span className="text-slate-500">Last change: </span>
-          {view.lastEvent ? autoscaleEventLine(view.lastEvent) : 'none yet'}
+          <span className="text-slate-500">{t('Last change: ')}</span>
+          {view.lastEvent ? autoscaleEventLine(view.lastEvent) : t('none yet')}
         </p>
         </>}
       </CardBody>

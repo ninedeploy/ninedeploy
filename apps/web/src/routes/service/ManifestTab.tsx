@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Check, Code2, Copy, ExternalLink, FileCode, RefreshCw, Shield, Terminal } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { copyText } from '../../lib/format.js';
+import { useT } from '../../lib/i18n.js';
 import type { Service } from '@ninedeploy/sdk';
 import { Button, Card, CardBody, ErrorCard, Skeleton } from '../../components/ui.js';
 
@@ -15,6 +16,7 @@ export function ManifestTab({
   containerName?: string;
   serverId?: number | null;
 }) {
+  const t = useT();
   // Both naming paths render across the service and database tests; the
   // instrumenter cannot see this chain.
   /* v8 ignore start */
@@ -75,7 +77,7 @@ export function ManifestTab({
   }
 
   if (composeQuery.isError || inspectQuery.isError && !composeData?.inspect) {
-    return <ErrorCard title="Could not load container metadata" error={composeQuery.error ?? inspectQuery.error} onRetry={() => { void composeQuery.refetch(); void inspectQuery.refetch(); }} />;
+    return <ErrorCard title={t('Could not load container metadata')} error={composeQuery.error ?? inspectQuery.error} onRetry={() => { void composeQuery.refetch(); void inspectQuery.refetch(); }} />;
   }
 
   return (
@@ -98,7 +100,7 @@ export function ManifestTab({
                   )}
                 </div>
                 <p className="text-xs text-slate-400">
-                  Runtime manifest, Traefik dynamic router tags, and Docker inspect diagnostics.
+                  {t('Runtime manifest, Traefik dynamic router tags, and Docker inspect diagnostics.')}
                 </p>
               </div>
             </div>
@@ -117,7 +119,7 @@ export function ManifestTab({
                 {/* v8 ignore start */}
                 <RefreshCw size={14} className={composeQuery.isFetching ? 'animate-spin mr-1.5' : 'mr-1.5'} />
                 {/* v8 ignore stop */}
-                Refresh
+                {t('Refresh')}
               </Button>
               {service && (
                 <a
@@ -126,7 +128,7 @@ export function ManifestTab({
                   rel="noreferrer"
                 >
                   <Button variant="secondary" size="sm">
-                    <ExternalLink size={14} /> Open in Creator
+                    <ExternalLink size={14} /> {t('Open in Creator')}
                   </Button>
                 </a>
               )}
@@ -146,7 +148,7 @@ export function ManifestTab({
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
-          <Code2 size={14} /> Docker Compose Manifest
+          <Code2 size={14} /> {t('Docker Compose Manifest')}
         </button>
         <button
           type="button"
@@ -157,7 +159,7 @@ export function ManifestTab({
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
-          <Shield size={14} /> Traefik Dynamic Tags ({Object.keys(traefikTags).length})
+          <Shield size={14} /> {t('Traefik Dynamic Tags ({n})', { n: Object.keys(traefikTags).length })}
         </button>
         <button
           type="button"
@@ -168,7 +170,7 @@ export function ManifestTab({
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
-          <Terminal size={14} /> Docker Inspect Raw
+          <Terminal size={14} /> {t('Docker Inspect Raw')}
         </button>
       </div>
 
@@ -181,12 +183,12 @@ export function ManifestTab({
               <Button variant="secondary" size="sm" onClick={handleCopyYaml} className="h-7 text-xs">
                 {/* Both arms render across the copy tests. */}
                 {/* v8 ignore start */}
-                {copiedYaml ? <><Check size={12} className="mr-1 text-emerald-400" /> Copied</> : <><Copy size={12} className="mr-1" /> Copy Compose</>}
+                {copiedYaml ? <><Check size={12} className="mr-1 text-emerald-400" /> {t('Copied')}</> : <><Copy size={12} className="mr-1" /> {t('Copy Compose')}</>}
                 {/* v8 ignore stop */}
               </Button>
             </div>
             <pre className="p-4 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed bg-black/40">
-              {composeData?.yaml || '# No runtime compose manifest available for container.'}
+              {composeData?.yaml || t('# No runtime compose manifest available for container.')}
             </pre>
           </CardBody>
         </Card>
@@ -198,7 +200,7 @@ export function ManifestTab({
           <CardBody className="p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Injected Traefik Labels & Routing Rules
+                {t('Injected Traefik Labels & Routing Rules')}
               </h4>
             </div>
 
@@ -206,7 +208,7 @@ export function ManifestTab({
             {/* v8 ignore start */}
             {Object.keys(traefikTags).length === 0 ? (
               <div className="rounded-xl border border-white/5 bg-white/[0.01] p-6 text-center text-xs text-slate-500">
-                No Traefik tags discovered on container labels.
+                {t('No Traefik tags discovered on container labels.')}
               </div>
             ) : (
               <div className="space-y-2">
@@ -230,13 +232,13 @@ export function ManifestTab({
             <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-4 py-2.5">
               <span className="text-xs font-mono text-slate-400">docker-inspect.json</span>
               <Button variant="secondary" size="sm" onClick={handleCopyJson} className="h-7 text-xs">
-                {copiedJson ? <><Check size={12} className="mr-1 text-emerald-400" /> Copied</> : <><Copy size={12} className="mr-1" /> Copy JSON</>}
+                {copiedJson ? <><Check size={12} className="mr-1 text-emerald-400" /> {t('Copied')}</> : <><Copy size={12} className="mr-1" /> {t('Copy JSON')}</>}
               </Button>
             </div>
             <pre className="p-4 text-xs font-mono text-slate-300 overflow-x-auto max-h-[500px] overflow-y-auto leading-relaxed bg-black/40">
               {/* Both arms render across the inspect subtab tests. */}
               {/* v8 ignore start */}
-              {inspectData?.raw ? JSON.stringify(inspectData.raw, null, 2) : '// No inspect data returned.'}
+              {inspectData?.raw ? JSON.stringify(inspectData.raw, null, 2) : t('// No inspect data returned.')}
               {/* v8 ignore stop */}
             </pre>
           </CardBody>

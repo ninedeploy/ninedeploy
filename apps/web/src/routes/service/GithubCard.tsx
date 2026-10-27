@@ -4,6 +4,7 @@ import { GitBranch } from 'lucide-react';
 import type { Service, ServiceGithubLink } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
+import { useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
 import { Badge, Button, Card, CardBody, ConfirmDialog, Select, Switch } from '../../components/ui.js';
 
@@ -18,6 +19,7 @@ import { Badge, Button, Card, CardBody, ConfirmDialog, Select, Switch } from '..
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export function GithubCard({ svc }: { svc: Service }) {
+  const t = useT();
   const { user } = useAuth();
   const isOperator = user?.isOperator === true;
   // A PR preview follows its parent's link; image and pasted-stack services have no repository.
@@ -33,7 +35,7 @@ export function GithubCard({ svc }: { svc: Service }) {
     <Card>
       <CardBody className="space-y-4">
         <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-          <GitBranch size={16} className="text-indigo-400" /> GitHub App
+          <GitBranch size={16} className="text-indigo-400" /> {t('GitHub App')}
         </div>
         {link ? (
           <LinkedView key={link.id} svc={svc} link={link} isOperator={isOperator} />
@@ -46,6 +48,7 @@ export function GithubCard({ svc }: { svc: Service }) {
 }
 
 function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGithubLink; isOperator: boolean }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [revertError, setRevertError] = useState<string | null>(null);
@@ -58,9 +61,9 @@ function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGith
     mutationFn: (patch: { reportStatus?: boolean; prComment?: boolean }) => api.services.github.feedback(svc.id, patch),
     onSuccess: () => {
       refresh();
-      toast('GitHub feedback updated', 'success');
+      toast(t('GitHub feedback updated'), 'success');
     },
-    onError: (err) => toast(`Could not change GitHub feedback: ${errorText(err)}`, 'error'),
+    onError: (err) => toast(t('Could not change GitHub feedback: {error}', { error: errorText(err) }), 'error'),
   });
   const relink = useMutation({
     mutationFn: (patch: { tokenScope?: 'repository' | 'installation'; enabled?: boolean }) =>
@@ -68,24 +71,24 @@ function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGith
       api.services.github.link(svc.id, { sourceId: link.sourceId as number, ...patch }),
     onSuccess: () => {
       refresh();
-      toast('GitHub link updated', 'success');
+      toast(t('GitHub link updated'), 'success');
     },
-    onError: (err) => toast(`Could not update the GitHub link: ${errorText(err)}`, 'error'),
+    onError: (err) => toast(t('Could not update the GitHub link: {error}', { error: errorText(err) }), 'error'),
   });
   const finalize = useMutation({
     mutationFn: () => api.services.github.finalize(svc.id),
     onSuccess: (res) => {
       refresh();
-      toast(`Migration finalized; ${res.webhooksDeactivated} webhook(s) switched off`, 'success');
+      toast(t('Migration finalized; {n} webhook(s) switched off', { n: res.webhooksDeactivated }), 'success');
     },
-    onError: (err) => toast(`Could not finalize: ${errorText(err)}`, 'error'),
+    onError: (err) => toast(t('Could not finalize: {error}', { error: errorText(err) }), 'error'),
   });
   const revert = useMutation({
     mutationFn: () => api.services.github.unlink(svc.id),
     onMutate: () => setRevertError(null),
     onSuccess: (res) => {
       refresh();
-      toast(`Unlinked from the GitHub App; ${res.webhooksReactivated} webhook(s) switched back on`, 'success');
+      toast(t('Unlinked from the GitHub App; {n} webhook(s) switched back on', { n: res.webhooksReactivated }), 'success');
     },
     // A 409 explains why (the service clones through the App source itself); keep it on screen.
     onError: (err) => setRevertError(errorText(err)),
@@ -96,24 +99,24 @@ function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGith
     <div className="space-y-4 text-xs">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-slate-200">{link.repoFullName}</span>
-        <Badge tone={link.active ? 'emerald' : 'amber'}>{link.active ? 'active' : 'inactive'}</Badge>
+        <Badge tone={link.active ? 'emerald' : 'amber'}>{link.active ? t('active') : t('inactive')}</Badge>
         <span className="text-slate-500">
           {link.active
-            ? 'App webhooks deploy this service; its per-service webhook is skipped.'
+            ? t('App webhooks deploy this service; its per-service webhook is skipped.')
             : link.enabled
-              ? 'The installation is suspended or removed; the per-service webhook and source take over.'
-              : 'The link is disabled; the per-service webhook and source are used.'}
+              ? t('The installation is suspended or removed; the per-service webhook and source take over.')
+              : t('The link is disabled; the per-service webhook and source are used.')}
         </span>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
           <span>
-            <span className="block text-slate-200">Commit statuses</span>
-            <span className="text-[11px] text-slate-500">ninedeploy/{svc.slug} on every deployed commit</span>
+            <span className="block text-slate-200">{t('Commit statuses')}</span>
+            <span className="text-[11px] text-slate-500">{t('{context} on every deployed commit', { context: `ninedeploy/${svc.slug}` })}</span>
           </span>
           <Switch
-            label="Commit statuses"
+            label={t('Commit statuses')}
             checked={link.reportStatus}
             disabled={feedback.isPending}
             onChange={(v) => feedback.mutate({ reportStatus: v })}
@@ -121,38 +124,38 @@ function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGith
         </label>
         <label className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
           <span>
-            <span className="block text-slate-200">PR comments</span>
-            <span className="text-[11px] text-slate-500">one comment per PR with the preview URL</span>
+            <span className="block text-slate-200">{t('PR comments')}</span>
+            <span className="text-[11px] text-slate-500">{t('one comment per PR with the preview URL')}</span>
           </span>
-          <Switch label="PR comments" checked={link.prComment} disabled={feedback.isPending} onChange={(v) => feedback.mutate({ prComment: v })} />
+          <Switch label={t('PR comments')} checked={link.prComment} disabled={feedback.isPending} onChange={(v) => feedback.mutate({ prComment: v })} />
         </label>
       </div>
-      <p className="text-[11px] text-slate-500">Feedback toggles need the admin role on this service.</p>
+      <p className="text-[11px] text-slate-500">{t('Feedback toggles need the admin role on this service.')}</p>
       <CiPolicy key={JSON.stringify(link.requiredWorkflows ?? [])} serviceId={svc.id} workflows={link.requiredWorkflows ?? []} onSaved={refresh} />
 
       {isOperator && (
         <div className="space-y-3 border-t border-white/5 pt-3">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-slate-400">Clone token scope</span>
+            <span className="text-slate-400">{t('Clone token scope')}</span>
             <Select
-              aria-label="Clone token scope"
+              aria-label={t('Clone token scope')}
               value={link.tokenScope}
               disabled={!canRelink || relink.isPending}
               onChange={(e) => relink.mutate({ tokenScope: e.target.value as 'repository' | 'installation' })}
               className="w-auto"
             >
-              <option value="repository">This repository only</option>
-              <option value="installation">Whole installation (sibling-repo submodules)</option>
+              <option value="repository">{t('This repository only')}</option>
+              <option value="installation">{t('Whole installation (sibling-repo submodules)')}</option>
             </Select>
-            <span className="text-slate-400">Link enabled</span>
-            <Switch label="Link enabled" checked={link.enabled} disabled={!canRelink || relink.isPending} onChange={(v) => relink.mutate({ enabled: v })} />
+            <span className="text-slate-400">{t('Link enabled')}</span>
+            <Switch label={t('Link enabled')} checked={link.enabled} disabled={!canRelink || relink.isPending} onChange={(v) => relink.mutate({ enabled: v })} />
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" onClick={() => setConfirmFinalize(true)} disabled={finalize.isPending || !link.active}>
-              Finalize migration
+              {t('Finalize migration')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => revert.mutate()} disabled={revert.isPending}>
-              Revert to previous source
+              {t('Revert to previous source')}
             </Button>
           </div>
           {revertError && (
@@ -161,16 +164,15 @@ function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGith
             </p>
           )}
           <p className="text-[11px] leading-relaxed text-slate-500">
-            Finalize makes the App source the service&apos;s source and switches its webhooks off. Revert restores the previous
-            source, switches the webhooks back on and removes the link.
+            {t("Finalize makes the App source the service's source and switches its webhooks off. Revert restores the previous source, switches the webhooks back on and removes the link.")}
           </p>
         </div>
       )}
       <ConfirmDialog
         open={confirmFinalize}
-        title="Finalize GitHub App migration"
-        message="Detach the previous source and switch this service's webhooks off? Deploys then depend on the GitHub App installation."
-        confirmLabel="Finalize"
+        title={t('Finalize GitHub App migration')}
+        message={t("Detach the previous source and switch this service's webhooks off? Deploys then depend on the GitHub App installation.")}
+        confirmLabel={t('Finalize')}
         onConfirm={() => finalize.mutate()}
         onClose={() => setConfirmFinalize(false)}
       />
@@ -179,30 +181,29 @@ function LinkedView({ svc, link, isOperator }: { svc: Service; link: ServiceGith
 }
 
 function CiPolicy({ serviceId, workflows, onSaved }: { serviceId: number; workflows: string[]; onSaved: () => void }) {
+  const t = useT();
   const [value, setValue] = useState(workflows.join('\n'));
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const save = useMutation({
     mutationFn: () => api.services.github.feedback(serviceId, { requiredWorkflows: value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) }),
-    onSuccess: () => { setError(null); onSaved(); toast('Required CI workflows updated', 'success'); },
+    onSuccess: () => { setError(null); onSaved(); toast(t('Required CI workflows updated'), 'success'); },
     onError: (err) => setError(errorText(err)),
   });
   return (
     <div className="space-y-2 border-t border-white/5 pt-3">
-      <label htmlFor={`ci-workflows-${serviceId}`} className="block text-slate-200">Required CI workflows</label>
+      <label htmlFor={`ci-workflows-${serviceId}`} className="block text-slate-200">{t('Required CI workflows')}</label>
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Deploy only after every listed GitHub Actions workflow succeeds for the exact commit. One file path per line; leave empty to disable.
-        Requires the App&apos;s Actions read permission. CI runs before lane approval; missing checks wait up to two hours.
-        Changes apply to new candidates; cancel an existing waiting deploy to change its captured policy.
+        {t("Deploy only after every listed GitHub Actions workflow succeeds for the exact commit. One file path per line; leave empty to disable. Requires the App's Actions read permission. CI runs before lane approval; missing checks wait up to two hours. Changes apply to new candidates; cancel an existing waiting deploy to change its captured policy.")}
       </p>
       <textarea id={`ci-workflows-${serviceId}`} rows={3} value={value} onChange={(e) => setValue(e.target.value)}
         placeholder=".github/workflows/ci.yml" spellCheck={false}
         className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 font-mono text-xs text-slate-200 focus:border-indigo-400 focus:outline-none" />
       <div className="flex items-center gap-3">
         <Button size="sm" variant="secondary" disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? 'Saving…' : 'Save CI requirements'}
+          {save.isPending ? t('Saving…') : t('Save CI requirements')}
         </Button>
-        <span className="text-[11px] text-slate-500">Service admin required</span>
+        <span className="text-[11px] text-slate-500">{t('Service admin required')}</span>
       </div>
       {error && <p role="alert" className="text-rose-300">{error}</p>}
     </div>
@@ -210,6 +211,7 @@ function CiPolicy({ serviceId, workflows, onSaved }: { serviceId: number; workfl
 }
 
 function MigrateView({ svc, options }: { svc: Service; options: Array<{ id: number; name: string }> }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [sourceId, setSourceId] = useState(String(options[0]!.id));
@@ -217,18 +219,19 @@ function MigrateView({ svc, options }: { svc: Service; options: Array<{ id: numb
     mutationFn: () => api.services.github.migrate(svc.id, Number(sourceId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['service-github', svc.id] });
-      toast('Service linked to the GitHub App; the previous source stays as a fallback', 'success');
+      toast(t('Service linked to the GitHub App; the previous source stays as a fallback'), 'success');
     },
-    onError: (err) => toast(`Could not migrate: ${errorText(err)}`, 'error'),
+    onError: (err) => toast(t('Could not migrate: {error}', { error: errorText(err) }), 'error'),
   });
   return (
     <div className="space-y-3 text-xs">
       <p className="leading-relaxed text-slate-400">
-        Move this service onto a GitHub App installation: deploys use short-lived tokens and the App webhook, while the current
-        source{svc.sourceName ? ` (${svc.sourceName})` : ''} and webhook stay as a fallback until you finalize.
+        {svc.sourceName
+          ? t('Move this service onto a GitHub App installation: deploys use short-lived tokens and the App webhook, while the current source ({source}) and webhook stay as a fallback until you finalize.', { source: svc.sourceName })
+          : t('Move this service onto a GitHub App installation: deploys use short-lived tokens and the App webhook, while the current source and webhook stay as a fallback until you finalize.')}
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <Select aria-label="GitHub App installation" value={sourceId} onChange={(e) => setSourceId(e.target.value)} className="w-auto">
+        <Select aria-label={t('GitHub App installation')} value={sourceId} onChange={(e) => setSourceId(e.target.value)} className="w-auto">
           {options.map((o) => (
             <option key={o.id} value={o.id}>
               {o.name}
@@ -236,7 +239,7 @@ function MigrateView({ svc, options }: { svc: Service; options: Array<{ id: numb
           ))}
         </Select>
         <Button size="sm" onClick={() => migrate.mutate()} disabled={migrate.isPending}>
-          {migrate.isPending ? 'Linking…' : 'Migrate to GitHub App'}
+          {migrate.isPending ? t('Linking…') : t('Migrate to GitHub App')}
         </Button>
       </div>
     </div>

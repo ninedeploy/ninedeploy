@@ -3,8 +3,12 @@ import type { ServiceLifecycleCommand, ServiceLifecycleView } from '@ninedeploy/
 import { api } from '../../lib/api.js';
 import { Button } from '../../components/ui.js';
 import { useToast } from '../../components/Toast.js';
+import { msg, useT } from '../../lib/i18n.js';
+
+const REQUESTED = { start: msg('Start requested'), stop: msg('Stop requested'), restart: msg('Restart requested') } as const;
 
 export function NodeLifecycleCard({ serviceId, command }: { serviceId: number; command: ServiceLifecycleCommand | null }) {
+  const t = useT();
   const qc = useQueryClient(), { toast } = useToast();
   const retry = useMutation({ mutationFn: (id: number) => api.services.retryLifecycle(id), onSuccess: (result, id) => {
     if (!result.command) { void qc.invalidateQueries({ queryKey: ['service-lifecycle', id] }); return; }
@@ -14,24 +18,24 @@ export function NodeLifecycleCard({ serviceId, command }: { serviceId: number; c
     }
     qc.setQueryData(['service-lifecycle', id], { command: result.command });
     void qc.invalidateQueries({ queryKey: ['service-lifecycle', id] });
-    if (id === serviceId) toast('Runtime command queued for another check', 'info');
+    if (id === serviceId) toast(t('Runtime command queued for another check'), 'info');
   }, onError: (error, id) => {
-    if (id === serviceId) toast(error instanceof Error ? error.message : 'Runtime command could not be retried', 'error');
+    if (id === serviceId) toast(error instanceof Error ? error.message : t('Runtime command could not be retried'), 'error');
   } });
   if (!command || command.phase === 'completed') return null;
   const superseded = command.phase === 'superseded' || !command.current;
-  return <section aria-label="Runtime command" className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm">
+  return <section aria-label={t('Runtime command')} className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h3 className="font-medium text-amber-200">{superseded ? 'Runtime command superseded' : `${{ start: 'Start', stop: 'Stop', restart: 'Restart' }[command.action]} requested`}</h3>
-      <span className="text-xs text-slate-400">Command #{command.id}</span>
+      <h3 className="font-medium text-amber-200">{superseded ? t('Runtime command superseded') : t(REQUESTED[command.action])}</h3>
+      <span className="text-xs text-slate-400">{t('Command #{id}', { id: command.id })}</span>
     </div>
-    <p className="mt-2 text-xs text-slate-300">{superseded ? 'The service state changed before this command finished. Request a new action if needed.'
-      : command.action === 'stop' ? 'Stop is pending until traffic removal, connection drain and container state are confirmed.'
-      : 'The service is not reported ready until configured readiness and routing checks finish.'}</p>
+    <p className="mt-2 text-xs text-slate-300">{superseded ? t('The service state changed before this command finished. Request a new action if needed.')
+      : command.action === 'stop' ? t('Stop is pending until traffic removal, connection drain and container state are confirmed.')
+      : t('The service is not reported ready until configured readiness and routing checks finish.')}</p>
     {command.reason && <p className="mt-2 break-words text-xs text-amber-200">{command.reason}</p>}
-    {!superseded && <p className="mt-2 text-xs text-slate-400">{command.busy ? 'Checking runtime state…' : `Next automatic check: ${new Date(command.nextAttemptAt).toLocaleTimeString()}`}</p>}
+    {!superseded && <p className="mt-2 text-xs text-slate-400">{command.busy ? t('Checking runtime state…') : t('Next automatic check: {time}', { time: new Date(command.nextAttemptAt).toLocaleTimeString() })}</p>}
     {command.retryable && !superseded && <Button className="mt-3" size="sm" variant="secondary" disabled={retry.isPending || command.busy} onClick={() => retry.mutate(serviceId)}>
-      {retry.isPending ? 'Queueing…' : 'Retry runtime command'}
+      {retry.isPending ? t('Queueing…') : t('Retry runtime command')}
     </Button>}
   </section>;
 }

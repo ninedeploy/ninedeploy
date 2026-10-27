@@ -4,6 +4,7 @@ import { Building2, FolderKanban, Plus, Tag, X } from 'lucide-react';
 import { useAuth } from '../../lib/auth.js';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
+import { useT } from '../../lib/i18n.js';
 import { Button, Field, Input, Modal, Select, cn } from '../../components/ui.js';
 import type { Label, LabelColor, ProjectEntry, WorkspaceEntry } from '@ninedeploy/sdk';
 
@@ -33,6 +34,7 @@ interface ServiceTagsCardProps {
  * (workspace-scoped by default — operators may also create a global label).
  */
 export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
+  const t = useT();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -72,10 +74,10 @@ export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-tags', serviceId] });
       queryClient.invalidateQueries({ queryKey: ['services'] });
-      toast('Tags updated', 'success');
+      toast(t('Tags updated'), 'success');
     },
     onError: (err: unknown) => {
-      toast(err instanceof Error ? err.message : 'Could not update tags', 'error');
+      toast(err instanceof Error ? err.message : t('Could not update tags'), 'error');
     },
   });
 
@@ -108,7 +110,7 @@ export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
 
   const createLabel = async () => {
     if (!newLabel.name.trim()) {
-      toast('Label name is required', 'error');
+      toast(t('Label name is required'), 'error');
       return;
     }
     setBusy(true);
@@ -124,9 +126,9 @@ export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
       // Add the freshly minted label to the service in a single write.
       setMutation.mutate({ ...current, labelIds: [...current.labelIds, created.id] });
       setAdding(null);
-      toast(`Label "${created.name}" created and added`, 'success');
+      toast(t('Label "{name}" created and added', { name: created.name }), 'success');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not create label', 'error');
+      toast(err instanceof Error ? err.message : t('Could not create label'), 'error');
     } finally {
       setBusy(false);
     }
@@ -135,7 +137,7 @@ export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
   return (
     <div className="space-y-3">
       <Group
-        title="Projects"
+        title={t('Projects')}
         icon={<FolderKanban size={14} />}
         items={data?.projects ?? []}
         allOptions={allProjects}
@@ -151,7 +153,7 @@ export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
         onAdd={() => setAdding('project')}
       />
       <Group
-        title="Workspaces"
+        title={t('Workspaces')}
         icon={<Building2 size={14} />}
         items={data?.workspaces ?? []}
         allOptions={allWorkspaces}
@@ -162,7 +164,7 @@ export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
         onAdd={() => setAdding('workspace')}
       />
       <Group
-        title="Labels"
+        title={t('Labels')}
         icon={<Tag size={14} />}
         items={data?.labels ?? []}
         allOptions={allLabels}
@@ -175,18 +177,18 @@ export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
       />
 
       {adding === 'label' && (
-        <Modal title="Create label" onClose={() => setAdding(null)}>
+        <Modal title={t('Create label')} onClose={() => setAdding(null)}>
           <div className="space-y-3">
-            <Field label="Name">
+            <Field label={t('Name')}>
               <Input
                 autoFocus
                 value={newLabel.name}
                 onChange={(e) => setNewLabel((s) => ({ ...s, name: e.target.value }))}
-                placeholder="e.g. production"
+                placeholder={t('e.g. production')}
                 maxLength={40}
               />
             </Field>
-            <Field label="Color">
+            <Field label={t('Color')}>
               <Select
                 value={newLabel.color}
                 onChange={(e) => setNewLabel((s) => ({ ...s, color: e.target.value as LabelColor }))}
@@ -196,21 +198,21 @@ export function ServiceTagsCard({ serviceId, initial }: ServiceTagsCardProps) {
                 ))}
               </Select>
             </Field>
-            <Field label="Workspace" hint="Operators may leave it global.">
+            <Field label={t('Workspace')} hint={t('Operators may leave it global.')}>
               <Select
                 value={String(newLabel.workspaceId)}
                 onChange={(e) => setNewLabel((s) => ({ ...s, workspaceId: e.target.value === '' ? '' : Number(e.target.value) }))}
               >
-                <option value="">{isOperator ? 'Global (no workspace)' : 'No workspace'}</option>
+                <option value="">{isOperator ? t('Global (no workspace)') : t('No workspace')}</option>
                 {allWorkspaces.map((w) => (
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
               </Select>
             </Field>
             <div className="flex justify-end gap-2 pt-1">
-              <Button type="button" variant="secondary" onClick={() => setAdding(null)}>Cancel</Button>
+              <Button type="button" variant="secondary" onClick={() => setAdding(null)}>{t('Cancel')}</Button>
               <Button onClick={createLabel} disabled={busy || !newLabel.name.trim()}>
-                {busy ? 'Creating…' : 'Create & add'}
+                {busy ? t('Creating…') : t('Create & add')}
               </Button>
             </div>
           </div>
@@ -235,6 +237,7 @@ interface GroupProps<T> {
 }
 
 function Group<T>({ title, icon, items, allOptions, getId, getLabel, getSublabel, colorFor, currentIds, onToggle, onAdd }: GroupProps<T>) {
+  const t = useT();
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between">
@@ -242,22 +245,22 @@ function Group<T>({ title, icon, items, allOptions, getId, getLabel, getSublabel
           {icon}
           {title}
           <span className="ml-1 text-[10px] font-normal normal-case text-slate-500">
-            ({items.length} of {allOptions.length})
+            {t('({n} of {total})', { n: items.length, total: allOptions.length })}
           </span>
         </h3>
         <button
           type="button"
           onClick={onAdd}
           className="inline-flex items-center gap-0.5 text-[10px] uppercase tracking-wide text-slate-500 hover:text-slate-200"
-          title="Add more"
+          title={t('Add more')}
         >
           <Plus size={11} />
-          Add
+          {t('Add')}
         </button>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {items.length === 0 ? (
-          <span className="text-[11px] text-slate-500">Not tagged</span>
+          <span className="text-[11px] text-slate-500">{t('Not tagged')}</span>
         ) : (
           items.map((item) => {
             const id = getId(item);
@@ -274,7 +277,7 @@ function Group<T>({ title, icon, items, allOptions, getId, getLabel, getSublabel
                     ? palette ?? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-200'
                     : 'border-slate-700 bg-slate-900/40 text-slate-500',
                 )}
-                title={`Click to remove (${getLabel(item)})`}
+                title={t('Click to remove ({name})', { name: getLabel(item) })}
               >
                 {getLabel(item)}
                 {getSublabel && <span className="text-[9px] opacity-70">· {getSublabel(item)}</span>}

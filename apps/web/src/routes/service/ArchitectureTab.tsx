@@ -37,6 +37,7 @@ import { api } from '../../lib/api.js';
 import { useThemeMode } from '../../lib/theme.js';
 import { Button, Card, CardBody, StatusBadge } from '../../components/ui.js';
 import { useCopy } from '../../lib/format.js';
+import { useT } from '../../lib/i18n.js';
 
 type SourceNodeData = {
   repoUrl: string | null;
@@ -66,6 +67,7 @@ type StorageNodeData = { path: string; volumeName?: string };
 type SecretsNodeData = { count: number; secretCount: number };
 
 function SvcSourceNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as SourceNodeData;
   return (
     <div className="min-w-[200px] rounded-2xl border-2 border-slate-700/60 bg-slate-900/95 p-3.5 shadow-xl shadow-black/50 backdrop-blur-md transition hover:border-slate-500">
@@ -76,7 +78,7 @@ function SvcSourceNode(props: NodeProps) {
         </span>
         <div className="min-w-0">
           <p className="font-semibold text-slate-100 text-xs truncate">
-            {data.image ? 'Container Registry' : 'Git Repository'}
+            {data.image ? t('Container Registry') : t('Git Repository')}
           </p>
           <p className="font-mono text-[10px] text-slate-400 truncate">
             {data.image ? data.image : data.branch}
@@ -85,7 +87,7 @@ function SvcSourceNode(props: NodeProps) {
       </div>
       {data.commitSha && (
         <div className="mt-2.5 rounded-lg bg-white/[0.04] px-2 py-1 font-mono text-[10px] text-slate-300 flex items-center justify-between">
-          <span className="text-slate-500">Commit</span>
+          <span className="text-slate-500">{t('Commit')}</span>
           <span>{data.commitSha.slice(0, 7)}</span>
         </div>
       )}
@@ -94,6 +96,7 @@ function SvcSourceNode(props: NodeProps) {
 }
 
 function SvcDomainNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as DomainNodeData;
   return (
     <div className="min-w-[190px] rounded-xl border border-sky-500/30 bg-slate-900/95 p-3 shadow-lg shadow-black/50 backdrop-blur-md transition hover:border-sky-400">
@@ -105,7 +108,7 @@ function SvcDomainNode(props: NodeProps) {
         <div className="min-w-0 flex-1">
           <p className="truncate font-mono text-xs font-semibold text-slate-200">{data.hostname}</p>
           <p className="text-[10px] text-slate-400">
-            {data.isDirect ? `Direct TCP :${data.port}` : data.ssl ? 'HTTPS / TLS 1.3' : 'HTTP / Dynamic Route'}
+            {data.isDirect ? t('Direct TCP :{port}', { port: String(data.port) }) : data.ssl ? 'HTTPS / TLS 1.3' : t('HTTP / Dynamic Route')}
           </p>
         </div>
       </div>
@@ -114,6 +117,7 @@ function SvcDomainNode(props: NodeProps) {
 }
 
 function SvcGatewayNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as GatewayNodeData;
   return (
     <div className="min-w-[170px] rounded-2xl border-2 border-indigo-500/40 bg-slate-900/95 p-3.5 shadow-xl shadow-black/50 backdrop-blur-md">
@@ -125,14 +129,14 @@ function SvcGatewayNode(props: NodeProps) {
         </span>
         <div>
           <p className="font-bold text-slate-100 text-xs">Traefik Ingress</p>
-          <p className="text-[10px] text-slate-400">Reverse Proxy</p>
+          <p className="text-[10px] text-slate-400">{t('Reverse Proxy')}</p>
         </div>
       </div>
       <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-1.5 text-[10px]">
-        <span className="text-slate-400">{data.domainsCount} route(s)</span>
+        <span className="text-slate-400">{t('{n} route(s)', { n: data.domainsCount })}</span>
         <span className="inline-flex items-center gap-1 font-medium text-emerald-400">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          Active
+          {t('Active')}
         </span>
       </div>
     </div>
@@ -140,6 +144,7 @@ function SvcGatewayNode(props: NodeProps) {
 }
 
 function SvcHealthNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as HealthNodeData;
   return (
     <div className="rounded-xl border border-emerald-500/30 bg-slate-900/95 px-3 py-2 shadow-lg backdrop-blur-md">
@@ -147,7 +152,7 @@ function SvcHealthNode(props: NodeProps) {
       <div className="flex items-center gap-2">
         <Activity size={14} className="text-emerald-400" />
         <div>
-          <p className="text-[10px] font-semibold uppercase text-slate-400">Health Probe</p>
+          <p className="text-[10px] font-semibold uppercase text-slate-400">{t('Health Probe')}</p>
           <p className="font-mono text-xs text-emerald-300">{data.path}</p>
         </div>
       </div>
@@ -156,6 +161,7 @@ function SvcHealthNode(props: NodeProps) {
 }
 
 function SvcMainNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as ServiceNodeData;
   return (
     <div className="min-w-[260px] rounded-2xl border-2 border-[var(--nd-accent)]/60 bg-slate-900/95 p-4 shadow-2xl shadow-black/70 backdrop-blur-md ring-4 ring-[var(--nd-accent)]/10">
@@ -172,7 +178,7 @@ function SvcMainNode(props: NodeProps) {
           </span>
           <div className="min-w-0">
             <p className="truncate font-bold text-slate-100 text-sm">{data.name}</p>
-            <p className="font-mono text-[10px] uppercase text-slate-400">{data.type} container</p>
+            <p className="font-mono text-[10px] uppercase text-slate-400">{t('{type} container', { type: data.type })}</p>
           </div>
         </div>
         <StatusBadge status={data.status} />
@@ -180,24 +186,24 @@ function SvcMainNode(props: NodeProps) {
 
       <div className="mt-3 space-y-1.5 rounded-xl bg-white/[0.03] p-2.5 font-mono text-[11px] text-slate-300">
         <div className="flex items-center justify-between">
-          <span className="text-slate-500">Internal Port</span>
+          <span className="text-slate-500">{t('Internal Port')}</span>
           <span className="text-slate-200">:{data.port ?? '—'}</span>
         </div>
         {data.publishedPort && (
           <div className="flex items-center justify-between text-amber-300">
-            <span className="text-slate-500">Host Published</span>
+            <span className="text-slate-500">{t('Host Published')}</span>
             <span>:{data.publishedPort}</span>
           </div>
         )}
         {data.runtimeId && (
           <div className="flex items-center justify-between text-[10px] text-slate-400">
-            <span className="text-slate-500">Runtime</span>
+            <span className="text-slate-500">{t('Runtime')}</span>
             <span className="truncate max-w-[130px]">{data.runtimeId}</span>
           </div>
         )}
         {(data.cpuShares || data.memLimitMb) && (
           <div className="flex items-center justify-between text-[10px] text-slate-500 border-t border-white/5 pt-1">
-            <span>Limits</span>
+            <span>{t('Limits')}</span>
             <span>
               {data.cpuShares ? `${data.cpuShares} cpu` : ''}
               {data.cpuShares && data.memLimitMb ? ' / ' : ''}
@@ -235,6 +241,7 @@ function SvcDbNode(props: NodeProps) {
 }
 
 function SvcStorageNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as StorageNodeData;
   return (
     <div className="rounded-xl border border-amber-500/30 bg-slate-900/95 px-3.5 py-2.5 shadow-lg backdrop-blur-md">
@@ -242,7 +249,7 @@ function SvcStorageNode(props: NodeProps) {
       <div className="flex items-center gap-2.5">
         <HardDrive size={15} className="text-amber-400" />
         <div>
-          <p className="text-[10px] font-semibold uppercase text-slate-400">Volume Storage</p>
+          <p className="text-[10px] font-semibold uppercase text-slate-400">{t('Volume Storage')}</p>
           <p className="font-mono text-xs text-amber-300">{data.path}</p>
         </div>
       </div>
@@ -251,6 +258,7 @@ function SvcStorageNode(props: NodeProps) {
 }
 
 function SvcSecretsNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as SecretsNodeData;
   return (
     <div className="rounded-xl border border-purple-500/30 bg-slate-900/95 px-3.5 py-2.5 shadow-lg backdrop-blur-md">
@@ -258,8 +266,8 @@ function SvcSecretsNode(props: NodeProps) {
       <div className="flex items-center gap-2.5">
         <Key size={15} className="text-purple-400" />
         <div>
-          <p className="text-[10px] font-semibold uppercase text-slate-400">Dual-Vault Store</p>
-          <p className="text-xs text-purple-300">{data.count} keys ({data.secretCount} encrypted)</p>
+          <p className="text-[10px] font-semibold uppercase text-slate-400">{t('Dual-Vault Store')}</p>
+          <p className="text-xs text-purple-300">{t('{count} keys ({secretCount} encrypted)', { count: data.count, secretCount: data.secretCount })}</p>
         </div>
       </div>
     </div>
@@ -278,6 +286,7 @@ const nodeTypes = {
 };
 
 export function ArchitectureTab({ service }: { service: Service }) {
+  const t = useT();
   const colorMode = useThemeMode();
   const { copied, copy } = useCopy();
   const [selectedNode, setSelectedNode] = useState<{ id: string; type?: string; data: any } | null>(null);
@@ -424,7 +433,7 @@ export function ArchitectureTab({ service }: { service: Service }) {
         position: { x: DB_X, y },
         data: {
           id: a.databaseId,
-          name: a.database?.name ?? `Database #${a.databaseId}`,
+          name: a.database?.name ?? t('Database #{id}', { id: a.databaseId }),
           engine: a.database?.engine ?? 'db',
           status: a.database?.status ?? 'running',
           envAlias: a.envAlias,
@@ -476,7 +485,7 @@ export function ArchitectureTab({ service }: { service: Service }) {
     });
 
     return { nodes, edges };
-  }, [domains.data, attachments.data, env.data, service]);
+  }, [domains.data, attachments.data, env.data, service, t]);
 
   return (
     <Card>
@@ -485,16 +494,16 @@ export function ArchitectureTab({ service }: { service: Service }) {
           <div>
             <h3 className="font-semibold text-slate-100 flex items-center gap-2">
               <Network size={16} className="text-[var(--nd-accent)]" />
-              Full Application Architecture & System Topology
+              {t('Full Application Architecture & System Topology')}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Comprehensive mapping: Source Repository → Inbound Ingress / Direct Ports → Application Container → Attached Databases & Storage.
+              {t('Comprehensive mapping: Source Repository → Inbound Ingress / Direct Ports → Application Container → Attached Databases & Storage.')}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 rounded-full bg-white/[0.04] px-3 py-1 text-xs font-mono text-slate-300">
               <Layers size={13} className="text-[var(--nd-accent)]" />
-              Interactive Canvas
+              {t('Interactive Canvas')}
             </span>
           </div>
         </div>
@@ -527,11 +536,11 @@ export function ArchitectureTab({ service }: { service: Service }) {
               </span>
               <div>
                 <p className="text-xs font-semibold text-slate-100 flex items-center gap-2">
-                  <span>Selected: {selectedNode.data?.name ?? selectedNode.data?.hostname ?? selectedNode.id}</span>
+                  <span>{t('Selected: {name}', { name: selectedNode.data?.name ?? selectedNode.data?.hostname ?? selectedNode.id })}</span>
                   {selectedNode.data?.status && <StatusBadge status={selectedNode.data.status} />}
                 </p>
                 <p className="text-[11px] text-slate-400 font-mono mt-0.5">
-                  Node Type: {selectedNode.type} {selectedNode.data?.envAlias ? `· Injected as ${selectedNode.data.envAlias}` : ''}
+                  {t('Node Type: {type}', { type: selectedNode.type ?? '' })} {selectedNode.data?.envAlias ? t('· Injected as {alias}', { alias: selectedNode.data.envAlias }) : ''}
                 </p>
               </div>
             </div>
@@ -542,7 +551,7 @@ export function ArchitectureTab({ service }: { service: Service }) {
                   to={`/databases/${selectedNode.data.id}`}
                   className="rounded-lg bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/25 transition"
                 >
-                  Go to Database &rarr;
+                  {t('Go to Database →')}
                 </Link>
               )}
               {selectedNode.type === 'svcDomain' && selectedNode.data?.hostname && (
@@ -553,14 +562,14 @@ export function ArchitectureTab({ service }: { service: Service }) {
                   className="text-xs"
                 >
                   {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                  {copied ? 'Copied' : 'Copy Endpoint'}
+                  {copied ? t('Copied') : t('Copy Endpoint')}
                 </Button>
               )}
               <button
                 type="button"
                 onClick={() => setSelectedNode(null)}
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-white/[0.06] hover:text-slate-200 transition"
-                title="Dismiss inspector"
+                title={t('Dismiss inspector')}
               >
                 <X size={15} />
               </button>

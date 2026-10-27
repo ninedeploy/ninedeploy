@@ -32,6 +32,7 @@ Use string literals inside `t()` and `msg()`. The test reads them from the sourc
 - the events drawer;
 - sign-in and password reset;
 - Settings → Appearance;
-- the dashboard.
+- the dashboard;
+- the services list and every service detail tab except the Network tab.
 
 The other pages are still English and move over route by route. Server error messages, help drawer topics and the CLI stay English.

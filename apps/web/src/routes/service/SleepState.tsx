@@ -5,6 +5,9 @@ import { sleepApi } from '../../lib/sleepApi.js';
 import { formatDateTime, formatRelative } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, StatusBadge } from '../../components/ui.js';
+import { type Translate, translate, useT } from '../../lib/i18n.js';
+
+const ENGLISH: Translate = (text, vars) => translate('en', text, vars);
 
 type SleepFields = Pick<Service, 'status'> & { asleepAt?: string | null };
 
@@ -12,8 +15,8 @@ type SleepFields = Pick<Service, 'status'> & { asleepAt?: string | null };
 export const isAsleep = (svc: SleepFields): boolean => svc.status === 'running' && svc.asleepAt != null;
 
 /** "Asleep since 20 Oct 2026, 10:04 — its next request wakes it." */
-export function asleepTitle(asleepAt: string): string {
-  return `Asleep since ${formatDateTime(asleepAt)} — its next request wakes it`;
+export function asleepTitle(asleepAt: string, t: Translate = ENGLISH): string {
+  return t('Asleep since {time} — its next request wakes it', { time: formatDateTime(asleepAt) });
 }
 
 /**
@@ -21,14 +24,15 @@ export function asleepTitle(asleepAt: string): string {
  * otherwise its status. For the service header and the service cards.
  */
 export function ServiceStatusBadge({ svc, since = false }: { svc: SleepFields; since?: boolean }) {
+  const t = useT();
   if (!isAsleep(svc)) return <StatusBadge status={svc.status} />;
-  const title = asleepTitle(svc.asleepAt!);
+  const title = asleepTitle(svc.asleepAt!, t);
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
       <StatusBadge status="asleep" title={title} />
       {since && (
         <span className="whitespace-nowrap text-xs text-slate-500" title={title}>
-          since {formatRelative(svc.asleepAt!)}
+          {t('since {time}', { time: formatRelative(svc.asleepAt!) })}
         </span>
       )}
     </span>
@@ -41,6 +45,7 @@ export function ServiceStatusBadge({ svc, since = false }: { svc: SleepFields; s
  * on. Nothing for a service that is not running, or on an older panel.
  */
 export function SleepActions({ svc }: { svc: SleepFields & Pick<Service, 'id' | 'type'> & { sleepAfterMinutes?: number | null } }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const refresh = () => {
@@ -53,34 +58,34 @@ export function SleepActions({ svc }: { svc: SleepFields & Pick<Service, 'id' | 
     mutationFn: () => sleepApi.wake(svc.id),
     onSuccess: () => {
       refresh();
-      toast('Service woken up', 'success');
+      toast(t('Service woken up'), 'success');
     },
     onError: (err) => {
       refresh();
-      toast(message(err, 'Could not wake the service'), 'error');
+      toast(message(err, t('Could not wake the service')), 'error');
     },
   });
   const sleep = useMutation({
     mutationFn: () => sleepApi.sleep(svc.id),
     onSuccess: () => {
       refresh();
-      toast('Service asleep — its next request wakes it', 'success');
+      toast(t('Service asleep — its next request wakes it'), 'success');
     },
-    onError: (err) => toast(message(err, 'Could not put the service to sleep'), 'error'),
+    onError: (err) => toast(message(err, t('Could not put the service to sleep')), 'error'),
   });
 
   if (svc.status !== 'running') return null;
   if (isAsleep(svc)) {
     return (
-      <Button variant="secondary" size="md" onClick={() => wake.mutate()} disabled={wake.isPending} title="Start the containers and route the domains back">
-        <Sun size={15} /> {wake.isPending ? 'Waking…' : 'Wake now'}
+      <Button variant="secondary" size="md" onClick={() => wake.mutate()} disabled={wake.isPending} title={t('Start the containers and route the domains back')}>
+        <Sun size={15} /> {wake.isPending ? t('Waking…') : t('Wake now')}
       </Button>
     );
   }
   if (svc.type !== 'docker' || svc.sleepAfterMinutes == null) return null;
   return (
-    <Button variant="secondary" size="md" onClick={() => sleep.mutate()} disabled={sleep.isPending} title="Stop the containers now; the next request wakes the service">
-      <Moon size={15} /> {sleep.isPending ? 'Sleeping…' : 'Sleep now'}
+    <Button variant="secondary" size="md" onClick={() => sleep.mutate()} disabled={sleep.isPending} title={t('Stop the containers now; the next request wakes the service')}>
+      <Moon size={15} /> {sleep.isPending ? t('Sleeping…') : t('Sleep now')}
     </Button>
   );
 }

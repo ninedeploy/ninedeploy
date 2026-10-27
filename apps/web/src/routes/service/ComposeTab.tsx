@@ -5,6 +5,7 @@ import { RotateCw, Save } from 'lucide-react';
 import type { Service } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
+import { fill, useT } from '../../lib/i18n.js';
 import { Button, Card, CardBody, Textarea } from '../../components/ui.js';
 
 /**
@@ -18,6 +19,7 @@ import { Button, Card, CardBody, Textarea } from '../../components/ui.js';
  * redeploy" exists next to plain Save.
  */
 export function ComposeTab({ service }: { service: Service }) {
+  const t = useT();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -50,13 +52,13 @@ export function ComposeTab({ service }: { service: Service }) {
       // r211: the redeploy just queued must reach the Deploys tab it lands on.
       qc.invalidateQueries({ queryKey: ['deploys', service.id] });
       if (deployment) {
-        toast('Compose file saved — redeploying…', 'info');
+        toast(t('Compose file saved — redeploying…'), 'info');
         navigate(`/services/${service.id}?tab=deploys`);
       } else {
-        toast('Compose file saved — redeploy to apply', 'success');
+        toast(t('Compose file saved — redeploy to apply'), 'success');
       }
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not save the compose file', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not save the compose file'), 'error'),
   });
 
   return (
@@ -65,15 +67,16 @@ export function ComposeTab({ service }: { service: Service }) {
         <CardBody className="space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm font-semibold text-slate-200">Compose file</div>
+              <div className="text-sm font-semibold text-slate-200">{t('Compose file')}</div>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                Deployed as project <span className="font-mono text-slate-400">ndcmp-{service.slug}</span>
-                {service.composeService && (
-                  <>
-                    {' '}· routed service <span className="font-mono text-slate-400">{service.composeService}</span>
-                  </>
-                )}
-                . Stored on the service, rewritten into the workspace before every deploy.
+                {service.composeService
+                  ? fill(t('Deployed as project {project} · routed service {service}. Stored on the service, rewritten into the workspace before every deploy.'), {
+                      project: <span className="font-mono text-slate-400">ndcmp-{service.slug}</span>,
+                      service: <span className="font-mono text-slate-400">{service.composeService}</span>,
+                    })
+                  : fill(t('Deployed as project {project}. Stored on the service, rewritten into the workspace before every deploy.'), {
+                      project: <span className="font-mono text-slate-400">ndcmp-{service.slug}</span>,
+                    })}
               </p>
             </div>
             <div className="flex shrink-0 gap-2">
@@ -84,7 +87,7 @@ export function ComposeTab({ service }: { service: Service }) {
                 disabled={!dirty || save.isPending}
                 onClick={() => save.mutate({ redeploy: false })}
               >
-                <Save size={13} className="mr-1" /> Save
+                <Save size={13} className="mr-1" /> {t('Save')}
               </Button>
               <Button
                 type="button"
@@ -92,7 +95,7 @@ export function ComposeTab({ service }: { service: Service }) {
                 disabled={!dirty || save.isPending}
                 onClick={() => save.mutate({ redeploy: true })}
               >
-                <RotateCw size={13} className="mr-1" /> Save &amp; redeploy
+                <RotateCw size={13} className="mr-1" /> {t('Save & redeploy')}
               </Button>
             </div>
           </div>
@@ -100,7 +103,7 @@ export function ComposeTab({ service }: { service: Service }) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={24}
-            aria-label="Compose file editor"
+            aria-label={t('Compose file editor')}
             className="font-mono text-xs leading-relaxed"
           />
         </CardBody>

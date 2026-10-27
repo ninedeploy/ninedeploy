@@ -7,6 +7,7 @@ import { api } from '../../lib/api.js';
 import { canaryApi, canaryKeys } from '../../lib/canaryApi.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Spinner } from '../../components/ui.js';
+import { fill, useT } from '../../lib/i18n.js';
 
 /** "1m 05s" / "42s" until `endsAt`; null without an end. */
 export function canaryTimeLeft(endsAt: string | undefined, now: number): string | null {
@@ -18,12 +19,13 @@ export function canaryTimeLeft(endsAt: string | undefined, now: number): string 
 }
 
 function ReleaseStats({ label, stats }: { label: string; stats: CanaryReleaseStats | undefined }) {
+  const t = useT();
   return (
     <div className="min-w-0 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
       <div className="text-[11px] font-medium text-slate-400">{label}</div>
       <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
         <div>
-          <dt className="inline text-slate-500">Requests </dt>
+          <dt className="inline text-slate-500">{t('Requests')} </dt>
           <dd className="inline font-mono text-slate-200">{stats?.requests ?? 0}</dd>
         </div>
         <div>
@@ -47,6 +49,7 @@ function ReleaseStats({ label, stats }: { label: string; stats: CanaryReleaseSta
  * use both (the server checks the member floor).
  */
 export function CanaryPanel({ serviceId, enabled, serverId }: { serviceId: number; enabled: boolean; serverId?: number | null }) {
+  const t = useT();
   const node = serverId != null;
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -65,8 +68,8 @@ export function CanaryPanel({ serviceId, enabled, serverId }: { serviceId: numbe
   const ticking = !!view?.stepEndsAt;
   useEffect(() => {
     if (!ticking) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
   }, [ticking]);
 
   const refresh = () => {
@@ -77,17 +80,17 @@ export function CanaryPanel({ serviceId, enabled, serverId }: { serviceId: numbe
     mutationFn: (deploymentId: number) => canaryApi.promote(serviceId, deploymentId),
     onSuccess: () => {
       refresh();
-      toast(node ? 'Promotion requested: waiting for this measured step to finish and pass' : 'Promoting: all traffic switches to the new release', 'success');
+      toast(node ? t('Promotion requested: waiting for this measured step to finish and pass') : t('Promoting: all traffic switches to the new release'), 'success');
     },
-    onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not promote the canary', 'error'),
+    onError: (err) => toast(err instanceof Error && err.message ? err.message : t('Could not promote the canary'), 'error'),
   });
   const abort = useMutation({
     mutationFn: (deploymentId: number) => api.deploys.cancel(serviceId, deploymentId),
     onSuccess: () => {
       refresh();
-      toast('Canary aborted: all traffic goes back to the previous release', 'success');
+      toast(t('Canary aborted: all traffic goes back to the previous release'), 'success');
     },
-    onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not abort the canary', 'error'),
+    onError: (err) => toast(err instanceof Error && err.message ? err.message : t('Could not abort the canary'), 'error'),
   });
 
   if (!view || view.deploymentId == null) return null;
@@ -105,33 +108,33 @@ export function CanaryPanel({ serviceId, enabled, serverId }: { serviceId: numbe
               <Split size={15} />
             </span>
             <div className="min-w-0">
-              <div className="text-sm font-medium text-slate-200">Canary release · deployment #{depId}</div>
+              <div className="text-sm font-medium text-slate-200">{t('Canary release · deployment #{id}', { id: depId })}</div>
               <div className="mt-0.5 text-[11px] text-slate-500">
                 {view.promoting
-                  ? node ? 'Waiting for this measured step to finish and pass…' : 'Switching all traffic to the new release…'
-                  : `Step ${view.step ?? 1} of ${view.steps ?? 1}${left ? ` · ${left} left in this step` : ''}`}
+                  ? node ? t('Waiting for this measured step to finish and pass…') : t('Switching all traffic to the new release…')
+                  : `${t('Step {step} of {steps}', { step: view.step ?? 1, steps: view.steps ?? 1 })}${left ? ` · ${t('{left} left in this step', { left })}` : ''}`}
               </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => promote.mutate(depId)} disabled={busy || view.promoting === true} title={node ? 'Finish and pass this measured step, then skip the remaining steps' : 'Skip the remaining steps and switch all traffic now'}>
-              {promote.isPending || view.promoting ? <Spinner className="h-3 w-3" /> : null} Promote
+            <Button size="sm" onClick={() => promote.mutate(depId)} disabled={busy || view.promoting === true} title={node ? t('Finish and pass this measured step, then skip the remaining steps') : t('Skip the remaining steps and switch all traffic now')}>
+              {promote.isPending || view.promoting ? <Spinner className="h-3 w-3" /> : null} {t('Promote')}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setConfirmAbort(true)} disabled={busy || (!node && view.promoting === true)}>
-              Abort
+              {t('Abort')}
             </Button>
           </div>
         </div>
 
         <div>
           <div className="flex flex-wrap justify-between gap-x-3 text-[11px]">
-            <span className="text-indigo-200">New release {weight}%</span>
-            <span className="text-slate-500">Previous release {100 - weight}%</span>
+            <span className="text-indigo-200">{t('New release {weight}%', { weight })}</span>
+            <span className="text-slate-500">{t('Previous release {weight}%', { weight: 100 - weight })}</span>
           </div>
           <div
             className="mt-1 h-2 overflow-hidden rounded-full bg-white/[0.06]"
             role="progressbar"
-            aria-label="Share of requests on the new release"
+            aria-label={t('Share of requests on the new release')}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={weight}
@@ -142,21 +145,22 @@ export function CanaryPanel({ serviceId, enabled, serverId }: { serviceId: numbe
 
         {view.measured ? (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <ReleaseStats label="New release" stats={view.canary} />
-            <ReleaseStats label="Previous release" stats={view.stable} />
+            <ReleaseStats label={t('New release')} stats={view.canary} />
+            <ReleaseStats label={t('Previous release')} stats={view.stable} />
           </div>
         ) : (
           <p className="text-xs text-slate-500">
-            Traffic analytics is off, so each step is judged on the healthcheck only. An operator can turn it on in{' '}
-            <Link to="/traefik" className="text-indigo-200 underline-offset-2 hover:underline">Traefik → Traffic</Link>.
+            {fill(t('Traffic analytics is off, so each step is judged on the healthcheck only. An operator can turn it on in {link}.'), {
+              link: <Link to="/traefik" className="text-indigo-200 underline-offset-2 hover:underline">{t('Traefik → Traffic')}</Link>,
+            })}
           </p>
         )}
 
         <ConfirmDialog
           open={confirmAbort}
-          title="Abort this canary?"
-          message={`Deployment #${depId} is cancelled and all traffic goes back to the previous release. The new container is stopped.`}
-          confirmLabel="Abort canary"
+          title={t('Abort this canary?')}
+          message={t('Deployment #{id} is cancelled and all traffic goes back to the previous release. The new container is stopped.', { id: depId })}
+          confirmLabel={t('Abort canary')}
           onConfirm={() => abort.mutate(depId)}
           onClose={() => setConfirmAbort(false)}
         />

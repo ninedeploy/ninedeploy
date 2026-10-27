@@ -3,6 +3,7 @@ import { CalendarClock, Clock, Copy, GitBranch, Plus, Trash2, Webhook } from 'lu
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../lib/api.js';
+import { fill, useT, type Translate } from '../../lib/i18n.js';
 import { PRESETS, describeCron, isValidCron, nextCronRun, presetCron, WEEKDAY_LABELS } from '../../lib/cron.js';
 import { formatDateTime, formatRelative, useCopy } from '../../lib/format.js';
 import { AttachmentsCard } from '../../components/AttachmentsCard.js';
@@ -58,6 +59,7 @@ export function EnvironmentTab({
 
 // ── Webhooks ──────────────────────────────────────────────────────────────
 function WebhooksCard({ serviceId }: { serviceId: number }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [revealed, setRevealed] = useState<{ url: string; secret: string } | null>(null);
@@ -71,12 +73,12 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
       setWatchPaths('');
       qc.invalidateQueries({ queryKey: ['webhooks', serviceId] });
     },
-    onError: () => toast('Could not create the webhook', 'error'),
+    onError: () => toast(t('Could not create the webhook'), 'error'),
   });
   const remove = useMutation({
     mutationFn: (hookId: number) => api.webhooks.remove(serviceId, hookId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['webhooks', serviceId] }),
-    onError: () => toast('Could not remove the webhook', 'error'),
+    onError: () => toast(t('Could not remove the webhook'), 'error'),
   });
   // Deleting a webhook breaks the repo's auto-deploy, and re-creating it
   // mints a NEW secret that must be re-registered with the provider —
@@ -90,10 +92,10 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
       <CardBody>
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Webhook size={15} className="text-slate-500" /> Auto-deploy
+            <Webhook size={15} className="text-slate-500" /> {t('Auto-deploy')}
           </div>
           <Button size="sm" variant="secondary" onClick={() => create.mutate()} disabled={create.isPending}>
-            <Plus size={14} /> New
+            <Plus size={14} /> {t('New')}
           </Button>
         </div>
 
@@ -107,36 +109,39 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
           <Input
             value={watchPaths}
             onChange={(e) => setWatchPaths(e.target.value)}
-            placeholder="Watch paths (optional) — e.g. services/api/**, packages/**"
+            placeholder={t('Watch paths (optional) — e.g. services/api/**, packages/**')}
             className="h-8 font-mono text-[11px]"
           />
           <p className="mt-1 text-[10px] text-slate-600">
-            Comma or newline separated globs. Only pushes touching these paths deploy (monorepo-friendly). Leave empty to deploy on every push.
+            {t('Comma or newline separated globs. Only pushes touching these paths deploy (monorepo-friendly). Leave empty to deploy on every push.')}
           </p>
         </form>
 
         {revealed && (
           <div className="mb-3 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3">
             <p className="text-xs font-medium text-amber-200">
-              Copy these now — the secret is shown only once.
+              {t('Copy these now — the secret is shown only once.')}
             </p>
-            <SecretRow label="Payload URL" value={revealed.url} />
-            <SecretRow label="Secret" value={revealed.secret} />
+            <SecretRow label={t('Payload URL')} value={revealed.url} />
+            <SecretRow label={t('Secret')} value={revealed.secret} />
             <button type="button"
               onClick={() => setRevealed(null)}
               className="text-xs text-amber-200/70 underline-offset-2 hover:underline"
             >
-              I&apos;ve saved it
+              {t("I've saved it")}
             </button>
           </div>
         )}
 
         {!hooks.isLoading && hooks.data?.some((w) => /\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(w.url)) && (
           <div className="mb-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.05] p-2.5 text-[11px] text-amber-200/90">
-            These URLs point at <code className="font-mono">localhost</code> because no panel domain is set. Git
-            providers can&apos;t reach that — set your real address under{' '}
-            <Link to="/settings" className="font-medium underline underline-offset-2">Settings → Security</Link>{' '}
-            ("Panel Domain").
+            {fill(
+              t('These URLs point at {localhost} because no panel domain is set. Git providers can\'t reach that — set your real address under {link} ("Panel Domain").'),
+              {
+                localhost: <code className="font-mono">localhost</code>,
+                link: <Link to="/settings" className="font-medium underline underline-offset-2">{t('Settings → Security')}</Link>,
+              },
+            )}
           </div>
         )}
 
@@ -144,7 +149,7 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
           {hooks.isLoading ? (
             <Skeleton className="h-8 w-full" />
           ) : !hooks.data || hooks.data.length === 0 ? (
-            <p className="py-2 text-xs text-slate-600">No webhooks. Create one and add it to GitHub/GitLab.</p>
+            <p className="py-2 text-xs text-slate-600">{t('No webhooks. Create one and add it to GitHub/GitLab.')}</p>
           ) : (
             hooks.data.map((w) => (
               <div
@@ -156,7 +161,7 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
                     <GitBranch size={11} /> {w.branch}
                     {w.watchPaths && (
                       <span className="truncate rounded bg-indigo-500/10 px-1.5 text-[10px] text-indigo-300" title={w.watchPaths}>
-                        watch: {w.watchPaths.split(/[\n,]/).filter(Boolean).length} path(s)
+                        {t('watch: {n} path(s)', { n: w.watchPaths.split(/[\n,]/).filter(Boolean).length })}
                       </span>
                     )}
                   </div>
@@ -172,7 +177,7 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
                 <button type="button"
                   onClick={() => setPendingRemove(w.id)}
                   className="text-slate-600 transition hover:text-rose-400"
-                  title="Remove webhook"
+                  title={t('Remove webhook')}
                 >
                   <Trash2 size={13} />
                 </button>
@@ -183,9 +188,9 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
       </CardBody>
       <ConfirmDialog
         open={pendingRemove != null}
-        title="Remove webhook?"
-        message="Auto-deploys from this webhook stop immediately. Re-creating it later mints a NEW secret that must be registered with the Git provider again."
-        confirmLabel="Remove"
+        title={t('Remove webhook?')}
+        message={t('Auto-deploys from this webhook stop immediately. Re-creating it later mints a NEW secret that must be registered with the Git provider again.')}
+        confirmLabel={t('Remove')}
         onConfirm={() => pendingRemove != null && remove.mutate(pendingRemove)}
         onClose={() => setPendingRemove(null)}
       />
@@ -204,16 +209,16 @@ function parseTimeField(raw: string | undefined, fallback: number, max: number):
 }
 
 /** "in ~4h" / "on 12 Aug, 03:00" — next-run chip text. */
-function untilLabel(d: Date): string {
+function untilLabel(d: Date, t: Translate): string {
   const ms = d.getTime() - Date.now();
   const min = Math.round(ms / 60000);
-  if (min <= 1) return 'within a minute';
-  if (min < 60) return `in ~${min}m`;
+  if (min <= 1) return t('within a minute');
+  if (min < 60) return t('in ~{n}m', { n: min });
   const hr = Math.round(min / 60);
-  if (hr < 24) return `in ~${hr}h`;
+  if (hr < 24) return t('in ~{n}h', { n: hr });
   const day = Math.round(hr / 24);
-  if (day <= 7) return `in ~${day}d`;
-  return `on ${formatDateTime(d)}`;
+  if (day <= 7) return t('in ~{n}d', { n: day });
+  return t('on {date}', { date: formatDateTime(d) });
 }
 
 interface JobEntry {
@@ -228,6 +233,7 @@ interface JobEntry {
 }
 
 function JobsCard({ serviceId }: { serviceId: number }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [name, setName] = useState('');
@@ -248,29 +254,29 @@ function JobsCard({ serviceId }: { serviceId: number }) {
       setCustomCron('');
       setCommand('');
       qc.invalidateQueries({ queryKey: ['jobs', serviceId] });
-      toast('Job created — active within 5 minutes', 'success');
+      toast(t('Job created — active within 5 minutes'), 'success');
     },
-    onError: () => toast('Could not create the job', 'error'),
+    onError: () => toast(t('Could not create the job'), 'error'),
   });
   const remove = useMutation({
     mutationFn: (jobId: number) => api.jobs.remove(serviceId, jobId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs', serviceId] }),
     // r211: the server refuses exec/backup jobs to members (403); a silent
     // failure looked like a dead button.
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not delete the job', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not delete the job'), 'error'),
   });
   const runNow = useMutation({
     mutationFn: (jobId: number) => api.jobs.run(serviceId, jobId),
     onSuccess: () => {
-      toast('Job executed', 'success');
+      toast(t('Job executed'), 'success');
       qc.invalidateQueries({ queryKey: ['jobs', serviceId] }); // refresh 'last ran'
     },
-    onError: () => toast('Job run failed', 'error'),
+    onError: () => toast(t('Job run failed'), 'error'),
   });
   const toggle = useMutation({
     mutationFn: (j: { id: number; enabled: boolean }) => api.jobs.update(serviceId, j.id, { enabled: !j.enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs', serviceId] }),
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not update the job', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not update the job'), 'error'),
   });
 
   const preset = PRESETS.find((p) => p.id === presetId) ?? PRESETS[0]!;
@@ -283,8 +289,8 @@ function JobsCard({ serviceId }: { serviceId: number }) {
 
   const description = isCustom
     ? cronValid
-      ? describeCron(cronExpr) ?? 'Custom expression.'
-      : 'Not a valid 5-field expression yet.'
+      ? describeCron(cronExpr) ?? t('Custom expression.')
+      : t('Not a valid 5-field expression yet.')
     : preset.hint || describeCron(cronExpr) || '';
   const nextRun = useMemo(() => (cronValid ? nextCronRun(cronExpr) : null), [cronValid, cronExpr]);
 
@@ -294,9 +300,9 @@ function JobsCard({ serviceId }: { serviceId: number }) {
     <Card>
       <CardBody>
         <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
-          <CalendarClock size={15} className="text-slate-500" /> Scheduled jobs
+          <CalendarClock size={15} className="text-slate-500" /> {t('Scheduled jobs')}
         </div>
-        <p className="mb-3 text-xs text-slate-500">Cron-scheduled redeploys or container commands (server timezone).</p>
+        <p className="mb-3 text-xs text-slate-500">{t('Cron-scheduled redeploys or container commands (server timezone).')}</p>
 
         <form
           onSubmit={(e) => {
@@ -307,10 +313,10 @@ function JobsCard({ serviceId }: { serviceId: number }) {
         >
           {/* Stacked: the column is narrow, and side by side the action read "Redeploy the serv". */}
           <div className="grid grid-cols-1 gap-2">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="nightly-rebuild" aria-label="Job name" className="h-8 text-xs" />
-            <select value={kind} onChange={(e) => setKind(e.target.value as 'deploy' | 'exec')} aria-label="Job action" className={selectCls}>
-              <option value="deploy">Redeploy the service</option>
-              <option value="exec">Run a command in the container</option>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="nightly-rebuild" aria-label={t('Job name')} className="h-8 text-xs" />
+            <select value={kind} onChange={(e) => setKind(e.target.value as 'deploy' | 'exec')} aria-label={t('Job action')} className={selectCls}>
+              <option value="deploy">{t('Redeploy the service')}</option>
+              <option value="exec">{t('Run a command in the container')}</option>
             </select>
           </div>
           {kind === 'exec' && (
@@ -321,7 +327,7 @@ function JobsCard({ serviceId }: { serviceId: number }) {
             <select
               value={presetId}
               onChange={(e) => setPresetId(e.target.value)}
-              aria-label="Schedule preset"
+              aria-label={t('Schedule preset')}
               className={cn(selectCls, 'flex-1')}
             >
               {PRESETS.map((p) => (
@@ -333,19 +339,19 @@ function JobsCard({ serviceId }: { serviceId: number }) {
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                aria-label="Time of day"
+                aria-label={t('Time of day')}
                 className="h-8 w-[7.5rem] shrink-0 px-2 font-mono text-xs"
               />
             )}
             {preset.needs === 'weekday-time' && (
-              <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} aria-label="Day of week" className={cn(selectCls, 'shrink-0')}>
+              <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} aria-label={t('Day of week')} className={cn(selectCls, 'shrink-0')}>
                 {WEEKDAY_LABELS.map((label, i) => (
                   <option key={label} value={i}>{label}</option>
                 ))}
               </select>
             )}
             {preset.needs === 'monthday-time' && (
-              <select value={monthday} onChange={(e) => setMonthday(Number(e.target.value))} aria-label="Day of month" className={cn(selectCls, 'shrink-0')}>
+              <select value={monthday} onChange={(e) => setMonthday(Number(e.target.value))} aria-label={t('Day of month')} className={cn(selectCls, 'shrink-0')}>
                 {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
                   <option key={d} value={d}>{d}</option>
                 ))}
@@ -357,7 +363,7 @@ function JobsCard({ serviceId }: { serviceId: number }) {
               value={customCron}
               onChange={(e) => setCustomCron(e.target.value)}
               placeholder="0 3 * * *"
-              aria-label="Cron expression"
+              aria-label={t('Cron expression')}
               className={cn('h-8 font-mono text-xs', customCron.trim() !== '' && !cronValid && 'ring-rose-500/50')}
             />
           )}
@@ -365,14 +371,14 @@ function JobsCard({ serviceId }: { serviceId: number }) {
           <p className={cn('text-[11px]', isCustom && !cronValid ? 'text-rose-300/90' : 'text-slate-600')}>
             {cronValid && nextRun && (
               <span className="mr-2 inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
-                <Clock size={9} /> next {untilLabel(nextRun)}
+                <Clock size={9} /> {t('next {when}', { when: untilLabel(nextRun, t) })}
               </span>
             )}
             {description || '\u00A0'}
           </p>
 
           <Button type="submit" size="sm" variant="secondary" disabled={!canCreate || create.isPending}>
-            <Plus size={13} /> Add job
+            <Plus size={13} /> {t('Add job')}
           </Button>
         </form>
 
@@ -380,7 +386,7 @@ function JobsCard({ serviceId }: { serviceId: number }) {
           {jobs.isLoading ? (
             <Skeleton className="h-8 w-full" />
           ) : !jobs.data || jobs.data.length === 0 ? (
-            <p className="py-2 text-xs text-slate-600">No scheduled jobs.</p>
+            <p className="py-2 text-xs text-slate-600">{t('No scheduled jobs.')}</p>
           ) : (
             jobs.data.map((j: JobEntry) => {
               const summary = describeCron(j.cron);
@@ -398,7 +404,7 @@ function JobsCard({ serviceId }: { serviceId: number }) {
                         <span className="truncate font-mono" title={j.command}>{j.command}</span>
                       )}
                       {j.lastRunAt && (
-                        <span title={formatDateTime(j.lastRunAt)} className="shrink-0 text-slate-600">last ran {formatRelative(j.lastRunAt)}</span>
+                        <span title={formatDateTime(j.lastRunAt)} className="shrink-0 text-slate-600">{t('last ran {when}', { when: formatRelative(j.lastRunAt) })}</span>
                       )}
                     </div>
                   </div>
@@ -410,12 +416,12 @@ function JobsCard({ serviceId }: { serviceId: number }) {
                         j.enabled ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20' : 'bg-slate-500/15 text-slate-400 ring-slate-500/20',
                       )}
                     >
-                      {j.enabled ? 'on' : 'off'}
+                      {j.enabled ? t('on') : t('off')}
                     </button>
-                    <button type="button" onClick={() => runNow.mutate(j.id)} className="text-[11px] text-slate-500 hover:text-indigo-300" title="Run now">
-                      run
+                    <button type="button" onClick={() => runNow.mutate(j.id)} className="text-[11px] text-slate-500 hover:text-indigo-300" title={t('Run now')}>
+                      {t('run')}
                     </button>
-                    <button type="button" onClick={() => remove.mutate(j.id)} className="text-slate-600 transition hover:text-rose-400" title="Delete job">
+                    <button type="button" onClick={() => remove.mutate(j.id)} className="text-slate-600 transition hover:text-rose-400" title={t('Delete job')}>
                       <Trash2 size={13} />
                     </button>
                   </div>

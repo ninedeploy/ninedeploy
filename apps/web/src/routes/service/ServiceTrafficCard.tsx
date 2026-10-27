@@ -4,6 +4,7 @@ import { BarChart3 } from 'lucide-react';
 import type { TrafficRange } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { Card, CardBody, ErrorCard, Skeleton } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 import { TrafficChart, TrafficRangePicker, TrafficScopeTable, TrafficTotals } from '../../components/traffic/TrafficChart.js';
 
 /**
@@ -12,6 +13,7 @@ import { TrafficChart, TrafficRangePicker, TrafficScopeTable, TrafficTotals } fr
  * service). With analytics off the card says so instead of drawing zeros.
  */
 export function ServiceTrafficCard({ serviceId }: { serviceId: number }) {
+  const t = useT();
   const [range, setRange] = useState<TrafficRange>('24h');
   const q = useQuery({
     queryKey: ['service-traffic', serviceId, range],
@@ -24,23 +26,23 @@ export function ServiceTrafficCard({ serviceId }: { serviceId: number }) {
       <CardBody className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
-            <BarChart3 size={15} className="text-slate-500" /> Traffic
+            <BarChart3 size={15} className="text-slate-500" /> {t('Traffic')}
           </div>
           {q.data?.enabled && <TrafficRangePicker value={range} onChange={setRange} />}
         </div>
         {q.isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : q.isError || !q.data ? (
-          <ErrorCard title="Couldn't load the traffic for this service" error={q.error} onRetry={() => q.refetch()} />
+          <ErrorCard title={t("Couldn't load the traffic for this service")} error={q.error} onRetry={() => q.refetch()} />
         ) : !q.data.enabled ? (
           <p className="text-xs text-slate-500">
-            Traffic analytics is off. An operator can turn it on in Traefik → Traffic (it restarts the proxy once).
+            {t('Traffic analytics is off. An operator can turn it on in Traefik → Traffic (it restarts the proxy once).')}
           </p>
         ) : (
           <>
             <TrafficTotals totals={q.data.totals} />
             <TrafficChart series={q.data.series} />
-            <TrafficScopeTable rows={q.data.domains} empty="No domain of this service received traffic in this range." />
+            <TrafficScopeTable rows={q.data.domains} empty={t('No domain of this service received traffic in this range.')} />
           </>
         )}
       </CardBody>

@@ -11,8 +11,14 @@ import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
 import { formatPortMapping } from '@ninedeploy/schemas';
 import { portMappingLabel } from './service/PortMappingsCard.js';
 import { ServiceStatusBadge } from './service/SleepState.js';
+import { msg, useT } from '../lib/i18n.js';
+
+const STATUS_FILTER_LABEL = {
+  all: msg('all'), running: msg('running'), stopped: msg('stopped'), errored: msg('errored'),
+} as const;
 
 export function ServicesList() {
+  const t = useT();
   const [wizard, setWizard] = useState(false);
   const [lanesModal, setLanesModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,11 +97,11 @@ export function ServicesList() {
     <div className="space-y-6">
       <PageHeader
         icon={<Server size={18} />}
-        title="Services"
-        subtitle="Deploy and manage your applications."
+        title={t('Services')}
+        subtitle={t('Deploy and manage your applications.')}
         actions={
           <Button onClick={() => setWizard(true)}>
-            <Plus size={16} /> New service
+            <Plus size={16} /> {t('New service')}
           </Button>
         }
       />
@@ -114,16 +120,16 @@ export function ServicesList() {
           ))}
         </div>
       ) : isError ? (
-        <ErrorCard title="Couldn't load services" error={error} onRetry={() => void refetch()} />
+        <ErrorCard title={t("Couldn't load services")} error={error} onRetry={() => void refetch()} />
       ) : !services || services.length === 0 ? (
         <Card>
           <EmptyState
             icon={<Server size={26} />}
-            title="No services yet"
-            hint="Connect a repository to deploy your first application in seconds."
+            title={t('No services yet')}
+            hint={t('Connect a repository to deploy your first application in seconds.')}
             action={
               <Button onClick={() => setWizard(true)}>
-                <Plus size={16} /> Create service
+                <Plus size={16} /> {t('Create service')}
               </Button>
             }
           />
@@ -135,7 +141,7 @@ export function ServicesList() {
             <div className="relative max-w-xs flex-1">
               <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <Input
-                placeholder="Search services..."
+                placeholder={t('Search services...')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 text-xs"
@@ -146,19 +152,19 @@ export function ServicesList() {
                 type="button"
                 onClick={() => setLanesModal(true)}
                 className="flex items-center gap-1.5 rounded-lg bg-white/[0.03] px-2.5 py-1 text-xs font-medium text-slate-400 transition hover:text-slate-200"
-                title="Manage deployment lanes"
-                aria-label="Manage deployment lanes"
+                title={t('Manage deployment lanes')}
+                aria-label={t('Manage deployment lanes')}
               >
-                <Layers size={12} /> Lanes
+                <Layers size={12} /> {t('Lanes')}
               </button>
               {environments && environments.length > 0 && (
                 <select
                   value={envFilter}
                   onChange={(e) => setEnvFilter(e.target.value)}
                   className="rounded-lg bg-white/[0.03] px-2.5 py-1 text-xs font-medium text-slate-300 ring-1 ring-inset ring-white/10"
-                  aria-label="Filter by environment"
+                  aria-label={t('Filter by environment')}
                 >
-                  <option value="all">All lanes</option>
+                  <option value="all">{t('All lanes')}</option>
                   {environments.map((e) => (
                     <option key={e.id} value={String(e.id)}>
                       {e.name}
@@ -177,7 +183,7 @@ export function ServicesList() {
                       : 'bg-white/[0.03] text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {st}
+                  {t(STATUS_FILTER_LABEL[st])}
                 </button>
               ))}
             </div>
@@ -187,8 +193,8 @@ export function ServicesList() {
             <Card>
               <EmptyState
                 icon={<Server size={24} />}
-                title="No matching services"
-                hint="Try searching with a different keyword or resetting your filter."
+                title={t('No matching services')}
+                hint={t('Try searching with a different keyword or resetting your filter.')}
                 action={
                   <Button
                     variant="secondary"
@@ -198,7 +204,7 @@ export function ServicesList() {
                       setStatusFilter('all');
                     }}
                   >
-                    Reset filters
+                    {t('Reset filters')}
                   </Button>
                 }
               />
@@ -242,7 +248,7 @@ export function ServicesList() {
                               {liveStat ? `${liveStat.memMb.toFixed(1)} MiB` : '—'}
                             </span>
                             {s.volumeMount && (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-300 ring-1 ring-inset ring-amber-500/20" title={`Volume mounted at ${s.volumeMount}`}>
+                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-300 ring-1 ring-inset ring-amber-500/20" title={t('Volume mounted at {path}', { path: s.volumeMount })}>
                                 <HardDrive size={11} className="text-amber-400" />
                                 {s.volumeMount}
                               </span>
@@ -250,7 +256,7 @@ export function ServicesList() {
                             {(s.replicas ?? 1) > 1 && (
                               <span
                                 className="inline-flex items-center gap-1 rounded-md bg-fuchsia-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-fuchsia-300 ring-1 ring-inset ring-fuchsia-500/20"
-                                title={`${s.replicas} replicas behind Traefik's round-robin`}
+                                title={t("{n} replicas behind Traefik's round-robin", { n: s.replicas ?? 1 })}
                               >
                                 <Layers size={11} className="text-fuchsia-400" />×{s.replicas}
                               </span>
@@ -294,7 +300,7 @@ export function ServicesList() {
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleService.mutate({ id: s.id, start: false }); }}
                         disabled={togglingId === s.id}
                         className="absolute bottom-3 left-3 z-10 rounded-lg bg-white/[0.06] p-1.5 text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.1] hover:text-rose-300"
-                        title="Stop service"
+                        title={t('Stop service')}
                       >
                         <Square size={12} />
                       </button>
@@ -305,7 +311,7 @@ export function ServicesList() {
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleService.mutate({ id: s.id, start: true }); }}
                         disabled={togglingId === s.id}
                         className="absolute bottom-3 left-3 z-10 rounded-lg bg-white/[0.06] p-1.5 text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.1] hover:text-emerald-300"
-                        title="Start service"
+                        title={t('Start service')}
                       >
                         <Play size={12} />
                       </button>

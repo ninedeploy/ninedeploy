@@ -5,6 +5,7 @@ import { api } from '../../lib/api.js';
 import { downloadBlob } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, Input, Select, Spinner } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 
 /** Line counts offered; the server caps a read at 5000 (RUNTIME_LOG_TAIL_MAX). */
 const TAILS = [300, 1000, 5000] as const;
@@ -18,6 +19,7 @@ const TAILS = [300, 1000, 5000] as const;
  * service's health, the problems it sees and what to do.
  */
 export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: string }) {
+  const t = useT();
   const [tail, setTail] = useState<number>(300);
   const [paused, setPaused] = useState(false);
   const [query, setQuery] = useState('');
@@ -49,7 +51,7 @@ export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: 
   const analyze = useMutation({
     mutationFn: () => api.ai.analyzeLogs(serviceId, { tail }),
     onSuccess: (res) => setAnalysis({ text: res.analysis, model: res.model, lines: res.lines }),
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Analysis failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Analysis failed'), 'error'),
   });
 
   return (
@@ -57,7 +59,7 @@ export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: 
       <CardBody>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Terminal size={15} className="text-slate-500" /> Runtime logs
+            <Terminal size={15} className="text-slate-500" /> {t('Runtime logs')}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -65,23 +67,23 @@ export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: 
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search"
-                aria-label="Search logs"
+                placeholder={t('Search')}
+                aria-label={t('Search logs')}
                 className="h-8 w-48 pl-7 text-xs"
               />
             </div>
-            <Select value={String(tail)} onChange={(e) => setTail(Number(e.target.value))} aria-label="Lines" className="h-8 text-xs">
+            <Select value={String(tail)} onChange={(e) => setTail(Number(e.target.value))} aria-label={t('Lines')} className="h-8 text-xs">
               {TAILS.map((n) => (
                 <option key={n} value={n}>
-                  Last {n} lines
+                  {t('Last {n} lines', { n })}
                 </option>
               ))}
             </Select>
-            <Button size="sm" variant="ghost" onClick={() => setPaused((p) => !p)} aria-label={paused ? 'Resume live logs' : 'Pause live logs'}>
-              {paused ? <Play size={13} /> : <Pause size={13} />} {paused ? 'Resume' : 'Pause'}
+            <Button size="sm" variant="ghost" onClick={() => setPaused((p) => !p)} aria-label={paused ? t('Resume live logs') : t('Pause live logs')}>
+              {paused ? <Play size={13} /> : <Pause size={13} />} {paused ? t('Resume') : t('Pause')}
             </Button>
-            <Button size="sm" variant="secondary" onClick={download} disabled={!text} aria-label="Download logs">
-              <Download size={13} /> Download
+            <Button size="sm" variant="secondary" onClick={download} disabled={!text} aria-label={t('Download logs')}>
+              <Download size={13} /> {t('Download')}
             </Button>
             {aiConfig.data?.configured && (
               <Button
@@ -89,9 +91,9 @@ export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: 
                 variant="secondary"
                 onClick={() => analyze.mutate()}
                 disabled={!text || analyze.isPending}
-                aria-label="Analyze logs with AI"
+                aria-label={t('Analyze logs with AI')}
               >
-                {analyze.isPending ? <Spinner className="h-3 w-3" /> : <Bot size={13} />} Analyze
+                {analyze.isPending ? <Spinner className="h-3 w-3" /> : <Bot size={13} />} {t('Analyze')}
               </Button>
             )}
           </div>
@@ -100,13 +102,13 @@ export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: 
           <div className="mb-3 rounded-lg border border-indigo-500/20 bg-indigo-500/[0.06] p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-slate-400">
               <span className="flex items-center gap-1.5">
-                <Bot size={13} className="text-indigo-300" /> AI analysis of the last {analysis.lines} lines · {analysis.model}
+                <Bot size={13} className="text-indigo-300" /> {t('AI analysis of the last {n} lines', { n: analysis.lines })} · {analysis.model}
               </span>
               <button
                 type="button"
                 onClick={() => setAnalysis(null)}
                 className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"
-                aria-label="Close the analysis"
+                aria-label={t('Close the analysis')}
               >
                 <X size={12} />
               </button>
@@ -122,10 +124,10 @@ export function RuntimeLogsCard({ serviceId, slug }: { serviceId: number; slug: 
           }}
           className="h-72 overflow-auto rounded-lg bg-black/40 p-3 font-mono text-xs leading-relaxed text-slate-300 ring-1 ring-inset ring-white/5"
         >
-          {all.length === 0 ? 'No logs yet.' : shown.length === 0 ? 'No line matches.' : shown.map((line, i) => <LogLine key={i} line={line} needle={needle} eol={i < shown.length - 1} />)}
+          {all.length === 0 ? t('No logs yet.') : shown.length === 0 ? t('No line matches.') : shown.map((line, i) => <LogLine key={i} line={line} needle={needle} eol={i < shown.length - 1} />)}
         </pre>
         <div className="mt-2 text-[11px] text-slate-600">
-          {needle ? `${shown.length} of ${all.length} lines match` : `${all.length} lines`} · {paused ? 'paused' : 'live · refreshed every 3 s'}
+          {needle ? t('{shown} of {all} lines match', { shown: shown.length, all: all.length }) : t('{n} lines', { n: all.length })} · {paused ? t('paused') : t('live · refreshed every 3 s')}
         </div>
       </CardBody>
     </Card>

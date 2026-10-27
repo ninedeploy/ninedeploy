@@ -5,14 +5,15 @@ import { Link } from 'react-router';
 import type { LogSearchResult } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { Button, Card, CardBody, Input, Select, Spinner } from '../../components/ui.js';
+import { fill, msg, useT } from '../../lib/i18n.js';
 
 /** Search windows offered, in minutes; the server allows up to 7 days. */
 const WINDOWS = [
-  { minutes: 15, label: 'Last 15 minutes' },
-  { minutes: 60, label: 'Last hour' },
-  { minutes: 360, label: 'Last 6 hours' },
-  { minutes: 1440, label: 'Last 24 hours' },
-  { minutes: 10080, label: 'Last 7 days' },
+  { minutes: 15, label: msg('Last 15 minutes') },
+  { minutes: 60, label: msg('Last hour') },
+  { minutes: 360, label: msg('Last 6 hours') },
+  { minutes: 1440, label: msg('Last 24 hours') },
+  { minutes: 10080, label: msg('Last 7 days') },
 ] as const;
 
 const errorStatus = (err: unknown): number | undefined => (err as { status?: number } | null)?.status;
@@ -23,6 +24,7 @@ const errorStatus = (err: unknown): number | undefined => (err as { status?: num
  * and `ninedeploy logs search` existed; this is the first web control.
  */
 export function ShippedLogSearchCard({ serviceId }: { serviceId: number }) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [minutes, setMinutes] = useState<number>(60);
   const search = useMutation<LogSearchResult, Error, { query: string; sinceMinutes: number }>({
@@ -41,10 +43,10 @@ export function ShippedLogSearchCard({ serviceId }: { serviceId: number }) {
     <Card className="mt-6 overflow-hidden">
       <div className="p-4 border-b border-white/[0.06]">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
-          <Search size={14} /> Search shipped logs
+          <Search size={14} /> {t('Search shipped logs')}
         </h2>
         <p className="mt-1 text-xs text-slate-500">
-          Searches the lines this service sent to a Loki log drain, including those of containers that no longer exist.
+          {t('Searches the lines this service sent to a Loki log drain, including those of containers that no longer exist.')}
         </p>
       </div>
       <CardBody className="space-y-3">
@@ -58,30 +60,32 @@ export function ShippedLogSearchCard({ serviceId }: { serviceId: number }) {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Text to find, e.g. ERROR or a request id"
-            aria-label="Log search text"
+            placeholder={t('Text to find, e.g. ERROR or a request id')}
+            aria-label={t('Log search text')}
             maxLength={500}
             className="min-w-48 flex-1 font-mono text-xs"
           />
-          <Select value={String(minutes)} onChange={(e) => setMinutes(Number(e.target.value))} aria-label="Search window" className="w-40 text-xs">
+          <Select value={String(minutes)} onChange={(e) => setMinutes(Number(e.target.value))} aria-label={t('Search window')} className="w-40 text-xs">
             {WINDOWS.map((w) => (
               <option key={w.minutes} value={w.minutes}>
-                {w.label}
+                {t(w.label)}
               </option>
             ))}
           </Select>
           <Button type="submit" size="sm" disabled={!query.trim() || search.isPending}>
-            {search.isPending ? <Spinner /> : <Search size={12} />} Search
+            {search.isPending ? <Spinner /> : <Search size={12} />} {t('Search')}
           </Button>
         </form>
 
         {noDrain && (
           <p className="text-xs text-amber-300">
-            No Loki log drain is enabled for this service. An operator can add one under{' '}
-            <Link to="/settings?section=log-drains" className="text-indigo-300 hover:underline">
-              Settings → Log Drains
-            </Link>
-            .
+            {fill(t('No Loki log drain is enabled for this service. An operator can add one under {link}.'), {
+              link: (
+                <Link to="/settings?section=log-drains" className="text-indigo-300 hover:underline">
+                  {t('Settings → Log Drains')}
+                </Link>
+              ),
+            })}
           </p>
         )}
         {search.isError && !noDrain && <p className="text-xs text-rose-400">{search.error.message}</p>}
@@ -89,15 +93,17 @@ export function ShippedLogSearchCard({ serviceId }: { serviceId: number }) {
         {result && (
           <>
             <p className="text-[11px] text-slate-500">
-              {result.lines.length} line{result.lines.length === 1 ? '' : 's'} from drain “{result.drain.name}”
-              {result.lines.length >= 500 ? ' (showing the first 500; narrow the search for more)' : ''}
+              {result.lines.length === 1
+                ? t('{n} line from drain “{name}”', { n: result.lines.length, name: result.drain.name })
+                : t('{n} lines from drain “{name}”', { n: result.lines.length, name: result.drain.name })}
+              {result.lines.length >= 500 ? ` ${t('(showing the first 500; narrow the search for more)')}` : ''}
             </p>
             {result.lines.length > 0 ? (
               <pre className="max-h-96 overflow-auto rounded-lg bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-slate-300" data-testid="shipped-log-lines">
                 {result.lines.map((l) => `${new Date(l.ts).toISOString()}  ${l.line}`).join('\n')}
               </pre>
             ) : (
-              <p className="text-xs text-slate-500">No matching lines in this window.</p>
+              <p className="text-xs text-slate-500">{t('No matching lines in this window.')}</p>
             )}
           </>
         )}

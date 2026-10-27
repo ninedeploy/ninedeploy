@@ -32,31 +32,43 @@ import { NodeLifecycleCard } from './NodeLifecycleCard.js';
 
 import { ContainerFileBrowser } from '../../components/ContainerFileBrowser.js';
 import { ServiceDomainLauncher } from '../../components/ServiceDomainLauncher.js';
+import { fill, msg, useT } from '../../lib/i18n.js';
 
 type TabId = 'overview' | 'terminal' | 'architecture' | 'manifest' | 'compose' | 'deploys' | 'environment' | 'network' | 'volumes' | 'files' | 'framework' | 'settings' | 'activity' | 'danger';
 
 const SERVICE_TABS: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard }> = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'terminal', label: 'Terminal & Exec', icon: Terminal },
-  { id: 'architecture', label: 'Architecture', icon: Network },
-  { id: 'manifest', label: 'Manifest & Traefik', icon: FileCode2 },
+  { id: 'overview', label: msg('Overview'), icon: LayoutDashboard },
+  { id: 'terminal', label: msg('Terminal & Exec'), icon: Terminal },
+  { id: 'architecture', label: msg('Architecture'), icon: Network },
+  { id: 'manifest', label: msg('Manifest & Traefik'), icon: FileCode2 },
   // Inline compose stacks only — see `visibleTabs`.
-  { id: 'compose', label: 'Compose File', icon: FileStack },
-  { id: 'deploys', label: 'Deploys', icon: Rocket },
-  { id: 'environment', label: 'Environment', icon: KeyRound },
-  { id: 'network', label: 'Network & Domains', icon: Globe },
-  { id: 'volumes', label: 'Volumes & Storage', icon: HardDrive },
-  { id: 'files', label: 'File Browser', icon: FolderTree },
-  { id: 'framework', label: 'Framework', icon: Boxes },
-  { id: 'settings', label: 'Settings', icon: Settings },
-  { id: 'activity', label: 'Activity Logs', icon: Activity },
-  { id: 'danger', label: 'Danger Zone', icon: ShieldAlert },
+  { id: 'compose', label: msg('Compose File'), icon: FileStack },
+  { id: 'deploys', label: msg('Deploys'), icon: Rocket },
+  { id: 'environment', label: msg('Environment'), icon: KeyRound },
+  { id: 'network', label: msg('Network & Domains'), icon: Globe },
+  { id: 'volumes', label: msg('Volumes & Storage'), icon: HardDrive },
+  { id: 'files', label: msg('File Browser'), icon: FolderTree },
+  { id: 'framework', label: msg('Framework'), icon: Boxes },
+  { id: 'settings', label: msg('Settings'), icon: Settings },
+  { id: 'activity', label: msg('Activity Logs'), icon: Activity },
+  { id: 'danger', label: msg('Danger Zone'), icon: ShieldAlert },
 ];
 
 /** Past tense for the lifecycle toast (`${action}ed` read "Service stoped"). */
-const LIFECYCLE_DONE = { stop: 'stopped', start: 'started', restart: 'restarted' } as const;
+const LIFECYCLE_DONE = { stop: msg('Service stopped'), start: msg('Service started'), restart: msg('Service restarted') } as const;
+const LIFECYCLE_SUPERSEDED = {
+  start: msg('Start request superseded by a newer action'),
+  stop: msg('Stop request superseded by a newer action'),
+  restart: msg('Restart request superseded by a newer action'),
+} as const;
+const LIFECYCLE_PENDING = {
+  start: msg('Start requested; runtime verification is pending'),
+  stop: msg('Stop requested; runtime verification is pending'),
+  restart: msg('Restart requested; runtime verification is pending'),
+} as const;
 
 export function ServiceDetail() {
+  const t = useT();
   const params = useParams();
   const id = Number(params['id']);
   const qc = useQueryClient();
@@ -157,7 +169,7 @@ export function ServiceDetail() {
       setActiveDeploy(res.deploymentId);
       switchTab('deploys');
     },
-    onError: (err) => toast(err instanceof Error ? `Deploy failed: ${err.message}` : 'Deploy failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? t('Deploy failed: {message}', { message: err.message }) : t('Deploy failed'), 'error'),
   });
 
   const lifecycle = useMutation({
@@ -173,11 +185,10 @@ export function ServiceDetail() {
         qc.setQueryData(['service-lifecycle', serviceId], { command: result.lifecycle ?? null });
         void qc.invalidateQueries({ queryKey: ['service-lifecycle', serviceId] });
         if (serviceId !== id) return;
-        const title = { start: 'Start', stop: 'Stop', restart: 'Restart' }[action];
-        toast(result.lifecycle?.phase === 'superseded' ? `${title} request superseded by a newer action` : `${title} requested; runtime verification is pending`, 'info');
-      } else if (serviceId === id) toast(`Service ${LIFECYCLE_DONE[action]}`, 'success');
+        toast(result.lifecycle?.phase === 'superseded' ? t(LIFECYCLE_SUPERSEDED[action]) : t(LIFECYCLE_PENDING[action]), 'info');
+      } else if (serviceId === id) toast(t(LIFECYCLE_DONE[action]), 'success');
     },
-    onError: (error, { serviceId }) => { if (serviceId === id) toast(error instanceof Error ? error.message : 'Action failed', 'error'); },
+    onError: (error, { serviceId }) => { if (serviceId === id) toast(error instanceof Error ? error.message : t('Action failed'), 'error'); },
   });
 
   // Danger zone: delete the service (type-the-name confirm).
@@ -187,20 +198,20 @@ export function ServiceDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['services'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
-      toast('Service deleted', 'success');
+      toast(t('Service deleted'), 'success');
       navigate('/services');
     },
-    onError: () => toast('Delete failed', 'error'),
+    onError: () => toast(t('Delete failed'), 'error'),
   });
 
   const cloneMutation = useMutation({
     mutationFn: () => api.services.clone(id),
     onSuccess: (cloned) => {
       qc.invalidateQueries({ queryKey: ['services'] });
-      toast(`Service cloned: ${cloned.name}`, 'success');
+      toast(t('Service cloned: {name}', { name: cloned.name }), 'success');
       navigate(`/services/${cloned.id}`);
     },
-    onError: () => toast('Clone failed', 'error'),
+    onError: () => toast(t('Clone failed'), 'error'),
   });
 
   const [showRuntimeLogs, setShowRuntimeLogs] = useState(false);
@@ -208,13 +219,13 @@ export function ServiceDetail() {
 
   const doExportService = async () => {
     try {
-      toast('Exporting service…', 'info');
+      toast(t('Exporting service…'), 'info');
       const res = await authedFetch(api.services.exportUrl(id));
       if (!res.ok) throw new Error('Export failed');
       downloadBlob(await res.blob(), `${svc?.slug ?? 'service'}-export.json`);
-      toast('Service exported', 'success');
+      toast(t('Service exported'), 'success');
     } catch {
-      toast('Export failed', 'error');
+      toast(t('Export failed'), 'error');
     }
   };
   const svc = service.data;
@@ -225,8 +236,8 @@ export function ServiceDetail() {
   // has: a git-repo compose service keeps its file in the repository, where
   // the next checkout would overwrite anything typed here. Hidden — and not
   // reachable by `?tab=compose` either — for every other service.
-  const visibleTabs = SERVICE_TABS.filter((t) => t.id !== 'compose' || !!svc?.composeContent);
-  const tab: TabId = visibleTabs.some((t) => t.id === tabParam) ? (tabParam as TabId) : 'overview';
+  const visibleTabs = SERVICE_TABS.filter((tabDef) => tabDef.id !== 'compose' || !!svc?.composeContent);
+  const tab: TabId = visibleTabs.some((tabDef) => tabDef.id === tabParam) ? (tabParam as TabId) : 'overview';
   // In the one-row tab strip (below lg) the active tab may sit off-screen.
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tab changes; the ref itself is stable.
@@ -254,11 +265,11 @@ export function ServiceDetail() {
   if (service.isError) {
     return (
       <Card className="p-10 text-center">
-        <p className="text-sm font-medium text-rose-300">Couldn't load this service.</p>
-        <p className="mt-1 text-xs text-slate-500">It may have been deleted, or the server is unreachable.</p>
+        <p className="text-sm font-medium text-rose-300">{t("Couldn't load this service.")}</p>
+        <p className="mt-1 text-xs text-slate-500">{t('It may have been deleted, or the server is unreachable.')}</p>
         <div className="mt-4 flex justify-center gap-2">
-          <Button size="sm" variant="secondary" onClick={() => service.refetch()}>Retry</Button>
-          <Link to="/services"><Button size="sm" variant="ghost">Back to services</Button></Link>
+          <Button size="sm" variant="secondary" onClick={() => service.refetch()}>{t('Retry')}</Button>
+          <Link to="/services"><Button size="sm" variant="ghost">{t('Back to services')}</Button></Link>
         </div>
       </Card>
     );
@@ -276,7 +287,7 @@ export function ServiceDetail() {
   return (
     <div className="nd-fade">
       <Link to="/services" className="inline-flex items-center gap-1.5 text-sm text-slate-400 transition hover:text-slate-200">
-        <ArrowLeft size={14} /> Services
+        <ArrowLeft size={14} /> {t('Services')}
       </Link>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
@@ -308,51 +319,51 @@ export function ServiceDetail() {
         <div className="flex flex-wrap items-center gap-2">
           <ServiceDomainLauncher serviceId={id} serviceName={svc.name} label />
           <Button onClick={requestDeploy} disabled={trigger.isPending}>
-            <Rocket size={16} /> {trigger.isPending ? 'Triggering…' : 'Deploy'}
+            <Rocket size={16} /> {trigger.isPending ? t('Triggering…') : t('Deploy')}
           </Button>
           <Button
             variant="secondary"
             size="md"
             onClick={() => cloneMutation.mutate()}
             disabled={cloneMutation.isPending}
-            title="Clone service configuration and environment variables"
+            title={t('Clone service configuration and environment variables')}
           >
-            <Copy size={15} /> {cloneMutation.isPending ? 'Cloning…' : 'Clone'}
+            <Copy size={15} /> {cloneMutation.isPending ? t('Cloning…') : t('Clone')}
           </Button>
           {svc.status === 'running' && (
             <>
               {/* 0.16.11: Wake now while asleep, Sleep now while awake with Sleep when idle on. */}
               <SleepActions svc={svc} />
-              <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'restart', serviceId: id })} disabled={lifecycle.isPending} title="Restart">
-                <RotateCcw size={15} /> Restart
+              <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'restart', serviceId: id })} disabled={lifecycle.isPending} title={t('Restart')}>
+                <RotateCcw size={15} /> {t('Restart')}
               </Button>
-              <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'stop', serviceId: id })} disabled={lifecycle.isPending} title="Stop">
-                <Square size={15} /> Stop
+              <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'stop', serviceId: id })} disabled={lifecycle.isPending} title={t('Stop')}>
+                <Square size={15} /> {t('Stop')}
               </Button>
             </>
           )}
           {svc.status === 'stopped' && !unselectedNode && (
             <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'start', serviceId: id })} disabled={lifecycle.isPending}>
-              <Play size={15} /> Start
+              <Play size={15} /> {t('Start')}
             </Button>
           )}
           {svc.status !== 'running' && (initialNodeWork || lifecycleState.data?.command?.current && !['completed', 'superseded'].includes(lifecycleState.data.command.phase) && lifecycleState.data.command.action !== 'stop') && (
-            <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'stop', serviceId: id })} disabled={lifecycle.isPending} title="Stop">
-              <Square size={15} /> Stop
+            <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'stop', serviceId: id })} disabled={lifecycle.isPending} title={t('Stop')}>
+              <Square size={15} /> {t('Stop')}
             </Button>
           )}
           {svc.runtimeId && (
             <Button variant="ghost" size="md" onClick={() => setShowRuntimeLogs((v) => !v)}>
-              <Terminal size={15} /> {showRuntimeLogs ? 'Hide logs' : 'Runtime logs'}
+              <Terminal size={15} /> {showRuntimeLogs ? t('Hide logs') : t('Runtime logs')}
             </Button>
           )}
           {svc.runtimeId && (
             <Button variant="ghost" size="md" onClick={() => setShowExec((v) => !v)}>
-              <Terminal size={15} /> {showExec ? 'Hide shell' : 'Exec'}
+              <Terminal size={15} /> {showExec ? t('Hide shell') : t('Exec')}
             </Button>
           )}
-          <Button variant="ghost" size="md" onClick={doExportService} title="Export service">
-            <Download size={15} /> Export
+          <Button variant="ghost" size="md" onClick={doExportService} title={t('Export service')}>
+            <Download size={15} /> {t('Export')}
           </Button>
         </div>
       </div>
@@ -369,7 +380,7 @@ export function ServiceDetail() {
 
       {showRuntimeLogs && svc.runtimeId && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
       <NodeLifecycleCard serviceId={id} command={lifecycleState.data?.command ?? null} />
-      {lifecycleState.isError && <ErrorCard title="Could not load runtime commands" error={lifecycleState.error} onRetry={() => void lifecycleState.refetch()} />}
+      {lifecycleState.isError && <ErrorCard title={t('Could not load runtime commands')} error={lifecycleState.error} onRetry={() => void lifecycleState.refetch()} />}
 
       {showExec && svc.runtimeId && tab !== 'terminal' && (
         <div className="mt-5">
@@ -385,22 +396,22 @@ export function ServiceDetail() {
         <aside className="w-full min-w-0 lg:w-60 shrink-0">
           <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 lg:block lg:space-y-1 lg:overflow-visible">
             <div className="hidden px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 lg:block">
-              Service Navigation
+              {t('Service Navigation')}
             </div>
-            {visibleTabs.map((t) => {
-              const Icon = t.icon;
-              const isActive = tab === t.id;
-              const isDanger = t.id === 'danger';
+            {visibleTabs.map((tabDef) => {
+              const Icon = tabDef.icon;
+              const isActive = tab === tabDef.id;
+              const isDanger = tabDef.id === 'danger';
 
               return (
                 <button
-                  key={t.id}
+                  key={tabDef.id}
                   type="button"
                   role="tab"
                   aria-selected={isActive}
                   aria-controls="service-tab-panel"
                   ref={isActive ? activeTabRef : undefined}
-                  onClick={() => switchTab(t.id)}
+                  onClick={() => switchTab(tabDef.id)}
                   className={cn(
                     'flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-left text-xs font-medium transition-all lg:w-full lg:gap-3',
                     isActive
@@ -413,7 +424,7 @@ export function ServiceDetail() {
                   )}
                 >
                   <Icon size={15} className={cn(isActive ? (isDanger ? 'text-rose-400' : 'text-indigo-400') : 'opacity-70')} />
-                  <span>{t.label}</span>
+                  <span>{t(tabDef.label)}</span>
                 </button>
               );
             })}
@@ -441,8 +452,8 @@ export function ServiceDetail() {
                 <Card>
                   <CardBody className="py-8 text-center text-slate-400">
                     <Terminal size={32} className="mx-auto mb-2 text-slate-600" />
-                    <p className="text-sm font-semibold text-slate-300">Container is not deployed</p>
-                    <p className="text-xs text-slate-500 mt-1">Deploy this service first to launch an interactive container shell.</p>
+                    <p className="text-sm font-semibold text-slate-300">{t('Container is not deployed')}</p>
+                    <p className="text-xs text-slate-500 mt-1">{t('Deploy this service first to launch an interactive container shell.')}</p>
                   </CardBody>
                 </Card>
               )}
@@ -501,15 +512,12 @@ export function ServiceDetail() {
 
         <ConfirmDialog
           open={confirmRedeploy}
-          title={`Redeploy "${svc.name}"?`}
-          message={
-            <>
-              <strong>{svc.name}</strong> is currently running. Triggering a deploy builds a
-              new version while the current one keeps serving traffic — once it passes the
-              healthcheck, traffic switches over and the previous container retires.
-            </>
-          }
-          confirmLabel="Redeploy"
+          title={t('Redeploy "{name}"?', { name: svc.name })}
+          message={fill(
+            t('{name} is currently running. Triggering a deploy builds a new version while the current one keeps serving traffic — once it passes the healthcheck, traffic switches over and the previous container retires.'),
+            { name: <strong>{svc.name}</strong> },
+          )}
+          confirmLabel={t('Redeploy')}
           onConfirm={() => {
             setConfirmRedeploy(false);
             trigger.mutate(id);

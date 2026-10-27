@@ -4,6 +4,7 @@ import type { Deployment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, Spinner } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 
 /**
  * 0.16.13: the service's deploy waiting for approval (a lane with "Require
@@ -13,6 +14,7 @@ import { Button, Card, CardBody, Spinner } from '../../components/ui.js';
  * which buttons to offer.
  */
 export function ApprovalCard({ serviceId, waiting }: { serviceId: number; waiting: Deployment }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const approvals = useQuery({
@@ -32,9 +34,9 @@ export function ApprovalCard({ serviceId, waiting }: { serviceId: number; waitin
     },
     onSuccess: (_res, decision) => {
       settle();
-      toast(decision === 'approve' ? `Deployment #${waiting.id} approved — it builds next` : `Deployment #${waiting.id} rejected`, 'info');
+      toast(decision === 'approve' ? t('Deployment #{id} approved — it builds next', { id: waiting.id }) : t('Deployment #{id} rejected', { id: waiting.id }), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Could not record the decision', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Could not record the decision'), 'error'),
   });
 
   return (
@@ -46,9 +48,9 @@ export function ApprovalCard({ serviceId, waiting }: { serviceId: number; waitin
               <ShieldCheck size={15} />
             </span>
             <div className="min-w-0">
-              <div className="text-sm font-medium text-slate-200">Deployment #{waiting.id} is waiting for approval</div>
+              <div className="text-sm font-medium text-slate-200">{t('Deployment #{id} is waiting for approval', { id: waiting.id })}</div>
               <div className="mt-0.5 truncate text-[11px] text-slate-500">
-                {waiting.commitSha ? waiting.commitSha.slice(0, 7) : 'no commit'}
+                {waiting.commitSha ? waiting.commitSha.slice(0, 7) : t('no commit')}
                 {waiting.message ? ` · ${waiting.message.split('\n')[0]}` : ''}
                 {` · ${waiting.trigger}`}
                 {waiting.author ? ` · ${waiting.author}` : ''}
@@ -58,15 +60,15 @@ export function ApprovalCard({ serviceId, waiting }: { serviceId: number; waitin
           {item?.mayReview ? (
             <div className="flex shrink-0 items-center gap-2">
               <Button size="sm" variant="secondary" disabled={decide.isPending} onClick={() => decide.mutate('reject')}>
-                <X size={13} /> Reject
+                <X size={13} /> {t('Reject')}
               </Button>
               <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate('approve')}>
-                {decide.isPending ? <Spinner className="h-3 w-3" /> : <Check size={13} />} Approve
+                {decide.isPending ? <Spinner className="h-3 w-3" /> : <Check size={13} />} {t('Approve')}
               </Button>
             </div>
           ) : (
             <span className="text-[11px] text-slate-500">
-              {approvals.isLoading ? 'Checking…' : 'A workspace admin approves deploys into this lane. You can withdraw it with ✕ on the row.'}
+              {approvals.isLoading ? t('Checking…') : t('A workspace admin approves deploys into this lane. You can withdraw it with ✕ on the row.')}
             </span>
           )}
         </div>

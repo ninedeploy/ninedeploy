@@ -4,17 +4,18 @@ import type { AiFixProposal, AiSettingsChange, Service } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Spinner } from '../../components/ui.js';
+import { msg, useT } from '../../lib/i18n.js';
 
 /** The label of a proposed setting, as the Settings tab names it. */
 const LABELS: Record<string, string> = {
-  port: 'Port',
-  healthPath: 'Health path',
-  buildPack: 'Build pack',
-  baseDir: 'Base directory',
-  installCmd: 'Install command',
-  buildCmd: 'Build command',
-  startCmd: 'Start command',
-  dockerfilePath: 'Dockerfile path',
+  port: msg('Port'),
+  healthPath: msg('Health path'),
+  buildPack: msg('Build pack'),
+  baseDir: msg('Base directory'),
+  installCmd: msg('Install command'),
+  buildCmd: msg('Build command'),
+  startCmd: msg('Start command'),
+  dockerfilePath: msg('Dockerfile path'),
 };
 
 /** Each proposed setting as [key, current value, proposed value]. */
@@ -44,9 +45,10 @@ export function AiProposalCard({
   proposal: AiFixProposal;
   onDeployed: (deploymentId: number) => void;
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const service = useQuery({ queryKey: ['service', serviceId], queryFn: () => api.services.get(serviceId) });
+  const service =useQuery({ queryKey: ['service', serviceId], queryFn: () => api.services.get(serviceId) });
   const apply = useMutation({
     mutationFn: async () => {
       await api.services.update(serviceId, proposal.settings as Parameters<typeof api.services.update>[1]);
@@ -55,17 +57,17 @@ export function AiProposalCard({
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['service', serviceId] });
       qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
-      toast('Change applied — redeploying', 'info');
+      toast(t('Change applied — redeploying'), 'info');
       onDeployed(res.deploymentId);
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Could not apply the change', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Could not apply the change'), 'error'),
   });
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast('Copied', 'info');
+      toast(t('Copied'), 'info');
     } catch {
-      toast('Could not copy', 'error');
+      toast(t('Could not copy'), 'error');
     }
   };
 
@@ -74,20 +76,20 @@ export function AiProposalCard({
       {proposal.settings && (
         <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/[0.06] p-3">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-slate-200">
-            <Wand2 size={13} className="text-indigo-300" /> Proposed settings change
+            <Wand2 size={13} className="text-indigo-300" /> {t('Proposed settings change')}
           </div>
           <table className="w-full text-[11px]">
             <thead>
               <tr className="text-left text-slate-500">
-                <th className="py-1 pr-3 font-normal">Setting</th>
-                <th className="py-1 pr-3 font-normal">Now</th>
-                <th className="py-1 font-normal">Proposed</th>
+                <th className="py-1 pr-3 font-normal">{t('Setting')}</th>
+                <th className="py-1 pr-3 font-normal">{t('Now')}</th>
+                <th className="py-1 font-normal">{t('Proposed')}</th>
               </tr>
             </thead>
             <tbody>
               {settingRows(proposal.settings, service.data).map(([key, now, next]) => (
                 <tr key={key} className="align-top">
-                  <td className="py-1 pr-3 text-slate-300">{LABELS[key] ?? key}</td>
+                  <td className="py-1 pr-3 text-slate-300">{LABELS[key] ? t(LABELS[key]) : key}</td>
                   <td className="py-1 pr-3 font-mono text-rose-200/80">{now}</td>
                   <td className="py-1 font-mono text-emerald-200">{next}</td>
                 </tr>
@@ -96,9 +98,9 @@ export function AiProposalCard({
           </table>
           <div className="mt-3 flex items-center gap-2">
             <Button size="sm" onClick={() => apply.mutate()} disabled={apply.isPending}>
-              {apply.isPending ? <Spinner className="h-3 w-3" /> : <Wand2 size={13} />} Apply and redeploy
+              {apply.isPending ? <Spinner className="h-3 w-3" /> : <Wand2 size={13} />} {t('Apply and redeploy')}
             </Button>
-            <span className="text-[11px] text-slate-500">Check it first: the model can be wrong.</span>
+            <span className="text-[11px] text-slate-500">{t('Check it first: the model can be wrong.')}</span>
           </div>
         </div>
       )}
@@ -113,9 +115,9 @@ export function AiProposalCard({
               type="button"
               onClick={() => void copy(f.replace)}
               className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              aria-label={`Copy the replacement for ${f.path}`}
+              aria-label={t('Copy the replacement for {path}', { path: f.path })}
             >
-              <Copy size={11} /> Copy replacement
+              <Copy size={11} /> {t('Copy replacement')}
             </button>
           </div>
           {f.why && <p className="mb-2 text-[11px] text-slate-400">{f.why}</p>}

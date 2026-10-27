@@ -5,6 +5,7 @@ import { downloadBlob } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { useDeployLogs } from '../../lib/useDeployLogs.js';
 import { PipelineStepper, type StageId } from '../../components/PipelineStepper.js';
+import { useT } from '../../lib/i18n.js';
 
 /** Terminal-style live deploy log with visual stage stepper and auto-scroll. */
 export function LogPanel({
@@ -16,6 +17,7 @@ export function LogPanel({
   deploymentId: number | null;
   deployStatus?: string;
 }) {
+  const t = useT();
   const { lines, open, refused } = useDeployLogs(serviceId, deploymentId);
   const ref = useRef<HTMLPreElement | null>(null);
   const preRef = useAutoScroll(ref, lines);
@@ -36,7 +38,7 @@ export function LogPanel({
       // download in Safari (r409).
       downloadBlob(await res.blob(), `deploy-${deploymentId}.log`, 'text/plain');
     } catch {
-      toast('Could not download the build log', 'error');
+      toast(t('Could not download the build log'), 'error');
     } finally {
       setDownloading(false);
     }
@@ -55,7 +57,7 @@ export function LogPanel({
   if (empty) {
     return (
       <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 py-16 text-center text-sm text-slate-600">
-        Trigger a deploy to see live logs.
+        {t('Trigger a deploy to see live logs.')}
       </div>
     );
   }
@@ -63,7 +65,7 @@ export function LogPanel({
   if (refused) {
     return (
       <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-violet-500/20 bg-violet-500/[0.04] px-6 py-16 text-center text-sm text-violet-200/80">
-        This service is in a protected lane: its deploy logs are for workspace admins.
+        {t('This service is in a protected lane: its deploy logs are for workspace admins.')}
       </div>
     );
   }
@@ -92,9 +94,9 @@ export function LogPanel({
                 disabled={downloading}
                 aria-busy={downloading}
                 className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:bg-white/5 hover:text-slate-200 disabled:opacity-50"
-                title="Download the full build log"
+                title={t('Download the full build log')}
               >
-                <Download size={11} /> {downloading ? 'Downloading…' : 'Download'}
+                <Download size={11} /> {downloading ? t('Downloading…') : t('Download')}
               </button>
             )}
             {/* Both stream states render across the open/closed log tests; the
@@ -102,7 +104,7 @@ export function LogPanel({
             {/* v8 ignore start */}
             <span className={open ? 'flex items-center gap-1.5 text-[10px] text-emerald-400' : 'flex items-center gap-1.5 text-[10px] text-slate-500'}>
               <span className={open ? 'h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse' : 'h-1.5 w-1.5 rounded-full bg-slate-600'} />
-              {open ? 'Following live output' : 'Stream closed'}
+              {open ? t('Following live output') : t('Stream closed')}
             </span>
             {/* v8 ignore stop */}
           </div>
@@ -111,7 +113,7 @@ export function LogPanel({
           {/* Every lines/open combination renders across the log tests; the
               instrumenter cannot see this expression. */}
           {/* v8 ignore start */}
-          {lines || (open ? '' : 'Connecting…')}
+          {lines || (open ? '' : t('Connecting…'))}
           {/* v8 ignore stop */}
         </pre>
       </div>

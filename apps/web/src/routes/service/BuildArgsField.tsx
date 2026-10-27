@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { Field, Input } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -32,6 +33,7 @@ export function BuildArgsField({
   value: string;
   onChange: (next: string) => void;
 }) {
+  const t = useT();
   // Same query key as the Environment tab's editor: one fetch, kept in sync.
   const env = useQuery({ queryKey: ['env', serviceId], queryFn: () => api.env.list(serviceId) });
   const { names, invalid } = parseBuildArgNames(value);
@@ -41,15 +43,15 @@ export function BuildArgsField({
   return (
     <div className="col-span-full">
       <Field
-        label="Build arguments"
-        hint="Variables a Dockerfile build receives as --build-arg (read them with ARG). Nixpacks, Railpack and buildpacks builds already see every variable."
-        error={invalid.length > 0 ? `Not a variable name: ${invalid.join(', ')}` : undefined}
+        label={t('Build arguments')}
+        hint={t('Variables a Dockerfile build receives as --build-arg (read them with ARG). Nixpacks, Railpack and buildpacks builds already see every variable.')}
+        error={invalid.length > 0 ? t('Not a variable name: {names}', { names: invalid.join(', ') }) : undefined}
       >
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="NEXT_PUBLIC_API_URL, NODE_VERSION"
-          aria-label="Build arguments"
+          aria-label={t('Build arguments')}
           className="h-9 font-mono text-xs"
         />
         {offered.length > 0 && (
@@ -60,7 +62,7 @@ export function BuildArgsField({
                 type="button"
                 onClick={() => onChange([...names, key].join(', '))}
                 className="inline-flex items-center gap-1 rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/10 transition hover:bg-indigo-500/10 hover:text-indigo-200"
-                title={`Pass ${key} to the build`}
+                title={t('Pass {key} to the build', { key })}
               >
                 <Plus size={9} /> {key}
               </button>
@@ -69,8 +71,9 @@ export function BuildArgsField({
         )}
         {secretListed.length > 0 && (
           <p className="mt-1 text-[11px] text-amber-300/90">
-            {secretListed.join(', ')} {secretListed.length === 1 ? 'is a secret' : 'are secrets'}: build arguments stay readable in the
-            image history. Use a BuildKit secret mount for credentials.
+            {secretListed.length === 1
+              ? t('{names} is a secret: build arguments stay readable in the image history. Use a BuildKit secret mount for credentials.', { names: secretListed.join(', ') })
+              : t('{names} are secrets: build arguments stay readable in the image history. Use a BuildKit secret mount for credentials.', { names: secretListed.join(', ') })}
           </p>
         )}
       </Field>

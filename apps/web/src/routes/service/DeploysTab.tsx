@@ -8,6 +8,7 @@ import { Card, CardBody, Button, ConfirmDialog, Skeleton, Spinner, StatusBadge, 
 import { AiProposalCard } from './AiProposalCard.js';
 import { ApprovalCard } from './ApprovalCard.js';
 import { LogPanel } from './LogPanel.js';
+import { fill, useT } from '../../lib/i18n.js';
 
 export const IN_FLIGHT = ['queued', 'building', 'deploying', 'awaiting_ci'];
 
@@ -39,6 +40,7 @@ export function DeploysTab({
   activeId: number | null;
   onSelect: (id: number | null) => void;
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const activeDeployRow = deploys.find((d) => d.id === activeId) ?? null;
@@ -83,18 +85,18 @@ export function DeploysTab({
       onSelect(res.deploymentId);
       qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
       qc.invalidateQueries({ queryKey: ['service', serviceId] });
-      toast('Rollback started', 'info');
+      toast(t('Rollback started'), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Rollback failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Rollback failed'), 'error'),
   });
 
   const cancelDeploy = useMutation({
     mutationFn: (depId: number) => api.deploys.cancel(serviceId, depId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
-      toast('Deployment cancelled', 'info');
+      toast(t('Deployment cancelled'), 'info');
     },
-    onError: () => toast('Cancel failed', 'error'),
+    onError: () => toast(t('Cancel failed'), 'error'),
   });
 
   const removeDeploy = useMutation({
@@ -105,11 +107,11 @@ export function DeploysTab({
       // longer exists.
       if (depId === activeId) onSelect(null);
       qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
-      toast('Deployment removed', 'info');
+      toast(t('Deployment removed'), 'info');
     },
     // The server refuses an in-flight deploy and the live one with a specific
     // reason; showing it beats a generic failure toast.
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Remove failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Remove failed'), 'error'),
   });
 
   // Bulk: every failed or cancelled deploy of this service, in one call.
@@ -120,23 +122,27 @@ export function DeploysTab({
     onSuccess: (res) => {
       if (activeId != null && res.removed.includes(activeId)) onSelect(null);
       qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
-      const leftovers = res.removedContainers.length > 0 ? ` and ${res.removedContainers.length} leftover container(s)` : '';
-      toast(`Removed ${res.removed.length} deployment(s)${leftovers}`, 'info');
+      toast(res.removedContainers.length > 0
+        ? t('Removed {n} deployment(s) and {c} leftover container(s)', { n: res.removed.length, c: res.removedContainers.length })
+        : t('Removed {n} deployment(s)', { n: res.removed.length }), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Remove failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Remove failed'), 'error'),
   });
 
   return (
     <div className="mt-5 space-y-5">
       <ConfirmDialog
         open={pendingRollback != null}
-        title="Rollback to this deployment?"
+        title={t('Rollback to this deployment?')}
         message={(() => {
           const row = deploys.find((d) => d.id === pendingRollback);
-          const detail = restoreInfo.isError ? 'Release information could not be loaded.' : restoreInfo.data?.reason ?? 'Checking the release record…';
-          return `The live release will be replaced by deployment #${pendingRollback}${row?.commitSha ? ` (${row.commitSha.slice(0, 7)})` : ''}. ${detail}`;
+          const detail = restoreInfo.isError ? t('Release information could not be loaded.') : restoreInfo.data?.reason ?? t('Checking the release record…');
+          const lead = row?.commitSha
+            ? t('The live release will be replaced by deployment #{id} ({sha}).', { id: String(pendingRollback), sha: row.commitSha.slice(0, 7) })
+            : t('The live release will be replaced by deployment #{id}.', { id: String(pendingRollback) });
+          return `${lead} ${detail}`;
         })()}
-        confirmLabel="Rollback"
+        confirmLabel={t('Rollback')}
         confirmDisabled={!restoreInfo.data?.available || restoreInfo.isError || restoreInfo.isFetching}
         onConfirm={() => {
           if (pendingRollback != null && restoreInfo.data?.available && !restoreInfo.isFetching) {
@@ -148,9 +154,9 @@ export function DeploysTab({
       />
       <ConfirmDialog
         open={confirmClear}
-        title="Remove failed and cancelled deployments?"
-        message={`Every failed or cancelled deployment of this service (${clearable} in the list) and its build log will be removed from history, with any container it left behind. Queued, running and live deployments are kept.`}
-        confirmLabel="Remove"
+        title={t('Remove failed and cancelled deployments?')}
+        message={t('Every failed or cancelled deployment of this service ({n} in the list) and its build log will be removed from history, with any container it left behind. Queued, running and live deployments are kept.', { n: clearable })}
+        confirmLabel={t('Remove')}
         onConfirm={() => clearFailed.mutate()}
         onClose={() => setConfirmClear(false)}
       />
@@ -170,20 +176,20 @@ export function DeploysTab({
 
       {activeDeployRow?.ciGate && (
         <Card><CardBody className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-slate-200">Required CI <StatusBadge status={activeDeployRow.ciGate.state === 'waiting' ? 'awaiting_ci' : activeDeployRow.ciGate.state === 'passed' ? 'success' : 'failed'} /></div>
+          <div className="flex items-center gap-2 text-sm text-slate-200">{t('Required CI')} <StatusBadge status={activeDeployRow.ciGate.state === 'waiting' ? 'awaiting_ci' : activeDeployRow.ciGate.state === 'passed' ? 'success' : 'failed'} /></div>
           <p className="text-xs text-slate-400">{activeDeployRow.ciGate.reason}</p>
-          <p className="break-all font-mono text-xs text-slate-400">{activeDeployRow.ciGate.headSha ?? 'Resolving commit…'}</p>
+          <p className="break-all font-mono text-xs text-slate-400">{activeDeployRow.ciGate.headSha ?? t('Resolving commit…')}</p>
           <ul className="space-y-1 text-xs text-slate-400">{activeDeployRow.ciGate.checks.map((check) => (
-            <li key={check.path}><span className="font-mono">{check.path}</span> · {check.state}{check.runId ? ` · run #${check.runId}, attempt ${check.attempt}` : ''}</li>
+            <li key={check.path}><span className="font-mono">{check.path}</span> · {check.state}{check.runId ? ` · ${t('run #{run}, attempt {attempt}', { run: check.runId, attempt: String(check.attempt) })}` : ''}</li>
           ))}</ul>
         </CardBody></Card>
       )}
       {activeDeployRow?.artifact && <Card><CardBody className="space-y-1">
-        <h3 className="text-sm font-medium">Immutable Docker artifact</h3>
+        <h3 className="text-sm font-medium">{t('Immutable Docker artifact')}</h3>
         <p className="break-all font-mono text-xs text-slate-400">{activeDeployRow.artifact.imageId}</p>
-        {activeDeployRow.artifact.originServerId != null && <p className="text-xs text-slate-400">Built on node #{activeDeployRow.artifact.originServerId} · Recoverable image copy retained on the panel.</p>}
-        {activeDeployRow.artifact.registryRef && <p className="break-all font-mono text-xs text-slate-400">Registry archive: {activeDeployRow.artifact.registryRef}</p>}
-        <p className="text-xs text-slate-400">Built by deployment #{activeDeployRow.artifact.originDeploymentId}{activeDeployRow.artifact.promotionSourceDeploymentId ? ` · Promoted from #${activeDeployRow.artifact.promotionSourceDeploymentId} without rebuilding` : ''} · Protected from NineDeploy image cleanup while this history is retained.</p>
+        {activeDeployRow.artifact.originServerId != null && <p className="text-xs text-slate-400">{t('Built on node #{id} · Recoverable image copy retained on the panel.', { id: activeDeployRow.artifact.originServerId })}</p>}
+        {activeDeployRow.artifact.registryRef && <p className="break-all font-mono text-xs text-slate-400">{t('Registry archive: {ref}', { ref: activeDeployRow.artifact.registryRef })}</p>}
+        <p className="text-xs text-slate-400">{t('Built by deployment #{id}', { id: activeDeployRow.artifact.originDeploymentId })}{activeDeployRow.artifact.promotionSourceDeploymentId ? ` · ${t('Promoted from #{id} without rebuilding', { id: activeDeployRow.artifact.promotionSourceDeploymentId })}` : ''} · {t('Protected from NineDeploy image cleanup while this history is retained.')}</p>
       </CardBody></Card>}
 
       <PromoteCard serviceId={serviceId} repoUrl={repoUrl} deploys={deploys} />
@@ -196,17 +202,17 @@ export function DeploysTab({
                 <Activity size={15} />
               </span>
               <div>
-                <div className="text-sm font-medium text-slate-200">Deployment output</div>
+                <div className="text-sm font-medium text-slate-200">{t('Deployment output')}</div>
                 <div className="mt-0.5 text-[11px] text-slate-500">
                   {activeDeployRow
-                    ? `Deployment #${activeDeployRow.id} · ${activeDeployRow.commitSha?.slice(0, 7) ?? 'no commit'}`
-                    : 'Select a deployment to inspect its output'}
+                    ? `${t('Deployment #{id}', { id: activeDeployRow.id })} · ${activeDeployRow.commitSha?.slice(0, 7) ?? t('no commit')}`
+                    : t('Select a deployment to inspect its output')}
                 </div>
               </div>
             </div>
             {inFlight && (
               <span className="flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] text-amber-300">
-                <Spinner className="h-3 w-3" /> Live deployment
+                <Spinner className="h-3 w-3" /> {t('Live deployment')}
               </span>
             )}
           </div>
@@ -229,18 +235,20 @@ export function DeploysTab({
 
 // ── Config diff vs the previous deployment ────────────────────────────────
 function ReleaseRecordCard({ serviceId, deploymentId }: { serviceId: number; deploymentId: number }) {
+  const t = useT();
   const info = useQuery({ queryKey: ['release-info', serviceId, deploymentId], queryFn: () => api.deploys.releaseInfo(serviceId, deploymentId), retry: false });
   return <Card><CardBody>
-    <h3 className="text-sm font-medium">Release recovery</h3>
+    <h3 className="text-sm font-medium">{t('Release recovery')}</h3>
     <p className="mt-1 text-sm text-neutral-400">
-      {info.isError ? 'Release information could not be loaded.' : info.data?.reason ?? 'Checking the release record…'}
+      {info.isError ? t('Release information could not be loaded.') : info.data?.reason ?? t('Checking the release record…')}
     </p>
-    {info.data?.mode === 'recorded-compose' && <p className="mt-2 text-xs text-neutral-400">Encrypted release record · {info.data.imageCount} pinned images · Images are protected from NineDeploy cleanup while this history is retained. Compose replaces the stack in place with a brief interruption.</p>}
-    {info.data?.mode === 'recorded-docker' && <p className="mt-2 text-xs text-neutral-400">Pinned Docker image · No rebuild or pull · Protected from NineDeploy cleanup while this history is retained.</p>}
+    {info.data?.mode === 'recorded-compose' && <p className="mt-2 text-xs text-neutral-400">{t('Encrypted release record · {n} pinned images · Images are protected from NineDeploy cleanup while this history is retained. Compose replaces the stack in place with a brief interruption.', { n: info.data.imageCount })}</p>}
+    {info.data?.mode === 'recorded-docker' && <p className="mt-2 text-xs text-neutral-400">{t('Pinned Docker image · No rebuild or pull · Protected from NineDeploy cleanup while this history is retained.')}</p>}
   </CardBody></Card>;
 }
 
 function ConfigDiffCard({ serviceId, deploymentId }: { serviceId: number; deploymentId: number }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const diff = useQuery({
     queryKey: ['deploy-diff', serviceId, deploymentId],
@@ -257,21 +265,21 @@ function ConfigDiffCard({ serviceId, deploymentId }: { serviceId: number; deploy
           className="flex w-full items-center justify-between text-sm font-medium text-slate-300"
         >
           <span className="flex items-center gap-2">
-            <GitCompare size={15} className="text-slate-500" /> Config diff vs previous deploy
+            <GitCompare size={15} className="text-slate-500" /> {t('Config diff vs previous deploy')}
           </span>
-          <span className="text-xs text-slate-500">{open ? 'hide' : 'show'}</span>
+          <span className="text-xs text-slate-500">{open ? t('hide') : t('show')}</span>
         </button>
         {open && (
           <div className="mt-3">
             {diff.isLoading ? (
               <Skeleton className="h-16 w-full" />
             ) : !diff.data ? (
-              <p className="text-xs text-slate-600">No snapshot.</p>
+              <p className="text-xs text-slate-600">{t('No snapshot.')}</p>
             ) : diff.data.previousDeploymentId === null ? (
-              <p className="text-xs text-slate-600">First recorded deployment — nothing to compare against.</p>
+              <p className="text-xs text-slate-600">{t('First recorded deployment — nothing to compare against.')}</p>
             ) : !diff.data.changed ? (
               <p className="text-xs text-slate-500">
-                No changes against #{diff.data.previousDeploymentId} — same build config and env keys.
+                {t('No changes against #{id} — same build config and env keys.', { id: diff.data.previousDeploymentId })}
               </p>
             ) : (
               <pre className="overflow-x-auto rounded-lg bg-black/40 p-3 font-mono text-[11px] leading-relaxed">
@@ -310,6 +318,7 @@ function PromoteCard({
   repoUrl: string | null;
   deploys: Deployment[];
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [targetId, setTargetId] = useState('');
@@ -335,27 +344,27 @@ function PromoteCard({
     onSuccess: (res, { target }) => {
       qc.invalidateQueries({ queryKey: ['deploys', target] });
       toast(
-        `Promotion queued — deploying service #${target} @ ${res.commitSha.slice(0, 7)}`,
+        t('Promotion queued — deploying service #{id} @ {sha}', { id: target, sha: res.commitSha.slice(0, 7) }),
         'info',
       );
       setTargetId('');
       setConfirmTarget(null);
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Promotion failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Promotion failed'), 'error'),
   });
 
   if (!running || !repoUrl || candidates.length === 0) return null;
 
   return (
-    <><ConfirmDialog open={confirmTarget != null} title="Promote recorded artifact?"
+    <><ConfirmDialog open={confirmTarget != null} title={t('Promote recorded artifact?')}
       message={<div className="space-y-3">
-        <p>Run the recorded image on {candidates.find(s => s.id === confirmTarget?.target)?.name ?? 'the target'}.</p>
+        <p>{t('Run the recorded image on {name}.', { name: candidates.find(s => s.id === confirmTarget?.target)?.name ?? t('the target') })}</p>
         <p className="break-all font-mono text-xs text-slate-400">{confirmTarget?.imageId}</p>
-        <p>{swarmTarget ? 'Target runtime environment, replica count, port and Swarm healthcheck apply.' : 'Target runtime environment, volumes, ports and health checks apply.'} Build-time values remain baked into the image.</p>
-        <p>Required CI and lane approval still apply. No source checkout or build will run. The image is transferred to a node or restored from its pinned registry digest when needed.</p>
-        {swarmTarget ? <p>Swarm rolls the same image across its replicas. Command or image healthchecks gate the native update; HTTP/TCP readiness is not available for Swarm.</p> : <p>Configured additional nodes receive the same image. Each target must pass its health and routing checks; a failed target keeps its previous release and is reported separately.</p>}
+        <p>{swarmTarget ? t('Target runtime environment, replica count, port and Swarm healthcheck apply.') : t('Target runtime environment, volumes, ports and health checks apply.')} {t('Build-time values remain baked into the image.')}</p>
+        <p>{t('Required CI and lane approval still apply. No source checkout or build will run. The image is transferred to a node or restored from its pinned registry digest when needed.')}</p>
+        {swarmTarget ? <p>{t('Swarm rolls the same image across its replicas. Command or image healthchecks gate the native update; HTTP/TCP readiness is not available for Swarm.')}</p> : <p>{t('Configured additional nodes receive the same image. Each target must pass its health and routing checks; a failed target keeps its previous release and is reported separately.')}</p>}
       </div>}
-      confirmLabel="Promote artifact" confirmDisabled={promote.isPending} onClose={() => setConfirmTarget(null)} onConfirm={() => confirmTarget != null && promote.mutate(confirmTarget)} />
+      confirmLabel={t('Promote artifact')} confirmDisabled={promote.isPending} onClose={() => setConfirmTarget(null)} onConfirm={() => confirmTarget != null && promote.mutate(confirmTarget)} />
     <Card>
       <CardBody className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
@@ -363,23 +372,23 @@ function PromoteCard({
             <ArrowUpRight size={15} />
           </span>
           <div>
-            <div className="text-sm font-medium text-slate-200">{artifactMode ? 'Promote this artifact' : 'Promote this commit'}</div>
+            <div className="text-sm font-medium text-slate-200">{artifactMode ? t('Promote this artifact') : t('Promote this commit')}</div>
             <div className="mt-0.5 text-[11px] text-slate-500">
-              {artifactMode ? 'Run the same image without rebuilding on the primary, configured additional nodes or Swarm replicas. Host hooks are not supported.' : <>Re-deploy another service at <span className="font-mono">{running.commitSha?.slice(0, 7)}</span> — the staging → production hop.</>}
+              {artifactMode ? t('Run the same image without rebuilding on the primary, configured additional nodes or Swarm replicas. Host hooks are not supported.') : fill(t('Re-deploy another service at {sha} — the staging → production hop.'), { sha: <span className="font-mono">{running.commitSha?.slice(0, 7)}</span> })}
             </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {running.artifact && <select aria-label="Promotion mode" value={mode} onChange={e => setMode(e.target.value as 'artifact' | 'commit')} className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300">
-            <option value="artifact">Same artifact · no rebuild</option><option value="commit">Same commit · rebuild</option>
+          {running.artifact && <select aria-label={t('Promotion mode')} value={mode} onChange={e => setMode(e.target.value as 'artifact' | 'commit')} className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300">
+            <option value="artifact">{t('Same artifact · no rebuild')}</option><option value="commit">{t('Same commit · rebuild')}</option>
           </select>}
           <select
             value={targetId}
             onChange={(e) => setTargetId(e.target.value)}
-            aria-label="Promotion target service"
+            aria-label={t('Promotion target service')}
             className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500/40"
           >
-            <option value="">Select service…</option>
+            <option value="">{t('Select service…')}</option>
             {candidates.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -393,7 +402,7 @@ function PromoteCard({
             className="flex items-center gap-1.5 rounded-lg bg-indigo-500/15 px-3 py-1.5 text-xs font-medium text-indigo-200 ring-1 ring-inset ring-indigo-500/30 transition hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {promote.isPending && <Spinner className="h-3 w-3" />}
-            Promote
+            {t('Promote')}
           </button>
         </div>
       </CardBody>
@@ -414,6 +423,7 @@ function AiDiagnosisCard({
   deploymentId: number;
   onDeployed: (deploymentId: number) => void;
 }) {
+  const t = useT();
   const { toast } = useToast();
   const [diagnosis, setDiagnosis] = useState<string | null>(null);
   // 0.16.16: what the model proposes to change, when it proposed anything.
@@ -429,9 +439,9 @@ function AiDiagnosisCard({
     onSuccess: (res) => {
       setDiagnosis(res.diagnosis);
       setProposal(res.proposal ?? null);
-      toast(`Diagnosis ready (${res.model})`, 'info');
+      toast(t('Diagnosis ready ({model})', { model: res.model }), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Diagnosis failed', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Diagnosis failed'), 'error'),
   });
 
   if (!configQ.data?.configured) return null;
@@ -441,15 +451,15 @@ function AiDiagnosisCard({
       <CardBody>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Bot size={15} className={diagnosis ? 'text-emerald-300' : 'text-slate-500'} /> AI diagnosis
+            <Bot size={15} className={diagnosis ? 'text-emerald-300' : 'text-slate-500'} /> {t('AI diagnosis')}
           </span>
           {diagnose.isPending ? (
             <span className="flex items-center gap-1.5 text-xs text-slate-500">
-              <Spinner className="h-3 w-3" /> Analyzing build log…
+              <Spinner className="h-3 w-3" /> {t('Analyzing build log…')}
             </span>
           ) : (
             <Button variant="secondary" size="sm" onClick={() => diagnose.mutate()}>
-              {diagnosis ? 'Re-analyze' : 'Diagnose failure'}
+              {diagnosis ? t('Re-analyze') : t('Diagnose failure')}
             </Button>
           )}
         </div>
@@ -494,32 +504,33 @@ function DeploymentsCard({
    */
   positionById: Map<number, { position: number; total: number }>;
 }) {
+  const t = useT();
   return (
     <Card>
       <CardBody>
         <div className="mb-3 flex items-end justify-between gap-3">
           <div>
-            <div className="text-sm font-medium text-slate-300">Deployments</div>
-            <p className="mt-0.5 text-[11px] text-slate-600">Select a release to inspect its pipeline and output.</p>
+            <div className="text-sm font-medium text-slate-300">{t('Deployments')}</div>
+            <p className="mt-0.5 text-[11px] text-slate-600">{t('Select a release to inspect its pipeline and output.')}</p>
           </div>
           <div className="flex items-center gap-3">
             {onClearFailed && (
               <button type="button"
                 onClick={onClearFailed}
                 className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-slate-500 transition hover:bg-white/5 hover:text-rose-300"
-                title="Remove every failed and cancelled deployment from history"
+                title={t('Remove every failed and cancelled deployment from history')}
               >
                 <Trash2 size={12} />
-                Remove failed &amp; cancelled ({clearable})
+                {t('Remove failed & cancelled ({n})', { n: clearable })}
               </button>
             )}
-            {deploys.length > 0 && <span className="text-[11px] text-slate-600">{deploys.length} total</span>}
+            {deploys.length > 0 && <span className="text-[11px] text-slate-600">{t('{n} total', { n: deploys.length })}</span>}
           </div>
         </div>
         {loading ? (
           <Skeleton className="h-8 w-full" />
         ) : deploys.length === 0 ? (
-          <p className="py-2 text-xs text-slate-600">No deployments yet.</p>
+          <p className="py-2 text-xs text-slate-600">{t('No deployments yet.')}</p>
         ) : (
           <ul className="flex gap-2 overflow-x-auto pb-1">
             {deploys.map((d, i) => {
@@ -546,14 +557,14 @@ function DeploymentsCard({
                         {d.status === 'queued' && positionById.get(d.id) && (
                           <span
                             className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20"
-                            title={`Position ${positionById.get(d.id)!.position} of ${positionById.get(d.id)!.total} queued for this service`}
+                            title={t('Position {position} of {total} queued for this service', { position: positionById.get(d.id)!.position, total: positionById.get(d.id)!.total })}
                           >
-                            #{positionById.get(d.id)!.position} of {positionById.get(d.id)!.total}
+                            {t('#{position} of {total}', { position: positionById.get(d.id)!.position, total: positionById.get(d.id)!.total })}
                           </span>
                         )}
                       </span>
                       <span className="mt-0.5 block truncate text-[11px] text-slate-500">
-                        {d.message ? d.message : <span className="italic">no commit message</span>}
+                        {d.message ? d.message : <span className="italic">{t('no commit message')}</span>}
                         {' · '}
                         {d.trigger}
                         {d.author ? ` · ${d.author}` : ''}
@@ -565,8 +576,8 @@ function DeploymentsCard({
                     <button type="button"
                       onClick={() => onCancel(d.id)}
                       className="shrink-0 rounded p-1.5 text-slate-500 opacity-0 transition hover:bg-white/5 hover:text-amber-300 group-hover:opacity-100 focus-visible:opacity-100"
-                      title={`Cancel deployment #${d.id}`}
-                      aria-label={`Cancel deployment #${d.id}`}
+                      title={t('Cancel deployment #{id}', { id: d.id })}
+                      aria-label={t('Cancel deployment #{id}', { id: d.id })}
                     >
                       <X size={12} />
                     </button>
@@ -580,8 +591,8 @@ function DeploymentsCard({
                     <button type="button"
                       onClick={() => onRollback(d.id)}
                       className="shrink-0 rounded p-1.5 text-slate-600 opacity-0 transition hover:bg-white/5 hover:text-indigo-300 group-hover:opacity-100 focus-visible:opacity-100"
-                      title={`Rollback to #${d.id}`}
-                      aria-label={`Rollback to deployment #${d.id}`}
+                      title={t('Rollback to #{id}', { id: d.id })}
+                      aria-label={t('Rollback to deployment #{id}', { id: d.id })}
                     >
                       <RotateCcw size={12} />
                     </button>
@@ -590,8 +601,8 @@ function DeploymentsCard({
                     <button type="button"
                       onClick={() => onRemove(d.id)}
                       className="shrink-0 rounded p-1.5 text-slate-600 opacity-0 transition hover:bg-white/5 hover:text-rose-300 group-hover:opacity-100 focus-visible:opacity-100"
-                      title={`Remove deployment #${d.id} from history`}
-                      aria-label={`Remove deployment #${d.id}`}
+                      title={t('Remove deployment #{id} from history', { id: d.id })}
+                      aria-label={t('Remove deployment #{id}', { id: d.id })}
                     >
                       <Trash2 size={12} />
                     </button>
