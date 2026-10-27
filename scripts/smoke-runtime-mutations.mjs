@@ -56,10 +56,12 @@ try{
  assert.equal(prepared.items.length,3);assert.equal(new Set(prepared.items.map(x=>x.id)).size,3);
  for(const item of prepared.items){const actual=state(item.id);assert.equal(actual.running,!item.name.endsWith('-r3'));assert.equal(item.running,actual.running);assert.ok(actual.networks.ninedeploy&&actual.networks['nd-extra']);}
  report('sealed-prepare-binds-three-immutable-replicas-and-keeps-spare-stopped');
- const secretName='proof-replay-env';assert.equal(run('file.writeEnv',{name:secretName,env:{FIXTURE:'temporary'}}).status,200);
+ const secretName='proof-replay-env',written=run('file.writeEnv',{name:secretName,env:{FIXTURE:'temporary'}});assert.equal(written.status,200);assert.equal(written.exitCode,0);
  const secretBatch=batch(5,50,12);for(const spec of secretBatch.specs)spec.envFile='.agent-env/'+secretName+'.env';
  const secretPrepared=receipt(run('docker.prepare',secretBatch),'ND-PREPARED ',secretBatch);
- assert.equal(run('file.deleteEnv',{name:secretName}).status,200);
+ const deleted=run('file.deleteEnv',{name:secretName});assert.equal(deleted.status,200);assert.equal(deleted.exitCode,0);
+ const absenceCheck=daemon+'-env-absence';runners.push(absenceCheck);
+ check(['run','--rm','--name',absenceCheck,'--label','ninedeploy.proof='+owner,'--user','0','--no-healthcheck','-v',volume+':'+home,'--entrypoint','node',image,'-e','if (require("node:fs").existsSync(process.argv[1])) process.exit(1)',home+'/.agent-env/'+secretName+'.env']);
  assert.deepEqual(receipt(run('docker.prepare',secretBatch),'ND-PREPARED ',secretBatch),secretPrepared);
  for(const item of secretPrepared.items)assert.equal(state(item.id).running,item.running);
  const fork={...secretBatch,specs:secretBatch.specs.map((spec,index)=>index===0?{...spec,cmd:['different']}:spec)};
