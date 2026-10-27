@@ -28,7 +28,7 @@ export async function sourcesList(client: NineDeployClient): Promise<void> {
 }
 
 /**
- * 0.13: a Gitea base URL from `--base-url`. Shape only (http(s), no
+ * 0.13: a Gitea (G1.2: or self-hosted GitLab) base URL from `--base-url`. Shape only (http(s), no
  * credentials, query or fragment); the server re-checks it and refuses
  * `http:` unless private egress is allowed.
  */
@@ -104,7 +104,7 @@ export async function sourcesAdd(client: NineDeployClient, nameArg?: string, opt
   if (!PROVIDERS.includes(type)) {
     return error(`Unknown provider: ${type}. Choose one of: ${PROVIDERS.join(', ')}`);
   }
-  if (baseUrl && type !== 'gitea') return error('--base-url applies to gitea sources only');
+  if (baseUrl && type !== 'gitea' && type !== 'gitlab') return error('--base-url applies to gitea and gitlab sources only');
   const defaultBranch = (await prompt('Default branch (used as suggestion only)', 'main')) || 'main';
 
   let token: string | undefined;

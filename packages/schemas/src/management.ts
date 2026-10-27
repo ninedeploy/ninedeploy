@@ -88,7 +88,7 @@ export const sourcePatch = z.object({
   /** r512: replace the registry hosts this credential may be sent to. */
   registryHosts: z.array(registryHost).max(20).optional(),
   defaultBranch: z.string().max(255).optional(),
-  /** 0.13: set the self-hosted provider base URL (Gitea); null clears it. */
+  /** 0.13: set the self-hosted provider base URL (Gitea, or a self-hosted GitLab); null clears it. */
   baseUrl: providerBaseUrl.nullable().optional(),
   /**
    * Multi-node (additive): allow this static credential (PAT, deploy key) to

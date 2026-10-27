@@ -88,6 +88,12 @@ Create the Source with type `gitea`, a Gitea access token (`read:repository`, pl
 
 The base URL must be `https` without credentials, query or fragment. A Gitea on a private (LAN) address is refused by the egress guard unless the server runs with `NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1`, which also allows `http`.
 
+### Self-hosted GitLab
+
+A `gitlab` source means gitlab.com unless it has a **base URL**. For a self-hosted instance, set the base URL to the instance's web root, including any relative URL path, e.g. `https://gitlab.example.com` or `https://example.com/gitlab`. The token needs `read_api` and `read_repository`.
+
+The base URL is used for the live token test (`GET <base>/api/v4/user`), the Deploy Wizard's project list (`<base>/api/v4/projects`) and the branch picker. Projects in nested groups (`group/subgroup/project`) are supported. Set it the same way as for Gitea: the *GitLab base URL* field, `ninedeploy sources add --base-url …`, or `baseUrl` in the API. The https and private-address rules above apply too. When a node clones with the source (*Allow on nodes*), the credential is only sent to repositories on the base URL's host.
+
 ### Bitbucket specifics
 
 Create the Source with type `bitbucket` and a **Bitbucket Cloud API token**

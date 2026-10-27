@@ -6,9 +6,9 @@ import { createSource, sourcePatch } from '@ninedeploy/schemas';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { badRequest, HttpError, notFound, parseId } from '../lib/errors.js';
 // Every outbound provider call below rides the egress SSRF guard like the
-// rest of the panel's webhooks/API clients. The github/gitlab/bitbucket hosts
-// are hardcoded; since 0.13 a Gitea base URL and a GitHub App's (GHES) API base
-// are operator-supplied, so the guard (private addresses refused unless
+// rest of the panel's webhooks/API clients. The github/bitbucket hosts are
+// hardcoded; since 0.13 a Gitea base URL and a GitHub App's (GHES) API base,
+// and since G1.2 a self-hosted GitLab base URL, are operator-supplied, so the guard (private addresses refused unless
 // NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1) is what keeps them off the LAN.
 import { guardedFetch, privateEgressAllowed } from '../lib/egressGuard.js';
 import { apiBase, appJwt, GithubAppError, githubApi, installationToken } from '../lib/githubApp.js';
@@ -155,32 +155,54 @@ async function listRepoPages(
 
 const INSECURE_BASE_URL = 'must use https (http is allowed only with NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1)';
 
+/** Source types whose provider can live on a self-hosted base URL. */
+const BASE_URL_TYPES: ReadonlySet<string> = new Set(['gitea', 'gitlab']);
+
 /**
- * A `baseUrl` on create/patch: Gitea sources only, https unless private
- * egress is allowed. These hosts are operator-supplied, so every call to
- * them also rides `guardedFetch` (which refuses private addresses unless
- * NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1).
+ * A `baseUrl` on create/patch: Gitea and (G1.2) self-hosted GitLab sources
+ * only, https unless private egress is allowed. These hosts are
+ * operator-supplied, so every call to them also rides `guardedFetch` (which
+ * refuses private addresses unless NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1).
  */
 function assertBaseUrlAllowed(type: string, baseUrl: string): void {
-  if (type !== 'gitea') throw badRequest('baseUrl applies to gitea sources only', 'base_url_unsupported');
+  if (!BASE_URL_TYPES.has(type)) throw badRequest('baseUrl applies to gitea and gitlab sources only', 'base_url_unsupported');
   if (!baseUrl.startsWith('https:') && !(baseUrl.startsWith('http:') && privateEgressAllowed())) {
     throw badRequest(`baseUrl ${INSECURE_BASE_URL}`, 'insecure_base_url');
   }
 }
 
-/** A Gitea source's API root, re-checked at use time (the egress setting may have changed since it was saved). */
-function giteaBase(src: Pick<Source, 'baseUrl'>, missing: string): { base: string } | { error: string } {
-  if (!src.baseUrl) return { error: missing };
+/** A self-hosted provider's web root, re-checked at use time (the egress setting may have changed since it was saved). */
+function providerBase(baseUrl: string, label: string): { base: string } | { error: string } {
   let url: URL;
   try {
-    url = new URL(src.baseUrl);
+    url = new URL(baseUrl);
   } catch {
-    return { error: 'The Gitea base URL is not a valid URL' };
+    return { error: `The ${label} base URL is not a valid URL` };
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && privateEgressAllowed())) {
-    return { error: `The Gitea base URL ${INSECURE_BASE_URL}` };
+    return { error: `The ${label} base URL ${INSECURE_BASE_URL}` };
   }
   return { base: `${url.origin}${url.pathname.replace(/\/+$/, '')}` };
+}
+
+/** A Gitea source's API root; Gitea has no default host, so a missing base URL is an error. */
+function giteaBase(src: Pick<Source, 'baseUrl'>, missing: string): { base: string } | { error: string } {
+  if (!src.baseUrl) return { error: missing };
+  return providerBase(src.baseUrl, 'Gitea');
+}
+
+/** G1.2: a GitLab source's web root — its base URL for a self-hosted instance, gitlab.com otherwise. */
+function gitlabBase(src: Pick<Source, 'baseUrl'>): { base: string } | { error: string } {
+  return src.baseUrl ? providerBase(src.baseUrl, 'GitLab') : { base: 'https://gitlab.com' };
+}
+
+/** A GitLab project path (`group/sub/project`) from a path or a clone URL under `base`, or null when it is neither. */
+export function gitlabProjectPath(repo: string, base: string): string | null {
+  const trimmed = repo.startsWith(`${base}/`) ? repo.slice(base.length + 1) : repo;
+  const clean = trimmed.replace(/\.git$/, '').replace(/\/+$/, '');
+  const parts = clean.split('/');
+  if (parts.length < 2 || parts.some((p) => !/^[A-Za-z0-9_.-]+$/.test(p) || p === '.' || p === '..')) return null;
+  return clean;
 }
 
 /** `owner/repo` from a full name or a clone URL under `base`, or null when it is neither. */
@@ -471,9 +493,14 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
     }
 
     if (src.type === 'gitlab') {
+      const gitlab = gitlabBase(src);
+      if ('error' in gitlab) {
+        reply.header('x-nd-source-error', gitlab.error);
+        return [];
+      }
       listed = await listRepoPages(
         'GitLab',
-        paged('https://gitlab.com/api/v4/projects?membership=true&per_page=100&order_by=updated_at'),
+        paged(`${gitlab.base}/api/v4/projects?membership=true&per_page=100&order_by=updated_at`),
         { headers: { 'PRIVATE-TOKEN': token } },
         token,
         async (res) => {
@@ -656,6 +683,33 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         return ['main', 'master'];
       }
     }
+    if (src.type === 'gitlab') {
+      // G1.2: branches came back as the main/master fallback for every GitLab source.
+      const gitlab = gitlabBase(src);
+      if ('error' in gitlab) {
+        reply.header('x-nd-source-error', gitlab.error);
+        return ['main', 'master'];
+      }
+      const project = gitlabProjectPath(repo, gitlab.base);
+      if (!project) {
+        reply.header('x-nd-source-error', `GitLab: expected group/project or a ${gitlab.base} clone URL`);
+        return ['main', 'master'];
+      }
+      try {
+        const res = await guardedFetch(`${gitlab.base}/api/v4/projects/${encodeURIComponent(project)}/repository/branches?per_page=100`, {
+          headers: { 'PRIVATE-TOKEN': token },
+        });
+        if (!res.ok) {
+          reply.header('x-nd-source-error', `GitLab API ${res.status} on ${project}`);
+          return ['main', 'master'];
+        }
+        const data = (await res.json()) as Array<{ name: string }>;
+        return (Array.isArray(data) ? data : []).map((b) => b.name);
+      } catch (err) {
+        reply.header('x-nd-source-error', `GitLab API unreachable: ${providerErrorText(err, token)}`);
+        return ['main', 'master'];
+      }
+    }
     if (src.type === 'gitea') {
       const gitea = giteaBase(src, "Gitea: set the source's base URL to list branches");
       if ('error' in gitea) {
@@ -749,7 +803,9 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
         return { ok: false, provider: 'github', status: res.status, error: body.slice(0, 240) };
       }
       if (src.type === 'gitlab') {
-        const res = await guardedFetch('https://gitlab.com/api/v4/user', {
+        const gitlab = gitlabBase(src);
+        if ('error' in gitlab) return { ok: false, provider: 'gitlab', error: gitlab.error };
+        const res = await guardedFetch(`${gitlab.base}/api/v4/user`, {
           headers: { 'PRIVATE-TOKEN': token },
         });
         if (res.ok) {
@@ -757,7 +813,7 @@ export const sourcesRoutes: FastifyPluginAsync = async (app) => {
           return { ok: true, provider: 'gitlab', login: data.username, name: data.name };
         }
         const body = await res.text().catch(() => '');
-        return { ok: false, provider: 'gitlab', status: res.status, error: body.slice(0, 240) };
+        return { ok: false, provider: 'gitlab', status: res.status, error: providerErrorText(body.slice(0, 240), token) };
       }
       if (src.type === 'bitbucket') {
         // Bearer auth works with Bitbucket Cloud API tokens and repository

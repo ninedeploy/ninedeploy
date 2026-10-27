@@ -117,7 +117,7 @@ superiority over another platform:
 - panel self-backup with offline restore;
 - image auto-update;
 - GitHub commit statuses and PR comments;
-- SSO/SAML/SCIM in the self-hosted build.
+- SSO through OIDC, and SCIM, in the self-hosted build. SAML is **not** available: creating a SAML provider is refused (`saml_unavailable`, r354) until a vetted XML-signature implementation lands ([GAP_ROADMAP.md](GAP_ROADMAP.md) G3.6).
 
 The 0.17.0 readiness, node metric history, log-drain and availability work is
 tracked in [Node operations](NODE_OPERATIONS.md), including its verification and
@@ -161,11 +161,15 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
 - SSH host key pinning for deploy-key sources: done in 0.15.8 (opt-in per source, panel clones only; a node keeps its per-job policy).
 - The unproven leads in the audit hints list, proven or dropped one by one. Most that remain need a real compose binary or a live hung daemon to prove.
 
+## Competitor gap roadmap — 2026-10-27
+
+A code-level comparison with the current releases of Coolify, Dokploy, CapRover, Dokku, Kamal, Komodo and newer projects produced a separate, itemised plan: [GAP_ROADMAP.md](GAP_ROADMAP.md). It runs next to the R2–R6 sequence above and ships as patch releases. The owner approved its G4 group on 2026-10-27, which moves cloud-API server provisioning and Heroku/Paketo buildpacks out of the list below.
+
 ## Not planned for now
 
 The following get revisited only if users ask for them:
 
 - Caddy as an alternative proxy.
-- Cloud-API server provisioning (Hetzner, DigitalOcean).
-- Heroku/Paketo buildpacks.
 - "Patches" file overlays.
+
+Cloud-API server provisioning and Heroku/Paketo buildpacks were here until 2026-10-27; they are now [GAP_ROADMAP.md](GAP_ROADMAP.md) G4.3 and G4.4.

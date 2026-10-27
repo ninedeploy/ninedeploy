@@ -103,7 +103,7 @@ export function Sources() {
         token: authKind === 'token' && token ? token : undefined,
         deployKey: authKind === 'ssh' && deployKey ? deployKey : undefined,
         registryUsername: isRegistry && registryUsername.trim() ? registryUsername.trim() : undefined,
-        baseUrl: type === 'gitea' && baseUrl.trim() ? baseUrl.trim() : undefined,
+        baseUrl: (type === 'gitea' || type === 'gitlab') && baseUrl.trim() ? baseUrl.trim() : undefined,
       });
     },
     onSuccess: () => {
@@ -283,6 +283,11 @@ export function Sources() {
                 <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://git.example.com" className="font-mono text-xs" />
               </Field>
             )}
+            {type === 'gitlab' && (
+              <Field label="GitLab base URL" hint="self-hosted GitLab only; leave empty for gitlab.com">
+                <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://gitlab.example.com" className="font-mono text-xs" />
+              </Field>
+            )}
             {authKind === 'ssh' && !isRegistry && (
               <>
                 <Field label="SSH private key (paste the contents of ~/.ssh/id_ed25519)">
@@ -395,7 +400,7 @@ export function Sources() {
                   <Tag ok={s.hasDeployKey} label="Deploy key" />
                 </div>
               )}
-              {s.type === 'gitea' && (
+              {(s.type === 'gitea' || s.type === 'gitlab') && (
                 <div className="mt-3 text-[11px] text-slate-400">
                   {editingBaseUrl?.id === s.id ? (
                     <form
@@ -406,10 +411,10 @@ export function Sources() {
                       }}
                     >
                       <Input
-                        aria-label="Gitea base URL"
+                        aria-label={s.type === 'gitlab' ? 'GitLab base URL' : 'Gitea base URL'}
                         value={editingBaseUrl.value}
                         onChange={(e) => setEditingBaseUrl({ id: s.id, value: e.target.value })}
-                        placeholder="https://git.example.com"
+                        placeholder={s.type === 'gitlab' ? 'https://gitlab.example.com' : 'https://git.example.com'}
                         className="flex-1 font-mono text-[11px]"
                       />
                       <Button type="submit" size="sm" disabled={saveBaseUrl.isPending}>
@@ -418,7 +423,11 @@ export function Sources() {
                     </form>
                   ) : (
                     <button type="button" className="text-left hover:text-indigo-300" onClick={() => setEditingBaseUrl({ id: s.id, value: s.baseUrl ?? '' })}>
-                      Base URL: <span className="font-mono">{s.baseUrl || 'not set (live test disabled)'}</span> · edit
+                      Base URL:{' '}
+                      <span className="font-mono">
+                        {s.baseUrl || (s.type === 'gitlab' ? 'gitlab.com (default)' : 'not set (live test disabled)')}
+                      </span>{' '}
+                      · edit
                     </button>
                   )}
                 </div>

@@ -585,7 +585,7 @@ export const createSource = z.object({
   registryHosts: z.array(registryHost).max(20).optional(),
   defaultBranch: z.string().optional(),
   /**
-   * 0.13: self-hosted provider base (Gitea), e.g. `https://git.example.com`.
+   * 0.13: self-hosted provider base (Gitea; GitLab since G1.2, where absent means gitlab.com), e.g. `https://git.example.com`.
    * The server refuses `http:` unless private egress is allowed.
    * `github_app` is deliberately NOT in `type`: only installation sync creates those sources.
    */
@@ -603,7 +603,7 @@ export const source = z.object({
   /** r512: hosts a registry credential is bound to (registry sources only). */
   registryHosts: z.array(z.string()).optional(),
   defaultBranch: z.string().nullable(),
-  /** 0.13: self-hosted provider base URL (Gitea); null/absent = not set. */
+  /** 0.13: self-hosted provider base URL (Gitea, or a self-hosted GitLab); null/absent = not set. */
   baseUrl: z.string().nullable().optional(),
   // ── 0.16 T8 surfaces ── multi-node (0.15.2, additive): this PAT or deploy key
   // may be sent to a node for one clone. Absent on older panels.

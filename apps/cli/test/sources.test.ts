@@ -271,8 +271,17 @@ describe('sourcesAdd — Gitea base URL', () => {
     }
     h.prompt.mockResolvedValueOnce('github');
     await sourcesAdd(makeClient({ sources: { create } }), 'gh', { baseUrl: 'https://git.example.com' });
-    expect(errorSpy).toHaveBeenLastCalledWith(expect.stringContaining('--base-url applies to gitea sources only'));
+    expect(errorSpy).toHaveBeenLastCalledWith(expect.stringContaining('--base-url applies to gitea and gitlab sources only'));
     expect(create).not.toHaveBeenCalled();
+  });
+
+  // G1.2: a self-hosted GitLab takes the same flag; without it the source means gitlab.com.
+  it('sends --base-url for a self-hosted GitLab', async () => {
+    const create = vi.fn().mockResolvedValue({ id: 5, name: 'gl' });
+    h.prompt.mockResolvedValueOnce('gitlab').mockResolvedValueOnce('main').mockResolvedValueOnce('token');
+    h.promptHidden.mockResolvedValueOnce('glpat-x');
+    await sourcesAdd(makeClient({ sources: { create, test: vi.fn().mockResolvedValue({ ok: true }) } }), 'gl', { baseUrl: 'https://gitlab.example.com/' });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'gitlab', token: 'glpat-x', baseUrl: 'https://gitlab.example.com' }));
   });
 });
 

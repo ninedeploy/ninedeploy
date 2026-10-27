@@ -1387,7 +1387,7 @@ sources.command('list').description('List configured sources').action(() => sour
 sources.command('show <id>').description('Show one source in detail').action((id: string) => sourcesShow(getClient(), id));
 sources.command('add [name]')
   .description('Add a new source (interactive; PAT/SSH key from env or masked prompt)')
-  .option('--base-url <url>', 'Gitea base URL, e.g. https://git.example.com (enables the live test and repo list)')
+  .option('--base-url <url>', 'Gitea or self-hosted GitLab base URL, e.g. https://git.example.com (enables the live test and repo list)')
   .action((name: string | undefined, opts: { baseUrl?: string }) => sourcesAdd(getClient(), name, opts));
 sources.command('test [id]').description('Verify that a stored source token still authenticates').action((id?: string) => sourcesTest(getClient(), id));
 sources.command('keygen [id]').description('Generate an ed25519 deploy-key pair on the panel and print the public key').action((id?: string) => sourcesKeygen(getClient(), id));

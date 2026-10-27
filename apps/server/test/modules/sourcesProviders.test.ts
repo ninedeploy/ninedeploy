@@ -284,3 +284,98 @@ describe('gitea sources', () => {
     expect(traversal.headers['x-nd-source-error']).toMatch(/expected owner\/repo/);
   });
 });
+
+// G1.2: a GitLab source on a self-hosted base URL; without one it still means gitlab.com.
+describe('gitlab sources', () => {
+  async function gitlabSource(baseUrl: string | null) {
+    const [row] = await db
+      .insert(sources)
+      .values({ type: 'gitlab', name: 'gitlab', tokenEncrypted: encrypt('GITLAB_TOKEN_VALUE'), baseUrl })
+      .returning();
+    return row!;
+  }
+
+  it('accepts a base URL on create and patch, with the same https rule as Gitea', async () => {
+    const app = await server();
+    const ok = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { name: 'gl', type: 'gitlab', token: 't', baseUrl: 'https://gitlab.example.com/' } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ type: 'gitlab', baseUrl: 'https://gitlab.example.com' });
+    const http = await app.inject({ method: 'PATCH', url: `/${ok.json().id}`, headers: asUser(), payload: { baseUrl: 'http://gitlab.lan' } });
+    expect(http.statusCode).toBe(400);
+    expect(http.json().error.code).toBe('insecure_base_url');
+  });
+
+  it('lists projects, branches and tests the token against the self-hosted instance', async () => {
+    gh.on('GET', /^\/gitlab\/api\/v4\/projects$/, () =>
+      json(200, [
+        { name: 'api', path_with_namespace: 'team/backend/api', http_url_to_repo: 'https://gitlab.example.com/gitlab/team/backend/api.git', default_branch: 'develop', visibility: 'private' },
+      ]),
+    );
+    gh.on('GET', /^\/gitlab\/api\/v4\/projects\/team%2Fbackend%2Fapi\/repository\/branches$/, () => json(200, [{ name: 'develop' }, { name: 'main' }]));
+    gh.on('GET', /^\/gitlab\/api\/v4\/user$/, () => json(200, { username: 'ersin', name: 'Ersin' }));
+    const src = await gitlabSource('https://gitlab.example.com/gitlab/');
+    const app = await server();
+
+    const repos = await app.inject({ method: 'GET', url: `/${src.id}/repos`, headers: asUser() });
+    expect(repos.headers['x-nd-source-error']).toBeUndefined();
+    expect(repos.json()).toEqual([
+      { name: 'api', fullName: 'team/backend/api', url: 'https://gitlab.example.com/gitlab/team/backend/api.git', defaultBranch: 'develop', isPrivate: true },
+    ]);
+    expect(gh.calls[0]!.url).toBe('https://gitlab.example.com/gitlab/api/v4/projects?membership=true&per_page=100&order_by=updated_at');
+    expect(gh.calls[0]!.headers.get('private-token')).toBe('GITLAB_TOKEN_VALUE');
+
+    const byPath = await app.inject({ method: 'GET', url: `/${src.id}/branches?repo=team/backend/api`, headers: asUser() });
+    expect(byPath.json()).toEqual(['develop', 'main']);
+    const byUrl = await app.inject({
+      method: 'GET',
+      url: `/${src.id}/branches?repo=${encodeURIComponent('https://gitlab.example.com/gitlab/team/backend/api.git')}`,
+      headers: asUser(),
+    });
+    expect(byUrl.json()).toEqual(['develop', 'main']);
+    expect(gh.calls.at(-1)!.url).toBe('https://gitlab.example.com/gitlab/api/v4/projects/team%2Fbackend%2Fapi/repository/branches?per_page=100');
+
+    const traversal = await app.inject({ method: 'GET', url: `/${src.id}/branches?repo=${encodeURIComponent('team/../admin')}`, headers: asUser() });
+    expect(traversal.json()).toEqual(['main', 'master']);
+    expect(traversal.headers['x-nd-source-error']).toMatch(/expected group\/project/);
+
+    const test = await app.inject({ method: 'GET', url: `/${src.id}/test`, headers: asUser() });
+    expect(test.json()).toEqual({ ok: true, provider: 'gitlab', login: 'ersin', name: 'Ersin' });
+    expect(gh.calls.at(-1)!.url).toBe('https://gitlab.example.com/gitlab/api/v4/user');
+  });
+
+  it('keeps gitlab.com without a base URL, and refuses a stored http base once private egress is off', async () => {
+    gh.on('GET', /^\/api\/v4\/projects\/acme%2Fapp\/repository\/branches$/, () => json(200, [{ name: 'trunk' }]));
+    const cloud = await gitlabSource(null);
+    const app = await server();
+    const branches = await app.inject({ method: 'GET', url: `/${cloud.id}/branches?repo=acme/app`, headers: asUser() });
+    expect(branches.json()).toEqual(['trunk']);
+    expect(gh.calls.at(-1)!.url).toBe('https://gitlab.com/api/v4/projects/acme%2Fapp/repository/branches?per_page=100');
+
+    const lan = await gitlabSource('http://gitlab.lan');
+    const calls = gh.calls.length;
+    const res = await app.inject({ method: 'GET', url: `/${lan.id}/test`, headers: asUser() });
+    expect(res.json()).toMatchObject({ ok: false, provider: 'gitlab', error: expect.stringMatching(/must use https/) });
+    const repos = await app.inject({ method: 'GET', url: `/${lan.id}/repos`, headers: asUser() });
+    expect(repos.json()).toEqual([]);
+    expect(repos.headers['x-nd-source-error']).toMatch(/must use https/);
+    const br = await app.inject({ method: 'GET', url: `/${lan.id}/branches?repo=acme/app`, headers: asUser() });
+    expect(br.json()).toEqual(['main', 'master']);
+    expect(gh.calls).toHaveLength(calls);
+  });
+
+  it('reports a GitLab API failure without echoing the token', async () => {
+    gh.on('GET', /^\/api\/v4\/projects\/acme%2Fapp\/repository\/branches$/, () => json(404, { message: 'not found' }));
+    const src = await gitlabSource(null);
+    const app = await server();
+    const res = await app.inject({ method: 'GET', url: `/${src.id}/branches?repo=acme/app`, headers: asUser() });
+    expect(res.json()).toEqual(['main', 'master']);
+    expect(res.headers['x-nd-source-error']).toBe('GitLab API 404 on acme/app');
+    expect(res.body).not.toContain('GITLAB_TOKEN_VALUE');
+
+    h.guardedFetch.mockRejectedValueOnce(new Error('connect ECONNREFUSED (token GITLAB_TOKEN_VALUE)'));
+    const down = await app.inject({ method: 'GET', url: `/${src.id}/branches?repo=acme/app`, headers: asUser() });
+    expect(down.json()).toEqual(['main', 'master']);
+    expect(down.headers['x-nd-source-error']).toMatch(/^GitLab API unreachable: /);
+    expect(down.headers['x-nd-source-error']).not.toContain('GITLAB_TOKEN_VALUE');
+  });
+});

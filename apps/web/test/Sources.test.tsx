@@ -267,6 +267,31 @@ describe('Sources', () => {
     await waitFor(() => expect(api.sources.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'gitea', baseUrl: 'https://git.example.com' })));
   });
 
+  // G1.2: a self-hosted GitLab gets the same base URL field; empty means gitlab.com.
+  it('sends a self-hosted GitLab base URL on create and edits it on the card', async () => {
+    const user = userEvent.setup();
+    mockOf(api.sources.list).mockResolvedValue([{ id: 8, name: 'gl', type: 'gitlab', hasToken: true, hasDeployKey: false, baseUrl: null }] as never);
+    mockOf(api.sources.create).mockResolvedValue({ id: 9 } as never);
+    mockOf(api.sources.update).mockResolvedValue({ id: 8 } as never);
+    renderWithProviders(<Sources />);
+    expect(await screen.findByText('gitlab.com (default)')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Base URL:/ }));
+    await user.type(screen.getByLabelText('GitLab base URL'), 'https://gitlab.example.com');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.sources.update).toHaveBeenCalledWith(8, { baseUrl: 'https://gitlab.example.com' }));
+
+    await user.click(screen.getByRole('button', { name: /New source/ }));
+    await user.type(screen.getByPlaceholderText('github-personal'), 'gl2');
+    await user.selectOptions(screen.getByRole('combobox'), 'gitlab');
+    await user.type(screen.getByPlaceholderText('glpat-…'), 'glpat-x');
+    await user.type(screen.getByPlaceholderText('https://gitlab.example.com'), 'https://gitlab.example.com');
+    await user.click(screen.getByRole('button', { name: /Save source/ }));
+    await waitFor(() =>
+      expect(api.sources.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'gitlab', token: 'glpat-x', baseUrl: 'https://gitlab.example.com' })),
+    );
+  });
+
   it('shows a generated GitHub App source with an installation test and no deploy-key controls', async () => {
     const user = userEvent.setup();
     mockOf(api.sources.list).mockResolvedValue([{ id: 7, name: 'gh-app:acme', type: 'github_app', hasToken: false, hasDeployKey: false }] as never);
