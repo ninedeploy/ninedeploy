@@ -315,7 +315,7 @@ describe('Meilisearch', () => {
     expect(importer).toEqual(expect.arrayContaining(['--name', 'nd-db-meili-nd-restore', '--network', 'none', '-v', 'nd-db-meili-data:/meili_data', '--env-file', '/tmp/secret.env']));
     expect(importer.slice(-5)).toEqual(['meilisearch', '--db-path', expect.stringMatching(/^\/meili_data\/nd-restore-.+\.ms$/), '--import-dump', dump]);
     const scripts = calls.filter((a) => a.includes('--entrypoint')).map((a) => a.at(-1) as string);
-    expect(scripts[0]).toMatch(/^mv data\.ms data\.ms\.nd-old-\S+ && mv nd-restore-\S+\.ms data\.ms$/);
+    expect(scripts[0]).toMatch(/^mv data\.ms (data\.ms\.nd-old-\S+) && \{ mv nd-restore-\S+\.ms data\.ms \|\| \{ mv \1 data\.ms; exit 1; \}; \}$/);
     expect(scripts[1]).toMatch(/^rm -rf data\.ms\.nd-old-\S+ nd-restore-\S+\.dump$/);
     // Started again before the previous data is removed.
     const startAt = calls.findIndex((a) => a[0] === 'start');

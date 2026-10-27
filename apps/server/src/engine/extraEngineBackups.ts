@@ -379,7 +379,9 @@ export async function restoreMeilisearch(
       await sleep(opts.pollMs ?? 1000);
     }
     await run('docker', ['stop', importer], {}, log);
-    await inVolume(`mv ${MEILI_DB} ${oldDb} && mv ${newDb} ${MEILI_DB}`);
+    // One script, so a failed second move puts the original back before the
+    // database starts: it must never start on a missing data.ms (an empty one).
+    await inVolume(`mv ${MEILI_DB} ${oldDb} && { mv ${newDb} ${MEILI_DB} || { mv ${oldDb} ${MEILI_DB}; exit 1; }; }`);
     swapped = true;
   } finally {
     await run('docker', ['rm', '-f', importer], {}, swallow).catch(() => undefined);
