@@ -84,13 +84,10 @@ describe('persistent runtime request admission', () => {
     await expect(runtime().prepare({ ...input, specs: [{ ...input.specs[0], cmd: ['different'] }] })).rejects.toThrow(/shape changed/);
     expect(effects()).toEqual([]);
   });
-  it('does not create a runtime when an initial environment file is missing', async () => {
+  it('does not create a journal for an unknown request with a missing environment file', async () => {
     const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/missing.env' }]);
     await expect(runtime().prepare(input)).rejects.toThrow(/receipt unavailable/);
-    expect(effects()).toEqual([]);
-    const db = new DatabaseSync(journalFile());
-    try { expect(db.prepare('SELECT * FROM lifecycle_head').get()).toBeUndefined(); }
-    finally { db.close(); }
+    expect(existsSync(journalFile())).toBe(false); expect(effects()).toEqual([]);
   });
   it('does not replay an incomplete preparation after its environment disappears', async () => {
     mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
@@ -122,11 +119,10 @@ describe('persistent runtime request admission', () => {
     await expect(runtime().prepare(input)).rejects.toThrow(/receipt unavailable/); expect(effects()).toEqual([]);
   });
   it('rolls back authority and performs no Docker effect if shape persistence fails', async () => {
-    const missing = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/missing.env' }]);
-    await expect(runtime().prepare(missing)).rejects.toThrow(/receipt unavailable/);
+    mkdirSync(join(root, '.agent-work', '.lifecycle'), { recursive: true });
     const db = new DatabaseSync(journalFile());
     try {
-      db.exec("CREATE TABLE runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL); CREATE TRIGGER reject_shape BEFORE INSERT ON runtime_prepare_shape BEGIN SELECT RAISE(ABORT,'proof shape rejected'); END");
+      db.exec("CREATE TABLE IF NOT EXISTS lifecycle_head (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, intent TEXT NOT NULL, receipt TEXT); CREATE TABLE runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL); CREATE TRIGGER reject_shape BEFORE INSERT ON runtime_prepare_shape BEGIN SELECT RAISE(ABORT,'proof shape rejected'); END");
     } finally { db.close(); }
     mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web.env'), 'KEY=first'); io.spawn.mockClear();
     await expect(runtime().prepare(prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]))).rejects.toThrow(/proof shape rejected/);

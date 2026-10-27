@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, type ContainerInventoryReply, type ContainerStopSetReply, containerLifecycleRequest, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest,
   runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply, type ContainerNetworkSetReply, type ContainerPrepareReply, type ContainerRetireSetReply, type RuntimeFenceReply } from '@ninedeploy/schemas';
 import { parseRunSpec, runSpecArgv, type RunSpec } from '../agentOps/runSpec.js';
@@ -184,6 +184,7 @@ export function createNodeRuntimeMutation(root: string) {
       if (envHashes.includes(missing)) {
         // A completed receipt is immutable. Replaying it has no Docker effect,
         // but requires a separately recorded hash of the complete request shape.
+        if (!existsSync(join(directory, `service-${input.serviceId}.sqlite`))) throw new Error('Completed preparation receipt unavailable or request shape changed');
         return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, journal => journal.write(async () => {
           const modeTable = journal.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_protocol'").get();
           const mode = modeTable ? journal.database.prepare('SELECT version FROM runtime_protocol WHERE id=1').get() : undefined;
