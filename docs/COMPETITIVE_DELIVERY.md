@@ -12,6 +12,8 @@ The [v0.18.5 release workflow](https://github.com/ninedeploy/ninedeploy/actions/
 
 The exact candidate passed all 11 uncached local release tasks (15,597 tests in 925 files) and its main-branch hosted CI. The hosted image build and a local 0.18.4-to-0.18.5 upgrade passed. Publication was held by smoke failures: independent runners did not pull the image before inspection, the user-journey expected an outdated secret-provider list, and two node scenarios timed out waiting for cancelled or stopped candidate containers to be removed. The first two smoke-tooling changes are committed locally for the 0.18.6 candidate; the node cleanup failures still require diagnosis and safe verification. A local rerun of the user journey passed the provider step but later timed out waiting for a canary, so the complete journey is not yet verified.
 
+The replica-database Stop failure also reproduced locally against the published v0.18.5 image: SQL readiness and rejection of an unhealthy candidate passed, then Stop completed while both replacement containers were still running and the former generation was stopped. The test exited 1 after the 90-second candidate-retirement deadline. Evidence: `.temp_files/r2-prepare-receipt-replay-20261027-6096c41a/replica-stop-repro/`. The selected-runtime Stop controller discovers the selected generation, while the superseded deploy continuation loses its owner; this is a suspected cleanup gap, not yet a verified complete root cause or fix.
+
 Do not infer publication or runtime safety from the tag, image, or the earlier green gates. A future candidate still needs a fresh full gate, hosted release smokes, and verification of the actual GitHub Release and published artifacts.
 
 ## 0.18.4 publication acceptance — 2026-10-26
