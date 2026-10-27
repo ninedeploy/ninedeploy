@@ -14,6 +14,8 @@ The exact candidate passed all 11 uncached local release tasks (15,597 tests in 
 
 The replica-database Stop failure also reproduced locally against the published v0.18.5 image: SQL readiness and rejection of an unhealthy candidate passed, then Stop completed while both replacement containers were still running and the former generation was stopped. The test exited 1 after the 90-second candidate-retirement deadline. Evidence: `.temp_files/r2-prepare-receipt-replay-20261027-6096c41a/replica-stop-repro/`. The selected-runtime Stop controller discovers the selected generation, while the superseded deploy continuation loses its owner; this is a suspected cleanup gap, not yet a verified complete root cause or fix.
 
+An isolated native SQLite characterization confirmed the protocol boundary: the existing selected-runtime lifecycle fence still permits a subsequently admitted legacy creation, while the newer ordered runtime fence refuses unversioned creation altogether, including a legitimate future legacy deploy. Both observed-behavior controls passed. This is not a complete race reproduction or a fix; producer adoption and mixed-version handling must be verified before switching selected Stop to the ordered fence. Evidence: `.temp_files/r2-prepare-receipt-replay-20261027-6096c41a/node-stop-fence-characterization/`.
+
 Do not infer publication or runtime safety from the tag, image, or the earlier green gates. A future candidate still needs a fresh full gate, hosted release smokes, and verification of the actual GitHub Release and published artifacts.
 
 ## 0.18.4 publication acceptance — 2026-10-26
