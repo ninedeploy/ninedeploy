@@ -56,7 +56,7 @@ Several of these were listed under "Not planned for now" in ROADMAP.md. Coolify 
 | G4.4 | **Heroku and Paketo buildpacks.** | Dokploy, Dokku, Kamal | A `buildpacks` build pack wrapping `pack build`, checksum-pinned like Nixpacks. | S | ⬜ approved |
 | G4.5 | **GitHub Actions runners on your own servers.** | Coolify 4.4 (`generate-jitconfig`, one container per job, dind or Sysbox) | Through the GitHub App: on `workflow_job` queued, start a just-in-time runner container on a build node. This could be a cheaper first step for R5. | M | ⬜ approved |
 | G4.6 | **Interface translations.** Turkish and English first. | Coolify (20 languages), CapRover | Add an i18n layer to the web app, extract strings route by route, ship the Turkish locale. | L | ⬜ approved |
-| G4.7 | **A larger template catalog.** Dokploy has 586, CapRover 361, Coolify 352, NineDeploy 305. | — | A converter for Dokploy blueprints (`template.toml` + compose) next to the Coolify mirror, with every stack smoke-run before promotion as in 0.15.7. | M | ⬜ approved |
+| G4.7 | **A larger template catalog.** Dokploy has 586, CapRover 361, Coolify 352, NineDeploy 305. | — | A converter for Dokploy blueprints (`template.toml` + compose) next to the Coolify mirror, with every stack smoke-run before promotion as in 0.15.7. | M | ✅ converter (promotion pending smoke runs) |
 
 ## G5: Ahead of the field
 

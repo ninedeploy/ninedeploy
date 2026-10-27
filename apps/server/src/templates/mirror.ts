@@ -45,7 +45,7 @@ export function parseHeader(raw: string): Record<string, string> {
   return header;
 }
 
-interface ServiceEntry {
+export interface ServiceEntry {
   image?: unknown;
   build?: unknown;
   ports?: unknown;
@@ -63,14 +63,14 @@ function serviceText(entry: ServiceEntry): string {
   }
 }
 
-const CATEGORY_EMOJI: Record<string, string> = {
+export const CATEGORY_EMOJI: Record<string, string> = {
   analytics: '📊', automation: '🤖', ai: '🧠', database: '🗄️', monitoring: '📈',
   media: '🎬', git: '🔧', cms: '📝', backend: '🧱', communication: '💬',
   developer: '🛠️', productivity: '📋', games: '🎮', messaging: '📨', money: '💰',
   security: '🔐', hosting: '🌐', file: '📁', email: '📧', social: '👥',
 };
 
-function titleFromSlug(slug: string): string {
+export function titleFromSlug(slug: string): string {
   return slug
     .split(/[-_.]/)
     .filter(Boolean)
@@ -96,7 +96,7 @@ const CATEGORY_ALIAS: Record<string, string> = {
   proxy: 'DevOps',
 };
 
-function titleCaseCategory(raw: string | undefined): string {
+export function titleCaseCategory(raw: string | undefined): string {
   if (!raw) return 'Tools';
   const c = raw.trim();
   return CATEGORY_ALIAS[c.toLowerCase()] ?? c.charAt(0).toUpperCase() + c.slice(1);
@@ -160,7 +160,7 @@ export function stripCoolifyOnlyKeys(raw: string): string {
 }
 
 /** Shows `image:tag` for an image written `image:${TAG:-tag}` or `${TAG-tag}`; the stack keeps the variable. */
-function displayImage(image: string): string {
+export function displayImage(image: string): string {
   return image.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*:?-([^}$]*)\}/g, '$1');
 }
 
@@ -263,6 +263,39 @@ export function declareImplicitVolumes(raw: string): string {
   return `${raw.slice(0, insertAt)}${eol}${lines}${raw.slice(insertAt)}`;
 }
 
+/**
+ * Why a mirrored stack's services cannot run here, or null. Shared by the
+ * Coolify and Dokploy converters (G4.7) so both refuse the same shapes.
+ */
+export function composeServiceRefusal(services: Record<string, ServiceEntry>): string | null {
+  for (const [name, entry] of Object.entries(services)) {
+    if (!entry || typeof entry !== 'object') return `service '${name}' is not a mapping`;
+    if (typeof entry.build !== 'undefined' && typeof entry.image === 'undefined') {
+      return `service '${name}' requires a build context`;
+    }
+    if (
+      Array.isArray(entry.ports)
+      && entry.ports.some(
+        (p) =>
+          // Short syntax: `host:container` mappings (and `$` interpolation,
+          // which can smuggle a host port past a literal review).
+          (typeof p === 'string' && (p.includes(':') || p.includes('$')))
+          // Long syntax: a `published` port or an explicit `host_ip` is a
+          // deterministic host binding — exactly what this guard refuses.
+          || (typeof p === 'object' && p !== null && ('published' in p || 'host_ip' in p)),
+      )
+    ) {
+      return `service '${name}' publishes host ports`;
+    }
+    // F317: host networking binds EVERY container port on the host with no
+    // `ports:` key at all (and `$` can smuggle it in via interpolation).
+    if (typeof entry.network_mode === 'string' && (entry.network_mode.trim() === 'host' || entry.network_mode.includes('$'))) {
+      return `service '${name}' uses host networking`;
+    }
+  }
+  return null;
+}
+
 export function convertCoolifyComposeFile(fileName: string, raw: string): MirrorSkip | MirrorConverted {
   const base = fileName.replace(/\.ya?ml$/i, '');
   const header = parseHeader(raw);
@@ -283,31 +316,8 @@ export function convertCoolifyComposeFile(fileName: string, raw: string): Mirror
   const names = Object.keys(services);
   if (names.length === 0) return { skip: true, reason: 'no services' };
 
-  for (const [name, entry] of Object.entries(services)) {
-    if (!entry || typeof entry !== 'object') return { skip: true, reason: `service '${name}' is not a mapping` };
-    if (typeof entry.build !== 'undefined' && typeof entry.image === 'undefined') {
-      return { skip: true, reason: `service '${name}' requires a build context` };
-    }
-    if (
-      Array.isArray(entry.ports)
-      && entry.ports.some(
-        (p) =>
-          // Short syntax: `host:container` mappings (and `$` interpolation,
-          // which can smuggle a host port past a literal review).
-          (typeof p === 'string' && (p.includes(':') || p.includes('$')))
-          // Long syntax: a `published` port or an explicit `host_ip` is a
-          // deterministic host binding — exactly what this guard refuses.
-          || (typeof p === 'object' && p !== null && ('published' in p || 'host_ip' in p)),
-      )
-    ) {
-      return { skip: true, reason: `service '${name}' publishes host ports` };
-    }
-    // F317: host networking binds EVERY container port on the host with no
-    // `ports:` key at all (and `$` can smuggle it in via interpolation).
-    if (typeof entry.network_mode === 'string' && (entry.network_mode.trim() === 'host' || entry.network_mode.includes('$'))) {
-      return { skip: true, reason: `service '${name}' uses host networking` };
-    }
-  }
+  const refusal = composeServiceRefusal(services);
+  if (refusal) return { skip: true, reason: refusal };
 
   const coolifyVar = /\bCOOLIFY_[A-Z0-9_]+\b/.exec(raw);
   if (coolifyVar) return { skip: true, reason: `uses ${coolifyVar[0]}, a variable only Coolify provides` };

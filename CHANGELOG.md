@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dokploy template converter (G4.7). `scripts/buildDokployMirror.ts` turns a checkout of the Dokploy blueprint catalog (MIT) into a NineDeploy template bundle, next to the Coolify mirror.
+  - **What it converts:** each blueprint's `.env` is folded into the compose file. Its generators become the matching `SERVICE_*` magic tokens: `${password:N}`, `${base64:N}`, `${hash:N}`, `${domain}`, `${username}` and `${email}`.
+  - **What it skips:** any blueprint without a faithful equivalent, with the reason: file mounts, more than one routed service, `${uuid}` and `${jwt}`, among others.
+  - **Results:** 383 of today's 586 blueprints convert. In a first smoke run, n8n, Umami and NocoDB started. The upstream Ghost blueprint did not: it has no `depends_on`, so Ghost restarts until MySQL is ready.
+  - **Catalog:** nothing joins the bundled catalog until it passes the smoke run.
+
+  The compose safety checks are now shared by both converters. `smol-toml` is a new dev dependency, used only by the build script. No migration. See TEMPLATE_MIRRORS.md.
+
 - More secret managers (G3.2). New reference forms, configured under Settings → Integrations → *Secret managers*:
   - `${{ssm:/name}}` reads AWS Parameter Store with the existing AWS credentials.
   - `${{gcp:secret[@version]}}` reads GCP Secret Manager with a service account key.
