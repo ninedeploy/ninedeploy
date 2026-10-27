@@ -194,6 +194,27 @@ describe('ClickHouse', () => {
     expect(chQueries()).toEqual([]);
   });
 
+  it('retains the previous database when promotion succeeds but its reply is lost', async () => {
+    h.capture.mockResolvedValueOnce('  metadata/app.sql\n');
+    h.capture.mockImplementation(liveOnly);
+    const databases = new Set(['app']);
+    h.run.mockImplementation(async (_cmd, args) => {
+      const query = String(args.at(-1));
+      const restore = /^RESTORE DATABASE `app` AS `([^`]+)`/.exec(query);
+      const rename = /^RENAME DATABASE `([^`]+)` TO `([^`]+)`$/.exec(query);
+      if (restore) databases.add(restore[1]!);
+      if (rename) {
+        if (!databases.has(rename[1]!) || databases.has(rename[2]!)) throw new Error('rename refused');
+        databases.delete(rename[1]!); databases.add(rename[2]!);
+        if (rename[1] === 'app__nd_restore') throw new Error('reply lost');
+      }
+    });
+    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('reply lost');
+    expect(databases.has('app')).toBe(true);
+    expect(databases.has('app__nd_old')).toBe(true);
+    expect(chQueries()).not.toContain('DROP DATABASE IF EXISTS `app__nd_old` SYNC');
+  });
+
   it('refuses an archive with no database or with names it cannot quote', async () => {
     h.capture.mockResolvedValueOnce('Archive: x\n');
     await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('holds no ClickHouse database');
