@@ -734,7 +734,12 @@ async function canaryRunning(token, serviceId, depId, ms) {
   for (;;) {
     const s = (await api(`/v1/services/${serviceId}/canary`, { token })).json;
     if (s?.active === true && s.deploymentId === depId && s.weight > 0) return s;
-    if (Date.now() > end) fail(`no canary of deploy #${depId} within ${ms / 1000} s: ${JSON.stringify(s)}`);
+    const all = (await api(`/v1/services/${serviceId}/deploys`, { token })).json;
+    const deployment = (Array.isArray(all) ? all : (all?.deploys ?? [])).find((x) => x.id === depId);
+    if (['failed', 'cancelled', 'superseded'].includes(deployment?.status)) {
+      fail(`canary deploy #${depId} ended ${deployment.status} before its traffic split`);
+    }
+    if (Date.now() > end) fail(`no canary of deploy #${depId} within ${ms / 1000} s (deploy status: ${deployment?.status ?? 'missing'}): ${JSON.stringify(s)}`);
     await sleep(2000);
   }
 }
