@@ -40,6 +40,10 @@ The panel now supplies a journal path under its writable data directory for loca
 
 A derivative of the v0.18.5 image containing the three freshly compiled modified server modules passed an isolated real-Docker initial deploy, redeploy, 50% canary promotion (30/30 requests, zero 5xx), and canary cancellation (5/5 requests to the retained generation), exit 0. This is a focused patched-image proof, not a full release-image certification. Evidence: `.temp_files/r2-prepare-receipt-replay-20261027-6096c41a/local-retire-fixed-image/`. The independent node Stop candidate-cleanup failure remains open.
 
+## Patched-image upgrade checkpoint — 2026-10-27
+
+The published v0.18.4 image was upgraded to the patched v0.18.5 test image containing the local-retirement fix. The real isolated Docker upgrade smoke exited 0: existing users, service, domain, history and running application survived; the interrupted deployment recovered; a new deploy succeeded; and all 104 recorded migrations were applied once. Additional Traefik, terminal, data-access and settings checks passed on the upgraded state. Evidence: `.temp_files/r2-prepare-receipt-replay-20261027-6096c41a/upgrade-local-retire-fix/`. This proves the tested derivative, not the final v0.18.6 artifact or the unresolved node Stop case.
+
 ## R2 completed node preparation receipt replay — 2026-10-27
 
 A completed ordered node preparation could not replay its receipt after its temporary environment file was deleted. The agent now records a hash of the normalized request shape alongside its journal head in the same transaction. If an environment file is absent, it returns only a previously completed receipt whose protocol version, request identity, shape, remaining environment fingerprints and receipt identities still match. A missing file on a new or incomplete request cannot create a runtime; an unknown request cannot create an empty journal. A legacy receipt without shape evidence remains held unless the original environment is still available to establish that evidence.
