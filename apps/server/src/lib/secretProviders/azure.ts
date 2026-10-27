@@ -73,8 +73,10 @@ export const azureDriver: NamedSecretDriver<AzureConfig> = {
     return parsed.success ? parsed.data : null;
   },
   validate: () => undefined,
-  // A client secret belongs to one app registration in one tenant.
-  target: (c) => `${c.tenantId}/${c.clientId}`,
+  // A client secret belongs to one app registration in one tenant, and a
+  // vault.azure.net token works at any vault: another vault URL (one the
+  // operator controls could log and replay it) needs the secret again.
+  target: (c) => `${c.tenantId}/${c.clientId}/${c.vaultUrl.toLowerCase()}`,
   read: readSecret,
   async test(config, creds, opts) {
     tokens.delete(opts.cacheKey);

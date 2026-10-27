@@ -67,6 +67,11 @@ describe('SecretManagersCard — G3.2 providers', () => {
     await screen.findByTestId('secret-provider-azure');
     const a = panel('azure');
     expect(a.getByRole('button', { name: /Save/ })).toBeEnabled();
+    // Another vault needs the secret again too (a vault.azure.net token works at any vault).
+    fireEvent.change(a.getByLabelText('Vault URL'), { target: { value: 'https://other.vault.azure.net' } });
+    expect(a.getByRole('button', { name: /Save/ })).toBeDisabled();
+    fireEvent.change(a.getByLabelText('Vault URL'), { target: { value: 'https://kv.vault.azure.net/' } });
+    expect(a.getByRole('button', { name: /Save/ })).toBeEnabled();
     fireEvent.change(a.getByLabelText('Client ID'), { target: { value: 'c-2' } });
     expect(a.getByRole('button', { name: /Save/ })).toBeDisabled();
     fireEvent.change(a.getByLabelText('Client secret'), { target: { value: 'cs' } });
@@ -74,7 +79,8 @@ describe('SecretManagersCard — G3.2 providers', () => {
     await waitFor(() =>
       expect(sp.set).toHaveBeenCalledWith('azure', {
         enabled: true,
-        config: { vaultUrl: 'https://kv.vault.azure.net', tenantId: 't-1', clientId: 'c-2' },
+        // Sent as typed; the server drops the trailing slash.
+        config: { vaultUrl: 'https://kv.vault.azure.net/', tenantId: 't-1', clientId: 'c-2' },
         credentials: { clientSecret: 'cs' },
       }),
     );

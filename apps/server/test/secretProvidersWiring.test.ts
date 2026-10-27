@@ -531,8 +531,11 @@ describe('G3.2 secret providers over the routes', () => {
     expect(saved.statusCode, saved.body).toBe(200);
     expect(saved.body).not.toContain('cs~TOPSECRET');
     expect(saved.json()).toMatchObject({ kind: 'azure', configured: true, config: { vaultUrl: 'https://kv1.vault.azure.net' } });
-    // Same app registration, another vault: the stored secret is kept.
-    expect((await put({ config: { ...config, vaultUrl: 'https://kv2.vault.azure.net' } })).statusCode).toBe(200);
+    // Another vault, even with the same app registration: a vault.azure.net
+    // token works at any vault, so the secret must come again.
+    const otherVault = await put({ config: { ...config, vaultUrl: 'https://kv2.vault.azure.net' } });
+    expect(otherVault.statusCode).toBe(400);
+    expect(otherVault.body).toContain('credentials.clientSecret');
     // Another client id: the secret must come again.
     const other = await put({ config: { ...config, clientId: 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee' } });
     expect(other.statusCode).toBe(400);

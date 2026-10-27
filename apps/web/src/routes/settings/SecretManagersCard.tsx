@@ -422,8 +422,12 @@ function AzurePanel({ view }: { view: SecretProviderView }) {
   const [tenantId, setTenantId] = useState(str(c['tenantId']));
   const [clientId, setClientId] = useState(str(c['clientId']));
   const [clientSecret, setClientSecret] = useState('');
-  // A stored secret belongs to one app registration: another tenant or client needs it again.
-  const stored = view.hasCredential && c['tenantId'] === tenantId.trim() && c['clientId'] === clientId.trim();
+  // A stored secret belongs to one app registration and one vault: changing any of them needs it again.
+  const stored =
+    view.hasCredential &&
+    c['tenantId'] === tenantId.trim() &&
+    c['clientId'] === clientId.trim() &&
+    str(c['vaultUrl']).toLowerCase() === vaultUrl.trim().replace(/\/+$/, '').toLowerCase();
 
   return (
     <ProviderShell
