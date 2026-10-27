@@ -22,7 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The dashboard banner for a single unhealthy service now reads "1 service needs attention".
 
-## [0.18.5] - 2026-10-27
+## [0.18.6] - 2026-10-27
+
+### Fixed
+
+- Pull the published candidate image on every independent release smoke runner before a smoke inspects it.
 
 ### Added
 
@@ -100,6 +104,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Clear an additional node's pending deployment status after its generation-independent Stop completes. Lost routing confirmation retains the captured targets for retry, while a newer runtime selection prevents the old Stop from resuming.
 - Offer Stop during the first plain-Docker node deployment, show the pending verification state, refresh cancelled deployment history and hide Start while no node runtime has been selected.
+
+## [0.18.5] - 2026-10-27
+
+Unpublished candidate: its signed image and Git tag are preserved. A smoke runner did not pull the candidate image before inspecting it; 0.18.6 corrects the release workflow.
 
 ## [0.18.4] - 2026-10-26
 
