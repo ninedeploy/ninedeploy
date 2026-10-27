@@ -80,4 +80,13 @@ describe('EmailTemplatesCard', () => {
     render();
     expect(await screen.findByText('Could not load the email templates')).toBeInTheDocument();
   });
+
+  it('retries a failed list request and shows the recovered templates', async () => {
+    mockOf(api.emailTemplates.list).mockRejectedValueOnce(new Error('temporarily unavailable'));
+    render();
+    expect(await screen.findByText('Could not load the email templates')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Workspace invitation')).toBeInTheDocument();
+    expect(api.emailTemplates.list).toHaveBeenCalledTimes(2);
+  });
 });

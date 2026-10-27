@@ -346,6 +346,33 @@ describe('Workspaces route', () => {
     });
   });
 
+  it('reports a failed role change without claiming it succeeded', async () => {
+    mockOf(api.workspaces.updateMemberRole).mockRejectedValueOnce(new Error('Role change denied'));
+    renderWithProviders(<Workspaces />);
+    await screen.findByText('dev@acme.com');
+    const memberRole = screen.getAllByRole('combobox').find((select) => (select as HTMLSelectElement).value === 'member');
+    expect(memberRole).toBeDefined();
+    fireEvent.change(memberRole!, { target: { value: 'admin' } });
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Role change denied', 'error'));
+    expect(api.workspaces.updateMemberRole).toHaveBeenCalledWith(1, 11, { role: 'admin' });
+    expect(refreshWorkspaces).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed member removal and keeps the member visible', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    try {
+      mockOf(api.workspaces.removeMember).mockRejectedValueOnce(new Error('Member removal denied'));
+      renderWithProviders(<Workspaces />);
+      await screen.findByText('dev@acme.com');
+      fireEvent.click(screen.getByText('Remove'));
+      await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Member removal denied', 'error'));
+      expect(api.workspaces.removeMember).toHaveBeenCalledWith(1, 11);
+      expect(screen.getByText('dev@acme.com')).toBeInTheDocument();
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
   it('edits workspace details', async () => {
     mockOf(api.workspaces.update).mockResolvedValueOnce({
       ...mockWs,
