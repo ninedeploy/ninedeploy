@@ -1294,7 +1294,8 @@ export const databaseImportStatus = [
   'expired',
 ] as const;
 export const databaseImportFormat = ['pg_custom', 'pg_plain', 'mysql_sql', 'mongo_archive', 'rdb'] as const;
-export const secretProviderKind = ['vault', 'aws'] as const;
+// G3.2 added gcp, azure, onepassword and exec; the column is plain text (no CHECK), so no migration.
+export const secretProviderKind = ['vault', 'aws', 'gcp', 'azure', 'onepassword', 'exec'] as const;
 
 // One row per database that has ever had public access configured. Disabling
 // keeps the row (enabled=false) so the configuration survives; the FK cascade

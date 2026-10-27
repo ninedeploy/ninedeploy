@@ -226,13 +226,23 @@ describe('secrets providers test / delete', () => {
 
   it('refuses a bad kind or a probe for the other kind, and relays errors', async () => {
     const client = makeClient();
-    await secretProvidersTest(client as never, 'gcp');
-    expect(err()).toContain('Usage: ninedeploy secrets providers test');
+    await secretProvidersTest(client as never, 'bitwarden');
+    expect(err()).toContain('Usage: ninedeploy secrets providers test <vault|aws|gcp|azure|onepassword|exec>');
     await secretProvidersTest(client as never, 'vault', { probeSecretId: 'x' });
     expect(err()).toContain('--probe-secret-id belongs to the aws provider');
     await secretProvidersTest(client as never, 'aws', { probePath: 'x' });
     expect(err()).toContain('--probe-path belongs to the vault provider');
+    await secretProvidersTest(client as never, 'gcp', { probeParameter: '/x' });
+    expect(err()).toContain('--probe-parameter belongs to the aws provider');
+    await secretProvidersTest(client as never, 'aws', { probeName: 'x' });
+    expect(err()).toContain('--probe-name belongs to the gcp, azure, onepassword and exec providers');
     expect(client.settings.secretProviders.test).not.toHaveBeenCalled();
+    // G3.2: the new kinds test with a probe name, aws with a parameter.
+    client.settings.secretProviders.test.mockResolvedValue({ ok: true, detail: 'fine' });
+    await secretProvidersTest(client as never, 'onepassword', { probeName: 'V/I/F' });
+    expect(client.settings.secretProviders.test).toHaveBeenLastCalledWith('onepassword', { probeName: 'V/I/F' });
+    await secretProvidersTest(client as never, 'aws', { probeParameter: '/prod/db' });
+    expect(client.settings.secretProviders.test).toHaveBeenLastCalledWith('aws', { probeParameter: '/prod/db' });
     client.settings.secretProviders.test.mockRejectedValue(new Error('rate limited'));
     await secretProvidersTest(client as never, 'aws');
     expect(err()).toContain('rate limited');

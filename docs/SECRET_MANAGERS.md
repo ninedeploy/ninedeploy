@@ -1,4 +1,4 @@
-# Secret managers: HashiCorp Vault / OpenBao and AWS Secrets Manager
+# Secret managers: Vault / OpenBao, AWS, GCP, Azure, 1Password and exec
 
 From 0.14, an environment value can reference a secret held in **HashiCorp Vault** or **OpenBao** (KV version 2) or in **AWS Secrets Manager**. The panel fetches the secret when a deploy starts and passes the value to the container. It never stores the value.
 
@@ -127,6 +127,39 @@ With `roleArn`, the key's own identity also needs `sts:AssumeRole` on that role,
 
 ---
 
+## 3a. More secret managers (G3.2)
+
+Five more reference forms. All except `op` also accept `#<jsonKey>`, which reads one key of a value that holds a JSON object.
+
+| Reference | Provider | Settings |
+| :--- | :--- | :--- |
+| `${{ssm:<name>}}` | AWS Systems Manager **Parameter Store**. SecureString values are decrypted. | Uses the **aws** provider above: the same key or assumed role, and the same region. It always uses the regional public `ssm` endpoint, because a custom `endpoint` names Secrets Manager only. The identity needs `ssm:GetParameter` (and `kms:Decrypt` for a customer-managed key). |
+| `${{gcp:<secret>[@<version>]}}` | **GCP Secret Manager**. The version defaults to `latest`. | A service account JSON key, plus `projectId` (optional; defaults to the key's project). The account needs *Secret Manager Secret Accessor*. The assertion is only ever sent to `oauth2.googleapis.com`, whatever `token_uri` the key file names. A binary (non-UTF-8) payload is refused. |
+| `${{azure:<name>[@<version>]}}` | **Azure Key Vault** | `vaultUrl` (`https://<name>.vault.azure.net`, or the China or US Gov equivalent; other hosts are refused), `tenantId`, `clientId` and a client secret. The secret goes only to Microsoft Entra ID for that vault's cloud. The app needs *Key Vault Secrets User* or a get-secret access policy. A new tenant or client id needs the secret again. |
+| `${{op:<vault>/<item>[/<section>]/<field>}}` | **1Password Connect** | The Connect server `address` and an access token. Each part is a name or a 26-character id. A name that matches nothing, or more than one entry, fails the deploy. A Connect server on a private network needs `NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1`. |
+| `${{exec:<name>}}` | The operator's **exec command** | Off unless the panel was started with `NINEDEPLOY_SECRET_EXEC=1`; without it the provider can be neither saved nor used. See below. |
+
+**The exec provider.** It covers any secret manager that has a command-line client: Bitwarden (`bw`), Doppler, `op`, `pass`, sops, or a script.
+
+- **How it runs:** the operator stores an argv, for example `["/usr/local/bin/bw", "get", "password", "{name}"]`, and a timeout (1–60 s, default 10). At deploy time the panel runs the argv on its host **without a shell**:
+  - `{name}` in any argument is replaced by the reference name;
+  - the name is also passed in `NINEDEPLOY_SECRET_NAME`;
+  - the command gets only `PATH`, `HOME` and that variable, never the panel's own environment.
+- **The value:** stdout, minus one trailing newline.
+- **Failures:** a non-zero exit, the timeout or more than 64 KiB of output fails the deploy. The first 200 characters of stderr are shown.
+- **Names:** reference names use `A-Z a-z 0-9 _ . / : @ -`, never start with `-` (as its own argument a name could otherwise read as an option) and never contain a `..` segment. It is still the command that decides what a name may reach: put `--` before `{name}` where the client supports it.
+
+Settings → Integrations → *Secret managers* has a panel for each of these kinds; Parameter Store uses the AWS panel. **Test connection** takes an optional probe:
+
+- gcp, azure, onepassword and exec: a reference name to resolve;
+- aws: `probeParameter`, a Parameter Store parameter to read, through the API or `--probe-parameter`.
+
+`ninedeploy secrets providers test|delete` accepts every kind.
+
+The column that names the kind is plain text, so these kinds need **no migration**. Existing text of these shapes in env values stays literal, with a warning, until its provider is configured, as in §6. The new forms do become subject to the write gates and the preview withholding in §4.
+
+---
+
 ## 4. Who may use references
 
 The instance-wide **allowlist** that governs Infisical and Doppler references (Settings → Integrations → *Allowed workspaces*, `PUT /v1/settings/vault/allowlist`) governs Vault and AWS references too. The credentials are instance-wide, so only services owned by an operator, or tagged into an allowed workspace, may use them:
@@ -164,10 +197,10 @@ All routes are operator-only. API tokens need the `settings` scope.
 
 | Route | Purpose |
 | :--- | :--- |
-| `GET /v1/settings/secret-providers` | `[{kind, configured, enabled, config, hasCredential, lastTestedAt, lastTestError}]` for `vault` and `aws`. Credentials are never returned. |
-| `PUT /v1/settings/secret-providers/vault` / `…/aws` | Save. An omitted credential field keeps the stored value, except that a new auth method, AppRole role id or access key id must come with its own secret. Saving clears the last test result. |
-| `DELETE /v1/settings/secret-providers/vault` / `…/aws` | Remove. References become literal again. |
-| `POST /v1/settings/secret-providers/vault/test` / `…/aws/test` | `{ok, detail}`. Records `lastTestedAt` and `lastTestError` only. |
+| `GET /v1/settings/secret-providers` | `[{kind, configured, enabled, config, hasCredential, lastTestedAt, lastTestError}]` for `vault`, `aws`, `gcp`, `azure`, `onepassword` and `exec`. Credentials are never returned. |
+| `PUT /v1/settings/secret-providers/<kind>` | Save. An omitted credential field keeps the stored value, except that a new auth method, AppRole role id or access key id must come with its own secret. Saving clears the last test result. |
+| `DELETE /v1/settings/secret-providers/<kind>` | Remove. References become literal again. |
+| `POST /v1/settings/secret-providers/<kind>/test` | `{ok, detail}`; probes `probePath` (vault), `probeSecretId` / `probeParameter` (aws), `probeName` (the others). Records `lastTestedAt` and `lastTestError` only. |
 
 A bad address, region, key id or role ARN is a 400 at save time, not a failed deploy later. Saves and deletions are audited as `settings.secret_provider.save` and `settings.secret_provider.delete`, with the kind and switches only, never an address path or a credential. The credentials are one encrypted envelope (`secret_providers.credential_encrypted`), re-encrypted by master-key rotation like every other secret.
 

@@ -1081,12 +1081,16 @@ providersCmd.command('set-aws')
   .option('--disable', 'Disable the provider (references stay literal)')
   .action((opts: AwsCliOptions) => secretProvidersSetAws(getClient(), opts));
 providersCmd.command('test <kind>')
-  .description('Test a provider (vault | aws), optionally reading one secret')
+  .description('Test a provider (vault | aws | gcp | azure | onepassword | exec), optionally reading one secret')
   .option('--probe-path <path>', 'vault: also read this path (relative to the mount)')
   .option('--probe-secret-id <id>', 'aws: also read this secret')
-  .action((kind: string, opts: { probePath?: string; probeSecretId?: string }) => secretProvidersTest(getClient(), kind, opts));
+  .option('--probe-parameter <name>', 'aws: also read this Parameter Store parameter')
+  .option('--probe-name <name>', 'gcp, azure, onepassword, exec: also resolve this reference name')
+  .action((kind: string, opts: { probePath?: string; probeSecretId?: string; probeParameter?: string; probeName?: string }) =>
+    secretProvidersTest(getClient(), kind, opts),
+  );
 providersCmd.command('delete <kind>')
-  .description('Remove a provider (vault | aws); its references stay literal at deploy')
+  .description('Remove a provider (vault | aws | gcp | azure | onepassword | exec); its references stay literal at deploy')
   .alias('rm')
   .option('-y, --yes', 'Skip the confirmation prompt')
   .action((kind: string, opts: { yes?: boolean }) => secretProvidersDelete(getClient(), kind, opts));

@@ -50,6 +50,10 @@ DELETE /v1/services/:id/webhooks/:hookId admin nd://scope/write/webhooks
 DELETE /v1/settings/dns-records/provider operator nd://scope/write/settings
 DELETE /v1/settings/enrolment operator nd://scope/write/settings
 DELETE /v1/settings/secret-providers/aws operator nd://scope/write/settings
+DELETE /v1/settings/secret-providers/azure operator nd://scope/write/settings
+DELETE /v1/settings/secret-providers/exec operator nd://scope/write/settings
+DELETE /v1/settings/secret-providers/gcp operator nd://scope/write/settings
+DELETE /v1/settings/secret-providers/onepassword operator nd://scope/write/settings
 DELETE /v1/settings/secret-providers/vault operator nd://scope/write/settings
 DELETE /v1/sources/:id operator -
 DELETE /v1/sso/providers/:id operator nd://scope/write/sso
@@ -444,6 +448,10 @@ POST /v1/settings/dns-records/test operator nd://scope/write/settings
 POST /v1/settings/enrolment/rotate operator nd://scope/write/settings
 POST /v1/settings/master-key/rotate operator nd://scope/write/settings
 POST /v1/settings/secret-providers/aws/test operator nd://scope/write/settings
+POST /v1/settings/secret-providers/azure/test operator nd://scope/write/settings
+POST /v1/settings/secret-providers/exec/test operator nd://scope/write/settings
+POST /v1/settings/secret-providers/gcp/test operator nd://scope/write/settings
+POST /v1/settings/secret-providers/onepassword/test operator nd://scope/write/settings
 POST /v1/settings/secret-providers/vault/test operator nd://scope/write/settings
 POST /v1/settings/vault/test operator nd://scope/write/settings
 POST /v1/setup public -
@@ -505,6 +513,10 @@ PUT /v1/settings/dns-records/provider operator nd://scope/write/settings
 PUT /v1/settings/domain-policy operator nd://scope/write/settings
 PUT /v1/settings/panel-domain operator nd://scope/write/settings
 PUT /v1/settings/secret-providers/aws operator nd://scope/write/settings
+PUT /v1/settings/secret-providers/azure operator nd://scope/write/settings
+PUT /v1/settings/secret-providers/exec operator nd://scope/write/settings
+PUT /v1/settings/secret-providers/gcp operator nd://scope/write/settings
+PUT /v1/settings/secret-providers/onepassword operator nd://scope/write/settings
 PUT /v1/settings/secret-providers/vault operator nd://scope/write/settings
 PUT /v1/settings/templates-source operator nd://scope/write/settings
 PUT /v1/settings/vault operator nd://scope/write/settings

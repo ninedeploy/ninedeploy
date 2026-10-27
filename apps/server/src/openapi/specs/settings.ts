@@ -10,8 +10,27 @@ import {
   setConfigSchema,
   sourcePatch,
   vaultProviderPut,
+  gcpProviderPut,
+  azureProviderPut,
+  onePasswordProviderPut,
+  execProviderPut,
 } from '@ninedeploy/schemas';
-import type { RouteSpecMap } from '../types.js';
+import type { RouteSpec, RouteSpecMap } from '../types.js';
+
+/** G3.2: the save / remove / test routes of one named secret provider. */
+function namedSecretProviderSpecs(kind: string, label: string, body: RouteSpec['body']): RouteSpecMap {
+  return {
+    [`PUT /v1/settings/secret-providers/${kind}`]: { summary: `Configure the ${label} secret provider`, tag: 'settings', floor: 'operator', body, validation: 'zod' },
+    [`DELETE /v1/settings/secret-providers/${kind}`]: { summary: `Remove the ${label} secret provider`, tag: 'settings', floor: 'operator' },
+    [`POST /v1/settings/secret-providers/${kind}/test`]: {
+      summary: `Test the ${label} secret provider`,
+      tag: 'settings',
+      floor: 'operator',
+      body: secretProviderTestRequest,
+      validation: 'zod',
+    },
+  };
+}
 
 /**
  * ROUTE_SPECS fragment: settings (routes that predate 0.15). Owner: task T4.
@@ -251,12 +270,17 @@ export const settingsSpecs: RouteSpecMap = {
     validation: 'zod',
   },
   'POST /v1/settings/secret-providers/aws/test': {
-    summary: 'Test the AWS Secrets Manager provider',
+    summary: 'Test the AWS Secrets Manager provider (and optionally read a Parameter Store parameter)',
     tag: 'settings',
     floor: 'operator',
     body: secretProviderTestRequest,
     validation: 'zod',
   },
+  // G3.2
+  ...namedSecretProviderSpecs('gcp', 'GCP Secret Manager', gcpProviderPut),
+  ...namedSecretProviderSpecs('azure', 'Azure Key Vault', azureProviderPut),
+  ...namedSecretProviderSpecs('onepassword', '1Password Connect', onePasswordProviderPut),
+  ...namedSecretProviderSpecs('exec', 'exec command (needs NINEDEPLOY_SECRET_EXEC=1)', execProviderPut),
   'GET /v1/config': {
     summary: 'List configuration entries (secrets masked)',
     tag: 'config',

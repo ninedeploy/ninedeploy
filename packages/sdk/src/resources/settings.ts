@@ -11,9 +11,23 @@ import type {
   SecretProviderView,
   VaultProviderPut,
   AwsProviderPut,
+  GcpProviderPut,
+  AzureProviderPut,
+  OnePasswordProviderPut,
+  ExecProviderPut,
 } from '@ninedeploy/schemas';
 import type { VaultAllowlistView, VaultSettings, EmailTemplateName, EmailTemplateEntry, EmailTemplateRender } from '../types.js';
 import type { Transport } from '../transport.js';
+
+/** The PUT body of each secret provider kind (G3.2 added gcp, azure, onepassword, exec). */
+export type SecretProviderPutFor<K extends SecretProviderKind> = {
+  vault: VaultProviderPut;
+  aws: AwsProviderPut;
+  gcp: GcpProviderPut;
+  azure: AzureProviderPut;
+  onepassword: OnePasswordProviderPut;
+  exec: ExecProviderPut;
+}[K];
 
 /** G3.5: the DNS record providers configured through `settings.dnsProvider`. */
 export type DnsCredentialProviderName = 'route53' | 'ovh' | 'porkbun' | 'hetzner';
@@ -137,7 +151,7 @@ export interface SettingsApi {
      */
     secretProviders: {
       list: () => Promise<SecretProviderView[]>;
-      set: <K extends SecretProviderKind>(kind: K, input: K extends 'vault' ? VaultProviderPut : AwsProviderPut) => Promise<SecretProviderView>;
+      set: <K extends SecretProviderKind>(kind: K, input: SecretProviderPutFor<K>) => Promise<SecretProviderView>;
       delete: (kind: SecretProviderKind) => Promise<{ ok: boolean; deleted: boolean }>;
       test: (kind: SecretProviderKind, probe?: SecretProviderTestRequest) => Promise<SecretProviderTestResult>;
     };

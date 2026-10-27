@@ -23,6 +23,7 @@ const EXEMPT: Record<string, string> = {
   'settings.ts POST /vault/test': 'connectivity probe, no state change',
   'services.ts POST /:id/wake': 'audited as service.wake by lib/sleep.ts wakeService, with trigger "manual"',
   'settings.ts POST /dns-records/test': 'connectivity probe, no state change',
+  'settings.ts POST /dns-records/provider/test': 'G3.5: lists zones, no state change',
   'settings.ts POST /auto-url/detect-ip': 'asks a public echo service for the host IP; reads only, nothing is stored',
   'notifications.ts POST /channels/:id/test': 'sends a test message, no state change',
   'emailTemplates.ts POST /:wid/email-templates/preview': 'renders a preview, no state change',
@@ -46,6 +47,11 @@ const EXEMPT: Record<string, string> = {
   // One static path per kind (an unknown kind is a plain 404), hence two entries.
   'secretProviders.ts POST /vault/test': 'connectivity probe; updates last_tested_* only',
   'secretProviders.ts POST /aws/test': 'connectivity probe; updates last_tested_* only',
+  // G3.2
+  'secretProviders.ts POST /gcp/test': 'connectivity probe; updates last_tested_* only',
+  'secretProviders.ts POST /azure/test': 'connectivity probe; updates last_tested_* only',
+  'secretProviders.ts POST /onepassword/test': 'connectivity probe; updates last_tested_* only',
+  'secretProviders.ts POST /exec/test': 'runs the probe once; updates last_tested_* only',
   // ── end 0.14 T5 ──
   // 0.15 (DESIGN §1.6, §2.4, §4.4): every new mutation route audits — session
   // create / terminate, both settings PUTs, every grant write — so none is

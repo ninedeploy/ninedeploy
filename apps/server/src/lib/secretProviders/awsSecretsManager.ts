@@ -221,6 +221,36 @@ export async function getSecretString(
 }
 
 /**
+ * G3.2: Parameter Store GetParameter (decrypted) → the value, signed with the
+ * same stored key or assumed role. Always the regional public SSM endpoint:
+ * a custom `endpoint` names a Secrets Manager endpoint only. A StringList
+ * comes back comma-joined, as AWS stores it.
+ */
+export async function getParameter(cfg: AwsClientConfig, creds: AwsCredentials, name: string, opts: AwsCallOptions): Promise<string> {
+  const signer = await effectiveCredentials(cfg, creds, opts);
+  const text = await send(
+    'Parameter Store GetParameter',
+    `https://ssm.${cfg.region}.${domainFor(cfg.region)}/`,
+    JSON.stringify({ Name: name, WithDecryption: true }),
+    { 'content-type': 'application/x-amz-json-1.1', 'x-amz-target': 'AmazonSSM.GetParameter' },
+    'ssm',
+    cfg.region,
+    signer,
+    [...secretsOf(creds, [name, ...(opts.redact ?? [])]), signer.secretAccessKey, signer.sessionToken],
+    opts.signal,
+  );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new SecretProviderError('Parameter Store answered with a body that is not JSON');
+  }
+  const value = (parsed as { Parameter?: { Value?: unknown } } | null)?.Parameter?.Value;
+  if (typeof value !== 'string') throw new SecretProviderError('Parameter Store answered without a value');
+  return value;
+}
+
+/**
  * One key of a JSON SecretString. undefined when the key is absent (the
  * caller reports it); a SecretString that is not a JSON object throws.
  */

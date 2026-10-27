@@ -313,7 +313,7 @@ describe('provider rows and deploy-time resolution', () => {
     const many: Record<string, string> = {};
     for (let i = 0; i < 101; i++) many[`K${i}`] = ref(`vault:p${i}#f`);
     await expect(providers.resolveExternalRefs({ vault: providers.asConfigured(row()) }, refsOf(many))).rejects.toThrow(
-      /101 distinct vault\/aws secrets; at most 100/,
+      /101 distinct external secrets; at most 100/,
     );
     expect(egress.guardedFetch).not.toHaveBeenCalled();
 

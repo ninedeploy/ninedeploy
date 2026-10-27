@@ -34,8 +34,12 @@ function readSecret(file: string | undefined, env: string): string | undefined {
   return process.env[env]?.trim() || undefined;
 }
 
+/** G3.2 added gcp, azure, onepassword and exec (configured in the web UI or through the API). */
+const KINDS: readonly SecretProviderKind[] = ['vault', 'aws', 'gcp', 'azure', 'onepassword', 'exec'];
+const KIND_USAGE = KINDS.join('|');
+
 function parseKind(raw: string | undefined): SecretProviderKind | null {
-  return raw === 'vault' || raw === 'aws' ? raw : null;
+  return KINDS.find((k) => k === raw) ?? null;
 }
 
 function enabledFrom(opts: { enable?: boolean; disable?: boolean }): { enabled?: boolean } | null {
@@ -187,17 +191,28 @@ export async function secretProvidersSetAws(client: NineDeployClient, opts: AwsC
   }
 }
 
-/** `ninedeploy secrets providers test <kind> [--probe-path <path>] [--probe-secret-id <id>]` */
+/** `ninedeploy secrets providers test <kind> [--probe-path <path>] [--probe-secret-id <id>] [--probe-parameter <name>] [--probe-name <name>]` */
 export async function secretProvidersTest(
   client: NineDeployClient,
   kindArg: string,
-  opts: { probePath?: string; probeSecretId?: string } = {},
+  opts: { probePath?: string; probeSecretId?: string; probeParameter?: string; probeName?: string } = {},
 ): Promise<void> {
   const kind = parseKind(kindArg);
-  if (!kind) return error('Usage: ninedeploy secrets providers test <vault|aws> [--probe-path <path>] [--probe-secret-id <id>]');
-  if (kind === 'vault' && opts.probeSecretId) return error('--probe-secret-id belongs to the aws provider');
-  if (kind === 'aws' && opts.probePath) return error('--probe-path belongs to the vault provider');
-  const probe = kind === 'vault' ? (opts.probePath ? { probePath: opts.probePath } : {}) : opts.probeSecretId ? { probeSecretId: opts.probeSecretId } : {};
+  if (!kind) {
+    return error(
+      `Usage: ninedeploy secrets providers test <${KIND_USAGE}> [--probe-path <path>] [--probe-secret-id <id>] [--probe-parameter <name>] [--probe-name <name>]`,
+    );
+  }
+  if (kind !== 'aws' && opts.probeSecretId) return error('--probe-secret-id belongs to the aws provider');
+  if (kind !== 'aws' && opts.probeParameter) return error('--probe-parameter belongs to the aws provider');
+  if (kind !== 'vault' && opts.probePath) return error('--probe-path belongs to the vault provider');
+  if ((kind === 'vault' || kind === 'aws') && opts.probeName) return error('--probe-name belongs to the gcp, azure, onepassword and exec providers');
+  const probe = {
+    ...(opts.probePath ? { probePath: opts.probePath } : {}),
+    ...(opts.probeSecretId ? { probeSecretId: opts.probeSecretId } : {}),
+    ...(opts.probeParameter ? { probeParameter: opts.probeParameter } : {}),
+    ...(opts.probeName ? { probeName: opts.probeName } : {}),
+  };
   try {
     const res = await spinner(`Testing the ${kind} secret manager`, () => client.settings.secretProviders.test(kind, probe));
     if (res.ok) success(plain(res.detail));
@@ -210,7 +225,7 @@ export async function secretProvidersTest(
 /** `ninedeploy secrets providers delete <kind> [--yes]` */
 export async function secretProvidersDelete(client: NineDeployClient, kindArg: string, opts: { yes?: boolean } = {}): Promise<void> {
   const kind = parseKind(kindArg);
-  if (!kind) return error('Usage: ninedeploy secrets providers delete <vault|aws> [--yes]');
+  if (!kind) return error(`Usage: ninedeploy secrets providers delete <${KIND_USAGE}> [--yes]`);
   if (!opts.yes) {
     const confirm = await prompt(`Type "delete" to remove the ${kind} secret manager (its references stay literal at deploy)`, '');
     if (confirm.trim() !== 'delete') {

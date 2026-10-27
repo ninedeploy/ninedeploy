@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- More secret managers (G3.2). New reference forms, configured under Settings → Integrations → *Secret managers*:
+  - `${{ssm:/name}}` reads AWS Parameter Store with the existing AWS credentials.
+  - `${{gcp:secret[@version]}}` reads GCP Secret Manager with a service account key.
+  - `${{azure:name}}` reads Azure Key Vault with an app registration.
+  - `${{op:vault/item/field}}` reads 1Password Connect.
+  - `${{exec:name}}` runs an operator-defined command and uses its stdout. This covers any manager that has a command-line client, such as Bitwarden, Doppler, `op`, `pass` or sops.
+
+  All forms except `op` also take `#jsonKey`. Exec runs without a shell and without the panel's environment. It stays off unless the panel was started with `NINEDEPLOY_SECRET_EXEC=1`.
+
+  Like Vault and AWS references, the new forms stay literal (with a deploy-log warning) until their provider is configured, and the per-workspace allowlist governs them. `ninedeploy secrets providers test|delete` accept every kind. No migration. See SECRET_MANAGERS.md §3a.
+
 - Automatic DNS records in Amazon Route 53, OVHcloud, Porkbun and Hetzner DNS (G3.5). The new card is under Settings → Integrations → *DNS records: Route 53, OVH, Porkbun, Hetzner*. Saving credentials there makes that provider the active one: a domain gets its A, AAAA or CNAME record when it goes live, and the record is deleted with the domain. **List zones** checks the credentials. Records that already exist are never changed.
   - Route 53 skips private hosted zones and needs no AWS SDK.
   - OVH refreshes the zone after each change.

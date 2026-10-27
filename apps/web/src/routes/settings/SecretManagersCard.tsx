@@ -5,7 +5,7 @@ import type { SecretProviderKind, SecretProviderTestResult, SecretProviderView }
 import { api } from '../../lib/api.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
-import { Badge, Button, Card, CardBody, ConfirmDialog, ErrorCard, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
+import { Badge, Button, Card, CardBody, ConfirmDialog, ErrorCard, Field, Input, Select, Skeleton, Switch, Textarea } from '../../components/ui.js';
 
 // `${{…}}` examples, escaped per repo convention so linters don't read them as template placeholders.
 const OPEN = '${{';
@@ -13,6 +13,13 @@ const CLOSE = '}}';
 export const REF_VAULT = `${OPEN}vault:path/to/secret#field${CLOSE}`;
 export const REF_AWS = `${OPEN}aws:secret-id${CLOSE}`;
 export const REF_AWS_KEY = `${OPEN}aws:secret-id#jsonKey${CLOSE}`;
+// G3.2
+export const REF_SSM = `${OPEN}ssm:/path/to/parameter${CLOSE}`;
+export const REF_GCP = `${OPEN}gcp:secret[@version]${CLOSE}`;
+export const REF_AZURE = `${OPEN}azure:secret-name${CLOSE}`;
+export const REF_OP = `${OPEN}op:vault/item/field${CLOSE}`;
+export const REF_EXEC = `${OPEN}exec:name${CLOSE}`;
+const NAME_PLACEHOLDER = '{name}';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 /** Only the non-blank fields: a blank credential keeps the stored value. */
@@ -32,6 +39,10 @@ export function SecretManagersCard() {
   const byKind = (kind: SecretProviderKind) => providers.data?.find((p) => p.kind === kind);
   const vault = byKind('vault');
   const aws = byKind('aws');
+  const gcp = byKind('gcp');
+  const azure = byKind('azure');
+  const onePassword = byKind('onepassword');
+  const exec = byKind('exec');
 
   return (
     <Card className="mb-5">
@@ -47,6 +58,14 @@ export function SecretManagersCard() {
             are fetched at deploy time and never stored.
           </p>
           <p>
+            Also <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_SSM}</code> (Parameter Store, with the AWS
+            credentials), <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_GCP}</code>,{' '}
+            <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_AZURE}</code>,{' '}
+            <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_OP}</code> and{' '}
+            <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_EXEC}</code>; all but op take a{' '}
+            <code className="font-mono text-[10px]">#jsonKey</code> too.
+          </p>
+          <p>
             While a provider is not configured (or is disabled) its references stay literal and the deploy log warns. The
             “Allowed workspaces” list above governs these providers too.
           </p>
@@ -59,6 +78,10 @@ export function SecretManagersCard() {
           <div className="grid gap-5 lg:grid-cols-2">
             <VaultPanel view={vault} />
             <AwsPanel view={aws} />
+            {gcp ? <GcpPanel view={gcp} /> : null}
+            {azure ? <AzurePanel view={azure} /> : null}
+            {onePassword ? <OnePasswordPanel view={onePassword} /> : null}
+            {exec ? <ExecPanel view={exec} /> : null}
           </div>
         )}
       </CardBody>
@@ -78,7 +101,7 @@ interface ShellProps {
   /** Clears the write-only credential inputs after a save. */
   onSaved: () => void;
   probeLabel: string;
-  probeField: 'probePath' | 'probeSecretId';
+  probeField: 'probePath' | 'probeSecretId' | 'probeName';
   children: ReactNode;
 }
 
@@ -341,6 +364,185 @@ function AwsPanel({ view }: { view: SecretProviderView }) {
         </Field>
       </div>
       <p className="text-[11px] text-slate-500">Instance and ECS roles (IMDS) are not supported: use an access key, optionally with an assumed role.</p>
+    </ProviderShell>
+  );
+}
+
+// ── G3.2: GCP Secret Manager ───────────────────────────────────────────────
+
+function GcpPanel({ view }: { view: SecretProviderView }) {
+  const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
+  const [projectId, setProjectId] = useState(str(view.config['projectId']));
+  const [serviceAccountJson, setServiceAccountJson] = useState('');
+  const stored = view.hasCredential;
+
+  return (
+    <ProviderShell
+      view={view}
+      title="GCP Secret Manager"
+      enabled={enabled}
+      onEnabled={setEnabled}
+      canSave={stored || serviceAccountJson.trim() !== ''}
+      onSave={() => {
+        const credentials = filled({ serviceAccountJson });
+        return api.settings.secretProviders.set('gcp', {
+          enabled,
+          config: projectId.trim() ? { projectId: projectId.trim() } : {},
+          ...(credentials ? { credentials } : {}),
+        });
+      }}
+      onSaved={() => setServiceAccountJson('')}
+      probeLabel="Probe secret"
+      probeField="probeName"
+    >
+      <Field label="Project ID" hint="optional, defaults to the project of the key">
+        <Input value={projectId} onChange={(e) => setProjectId(e.target.value)} placeholder="my-project" className="font-mono text-xs" />
+      </Field>
+      <Field label="Service account key (JSON)" hint={credentialHint(stored)}>
+        <Textarea
+          aria-label="Service account key (JSON)"
+          value={serviceAccountJson}
+          onChange={(e) => setServiceAccountJson(e.target.value)}
+          placeholder={stored ? '••••••••' : '{"type": "service_account", …}'}
+          rows={4}
+          className="font-mono text-[11px]"
+        />
+      </Field>
+      <p className="text-[11px] text-slate-500">The account needs Secret Manager Secret Accessor on the secrets it reads.</p>
+    </ProviderShell>
+  );
+}
+
+// ── G3.2: Azure Key Vault ──────────────────────────────────────────────────
+
+function AzurePanel({ view }: { view: SecretProviderView }) {
+  const c = view.config;
+  const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
+  const [vaultUrl, setVaultUrl] = useState(str(c['vaultUrl']));
+  const [tenantId, setTenantId] = useState(str(c['tenantId']));
+  const [clientId, setClientId] = useState(str(c['clientId']));
+  const [clientSecret, setClientSecret] = useState('');
+  // A stored secret belongs to one app registration: another tenant or client needs it again.
+  const stored = view.hasCredential && c['tenantId'] === tenantId.trim() && c['clientId'] === clientId.trim();
+
+  return (
+    <ProviderShell
+      view={view}
+      title="Azure Key Vault"
+      enabled={enabled}
+      onEnabled={setEnabled}
+      canSave={vaultUrl.trim() !== '' && tenantId.trim() !== '' && clientId.trim() !== '' && (stored || clientSecret.trim() !== '')}
+      onSave={() => {
+        const credentials = filled({ clientSecret });
+        return api.settings.secretProviders.set('azure', {
+          enabled,
+          config: { vaultUrl: vaultUrl.trim(), tenantId: tenantId.trim(), clientId: clientId.trim() },
+          ...(credentials ? { credentials } : {}),
+        });
+      }}
+      onSaved={() => setClientSecret('')}
+      probeLabel="Probe secret"
+      probeField="probeName"
+    >
+      <Field label="Vault URL">
+        <Input value={vaultUrl} onChange={(e) => setVaultUrl(e.target.value)} placeholder="https://my-vault.vault.azure.net" className="font-mono text-xs" />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Tenant ID">
+          <Input value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="font-mono text-xs" />
+        </Field>
+        <Field label="Client ID">
+          <Input value={clientId} onChange={(e) => setClientId(e.target.value)} className="font-mono text-xs" />
+        </Field>
+      </div>
+      <Field label="Client secret" hint={credentialHint(stored)}>
+        <Input type="password" autoComplete="off" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={stored ? '••••••••' : ''} />
+      </Field>
+      <p className="text-[11px] text-slate-500">The app registration needs the Key Vault Secrets User role (or a get-secret access policy).</p>
+    </ProviderShell>
+  );
+}
+
+// ── G3.2: 1Password Connect ────────────────────────────────────────────────
+
+function OnePasswordPanel({ view }: { view: SecretProviderView }) {
+  const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
+  const [address, setAddress] = useState(str(view.config['address']));
+  const [token, setToken] = useState('');
+  // A stored token is never sent to another server.
+  const stored = view.hasCredential && str(view.config['address']).replace(/\/+$/, '') === address.trim().replace(/\/+$/, '');
+
+  return (
+    <ProviderShell
+      view={view}
+      title="1Password Connect"
+      enabled={enabled}
+      onEnabled={setEnabled}
+      canSave={address.trim() !== '' && (stored || token.trim() !== '')}
+      onSave={() => {
+        const credentials = filled({ token });
+        return api.settings.secretProviders.set('onepassword', {
+          enabled,
+          config: { address: address.trim() },
+          ...(credentials ? { credentials } : {}),
+        });
+      }}
+      onSaved={() => setToken('')}
+      probeLabel="Probe reference (vault/item/field)"
+      probeField="probeName"
+    >
+      <Field label="Connect server" hint="https">
+        <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://connect.example.com" />
+      </Field>
+      <Field label="Access token" hint={credentialHint(stored)}>
+        <Input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder={stored ? '••••••••' : 'eyJ…'} />
+      </Field>
+      <p className="text-[11px] text-slate-500">A Connect server on a private network needs NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1 (http as well).</p>
+    </ProviderShell>
+  );
+}
+
+// ── G3.2: exec command ─────────────────────────────────────────────────────
+
+function ExecPanel({ view }: { view: SecretProviderView }) {
+  const c = view.config;
+  const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
+  const [command, setCommand] = useState(Array.isArray(c['command']) ? (c['command'] as string[]).join('\n') : '');
+  const [timeoutSeconds, setTimeoutSeconds] = useState(String(typeof c['timeoutSeconds'] === 'number' ? c['timeoutSeconds'] : 10));
+  const argv = command
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const timeout = Number(timeoutSeconds);
+
+  return (
+    <ProviderShell
+      view={view}
+      title="exec command"
+      enabled={enabled}
+      onEnabled={setEnabled}
+      canSave={argv.length > 0 && argv[0]!.startsWith('/') && Number.isInteger(timeout) && timeout >= 1 && timeout <= 60}
+      onSave={() => api.settings.secretProviders.set('exec', { enabled, config: { command: argv, timeoutSeconds: timeout } })}
+      onSaved={() => undefined}
+      probeLabel="Probe name"
+      probeField="probeName"
+    >
+      <Field label="Command" hint={`one argument per line; ${NAME_PLACEHOLDER} is the reference name`}>
+        <Textarea
+          aria-label="Command"
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          placeholder={['/usr/local/bin/bw', 'get', 'password', NAME_PLACEHOLDER].join('\n')}
+          rows={4}
+          className="font-mono text-[11px]"
+        />
+      </Field>
+      <Field label="Timeout (seconds)">
+        <Input aria-label="Timeout (seconds)" value={timeoutSeconds} onChange={(e) => setTimeoutSeconds(e.target.value)} inputMode="numeric" className="w-24 font-mono text-xs" />
+      </Field>
+      <p className="text-[11px] text-slate-500">
+        Runs on the panel host without a shell; its stdout is the value. Off unless the panel was started with NINEDEPLOY_SECRET_EXEC=1.
+      </p>
     </ProviderShell>
   );
 }

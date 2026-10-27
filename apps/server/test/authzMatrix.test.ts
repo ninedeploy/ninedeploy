@@ -1052,6 +1052,12 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/settings/dns-records/namecheap': OP,
   'PUT /v1/settings/dns-records/namecheap': OP,
   'POST /v1/settings/dns-records/test': OP,
+  // G3.5: Route 53 / OVH / Porkbun / Hetzner credentials. The at-floor test
+  // finds no active provider and makes no outbound call.
+  'GET /v1/settings/dns-records/provider': OP,
+  'PUT /v1/settings/dns-records/provider': OP,
+  'DELETE /v1/settings/dns-records/provider': OP,
+  'POST /v1/settings/dns-records/provider/test': OP,
   'GET /v1/settings/domain-policy': OP,
   'PUT /v1/settings/domain-policy': OP,
   'GET /v1/settings/enrolment': OP,
@@ -1202,6 +1208,14 @@ export const MATRIX: Record<string, Rule> = {
   'DELETE /v1/settings/secret-providers/aws': OP,
   'POST /v1/settings/secret-providers/vault/test': OP,
   'POST /v1/settings/secret-providers/aws/test': OP,
+  // G3.2: GCP, Azure, 1Password Connect and exec — same three routes each.
+  ...Object.fromEntries(
+    ['gcp', 'azure', 'onepassword', 'exec'].flatMap((k) => [
+      [`PUT /v1/settings/secret-providers/${k}`, OP],
+      [`DELETE /v1/settings/secret-providers/${k}`, OP],
+      [`POST /v1/settings/secret-providers/${k}/test`, OP],
+    ]),
+  ),
   // ── end 0.14 T5 ──
   // 0.15 (DESIGN §1.8, §2.7, §3.1, §4.7): each task uncomments or adds its
   // entries in the same change that registers the route — a stale entry (no

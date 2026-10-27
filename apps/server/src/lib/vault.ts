@@ -5,7 +5,14 @@ import { decrypt, encrypt } from './crypto.js';
 import { forbidden } from './errors.js';
 import { isOperator, type AuthedUser } from './resourceAccess.js';
 import { findSecretRefs, hasSecretRef, replaceSecretRefs, type ExternalSecretRef } from './secretRefs.js';
-import { loadConfiguredProvider, resolveExternalRefs, type ConfiguredProvider } from './secretProviders/index.js';
+import { secretProviderKind, type SecretProviderKind } from '@ninedeploy/schemas';
+import {
+  loadConfiguredProvider,
+  providerKindFor,
+  refSourceLabel,
+  resolveExternalRefs,
+  type ConfiguredProvider,
+} from './secretProviders/index.js';
 import { getSettingJson, getSettingString, setSettingJson, setSettingString } from './settings.js';
 
 /**
@@ -393,18 +400,22 @@ export async function resolveVaultRefs(
 
   // Vault / AWS: an unconfigured (absent, disabled, undecryptable) provider
   // keeps its references literal, with a warning naming the env keys only.
-  const kinds = (['vault', 'aws'] as const).filter((k) => [...external.values()].some((e) => e.ref.provider === k));
-  const providers: { vault?: ConfiguredProvider | null; aws?: ConfiguredProvider | null } = {};
+  // G3.2: `ssm` reads with the aws row, `op` with the onepassword row.
+  const used = new Set([...external.values()].map((e) => providerKindFor(e.ref)));
+  const kinds = secretProviderKind.options.filter((k) => used.has(k));
+  const providers: Partial<Record<SecretProviderKind, ConfiguredProvider | null>> = {};
   for (const kind of kinds) {
     providers[kind] = await loadConfiguredProvider(db, kind);
     if (providers[kind]) continue;
-    const keys = [...new Set([...external.values()].filter((e) => e.ref.provider === kind).flatMap((e) => e.envKeys))].sort();
+    const entries = [...external.values()].filter((e) => providerKindFor(e.ref) === kind);
+    const keys = [...new Set(entries.flatMap((e) => e.envKeys))].sort();
+    const labels = [...new Set(entries.map((e) => refSourceLabel(e.ref)))].join(' / ');
     log?.(
-      `⚠ ${kind === 'vault' ? 'Vault' : 'AWS Secrets Manager'} references in ${keys.join(', ')} were left as literal text: ` +
+      `⚠ ${labels} references in ${keys.join(', ')} were left as literal text: ` +
         `no ${kind} secret manager is configured (Settings → Integrations → Secret managers).`,
     );
   }
-  const resolvable = new Map([...external].filter(([, e]) => providers[e.ref.provider]));
+  const resolvable = new Map([...external].filter(([, e]) => providers[providerKindFor(e.ref)]));
   if (needed.size === 0 && resolvable.size === 0) return env;
 
   // r510: no unscoped resolution — a service the operator has not allowed
@@ -420,7 +431,7 @@ export async function resolveVaultRefs(
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     out[key] = replaceSecretRefs(value, (ref) => {
-      if (ref.provider === 'vault' || ref.provider === 'aws') return resolved.get(ref.raw) ?? ref.raw;
+      if (ref.provider !== 'infisical' && ref.provider !== 'doppler') return resolved.get(ref.raw) ?? ref.raw;
       const pool = pools.get(ref.provider);
       // F177: own keys only — `constructor`, `toString`, `__proto__` … are
       // inherited by the plain-object pool and must not resolve to garbage.

@@ -142,15 +142,16 @@ describe('/v1/settings/secret-providers routes', () => {
     });
     await app.register(secretProviderRoutes, { prefix: '/v1/settings/secret-providers' });
     await app.ready();
+    // G3.2 added gcp, azure, onepassword and exec, with the same three routes each.
+    const kinds = ['vault', 'aws', 'gcp', 'azure', 'onepassword', 'exec'];
     expect(seen.sort()).toEqual(
       [
         'GET /v1/settings/secret-providers',
-        'PUT /v1/settings/secret-providers/vault',
-        'PUT /v1/settings/secret-providers/aws',
-        'DELETE /v1/settings/secret-providers/vault',
-        'DELETE /v1/settings/secret-providers/aws',
-        'POST /v1/settings/secret-providers/vault/test',
-        'POST /v1/settings/secret-providers/aws/test',
+        ...kinds.flatMap((k) => [
+          `PUT /v1/settings/secret-providers/${k}`,
+          `DELETE /v1/settings/secret-providers/${k}`,
+          `POST /v1/settings/secret-providers/${k}/test`,
+        ]),
       ].sort(),
     );
     await app.close();
@@ -170,14 +171,21 @@ describe('/v1/settings/secret-providers routes', () => {
     expect(await db.select().from(secretProviders)).toEqual([]);
   });
 
-  it('lists both kinds as not configured on a fresh install; an unknown kind is a 404', async () => {
+  it('lists every kind as not configured on a fresh install; an unknown kind is a 404', async () => {
     const app = await providerApp();
     const res = await app.inject({ method: 'GET', url: '/settings/secret-providers', headers: OP });
-    expect(res.json()).toEqual([
-      { kind: 'vault', configured: false, enabled: false, config: {}, hasCredential: false, lastTestedAt: null, lastTestError: null },
-      { kind: 'aws', configured: false, enabled: false, config: {}, hasCredential: false, lastTestedAt: null, lastTestError: null },
-    ]);
-    expect((await app.inject({ method: 'PUT', url: '/settings/secret-providers/gcp', headers: OP, payload: {} })).statusCode).toBe(404);
+    expect(res.json()).toEqual(
+      ['vault', 'aws', 'gcp', 'azure', 'onepassword', 'exec'].map((kind) => ({
+        kind,
+        configured: false,
+        enabled: false,
+        config: {},
+        hasCredential: false,
+        lastTestedAt: null,
+        lastTestError: null,
+      })),
+    );
+    expect((await app.inject({ method: 'PUT', url: '/settings/secret-providers/bitwarden', headers: OP, payload: {} })).statusCode).toBe(404);
   });
 
   it('vault: saves, never returns the credential, keeps an omitted one, audits without secrets', async () => {
@@ -494,5 +502,49 @@ describe('pipeline passes its deploy log to the resolver (M14)', () => {
     expect(src).toMatch(/const runtimeEnvironment: RuntimeEnvironment = restore\s*\? \{[^\n]+\}\s*: await loadRuntimeEnv\(db, service, templateDatabaseId, log\);/);
     const vaultSrc = readFileSync(new URL('../src/lib/vault.ts', import.meta.url), 'utf8');
     expect(vaultSrc).toMatch(/export function hasVaultRef\(value: string\): boolean \{\s*return hasSecretRef\(value\);\s*\}/);
+  });
+});
+
+describe('G3.2 secret providers over the routes', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('exec cannot be saved unless the panel opted in', async () => {
+    const app = await providerApp();
+    const put = () =>
+      app.inject({ method: 'PUT', url: '/settings/secret-providers/exec', headers: OP, payload: { config: { command: ['/usr/bin/bw', 'get', 'password', '{name}'] } } });
+    const refused = await put();
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toContain('NINEDEPLOY_SECRET_EXEC=1');
+    vi.stubEnv('NINEDEPLOY_SECRET_EXEC', '1');
+    const saved = await put();
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json()).toMatchObject({ kind: 'exec', configured: true, hasCredential: true, config: { timeoutSeconds: 10 } });
+    const relative = await app.inject({ method: 'PUT', url: '/settings/secret-providers/exec', headers: OP, payload: { config: { command: ['bw'] } } });
+    expect(relative.statusCode).toBe(400);
+  });
+
+  it('azure: saves without returning the secret, needs it again for another app registration, refuses a foreign host', async () => {
+    const app = await providerApp();
+    const config = { vaultUrl: 'https://kv1.vault.azure.net/', tenantId: '11111111-2222-3333-4444-555555555555', clientId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' };
+    const put = (payload: unknown) => app.inject({ method: 'PUT', url: '/settings/secret-providers/azure', headers: OP, payload });
+    const saved = await put({ config, credentials: { clientSecret: 'cs~TOPSECRET' } });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.body).not.toContain('cs~TOPSECRET');
+    expect(saved.json()).toMatchObject({ kind: 'azure', configured: true, config: { vaultUrl: 'https://kv1.vault.azure.net' } });
+    // Same app registration, another vault: the stored secret is kept.
+    expect((await put({ config: { ...config, vaultUrl: 'https://kv2.vault.azure.net' } })).statusCode).toBe(200);
+    // Another client id: the secret must come again.
+    const other = await put({ config: { ...config, clientId: 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee' } });
+    expect(other.statusCode).toBe(400);
+    expect(other.body).toContain('credentials.clientSecret');
+    expect((await put({ config: { ...config, vaultUrl: 'https://evil.example.com' }, credentials: { clientSecret: 'x' } })).statusCode).toBe(400);
+  });
+
+  it('a probe that belongs to another kind is refused, and an unconfigured kind tests as not configured', async () => {
+    const app = await providerApp();
+    const wrong = await app.inject({ method: 'POST', url: '/settings/secret-providers/gcp/test', headers: OP, payload: { probePath: 'a/b' } });
+    expect(wrong.statusCode).toBe(400);
+    const none = await app.inject({ method: 'POST', url: '/settings/secret-providers/onepassword/test', headers: OP, payload: { probeName: 'V/I/F' } });
+    expect(none.json()).toEqual({ ok: false, detail: 'No onepassword secret manager is configured' });
   });
 });
