@@ -44,6 +44,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { expectedUpgradeSecretProviders } from './lib/upgrade-secret-providers.mjs';
 
 // Default to the CURRENT repo version (read from version.ts) — a hardcoded
 // tag drifts and a bare run would happily prove the journey on a stale
@@ -379,14 +380,15 @@ async function importChecks(token, databaseId) {
   step(`import: ${sql.length}-byte plain SQL in one chunk → completed; smoke_t holds ${rows} rows in ${container}; pre-import backup #${safety.id} completed`);
 }
 
-/** Secret managers: both unconfigured, a Vault on a reserved host tests ok:false, a bad AWS region is refused. */
-async function secretProviderChecks(token) {
+/** Secret managers: supported kinds unconfigured, a Vault on a reserved host tests ok:false, a bad AWS region is refused. */
+async function secretProviderChecks(token, version) {
   const p = '/v1/settings/secret-providers';
   const legacy0 = await api('/v1/settings/vault', { token });
   if (legacy0.status !== 200) fail(`GET /v1/settings/vault answered ${legacy0.status} ${legacy0.text.slice(0, 200)}`);
   const kinds = (list) => (Array.isArray(list) ? list.map((x) => `${x.kind}:${x.configured}`).sort().join(',') : JSON.stringify(list));
+  const expected = (vaultConfigured) => expectedUpgradeSecretProviders(version, vaultConfigured);
   const l0 = await api(p, { token });
-  if (l0.status !== 200 || kinds(l0.json) !== 'aws:false,vault:false') fail(`GET ${p} should list both kinds unconfigured, got ${l0.status} ${l0.text.slice(0, 300)}`);
+  if (l0.status !== 200 || kinds(l0.json) !== expected(false)) fail(`GET ${p} should list the supported kinds unconfigured, got ${l0.status} ${l0.text.slice(0, 300)}`);
   const vaultToken = `hvs.smoke${suffix}`;
   const vault = await api(`${p}/vault`, { method: 'PUT', token, body: { config: { address: 'https://vault.invalid', authMethod: 'token' }, credentials: { token: vaultToken } } });
   if (vault.status !== 200 || vault.json?.configured !== true || vault.json.hasCredential !== true) fail(`PUT ${p}/vault answered ${vault.status} ${vault.text.slice(0, 300)}`);
@@ -401,13 +403,13 @@ async function secretProviderChecks(token) {
   });
   if (aws.status !== 400) fail(`PUT ${p}/aws with a bad region answered ${aws.status} ${aws.text.slice(0, 200)} (wanted 400)`);
   const l1 = (await api(p, { token })).json;
-  if (kinds(l1) !== 'aws:false,vault:true') fail(`GET ${p} after the saves: ${JSON.stringify(l1).slice(0, 300)}`);
+  if (kinds(l1) !== expected(true)) fail(`GET ${p} after the saves: ${JSON.stringify(l1).slice(0, 300)}`);
   const legacy1 = await api('/v1/settings/vault', { token });
   if (legacy1.status !== 200 || legacy1.text !== legacy0.text) fail(`GET /v1/settings/vault changed: ${legacy0.text.slice(0, 200)} → ${legacy1.text.slice(0, 200)}`);
   const del = await api(`${p}/vault`, { method: 'DELETE', token });
   if (del.status !== 200 || del.json?.deleted !== true) fail(`DELETE ${p}/vault answered ${del.status} ${del.text.slice(0, 200)}`);
-  if (kinds((await api(p, { token })).json) !== 'aws:false,vault:false') fail('the Vault provider is still configured after DELETE');
-  step(`secret managers: both unconfigured; Vault on vault.invalid saved and tests ok:false (${String(test.json.detail).slice(0, 80)}); a bad AWS region refused (400); /v1/settings/vault unchanged; Vault deleted`);
+  if (kinds((await api(p, { token })).json) !== expected(false)) fail('the secret provider list changed or Vault is still configured after DELETE');
+  step(`secret managers: supported kinds unconfigured; Vault on vault.invalid saved and tests ok:false (${String(test.json.detail).slice(0, 80)}); a bad AWS region refused (400); /v1/settings/vault unchanged; Vault deleted`);
 }
 
 // 0.15: operations and API — terminals, traffic analytics, the OpenAPI
@@ -1839,7 +1841,7 @@ async function main() {
     await traefikDirectoryChecks(`journey-${suffix}.test`);
     await customConfigChecks(token);
     await customCertificateChecks(token);
-    await secretProviderChecks(token);
+    await secretProviderChecks(token, String(health.version));
   } else {
     step(`${health.version} predates network and data access (0.14): 0.14 checks skipped`);
   }
