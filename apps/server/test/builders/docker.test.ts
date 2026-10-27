@@ -1366,6 +1366,8 @@ describe('dockerBuilder.buildAndRun — static build pack', () => {
       expect(args[args.indexOf('--builder') + 1]).toBe(BUILDPACK_BUILDERS[pack]);
       expect(args[args.indexOf('--builder') + 1]).toMatch(/@sha256:[0-9a-f]{64}$/);
       expect(args[args.indexOf('--platform') + 1]).toBe(buildpacksPlatform());
+      // The repository's build code never shares a container with the Docker socket.
+      expect(args).toContain('--trust-builder=false');
       expect(args.filter((a) => a.startsWith('type='))).toEqual([
         'type=build;format=volume;name=nd-pack-ninedeploy_web-build',
         'type=launch;format=volume;name=nd-pack-ninedeploy_web-launch',

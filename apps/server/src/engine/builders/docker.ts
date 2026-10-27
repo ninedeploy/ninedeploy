@@ -842,6 +842,12 @@ async function buildWithBuildpacks(
         'build', target,
         '--path', path.join(workDir, baseDir),
         '--builder', builder,
+        // pack trusts its suggested builders (Paketo, Heroku) by default and
+        // then runs ONE container with the Docker socket mounted, in which the
+        // repository's own code (install scripts, build hooks) runs: a
+        // member's repo would own the host. Untrusted, the build phase runs
+        // without the socket; only analyze/export (lifecycle code) get it.
+        '--trust-builder=false',
         '--env-file', envFile.path,
         // The builder is digest-pinned, so a cached copy is the same image.
         '--pull-policy', 'if-not-present',

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Pinning:** the Dockerfile and `install.sh` install `pack` 0.40.9 checksum-verified, as they do Nixpacks and Railpack. Each builder image is pinned by digest. Paketo's base builder covers amd64 only; Heroku's covers amd64 and arm64.
   - **Panel host only:** a service that a node builds is refused when it is saved, at deploy and in build placement. It never quietly falls back to a Dockerfile build. Choose **Build on: panel** to ship the image to the node.
   - **Build env:** it goes through a private env file, never argv, and is not written into the image.
+  - **Untrusted builder:** builds run with `--trust-builder=false`, so the repository's own build code never shares a container with the Docker socket. `pack` would otherwise trust the Paketo and Heroku builders, run one container with the socket mounted, and let a member's repository take over the host.
   - **Caches:** each service keeps one pair of cache volumes, removed with the service. `pack`'s default would have left a new pair per deploy.
   - **Platform:** builds target the panel host's platform.
   - **Containerd image store:** Docker's containerd image store (the default for new Docker 29 installs) breaks the Heroku builder whenever the build has env. The deploy log names the fix.
