@@ -453,8 +453,8 @@ describe('backups, restores and imports over the stream channel', () => {
     await databaseRuntime(db, d).restore(plain, () => undefined);
     expect(Buffer.concat(h.restored).toString()).toBe('SELECT 1;\n');
     const ch = await nodeRow({ name: 'ch', slug: 'ch', engine: 'clickhouse', nodeContainerName: 'nd-db-ch', nodeVolumeName: 'nd-db-ch-data' });
-    await expect(databaseRuntime(db, ch).backup(path.join(tmp, 'ch.dump'), () => undefined)).rejects.toThrow('backup not supported for clickhouse');
-    await expect(databaseRuntime(db, ch).restore(plain, () => undefined)).rejects.toThrow('restore not supported for clickhouse');
+    await expect(databaseRuntime(db, ch).backup(path.join(tmp, 'ch.dump'), () => undefined)).rejects.toThrow('backup of a clickhouse database runs on the panel host only; a database on a node cannot be backed up yet'); // G1.8
+    await expect(databaseRuntime(db, ch).restore(plain, () => undefined)).rejects.toThrow('restore of a clickhouse database runs on the panel host only; a database on a node cannot be restored yet');
   });
 
   it('0.14 import: the safety backup and the import under one lock, plan fields on the stream, the probe on the node', async () => {

@@ -269,7 +269,8 @@ describe('lib/backupDrill', () => {
 
     it('fails for an unsupported engine without a validator', async () => {
       const db = buildDb();
-      seed('clickhouse', await dumpFile('dump.bin', 'fake'));
+      // G1.8: clickhouse, the old example, has a validator now.
+      seed('cockroach', await dumpFile('dump.bin', 'fake'));
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('failed');
       expect(result.error).toMatch(/Drill not supported for engine/);
@@ -584,6 +585,87 @@ describe('lib/backupDrill', () => {
       seed('mongo', await dumpFile('mongo.archive', 'fake bson'));
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('failed');
+    });
+  });
+
+  // G1.8: the engines whose backups arrived in G1.8.
+  describe('G1.8: clickhouse / meilisearch / rabbitmq', () => {
+    const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('rest of the archive')]);
+    const gzip = Buffer.concat([Buffer.from([0x1f, 0x8b, 0x08]), Buffer.from('compressed')]);
+
+    it('lists a ClickHouse archive with unzip inside the ClickHouse image', async () => {
+      const db = buildDb();
+      seed('clickhouse', await dumpFile('ch.zip', zip));
+      execState.handler = dockerReplies({ lines: ['Archive:  /tmp/ninedeploy-drill.dump', '  metadata/app.sql', '---------                     -------', '   519936                     24 files'] });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'unzip', image: 'clickhouse/clickhouse-server:25.8', files: 24 });
+      expect(dockerCall('create')!.args.slice(-4)).toEqual(['unzip', 'clickhouse/clickhouse-server:25.8', '-l', '/tmp/ninedeploy-drill.dump']);
+    });
+
+    it('fails a ClickHouse backup that is not a zip, or that unzip rejects', async () => {
+      const db = buildDb();
+      seed('clickhouse', await dumpFile('ch-text.zip', 'not a zip'));
+      expect((await runBackupDrill(db, 1, 1)).error).toMatch(/no zip header/);
+      seed('clickhouse', await dumpFile('ch-cut.zip', zip));
+      execState.handler = dockerReplies({ lines: ['unzip: short read'], throw: new Error('`docker start -a cid123` exited with code 1') });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/unzip -l rejected the archive: unzip: short read/);
+    });
+
+    it('reads metadata.json from a Meilisearch dump inside the Meilisearch image', async () => {
+      const db = buildDb();
+      seed('meilisearch', await dumpFile('m.dump', gzip));
+      execState.handler = dockerReplies({ lines: ['{"dumpVersion":"V6","dbVersion":"1.53.3"}'] });
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toMatchObject({ tool: 'tar', dumpVersion: 'V6', image: 'getmeili/meilisearch:v1.53' });
+      expect(dockerCall('create')!.args.slice(-5)).toEqual(['tar', 'getmeili/meilisearch:v1.53', '-xzOf', '/tmp/ninedeploy-drill.dump', 'metadata.json']);
+    });
+
+    it('fails a Meilisearch dump that is not gzip, that tar rejects, or whose metadata names no version', async () => {
+      const db = buildDb();
+      seed('meilisearch', await dumpFile('m-text.dump', 'plain'));
+      expect((await runBackupDrill(db, 1, 1)).error).toMatch(/no gzip header/);
+      seed('meilisearch', await dumpFile('m-cut.dump', gzip));
+      execState.handler = dockerReplies({ lines: ['tar: unexpected end of file'], throw: new Error('`docker start -a cid123` exited with code 1') });
+      expect((await runBackupDrill(db, 1, 1)).error).toMatch(/tar could not read metadata.json from the dump: tar: unexpected end of file/);
+      execState.handler = dockerReplies({ lines: ['{}'] });
+      expect((await runBackupDrill(db, 1, 1)).error).toMatch(/no metadata.json naming a dump version/);
+    });
+
+    it('is unverifiable when the engine image is not on the host', async () => {
+      const db = buildDb();
+      seed('clickhouse', await dumpFile('ch2.zip', zip));
+      execState.handler = (cmd, args) => (cmd === 'docker' && args[0] === 'image' ? { throw: new Error('No such image') } : undefined);
+      expect((await runBackupDrill(db, 1, 1)).status).toBe('unverifiable');
+      seed('meilisearch', await dumpFile('m2.dump', gzip));
+      expect((await runBackupDrill(db, 1, 1)).status).toBe('unverifiable');
+    });
+
+    it('parses a RabbitMQ definitions export and reports what it holds', async () => {
+      const db = buildDb();
+      seed('rabbitmq', await dumpFile('defs.json', JSON.stringify({ rabbitmq_version: '4.0.9', vhosts: [{}, {}], users: [{}], queues: [{}], exchanges: [] })));
+      const result = await runBackupDrill(db, 1, 1);
+      expect(result.status).toBe('passed');
+      expect(result.details).toEqual({ tool: 'json', rabbitmqVersion: '4.0.9', vhosts: 2, users: 1, queues: 1, exchanges: 0 });
+      seed('rabbitmq', await dumpFile('defs-old.json', JSON.stringify({ rabbit_version: '3.13.7' })));
+      expect((await runBackupDrill(db, 1, 1)).details).toMatchObject({ rabbitmqVersion: '3.13.7', vhosts: 0 });
+    });
+
+    it('fails a RabbitMQ backup that is cut off, not an object, or names no version', async () => {
+      const db = buildDb();
+      for (const [name, body, error] of [
+        ['cut.json', '{"rabbitmq_version":"4', /Not a RabbitMQ definitions file: /],
+        ['array.json', '[1]', /not a JSON object/],
+        ['nover.json', '{"vhosts":[]}', /no rabbitmq_version/],
+      ] as const) {
+        seed('rabbitmq', await dumpFile(name, body));
+        const result = await runBackupDrill(db, 1, 1);
+        expect(result.status).toBe('failed');
+        expect(result.error).toMatch(error);
+      }
     });
   });
 

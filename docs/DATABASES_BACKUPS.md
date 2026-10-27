@@ -15,9 +15,9 @@ NineDeploy provides provisioning and lifecycle management for databases, encrypt
 | **KeyDB** | 6.3 (`eqalpha/keydb`) | Multithreaded Redis-compatible server (section 9) |
 | **Dragonfly** | 1.x (`ghcr.io/dragonflydb/dragonfly`) | Multi-core Redis-compatible in-memory store (section 9) |
 | **MongoDB** | 7.0 Community | Document-oriented NoSQL database |
-| **ClickHouse** | Latest | High-performance columnar analytics |
-| **Meilisearch** | Latest | Lightning-fast full-text search engine |
-| **RabbitMQ** | 3.13 Management | Enterprise message broker with AMQP |
+| **ClickHouse** | 25.8 (`clickhouse/clickhouse-server`) | High-performance columnar analytics; backups since G1.8 (section 10) |
+| **Meilisearch** | v1.53 (`getmeili/meilisearch`) | Full-text search engine; backups since G1.8 (section 10) |
+| **RabbitMQ** | 4 Management (`rabbitmq:4-management`) | Message broker with AMQP; definitions backups since G1.8 (section 10) |
 
 ---
 
@@ -198,3 +198,20 @@ Two more Redis-protocol engines. Create them like Redis (`POST /v1/databases {na
 
 
 0.18.2 implements sealed node Web Studio for the supported SQL/KV engines; see [node Studio operations](NODE_OPERATIONS.md#node-database-web-studio-unreleased-0180). Its full acceptance is tracked separately from published 0.17.1.
+
+---
+
+## 📦 10. ClickHouse, Meilisearch and RabbitMQ backups (G1.8)
+
+These three engines used to answer "backup not supported". Manual backups, scheduled backups and policies, off-site copies, download, restore and the **Check** drill now work for them on the **panel host**. A database of these engines on a node still refuses backups, with a message that says so: the node agent has no dump format for them yet.
+
+| | ClickHouse | Meilisearch | RabbitMQ |
+| --- | --- | --- | --- |
+| What is backed up | Every user database (all but `system` and the information schemas), with data, through `BACKUP DATABASE … TO File(…)` | The whole instance as a Meilisearch dump (`POST /dumps`): indexes, documents, settings, API keys | The **definitions** only (`rabbitmqctl export_definitions`): users, virtual hosts, permissions, queues, exchanges, bindings, policies and parameters. **Not the messages in the queues.** |
+| File | The backup zip | The `.dump` file (gzipped tar) | JSON |
+| Restore | Each database is restored under a temporary name first; only when all of them succeeded are the live ones dropped and the copies renamed into place. A failed restore leaves the current data untouched. Databases not in the backup are kept. | The database is **stopped**. A one-off container of the same image imports the dump into a new path on the same volume; only after it is healthy are the paths swapped and the old data removed. A failed import keeps the current data. The database is started again either way. | `rabbitmqctl import_definitions`, then the restore waits until every vhost, queue, exchange and binding in the file exists. The import **adds and updates**; objects created after the backup are not deleted. |
+| Downtime | None | For the length of the import | None |
+| Drill (**Check**) | `unzip -l` in the ClickHouse image | `metadata.json` read with `tar` in the Meilisearch image | The JSON parses and names a RabbitMQ version |
+
+ClickHouse database names must consist of letters, digits and `_`; a backup or restore refuses others instead of quoting them. Large ClickHouse and Meilisearch operations may run for hours; the limit is six hours per step.
+

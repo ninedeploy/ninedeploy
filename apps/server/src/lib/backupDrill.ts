@@ -364,6 +364,13 @@ async function validateDump(ctx: DrillContext, image: string | null): Promise<Va
       return validateRedis(ctx.file, ctx.engine, image);
     case 'mongo':
       return validateMongo(ctx.file);
+    // G1.8: the engines backups now cover (engine/extraEngineBackups.ts).
+    case 'clickhouse':
+      return validateClickhouse(ctx.file, image);
+    case 'meilisearch':
+      return validateMeilisearch(ctx.file, image);
+    case 'rabbitmq':
+      return validateRabbitmq(ctx.file);
     default:
       return failed(`Drill not supported for engine "${ctx.engine}"`);
   }
@@ -526,6 +533,76 @@ async function validatePostgres(file: string, image: string | null): Promise<Val
     return failed('Truncated pg_dump: the header\'s \\restrict key has no matching \\unrestrict at the end of the file');
   }
   return passed({ tool: 'pg_dump-structure', mode: 'plain-sql' });
+}
+
+/** G1.8: the first `bytes` of a file as raw bytes ({@link readHead} decodes UTF-8, which mangles binary magic). */
+async function readHeadBytes(file: string, bytes: number): Promise<Buffer> {
+  const handle = await open(file, 'r');
+  try {
+    const buf = Buffer.alloc(bytes);
+    const { bytesRead } = await handle.read(buf, 0, bytes, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
+
+/**
+ * G1.8: a ClickHouse `BACKUP … TO File('….zip')` archive. The zip local-file
+ * magic, then `unzip -l` from the ClickHouse image itself (BusyBox), which
+ * reads the whole central directory and fails on a cut-off archive.
+ */
+async function validateClickhouse(file: string, image: string | null): Promise<ValidationResult> {
+  if (!(await readHeadBytes(file, 4)).equals(ZIP_MAGIC)) return failed('Not a ClickHouse backup archive: no zip header');
+  if (!image) return unverifiable('no clickhouse image is known for this database');
+  const check = await checkInEngineImage(image, file, 'unzip', ['-l', DRILL_CONTAINER_DUMP]);
+  if (check.kind === 'unavailable') return unverifiable(check.reason, { tool: 'unzip', image });
+  if (check.kind === 'rejected') return failed(`unzip -l rejected the archive${outputTail(check.output)} (${check.error})`, { tool: 'unzip', image });
+  const summary = check.output.map((l) => /^\s*\d+\s+(\d+) files?\s*$/.exec(l)).find(Boolean);
+  return passed({ tool: 'unzip', image, files: summary ? Number(summary[1]) : null });
+}
+
+/**
+ * G1.8: a Meilisearch dump (a gzipped tar). Its `metadata.json` is read with
+ * `tar -xzO` in the Meilisearch image, which inflates the archive up to that
+ * entry; the file must name a dump version.
+ */
+async function validateMeilisearch(file: string, image: string | null): Promise<ValidationResult> {
+  if (!(await readHeadBytes(file, 2)).equals(GZIP_MAGIC)) return failed('Not a Meilisearch dump: no gzip header');
+  if (!image) return unverifiable('no meilisearch image is known for this database');
+  const check = await checkInEngineImage(image, file, 'tar', ['-xzOf', DRILL_CONTAINER_DUMP, 'metadata.json']);
+  if (check.kind === 'unavailable') return unverifiable(check.reason, { tool: 'tar', image });
+  if (check.kind === 'rejected') return failed(`tar could not read metadata.json from the dump${outputTail(check.output)} (${check.error})`, { tool: 'tar', image });
+  const version = /"dumpVersion"\s*:\s*"([^"]+)"/.exec(check.output.join('\n'))?.[1];
+  if (!version) return failed('The dump has no metadata.json naming a dump version', { tool: 'tar', image });
+  return passed({ tool: 'tar', image, dumpVersion: version });
+}
+
+/** G1.8: definitions above this size are not parsed in the panel's memory. */
+const RABBITMQ_DEFINITIONS_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * G1.8: a RabbitMQ definitions export (JSON). It must parse and name the
+ * RabbitMQ version that wrote it; the counts are reported.
+ */
+async function validateRabbitmq(file: string): Promise<ValidationResult> {
+  const { size } = await stat(file);
+  if (size > RABBITMQ_DEFINITIONS_MAX_BYTES) return unverifiable(`the definitions file is larger than ${RABBITMQ_DEFINITIONS_MAX_BYTES / 1024 / 1024} MiB`);
+  let defs: unknown;
+  try {
+    defs = JSON.parse((await readBackupBytes(file)).toString('utf8'));
+  } catch (err) {
+    return failed(`Not a RabbitMQ definitions file: ${errText(err)}`);
+  }
+  const o = defs as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return failed('Not a RabbitMQ definitions file: not a JSON object');
+  const version = typeof o['rabbitmq_version'] === 'string' ? o['rabbitmq_version'] : typeof o['rabbit_version'] === 'string' ? o['rabbit_version'] : null;
+  if (!version) return failed('Not a RabbitMQ definitions file: no rabbitmq_version');
+  const count = (key: string) => (Array.isArray(o[key]) ? (o[key] as unknown[]).length : 0);
+  return passed({ tool: 'json', rabbitmqVersion: version, vhosts: count('vhosts'), users: count('users'), queues: count('queues'), exchanges: count('exchanges') });
 }
 
 /**

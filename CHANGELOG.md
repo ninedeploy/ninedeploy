@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Backups for ClickHouse, Meilisearch and RabbitMQ (G1.8): the three engines that answered "backup not supported" now have manual and scheduled backups, off-site copies, restore and the **Check** drill on the panel host. ClickHouse backs up every user database with `BACKUP … TO File` and restores each one under a temporary name before swapping it in, so a failed restore leaves the data untouched. Meilisearch takes a dump; a restore stops the database and imports the dump with a one-off container into a new path, swapping it in only once the import is healthy. RabbitMQ backs up its definitions (users, vhosts, queues, exchanges, bindings, policies), not queued messages; a restore waits until everything in the file exists. Each flow was run against the real images. Node databases of these engines still refuse backups, now with a message that says why. No migration. See DATABASES_BACKUPS.md §10.
+
 - Email templates in the web UI (G1.5): workspace admins can edit, preview and reset the workspace's email templates on the Workspaces page. Account emails such as the password reset are shown as fixed. Until now this needed `ninedeploy email-templates` or the API.
 
 - Outgoing IP per project in the web UI (G1.5): Settings → Security has an operator-only *Outgoing IP per project* card that lists the egress rules and sets or removes one, picking the project and one of the panel host's IPv4 addresses. Traffic from that project's containers then leaves through that address (iptables SNAT). Until now this needed `ninedeploy egress` or the API.

@@ -21,6 +21,8 @@ import { createBackupCipher, decrypt } from './crypto.js';
 import {
   AGENT_REDIS_FAMILY_VERSION,
   DUMPABLE_ENGINES,
+  PANEL_ONLY_DUMPABLE_ENGINES,
+  panelOnlyBackupRefusal,
   NODE_ENGINES_NEEDING_NEWER_AGENT,
   mysqlHelpCommand,
   parseSizeOutput,
@@ -181,6 +183,7 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
   const password = () => decrypt(d.passwordEncrypted);
 
   const dumpUnlocked = async (file: string, log: (line: string) => void): Promise<void> => {
+    if (PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) throw new Error(panelOnlyBackupRefusal(d.engine, 'backup'));
     if (!DUMPABLE_ENGINES.has(d.engine)) throw new Error(`backup not supported for ${d.engine}`);
     log(`Dumping ${d.name} on node #${serverId} …`);
     const handle = await openStream(db, serverId, 'db.dump', { container, engine: d.engine, password: password() });
@@ -336,6 +339,7 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
 
     /** Restore an encrypted (or legacy plaintext) backup file from the panel into the node database. */
     restore(file: string, log: (line: string) => void): Promise<void> {
+      if (PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) return Promise.reject(new Error(panelOnlyBackupRefusal(d.engine, 'restore')));
       if (!DUMPABLE_ENGINES.has(d.engine)) return Promise.reject(new Error(`restore not supported for ${d.engine}`));
       return withDatabaseOperationLock(d.id, log, async () => {
         log(`Restoring ${d.name} on node #${serverId} …`);

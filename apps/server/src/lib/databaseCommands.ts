@@ -25,8 +25,19 @@ export type DatabaseEngineName = (typeof DATABASE_ENGINES)[number];
 export const isDatabaseEngine = (value: unknown): value is DatabaseEngineName =>
   typeof value === 'string' && (DATABASE_ENGINES as readonly string[]).includes(value);
 
-/** Engines `backupDatabase` / `restoreDatabase` support (the rest refuse with the same message). */
+/** Engines a node's agent can dump and restore (`db.dump` / `db.restore`); the rest refuse with the same message. */
 export const DUMPABLE_ENGINES: ReadonlySet<string> = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongo', 'keydb', 'dragonfly']);
+
+/**
+ * G1.8: engines `backupDatabase` / `restoreDatabase` support on the PANEL HOST
+ * only (engine/extraEngineBackups.ts). A node's agent has no dump kind for
+ * them, so a node database of these engines keeps refusing backups.
+ */
+export const PANEL_ONLY_DUMPABLE_ENGINES: ReadonlySet<string> = new Set(['clickhouse', 'meilisearch', 'rabbitmq']);
+
+/** The refusal for a node database whose engine only the panel host can back up. */
+export const panelOnlyBackupRefusal = (engine: string, verb: 'backup' | 'restore'): string =>
+  `${verb} of a ${engine} database runs on the panel host only; a database on a node cannot be ${verb === 'backup' ? 'backed up' : 'restored'} yet`;
 
 /**
  * Engines that speak the Redis protocol and keep their data in ONE RDB file,

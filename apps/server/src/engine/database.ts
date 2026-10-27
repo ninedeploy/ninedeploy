@@ -16,6 +16,7 @@ import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../lib/crossProcessLock.js';
 import { conflict } from '../lib/errors.js';
 import { dumpCommands, isRedisFamily, redisCliArgv, saveReplyProblem } from '../lib/databaseCommands.js';
+import { backupClickhouse, backupMeilisearch, backupRabbitmq, restoreClickhouse, restoreMeilisearch, restoreRabbitmq } from './extraEngineBackups.js';
 import { redisStudioConfig, studioImageForEngine } from '../lib/databaseStudioImages.js';
 export { studioImageForEngine } from '../lib/databaseStudioImages.js';
 import { NETWORK } from './proxy.js';
@@ -1078,6 +1079,13 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
         `--archive=${DUMP_TMP}`, '--gzip',
       ], {}, log);
       await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
+    } else if (d.engine === 'clickhouse') {
+      // G1.8: the three engines below (engine/extraEngineBackups.ts).
+      await backupClickhouse({ cn, password: decrypt(d.passwordEncrypted), username: cfg.username()! }, file, log);
+    } else if (d.engine === 'meilisearch') {
+      await backupMeilisearch({ cn, password: decrypt(d.passwordEncrypted) }, file, log);
+    } else if (d.engine === 'rabbitmq') {
+      await backupRabbitmq({ cn }, file, log);
     } else {
       throw new Error(`backup not supported for ${d.engine}`);
     }
@@ -1123,9 +1131,29 @@ async function restoreDatabaseUnlocked(d: Database, file: string, log: (line: st
     d.engine !== 'redis' &&
     d.engine !== 'valkey' &&
     d.engine !== 'keydb' &&
-    d.engine !== 'dragonfly'
+    d.engine !== 'dragonfly' &&
+    d.engine !== 'clickhouse' &&
+    d.engine !== 'meilisearch' &&
+    d.engine !== 'rabbitmq'
   ) {
     throw new Error(`restore not supported for ${d.engine}`);
+  }
+
+  // G1.8: these three manage their own temp files (engine/extraEngineBackups.ts).
+  if (d.engine === 'clickhouse' || d.engine === 'meilisearch' || d.engine === 'rabbitmq') {
+    const staged = await stageForRestore(file);
+    try {
+      const password = decrypt(d.passwordEncrypted);
+      if (d.engine === 'clickhouse') await restoreClickhouse({ cn, password, username: cfg.username()! }, staged.path, log);
+      else if (d.engine === 'rabbitmq') await restoreRabbitmq({ cn }, staged.path, log);
+      else {
+        if (!d.volumeName) throw new Error('database has no volume name');
+        await restoreMeilisearch({ cn, password, volumeName: d.volumeName, image: cfg.image(d.version ?? undefined) }, staged.path, log);
+      }
+    } finally {
+      staged.cleanup();
+    }
+    return;
   }
 
   const staged = await stageForRestore(file);
