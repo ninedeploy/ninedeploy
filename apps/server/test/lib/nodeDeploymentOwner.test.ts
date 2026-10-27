@@ -146,6 +146,27 @@ describe('node deployment authority boundaries', () => {
     await c.db.update(serviceRuntimeOwners).set({ requestId: owner.requestId }).where(eq(serviceRuntimeOwners.serviceId, 1));
     await expect(guard.check()).rejects.toBeInstanceOf(NodeDeploymentOwnershipLost);
   });
+  it('rejects an in-flight old read after another checkpoint has observed authority loss', async () => {
+    const { guard } = await admitted();
+    let entered!: () => void, release!: () => void;
+    const arrived = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const query = c.db.query.deploymentRuntimeOwners;
+    const original = query.findFirst.bind(query);
+    const read = vi.spyOn(query, 'findFirst').mockImplementationOnce(options => {
+      const result = original(options);
+      // Delay delivery of a real completed SQL read, not the ownership decision.
+      return result.then(async row => { entered(); await gate; return row; }) as typeof result;
+    });
+    const pending = guard.check();
+    try {
+      await arrived;
+      await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+      await expect(guard.check()).rejects.toBeInstanceOf(NodeDeploymentOwnershipLost);
+      release();
+      await expect(pending).rejects.toBeInstanceOf(NodeDeploymentOwnershipLost);
+    } finally { release(); await pending.catch(() => undefined); read.mockRestore(); }
+  });
   it('captures the owner instead of following a mutable caller object', async () => {
     const { owner, guard } = await admitted(); owner.requestId = 'f'.repeat(32); owner.serverId = 5;
     await guard.check(); expect(guard.lost()).toBe(false);

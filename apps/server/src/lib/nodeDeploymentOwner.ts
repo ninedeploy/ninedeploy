@@ -29,7 +29,7 @@ export function createNodeDeploymentAuthority(db: DB, input: DeploymentRuntimeOw
       if (!lost) {
         const current = await db.query.deploymentRuntimeOwners.findFirst({ columns: { deploymentId: true },
           where: and(eq(deploymentRuntimeOwners.deploymentId, owner.deploymentId), predicate) });
-        if (current) return;
+        if (current && !lost) return;
         lost = true;
       }
       throw new NodeDeploymentOwnershipLost();
