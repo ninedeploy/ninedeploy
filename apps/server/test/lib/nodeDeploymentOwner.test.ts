@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations, deploymentRuntimeOwners, deployments, eq, servers, serviceRuntimeOwners, services, type Service } from '@ninedeploy/db';
-import { claimNodeDeploymentAttempt } from '../../src/lib/nodeDeploymentOwner.js';
+import { claimNodeDeploymentAttempt, createNodeDeploymentAuthority, NodeDeploymentOwnershipLost } from '../../src/lib/nodeDeploymentOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { readServiceRuntimeOwner, MAX_RUNTIME_EPOCH } from '../../src/lib/serviceRuntimeOwner.js';
 
@@ -97,5 +97,68 @@ describe('durable node deployment admission', () => {
   it.each([{ serverId: null }, { orchestrator: 'swarm' }, { type: 'pm2' }])('requires a real plain Docker node placement: %j', async patch => {
     await expect(claimNodeDeploymentAttempt(c.db, 9, { ...await service(), ...patch } as Service, '{}')).rejects.toThrow(/plain Docker/);
     expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
+  });
+});
+
+
+describe('node deployment authority boundaries', () => {
+  async function admitted() {
+    const result = await claimNodeDeploymentAttempt(c.db, 9, await service(), '{}');
+    if (!result.claimed) throw Error('Missing admitted owner');
+    return { owner: result.owner, guard: createNodeDeploymentAuthority(c.db, result.owner) };
+  }
+  it('fences SQL at execution time when Stop wins after a successful checkpoint', async () => {
+    const { guard } = await admitted(); await guard.check();
+    await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await c.db.update(services).set({ status: 'running', runtimeId: 'obsolete' }).where(guard.fence()).returning()).toEqual([]);
+    expect(await c.db.update(deployments).set({ status: 'failed' }).where(guard.fence()).returning()).toEqual([]);
+    await expect(guard.check()).rejects.toBeInstanceOf(NodeDeploymentOwnershipLost);
+    expect(guard.lost()).toBe(true); expect((await service()).status).toBe('stopped');
+    expect((await c.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('cancelled');
+  });
+  it('permits cleanup under the original owner after cancellation without claiming a new epoch', async () => {
+    const { guard, owner } = await admitted();
+    await c.db.update(deployments).set({ status: 'cancelled', configSnapshot: '{}' }).where(eq(deployments.id, 9));
+    await guard.check(); expect(guard.lost()).toBe(false);
+    expect(await c.db.update(services).set({ status: 'idle' }).where(guard.fence()).returning({ id: services.id })).toEqual([{ id: 1 }]);
+    expect(await readServiceRuntimeOwner(c.db, 1)).toMatchObject({ epoch: owner.epoch, requestId: owner.requestId });
+  });
+  it.each(['nonce', 'epoch', 'kind', 'stamp', 'node', 'type', 'orchestrator', 'deleted node', 'deleted deployment'] as const)('refuses changed %s before effects or status writes', async boundary => {
+    const { guard, owner } = await admitted(); await guard.check();
+    if (boundary === 'nonce') await c.db.update(serviceRuntimeOwners).set({ requestId: 'f'.repeat(32) }).where(eq(serviceRuntimeOwners.serviceId, 1));
+    if (boundary === 'epoch') await c.db.update(serviceRuntimeOwners).set({ epoch: owner.epoch + 1 }).where(eq(serviceRuntimeOwners.serviceId, 1));
+    if (boundary === 'kind') await c.db.update(serviceRuntimeOwners).set({ kind: 'stop' }).where(eq(serviceRuntimeOwners.serviceId, 1));
+    if (boundary === 'stamp') await c.db.delete(deploymentRuntimeOwners).where(eq(deploymentRuntimeOwners.deploymentId, 9));
+    if (boundary === 'node') await c.db.update(services).set({ serverId: 5 }).where(eq(services.id, 1));
+    if (boundary === 'type') await c.db.update(services).set({ type: 'compose' }).where(eq(services.id, 1));
+    if (boundary === 'orchestrator') await c.db.update(services).set({ orchestrator: 'swarm' }).where(eq(services.id, 1));
+    if (boundary === 'deleted node') await c.db.delete(servers).where(eq(servers.id, 4));
+    if (boundary === 'deleted deployment') await c.db.delete(deployments).where(eq(deployments.id, 9));
+    const before = await service();
+    expect(await c.db.update(services).set({ status: 'error', runtimeId: 'obsolete' }).where(guard.fence()).returning()).toEqual([]);
+    await expect(guard.check()).rejects.toBeInstanceOf(NodeDeploymentOwnershipLost);
+    expect(await service()).toEqual(before);
+  });
+  it('keeps an observed loss terminal even if the old SQL identity is restored', async () => {
+    const { guard, owner } = await admitted();
+    await c.db.update(serviceRuntimeOwners).set({ requestId: 'f'.repeat(32) }).where(eq(serviceRuntimeOwners.serviceId, 1));
+    await expect(guard.check()).rejects.toBeInstanceOf(NodeDeploymentOwnershipLost);
+    await c.db.update(serviceRuntimeOwners).set({ requestId: owner.requestId }).where(eq(serviceRuntimeOwners.serviceId, 1));
+    await expect(guard.check()).rejects.toBeInstanceOf(NodeDeploymentOwnershipLost);
+  });
+  it('captures the owner instead of following a mutable caller object', async () => {
+    const { owner, guard } = await admitted(); owner.requestId = 'f'.repeat(32); owner.serverId = 5;
+    await guard.check(); expect(guard.lost()).toBe(false);
+  });
+  it('propagates an unavailable authority read without granting permission', async () => {
+    const { guard } = await admitted();
+    const read = vi.spyOn(c.db.query.deploymentRuntimeOwners, 'findFirst').mockRejectedValueOnce(Error('Authority unavailable'));
+    try { await expect(guard.check()).rejects.toThrow('Authority unavailable'); }
+    finally { read.mockRestore(); }
+    await guard.check();
+  });
+  it.each([{ epoch: 0 }, { serverId: -1 }, { serviceId: 1.5 }, { deploymentId: NaN }, { epoch: MAX_RUNTIME_EPOCH + 1 }, { requestId: 'invalid' }])('refuses invalid captured authority: %j', async patch => {
+    const { owner } = await admitted();
+    expect(() => createNodeDeploymentAuthority(c.db, { ...owner, ...patch })).toThrow('Invalid node deployment authority');
   });
 });

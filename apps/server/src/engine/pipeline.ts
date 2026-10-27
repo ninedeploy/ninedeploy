@@ -58,7 +58,7 @@ import { composeBuilder } from './builders/compose.js';
 import { logBus } from './logs.js';
 import { pm2Builder } from './builders/pm2.js';
 import { AGENT_CAP_OP_CANCEL, CANCELLABLE_AGENT_OPS, deployAbortSignal, deployAborted, outsideDeployScope, runInDeployScope } from '../lib/deployAbort.js';
-import { claimNodeDeploymentAttempt } from '../lib/nodeDeploymentOwner.js';
+import { claimNodeDeploymentAttempt, createNodeDeploymentAuthority, NodeDeploymentOwnershipLost, type NodeDeploymentAuthority } from '../lib/nodeDeploymentOwner.js';
 import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
 import { beginPrimaryTransition, primaryRecoveryPending, PrimaryIdentityUnconfirmed, PrimaryRecoveryOwnershipLost, PrimaryRecoveryPending, type PrimaryRecoveryLease } from './primaryRecovery.js';
@@ -666,6 +666,7 @@ type PipelineKernelCtx = {
 /** Run the full deploy pipeline for one deployment row. */
 export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: PipelineKernelCtx): Promise<void> {
   let primaryRecovery: PrimaryRecoveryLease | SwarmRecoveryLease | undefined;
+  let nodeAuthority: NodeDeploymentAuthority | undefined;
   const events = kernelCtx?.events;
   let ownsLog = false, announce = true;
   const beginLog = () => { if (!ownsLog) { logBus.beginRun(deploymentId); ownsLog = true; } };
@@ -678,10 +679,18 @@ export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: Pi
     beginLog();
     if (events) await emitDeploying(db, deploymentId, events).catch(() => undefined);
     // The scope lets the cancel route stop the running step (lib/deployAbort.ts).
-    const result = await runInDeployScope(deploymentId, () => runDeploymentCore(db, deploymentId, dep, kernelCtx, lease => { primaryRecovery = lease; }));
+    const result = await runInDeployScope(deploymentId, () => runDeploymentCore(db, deploymentId, dep, kernelCtx, lease => { primaryRecovery = lease; }, authority => { nodeAuthority = authority; }));
     if (result === false) announce = false;
   } catch (err) {
     beginLog();
+    if (nodeAuthority) {
+      try { await nodeAuthority.check(); }
+      catch (ownerError) {
+        announce = false;
+        if (ownerError instanceof NodeDeploymentOwnershipLost) { logBus.publish(deploymentId, ownerError.message); return; }
+        throw ownerError;
+      }
+    }
     if (err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost || primaryRecovery && 'managerNodeId' in primaryRecovery.row) {
       const reason = err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost ? err.message : 'Swarm transition remains unconfirmed; retained for recovery';
       logBus.publish(deploymentId, reason); await primaryRecovery?.release(reason); return;
@@ -695,15 +704,15 @@ export async function runDeployment(db: DB, deploymentId: number, kernelCtx?: Pi
     // `building` — that blocks every later deploy of the service and the
     // stale sweep silently re-runs it 45 minutes later.
     await primaryRecovery?.check();
-    await failUnsettledDeployment(db, deploymentId, err, primaryRecovery?.fence()).catch(() => undefined);
+    await failUnsettledDeployment(db, deploymentId, err, and(primaryRecovery?.fence(), nodeAuthority?.fence())).catch(() => undefined);
     throw err;
   } finally {
     if (primaryRecovery) {
-      if (!primaryRecovery.lost()) await primaryRecovery.completeIfSafe().catch(() => {});
+      if (!primaryRecovery.lost()) await (async () => { await nodeAuthority?.check(); await primaryRecovery.completeIfSafe(); })().catch(() => {});
       await primaryRecovery.release();
     }
     if (ownsLog) {
-      if (announce && !primaryRecovery?.lost() && (kernelCtx?.hooks || events)) await announceOutcome(db, deploymentId, kernelCtx).catch(() => undefined);
+      if (announce && !primaryRecovery?.lost() && !nodeAuthority?.lost() && (kernelCtx?.hooks || events)) await announceOutcome(db, deploymentId, kernelCtx).catch(() => undefined);
       logBus.end(deploymentId);
     }
   }
@@ -773,7 +782,7 @@ async function announceOutcome(db: DB, deploymentId: number, kernelCtx: Pipeline
   }
 }
 
-async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deployments.$inferSelect, kernelCtx?: PipelineKernelCtx, trackPrimary?: (lease: PrimaryRecoveryLease | SwarmRecoveryLease) => void): Promise<void | false> {
+async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deployments.$inferSelect, kernelCtx?: PipelineKernelCtx, trackPrimary?: (lease: PrimaryRecoveryLease | SwarmRecoveryLease) => void, trackNodeAuthority?: (authority: NodeDeploymentAuthority) => void): Promise<void | false> {
   const service = await db.query.services.findFirst({ where: eq(services.id, dep.serviceId) });
   if (!service) return;
   if (await primaryRecoveryPending(db, service.id)) throw new PrimaryRecoveryPending();
@@ -824,6 +833,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     log(`⏹ Node deployment skipped: ${reasons[admission.reason]}`);
     return false;
   }
+  const nodeAuthority = admission?.claimed ? createNodeDeploymentAuthority(db, admission.owner) : undefined;
+  if (nodeAuthority) trackNodeAuthority?.(nodeAuthority);
   const claimed = admission?.claimed ? [{ id: deploymentId }] : await db
     .update(deployments)
     .set({ status: 'building', startedAt: new Date(), configSnapshot })
@@ -863,7 +874,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     const reason = await swarmDeployRefusal(db, service);
     if (reason) {
       log(`✗ ${reason}`);
-      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await nodeAuthority?.check();
+      await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
       await auditOutcome(db, service, deploymentId, 'failed', reason);
       return;
     }
@@ -886,7 +898,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     (notDocker && Object.keys(service.dockerLabels ?? {}).length > 0 ? DOCKER_LABELS_PANEL_ONLY : null);
   if (fileRefusal) {
     log(`✗ ${fileRefusal}`);
-    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await nodeAuthority?.check();
+    await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
     await auditOutcome(db, service, deploymentId, 'failed', fileRefusal);
     return;
   }
@@ -903,14 +916,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   } catch (err) {
     const reason = msg(err);
     log(`✗ ${reason}`);
-    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await nodeAuthority?.check();
+    await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
     await auditOutcome(db, service, deploymentId, 'failed', reason);
     return;
   }
   if (placement.kind !== 'target' && service.type !== 'docker') {
     const reason = `Building on ${placement.kind === 'panel' ? 'the panel host' : 'a build server'} applies to docker services; a ${service.type} service builds where it runs. Set Build on: target.`;
     log(`✗ ${reason}`);
-    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await nodeAuthority?.check();
+    await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
     await auditOutcome(db, service, deploymentId, 'failed', reason);
     return;
   }
@@ -933,14 +948,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   const buildsOnPanel = buildAway ? buildAway.kind === 'panel' : service.serverId == null;
   if (service.gitLfs && service.repoUrl && !service.image && !buildsOnPanel) {
     log(`✗ ${GIT_LFS_PANEL_ONLY}`);
-    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await nodeAuthority?.check();
+    await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
     await auditOutcome(db, service, deploymentId, 'failed', GIT_LFS_PANEL_ONLY);
     return;
   }
   // 0.16.7: no node or build server can fetch an uploaded archive.
   if (service.serverId != null && isUploadSourced(service) && !buildsOnPanel) {
     log(`✗ ${UPLOAD_SOURCE_PANEL_BUILD}`);
-    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await nodeAuthority?.check();
+    await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
     await auditOutcome(db, service, deploymentId, 'failed', UPLOAD_SOURCE_PANEL_BUILD);
     return;
   }
@@ -955,7 +972,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     if (!remoteDeploySupported(service.type)) {
       const reason = remoteDeployUnsupportedReason(service.type);
       log(`✗ ${reason}`);
-      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await nodeAuthority?.check();
+      await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
       await auditOutcome(db, service, deploymentId, 'failed', reason);
       return;
     }
@@ -967,7 +985,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       const reason =
         'the static build pack runs its build commands on the panel host and has no remote implementation';
       log(`✗ ${reason}`);
-      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await nodeAuthority?.check();
+      await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
       await auditOutcome(db, service, deploymentId, 'failed', reason);
       return;
     }
@@ -977,14 +996,16 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     const hookRefusal = remoteHookRefusal(buildConfig);
     if (hookRefusal) {
       log(`✗ ${hookRefusal}`);
-      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await nodeAuthority?.check();
+      await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
       await auditOutcome(db, service, deploymentId, 'failed', hookRefusal);
       return;
     }
     const dbRefusal = await remoteDatabaseRefusal(db, service);
     if (dbRefusal) {
       log(`✗ ${dbRefusal}`);
-      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await nodeAuthority?.check();
+      await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
       await auditOutcome(db, service, deploymentId, 'failed', dbRefusal);
       return;
     }
@@ -994,7 +1015,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     const serviceRefusal = await remoteServiceRefusal(db, artifact ? artifactRuntimeService(service) : service);
     if (serviceRefusal) {
       log(`✗ ${serviceRefusal}`);
-      await safeFail(db, deploymentId, service.id, service.runtimeId);
+      await nodeAuthority?.check();
+      await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
       await auditOutcome(db, service, deploymentId, 'failed', serviceRefusal);
       return;
     }
@@ -1002,14 +1024,19 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     // the op with the dropped request; an older agent would build on in the
     // workspace the next deploy is about to use, so it keeps the old wait.
     let opCancel: Promise<boolean> | undefined;
+    const invoke = async (op: string, params: Record<string, unknown>, sink: (line: string) => void, options?: { timeoutMs?: number; signal?: AbortSignal }) => {
+      await nodeAuthority?.check();
+      try { return await agentOp(db, serverId, op, params, sink, options); }
+      finally { await nodeAuthority?.check(); }
+    };
     const call = async (op: string, params: Record<string, unknown>, sink: (line: string) => void, options?: { timeoutMs?: number; signal?: AbortSignal }) => {
       const abort = CANCELLABLE_AGENT_OPS.has(op) && !options?.signal ? deployAbortSignal() : undefined;
       if (abort) {
-        opCancel ??= agentOp(db, serverId, 'agent.ping', {}, () => undefined)
+        opCancel ??= invoke('agent.ping', {}, () => undefined)
           .then((r) => parseAgentCapabilities(r.lines).caps.has(AGENT_CAP_OP_CANCEL), () => false);
-        if (await opCancel) return agentOp(db, serverId, op, params, sink, { ...options, signal: abort });
+        if (await opCancel) return invoke(op, params, sink, { ...options, signal: abort });
       }
-      return agentOp(db, serverId, op, params, sink, options);
+      return invoke(op, params, sink, options);
     };
     // r660: the node's name goes into the "update this agent" refusal.
     const label = await nodeLabel(db, serverId);
@@ -1032,7 +1059,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   // ── end 0.16 T7 ──
   if (!builder) {
     log(`✗ Unknown service type: ${service.type}`);
-    await safeFail(db, deploymentId, service.id, service.runtimeId);
+    await nodeAuthority?.check();
+    await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
     await auditOutcome(db, service, deploymentId, 'failed', `Unknown service type: ${service.type}`);
     return;
   }
@@ -1049,8 +1077,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   let runtime: DeployRuntime | undefined;
   let primaryRecovery: PrimaryRecoveryLease | undefined;
   let swarmRecovery: SwarmRecoveryLease | undefined;
-  const candidateCheckpoint = async () => { if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled(); };
-  const runtimeFence = () => and(primaryRecovery?.fence(), swarmRecovery?.fence());
+  const candidateCheckpoint = async () => { await nodeAuthority?.check(); if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled(); };
+  const runtimeFence = () => and(primaryRecovery?.fence(), swarmRecovery?.fence(), nodeAuthority?.fence());
   const ensurePrimaryRecovery = async () => {
     if (primaryRecovery || !builder || service.type !== 'docker' || service.orchestrator === 'swarm' || !runtime || runtime.port == null || runtime.runtimeId === previous?.runtimeId) return;
     const active = await db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, service.id), eq(domains.status, 'active')));
@@ -1612,7 +1640,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
         const liveBuilder = builder;
         const probeTimeoutMs = Math.min(10_000, (service.healthTimeoutSeconds ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000);
         const checkpoint = async () => {
-          await primaryRecovery?.check(); await swarmRecovery?.check();
+          await nodeAuthority?.check(); await primaryRecovery?.check(); await swarmRecovery?.check();
           if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
           if (canaryStarted && canaryOwner !== undefined && !canaryOwnedBy(service.id, deploymentId, canaryOwner)) throw new ProxyRoutingUnconfirmed('Canary ownership changed; traffic observation refused');
         };
@@ -1643,6 +1671,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     }
     // ── end 0.16.9 ──
   } catch (err) {
+    await nodeAuthority?.check();
     if (swarmRecovery) {
       if (err instanceof SwarmRecoveryPending || err instanceof SwarmRecoveryOwnershipLost) throw err;
       try { await swarmRecovery.fail(err instanceof DeploymentCancelled); }
@@ -1798,6 +1827,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     finalizeSnapshot = JSON.stringify(base);
   }
 
+  await nodeAuthority?.check();
   await primaryRecovery?.intentCandidate(finalizeSnapshot); await swarmRecovery?.intentCandidate(finalizeSnapshot);
   const finalized = await db
     .update(deployments)
@@ -1816,7 +1846,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     endCanary(service.id, deploymentId, canaryOwner);
   }
   if (finalized.length === 0) {
-    await primaryRecovery?.check(); await swarmRecovery?.check();
+    await nodeAuthority?.check(); await primaryRecovery?.check(); await swarmRecovery?.check();
     if (!inPlaceRedeploy) {
       log('⏹ Cancelled just before finalizing — restoring the previous routing before retiring the candidate');
       let canRetire = true;
@@ -1861,7 +1891,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     .where(and(eq(services.id, service.id), ne(services.status, 'stopped'), runtimeFence()))
     .returning({ id: services.id });
   if (persisted.length === 0) {
-    await primaryRecovery?.check(); await swarmRecovery?.check();
+    await nodeAuthority?.check(); await primaryRecovery?.check(); await swarmRecovery?.check();
     // The service was deleted while this deploy was building. Nothing tracks
     // the candidate any more — retire it so it cannot hold its port forever.
     log('Service row disappeared mid-deploy (deleted) — retiring the orphaned runtime');
@@ -1884,14 +1914,21 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   // always "succeeded" and CLEANUP stopped the previous container on the node
   // while the node still routed to it. Requiring the node makes that failure
   // take the same honest revert path as a panel-host write failure.
-  const flipRouting = (): Promise<void> => swarmRecovery ? swarmRecovery.confirm() : primaryRecovery ? primaryRecovery.confirm() :
-    service.serverId != null ? writeDynamicConfig(db, { requireNode: service.serverId, confirmServiceId: service.id }) : writeDynamicConfig(db, { confirmServiceId: service.id });
+  const flipRouting = async (): Promise<void> => {
+    await nodeAuthority?.check();
+    try {
+      if (swarmRecovery) await swarmRecovery.confirm();
+      else if (primaryRecovery) await primaryRecovery.confirm();
+      else await writeDynamicConfig(db, { ...(service.serverId != null ? { requireNode: service.serverId } : {}), confirmServiceId: service.id });
+    } finally { await nodeAuthority?.check(); }
+  };
   log('##[stage:PROXY_SWAP:running] Updating Traefik dynamic router & shifting live traffic');
   try {
     await flipRouting();
     routingFlipped = true;
     log('##[stage:PROXY_SWAP:success]');
   } catch (firstErr) {
+    await nodeAuthority?.check();
     if (swarmRecovery) throw new SwarmRecoveryPending('Swarm routing acknowledgement is unconfirmed; retained for recovery');
     await primaryRecovery?.check();
     log(`proxy warning: ${msg(firstErr)} — retrying once in 2s`);
@@ -1976,9 +2013,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       )))))
     .returning({ id: deployments.id });
   if (promoted.length === 0) {
-    await primaryRecovery?.check(); await swarmRecovery?.check();
+    await nodeAuthority?.check(); await primaryRecovery?.check(); await swarmRecovery?.check();
     await db.update(deployments).set({ status: 'cancelled', finishedAt: new Date() })
-      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'deploying')));
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'deploying'), runtimeFence()));
     log('⏹ Cancelled during routing transition — restoring a healthy previous release before candidate retirement');
     const canRestore = previous && !inPlaceRedeploy && service.type !== 'pm2'
       && await outsideDeployScope(() => builder!.isHealthy(previous!, 5_000, 0)).catch(() => false);
@@ -2007,7 +2044,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     return;
   }
   await db.update(deployments).set({ status: 'superseded' })
-    .where(and(eq(deployments.serviceId, service.id), eq(deployments.status, 'running'), ne(deployments.id, deploymentId)));
+    .where(and(eq(deployments.serviceId, service.id), eq(deployments.status, 'running'), ne(deployments.id, deploymentId), runtimeFence()));
 
   // 0.16.1 allow-listed port mappings: the port proxy follows the routing
   // flip to the new containers (and is removed once no mapping needs it).
@@ -2066,7 +2103,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   log('##[stage:COMPLETE:success] Service is live and healthy on production');
 
   // ── Multi-server fan-out ──────────────────────────────────────────────────
-  await primaryRecovery?.check(); await swarmRecovery?.check();
+  await nodeAuthority?.check(); await primaryRecovery?.check(); await swarmRecovery?.check();
   // Docker releases are pushed to every extra target node AFTER the primary
   // is live — additive, best-effort, never blocking the success. An image
   // release is pulled on each node. A source build whose primary built a

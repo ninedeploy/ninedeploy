@@ -179,6 +179,7 @@ interface FakeDb {
     serviceTargets: { findFirst: ReturnType<typeof vi.fn> };
     deploymentReleaseRecords: { findFirst: ReturnType<typeof vi.fn> };
     deployments: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
+    deploymentRuntimeOwners: { findFirst: ReturnType<typeof vi.fn> };
     services: { findFirst: ReturnType<typeof vi.fn> };
     buildConfigs: { findFirst: ReturnType<typeof vi.fn> };
     sources: { findFirst: ReturnType<typeof vi.fn> };
@@ -208,12 +209,14 @@ interface FakeDb {
 function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<string, unknown> }[]; inserts: { table: unknown; values: Record<string, unknown> }[] } {
   const updates: { table: unknown; values: Record<string, unknown> }[] = [];
   const inserts: { table: unknown; values: Record<string, unknown> }[] = [];
+  let owner: Record<string, unknown> | undefined, stamp: Record<string, unknown> | undefined;
   const db: FakeDb = {
     transaction: vi.fn(),
     query: {
       serviceTargets: { findFirst: vi.fn().mockResolvedValue(undefined) },
       deploymentReleaseRecords: { findFirst: vi.fn().mockResolvedValue(undefined) },
       deployments: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+      deploymentRuntimeOwners: { findFirst: vi.fn(async () => stamp) },
       services: { findFirst: vi.fn() },
       buildConfigs: { findFirst: vi.fn() },
       sources: { findFirst: vi.fn() },
@@ -275,7 +278,6 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
   };
   // SQL boundary for the legacy statement fixtures. Ownership correctness and
   // pipeline wiring are exercised separately against real migrated SQLite.
-  let owner: Record<string, unknown> | undefined, stamp: Record<string, unknown> | undefined;
   db.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
     ...db,
     select: () => ({ from: (table: unknown) => {
@@ -330,6 +332,69 @@ describe('explicit Stop during primary readiness', () => {
       await runDeployment(f.db, 9).catch(error => { expect(error.message).toBe('Controlled node boundary'); });
       expect(observed.length).toBeGreaterThan(0);
       for (const owner of observed) expect(owner).toMatchObject({ serviceId: 1, kind: 'deploy', epoch: expect.any(Number), requestId: expect.stringMatching(/^[a-f0-9]{32}$/) });
+      expect(await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) })).toMatchObject({ status: 'failed' });
+      expect(await f.db.query.services.findFirst({ where: eq(services.id, 1) })).toMatchObject({ status: 'error', runtimeId: null });
+    } finally { h.agentOp.mockReset().mockImplementation(originalAgent); f.close(); }
+  });
+  it('does not create or clean up a runtime after a successful old pull reply loses authority', async () => {
+    const { observabilityDb } = await import('./fixtures/observability.js');
+    const { acceptNodeLifecycleIntent } = await import('../src/lib/nodeLifecycleIntent.js');
+    const { claimNodeDeploymentAttempt } = await import('../src/lib/nodeDeploymentOwner.js');
+    const f = await observabilityDb(), originalAgent = h.agentOp.getMockImplementation()!;
+    const calls: string[] = []; let superseded = false;
+    h.agentOp.mockImplementation(async (_db, _server, op) => {
+      calls.push(op);
+      if (superseded) throw Error('Obsolete runtime effect attempted');
+      if (op === 'docker.pull') {
+        await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
+        await f.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+        const next = await claimNodeDeploymentAttempt(f.db, 10, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, '{}');
+        expect(next.claimed).toBe(true); superseded = true;
+      }
+      return { exitCode: 0, lines: op === 'agent.ping' ? ['ND-AGENT {"version":"0.18.4","caps":["build-path-guard"]}'] : [] };
+    });
+    try {
+      await f.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await f.db.update(services).set({ serverId: 4, image: 'fixture:1', runtimeId: null, port: 8080, status: 'idle' }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+      await runDeployment(f.db, 9);
+      expect(superseded).toBe(true);
+      expect(calls.slice(calls.indexOf('docker.pull') + 1)).toEqual([]);
+      expect(await f.db.query.services.findFirst({ where: eq(services.id, 1) })).toMatchObject({ status: 'deploying', runtimeId: null });
+      expect(await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) })).toMatchObject({ status: 'cancelled' });
+      expect(await f.db.query.deployments.findFirst({ where: eq(deployments.id, 10) })).toMatchObject({ status: 'building' });
+    } finally { h.agentOp.mockReset().mockImplementation(originalAgent); f.close(); }
+  });
+  it.each(['new deployment', 'moved node'] as const)('does not settle a newer owner after an old node reply rejects: %s', async successor => {
+    const { observabilityDb } = await import('./fixtures/observability.js');
+    const { acceptNodeLifecycleIntent } = await import('../src/lib/nodeLifecycleIntent.js');
+    const { claimNodeDeploymentAttempt } = await import('../src/lib/nodeDeploymentOwner.js');
+    const f = await observabilityDb(), originalAgent = h.agentOp.getMockImplementation()!;
+    const hooks = { call: vi.fn(async () => undefined) }; let replies = 0;
+    h.agentOp.mockImplementation(async () => {
+      if (++replies > 1) throw Error('Unexpected extra node request');
+      if (successor === 'new deployment') {
+        await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
+        await f.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+        const admitted = await claimNodeDeploymentAttempt(f.db, 10, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, '{}');
+        expect(admitted.claimed).toBe(true);
+        await f.db.update(deployments).set({ status: 'running' }).where(eq(deployments.id, 10));
+      } else {
+        await f.db.update(services).set({ serverId: 5 }).where(eq(services.id, 1));
+      }
+      await f.db.update(services).set({ status: 'running', runtimeId: 'new-owner-runtime' }).where(eq(services.id, 1));
+      throw Error('Controlled old reply rejection');
+    });
+    try {
+      await f.db.insert(servers).values([{ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' }, { id: 5, name: 'Other', host: 'other.test', tokenEncrypted: 'fixture' }]);
+      await f.db.update(services).set({ serverId: 4, image: 'fixture:1', runtimeId: 'web-7', port: 8080 }).where(eq(services.id, 1));
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+      await runDeployment(f.db, 9, { hooks } as never);
+      expect(replies).toBeGreaterThan(0);
+      expect(await f.db.query.services.findFirst({ where: eq(services.id, 1) })).toMatchObject({ status: 'running', runtimeId: 'new-owner-runtime', serverId: successor === 'new deployment' ? 4 : 5 });
+      expect(await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) })).toMatchObject({ status: successor === 'new deployment' ? 'cancelled' : 'building' });
+      if (successor === 'new deployment') expect(await f.db.query.deployments.findFirst({ where: eq(deployments.id, 10) })).toMatchObject({ status: 'running' });
+      expect(hooks.call.mock.calls.map(call => call[0])).toEqual(['deploy:before']);
     } finally { h.agentOp.mockReset().mockImplementation(originalAgent); f.close(); }
   });
   it('does not replace Stop authority when cancellation wins before node deployment admission', async () => {
