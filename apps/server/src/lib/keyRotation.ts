@@ -255,6 +255,7 @@ export const SETTINGS_ENCRYPTED_KEYS = [
   'namecheap_api_key_encrypted', // lib/namecheap.ts (KEY_API_KEY)
   'dns_token_encrypted', // /settings /dns route (encryptDnsToken)
   'dns_records_token_encrypted', // lib/cloudflare.ts
+  'dns_records_credentials_encrypted', // G3.5 lib/dnsProviderCredentials.ts (Route 53, OVH, Porkbun, Hetzner)
   'panel_backup_passphrase_encrypted', // lib/panelBackup.ts (recovery passphrase)
   'traefik_custom_config_encrypted', // 0.14 lib/traefikCustomConfig.ts (custom dynamic config)
   'traefik_custom_config_last_good_encrypted', // 0.14 lib/traefikCustomConfig.ts (last good version)

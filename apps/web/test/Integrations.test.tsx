@@ -11,6 +11,11 @@ vi.mock('../src/lib/api.js', async () => {
   return createFakeApiModule();
 });
 
+// G3.5: the Route 53 / OVH / Porkbun / Hetzner card has its own suite
+// (DnsProviderCard.test.tsx); its selects and labels would make the queries
+// below ambiguous.
+vi.mock('../src/routes/settings/DnsProviderCard.js', () => ({ DnsProviderCard: () => null }));
+
 const toastSpy = vi.hoisted(() => ({ toast: vi.fn() }));
 vi.mock('../src/components/Toast.js', async () => {
   const actual = await vi.importActual<typeof import('../src/components/Toast.js')>('../src/components/Toast.js');

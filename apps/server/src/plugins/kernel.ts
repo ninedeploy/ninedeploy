@@ -5,6 +5,11 @@ import { TraefikProxyDriver } from '../kernel/drivers/traefik.js';
 import { CloudflareZoneProvider } from '../kernel/drivers/cloudflareZone.js';
 import { DnsimpleProvider } from '../kernel/drivers/dnsimple.js';
 import { NamecheapProvider } from '../kernel/drivers/namecheapProvider.js';
+import { HetznerDnsProvider } from '../kernel/drivers/hetznerDns.js';
+import { OvhProvider } from '../kernel/drivers/ovh.js';
+import { PorkbunProvider } from '../kernel/drivers/porkbun.js';
+import { Route53Provider } from '../kernel/drivers/route53.js';
+import { getDnsCredentials } from '../lib/dnsProviderCredentials.js';
 import { InlineBuildCache } from '../kernel/drivers/inlineBuildCache.js';
 import { RegistryBuildCache } from '../kernel/drivers/registryBuildCache.js';
 import { S3BuildCache } from '../kernel/drivers/s3BuildCache.js';
@@ -177,6 +182,19 @@ export default fp(
             }
           }),
         );
+        // G3.5: Route 53, OVH, Porkbun and Hetzner DNS. Their credentials live
+        // in one encrypted setting (lib/dnsProviderCredentials.ts) and resolve
+        // only for the active `dns_records_provider`, so the domain-presets
+        // plugin drives them like DNSimple and Namecheap.
+        const db = fastify.db;
+        const creds =
+          <P extends 'route53' | 'ovh' | 'porkbun' | 'hetzner'>(provider: P) =>
+          () =>
+            getDnsCredentials(db, provider).catch(() => null);
+        kernel.registry.registerDomainProvider(new Route53Provider(creds('route53')));
+        kernel.registry.registerDomainProvider(new OvhProvider(creds('ovh')));
+        kernel.registry.registerDomainProvider(new PorkbunProvider(creds('porkbun')));
+        kernel.registry.registerDomainProvider(new HetznerDnsProvider(creds('hetzner')));
       }
 
       // Register official built-in plugins

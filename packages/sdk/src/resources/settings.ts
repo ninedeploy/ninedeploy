@@ -15,6 +15,18 @@ import type {
 import type { VaultAllowlistView, VaultSettings, EmailTemplateName, EmailTemplateEntry, EmailTemplateRender } from '../types.js';
 import type { Transport } from '../transport.js';
 
+/** G3.5: the DNS record providers configured through `settings.dnsProvider`. */
+export type DnsCredentialProviderName = 'route53' | 'ovh' | 'porkbun' | 'hetzner';
+export interface DnsProviderSettings {
+  providers: DnsCredentialProviderName[];
+  /** The active `dns_records_provider` (may be cloudflare, dnsimple, …). */
+  provider: string | null;
+  /** Which of these four has credentials saved. */
+  configured: DnsCredentialProviderName | null;
+  /** The saved non-secret fields (an access key id, an OVH endpoint). */
+  fields: Record<string, string>;
+}
+
 export type AutoUrlMode = 'off' | 'domain' | 'sslip';
 export interface AutoUrlEffective {
   mode: AutoUrlMode;
@@ -87,6 +99,17 @@ export interface SettingsApi {
     namecheap: {
       get: () => Promise<{ configured: boolean; apiUser: string | null; clientIp: string | null; hasKey: boolean }>;
       set: (input: { apiUser: string; apiKey: string; clientIp: string }) => Promise<{ ok: boolean; apiUser: string }>;
+    };
+    /**
+     * G3.5: Route 53, OVH, Porkbun and Hetzner DNS record auto-provisioning.
+     * Saving credentials makes that provider the active one; `get` never
+     * returns a secret.
+     */
+    dnsProvider: {
+      get: () => Promise<DnsProviderSettings>;
+      set: (input: { provider: DnsCredentialProviderName; credentials: Record<string, string> }) => Promise<{ ok: boolean; provider: string }>;
+      clear: () => Promise<{ ok: boolean }>;
+      test: () => Promise<{ ok: boolean; provider?: string; zones?: string[]; zoneCount?: number; error?: string }>;
     };
     /**
      * Master-key rotation. `rotate` re-encrypts every stored secret onto the
@@ -236,6 +259,13 @@ export function settingsApi(t: Transport): SettingsApi {
       namecheap: {
         get: () => get<{ configured: boolean; apiUser: string | null; clientIp: string | null; hasKey: boolean }>('/v1/settings/dns-records/namecheap'),
         set: (input) => send<{ ok: boolean; apiUser: string }>('PUT', '/v1/settings/dns-records/namecheap', input),
+      },
+      dnsProvider: {
+        get: () => get<DnsProviderSettings>('/v1/settings/dns-records/provider'),
+        set: (input) => send<{ ok: boolean; provider: string }>('PUT', '/v1/settings/dns-records/provider', input),
+        clear: () => send<{ ok: boolean }>('DELETE', '/v1/settings/dns-records/provider'),
+        test: () =>
+          send<{ ok: boolean; provider?: string; zones?: string[]; zoneCount?: number; error?: string }>('POST', '/v1/settings/dns-records/provider/test'),
       },
       masterKey: {
         get: () => get<{ activeVersion: number; knownVersions: number[]; rotatable: boolean }>('/v1/settings/master-key'),

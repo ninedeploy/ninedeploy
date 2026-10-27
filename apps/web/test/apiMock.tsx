@@ -207,6 +207,10 @@ export function createFakeApiModule() {
       setDns: vi.fn(),
       dnsRecords: { get: vi.fn(), set: vi.fn(), test: vi.fn() },
       namecheap: { get: vi.fn(), set: vi.fn() },
+      dnsProvider: {
+        get: vi.fn().mockResolvedValue({ providers: ['route53', 'ovh', 'porkbun', 'hetzner'], provider: null, configured: null, fields: {} }),
+        set: vi.fn(), clear: vi.fn(), test: vi.fn(),
+      },
       vault: { get: vi.fn(), set: vi.fn(), test: vi.fn(), setAllowlist: vi.fn() },
       autoUrl: {
         get: vi.fn().mockResolvedValue({

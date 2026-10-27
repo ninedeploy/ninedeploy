@@ -72,7 +72,12 @@ export async function setDnsRecordsConfig(
   db: DB,
   cfg: { enabled: boolean; token?: string; content: string | null },
 ): Promise<void> {
-  await setSettingString(db, 'dns_records_provider', cfg.enabled ? 'cloudflare' : '');
+  // G3.5: saving the Cloudflare card switched off never deactivates another
+  // provider (Route 53, Hetzner, …) that is the active one.
+  const active = await getSettingString(db, 'dns_records_provider', null);
+  if (cfg.enabled || !active || active === 'cloudflare') {
+    await setSettingString(db, 'dns_records_provider', cfg.enabled ? 'cloudflare' : '');
+  }
   if (cfg.token !== undefined) {
     await setSettingString(db, 'dns_records_token_encrypted', cfg.token ? encrypt(cfg.token) : '');
   }

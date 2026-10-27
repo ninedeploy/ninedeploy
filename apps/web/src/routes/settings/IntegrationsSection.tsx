@@ -5,12 +5,13 @@ import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ErrorCard } from '../../components/ui.js';
 import { SecretManagersCard } from './SecretManagersCard.js';
+import { DnsProviderCard } from './DnsProviderCard.js';
 
 // Vault reference examples (escaped so linters don't read them as template placeholders).
 const REF_INFISICAL = '\u0024\u007B\u007Binfisical:KEY\u007D\u007D';
 const REF_DOPPLER = '\u0024\u007B\u007Bdoppler:KEY\u007D\u007D';
 
-/** Integrations: vault providers and secret managers (deploy-time secrets) + Cloudflare + Namecheap DNS records. */
+/** Integrations: vault providers and secret managers (deploy-time secrets) + DNS records (Cloudflare, Namecheap, Route 53, OVH, Porkbun, Hetzner). */
 export function IntegrationsSection() {
   return (
     <>
@@ -18,6 +19,7 @@ export function IntegrationsSection() {
       <SecretManagersCard />
       <CloudflareCard />
       <NamecheapCard />
+      <DnsProviderCard />
     </>
   );
 }

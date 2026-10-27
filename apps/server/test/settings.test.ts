@@ -1026,3 +1026,60 @@ describe('settings routes — Traefik apply timer', () => {
     expect(dnsMock.ensureTraefik).not.toHaveBeenCalled();
   });
 });
+
+// G3.5: Route 53, OVH, Porkbun and Hetzner DNS credentials.
+describe('DNS record provider credentials (G3.5)', () => {
+  beforeEach(() => {
+    vi.stubEnv('NINEDEPLOY_MASTER_KEY', 'd'.repeat(64));
+    for (const k of Object.keys(settingsMock.__values)) delete settingsMock.__values[k];
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  async function appWith(driver?: { listZones: () => Promise<Array<{ id: string; name: string }>> }) {
+    const app = await buildTestApp({ db: createFakeDb() });
+    vi.spyOn(app.kernel.registry, 'getDomainProvider').mockReturnValue(driver as never);
+    await app.register(settingsRoutes);
+    return app;
+  }
+
+  it('saves, describes without secrets, tests and clears', async () => {
+    const listZones = vi.fn(async () => [{ id: '1', name: 'example.com' }]);
+    const app = await appWith({ listZones });
+    const put = await app.inject({
+      method: 'PUT', url: '/dns-records/provider', headers: asUser(),
+      payload: { provider: 'ovh', credentials: { endpoint: 'ovh-ca', applicationKey: 'appkey12', applicationSecret: 'secret-value-1', consumerKey: 'consumer-1' } },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(settingsMock.__values['dns_records_provider']).toBe('ovh');
+    const get = await app.inject({ method: 'GET', url: '/dns-records/provider', headers: asUser() });
+    expect(get.json()).toEqual({
+      providers: ['route53', 'ovh', 'porkbun', 'hetzner'],
+      provider: 'ovh',
+      configured: 'ovh',
+      fields: { endpoint: 'ovh-ca', applicationKey: 'appkey12' },
+    });
+    expect(get.body).not.toContain('secret-value-1');
+    const test = await app.inject({ method: 'POST', url: '/dns-records/provider/test', headers: asUser() });
+    expect(test.json()).toEqual({ ok: true, provider: 'ovh', zones: ['example.com'], zoneCount: 1 });
+    listZones.mockRejectedValueOnce(new Error('OVH API error: 403 denied'));
+    const failed = await app.inject({ method: 'POST', url: '/dns-records/provider/test', headers: asUser() });
+    expect(failed.json()).toEqual({ ok: false, error: 'OVH API error: 403 denied' });
+    const del = await app.inject({ method: 'DELETE', url: '/dns-records/provider', headers: asUser() });
+    expect(del.statusCode).toBe(200);
+    expect(settingsMock.__values['dns_records_provider']).toBe('');
+    const after = await app.inject({ method: 'POST', url: '/dns-records/provider/test', headers: asUser() });
+    expect(after.json()).toMatchObject({ ok: false });
+    await app.close();
+  });
+
+  it('rejects an unknown provider and credentials that do not fit it', async () => {
+    const app = await appWith();
+    const unknown = await app.inject({ method: 'PUT', url: '/dns-records/provider', headers: asUser(), payload: { provider: 'godaddy', credentials: {} } });
+    expect(unknown.statusCode).toBe(400);
+    const bad = await app.inject({ method: 'PUT', url: '/dns-records/provider', headers: asUser(), payload: { provider: 'porkbun', credentials: { apiKey: 'nope', secretApiKey: 'sk1_x' } } });
+    expect(bad.statusCode).toBe(422);
+    expect(bad.json().message ?? bad.body).toMatch(/apiKey starts with pk1_/);
+    expect(settingsMock.__values['dns_records_provider']).toBeUndefined();
+    await app.close();
+  });
+});

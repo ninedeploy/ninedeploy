@@ -56,6 +56,21 @@ Each domain can carry up to 10 redirect rules (Network tab → the domain's **Se
 - **DNS-01 Challenge**: Automatic wildcard SSL certificates (`*.yourdomain.com`) via Cloudflare, DigitalOcean, Hetzner, Linode, Gandi or DuckDNS DNS API integration.
 - **Auto-Renewal**: Traefik automatically renews certificates 30 days before expiration.
 - **HTTP → HTTPS**: a domain with SSL on also answers plain HTTP with a redirect to HTTPS (a temporary one, so turning SSL off takes effect). The panel domain does the same once an ACME email is configured.
+- **Automatic DNS records**: NineDeploy can create a domain's DNS record when the domain goes live, and delete it with the domain. Only one provider is active at a time; saving one replaces the previous one. The supported providers are below.
+
+  The record is an A record when the target is an IPv4 address and an AAAA record for IPv6. Otherwise it is a CNAME. The target is the *record content* from the Cloudflare card, or this host's public IP. A record that already exists for the host is left unchanged and reported as a failure. Cloudflare records are made by the domain routes and also cover the www companion. The other providers are driven by the `domain-presets` plugin, which publishes `domain.preset.applied` and `domain.preset.failed` events.
+
+  | Provider | Configured on | Credentials |
+  | --- | --- | --- |
+  | Cloudflare | Settings → Integrations → Cloudflare DNS records | API token with Zone.DNS edit |
+  | Namecheap | Settings → Integrations → Namecheap | API user, API key, whitelisted IPv4 |
+  | DNSimple | `dns_records_provider=dnsimple` + `dns_records_token_encrypted` + `dns_records_account_id` | API token, account id |
+  | Amazon Route 53 (G3.5) | Settings → Integrations → DNS records: Route 53, OVH, Porkbun, Hetzner | IAM access key allowed `route53:ListHostedZones` and `route53:ChangeResourceRecordSets`; private hosted zones are skipped |
+  | OVHcloud (G3.5) | same card | region (eu, ca, us), application key and secret, consumer key granted GET/POST/DELETE on `/domain/zone/*`; every change is followed by a zone refresh |
+  | Porkbun (G3.5) | same card | `pk1_` and `sk1_` key pair; API access must be switched on per domain; TTL floor 600 s |
+  | Hetzner DNS (G3.5) | same card | Hetzner Cloud API token (Read & Write) of the project holding the zones; uses the Cloud API, not the retired dns.hetzner.com API |
+
+  On the G3.5 card, **List zones** shows the zones the saved credentials can see. The credentials are stored encrypted in the `dns_records_credentials_encrypted` setting and are re-encrypted by master-key rotation. API: `GET`/`PUT`/`DELETE /v1/settings/dns-records/provider` and `POST /v1/settings/dns-records/provider/test`.
 - **HTTP/3 (0.16.1, opt-in)**: Traefik → Overview → HTTP/3 publishes `443/udp` so browsers can use QUIC. The static config has always declared `http3` on `websecure`, but without the UDP port browsers could never reach it. Turning it on or off recreates the panel host's Traefik once (about a second of refused connections); a failed recreate puts the switch and the previous container back and answers 502. Off, the container is exactly the 0.16.0 one, so an upgrade does not recreate it. Open UDP 443 in the cloud provider's firewall as well. Node proxies are unchanged. API: `GET`/`PUT /v1/traefik/http3`.
 
 ---

@@ -27,6 +27,13 @@ import {
 import { clearEnrolmentToken, getEnrolmentToken, rotateEnrolmentToken } from '../lib/enrolment.js';
 import { getDnsRecordsConfig, setDnsRecordsConfig, testCloudflareToken } from '../lib/cloudflare.js';
 import { getNamecheapConfig, setNamecheapConfig } from '../lib/namecheap.js';
+import {
+  clearDnsCredentials,
+  describeDnsCredentials,
+  DNS_CREDENTIAL_PROVIDERS,
+  DNS_CREDENTIAL_SCHEMAS,
+  setDnsCredentials,
+} from '../lib/dnsProviderCredentials.js';
 import { config } from '../config.js';
 import { ALLOW_REGISTRATION_DEFAULT } from './auth.js';
 import { getAutoUrlConfig, isIpv4, isPublicIpv4, setAutoUrlConfig, SSLIP_ZONE } from '../lib/autoUrl.js';
@@ -105,6 +112,12 @@ const namecheapConfigPatch = z.object({
   apiUser: z.string().min(1).max(64),
   apiKey: z.string().min(10).max(4096),
   clientIp: z.string().regex(/^\d{1,3}(\.\d{1,3}){3}$/, 'clientIp must be an IPv4 address'),
+});
+
+// G3.5: the credentials are checked against the provider's own schema in the route.
+const dnsProviderPatch = z.object({
+  provider: z.enum(DNS_CREDENTIAL_PROVIDERS as [string, ...string[]]).transform((p) => p as (typeof DNS_CREDENTIAL_PROVIDERS)[number]),
+  credentials: z.record(z.string(), z.string()),
 });
 
 /**
@@ -375,6 +388,44 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
     await setNamecheapConfig(app.db, input);
     void audit(app.db, req.user!.id, 'settings.dns_records.namecheap', input.apiUser);
     return { ok: true, apiUser: input.apiUser };
+  });
+
+  // ── G3.5: Route 53, OVH, Porkbun, Hetzner DNS ──────────────────────────
+  // Saving credentials makes that provider the active `dns_records_provider`;
+  // the domain-presets plugin then creates a domain's record when it goes
+  // live and deletes it with the domain. Secrets are never returned.
+  app.get('/dns-records/provider', async () => ({
+    providers: DNS_CREDENTIAL_PROVIDERS,
+    ...(await describeDnsCredentials(app.db)),
+  }));
+
+  app.put('/dns-records/provider', async (req) => {
+    const { provider, credentials } = dnsProviderPatch.parse(req.body);
+    const parsed = DNS_CREDENTIAL_SCHEMAS[provider].safeParse(credentials);
+    if (!parsed.success) throw unprocessable(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+    await setDnsCredentials(app.db, provider, parsed.data as Record<string, string>);
+    void audit(app.db, req.user!.id, 'settings.dns_records.provider', provider);
+    return { ok: true, provider };
+  });
+
+  app.delete('/dns-records/provider', async (req) => {
+    await clearDnsCredentials(app.db);
+    void audit(app.db, req.user!.id, 'settings.dns_records.provider', 'disabled');
+    return { ok: true };
+  });
+
+  /** Lists the zones the saved credentials can see: proves they work before a domain needs them. */
+  app.post('/dns-records/provider/test', async () => {
+    const { configured, provider } = await describeDnsCredentials(app.db);
+    if (!configured || provider !== configured) return { ok: false, error: 'No Route 53, OVH, Porkbun or Hetzner DNS credentials are active' };
+    const driver = app.kernel.registry.getDomainProvider(configured);
+    if (!driver) return { ok: false, error: `No DNS driver registered for ${configured}` };
+    try {
+      const zones = await driver.listZones();
+      return { ok: true, provider: configured, zones: zones.map((z) => z.name).slice(0, 50), zoneCount: zones.length };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   // ── Node enrolment (M-6) ────────────────────────────────────────────────

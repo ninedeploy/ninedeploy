@@ -114,6 +114,6 @@ NineDeploy executes third-party community extensions in a dedicated **child proc
   - `dashboard:overview`: Live dashboard telemetry & overview cards
   - `service:tabs`, `service:overview:widget`: Service-level inspection panels
   - `command:palette`: Global command search items
-- **ServiceRegistry**: Interchange core storage, DNS (Cloudflare, DNSimple, Namecheap), orchestrator, and deploy drivers dynamically at runtime.
+- **ServiceRegistry**: Interchange core storage, DNS (Cloudflare, DNSimple, Namecheap, Route 53, OVH, Porkbun, Hetzner), orchestrator, and deploy drivers dynamically at runtime.
 - **ConfigCenter Integration**: Read and persist encrypted plugin configurations in the central key-value store.
 

@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Automatic DNS records in Amazon Route 53, OVHcloud, Porkbun and Hetzner DNS (G3.5). The new card is under Settings → Integrations → *DNS records: Route 53, OVH, Porkbun, Hetzner*. Saving credentials there makes that provider the active one: a domain gets its A, AAAA or CNAME record when it goes live, and the record is deleted with the domain. **List zones** checks the credentials. Records that already exist are never changed.
+  - Route 53 skips private hosted zones and needs no AWS SDK.
+  - OVH refreshes the zone after each change.
+  - Hetzner uses the Cloud API, since the old DNS API has been retired.
+
+  The credentials are stored encrypted and re-encrypted by master-key rotation. Saving the Cloudflare card switched off no longer turns off a different active provider. No migration. See TRAEFIK_INGRESS.md §2.
+
 - Five more notification channels (G3.7), all in the notification wizard:
   - **Mattermost** (incoming webhook) and **Google Chat** (space webhook; only `https://chat.googleapis.com` URLs are accepted).
   - **Matrix**: posts to a room with a bot account's access token. Each event has a fixed transaction id, so a retried delivery never posts twice.

@@ -94,6 +94,32 @@ export const settingsSpecs: RouteSpecMap = {
     responseType: '{ ok: boolean; apiUser: string }',
     validation: 'zod',
   },
+  'GET /v1/settings/dns-records/provider': {
+    summary: 'Route 53, OVH, Porkbun or Hetzner DNS record automation settings (no secrets)',
+    tag: 'settings',
+    floor: 'operator',
+    responseType: '{ providers: string[]; provider: string | null; configured: string | null; fields: Record<string, string> }',
+  },
+  'PUT /v1/settings/dns-records/provider': {
+    summary: 'Save Route 53, OVH, Porkbun or Hetzner DNS credentials and make that provider active',
+    tag: 'settings',
+    floor: 'operator',
+    localBody: 'settings.ts#dnsProviderPatch',
+    responseType: '{ ok: boolean; provider: string }',
+    validation: 'zod',
+  },
+  'DELETE /v1/settings/dns-records/provider': {
+    summary: 'Forget the Route 53, OVH, Porkbun or Hetzner DNS credentials',
+    tag: 'settings',
+    floor: 'operator',
+    responseType: '{ ok: boolean }',
+  },
+  'POST /v1/settings/dns-records/provider/test': {
+    summary: 'List the zones the saved Route 53, OVH, Porkbun or Hetzner DNS credentials can see',
+    tag: 'settings',
+    floor: 'operator',
+    responseType: '{ ok: boolean; provider?: string; zones?: string[]; zoneCount?: number; error?: string }',
+  },
   'POST /v1/settings/dns-records/test': {
     summary: 'Test the DNS record provider credentials',
     tag: 'settings',
