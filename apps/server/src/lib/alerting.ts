@@ -96,7 +96,8 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
             null,
             'alert.recovered',
             `${rule.name} (${rule.metric}=${snap.value}) back within threshold`,
-            rule.serviceId != null ? { serviceId: rule.serviceId } : undefined,
+            // G3.7: ruleId lets incident channels (PagerDuty, Opsgenie) resolve what they opened.
+          { ruleId: rule.id, ...(rule.serviceId != null ? { serviceId: rule.serviceId } : {}) },
           );
         }
       } else {
@@ -127,7 +128,8 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
           null,
           'alert.fired',
           `${rule.name} (${rule.metric}=${snap.value}, threshold ${rule.operator} ${rule.threshold})${snap.detail ? ` — ${snap.detail}` : ''}`,
-          rule.serviceId != null ? { serviceId: rule.serviceId } : undefined,
+          // G3.7: ruleId lets incident channels (PagerDuty, Opsgenie) resolve what they opened.
+          { ruleId: rule.id, ...(rule.serviceId != null ? { serviceId: rule.serviceId } : {}) },
         );
       } else {
         await db.update(alertState).set({ lastValue: snap.value }).where(eq(alertState.ruleId, rule.id));

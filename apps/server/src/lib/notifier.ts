@@ -1,12 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { type DB, notificationChannels, notificationLog, serviceNotificationChannels, services, type NotificationChannel } from '@ninedeploy/db';
 import { webhookChannelConfig, type WebhookChannelConfig } from '@ninedeploy/schemas';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { decrypt } from './crypto.js';
 import type { AppEvent } from './events.js';
 import { encrypt } from './crypto.js';
 import { guardedFetch } from './egressGuard.js';
 import { sendFcm } from './fcm.js';
+import { dispatchIncident, INCIDENT_CHANNEL_TYPES, incidentActionFor } from './incidentChannels.js';
 import { isOperator } from './resourceAccess.js';
 
 /** Check if an event matches a channel's filter (comma-separated prefixes). */
@@ -264,6 +265,81 @@ async function sendSlack(webhookUrl: string, message: string): Promise<void> {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Slack ${res.status}`);
+}
+
+/** G3.7: a Mattermost incoming webhook (Slack-compatible `{ text }`). */
+async function sendMattermost(webhookUrl: string, message: string): Promise<void> {
+  const res = await guardedFetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: message, username: 'NineDeploy' }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Mattermost ${res.status}`);
+}
+
+/** G3.7: a Google Chat space webhook (`https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…`). */
+async function sendGoogleChat(webhookUrl: string, message: string): Promise<void> {
+  let url: URL;
+  try {
+    url = new URL(webhookUrl.trim());
+  } catch {
+    throw new Error('Invalid Google Chat target (expected the space webhook URL)');
+  }
+  if (url.protocol !== 'https:' || url.hostname !== 'chat.googleapis.com') {
+    throw new Error('Invalid Google Chat target (expected an https://chat.googleapis.com webhook URL)');
+  }
+  const res = await guardedFetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify({ text: message }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Google Chat ${res.status}`);
+}
+
+export interface MatrixTarget {
+  homeserver: string;
+  roomId: string;
+  accessToken: string;
+}
+
+/** G3.7: parse a Matrix channel target, JSON `{ homeserver, roomId, accessToken }`. */
+export function parseMatrixTarget(target: string): MatrixTarget {
+  const invalid = 'Invalid Matrix target (expected JSON with homeserver, roomId, accessToken)';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(target);
+  } catch {
+    throw new Error(invalid);
+  }
+  const o = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof o[k] === 'string' ? (o[k] as string).trim() : '');
+  const homeserver = str('homeserver').replace(/\/+$/, '');
+  const roomId = str('roomId');
+  const accessToken = str('accessToken');
+  if (!homeserver || !roomId || !accessToken) throw new Error(invalid);
+  if (!/^https:\/\//.test(homeserver)) throw new Error('Invalid Matrix target (the homeserver must be an https URL)');
+  if (!/^[!#][^:\s]+:[^\s]+$/.test(roomId)) throw new Error('Invalid Matrix target (roomId must look like !abc:example.org)');
+  return { homeserver, roomId, accessToken };
+}
+
+/**
+ * G3.7: post an `m.text` message to a Matrix room. The transaction id is
+ * derived from the event, so a retried send is one message, not two.
+ */
+async function sendMatrix(target: MatrixTarget, message: string, event: AppEvent): Promise<void> {
+  const txn = createHash('sha256').update(`${event.id}:${event.ts}:${event.action}:${target.roomId}`).digest('hex').slice(0, 32);
+  const res = await guardedFetch(
+    `${target.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(target.roomId)}/send/m.room.message/nd${txn}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${target.accessToken}` },
+      body: JSON.stringify({ msgtype: 'm.text', body: message }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    },
+  );
+  if (!res.ok) throw new Error(`Matrix ${res.status}`);
 }
 
 /** Publish to an ntfy topic (target = topic URL, e.g. https://ntfy.sh/my-topic). */
@@ -563,6 +639,16 @@ export async function dispatchChannel(
     await sendLark(target, message);
   } else if (type === 'teams') {
     await sendTeams(target, message);
+  } else if (type === 'mattermost') {
+    await sendMattermost(target, message);
+  } else if (type === 'googlechat') {
+    await sendGoogleChat(target, message);
+  } else if (type === 'matrix') {
+    await sendMatrix(parseMatrixTarget(target), message, event);
+  } else if (type === 'pagerduty' || type === 'opsgenie') {
+    // G3.7: problems open an incident, fixes close it, everything else is
+    // skipped (notifyEvent does not even call in for those).
+    await dispatchIncident(type, target, event, message);
   } else if (type === 'email') {
     await sendEmail(target, `NineDeploy: ${event.action}`, message);
   } else if (type === 'resend') {
@@ -685,6 +771,9 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
   await Promise.all(
     channels.map(async (ch) => {
       if (!ch.active) return;
+      // G3.7: an incident channel never receives an event that neither
+      // reports nor fixes a problem — it would page someone for a success.
+      if (INCIDENT_CHANNEL_TYPES.has(ch.type) && !incidentActionFor(event)) return;
       // Global path: the channel's own event filter, exactly as always.
       if (matchesFilter(event.action, ch.eventFilter)) {
         await deliver(ch);

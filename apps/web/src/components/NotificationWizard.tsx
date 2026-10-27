@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, Bell, Check, Mail, MessageCircle,
-  Plug, Send, Smartphone, Webhook, X, Zap,
+  Plug, Send, Siren, Smartphone, Webhook, X, Zap,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useToast } from './Toast.js';
@@ -23,6 +23,12 @@ const TYPES = [
   { id: 'resend', label: 'Email (Resend)', emoji: '📨', color: 'from-slate-500 to-zinc-700', icon: Mail },
   // G1.5: FCM (G-22) was CLI-only; the target is a device token, the config the service account JSON.
   { id: 'fcm', label: 'Firebase push (FCM)', emoji: '📱', color: 'from-orange-500 to-amber-600', icon: Smartphone },
+  // G3.7
+  { id: 'mattermost', label: 'Mattermost', emoji: '💬', color: 'from-blue-600 to-sky-700', icon: MessageCircle },
+  { id: 'googlechat', label: 'Google Chat', emoji: '💬', color: 'from-green-500 to-emerald-600', icon: MessageCircle },
+  { id: 'matrix', label: 'Matrix', emoji: '🟩', color: 'from-zinc-600 to-slate-800', icon: MessageCircle },
+  { id: 'pagerduty', label: 'PagerDuty', emoji: '🚨', color: 'from-green-600 to-lime-700', icon: Siren },
+  { id: 'opsgenie', label: 'Opsgenie', emoji: '🚨', color: 'from-blue-500 to-cyan-600', icon: Siren },
 ] as const;
 
 /** The fields the server requires in an FCM service account (lib/fcm.ts `parseServiceAccount`). */
@@ -210,6 +216,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                           : t.id === 'teams' ? 'Teams channel'
                           : t.id === 'resend' ? 'Resend email API'
                           : t.id === 'fcm' ? 'Mobile / web push'
+                          : t.id === 'mattermost' ? 'Incoming webhook'
+                          : t.id === 'googlechat' ? 'Space webhook'
+                          : t.id === 'matrix' ? 'Matrix room'
+                          : t.id === 'pagerduty' ? 'Incidents (Events v2)'
+                          : t.id === 'opsgenie' ? 'Incidents (Alert API)'
                           : 'SMTP email'}
                       </div>
                     </div>
@@ -354,6 +365,32 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                 </div>
               </>
             )}
+            {type === 'mattermost' && (
+              <>
+                <div className="rounded-xl bg-blue-500/[0.06] p-3 ring-1 ring-inset ring-blue-500/20">
+                  <p className="mb-1.5 text-xs font-medium text-blue-200">Mattermost incoming webhook</p>
+                  <p className="text-[11px] text-slate-400">Integrations → Incoming Webhooks → Add Incoming Webhook, pick the channel, then paste its URL.</p>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://mattermost.example.com/hooks/…" className="font-mono text-xs" autoFocus />
+                </div>
+              </>
+            )}
+            {type === 'googlechat' && (
+              <>
+                <div className="rounded-xl bg-green-500/[0.06] p-3 ring-1 ring-inset ring-green-500/20">
+                  <p className="mb-1.5 text-xs font-medium text-green-200">Google Chat webhook</p>
+                  <p className="text-[11px] text-slate-400">In the space: Apps &amp; integrations → Webhooks → Add webhook, then paste its URL.</p>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://chat.googleapis.com/v1/spaces/…" className="font-mono text-xs" autoFocus />
+                </div>
+              </>
+            )}
+            {type === 'matrix' && <MatrixFields value={target} onChange={setTarget} />}
+            {(type === 'pagerduty' || type === 'opsgenie') && <IncidentFields type={type} value={target} onChange={setTarget} />}
             {type === 'email' && <EmailFields value={target} onChange={setTarget} />}
             {type === 'resend' && <ResendFields value={target} onChange={setTarget} />}
             {type === 'webhook' && (
@@ -468,16 +505,22 @@ function EmailFields({ value, onChange }: { value: string; onChange: (v: string)
   );
 }
 
-/** The Target row of the test summary. A Resend target leads with its API key, so show only the recipients. */
+/**
+ * The Target row of the test summary. Resend, Matrix and incident targets hold
+ * a secret, so show only the part that says where messages go.
+ */
 function summaryTarget(type: string | null, target: string): string {
-  if (type === 'resend') {
+  const field = (key: string): string => {
     try {
-      const to = (JSON.parse(target) as { to?: unknown }).to;
-      return typeof to === 'string' ? to : '';
+      const v = (JSON.parse(target) as Record<string, unknown>)[key];
+      return typeof v === 'string' ? v : '';
     } catch {
       return '';
     }
-  }
+  };
+  if (type === 'resend') return field('to');
+  if (type === 'matrix') return field('roomId');
+  if (type === 'pagerduty' || type === 'opsgenie') return `${(field('region') || 'us').toUpperCase()} region`;
   return target.slice(0, 40) + (target.length > 40 ? '…' : '');
 }
 
@@ -510,6 +553,85 @@ function ResendFields({ value, onChange }: { value: string; onChange: (v: string
             <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">To (comma-separated)</span>
             <Input value={cfg['to'] ?? ''} onChange={(e) => set('to', e.target.value)} placeholder="you@example.com" className="h-8 font-mono text-xs" />
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Matrix target editor — composes the JSON {homeserver, roomId, accessToken} the server decrypts. */
+function MatrixFields({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  let cfg: Record<string, string> = {};
+  try {
+    cfg = JSON.parse(value) as Record<string, string>;
+  } catch {
+    /* empty target */
+  }
+  const set = (key: string, v: string) => onChange(JSON.stringify({ ...cfg, [key]: v }));
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl bg-zinc-500/[0.06] p-3 ring-1 ring-inset ring-zinc-500/20">
+        <p className="mb-1 text-xs font-medium text-zinc-200">Matrix room</p>
+        <p className="text-[11px] text-slate-400">Invite a bot account to the room and use its access token. The token is encrypted at rest.</p>
+      </div>
+      <div className="space-y-2">
+        <div>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Homeserver</span>
+          <Input value={cfg['homeserver'] ?? ''} onChange={(e) => set('homeserver', e.target.value)} placeholder="https://matrix.example.org" className="h-8 font-mono text-xs" autoFocus />
+        </div>
+        <div>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Room ID or alias</span>
+          <Input value={cfg['roomId'] ?? ''} onChange={(e) => set('roomId', e.target.value)} placeholder="!abcdef:example.org" className="h-8 font-mono text-xs" />
+        </div>
+        <div>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Access token</span>
+          <Input type="password" value={cfg['accessToken'] ?? ''} onChange={(e) => set('accessToken', e.target.value)} placeholder="syt_…" className="h-8 font-mono text-xs" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** PagerDuty / Opsgenie target editor — composes `{routingKey|apiKey, region}`. */
+function IncidentFields({ type, value, onChange }: { type: 'pagerduty' | 'opsgenie'; value: string; onChange: (v: string) => void }) {
+  const keyField = type === 'pagerduty' ? 'routingKey' : 'apiKey';
+  let cfg: Record<string, string> = {};
+  try {
+    cfg = JSON.parse(value) as Record<string, string>;
+  } catch {
+    /* empty target */
+  }
+  const key = cfg[keyField] ?? '';
+  const region = cfg['region'] === 'eu' ? 'eu' : 'us';
+  // An empty key leaves the target empty, so Continue stays disabled.
+  const set = (k: string, r: string) => onChange(k ? JSON.stringify({ [keyField]: k, region: r }) : '');
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl bg-emerald-500/[0.06] p-3 ring-1 ring-inset ring-emerald-500/20">
+        <p className="mb-1 text-xs font-medium text-emerald-200">{type === 'pagerduty' ? 'PagerDuty Events API v2' : 'Opsgenie API integration'}</p>
+        <p className="text-[11px] text-slate-400">
+          {type === 'pagerduty'
+            ? 'Service → Integrations → Add an integration → Events API V2, then copy its integration (routing) key.'
+            : 'Team → Integrations → Add integration → API, then copy its API key.'}
+          {' '}Only problems open an incident (alerts, monitor or service down, failed deploys, missed backups); the matching recovery or the next successful deploy closes it.
+        </p>
+      </div>
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <div>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{type === 'pagerduty' ? 'Routing key' : 'API key'}</span>
+          <Input type="password" aria-label={type === 'pagerduty' ? 'Routing key' : 'API key'} value={key} onChange={(e) => set(e.target.value.trim(), region)} className="h-8 font-mono text-xs" autoFocus />
+        </div>
+        <div>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Region</span>
+          <select
+            aria-label="Region"
+            value={region}
+            onChange={(e) => set(key, e.target.value)}
+            className="h-8 rounded-lg border border-white/10 bg-black/20 px-2 text-xs text-slate-200"
+          >
+            <option value="us">US</option>
+            <option value="eu">EU</option>
+          </select>
         </div>
       </div>
     </div>

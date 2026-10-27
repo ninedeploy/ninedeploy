@@ -107,7 +107,7 @@ export const sourcePatch = z.object({
 });
 export type SourcePatch = z.infer<typeof sourcePatch>;
 
-export const notificationType = z.enum(['telegram', 'webhook', 'discord', 'slack', 'ntfy', 'gotify', 'pushover', 'lark', 'email', 'fcm', 'teams', 'resend']);
+export const notificationType = z.enum(['telegram', 'webhook', 'discord', 'slack', 'ntfy', 'gotify', 'pushover', 'lark', 'email', 'fcm', 'teams', 'resend', 'mattermost', 'googlechat', 'matrix', 'pagerduty', 'opsgenie']);
 
 export const notificationChannelCreate = z.object({
   name: z.string().min(1).max(100),

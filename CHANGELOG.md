@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Five more notification channels (G3.7), all in the notification wizard:
+  - **Mattermost** (incoming webhook) and **Google Chat** (space webhook; only `https://chat.googleapis.com` URLs are accepted).
+  - **Matrix**: posts to a room with a bot account's access token. Each event has a fixed transaction id, so a retried delivery never posts twice.
+  - **PagerDuty** (Events API v2) and **Opsgenie** (Alert API), US or EU region. These two receive only problems: fired alerts, a monitor or service going down, a failed deploy, a missed backup. The matching recovery, or the service's next successful deploy, closes the incident it opened. Every other event is skipped and never pages anyone. A channel test opens a test incident and closes it right away.
+
+  `alert.fired` and `alert.recovered` events now carry the rule id, so recovery closes the right incident. No migration.
+
 - Backups for ClickHouse, Meilisearch and RabbitMQ (G1.8): the three engines that answered "backup not supported" now have manual and scheduled backups, off-site copies, restore and the **Check** drill on the panel host. ClickHouse backs up every user database with `BACKUP … TO File` and restores each one under a temporary name before swapping it in, so a failed restore leaves the data untouched. Meilisearch takes a dump; a restore stops the database and imports the dump with a one-off container into a new path, swapping it in only once the import is healthy. RabbitMQ backs up its definitions (users, vhosts, queues, exchanges, bindings, policies), not queued messages; a restore waits until everything in the file exists. Each flow was run against the real images. Node databases of these engines still refuse backups, now with a message that says why. No migration. See DATABASES_BACKUPS.md §10.
 
 - Email templates in the web UI (G1.5): workspace admins can edit, preview and reset the workspace's email templates on the Workspaces page. Account emails such as the password reset are shown as fixed. Until now this needed `ninedeploy email-templates` or the API.

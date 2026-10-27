@@ -144,7 +144,7 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
    - a Prometheus `/metrics` endpoint and OTLP export;
    - per-container utilisation history (Coolify, 139 votes);
    - error-rate and latency alerts;
-   - PagerDuty and Opsgenie channels.
+   - PagerDuty and Opsgenie channels (done, G3.7; see [GAP_ROADMAP.md](GAP_ROADMAP.md)).
 8. **Git:** commit statuses for GitLab, Gitea and Bitbucket, and "wait for CI", which skips an auto-deploy whose checks failed.
 9. **Usage and cost:** CPU-hours, memory, disk and bandwidth per workspace, project and service, priced from a per-server cost. No self-hosted tool has this.
 10. **The remaining node gaps:**

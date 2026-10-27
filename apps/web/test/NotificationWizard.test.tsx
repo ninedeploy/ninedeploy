@@ -78,6 +78,73 @@ describe('NotificationWizard', () => {
     );
   });
 
+  // G3.7
+  it('creates a PagerDuty channel from a routing key and region, keeping the key out of the summary', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.click(screen.getByText('PagerDuty'));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
+    await user.type(screen.getByLabelText('Routing key'), 'R0UTINGKEY');
+    await user.selectOptions(screen.getByLabelText('Region'), 'eu');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('EU region')).toBeInTheDocument();
+    expect(screen.queryByText(/R0UTINGKEY/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /send test/i }));
+    await waitFor(() =>
+      expect(apiMock.api.notifications.createChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'pagerduty', target: JSON.stringify({ routingKey: 'R0UTINGKEY', region: 'eu' }) }),
+      ),
+    );
+  });
+
+  it('clears an Opsgenie target when its key is emptied', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.click(screen.getByText('Opsgenie'));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.type(screen.getByLabelText('API key'), 'k');
+    expect(screen.getByRole('button', { name: /continue/i })).toBeEnabled();
+    await user.clear(screen.getByLabelText('API key'));
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
+  });
+
+  it('creates a Matrix channel and shows only the room in the summary', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.click(screen.getByText('Matrix'));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.type(screen.getByPlaceholderText('https://matrix.example.org'), 'https://m.example.org');
+    await user.type(screen.getByPlaceholderText('!abcdef:example.org'), '!room:m.example.org');
+    await user.type(screen.getByPlaceholderText('syt_…'), 'syt_token');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('!room:m.example.org')).toBeInTheDocument();
+    expect(screen.queryByText(/syt_token/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /send test/i }));
+    await waitFor(() =>
+      expect(apiMock.api.notifications.createChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'matrix',
+          target: JSON.stringify({ homeserver: 'https://m.example.org', roomId: '!room:m.example.org', accessToken: 'syt_token' }),
+        }),
+      ),
+    );
+  });
+
+  it('shows the Mattermost and Google Chat connect forms', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.click(screen.getByText('Mattermost'));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Mattermost incoming webhook')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /back/i }));
+    await user.click(screen.getByText('Google Chat'));
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByPlaceholderText('https://chat.googleapis.com/v1/spaces/…')).toBeInTheDocument();
+  });
+
   it('validates an FCM service account JSON', () => {
     expect(fcmServiceAccountError(' ')).toBe('Paste the service account JSON');
     expect(fcmServiceAccountError('{')).toBe('Not valid JSON');

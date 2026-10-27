@@ -2120,7 +2120,8 @@ export const tunnels = sqliteTable(
 );
 
 // ─── notification channels ────────────────────────────────────────────────
-export const channelType = ['telegram', 'webhook', 'discord', 'slack', 'ntfy', 'gotify', 'pushover', 'lark', 'email', 'fcm', 'teams', 'resend'] as const;
+// G3.7: mattermost, googlechat, matrix, pagerduty, opsgenie. TS-only enum (no SQL CHECK), so no migration.
+export const channelType = ['telegram', 'webhook', 'discord', 'slack', 'ntfy', 'gotify', 'pushover', 'lark', 'email', 'fcm', 'teams', 'resend', 'mattermost', 'googlechat', 'matrix', 'pagerduty', 'opsgenie'] as const;
 export const notificationChannels = sqliteTable(
   'notification_channels',
   {
