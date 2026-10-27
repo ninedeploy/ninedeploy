@@ -4,26 +4,27 @@ import { ArrowLeft, ArrowRight, Check, Database, HardDrive, Server, Sparkles, Te
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { formatBytes } from '../lib/format.js';
+import { fill, msg, useT } from '../lib/i18n.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { registeredNodes } from '../lib/multiNode.js';
 import { Button, Input, cn, useEscapeToClose } from './ui.js';
 import { useToast } from './Toast.js';
 
 export const ENGINES = [
-  { id: 'postgres', label: 'PostgreSQL', emoji: '🐘', hint: 'Relational · SQL · pgvector' },
-  { id: 'mysql', label: 'MySQL', emoji: '🐬', hint: 'Relational · SQL' },
-  { id: 'mariadb', label: 'MariaDB', emoji: '🦭', hint: 'Relational · SQL' },
-  { id: 'redis', label: 'Redis', emoji: '⚡', hint: 'Key-value · Cache' },
-  { id: 'valkey', label: 'Valkey', emoji: '🚀', hint: 'Fast KV · Redis fork' },
-  { id: 'keydb', label: 'KeyDB', emoji: '🧵', hint: 'Multithreaded · Redis fork' },
-  { id: 'dragonfly', label: 'Dragonfly', emoji: '🐉', hint: 'Multi-core · Redis-compatible' },
-  { id: 'mongo', label: 'MongoDB', emoji: '🍃', hint: 'Document · NoSQL' },
-  { id: 'clickhouse', label: 'ClickHouse', emoji: '📊', hint: 'Columnar · OLAP' },
-  { id: 'meilisearch', label: 'Meilisearch', emoji: '🔍', hint: 'Full-text search' },
-  { id: 'rabbitmq', label: 'RabbitMQ', emoji: '🐇', hint: 'Message broker · AMQP' },
+  { id: 'postgres', label: 'PostgreSQL', emoji: '🐘', hint: msg('Relational · SQL · pgvector') },
+  { id: 'mysql', label: 'MySQL', emoji: '🐬', hint: msg('Relational · SQL') },
+  { id: 'mariadb', label: 'MariaDB', emoji: '🦭', hint: msg('Relational · SQL') },
+  { id: 'redis', label: 'Redis', emoji: '⚡', hint: msg('Key-value · Cache') },
+  { id: 'valkey', label: 'Valkey', emoji: '🚀', hint: msg('Fast KV · Redis fork') },
+  { id: 'keydb', label: 'KeyDB', emoji: '🧵', hint: msg('Multithreaded · Redis fork') },
+  { id: 'dragonfly', label: 'Dragonfly', emoji: '🐉', hint: msg('Multi-core · Redis-compatible') },
+  { id: 'mongo', label: 'MongoDB', emoji: '🍃', hint: msg('Document · NoSQL') },
+  { id: 'clickhouse', label: 'ClickHouse', emoji: '📊', hint: msg('Columnar · OLAP') },
+  { id: 'meilisearch', label: 'Meilisearch', emoji: '🔍', hint: msg('Full-text search') },
+  { id: 'rabbitmq', label: 'RabbitMQ', emoji: '🐇', hint: msg('Message broker · AMQP') },
 ] as const;
 
-const STEPS = ['Engine', 'Details', 'Review'];
+const STEPS = [msg('Engine'), msg('Details'), msg('Review')];
 
 export type DatabaseEngineId = (typeof ENGINES)[number]['id'];
 
@@ -40,6 +41,7 @@ export function DatabaseWizard({
   initialEngine?: DatabaseEngineId;
   onCreated?: (created: { id: number }) => void;
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { isAdvanced } = useExperienceMode();
@@ -74,7 +76,7 @@ export function DatabaseWizard({
     enabled: isOperator,
   });
   const dbHosts = registeredNodes(servers.data).filter((s) => s.features?.databases === true);
-  const hostLabel = host === '' ? 'Panel host' : (dbHosts.find((s) => String(s.id) === host)?.name ?? `node #${host}`);
+  const hostLabel = host === '' ? t('Panel host') : (dbHosts.find((s) => String(s.id) === host)?.name ?? t('node #{id}', { id: host }));
 
   const retainedVolumes = (volumes.data || []).filter(
     (v) => v.owner === null && !v.inUse && v.name.startsWith('nd-db-'),
@@ -102,7 +104,7 @@ export function DatabaseWizard({
     },
     // r211: a taken slug or an operator-only volume re-attach was swallowed —
     // the button just went back to "Create database" with no feedback.
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not create the database', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not create the database'), 'error'),
   });
 
   const canNext = step === 0 ? !!engine : step === 1 ? !!name.trim() : true;
@@ -118,19 +120,19 @@ export function DatabaseWizard({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
-      <button type="button" aria-label="Close dialog" tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <button type="button" aria-label={t('Close dialog')} tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="nd-fade relative w-full max-w-lg overflow-hidden rounded-t-2xl border border-white/10 bg-slate-950 shadow-2xl sm:rounded-2xl">
         {/* Header + stepper */}
         <div className="border-b border-white/5 p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-lg font-semibold">
               <Database size={18} className="text-emerald-400" />
-              <span id={titleId}>New database</span>
+              <span id={titleId}>{t('New database')}</span>
               <span className={cn('ml-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border inline-flex items-center gap-1', isAdvanced ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300')}>
-                {isAdvanced ? <><Terminal size={10} /> DevOps Pro</> : <><Sparkles size={10} /> Quick Mode</>}
+                {isAdvanced ? <><Terminal size={10} /> DevOps Pro</> : <><Sparkles size={10} /> {t('Quick Mode')}</>}
               </span>
             </h2>
-            <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"><X size={16} /></button>
+            <button type="button" onClick={onClose} aria-label={t('Close')} className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"><X size={16} /></button>
           </div>
           <div className="flex items-center gap-2">
             {STEPS.map((label, i) => (
@@ -138,7 +140,7 @@ export function DatabaseWizard({
                 <div className={cn('grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold transition', i < step ? 'bg-emerald-500 text-white' : i === step ? 'bg-indigo-500 text-white' : 'bg-white/10 text-slate-500')}>
                   {i < step ? <Check size={12} /> : i + 1}
                 </div>
-                <span className={cn('text-xs', i === step ? 'text-slate-200' : 'text-slate-500')}>{label}</span>
+                <span className={cn('text-xs', i === step ? 'text-slate-200' : 'text-slate-500')}>{t(label)}</span>
                 {i < STEPS.length - 1 && <div className="h-px flex-1 bg-white/10" />}
               </div>
             ))}
@@ -173,10 +175,10 @@ export function DatabaseWizard({
                   <div>
                     <div className="text-xs font-semibold text-emerald-300 flex items-center gap-1">
                       <Zap size={13} className="text-emerald-400" />
-                      1-Click Ready: <b>{name || `${engine}-db`}</b>
+                      {fill(t('1-Click Ready: {name}'), { name: <b>{name || `${engine}-db`}</b> })}
                     </div>
                     <div className="text-[10px] text-slate-400">
-                      Standard persistent storage & credentials configured automatically.
+                      {t('Standard persistent storage & credentials configured automatically.')}
                     </div>
                   </div>
                   <Button
@@ -186,7 +188,7 @@ export function DatabaseWizard({
                     onClick={() => create.mutate()}
                     className="bg-emerald-600 hover:bg-emerald-500 text-white"
                   >
-                    {create.isPending ? 'Creating…' : 'Create Now'}
+                    {create.isPending ? t('Creating…') : t('Create Now')}
                   </Button>
                 </div>
               )}
@@ -196,12 +198,12 @@ export function DatabaseWizard({
           {step === 1 && (
             <div className="space-y-4">
               <div>
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Name</span>
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Name')}</span>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-database" autoFocus />
               </div>
               <div>
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Version (optional)</span>
-                <Input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="e.g. 16 (default if empty)" />
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Version (optional)')}</span>
+                <Input value={version} onChange={(e) => setVersion(e.target.value)} placeholder={t('e.g. 16 (default if empty)')} />
               </div>
 
               {engine === 'postgres' && (
@@ -213,8 +215,8 @@ export function DatabaseWizard({
                     className="accent-emerald-500 rounded"
                   />
                   <span>
-                    <strong className="font-semibold text-emerald-300">Enable pgvector extension</strong>
-                    <span className="block text-[11px] text-slate-400">Installs vector database support for AI embeddings, similarity search, and RAG workloads.</span>
+                    <strong className="font-semibold text-emerald-300">{t('Enable pgvector extension')}</strong>
+                    <span className="block text-[11px] text-slate-400">{t('Installs vector database support for AI embeddings, similarity search, and RAG workloads.')}</span>
                   </span>
                 </label>
               )}
@@ -222,10 +224,10 @@ export function DatabaseWizard({
               {dbHosts.length > 0 && (
                 <div>
                   <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
-                    <Server size={12} /> Host
+                    <Server size={12} /> {t('Host')}
                   </span>
                   <select
-                    aria-label="Database host"
+                    aria-label={t('Database host')}
                     value={host}
                     onChange={(e) => {
                       setHost(e.target.value);
@@ -234,7 +236,7 @@ export function DatabaseWizard({
                     }}
                     className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                   >
-                    <option value="">Panel host</option>
+                    <option value="">{t('Panel host')}</option>
                     {dbHosts.map((s) => (
                       <option key={s.id} value={String(s.id)}>
                         {s.name}
@@ -244,8 +246,7 @@ export function DatabaseWizard({
                   </select>
                   {host !== '' && (
                     <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                      The database stays on this node for its whole life. Services attach to it from the same node only; Web Studio,
-                      PgBouncer and public access are not available for node databases yet.
+                      {t('The database stays on this node for its whole life. Services attach to it from the same node only; Web Studio, PgBouncer and public access are not available for node databases yet.')}
                     </p>
                   )}
                 </div>
@@ -255,7 +256,7 @@ export function DatabaseWizard({
                 <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 space-y-2.5">
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
                     <HardDrive size={14} className="text-indigo-400" />
-                    <span>Persistent Volume</span>
+                    <span>{t('Persistent Volume')}</span>
                   </div>
                   <div className="space-y-2">
                     <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
@@ -266,7 +267,7 @@ export function DatabaseWizard({
                         onChange={() => setSelectedVolume('')}
                         className="accent-indigo-500"
                       />
-                      <span>Create fresh volume (<code className="text-slate-400 font-mono text-[11px]">nd-db-{name.trim() || '…'}-data</code>)</span>
+                      <span>{fill(t('Create fresh volume ({volume})'), { volume: <code className="text-slate-400 font-mono text-[11px]">nd-db-{name.trim() || '…'}-data</code> })}</span>
                     </label>
                     <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                       <input
@@ -276,7 +277,7 @@ export function DatabaseWizard({
                         onChange={() => setSelectedVolume(retainedVolumes[0]!.name)}
                         className="accent-indigo-500"
                       />
-                      <span>Re-attach retained volume ({retainedVolumes.length} available)</span>
+                      <span>{t('Re-attach retained volume ({n} available)', { n: retainedVolumes.length })}</span>
                     </label>
                     {!!selectedVolume && (
                       <select
@@ -297,29 +298,29 @@ export function DatabaseWizard({
 
               <p className="rounded-lg bg-white/[0.03] px-3 py-2 text-xs text-slate-500">
                 {selectedVolume
-                  ? `Will re-attach to existing volume "${selectedVolume}" with its previous data.`
-                  : 'A fresh persistent volume, auto-generated credentials and a connection string will be created.'}
+                  ? t('Will re-attach to existing volume "{volume}" with its previous data.', { volume: selectedVolume })
+                  : t('A fresh persistent volume, auto-generated credentials and a connection string will be created.')}
               </p>
             </div>
           )}
 
           {step === 2 && (
             <div className="space-y-2 text-sm">
-              <Row label="Engine" value={`${ENGINES.find((e) => e.id === engine)!.emoji} ${ENGINES.find((e) => e.id === engine)!.label}`} />
-              <Row label="Name" value={name} />
-              <Row label="Version" value={version || 'default'} />
-              {dbHosts.length > 0 && <Row label="Host" value={hostLabel} />}
-              <Row label="Volume" value={selectedVolume ? `Re-attach (${selectedVolume})` : `nd-db-${name}-data`} />
-              <Row label="Credentials" value="auto-generated, encrypted" />
+              <Row label={t('Engine')} value={`${ENGINES.find((e) => e.id === engine)!.emoji} ${ENGINES.find((e) => e.id === engine)!.label}`} />
+              <Row label={t('Name')} value={name} />
+              <Row label={t('Version')} value={version || t('default')} />
+              {dbHosts.length > 0 && <Row label={t('Host')} value={hostLabel} />}
+              <Row label={t('Volume')} value={selectedVolume ? t('Re-attach ({volume})', { volume: selectedVolume }) : `nd-db-${name}-data`} />
+              <Row label={t('Credentials')} value={t('auto-generated, encrypted')} />
             </div>
           )}
 
           <div className="mt-6 flex items-center justify-between">
             <Button type="button" variant="ghost" size="sm" onClick={back} className={cn(step === 0 && 'invisible')}>
-              <ArrowLeft size={14} /> Back
+              <ArrowLeft size={14} /> {t('Back')}
             </Button>
             <Button type="submit" disabled={!canNext || create.isPending}>
-              {step === STEPS.length - 1 ? (create.isPending ? 'Creating…' : 'Create database') : <>Continue <ArrowRight size={14} /></>}
+              {step === STEPS.length - 1 ? (create.isPending ? t('Creating…') : t('Create database')) : <>{t('Continue')} <ArrowRight size={14} /></>}
             </Button>
           </div>
         </form>

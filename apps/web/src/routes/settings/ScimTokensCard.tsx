@@ -4,6 +4,7 @@ import { KeyRound, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Badge, Button, Card, CardBody, Field, Input, Select } from '../../components/ui.js';
+import { fill, useT } from '../../lib/i18n.js';
 
 /**
  * SCIM 2.0 provisioning tokens (RFC 7644). Each token lets an identity
@@ -15,6 +16,7 @@ import { Badge, Button, Card, CardBody, Field, Input, Select } from '../../compo
 export function ScimTokensCard() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
   const [name, setName] = useState('');
   const [workspaceId, setWorkspaceId] = useState('');
   const [minted, setMinted] = useState<string | null>(null);
@@ -29,49 +31,49 @@ export function ScimTokensCard() {
       setName('');
       qc.invalidateQueries({ queryKey: ['scim-tokens'] });
     },
-    onError: () => toast('Could not create the SCIM token', 'error'),
+    onError: () => toast(t('Could not create the SCIM token'), 'error'),
   });
 
   const revoke = useMutation({
     mutationFn: (id: number) => api.scim.revokeToken(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['scim-tokens'] }),
-    onError: () => toast('Could not revoke the token', 'error'),
+    onError: () => toast(t('Could not revoke the token'), 'error'),
   });
 
   return (
     <Card>
       <CardBody className="space-y-4">
         <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-          <KeyRound size={15} className="text-slate-500" /> SCIM provisioning
+          <KeyRound size={15} className="text-slate-500" /> {t('SCIM provisioning')}
         </div>
         <p className="text-xs text-slate-500">
-          Point your identity provider at <code className="font-mono text-slate-400">{'{panel}'}/scim/v2</code> with a bearer
-          token below. Provisioned users join the token's workspace as members; deactivating or deleting them at the IdP
-          revokes their access here automatically. An existing account is linked only if it is already a member of that
-          workspace — invite it first. Accounts that also belong to other workspaces lose only their seat in this one.
+          {fill(
+            t("Point your identity provider at {endpoint} with a bearer token below. Provisioned users join the token's workspace as members; deactivating or deleting them at the IdP revokes their access here automatically. An existing account is linked only if it is already a member of that workspace — invite it first. Accounts that also belong to other workspaces lose only their seat in this one."),
+            { endpoint: <code className="font-mono text-slate-400">{'{panel}'}/scim/v2</code> },
+          )}
         </p>
 
         <div className="space-y-2">
-          {tokens.map((t) => (
-            <div key={t.id} className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+          {tokens.map((tok) => (
+            <div key={tok.id} className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-xs text-slate-200">
-                  {t.name}
-                  {t.revoked && <Badge>revoked</Badge>}
+                  {tok.name}
+                  {tok.revoked && <Badge>{t('revoked')}</Badge>}
                 </div>
                 <div className="text-[11px] text-slate-500">
-                  workspace #{t.workspaceId}
-                  {t.lastUsedAt ? ` · last used ${new Date(t.lastUsedAt).toLocaleString()}` : ' · never used'}
+                  {t('workspace #{id}', { id: tok.workspaceId })}
+                  {tok.lastUsedAt ? ` · ${t('last used {when}', { when: new Date(tok.lastUsedAt).toLocaleString() })}` : ` · ${t('never used')}`}
                 </div>
               </div>
-              {!t.revoked && (
-                <Button variant="ghost" size="sm" onClick={() => revoke.mutate(t.id)} disabled={revoke.isPending} aria-label={`Revoke ${t.name}`}>
+              {!tok.revoked && (
+                <Button variant="ghost" size="sm" onClick={() => revoke.mutate(tok.id)} disabled={revoke.isPending} aria-label={t('Revoke {name}', { name: tok.name })}>
                   <Trash2 size={13} />
                 </Button>
               )}
             </div>
           ))}
-          {tokens.length === 0 && <p className="text-xs text-slate-600">No provisioning tokens yet.</p>}
+          {tokens.length === 0 && <p className="text-xs text-slate-600">{t('No provisioning tokens yet.')}</p>}
         </div>
 
         <form
@@ -81,17 +83,17 @@ export function ScimTokensCard() {
             if (workspaceId) create.mutate();
           }}
         >
-          <Field label="Token name">
+          <Field label={t('Token name')}>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Okta" className="h-9 w-40 text-xs" />
           </Field>
-          <Field label="Workspace">
+          <Field label={t('Workspace')}>
             <Select
-              aria-label="SCIM workspace"
+              aria-label={t('SCIM workspace')}
               value={workspaceId}
               onChange={(e) => setWorkspaceId(e.target.value)}
               className="h-9 w-44 text-xs"
             >
-              <option value="">Choose…</option>
+              <option value="">{t('Choose…')}</option>
               {(workspaces ?? []).map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
@@ -100,17 +102,17 @@ export function ScimTokensCard() {
             </Select>
           </Field>
           <Button type="submit" size="sm" variant="secondary" disabled={!workspaceId || create.isPending}>
-            {create.isPending ? 'Creating…' : 'Create token'}
+            {create.isPending ? t('Creating…') : t('Create token')}
           </Button>
         </form>
 
         {minted && (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs" role="alert">
-            <div className="mb-1 font-semibold uppercase tracking-wide text-emerald-300">Copy this token now</div>
+            <div className="mb-1 font-semibold uppercase tracking-wide text-emerald-300">{t('Copy this token now')}</div>
             <code className="break-all font-mono text-emerald-200">{minted}</code>
-            <p className="mt-1 text-[11px] text-slate-500">It is stored hashed — this is the only time it is shown.</p>
+            <p className="mt-1 text-[11px] text-slate-500">{t('It is stored hashed — this is the only time it is shown.')}</p>
             <Button variant="ghost" size="sm" className="mt-1" onClick={() => setMinted(null)}>
-              Dismiss
+              {t('Dismiss')}
             </Button>
           </div>
         )}

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { HardDrive, Sparkles } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
+import { useT } from '../../lib/i18n.js';
 import { Button, Card, CardBody, ErrorCard, Input, cn } from '../../components/ui.js';
 import type { AutoPruneConfigUpdateInput } from '@ninedeploy/sdk';
 
@@ -37,6 +38,7 @@ const DEFAULT_CONFIG: StorageFormState = {
 export function StorageSection() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
 
   const pruneStatus = useQuery({
     queryKey: ['auto-prune-status'],
@@ -63,9 +65,9 @@ export function StorageSection() {
     mutationFn: (data: AutoPruneConfigUpdateInput) => api.housekeeping.updateAutoPrune(data),
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ['auto-prune-status'] });
-      toast(`Auto-prune settings saved (trigger at ${updated.thresholdPercent}% disk usage)`, 'success');
+      toast(t('Auto-prune settings saved (trigger at {percent}% disk usage)', { percent: updated.thresholdPercent }), 'success');
     },
-    onError: () => toast('Failed to update auto-prune settings', 'error'),
+    onError: () => toast(t('Failed to update auto-prune settings'), 'error'),
   });
 
   const runPrune = useMutation({
@@ -73,9 +75,9 @@ export function StorageSection() {
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['auto-prune-status'] });
       const freed = formatBytes(res.freedBytes);
-      toast(`Disk clean completed! Reclaimed ${freed}`, 'success');
+      toast(t('Disk clean completed! Reclaimed {freed}', { freed }), 'success');
     },
-    onError: () => toast('Failed to execute disk cleanup', 'error'),
+    onError: () => toast(t('Failed to execute disk cleanup'), 'error'),
   });
 
   const data = pruneStatus.data;
@@ -88,9 +90,9 @@ export function StorageSection() {
 
   const header = (
     <div>
-      <h2 className="text-lg font-medium text-slate-100">Storage &amp; Auto-Pruning</h2>
+      <h2 className="text-lg font-medium text-slate-100">{t('Storage & Auto-Pruning')}</h2>
       <p className="text-xs text-slate-400">
-        Monitor host disk utilization and configure automated background cleanup of dangling Docker images, builder layers, containers, and volumes.
+        {t('Monitor host disk utilization and configure automated background cleanup of dangling Docker images, builder layers, containers, and volumes.')}
       </p>
     </div>
   );
@@ -102,7 +104,7 @@ export function StorageSection() {
     return (
       <div className="space-y-6">
         {header}
-        <ErrorCard title="Could not load the storage settings" error={pruneStatus.error} onRetry={() => void pruneStatus.refetch()} />
+        <ErrorCard title={t('Could not load the storage settings')} error={pruneStatus.error} onRetry={() => void pruneStatus.refetch()} />
       </div>
     );
   }
@@ -120,10 +122,10 @@ export function StorageSection() {
                 <HardDrive size={20} />
               </div>
               <div>
-                <span className="text-xs font-medium uppercase tracking-wider text-slate-400">Host Storage Gauge</span>
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-400">{t('Host Storage Gauge')}</span>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-slate-100">{usedPercent}%</span>
-                  <span className="text-xs text-slate-400">used of {totalGb} GB ({freeGb} GB free)</span>
+                  <span className="text-xs text-slate-400">{t('used of {total} GB ({free} GB free)', { total: totalGb, free: freeGb })}</span>
                 </div>
               </div>
             </div>
@@ -136,7 +138,7 @@ export function StorageSection() {
               className="gap-1.5"
             >
               <Sparkles size={14} />
-              Run Cleanup Now
+              {t('Run Cleanup Now')}
             </Button>
           </div>
 
@@ -149,9 +151,9 @@ export function StorageSection() {
 
           {data && data.lastPrunedAt && (
             <div className="flex items-center justify-between border-t border-white/[0.06] pt-3 text-xs text-slate-400">
-              <span>Last pruned: {new Date(data.lastPrunedAt).toLocaleString()}</span>
+              <span>{t('Last pruned: {when}', { when: new Date(data.lastPrunedAt).toLocaleString() })}</span>
               {data.lastFreedBytes != null && (
-                <span>Reclaimed: <strong className="text-slate-200">{formatBytes(data.lastFreedBytes)}</strong></span>
+                <span>{t('Reclaimed:')} <strong className="text-slate-200">{formatBytes(data.lastFreedBytes)}</strong></span>
               )}
             </div>
           )}
@@ -163,8 +165,8 @@ export function StorageSection() {
         <CardBody className="space-y-5">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-medium text-slate-200">Automated Background Prune Engine</h3>
-              <p className="text-xs text-slate-400">Hourly background check executes cleanup when host disk exceeds the threshold.</p>
+              <h3 className="text-sm font-medium text-slate-200">{t('Automated Background Prune Engine')}</h3>
+              <p className="text-xs text-slate-400">{t('Hourly background check executes cleanup when host disk exceeds the threshold.')}</p>
             </div>
             <button
               type="button"
@@ -176,14 +178,14 @@ export function StorageSection() {
                   : 'bg-slate-800 text-slate-400 border-slate-700',
               )}
             >
-              {form.enabled ? 'Enabled' : 'Disabled'}
+              {form.enabled ? t('Enabled') : t('Disabled')}
             </button>
           </div>
 
           <div className="space-y-4 pt-2 border-t border-white/[0.06]">
             <div>
               <div className="flex justify-between text-xs font-medium text-slate-300 mb-1.5">
-                <span>Threshold Trigger (% Disk Utilization)</span>
+                <span>{t('Threshold Trigger (% Disk Utilization)')}</span>
                 <span className="text-indigo-400 font-bold">{form.thresholdPercent}%</span>
               </div>
               <input
@@ -199,14 +201,14 @@ export function StorageSection() {
                 className="w-full h-2 rounded-lg bg-black/40 accent-indigo-500 cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-                <span>50% (Aggressive)</span>
-                <span>85% (Recommended)</span>
-                <span>95% (Conservative)</span>
+                <span>{t('50% (Aggressive)')}</span>
+                <span>{t('85% (Recommended)')}</span>
+                <span>{t('95% (Conservative)')}</span>
               </div>
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-300">Artifact Retention Max Age (Hours)</label>
+              <label className="mb-1 block text-xs font-medium text-slate-300">{t('Artifact Retention Max Age (Hours)')}</label>
               <Input
                 type="number"
                 min={1}
@@ -217,11 +219,11 @@ export function StorageSection() {
                   setForm((prev) => ({ ...prev, maxAgeHours: val }));
                 }}
               />
-              <p className="text-[11px] text-slate-500 mt-1">Only images and build layers older than this age will be pruned (168h = 7 days). Images referenced by recorded Compose releases are kept until that deployment history is deleted.</p>
+              <p className="text-[11px] text-slate-500 mt-1">{t('Only images and build layers older than this age will be pruned (168h = 7 days). Images referenced by recorded Compose releases are kept until that deployment history is deleted.')}</p>
             </div>
 
             <div className="space-y-2 pt-2">
-              <span className="block text-xs font-medium text-slate-300">Cleanup Targets</span>
+              <span className="block text-xs font-medium text-slate-300">{t('Cleanup Targets')}</span>
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex items-center gap-2 rounded-lg bg-black/20 p-2.5 border border-white/[0.06] cursor-pointer hover:bg-black/30">
                   <input
@@ -230,7 +232,7 @@ export function StorageSection() {
                     onChange={(e) => setForm((prev) => ({ ...prev, pruneImages: e.target.checked }))}
                     className="rounded accent-indigo-500"
                   />
-                  <span className="text-xs text-slate-200">Unused Docker Images</span>
+                  <span className="text-xs text-slate-200">{t('Unused Docker Images')}</span>
                 </label>
 
                 <label className="flex items-center gap-2 rounded-lg bg-black/20 p-2.5 border border-white/[0.06] cursor-pointer hover:bg-black/30">
@@ -240,7 +242,7 @@ export function StorageSection() {
                     onChange={(e) => setForm((prev) => ({ ...prev, pruneBuildCache: e.target.checked }))}
                     className="rounded accent-indigo-500"
                   />
-                  <span className="text-xs text-slate-200">BuildKit Cache Layers</span>
+                  <span className="text-xs text-slate-200">{t('BuildKit Cache Layers')}</span>
                 </label>
 
                 <label className="flex items-center gap-2 rounded-lg bg-black/20 p-2.5 border border-white/[0.06] cursor-pointer hover:bg-black/30">
@@ -250,7 +252,7 @@ export function StorageSection() {
                     onChange={(e) => setForm((prev) => ({ ...prev, pruneContainers: e.target.checked }))}
                     className="rounded accent-indigo-500"
                   />
-                  <span className="text-xs text-slate-200">Stopped Containers</span>
+                  <span className="text-xs text-slate-200">{t('Stopped Containers')}</span>
                 </label>
 
                 <label className="flex items-center gap-2 rounded-lg bg-black/20 p-2.5 border border-white/[0.06] cursor-pointer hover:bg-black/30">
@@ -260,7 +262,7 @@ export function StorageSection() {
                     onChange={(e) => setForm((prev) => ({ ...prev, pruneVolumes: e.target.checked }))}
                     className="rounded accent-indigo-500"
                   />
-                  <span className="text-xs text-slate-200">Anonymous Volumes</span>
+                  <span className="text-xs text-slate-200">{t('Anonymous Volumes')}</span>
                 </label>
               </div>
             </div>
@@ -271,7 +273,7 @@ export function StorageSection() {
                 disabled={updateConfig.isPending || !data}
                 onClick={() => updateConfig.mutate(form)}
               >
-                Save Auto-Prune Settings
+                {t('Save Auto-Prune Settings')}
               </Button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, Field, Input, Skeleton } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 
 /**
  * AI (BYO-key): one provider + model + API key for the whole instance —
@@ -18,6 +19,7 @@ export function AiSection() {
   const { user } = useAuth();
   const isOperator = user?.isOperator === true;
   const { toast } = useToast();
+  const t = useT();
   const qc = useQueryClient();
 
   const [provider, setProvider] = useState<AiProvider>('openai');
@@ -66,22 +68,19 @@ export function AiSection() {
       // r342: the "configured" banner here and the deploy page's Diagnose
       // card both read ['ai-config'] — without this they stayed stale.
       qc.invalidateQueries({ queryKey: ['ai-config'] });
-      toast('AI diagnosis settings saved', 'info');
+      toast(t('AI diagnosis settings saved'), 'info');
     },
-    onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Failed to save', 'error'),
+    onError: (err: unknown) => toast(err instanceof Error ? err.message : t('Failed to save'), 'error'),
   });
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-          <Bot size={16} className="text-indigo-400" /> AI assistant
+          <Bot size={16} className="text-indigo-400" /> {t('AI assistant')}
         </h2>
         <p className="mt-1 text-xs text-slate-500">
-          Bring your own key: the panel asks Claude or an OpenAI-compatible endpoint to diagnose failed builds and to
-          read a running service's logs. The sanitized tail of the log is sent to the provider — pick a provider you
-          trust. It spends this key's budget, so only instance operators and members of a workspace an operator owns
-          can use it.
+          {t("Bring your own key: the panel asks Claude or an OpenAI-compatible endpoint to diagnose failed builds and to read a running service's logs. The sanitized tail of the log is sent to the provider — pick a provider you trust. It spends this key's budget, so only instance operators and members of a workspace an operator owns can use it.")}
         </p>
       </div>
 
@@ -99,66 +98,66 @@ export function AiSection() {
                 }
               >
                 {config.data?.configured
-                  ? `Configured — ${config.data.model} via ${config.data.baseUrl}`
-                  : 'Not configured — failed deploys offer no diagnosis button yet.'}
-                {config.data?.hasApiKey && ' An API key is stored.'}
+                  ? t('Configured — {model} via {url}', { model: config.data.model ?? '', url: config.data.baseUrl ?? '' })
+                  : t('Not configured — failed deploys offer no diagnosis button yet.')}
+                {config.data?.hasApiKey && ` ${t('An API key is stored.')}`}
               </div>
               {knowsProviders && (
-                <Field label="Provider" hint="Claude through the Anthropic API, or any OpenAI-compatible endpoint.">
+                <Field label={t('Provider')} hint={t('Claude through the Anthropic API, or any OpenAI-compatible endpoint.')}>
                   <select
                     value={provider}
                     onChange={(e) => chooseProvider(e.target.value as AiProvider)}
-                    aria-label="Provider"
+                    aria-label={t('Provider')}
                     disabled={!isOperator}
                     className="h-9 w-full rounded-lg bg-black/30 px-2 text-sm text-slate-100 ring-1 ring-inset ring-white/10"
                   >
                     <option value="anthropic">Claude (Anthropic)</option>
-                    <option value="openai">OpenAI-compatible</option>
+                    <option value="openai">{t('OpenAI-compatible')}</option>
                   </select>
                 </Field>
               )}
               <Field
-                label="Base URL"
+                label={t('Base URL')}
                 hint={
                   anthropic
-                    ? `Optional — leave empty for ${ANTHROPIC_DEFAULT_BASE_URL}, or name a gateway that speaks the Messages API.`
-                    : 'OpenAI-compatible chat-completions endpoint (local Ollama/LM Studio works too).'
+                    ? t('Optional — leave empty for {url}, or name a gateway that speaks the Messages API.', { url: ANTHROPIC_DEFAULT_BASE_URL })
+                    : t('OpenAI-compatible chat-completions endpoint (local Ollama/LM Studio works too).')
                 }
               >
                 <Input
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder={anthropic ? ANTHROPIC_DEFAULT_BASE_URL : OPENAI_DEFAULTS.baseUrl}
-                  aria-label="Base URL"
+                  aria-label={t('Base URL')}
                   disabled={!isOperator}
                 />
               </Field>
               <Field
-                label="Model"
-                hint={anthropic ? `e.g. ${ANTHROPIC_DEFAULT_MODEL}, claude-opus-5-5 or claude-haiku-5-5.` : 'As the provider expects it, e.g. gpt-4o-mini or llama3.1.'}
+                label={t('Model')}
+                hint={anthropic ? t('e.g. {model}, claude-opus-5-5 or claude-haiku-5-5.', { model: ANTHROPIC_DEFAULT_MODEL }) : t('As the provider expects it, e.g. gpt-4o-mini or llama3.1.')}
               >
                 <Input
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   placeholder={anthropic ? ANTHROPIC_DEFAULT_MODEL : OPENAI_DEFAULTS.model}
-                  aria-label="Model"
+                  aria-label={t('Model')}
                   disabled={!isOperator}
                 />
               </Field>
               <Field
-                label="API key"
+                label={t('API key')}
                 hint={
                   config.data?.hasApiKey
-                    ? 'A key is stored. Leave empty to keep it — type to replace.'
-                    : 'Stored encrypted at rest; never returned by the API.'
+                    ? t('A key is stored. Leave empty to keep it — type to replace.')
+                    : t('Stored encrypted at rest; never returned by the API.')
                 }
               >
                 <Input
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={config.data?.hasApiKey ? '•••••••• (stored)' : anthropic ? 'sk-ant-…' : 'sk-…'}
-                  aria-label="API key"
+                  placeholder={config.data?.hasApiKey ? t('•••••••• (stored)') : anthropic ? 'sk-ant-…' : 'sk-…'}
+                  aria-label={t('API key')}
                   disabled={!isOperator}
                   autoComplete="off"
                 />
@@ -166,11 +165,11 @@ export function AiSection() {
               {isOperator ? (
                 <div className="flex items-center gap-2">
                   <Button onClick={() => save.mutate()} disabled={save.isPending || (!anthropic && !baseUrl.trim()) || !model.trim()}>
-                    {save.isPending ? 'Saving…' : 'Save AI settings'}
+                    {save.isPending ? t('Saving…') : t('Save AI settings')}
                   </Button>
                 </div>
               ) : (
-                <p className="text-xs text-slate-500">Only the instance operator can change these settings.</p>
+                <p className="text-xs text-slate-500">{t('Only the instance operator can change these settings.')}</p>
               )}
             </>
           )}

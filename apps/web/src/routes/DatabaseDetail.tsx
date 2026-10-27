@@ -55,6 +55,7 @@ import { isNodeDatabase, NodeDatabaseBadge, NodeUnavailableCard } from '../compo
 import { ManifestTab } from './service/ManifestTab.js';
 import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
 import { useAuth } from '../lib/auth.js';
+import { fill, msg, useT } from '../lib/i18n.js';
 
 /** Engines with an interactive client (`mode: 'client'`); the others get a shell only. */
 export const CLIENT_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb', 'dragonfly']);
@@ -73,10 +74,21 @@ const ENGINE_LABEL: Record<string, string> = {
   rabbitmq: 'RabbitMQ',
 };
 
+const DB_TAB_LABELS: Array<{ id: string; label: string }> = [
+  { id: 'overview', label: msg('Overview') },
+  { id: 'topology', label: msg('Topology') },
+  { id: 'manifest', label: msg('Manifest & Inspect') },
+  { id: 'files', label: msg('Files') },
+  { id: 'backups', label: msg('Backups') },
+  { id: 'logs', label: msg('Logs') },
+  { id: 'settings', label: msg('Settings') },
+];
+
 const DB_TABS = ['overview', 'topology', 'manifest', 'files', 'backups', 'logs', 'settings'] as const;
 type DbTab = (typeof DB_TABS)[number];
 
 export function DatabaseDetail() {
+  const t = useT();
   const { id: idParam } = useParams<{ id: string }>();
   const id = Number(idParam);
   const navigate = useNavigate();
@@ -112,34 +124,34 @@ export function DatabaseDetail() {
     mutationFn: () => api.databases.restart(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['database-detail', id] });
-      toast('Database restarted', 'success');
+      toast(t('Database restarted'), 'success');
     },
-    onError: () => toast('Could not restart database', 'error'),
+    onError: () => toast(t('Could not restart database'), 'error'),
   });
 
   const stopMutation = useMutation({
     mutationFn: () => api.databases.stop(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['database-detail', id] });
-      toast('Database stopped', 'success');
+      toast(t('Database stopped'), 'success');
     },
-    onError: () => toast('Could not stop database', 'error'),
+    onError: () => toast(t('Could not stop database'), 'error'),
   });
 
   const startMutation = useMutation({
     mutationFn: () => api.databases.start(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['database-detail', id] });
-      toast('Database started', 'success');
+      toast(t('Database started'), 'success');
     },
-    onError: () => toast('Could not start database', 'error'),
+    onError: () => toast(t('Could not start database'), 'error'),
   });
 
   const startStudioMutation = useMutation({
     mutationFn: () => api.databases.startStudio(id),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['database-detail', id] });
-      toast(data.port == null ? 'Web Studio ready on the database node' : `Web Studio ready on port ${data.port}`, 'success');
+      toast(data.port == null ? t('Web Studio ready on the database node') : t('Web Studio ready on port {port}', { port: data.port }), 'success');
       // The server answers with its same-origin proxy path (the studio itself
       // is loopback-bound); resolve it against the API origin.
       const url = apiUrl(data.url);
@@ -150,7 +162,7 @@ export function DatabaseDetail() {
       // fresh sessionStorage and no handle back to this window.
       window.open(url, '_blank', 'noopener,noreferrer');
     },
-    onError: (error) => { qc.invalidateQueries({ queryKey: ['database-detail', id] }); toast(error instanceof Error ? error.message : 'Could not launch Web Studio', 'error'); },
+    onError: (error) => { qc.invalidateQueries({ queryKey: ['database-detail', id] }); toast(error instanceof Error ? error.message : t('Could not launch Web Studio'), 'error'); },
   });
 
   const stopStudioMutation = useMutation({
@@ -158,18 +170,18 @@ export function DatabaseDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['database-detail', id] });
       setStudioUrl(null);
-      toast('Web Studio stopped', 'success');
+      toast(t('Web Studio stopped'), 'success');
     },
-    onError: (error) => { qc.invalidateQueries({ queryKey: ['database-detail', id] }); toast(error instanceof Error ? error.message : 'Could not stop Web Studio', 'error'); },
+    onError: (error) => { qc.invalidateQueries({ queryKey: ['database-detail', id] }); toast(error instanceof Error ? error.message : t('Could not stop Web Studio'), 'error'); },
   });
 
   const backupMutation = useMutation({
     mutationFn: () => api.backups.backupNow(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['backups'] });
-      toast('Backup snapshot started', 'success');
+      toast(t('Backup snapshot started'), 'success');
     },
-    onError: () => toast('Backup failed', 'error'),
+    onError: () => toast(t('Backup failed'), 'error'),
   });
 
   if (dbQuery.isLoading) {
@@ -185,7 +197,7 @@ export function DatabaseDetail() {
   if (dbQuery.isError || !dbQuery.data) {
     return (
       <ErrorCard
-        title="Database not found"
+        title={t('Database not found')}
         error={dbQuery.error}
         onRetry={() => void dbQuery.refetch()}
       />
@@ -203,7 +215,7 @@ export function DatabaseDetail() {
           to="/databases"
           className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 transition hover:text-slate-200"
         >
-          <ArrowLeft size={13} /> Back to databases
+          <ArrowLeft size={13} /> {t('Back to databases')}
         </Link>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
@@ -233,7 +245,7 @@ export function DatabaseDetail() {
                 disabled={stopMutation.isPending}
               >
                 <Square size={13} className="fill-current" />
-                Stop
+                {t('Stop')}
               </Button>
             ) : (
               <Button
@@ -243,7 +255,7 @@ export function DatabaseDetail() {
                 disabled={startMutation.isPending}
               >
                 <Play size={13} className="fill-current text-emerald-400" />
-                Start
+                {t('Start')}
               </Button>
             )}
 
@@ -254,7 +266,7 @@ export function DatabaseDetail() {
               disabled={restartMutation.isPending || !isRunning}
             >
               <RefreshCw size={13} />
-              Restart
+              {t('Restart')}
             </Button>
 
             <Button
@@ -263,19 +275,19 @@ export function DatabaseDetail() {
               disabled={backupMutation.isPending || !isRunning}
             >
               <Download size={13} />
-              Backup now
+              {t('Backup now')}
             </Button>
 
             {isOperator && isRunning && (
               <>
-                <Button variant="secondary" size="sm" onClick={() => setShell('shell')} title="Open a shell in the database container">
+                <Button variant="secondary" size="sm" onClick={() => setShell('shell')} title={t('Open a shell in the database container')}>
                   <Terminal size={13} />
-                  Shell
+                  {t('Shell')}
                 </Button>
                 {CLIENT_ENGINES.has(db.engine) && (
-                  <Button variant="secondary" size="sm" onClick={() => setShell('client')} title="Open the engine's client with the stored credentials">
+                  <Button variant="secondary" size="sm" onClick={() => setShell('client')} title={t("Open the engine's client with the stored credentials")}>
                     <Terminal size={13} />
-                    Client
+                    {t('Client')}
                   </Button>
                 )}
               </>
@@ -296,16 +308,8 @@ export function DatabaseDetail() {
       {/* Tabs */}
       <Tabs
         active={activeTab}
-        onChange={(t) => setActiveTab(t as DbTab)}
-        tabs={[
-          { id: 'overview', label: 'Overview' },
-          { id: 'topology', label: 'Topology' },
-          { id: 'manifest', label: 'Manifest & Inspect' },
-          { id: 'files', label: 'Files' },
-          { id: 'backups', label: 'Backups' },
-          { id: 'logs', label: 'Logs' },
-          { id: 'settings', label: 'Settings' },
-        ]}
+        onChange={(tab) => setActiveTab(tab as DbTab)}
+        tabs={DB_TAB_LABELS.map((tab) => ({ id: tab.id, label: t(tab.label) }))}
       />
 
       {/* Tab Panels */}
@@ -361,6 +365,7 @@ function OverviewPanel({
   studioUrl: string | null;
   isStudioPending: boolean;
 }) {
+  const t = useT();
   const { copied, copy } = useCopy();
   const [showPassword, setShowPassword] = useState(false);
 
@@ -379,10 +384,10 @@ function OverviewPanel({
   const resource = liveStats.data?.resource;
   const live = !liveStats.isError && resource?.state === 'live' && resource.id === db.id && resource.serverId === (db.serverId ?? null)
     ? liveStats.data?.containers.find((c) => c.kind === 'database' && c.refId === db.id) : undefined;
-  const metricsMessage = liveStats.isError ? 'Live metrics could not be loaded. Retry the snapshot.'
-    : liveStats.isLoading || resource?.state === 'pending' ? 'Waiting for the first resource sample…'
-    : resource?.state === 'stale' ? 'The last resource sample is out of date. Waiting for a fresh sample…'
-    : 'Live metrics are unavailable. Waiting for the next collection.';
+  const metricsMessage = liveStats.isError ? t('Live metrics could not be loaded. Retry the snapshot.')
+    : liveStats.isLoading || resource?.state === 'pending' ? t('Waiting for the first resource sample…')
+    : resource?.state === 'stale' ? t('The last resource sample is out of date. Waiting for a fresh sample…')
+    : t('Live metrics are unavailable. Waiting for the next collection.');
 
   const creds = credsQuery.data;
   const isRunning = db.status === 'running';
@@ -397,7 +402,7 @@ function OverviewPanel({
       <div className="space-y-6">
         <Card className="p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Connection Details</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{t('Connection Details')}</h2>
             {db.connectionString && (
               <Button
                 variant="secondary"
@@ -406,7 +411,7 @@ function OverviewPanel({
                 className="text-xs"
               >
                 {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-                {copied ? 'Copied' : 'Copy URI'}
+                {copied ? t('Copied') : t('Copy URI')}
               </Button>
             )}
           </div>
@@ -417,25 +422,25 @@ function OverviewPanel({
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">
-              {isRunning ? 'Connection URI is unavailable for this account. Ask a database administrator for connection details.' : 'Database is stopped. Start database to generate active connection string.'}
+              {isRunning ? t('Connection URI is unavailable for this account. Ask a database administrator for connection details.') : t('Database is stopped. Start database to generate active connection string.')}
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-2.5">
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Host (Internal)</span>
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('Host (Internal)')}</span>
               <span className="font-mono text-slate-200">{db.host}</span>
             </div>
             <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-2.5">
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Port</span>
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('Port')}</span>
               <span className="font-mono text-slate-200">{db.port}</span>
             </div>
             <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-2.5">
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Username</span>
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('Username')}</span>
               <span className="font-mono text-slate-200">{db.username}</span>
             </div>
             <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-2.5">
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Database</span>
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('Database')}</span>
               <span className="font-mono text-slate-200">{db.database}</span>
             </div>
           </div>
@@ -443,7 +448,7 @@ function OverviewPanel({
           {creds && (
             <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-3 flex items-center justify-between">
               <div>
-                <span className="text-slate-500 block text-[10px] uppercase font-semibold">Password</span>
+                <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('Password')}</span>
                 <span className="font-mono text-xs text-slate-200">
                   {showPassword ? creds.password : '••••••••••••••••'}
                 </span>
@@ -453,7 +458,7 @@ function OverviewPanel({
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   className="rounded p-1 text-slate-400 hover:text-slate-200 transition"
-                  title={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? t('Hide password') : t('Show password')}
                 >
                   {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
@@ -461,7 +466,7 @@ function OverviewPanel({
                   type="button"
                   onClick={() => void copy(creds.password)}
                   className="rounded p-1 text-slate-400 hover:text-slate-200 transition"
-                  title="Copy password"
+                  title={t('Copy password')}
                 >
                   <Copy size={14} />
                 </button>
@@ -475,12 +480,12 @@ function OverviewPanel({
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2">
               <Activity size={16} className="text-emerald-400" />
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Live Resources</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{t('Live Resources')}</h2>
               <span className={`ml-auto inline-flex items-center gap-1.5 text-[10px] font-medium ${live ? 'text-emerald-300' : 'text-slate-500'}`}>
-                {live && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />}{live ? 'live' : liveStats.isLoading || resource?.state === 'pending' ? 'waiting' : resource?.state === 'stale' ? 'stale' : 'unavailable'}
+                {live && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />}{live ? t('live') : liveStats.isLoading || resource?.state === 'pending' ? t('waiting') : resource?.state === 'stale' ? t('stale') : t('unavailable')}
               </span>
             </div>
-            {db.serverId != null && <p className="text-xs text-slate-500">Source: node #{db.serverId}{db.serverName ? ` · ${db.serverName}` : ''}</p>}
+            {db.serverId != null && <p className="text-xs text-slate-500">{t('Source: node #{id}', { id: db.serverId })}{db.serverName ? ` · ${db.serverName}` : ''}</p>}
 
             {live ? (
               <div className="grid grid-cols-2 gap-3">
@@ -506,7 +511,7 @@ function OverviewPanel({
                           style={{ width: `${Math.min(100, (live.memMb / (db.memLimitMb ?? 1)) * 100)}%` }}
                         />
                       </div>
-                      <div className="mt-1 text-[10px] text-slate-500">of {db.memLimitMb} MB limit</div>
+                      <div className="mt-1 text-[10px] text-slate-500">{t('of {n} MB limit', { n: db.memLimitMb ?? 0 })}</div>
                     </div>
                   )}
                 </div>
@@ -514,7 +519,7 @@ function OverviewPanel({
             ) : (
               <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">
                 <p>{metricsMessage}</p>
-                {liveStats.isError && <Button size="sm" variant="secondary" className="mt-2" onClick={() => void liveStats.refetch()}>Retry metrics</Button>}
+                {liveStats.isError && <Button size="sm" variant="secondary" className="mt-2" onClick={() => void liveStats.refetch()}>{t('Retry metrics')}</Button>}
               </div>
             )}
           </Card>
@@ -523,15 +528,15 @@ function OverviewPanel({
         {/* The installed Studio images support these SQL/KV engines. */}
         {!(DATABASE_STUDIO_ENGINES as readonly string[]).includes(db.engine) ? (
           <Card className="p-5 space-y-2">
-            <h2 className="text-sm font-semibold text-slate-400">Database Web Studio</h2>
-            <p className="text-xs text-slate-400">Web Studio supports PostgreSQL, MySQL, MariaDB and Redis-compatible engines.</p>
+            <h2 className="text-sm font-semibold text-slate-400">{t('Database Web Studio')}</h2>
+            <p className="text-xs text-slate-400">{t('Web Studio supports PostgreSQL, MySQL, MariaDB and Redis-compatible engines.')}</p>
           </Card>
         ) : (
         <Card className="p-5 space-y-4">
 <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Compass size={16} className="text-amber-400" />
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Database Web Studio</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{t('Database Web Studio')}</h2>
             </div>
             <span
               className={cn(
@@ -541,18 +546,17 @@ function OverviewPanel({
                   : 'bg-slate-500/15 text-slate-400 ring-slate-500/20',
               )}
             >
-              {db.nodeStudioState === 'preparing' ? 'Preparation pending' : db.nodeStudioState === 'cleanup_pending' ? 'Cleanup pending' : db.webGuiEnabled ? (isNodeDatabase(db) ? `Running on node #${db.serverId}` : `Running on :${studioPort}`) : 'Inactive'}
+              {db.nodeStudioState === 'preparing' ? t('Preparation pending') : db.nodeStudioState === 'cleanup_pending' ? t('Cleanup pending') : db.webGuiEnabled ? (isNodeDatabase(db) ? t('Running on node #{id}', { id: db.serverId ?? '' }) : t('Running on :{port}', { port: studioPort })) : t('Inactive')}
             </span>
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">
-            One-click visual database browser (Adminer for SQL / Redis Commander for KV). Inspect tables, execute queries, and view records without leaving your browser.
+            {t('One-click visual database browser (Adminer for SQL / Redis Commander for KV). Inspect tables, execute queries, and view records without leaving your browser.')}
           </p>
-          {isNodeDatabase(db) && <p className="text-xs text-slate-500">Runs on node #{db.serverId}{db.serverName ? ' · ' + db.serverName : ''}. Access uses the panel address; no host port is published.</p>}
+          {isNodeDatabase(db) && <p className="text-xs text-slate-500">{t('Runs on node #{node}. Access uses the panel address; no host port is published.', { node: `${db.serverId}${db.serverName ? ` · ${db.serverName}` : ''}` })}</p>}
           {/* r560: why it is a tab and not an embedded window. */}
           <p className="text-xs text-slate-500 leading-relaxed">
-            The studio opens in its own browser tab, isolated from the panel. Its session is tied to your login —
-            signing out, or losing operator access, ends it.
+            {t('The studio opens in its own browser tab, isolated from the panel. Its session is tied to your login — signing out, or losing operator access, ends it.')}
           </p>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -569,7 +573,7 @@ function OverviewPanel({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-50"
                 >
                   <ExternalLink size={13} />
-                  Open studio
+                  {t('Open studio')}
                 </button>
 
               </>
@@ -580,24 +584,27 @@ function OverviewPanel({
                 disabled={isStudioPending || !isRunning}
               >
                 <Play size={13} className="fill-current text-emerald-400" />
-                {isStudioPending ? 'Preparing Studio…' : 'Launch Web Studio'}
+                {isStudioPending ? t('Preparing Studio…') : t('Launch Web Studio')}
               </Button>
             )}
             {(db.webGuiEnabled || db.nodeStudioState != null) && (
-              <Button variant="secondary" size="sm" onClick={onStopStudio} disabled={isStudioPending}>Stop Studio</Button>
+              <Button variant="secondary" size="sm" onClick={onStopStudio} disabled={isStudioPending}>{t('Stop Studio')}</Button>
             )}
           </div>
           {studioUrl && (
             <p className="text-xs text-slate-400">
-              Tab didn't open?{' '}
-              <a
-                href={studioUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
-              >
-                Open the studio in a new tab <ExternalLink size={12} />
-              </a>
+              {fill(t("Tab didn't open? {link}"), {
+                link: (
+                  <a
+                    href={studioUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
+                  >
+                    {t('Open the studio in a new tab')} <ExternalLink size={12} />
+                  </a>
+                ),
+              })}
             </p>
           )}
         </Card>
@@ -609,15 +616,15 @@ function OverviewPanel({
       <div className="space-y-6">
         <Card className="p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Linked Applications</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{t('Linked Applications')}</h2>
             <span className="rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-300">
-              {db.attachedServices.length} attached
+              {t('{n} attached', { n: db.attachedServices.length })}
             </span>
           </div>
 
           {db.attachedServices.length === 0 ? (
             <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-slate-500">
-              No services are linked to this database yet. You can attach this database in the service's Environment tab.
+              {t("No services are linked to this database yet. You can attach this database in the service's Environment tab.")}
             </div>
           ) : (
             <div className="space-y-2">
@@ -636,7 +643,7 @@ function OverviewPanel({
                       <div className="font-mono text-[10px] text-slate-500">{svc.slug}</div>
                     </div>
                   </div>
-                  <span className="text-xs text-indigo-400 font-medium">View service &rarr;</span>
+                  <span className="text-xs text-indigo-400 font-medium">{t('View service →')}</span>
                 </Link>
               ))}
             </div>
@@ -646,19 +653,19 @@ function OverviewPanel({
         {/* Beside the linked services, so the two columns stay balanced. */}
         {/* Runtime info card */}
         <Card className="p-5 space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Runtime &amp; Storage</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{t('Runtime & Storage')}</h2>
           <dl className="space-y-2 text-xs">
             <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
-              <dt className="text-slate-500">Container</dt>
+              <dt className="text-slate-500">{t('Container')}</dt>
               <dd className="font-mono text-slate-200">{db.containerName ?? `nd-db-${db.slug}`}</dd>
             </div>
             <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
-              <dt className="text-slate-500">Volume</dt>
+              <dt className="text-slate-500">{t('Volume')}</dt>
               <dd className="font-mono text-slate-200">{db.volumeName ?? `nd-db-${db.slug}-data`}</dd>
             </div>
             {db.extensions && db.extensions.length > 0 && (
               <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
-                <dt className="text-slate-500">Extensions</dt>
+                <dt className="text-slate-500">{t('Extensions')}</dt>
                 <dd className="flex gap-1.5">
                   {db.extensions.map((ext) => (
                     <span key={ext} className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-emerald-300">
@@ -669,13 +676,13 @@ function OverviewPanel({
               </div>
             )}
             <div className="flex justify-between border-b border-white/[0.04] pb-1.5">
-              <dt className="text-slate-500">Created</dt>
+              <dt className="text-slate-500">{t('Created')}</dt>
               <dd className="text-slate-300">{formatDateTime(db.createdAt)}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-slate-500">CPU / RAM Limit</dt>
+              <dt className="text-slate-500">{t('CPU / RAM Limit')}</dt>
               <dd className="font-mono text-slate-200">
-                {db.cpuLimitMilli ? `${db.cpuLimitMilli / 1000} cores` : db.cpuShares ? `${db.cpuShares} shares` : 'Unlimited'} / {db.memLimitMb ? `${db.memLimitMb} MB` : 'Unlimited'}
+                {db.cpuLimitMilli ? t('{n} cores', { n: db.cpuLimitMilli / 1000 }) : db.cpuShares ? t('{n} shares', { n: db.cpuShares }) : t('Unlimited')} / {db.memLimitMb ? `${db.memLimitMb} MB` : t('Unlimited')}
               </dd>
             </div>
           </dl>
@@ -687,6 +694,7 @@ function OverviewPanel({
 
 // ── Backups Tab ──────────────────────────────────────────────────────────────
 function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [pendingRestore, setPendingRestore] = useState<{ id: number; createdAt: string } | null>(null);
@@ -718,11 +726,11 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
     mutationFn: (backupId: number) => api.databases.drillBackup(dbId, { backupId }),
     onSuccess: (result) => {
       void qc.invalidateQueries({ queryKey: ['database-drills', dbId] });
-      if (result.status === 'passed') toast('Backup check passed', 'success');
-      else if (result.status === 'failed') toast(`Backup check failed${result.error ? `: ${result.error}` : ''}`, 'error');
-      else toast(`Backup could not be checked${result.error ? `: ${result.error}` : ''}`, 'error');
+      if (result.status === 'passed') toast(t('Backup check passed'), 'success');
+      else if (result.status === 'failed') toast(result.error ? t('Backup check failed: {error}', { error: result.error }) : t('Backup check failed'), 'error');
+      else toast(result.error ? t('Backup could not be checked: {error}', { error: result.error }) : t('Backup could not be checked'), 'error');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Backup check failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Backup check failed'), 'error'),
   });
 
   const restoreMutation = useMutation({
@@ -730,48 +738,48 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
     onSuccess: () => {
       setPendingRestore(null);
       qc.invalidateQueries({ queryKey: ['backups'] });
-      toast('Database restore started', 'success');
+      toast(t('Database restore started'), 'success');
     },
-    onError: () => toast('Restore failed', 'error'),
+    onError: () => toast(t('Restore failed'), 'error'),
   });
 
   const downloadBackup = async (id: number) => {
     try {
       const res = await authedFetch(`/v1/backups/${id}/download`);
       if (!res.ok) {
-        toast('Download failed', 'error');
+        toast(t('Download failed'), 'error');
         return;
       }
       downloadBlob(await res.blob(), `${dbName}-backup-${id}.dump`);
     } catch {
-      toast('Download failed', 'error');
+      toast(t('Download failed'), 'error');
     }
   };
 
   return (
     <Card className="overflow-hidden">
       <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Database Snapshots</h2>
-        <span className="text-xs text-slate-500">{dbBackups.length} snapshot(s)</span>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{t('Database Snapshots')}</h2>
+        <span className="text-xs text-slate-500">{t('{n} snapshot(s)', { n: dbBackups.length })}</span>
       </div>
 
       {dbBackups.length === 0 ? (
         <CardBody>
           <EmptyState
             icon={<HardDrive size={24} />}
-            title="No snapshots yet"
-            hint="Create a snapshot using the 'Backup now' button in the top right."
+            title={t('No snapshots yet')}
+            hint={t("Create a snapshot using the 'Backup now' button in the top right.")}
           />
         </CardBody>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium">Size</th>
-              <th className="px-5 py-3 font-medium">Created</th>
-              <th className="px-5 py-3 font-medium">Last check</th>
-              <th className="px-5 py-3 text-right">Actions</th>
+              <th className="px-5 py-3 font-medium">{t('Status')}</th>
+              <th className="px-5 py-3 font-medium">{t('Size')}</th>
+              <th className="px-5 py-3 font-medium">{t('Created')}</th>
+              <th className="px-5 py-3 font-medium">{t('Last check')}</th>
+              <th className="px-5 py-3 text-right">{t('Actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -786,10 +794,10 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
                   {latestDrill.get(b.id) ? (
                     <StatusBadge
                       status={latestDrill.get(b.id)!.status}
-                      title={latestDrill.get(b.id)!.error ?? `Checked ${formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString())}`}
+                      title={latestDrill.get(b.id)!.error ?? t('Checked {time}', { time: formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString()) })}
                     />
                   ) : (
-                    <span className="text-xs text-slate-600">never</span>
+                    <span className="text-xs text-slate-600">{t('never')}</span>
                   )}
                 </td>
                 <td className="px-5 py-3 text-right">
@@ -800,26 +808,26 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
                       onClick={() => drillMutation.mutate(b.id)}
                       disabled={drillMutation.isPending || b.status !== 'completed'}
                       className="text-xs"
-                      title="Check that this dump is readable, without restoring it"
-                      aria-label={`Check backup ${b.id}`}
+                      title={t('Check that this dump is readable, without restoring it')}
+                      aria-label={t('Check backup {id}', { id: b.id })}
                     >
-                      <ShieldCheck size={12} /> {drillMutation.isPending && drillMutation.variables === b.id ? 'Checking…' : 'Check'}
+                      <ShieldCheck size={12} /> {drillMutation.isPending && drillMutation.variables === b.id ? t('Checking…') : t('Check')}
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => setPendingRestore({ id: b.id, createdAt: b.createdAt })}
                       className="text-xs"
-                      title="Restore database snapshot"
+                      title={t('Restore database snapshot')}
                     >
-                      <RotateCcw size={12} /> Restore
+                      <RotateCcw size={12} /> {t('Restore')}
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => void downloadBackup(b.id)}
                       className="text-xs"
-                      title="Download dump file"
+                      title={t('Download dump file')}
                     >
                       <Download size={12} />
                     </Button>
@@ -834,9 +842,9 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
       {pendingRestore && (
         <ConfirmDialog
           open={true}
-          title="Restore Database Snapshot"
-          message={`Are you sure you want to restore the snapshot from ${formatDateTime(pendingRestore.createdAt)}? The database will restart and current data will be replaced.`}
-          confirmLabel="Restore Snapshot"
+          title={t('Restore Database Snapshot')}
+          message={t('Are you sure you want to restore the snapshot from {time}? The database will restart and current data will be replaced.', { time: formatDateTime(pendingRestore.createdAt) })}
+          confirmLabel={t('Restore Snapshot')}
           onConfirm={() => restoreMutation.mutate(pendingRestore.id)}
           onClose={() => setPendingRestore(null)}
         />
@@ -847,6 +855,7 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
 
 // ── Logs Tab ─────────────────────────────────────────────────────────────────
 function LogsPanel({ dbId, isRunning }: { dbId: number; isRunning: boolean }) {
+  const t = useT();
   const [lines, setLines] = useState('100');
   const { copy } = useCopy();
 
@@ -864,7 +873,7 @@ function LogsPanel({ dbId, isRunning }: { dbId: number; isRunning: boolean }) {
       <div className="p-4 border-b border-white/[0.06] flex items-center justify-between bg-white/[0.01]">
         <div className="flex items-center gap-2">
           <Terminal size={15} className="text-indigo-400" />
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Database Engine Logs</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{t('Database Engine Logs')}</h2>
         </div>
 
         <div className="flex items-center gap-2">
@@ -873,10 +882,10 @@ function LogsPanel({ dbId, isRunning }: { dbId: number; isRunning: boolean }) {
             onChange={(e) => setLines(e.target.value)}
             className="rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-xs text-slate-300 outline-none"
           >
-            <option value="50">50 lines</option>
-            <option value="100">100 lines</option>
-            <option value="250">250 lines</option>
-            <option value="500">500 lines</option>
+            <option value="50">{t('{n} lines', { n: 50 })}</option>
+            <option value="100">{t('{n} lines', { n: 100 })}</option>
+            <option value="250">{t('{n} lines', { n: 250 })}</option>
+            <option value="500">{t('{n} lines', { n: 500 })}</option>
           </select>
 
           <Button
@@ -886,7 +895,7 @@ function LogsPanel({ dbId, isRunning }: { dbId: number; isRunning: boolean }) {
             disabled={logs.length === 0}
             className="text-xs"
           >
-            <Copy size={12} /> Copy logs
+            <Copy size={12} /> {t('Copy logs')}
           </Button>
 
           <Button
@@ -895,7 +904,7 @@ function LogsPanel({ dbId, isRunning }: { dbId: number; isRunning: boolean }) {
             onClick={() => void logsQuery.refetch()}
             disabled={logsQuery.isFetching}
             className="text-xs"
-            title="Refresh logs"
+            title={t('Refresh logs')}
           >
             <RefreshCw size={12} className={logsQuery.isFetching ? 'animate-spin' : ''} />
           </Button>
@@ -904,9 +913,9 @@ function LogsPanel({ dbId, isRunning }: { dbId: number; isRunning: boolean }) {
 
       <div className="p-4 bg-slate-950 font-mono text-xs text-slate-300 max-h-[500px] overflow-y-auto space-y-0.5">
         {!isRunning ? (
-          <div className="py-8 text-center text-slate-500">Database is stopped. Start database to stream logs.</div>
+          <div className="py-8 text-center text-slate-500">{t('Database is stopped. Start database to stream logs.')}</div>
         ) : logs.length === 0 ? (
-          <div className="py-8 text-center text-slate-500">No logs captured yet.</div>
+          <div className="py-8 text-center text-slate-500">{t('No logs captured yet.')}</div>
         ) : (
           logs.map((line, idx) => (
             <div key={idx} className="whitespace-pre-wrap break-all hover:bg-white/[0.02] py-0.5">
@@ -921,6 +930,7 @@ function LogsPanel({ dbId, isRunning }: { dbId: number; isRunning: boolean }) {
 
 // ── Settings Tab ─────────────────────────────────────────────────────────────
 function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () => void }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [cpuShares, setCpuShares] = useState(db.cpuShares ? String(db.cpuShares) : '');
@@ -943,48 +953,48 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
       qc.invalidateQueries({ queryKey: ['database-detail', db.id] });
       qc.invalidateQueries({ queryKey: ['databases'] });
       qc.invalidateQueries({ queryKey: ['live-stats-snapshot'] });
-      toast('Resource limits updated and applied', 'success');
+      toast(t('Resource limits updated and applied'), 'success');
     },
-    onError: () => toast('Could not update limits', 'error'),
+    onError: () => toast(t('Could not update limits'), 'error'),
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => api.databases.remove(db.id, { force: forceDelete }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['databases'] });
-      toast('Database deleted', 'success');
+      toast(t('Database deleted'), 'success');
       onDeleted();
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Delete failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Delete failed'), 'error'),
   });
 
   return (
     <div className="max-w-2xl space-y-6">
       {/* Resource Limits */}
       <Card className="p-5 space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Resource Allocations</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{t('Resource Allocations')}</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="CPU Limit (cores, hard cap)">
+          <Field label={t('CPU Limit (cores, hard cap)')}>
             <Input
               type="text"
               inputMode="decimal"
-              placeholder="e.g. 0.5"
+              placeholder={t('e.g. {value}', { value: '0.5' })}
               value={cpuCap}
               onChange={(e) => setCpuCap(e.target.value)}
             />
           </Field>
-          <Field label="CPU Shares (relative weight, e.g. 1024)">
+          <Field label={t('CPU Shares (relative weight, e.g. 1024)')}>
             <Input
               type="number"
-              placeholder="e.g. 1024"
+              placeholder={t('e.g. {value}', { value: '1024' })}
               value={cpuShares}
               onChange={(e) => setCpuShares(e.target.value)}
             />
           </Field>
-          <Field label="Memory Limit (MB, no swap allowance)">
+          <Field label={t('Memory Limit (MB, no swap allowance)')}>
             <Input
               type="number"
-              placeholder="e.g. 512"
+              placeholder={t('e.g. {value}', { value: '512' })}
               value={memLimitMb}
               onChange={(e) => setMemLimitMb(e.target.value)}
             />
@@ -996,7 +1006,7 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
             onClick={() => limitsMutation.mutate()}
             disabled={limitsMutation.isPending}
           >
-            Save resource limits
+            {t('Save resource limits')}
           </Button>
         </div>
       </Card>
@@ -1004,8 +1014,8 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
       {/* Multi-node: public access and PgBouncer need a port on the panel host; a node database has neither yet. */}
       {isNodeDatabase(db) ? (
         <>
-          <NodeUnavailableCard title="Public access" db={db} />
-          <NodeUnavailableCard title="PgBouncer connection pooling" db={db} />
+          <NodeUnavailableCard title={t('Public access')} db={db} />
+          <NodeUnavailableCard title={t('PgBouncer connection pooling')} db={db} />
         </>
       ) : (
         <>
@@ -1017,16 +1027,21 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
       {/* Danger Zone */}
       <Card className="p-5 border-rose-500/20 bg-rose-500/[0.02] space-y-4">
         <div>
-          <h2 className="text-sm font-semibold text-rose-400 uppercase tracking-wider">Danger Zone</h2>
+          <h2 className="text-sm font-semibold text-rose-400 uppercase tracking-wider">{t('Danger Zone')}</h2>
           <p className="text-xs text-slate-400 mt-1">
-            Deleting this database will permanently stop the container. Persistent volume storage is retained for safety.
+            {t('Deleting this database will permanently stop the container. Persistent volume storage is retained for safety.')}
           </p>
         </div>
 
         {db.attachedServices.length > 0 && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
-            <strong>Warning:</strong> This database is actively linked to {db.attachedServices.length} service(s):{' '}
-            {db.attachedServices.map((s) => s.name).join(', ')}.
+            {fill(
+              t('{warning} This database is actively linked to {n} service(s): {services}.', {
+                n: db.attachedServices.length,
+                services: db.attachedServices.map((s) => s.name).join(', '),
+              }),
+              { warning: <strong>{t('Warning:')}</strong> },
+            )}
           </div>
         )}
 
@@ -1038,14 +1053,14 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
               onChange={(e) => setForceDelete(e.target.checked)}
               className="rounded border-slate-700 bg-slate-900 text-indigo-500"
             />
-            Force delete even if services are attached
+            {t('Force delete even if services are attached')}
           </label>
           <Button
             variant="danger"
             size="sm"
             onClick={() => setConfirmDelete(true)}
           >
-            <Trash2 size={13} /> Delete database
+            <Trash2 size={13} /> {t('Delete database')}
           </Button>
         </div>
       </Card>
@@ -1053,9 +1068,9 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
       {confirmDelete && (
         <ConfirmDialog
           open={true}
-          title={`Delete "${db.name}"?`}
-          message={`Are you sure you want to delete database "${db.name}"? This action cannot be undone.`}
-          confirmLabel="Delete Database"
+          title={t('Delete "{name}"?', { name: db.name })}
+          message={t('Are you sure you want to delete database "{name}"? This action cannot be undone.', { name: db.name })}
+          confirmLabel={t('Delete Database')}
           onConfirm={() => deleteMutation.mutate()}
           onClose={() => setConfirmDelete(false)}
         />

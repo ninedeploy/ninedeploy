@@ -5,6 +5,7 @@ import type { DnsCredentialProviderName } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody } from '../../components/ui.js';
+import { msg, useT } from '../../lib/i18n.js';
 
 interface Field {
   key: string;
@@ -18,42 +19,42 @@ interface Field {
 const PROVIDERS: Record<DnsCredentialProviderName, { label: string; help: string; fields: Field[] }> = {
   route53: {
     label: 'Amazon Route 53',
-    help: 'An IAM access key allowed route53:ListHostedZones and route53:ChangeResourceRecordSets on your public hosted zones.',
+    help: msg('An IAM access key allowed route53:ListHostedZones and route53:ChangeResourceRecordSets on your public hosted zones.'),
     fields: [
-      { key: 'accessKeyId', label: 'Access key ID', placeholder: 'AKIA…' },
-      { key: 'secretAccessKey', label: 'Secret access key', secret: true },
+      { key: 'accessKeyId', label: msg('Access key ID'), placeholder: 'AKIA…' },
+      { key: 'secretAccessKey', label: msg('Secret access key'), secret: true },
     ],
   },
   ovh: {
     label: 'OVHcloud',
-    help: 'Create an application and a consumer key at the API token page of your region, granting GET/POST/DELETE on /domain/zone/*.',
+    help: msg('Create an application and a consumer key at the API token page of your region, granting GET/POST/DELETE on /domain/zone/*.'),
     fields: [
       {
         key: 'endpoint',
-        label: 'Region',
+        label: msg('Region'),
         options: [
-          { value: 'ovh-eu', label: 'Europe (eu.api.ovh.com)' },
-          { value: 'ovh-ca', label: 'Canada (ca.api.ovh.com)' },
-          { value: 'ovh-us', label: 'United States (api.us.ovhcloud.com)' },
+          { value: 'ovh-eu', label: msg('Europe (eu.api.ovh.com)') },
+          { value: 'ovh-ca', label: msg('Canada (ca.api.ovh.com)') },
+          { value: 'ovh-us', label: msg('United States (api.us.ovhcloud.com)') },
         ],
       },
-      { key: 'applicationKey', label: 'Application key' },
-      { key: 'applicationSecret', label: 'Application secret', secret: true },
-      { key: 'consumerKey', label: 'Consumer key', secret: true },
+      { key: 'applicationKey', label: msg('Application key') },
+      { key: 'applicationSecret', label: msg('Application secret'), secret: true },
+      { key: 'consumerKey', label: msg('Consumer key'), secret: true },
     ],
   },
   porkbun: {
     label: 'Porkbun',
-    help: 'Create an API key pair under Account → API Access, then switch on API access for each domain in its Details.',
+    help: msg('Create an API key pair under Account → API Access, then switch on API access for each domain in its Details.'),
     fields: [
-      { key: 'apiKey', label: 'API key', placeholder: 'pk1_…', secret: true },
-      { key: 'secretApiKey', label: 'Secret API key', placeholder: 'sk1_…', secret: true },
+      { key: 'apiKey', label: msg('API key'), placeholder: 'pk1_…', secret: true },
+      { key: 'secretApiKey', label: msg('Secret API key'), placeholder: 'sk1_…', secret: true },
     ],
   },
   hetzner: {
     label: 'Hetzner DNS',
-    help: 'A Hetzner Cloud API token (Read & Write) of the project that holds your DNS zones.',
-    fields: [{ key: 'token', label: 'API token', secret: true }],
+    help: msg('A Hetzner Cloud API token (Read & Write) of the project that holds your DNS zones.'),
+    fields: [{ key: 'token', label: msg('API token'), secret: true }],
   },
 };
 
@@ -63,6 +64,7 @@ const INPUT = 'w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py
 export function DnsProviderCard() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
   const q = useQuery({ queryKey: ['settings-dns-provider'], queryFn: () => api.settings.dnsProvider.get() });
   const [provider, setProvider] = useState<DnsCredentialProviderName>('route53');
   const [values, setValues] = useState<Record<string, string>>({ endpoint: 'ovh-eu' });
@@ -92,18 +94,18 @@ export function DnsProviderCard() {
       setValues((v) => Object.fromEntries(Object.entries(v).filter(([k]) => !spec.fields.find((f) => f.key === k)?.secret)));
       setZones(null);
       refresh();
-      toast(`${spec.label} is now the DNS record provider`, 'success');
+      toast(t('{provider} is now the DNS record provider', { provider: spec.label }), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Save failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Save failed'), 'error'),
   });
 
   const test = useMutation({
     mutationFn: () => api.settings.dnsProvider.test(),
     onSuccess: (r) => {
-      if (r.ok) setZones(r.zoneCount ? `${r.zoneCount} zone(s): ${(r.zones ?? []).join(', ')}` : 'No zones visible to these credentials');
-      else toast(r.error ?? 'Test failed', 'error');
+      if (r.ok) setZones(r.zoneCount ? t('{count} zone(s): {zones}', { count: r.zoneCount, zones: (r.zones ?? []).join(', ') }) : t('No zones visible to these credentials'));
+      else toast(r.error ?? t('Test failed'), 'error');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Test failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Test failed'), 'error'),
   });
 
   const clear = useMutation({
@@ -111,9 +113,9 @@ export function DnsProviderCard() {
     onSuccess: () => {
       setZones(null);
       refresh();
-      toast('DNS record provider switched off', 'success');
+      toast(t('DNS record provider switched off'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not switch it off', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not switch it off'), 'error'),
   });
 
   const canSave = spec.fields.every((f) => !!(values[f.key] ?? '').trim());
@@ -122,27 +124,25 @@ export function DnsProviderCard() {
     <Card className="mb-5">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <Globe size={14} /> DNS records: Route 53, OVH, Porkbun, Hetzner
+          <Globe size={14} /> {t('DNS records: Route 53, OVH, Porkbun, Hetzner')}
         </h2>
         <p className="mb-2 text-xs text-slate-500">
-          When a domain goes live, NineDeploy creates its A, AAAA or CNAME record in the zone that owns it, and deletes the
-          record with the domain. Records that already exist are left alone. One DNS record provider is active at a time:
-          saving here replaces Cloudflare, DNSimple or Namecheap.
+          {t('When a domain goes live, NineDeploy creates its A, AAAA or CNAME record in the zone that owns it, and deletes the record with the domain. Records that already exist are left alone. One DNS record provider is active at a time: saving here replaces Cloudflare, DNSimple or Namecheap.')}
         </p>
         <p className="mb-4 text-xs" data-testid="dns-provider-status">
           {active ? (
-            <span className="text-emerald-400">Active: {PROVIDERS[active].label}</span>
+            <span className="text-emerald-400">{t('Active: {provider}', { provider: PROVIDERS[active].label })}</span>
           ) : q.data?.provider ? (
-            <span className="text-slate-500">Active provider: {q.data.provider} (configured on its own card)</span>
+            <span className="text-slate-500">{t('Active provider: {provider} (configured on its own card)', { provider: q.data.provider })}</span>
           ) : (
-            <span className="text-slate-500">No DNS record provider is active.</span>
+            <span className="text-slate-500">{t('No DNS record provider is active.')}</span>
           )}
         </p>
         <div className="grid max-w-md gap-3">
           <label className="block">
-            <span className="mb-1 block text-xs text-slate-500">Provider</span>
+            <span className="mb-1 block text-xs text-slate-500">{t('Provider')}</span>
             <select
-              aria-label="DNS provider"
+              aria-label={t('DNS provider')}
               value={provider}
               onChange={(e) => {
                 setProvider(e.target.value as DnsCredentialProviderName);
@@ -157,26 +157,26 @@ export function DnsProviderCard() {
               ))}
             </select>
           </label>
-          <p className="text-[11px] text-slate-500">{spec.help}</p>
+          <p className="text-[11px] text-slate-500">{t(spec.help)}</p>
           {spec.fields.map((f) => (
             <label key={f.key} className="block">
-              <span className="mb-1 block text-xs text-slate-500">{f.label}</span>
+              <span className="mb-1 block text-xs text-slate-500">{t(f.label)}</span>
               {f.options ? (
-                <select aria-label={f.label} value={values[f.key] ?? ''} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} className={INPUT}>
+                <select aria-label={t(f.label)} value={values[f.key] ?? ''} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} className={INPUT}>
                   {f.options.map((o) => (
                     <option key={o.value} value={o.value}>
-                      {o.label}
+                      {t(o.label)}
                     </option>
                   ))}
                 </select>
               ) : (
                 <input
-                  aria-label={f.label}
+                  aria-label={t(f.label)}
                   type={f.secret ? 'password' : 'text'}
                   autoComplete="off"
                   value={values[f.key] ?? ''}
                   onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
-                  placeholder={f.secret && active === provider ? 'saved; re-enter to change' : f.placeholder}
+                  placeholder={f.secret && active === provider ? t('saved; re-enter to change') : f.placeholder}
                   className={INPUT}
                 />
               )}
@@ -184,14 +184,14 @@ export function DnsProviderCard() {
           ))}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !canSave}>
-              {save.isPending ? 'Saving…' : 'Save and activate'}
+              {save.isPending ? t('Saving…') : t('Save and activate')}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => test.mutate()} disabled={test.isPending || !active}>
-              {test.isPending ? 'Testing…' : 'List zones'}
+              {test.isPending ? t('Testing…') : t('List zones')}
             </Button>
             {q.data?.configured && (
               <Button size="sm" variant="ghost" onClick={() => clear.mutate()} disabled={clear.isPending}>
-                Switch off
+                {t('Switch off')}
               </Button>
             )}
           </div>

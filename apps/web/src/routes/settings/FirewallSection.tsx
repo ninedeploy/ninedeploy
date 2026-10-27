@@ -18,6 +18,7 @@ import {
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, Input, cn } from '../../components/ui.js';
+import { fill, msg, useT } from '../../lib/i18n.js';
 
 interface PortPreset {
   id: string;
@@ -31,18 +32,18 @@ interface PortPreset {
 const COMMON_PRESETS: PortPreset[] = [
   {
     id: 'web-ingress',
-    name: 'Web Ingress (Traefik)',
+    name: msg('Web Ingress (Traefik)'),
     category: 'Web',
     icon: Globe,
     ports: [
       { port: 80, proto: 'tcp', label: 'HTTP (80)' },
       { port: 443, proto: 'tcp', label: 'HTTPS (443)' },
     ],
-    description: 'Reverse proxy, Let\'s Encrypt automatic SSL certificates and custom domains',
+    description: msg('Reverse proxy, Let\'s Encrypt automatic SSL certificates and custom domains'),
   },
   {
     id: 'mail-poste',
-    name: 'Mail Server (Poste.io / Mailcow)',
+    name: msg('Mail Server (Poste.io / Mailcow)'),
     category: 'Mail',
     icon: Mail,
     ports: [
@@ -52,47 +53,47 @@ const COMMON_PRESETS: PortPreset[] = [
       { port: 993, proto: 'tcp', label: 'IMAPS (993)' },
       { port: 995, proto: 'tcp', label: 'POP3S (995)' },
     ],
-    description: 'Inbound/outbound email protocols & secure mailbox sync for Poste.io/Mailcow',
+    description: msg('Inbound/outbound email protocols & secure mailbox sync for Poste.io/Mailcow'),
   },
   {
     id: 'ssh',
-    name: 'SSH Remote Console',
+    name: msg('SSH Remote Console'),
     category: 'Remote',
     icon: Terminal,
     ports: [{ port: 22, proto: 'tcp', label: 'SSH (22)' }],
-    description: 'Secure shell remote terminal access to the host server',
+    description: msg('Secure shell remote terminal access to the host server'),
   },
   {
     id: 'postgres',
-    name: 'PostgreSQL Database',
+    name: msg('PostgreSQL Database'),
     category: 'Database',
     icon: Database,
     ports: [{ port: 5432, proto: 'tcp', label: 'Postgres (5432)' }],
-    description: 'Direct external database client access (DBeaver, TablePlus, pgAdmin)',
+    description: msg('Direct external database client access (DBeaver, TablePlus, pgAdmin)'),
   },
   {
     id: 'mysql',
-    name: 'MySQL / MariaDB',
+    name: msg('MySQL / MariaDB'),
     category: 'Database',
     icon: Database,
     ports: [{ port: 3306, proto: 'tcp', label: 'MySQL (3306)' }],
-    description: 'Direct external MySQL/MariaDB database client access',
+    description: msg('Direct external MySQL/MariaDB database client access'),
   },
   {
     id: 'redis',
-    name: 'Redis Datastore',
+    name: msg('Redis Datastore'),
     category: 'Database',
     icon: Database,
     ports: [{ port: 6379, proto: 'tcp', label: 'Redis (6379)' }],
-    description: 'Direct external cache and message queue access',
+    description: msg('Direct external cache and message queue access'),
   },
   {
     id: 'mongodb',
-    name: 'MongoDB',
+    name: msg('MongoDB'),
     category: 'Database',
     icon: Database,
     ports: [{ port: 27017, proto: 'tcp', label: 'MongoDB (27017)' }],
-    description: 'Direct external document database client access',
+    description: msg('Direct external document database client access'),
   },
 ];
 
@@ -110,6 +111,7 @@ export function ufwRuleMatchesPort(to: string, port: number, proto: 'tcp' | 'udp
 }
 
 export function FirewallSection() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -128,18 +130,18 @@ export function FirewallSection() {
     mutationFn: (enabled: boolean) => api.firewall.toggle(enabled),
     onSuccess: (data, enabled) => {
       qc.setQueryData(['firewall-status'], data.status);
-      toast(enabled ? 'Host firewall (UFW) enabled' : 'Host firewall (UFW) disabled', 'success');
+      toast(enabled ? t('Host firewall (UFW) enabled') : t('Host firewall (UFW) disabled'), 'success');
     },
-    onError: (err: any) => toast(err?.message || 'Could not toggle firewall', 'error'),
+    onError: (err: any) => toast(err?.message || t('Could not toggle firewall'), 'error'),
   });
 
   const applyRecommended = useMutation({
     mutationFn: () => api.firewall.applyRecommended(),
     onSuccess: (data) => {
       qc.setQueryData(['firewall-status'], data.status);
-      toast('Recommended VPS firewall profile applied (22, 80, 443 allowed)', 'success');
+      toast(t('Recommended VPS firewall profile applied (22, 80, 443 allowed)'), 'success');
     },
-    onError: (err: any) => toast(err?.message || 'Failed to apply recommended profile', 'error'),
+    onError: (err: any) => toast(err?.message || t('Failed to apply recommended profile'), 'error'),
   });
 
   const addRuleMutation = useMutation({
@@ -161,18 +163,18 @@ export function FirewallSection() {
       setPort('');
       setFromIp('');
       setComment('');
-      toast('Firewall port rule opened', 'success');
+      toast(t('Firewall port rule opened'), 'success');
     },
-    onError: (err: any) => toast(err?.message || 'Failed to add rule', 'error'),
+    onError: (err: any) => toast(err?.message || t('Failed to add rule'), 'error'),
   });
 
   const deleteRuleMutation = useMutation({
     mutationFn: (id: number) => api.firewall.deleteRule(id),
     onSuccess: (data) => {
       qc.setQueryData(['firewall-status'], data.status);
-      toast('Firewall rule removed', 'success');
+      toast(t('Firewall rule removed'), 'success');
     },
-    onError: (err: any) => toast(err?.message || 'Failed to delete rule', 'error'),
+    onError: (err: any) => toast(err?.message || t('Failed to delete rule'), 'error'),
   });
 
   const status = statusQuery.data;
@@ -196,7 +198,7 @@ export function FirewallSection() {
             comment: `${preset.name} - ${item.label}`,
           });
         }
-        toast(`Opened all ports for ${preset.name}`, 'success');
+        toast(t('Opened all ports for {name}', { name: t(preset.name) }), 'success');
       } else {
         // r191: every matching ALLOW rule (IPv4 AND the "(v6)" twin), matched
         // on the exact port — `includes('22')` also hit 2222 — and deleted in
@@ -214,11 +216,11 @@ export function FirewallSection() {
         for (const id of matchingRuleIds) {
           await api.firewall.deleteRule(id);
         }
-        toast(`Closed ports for ${preset.name}`, 'success');
+        toast(t('Closed ports for {name}', { name: t(preset.name) }), 'success');
       }
       statusQuery.refetch();
     } catch (err: any) {
-      toast(err?.message || 'Failed to toggle port preset', 'error');
+      toast(err?.message || t('Failed to toggle port preset'), 'error');
     }
   };
 
@@ -241,7 +243,7 @@ export function FirewallSection() {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-slate-100">Host Firewall & Port Control (UFW)</h3>
+                  <h3 className="text-base font-semibold text-slate-100">{t('Host Firewall & Port Control (UFW)')}</h3>
                   {status?.installed ? (
                     <span
                       className={cn(
@@ -252,16 +254,16 @@ export function FirewallSection() {
                       )}
                     >
                       <span className={cn('h-1.5 w-1.5 rounded-full', status.active ? 'bg-emerald-400' : 'bg-amber-400')} />
-                      {status.active ? 'Active & Enforcing' : 'Inactive'}
+                      {status.active ? t('Active & Enforcing') : t('Inactive')}
                     </span>
                   ) : (
                     <span className="rounded-full bg-slate-500/10 px-2.5 py-0.5 text-xs font-medium text-slate-400 ring-1 ring-slate-500/20">
-                      Not Installed
+                      {t('Not Installed')}
                     </span>
                   )}
                 </div>
                 <p className="mt-1 text-xs text-slate-400 max-w-xl">
-                  Manage incoming network traffic and port exposure on your Ubuntu VPS. When active, all incoming ports are blocked by default except explicitly permitted ones.
+                  {t('Manage incoming network traffic and port exposure on your Ubuntu VPS. When active, all incoming ports are blocked by default except explicitly permitted ones.')}
                 </p>
               </div>
             </div>
@@ -272,7 +274,7 @@ export function FirewallSection() {
                 size="sm"
                 onClick={() => statusQuery.refetch()}
                 disabled={statusQuery.isFetching}
-                title="Refresh firewall state"
+                title={t('Refresh firewall state')}
               >
                 <RefreshCw size={14} className={statusQuery.isFetching ? 'animate-spin' : ''} />
               </Button>
@@ -284,7 +286,7 @@ export function FirewallSection() {
                   disabled={toggleMutation.isPending}
                   className={status.active ? 'text-rose-400 hover:bg-rose-500/10' : ''}
                 >
-                  {status.active ? 'Disable Firewall' : 'Enable Firewall'}
+                  {status.active ? t('Disable Firewall') : t('Enable Firewall')}
                 </Button>
               )}
             </div>
@@ -296,7 +298,8 @@ export function FirewallSection() {
               <div className="flex items-center gap-2 text-xs text-indigo-300">
                 <Zap size={14} className="shrink-0 text-indigo-400" />
                 <span>
-                  <strong>Quick Start VPS Profile:</strong> Safely enable firewall with essential web & SSH access (22 SSH, 80 HTTP, 443 HTTPS).
+                  <strong>{t('Quick Start VPS Profile:')}</strong>{' '}
+                  {t('Safely enable firewall with essential web & SSH access (22 SSH, 80 HTTP, 443 HTTPS).')}
                 </span>
               </div>
               <Button
@@ -305,7 +308,7 @@ export function FirewallSection() {
                 onClick={() => applyRecommended.mutate()}
                 disabled={applyRecommended.isPending}
               >
-                Apply VPS Profile
+                {t('Apply VPS Profile')}
               </Button>
             </div>
           )}
@@ -316,9 +319,9 @@ export function FirewallSection() {
       <Card>
         <CardBody className="p-6">
           <div className="mb-4">
-            <h4 className="text-sm font-semibold text-slate-200">1-Click Service Port Presets</h4>
+            <h4 className="text-sm font-semibold text-slate-200">{t('1-Click Service Port Presets')}</h4>
             <p className="text-xs text-slate-400">
-              Easily open or close standard port combinations for mail servers (Poste.io), databases, and web ingress.
+              {t('Easily open or close standard port combinations for mail servers (Poste.io), databases, and web ingress.')}
             </p>
           </div>
 
@@ -340,7 +343,7 @@ export function FirewallSection() {
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-indigo-400 ring-1 ring-white/10">
                           <Icon size={14} />
                         </div>
-                        <span className="text-xs font-semibold text-slate-200">{preset.name}</span>
+                        <span className="text-xs font-semibold text-slate-200">{t(preset.name)}</span>
                       </div>
                       <span
                         className={cn(
@@ -358,10 +361,14 @@ export function FirewallSection() {
                             allOpen ? 'bg-emerald-400' : someOpen ? 'bg-amber-400' : 'bg-slate-500',
                           )}
                         />
-                        {allOpen ? 'All Open' : someOpen ? `${openCount}/${preset.ports.length} Open` : 'Closed'}
+                        {allOpen
+                          ? t('All Open')
+                          : someOpen
+                            ? t('{open}/{total} Open', { open: openCount, total: preset.ports.length })
+                            : t('Closed')}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-400 mb-3">{preset.description}</p>
+                    <p className="text-[11px] text-slate-400 mb-3">{t(preset.description)}</p>
                     <div className="flex flex-wrap gap-1.5 mb-4">
                       {preset.ports.map((p) => {
                         const open = isPortAllowed(p.port, p.proto);
@@ -391,7 +398,7 @@ export function FirewallSection() {
                       onClick={() => togglePreset(preset, allOpen)}
                       disabled={!status?.installed}
                     >
-                      {allOpen ? 'Close Ports' : 'Open All Ports'}
+                      {allOpen ? t('Close Ports') : t('Open All Ports')}
                     </Button>
                   </div>
                 </div>
@@ -406,12 +413,12 @@ export function FirewallSection() {
         <CardBody className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h4 className="text-sm font-semibold text-slate-200">Active Ingress & Port Rules</h4>
+              <h4 className="text-sm font-semibold text-slate-200">{t('Active Ingress & Port Rules')}</h4>
               <p className="text-xs text-slate-400">
-                All traffic matching these specific rules is permitted through the Linux host firewall.
+                {t('All traffic matching these specific rules is permitted through the Linux host firewall.')}
               </p>
             </div>
-            {rules.length > 0 && <span className="font-mono text-xs text-slate-400">{rules.length} rule(s)</span>}
+            {rules.length > 0 && <span className="font-mono text-xs text-slate-400">{t('{n} rule(s)', { n: rules.length })}</span>}
           </div>
 
           {rules.length > 0 ? (
@@ -420,11 +427,11 @@ export function FirewallSection() {
                 <thead>
                   <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400">
                     <th className="px-4 py-2.5 font-medium">#</th>
-                    <th className="px-4 py-2.5 font-medium">To / Port</th>
-                    <th className="px-4 py-2.5 font-medium">Action</th>
-                    <th className="px-4 py-2.5 font-medium">From (Source)</th>
-                    <th className="px-4 py-2.5 font-medium">Comment / Service</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Manage</th>
+                    <th className="px-4 py-2.5 font-medium">{t('To / Port')}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('Action')}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('From (Source)')}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('Comment / Service')}</th>
+                    <th className="px-4 py-2.5 text-right font-medium">{t('Manage')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono text-slate-300">
@@ -455,7 +462,7 @@ export function FirewallSection() {
                           onClick={() => deleteRuleMutation.mutate(r.id)}
                           disabled={deleteRuleMutation.isPending}
                           className="h-7 w-7 p-0 text-slate-500 hover:text-rose-400"
-                          title="Delete rule"
+                          title={t('Delete rule')}
                         >
                           <Trash2 size={13} />
                         </Button>
@@ -467,7 +474,7 @@ export function FirewallSection() {
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-xs text-slate-500">
-              No active host firewall rules configured.
+              {t('No active host firewall rules configured.')}
             </div>
           )}
         </CardBody>
@@ -476,9 +483,9 @@ export function FirewallSection() {
       {/* ── Add Custom Firewall Rule ──────────────────────────────────────── */}
       <Card>
         <CardBody className="p-6">
-          <h4 className="mb-1 text-sm font-semibold text-slate-200">Open Custom Port</h4>
+          <h4 className="mb-1 text-sm font-semibold text-slate-200">{t('Open Custom Port')}</h4>
           <p className="mb-4 text-xs text-slate-400">
-            Open any custom TCP/UDP port with optional IP allowlist filtering (CIDR).
+            {t('Open any custom TCP/UDP port with optional IP allowlist filtering (CIDR).')}
           </p>
 
           <form
@@ -492,17 +499,17 @@ export function FirewallSection() {
             className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5"
           >
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Port Number</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Port Number')}</label>
               <Input
                 value={port}
                 onChange={(e) => setPort(e.target.value)}
-                placeholder="e.g. 8080, 25565"
+                placeholder={t('e.g. 8080, 25565')}
                 required
                 className="h-9 font-mono text-xs"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Protocol</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Protocol')}</label>
               <select
                 value={proto}
                 onChange={(e) => setProto(e.target.value as any)}
@@ -510,27 +517,27 @@ export function FirewallSection() {
               >
                 <option value="tcp">TCP</option>
                 <option value="udp">UDP</option>
-                <option value="any">ANY (TCP+UDP)</option>
+                <option value="any">{t('ANY (TCP+UDP)')}</option>
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Action</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Action')}</label>
               <select
                 value={action}
                 onChange={(e) => setAction(e.target.value as any)}
                 className="h-9 w-full rounded-lg border border-white/10 bg-slate-900 px-3 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
               >
-                <option value="allow">ALLOW (Permit)</option>
-                <option value="deny">DENY (Block)</option>
-                <option value="limit">LIMIT (Rate limit)</option>
+                <option value="allow">{t('ALLOW (Permit)')}</option>
+                <option value="deny">{t('DENY (Block)')}</option>
+                <option value="limit">{t('LIMIT (Rate limit)')}</option>
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Source IP (Optional)</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Source IP (Optional)')}</label>
               <Input
                 value={fromIp}
                 onChange={(e) => setFromIp(e.target.value)}
-                placeholder="Anywhere (or 1.2.3.4)"
+                placeholder={t('Anywhere (or 1.2.3.4)')}
                 className="h-9 font-mono text-xs"
               />
             </div>
@@ -542,7 +549,7 @@ export function FirewallSection() {
                 className="h-9 w-full"
               >
                 <Plus size={14} className="mr-1" />
-                Open Port
+                {t('Open Port')}
               </Button>
             </div>
           </form>
@@ -554,37 +561,43 @@ export function FirewallSection() {
         <CardBody className="p-6">
           <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-200">
             <Lock size={16} className="text-indigo-400" />
-            <span>Multi-Layer Firewall & Security Architecture</span>
+            <span>{t('Multi-Layer Firewall & Security Architecture')}</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-400">
             <div className="rounded-xl border border-white/5 bg-slate-950/40 p-3 space-y-1.5">
               <div className="flex items-center gap-1.5 font-semibold text-slate-200">
                 <Radio size={14} className="text-emerald-400" />
-                <span>1. Host Network (UFW)</span>
+                <span>{t('1. Host Network (UFW)')}</span>
               </div>
               <p>
-                Controls physical machine network ports (22 SSH, 80 HTTP, 443 HTTPS, 25/587 Mail). Blocks raw port scanning and unauthorized network probing.
+                {t('Controls physical machine network ports (22 SSH, 80 HTTP, 443 HTTPS, 25/587 Mail). Blocks raw port scanning and unauthorized network probing.')}
               </p>
             </div>
 
             <div className="rounded-xl border border-white/5 bg-slate-950/40 p-3 space-y-1.5">
               <div className="flex items-center gap-1.5 font-semibold text-slate-200">
                 <Shield size={14} className="text-indigo-400" />
-                <span>2. Application WAF (Traefik)</span>
+                <span>{t('2. Application WAF (Traefik)')}</span>
               </div>
               <p>
-                Configurable per-domain in <em>Service &rarr; Network &rarr; Security</em>: IP allowlisting (CIDR), Rate Limiting (req/sec), and HTTP Basic Auth.
+                {fill(
+                  t('Configurable per-domain in {path}: IP allowlisting (CIDR), Rate Limiting (req/sec), and HTTP Basic Auth.'),
+                  { path: <em>{t('Service → Network → Security')}</em> },
+                )}
               </p>
             </div>
 
             <div className="rounded-xl border border-white/5 bg-slate-950/40 p-3 space-y-1.5">
               <div className="flex items-center gap-1.5 font-semibold text-slate-200">
                 <Zap size={14} className="text-amber-400" />
-                <span>3. Zero Trust Tunnels</span>
+                <span>{t('3. Zero Trust Tunnels')}</span>
               </div>
               <p>
-                Expose services globally with <strong>0 inbound open ports</strong> via Cloudflare Tunnels (Tunnels tab), bypassing traditional open-port firewalls entirely.
+                {fill(
+                  t('Expose services globally with {ports} via Cloudflare Tunnels (Tunnels tab), bypassing traditional open-port firewalls entirely.'),
+                  { ports: <strong>{t('0 inbound open ports')}</strong> },
+                )}
               </p>
             </div>
           </div>

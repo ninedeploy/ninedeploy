@@ -18,6 +18,7 @@ import {
 } from '../../components/ui.js';
 import type { OidcProviderCreateInput, OidcProviderEntry } from '@ninedeploy/sdk';
 import { ScimTokensCard } from './ScimTokensCard.js';
+import { msg, useT } from '../../lib/i18n.js';
 
 /** r507: the comma/space-separated domain field → the list the API stores. */
 export function parseAllowedDomains(raw: string): string[] {
@@ -30,24 +31,25 @@ export function parseAllowedDomains(raw: string): string[] {
  * users into no team workspace, so the role had no effect. The form no longer
  * offers or sends it (the API still accepts it; a stored value is left as is).
  */
-export const OIDC_DEFAULT_ROLE_NOTE =
-  'Not used for OIDC sign-ins: users always own their personal workspace; add them to team workspaces with invitations or SCIM.';
+export const OIDC_DEFAULT_ROLE_NOTE = msg(
+  'Not used for OIDC sign-ins: users always own their personal workspace; add them to team workspaces with invitations or SCIM.',
+);
 
 /** r507: auto-enroll with no domain list lets ANY account at the IdP sign up. */
 function OpenEnrollmentWarning() {
+  const t = useT();
   return (
     <p className="flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
       <AlertTriangle size={13} className="mt-0.5 shrink-0" />
       <span>
-        Auto-enroll is on with no domain restriction: anyone who can sign in to this identity provider (for a public
-        provider like GitHub or Google, anyone at all) can create an account here. Add your organisation's email
-        domains, or turn auto-enroll off.
+        {t("Auto-enroll is on with no domain restriction: anyone who can sign in to this identity provider (for a public provider like GitHub or Google, anyone at all) can create an account here. Add your organisation's email domains, or turn auto-enroll off.")}
       </span>
     </p>
   );
 }
 
 export function SsoSection() {
+  const t = useT();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editProvider, setEditProvider] = useState<OidcProviderEntry | null>(null);
@@ -97,7 +99,7 @@ export function SsoSection() {
       queryClient.invalidateQueries({ queryKey: ['oidc-providers'] });
       queryClient.invalidateQueries({ queryKey: ['public-oidc-providers'] });
     },
-    onError: () => setDeleteError('Could not delete the provider — try again'),
+    onError: () => setDeleteError(t('Could not delete the provider — try again')),
   });
   // The app-wide ConfirmDialog replaces the native confirm() (inconsistent
   // focus/keyboard behaviour) and a failure now says so instead of dying
@@ -176,7 +178,7 @@ export function SsoSection() {
         });
       } else {
         if (!slug.trim() || !clientSecret.trim()) {
-          setError('Slug and Client Secret are required');
+          setError(t('Slug and Client Secret are required'));
           setBusy(false);
           return;
         }
@@ -193,7 +195,7 @@ export function SsoSection() {
         });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save SSO provider');
+      setError(err instanceof Error ? err.message : t('Failed to save SSO provider'));
     } finally {
       setBusy(false);
     }
@@ -206,24 +208,24 @@ export function SsoSection() {
           <div>
             <div className="flex items-center gap-2">
               <Shield size={18} className="text-indigo-400" />
-              <h2 className="text-base font-semibold text-white">Single Sign-On (SSO &amp; OIDC)</h2>
+              <h2 className="text-base font-semibold text-white">{t('Single Sign-On (SSO & OIDC)')}</h2>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Connect external OpenID Connect and OAuth2 identity providers for one-click team authentication.
+              {t('Connect external OpenID Connect and OAuth2 identity providers for one-click team authentication.')}
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={() => openCreate()}>
               <Plus size={14} />
-              <span>Add Provider</span>
+              <span>{t('Add Provider')}</span>
             </Button>
           </div>
         </div>
 
         {/* Quick Presets */}
         <div className="flex flex-wrap items-center gap-2 pb-5 border-b border-white/5">
-          <span className="text-xs text-slate-500">Quick add:</span>
+          <span className="text-xs text-slate-500">{t('Quick add:')}</span>
           <button
             type="button"
             onClick={() => openCreate('github')}
@@ -249,10 +251,10 @@ export function SsoSection() {
 
         {/* Providers List */}
         {isLoading ? (
-          <div className="py-8 text-center text-xs text-slate-500">Loading SSO providers…</div>
+          <div className="py-8 text-center text-xs text-slate-500">{t('Loading SSO providers…')}</div>
         ) : providers.length === 0 ? (
           <div className="py-8 text-center text-xs text-slate-500">
-            No SSO providers configured. Add Google, GitHub, or Okta above to enable one-click login.
+            {t('No SSO providers configured. Add Google, GitHub, or Okta above to enable one-click login.')}
           </div>
         ) : (
           <div className="divide-y divide-white/5 mt-2">
@@ -265,16 +267,16 @@ export function SsoSection() {
                   <div className="flex items-center gap-2.5">
                     <span className="text-sm font-semibold text-white">{p.name}</span>
                     <Badge tone={p.enabled ? 'emerald' : 'neutral'} className="text-[10px]">
-                      {p.enabled ? 'Enabled' : 'Disabled'}
+                      {p.enabled ? t('Enabled') : t('Disabled')}
                     </Badge>
                     {p.autoEnroll && (
                       <Badge tone="indigo" className="text-[10px]">
-                        Auto-Enroll
+                        {t('Auto-Enroll')}
                       </Badge>
                     )}
                     {p.autoEnroll && (p.allowedDomains ?? []).length === 0 && (
                       <Badge tone="amber" className="text-[10px]">
-                        Any domain
+                        {t('Any domain')}
                       </Badge>
                     )}
                   </div>
@@ -288,13 +290,13 @@ export function SsoSection() {
 
                 <div className="flex items-center gap-2">
                   <Button variant="secondary" size="sm" onClick={() => openEdit(p)}>
-                    Edit
+                    {t('Edit')}
                   </Button>
                   <Button
                     variant="danger"
                     size="sm"
                     className="px-2"
-                    title="Delete Provider"
+                    title={t('Delete Provider')}
                     onClick={() => {
                       setDeleteError(null);
                       setPendingDelete(p);
@@ -316,31 +318,31 @@ export function SsoSection() {
             setCreateOpen(false);
             setEditProvider(null);
           }}
-          title={editProvider ? `Edit ${editProvider.name}` : 'Configure SSO / OIDC Provider'}
+          title={editProvider ? t('Edit {name}', { name: editProvider.name }) : t('Configure SSO / OIDC Provider')}
         >
           <form onSubmit={handleSave} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Display Name">
+              <Field label={t('Display Name')}>
                 <Input
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Google Workspace"
+                  placeholder={t('e.g. Google Workspace')}
                   autoFocus
                 />
               </Field>
-              <Field label="Slug (URL identifier)">
+              <Field label={t('Slug (URL identifier)')}>
                 <Input
                   required
                   disabled={Boolean(editProvider)}
                   value={slug}
                   onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                  placeholder="e.g. google or okta"
+                  placeholder={t('e.g. google or okta')}
                 />
               </Field>
             </div>
 
-            <Field label="OIDC Issuer URL (Optional for GitHub)">
+            <Field label={t('OIDC Issuer URL (Optional for GitHub)')}>
               <Input
                 type="url"
                 value={issuerUrl}
@@ -352,15 +354,15 @@ export function SsoSection() {
             </Field>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Client ID">
+              <Field label={t('Client ID')}>
                 <Input
                   required
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
-                  placeholder="OAuth Client ID"
+                  placeholder={t('OAuth Client ID')}
                 />
               </Field>
-              <Field label={editProvider ? 'Client Secret (leave blank to keep)' : 'Client Secret'}>
+              <Field label={editProvider ? t('Client Secret (leave blank to keep)') : t('Client Secret')}>
                 <Input
                   type="password"
                   required={!editProvider}
@@ -373,7 +375,7 @@ export function SsoSection() {
               </Field>
             </div>
 
-            <Field label="OAuth Scopes">
+            <Field label={t('OAuth Scopes')}>
               <Input
                 value={scopes}
                 onChange={(e) => setScopes(e.target.value)}
@@ -381,7 +383,7 @@ export function SsoSection() {
               />
             </Field>
 
-            <Field label="Allowed email domains (comma-separated; empty = any)">
+            <Field label={t('Allowed email domains (comma-separated; empty = any)')}>
               <Input
                 value={allowedDomains}
                 onChange={(e) => setAllowedDomains(e.target.value)}
@@ -390,8 +392,8 @@ export function SsoSection() {
             </Field>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-white/5">
-              <Field label="Workspace role">
-                <p className="pt-1 text-xs text-slate-400">{OIDC_DEFAULT_ROLE_NOTE}</p>
+              <Field label={t('Workspace role')}>
+                <p className="pt-1 text-xs text-slate-400">{t(OIDC_DEFAULT_ROLE_NOTE)}</p>
               </Field>
 
               <div className="space-y-3 pt-6">
@@ -402,7 +404,7 @@ export function SsoSection() {
                     onChange={(e) => setEnabled(e.target.checked)}
                     className="rounded border-white/10 bg-slate-800 text-indigo-500 focus:ring-indigo-400"
                   />
-                  <span>Enable SSO on login page</span>
+                  <span>{t('Enable SSO on login page')}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
                   <input
@@ -411,7 +413,7 @@ export function SsoSection() {
                     onChange={(e) => setAutoEnroll(e.target.checked)}
                     className="rounded border-white/10 bg-slate-800 text-indigo-500 focus:ring-indigo-400"
                   />
-                  <span>Auto-enroll new users on first login</span>
+                  <span>{t('Auto-enroll new users on first login')}</span>
                 </label>
               </div>
             </div>
@@ -429,10 +431,10 @@ export function SsoSection() {
                   setEditProvider(null);
                 }}
               >
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button type="submit" disabled={busy || !name.trim() || !clientId.trim()}>
-                {busy ? 'Saving…' : editProvider ? 'Save Changes' : 'Create Provider'}
+                {busy ? t('Saving…') : editProvider ? t('Save Changes') : t('Create Provider')}
               </Button>
             </div>
           </form>
@@ -440,9 +442,9 @@ export function SsoSection() {
       )}
       <ConfirmDialog
         open={pendingDelete != null}
-        title="Delete SSO provider"
-        message={`Delete ${pendingDelete?.name}? Everyone signing in through it falls back to password login; linked accounts keep their data.`}
-        confirmLabel="Delete"
+        title={t('Delete SSO provider')}
+        message={t('Delete {name}? Everyone signing in through it falls back to password login; linked accounts keep their data.', { name: String(pendingDelete?.name) })}
+        confirmLabel={t('Delete')}
         onConfirm={() => {
           if (pendingDelete) deleteMutation.mutate(pendingDelete.id);
           setPendingDelete(null);

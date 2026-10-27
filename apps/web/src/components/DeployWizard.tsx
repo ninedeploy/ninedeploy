@@ -11,8 +11,9 @@ import { registeredNodes } from '../lib/multiNode.js';
 import { useToast } from './Toast.js';
 import { Button, Input, Select, Textarea, cn } from './ui.js';
 import { DeploymentSupport } from './DeploymentSupport.js';
+import { fill, msg, useT } from '../lib/i18n.js';
 
-const STEPS = ['Source', 'Runtime', 'Environment', 'Resources', 'Review'];
+const STEPS = [msg('Source'), msg('Runtime'), msg('Environment'), msg('Resources'), msg('Review')];
 
 /** Shown in the empty paste box: the smallest stack that actually deploys. */
 const COMPOSE_PLACEHOLDER = [
@@ -40,17 +41,18 @@ export interface DeployPreset {
 }
 
 const BUILD_PACKS: { id: BuildPack; label: string; hint: string }[] = [
-  { id: 'auto', label: 'Auto-detect', hint: 'Dockerfile if the repo has one, otherwise Nixpacks' },
-  { id: 'nixpacks', label: 'Nixpacks', hint: 'Zero-config builds for Node, Python, Go, PHP, Ruby, Rust, Java…' },
-  { id: 'railpack', label: 'Railpack', hint: "Railway's successor to Nixpacks — needs a BuildKit daemon (BUILDKIT_HOST) on the panel" },
-  { id: 'dockerfile', label: 'Dockerfile', hint: 'Build the Dockerfile in the repository' },
-  { id: 'static', label: 'Static site', hint: 'Build, then serve the output folder with nginx (SPA-ready)' },
+  { id: 'auto', label: msg('Auto-detect'), hint: msg('Dockerfile if the repo has one, otherwise Nixpacks') },
+  { id: 'nixpacks', label: msg('Nixpacks'), hint: msg('Zero-config builds for Node, Python, Go, PHP, Ruby, Rust, Java…') },
+  { id: 'railpack', label: msg('Railpack'), hint: msg("Railway's successor to Nixpacks — needs a BuildKit daemon (BUILDKIT_HOST) on the panel") },
+  { id: 'dockerfile', label: msg('Dockerfile'), hint: msg('Build the Dockerfile in the repository') },
+  { id: 'static', label: msg('Static site'), hint: msg('Build, then serve the output folder with nginx (SPA-ready)') },
   // G4.4
-  { id: 'paketo', label: 'Paketo buildpacks', hint: 'Cloud Native Buildpacks with the Paketo builder — panel host only, amd64' },
-  { id: 'heroku', label: 'Heroku buildpacks', hint: 'Cloud Native Buildpacks with the Heroku builder — panel host only' },
+  { id: 'paketo', label: msg('Paketo buildpacks'), hint: msg('Cloud Native Buildpacks with the Paketo builder — panel host only, amd64') },
+  { id: 'heroku', label: msg('Heroku buildpacks'), hint: msg('Cloud Native Buildpacks with the Heroku builder — panel host only') },
 ];
 
 export function DeployWizard({ template, preset, onClose }: { template?: Template; preset?: DeployPreset; onClose: () => void }) {
+  const t = useT();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -93,10 +95,10 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
       setQuickAddDeployKey('');
       setQuickAddAuthKind('token');
       setQuickAddPublicKey(null);
-      toast(`Source "${created.name}" added. Token is encrypted at rest.`, 'success');
+      toast(t('Source "{name}" added. Token is encrypted at rest.', { name: created.name }), 'success');
     },
     onError: (err: Error) => {
-      toast(`Could not add source: ${err.message}`, 'error');
+      toast(t('Could not add source: {error}', { error: err.message }), 'error');
     },
   });
   /* v8 ignore stop */
@@ -110,11 +112,11 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
     onSuccess: (data) => {
       setQuickAddPublicKey(data);
       void copyText(data.publicKey).then(
-        (ok) => toast(ok ? 'Deploy key generated. Public key copied to clipboard.' : 'Deploy key generated. Copy it from the field below.', ok ? 'success' : 'info'),
+        (ok) => toast(ok ? t('Deploy key generated. Public key copied to clipboard.') : t('Deploy key generated. Copy it from the field below.'), ok ? 'success' : 'info'),
       );
     },
     onError: (err: Error) => {
-      toast(`Could not generate key: ${err.message}`, 'error');
+      toast(t('Could not generate key: {error}', { error: err.message }), 'error');
     },
   });
   /* v8 ignore stop */
@@ -246,11 +248,11 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
   const staticCredential =
     selectedSource != null && selectedSource.type !== 'github_app' && selectedSource.type !== 'registry' && (selectedSource.hasToken || selectedSource.hasDeployKey);
   const nodeRefusal = (n: ServerListEntry): string | null => {
-    if (n.status !== 'online') return `the node is ${n.status}`;
+    if (n.status !== 'online') return t('the node is {status}', { status: n.status });
     if (staticCredential && selectedSource?.allowOnNodes !== true) {
-      return `credential "${selectedSource?.name}" is not allowed on nodes (Sources → Allow on nodes)`;
+      return t('credential "{name}" is not allowed on nodes (Sources → Allow on nodes)', { name: String(selectedSource?.name) });
     }
-    if (staticCredential && n.features?.privateClones === false) return 'its agent cannot clone with a token or deploy key: update it';
+    if (staticCredential && n.features?.privateClones === false) return t('its agent cannot clone with a token or deploy key: update it');
     return null;
   };
   const chosenNode = nodeChoice && targetNode ? nodes.find((n) => String(n.id) === targetNode) : undefined;
@@ -306,11 +308,11 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
     } catch (err) {
       if (seq !== analyzeSeqRef.current) return;
       setInsights(null);
-      setAnalyzeError(err instanceof Error ? err.message : 'Could not analyze the repository');
+      setAnalyzeError(err instanceof Error ? err.message : t('Could not analyze the repository'));
     } finally {
       if (seq === analyzeSeqRef.current) setAnalyzing(false);
     }
-  }, [repoUrl, branch, sourceId, trimmedBaseDir, isRootScope]);
+  }, [repoUrl, branch, sourceId, trimmedBaseDir, isRootScope, t]);
 
   useEffect(() => {
     if (template || mode !== 'repo' || !repoUrl.trim() || !/^https?:\/\//i.test(repoUrl.trim())) return;
@@ -325,8 +327,8 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
     setAnalyzing(false);
     setInsights(null);
     setAnalyzeError(null);
-    const t = setTimeout(() => void runAnalyze(), 900);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void runAnalyze(), 900);
+    return () => clearTimeout(timer);
   }, [repoUrl, branch, baseDir, mode, template, runAnalyze]);
 
   // ── Inline compose preview ────────────────────────────────────────────
@@ -350,7 +352,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
     setComposePreview(null);
     setComposePreviewError(null);
     const seq = ++previewSeqRef.current;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       void api.services
         .composePreview({ content, ...(toInt(port) ? { port: toInt(port)! } : {}) })
         .then((result) => {
@@ -364,11 +366,11 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
         })
         .catch((err: unknown) => {
           if (seq !== previewSeqRef.current) return;
-          setComposePreviewError(err instanceof Error ? err.message : 'Could not analyze the compose file');
+          setComposePreviewError(err instanceof Error ? err.message : t('Could not analyze the compose file'));
         });
     }, 600);
-    return () => clearTimeout(t);
-  }, [composeContent, mode, port]);
+    return () => clearTimeout(timer);
+  }, [composeContent, mode, port, t]);
 
   /** Copy the detected preset into the form: port, suggested env vars and the
    * build commands that travel with the create-service request. */
@@ -403,8 +405,10 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
       // an unmounted wizard and the final navigate would fire anyway.
       busyRef.current = true;
       setProvisionStatus(template
-        ? `Server is reconciling service → environment${dbEngine ? ` → ${dbEngine} database → attachment` : ''} → deployment queue…`
-        : 'Creating service and queueing deployment…');
+        ? dbEngine
+          ? t('Server is reconciling service → environment → {engine} database → attachment → deployment queue…', { engine: dbEngine })
+          : t('Server is reconciling service → environment → deployment queue…')
+        : t('Creating service and queueing deployment…'));
     },
     onSettled: () => {
       busyRef.current = false;
@@ -501,9 +505,9 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
       if (host && !progress.domainDone) {
         try {
           const created = await api.domains.create(svc.id, { hostname: host });
-          if (created.status === 'pending') toast(`${host} needs a DNS TXT proof — see the service's Network tab`, 'info');
+          if (created.status === 'pending') toast(t("{host} needs a DNS TXT proof — see the service's Network tab", { host }), 'info');
         } catch (err) {
-          toast(`Domain ${host} skipped: ${err instanceof Error ? err.message : String(err)}`, 'error');
+          toast(t('Domain {host} skipped: {error}', { host, error: err instanceof Error ? err.message : String(err) }), 'error');
         }
         progress.domainDone = true;
       }
@@ -516,7 +520,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
         try {
           await api.services.github.link(svc.id, appRepo);
         } catch (err) {
-          toast(`GitHub App link skipped: ${err instanceof Error ? err.message : String(err)}`, 'error');
+          toast(t('GitHub App link skipped: {error}', { error: err instanceof Error ? err.message : String(err) }), 'error');
         }
         progress.githubLinked = true;
       }
@@ -539,17 +543,17 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
       // Both mutation arms above return background: false, so the background
       // toast arm is dead code kept for future background deploys.
       /* v8 ignore next 1 */
-      toast(result.background ? 'Provisioning started — follow progress in Deployments' : 'Deploy started — building…', 'info');
+      toast(result.background ? t('Provisioning started — follow progress in Deployments') : t('Deploy started — building…'), 'info');
       navigate(`/services/${result.serviceId}?tab=deploys`);
       onClose();
     },
     onError: (err) => {
       setProvisionStatus(
         createdRef.current
-          ? 'The service was created but setup did not finish — retrying resumes where it stopped.'
-          : 'Provisioning failed — nothing was queued before its required dependencies were ready.',
+          ? t('The service was created but setup did not finish — retrying resumes where it stopped.')
+          : t('Provisioning failed — nothing was queued before its required dependencies were ready.'),
       );
-      toast(err instanceof Error ? err.message : 'Deploy failed', 'error');
+      toast(err instanceof Error ? err.message : t('Deploy failed'), 'error');
     },
   });
 
@@ -611,7 +615,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
     <div className="fixed inset-0 z-[9999] flex items-end justify-center sm:items-center p-4 sm:p-6">
       <button
         type="button"
-        aria-label="Close dialog"
+        aria-label={t('Close dialog')}
         tabIndex={-1}
         aria-hidden="true"
         onClick={() => !busyRef.current && onClose()}
@@ -621,7 +625,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={template ? `Deploy ${template.name}` : 'New service'}
+        aria-label={template ? t('Deploy {name}', { name: template.name }) : t('New service')}
         className="nd-fade relative flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl z-10"
       >
         {/* Header + stepper */}
@@ -629,9 +633,9 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
           <div className="mb-3 flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
               <Rocket size={18} className="text-indigo-400" />
-              <span>{template ? `Deploy ${template.name}` : 'New service'}</span>
+              <span>{template ? t('Deploy {name}', { name: template.name }) : t('New service')}</span>
               <span className={cn('ml-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border inline-flex items-center gap-1', isAdvanced ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300')}>
-                {isAdvanced ? <><Terminal size={10} /> DevOps Pro</> : <><Sparkles size={10} /> Quick Mode</>}
+                {isAdvanced ? <><Terminal size={10} /> DevOps Pro</> : <><Sparkles size={10} /> {t('Quick Mode')}</>}
               </span>
             </h2>
             <button type="button" onClick={() => !busyRef.current && onClose()} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-slate-200 transition"><X size={16} /></button>
@@ -642,7 +646,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                 <div className={cn('grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold transition', i < step ? 'bg-emerald-500 text-white' : i === step ? 'bg-indigo-500 text-white' : 'bg-white/10 text-slate-500')}>
                   {i < step ? <Check size={12} /> : i + 1}
                 </div>
-                <span className={cn('truncate text-[11px]', i === step ? 'text-slate-200' : 'text-slate-500')}>{label}</span>
+                <span className={cn('truncate text-[11px]', i === step ? 'text-slate-200' : 'text-slate-500')}>{t(label)}</span>
                 {i < STEPS.length - 1 && <div className="h-px flex-1 bg-white/10" />}
               </div>
             ))}
@@ -652,33 +656,33 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
         <form onSubmit={onSubmit} className="flex-1 overflow-auto p-5">
           {deploy.isPending && template && (
             <div role="status" className="mb-4 rounded-xl border border-indigo-500/25 bg-indigo-500/[0.08] p-3.5">
-              <div className="mb-2 text-xs font-semibold text-indigo-200">Server provisioning pipeline</div>
+              <div className="mb-2 text-xs font-semibold text-indigo-200">{t('Server provisioning pipeline')}</div>
               <div className="grid gap-1.5 text-[11px] text-slate-300">
-                <span>1. Reconcile service configuration and persistent storage</span>
-                <span>2. Reconcile environment variables and preserve existing secrets</span>
-                {dbEngine && <span>3. Start and verify the required {dbEngine} database, then attach it</span>}
-                <span>{dbEngine ? '4' : '3'}. Queue the application deployment only after dependencies are ready</span>
+                <span>{t('1. Reconcile service configuration and persistent storage')}</span>
+                <span>{t('2. Reconcile environment variables and preserve existing secrets')}</span>
+                {dbEngine && <span>{t('3. Start and verify the required {engine} database, then attach it', { engine: dbEngine })}</span>}
+                <span>{t('{n}. Queue the application deployment only after dependencies are ready', { n: dbEngine ? '4' : '3' })}</span>
               </div>
             </div>
           )}
           {adminOnlyTemplate && (
             <div className="mb-4 rounded-xl border border-rose-500/25 bg-rose-500/[0.08] p-3 text-xs leading-relaxed text-rose-200">
               {template?.dockerSocket === true
-                ? 'This template mounts the Docker socket, which grants control of every container on the host. Only an administrator can deploy it.'
-                : 'This template installs a Compose stack, which can mount host paths or request privileged containers. Only an administrator can deploy it.'}
+                ? t('This template mounts the Docker socket, which grants control of every container on the host. Only an administrator can deploy it.')
+                : t('This template installs a Compose stack, which can mount host paths or request privileged containers. Only an administrator can deploy it.')}
             </div>
           )}
           {template && !template.runtimeVerified && (
             <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.08] p-3 text-xs leading-relaxed text-amber-200">
-              Community template — registry-valid but not yet runtime-certified. Confirm its port, environment and storage settings before deployment.
+              {t('Community template — registry-valid but not yet runtime-certified. Confirm its port, environment and storage settings before deployment.')}
             </div>
           )}
           {/* Step 1: Source */}
           {step === 0 && (
             <div className="space-y-4">
-              <L label="Name"><Input ref={nameInputRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="my-app" /></L>
+              <L label={t('Name')}><Input ref={nameInputRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="my-app" /></L>
               <div className="grid grid-cols-2 gap-3">
-                <L label="Type">
+                <L label={t('Type')}>
                   <Select
                     value={type}
                     disabled={!!template}
@@ -696,12 +700,12 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                     {isAdmin && <option value="pm2">PM2</option>}
                   </Select>
                 </L>
-                <L label="Source type">
+                <L label={t('Source type')}>
                   <div className="flex h-10 items-center gap-1 rounded-lg bg-black/30 p-1 ring-1 ring-inset ring-white/10">
                     {/* Pasting a stack only makes sense for a compose deploy —
                         every other type has nothing to run a YAML file with. */}
                     {(type === 'compose' ? (['repo', 'paste'] as const) : (['repo', 'image'] as const)).map((m) => (
-                      <button key={m} type="button" disabled={!!template} onClick={() => setMode(m)} className={cn('flex-1 rounded-md py-1 text-xs font-medium transition disabled:opacity-50', mode === m ? 'bg-indigo-500 text-white' : 'text-slate-400')}>{m === 'repo' ? 'Git repo' : m === 'paste' ? 'Paste YAML' : 'Image'}</button>
+                      <button key={m} type="button" disabled={!!template} onClick={() => setMode(m)} className={cn('flex-1 rounded-md py-1 text-xs font-medium transition disabled:opacity-50', mode === m ? 'bg-indigo-500 text-white' : 'text-slate-400')}>{m === 'repo' ? t('Git repo') : m === 'paste' ? t('Paste YAML') : t('Image')}</button>
                     ))}
                   </div>
                 </L>
@@ -709,10 +713,10 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
               {mode === 'repo' ? (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <L label="Source (Git Credential)">
+                    <L label={t('Source (Git Credential)')}>
                       <div className="flex gap-2">
                         <Select value={sourceId} onChange={(e) => setSourceId(e.target.value)} className="flex-1">
-                          <option value="">Public / none</option>
+                          <option value="">{t('Public / none')}</option>
                           {sources.data?.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.type})</option>)}
                         </Select>
                         {/* v8 ignore start -- the "Add credential" button only renders for admins
@@ -724,16 +728,16 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                             variant="ghost"
                             size="sm"
                             onClick={() => setShowQuickAdd((v) => !v)}
-                            title="Add a new GitHub/GitLab credential inline"
+                            title={t('Add a new GitHub/GitLab credential inline')}
                           >
-                            <Plus size={14} /> {showQuickAdd ? 'Cancel' : 'Add credential'}
+                            <Plus size={14} /> {showQuickAdd ? t('Cancel') : t('Add credential')}
                           </Button>
                         )}
                         {/* v8 ignore stop */}
                       </div>
                     </L>
                     {repoList && repoList.length > 0 ? (
-                      <L label="Select Repository">
+                      <L label={t('Select Repository')}>
                         <Select
                           value={repoUrl}
                           onChange={(e) => {
@@ -745,7 +749,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                             }
                           }}
                         >
-                          <option value="">Choose a repo ({repoList.length})…</option>
+                          <option value="">{t('Choose a repo ({n})…', { n: repoList.length })}</option>
                           {repoList.map((r) => (
                             <option key={r.url} value={r.url}>
                               {r.fullName} {r.isPrivate ? '🔒' : '🌐'}
@@ -754,7 +758,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                         </Select>
                       </L>
                     ) : (
-                      <L label="Repository Branch">
+                      <L label={t('Repository Branch')}>
                         {remoteBranches.data && remoteBranches.data.length > 0 ? (
                           <Select value={branch} onChange={(e) => setBranch(e.target.value)}>
                             {remoteBranches.data.map((b) => (
@@ -783,14 +787,12 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                       it, so a "missing" repo is a token setting, not a bug. */}
                   {remoteRepos.isSuccess && sources.data?.find((s) => String(s.id) === sourceId)?.type === 'github' && (
                     <p className="-mt-1 text-[11px] leading-relaxed text-slate-500" data-testid="repo-list-hint">
-                      Missing a repository? Fine-grained tokens only list the repositories selected for them; organization
-                      repositories may need the token approved or SSO-authorized. You can also paste the URL below.
+                      {t('Missing a repository? Fine-grained tokens only list the repositories selected for them; organization repositories may need the token approved or SSO-authorized. You can also paste the URL below.')}
                     </p>
                   )}
                   {remoteRepos.isSuccess && sources.data?.find((s) => String(s.id) === sourceId)?.type === 'github_app' && (
                     <p className="-mt-1 text-[11px] leading-relaxed text-slate-500" data-testid="repo-list-hint-app">
-                      These are the repositories the GitHub App installation can see. Missing one? Add it to the
-                      installation&apos;s selected repositories on GitHub; the service is linked to the repository by its id.
+                      {t("These are the repositories the GitHub App installation can see. Missing one? Add it to the installation's selected repositories on GitHub; the service is linked to the repository by its id.")}
                     </p>
                   )}
 
@@ -807,35 +809,36 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                     )}
                   >
                     {sourceId ? (
-                      <>
-                        Cloning, framework analysis and webhook auto-deploys run with credential{' '}
-                        <span className="font-medium text-emerald-300">
-                          {/* Defensive: sourceId comes from this very list, so
-                              the id fallback only matters if the list changed
-                              between selection and render. */}
-                          {/* v8 ignore start */}
-                          {sources.data?.find((s) => String(s.id) === sourceId)?.name ?? `#${sourceId}`}
-                          {/* v8 ignore stop */}
-                        </span>
-                        {repoList?.some((r) => r.url === repoUrl && r.isPrivate) && (
-                          <> — this repository is <span className="font-medium">private</span></>
-                        )}
-                        .
-                      </>
+                      fill(
+                        repoList?.some((r) => r.url === repoUrl && r.isPrivate)
+                          ? t('Cloning, framework analysis and webhook auto-deploys run with credential {credential} — this repository is {private}.')
+                          : t('Cloning, framework analysis and webhook auto-deploys run with credential {credential}.'),
+                        {
+                          credential: (
+                            <span className="font-medium text-emerald-300">
+                              {/* Defensive: sourceId comes from this very list, so
+                                  the id fallback only matters if the list changed
+                                  between selection and render. */}
+                              {/* v8 ignore start */}
+                              {sources.data?.find((s) => String(s.id) === sourceId)?.name ?? `#${sourceId}`}
+                              {/* v8 ignore stop */}
+                            </span>
+                          ),
+                          private: <span className="font-medium">{t('private')}</span>,
+                        },
+                      )
                     ) : repoUrl.trim() ? (
-                      <>
-                        No Git credential selected — public repositories deploy fine, but a{' '}
-                        <span className="font-medium">private</span> repository will fail to clone at deploy time. Select
-                        one above
-                        {!isAdmin && ' (ask an administrator if none is listed)'}.
-                      </>
+                      fill(
+                        isAdmin
+                          ? t('No Git credential selected — public repositories deploy fine, but a {private} repository will fail to clone at deploy time. Select one above.')
+                          : t('No Git credential selected — public repositories deploy fine, but a {private} repository will fail to clone at deploy time. Select one above (ask an administrator if none is listed).'),
+                        { private: <span className="font-medium">{t('private')}</span> },
+                      )
                     ) : (
-                      <>
-                        Private repository? Select a Git credential first — it is used for cloning, analysis and webhook
-                        auto-deploys. Credentials are created by admins under{' '}
-                        <span className="font-medium text-slate-300">System → Sources</span> and stored encrypted; the
-                        token itself is never shown again.
-                      </>
+                      fill(
+                        t('Private repository? Select a Git credential first — it is used for cloning, analysis and webhook auto-deploys. Credentials are created by admins under {location} and stored encrypted; the token itself is never shown again.'),
+                        { location: <span className="font-medium text-slate-300">{t('System → Sources')}</span> },
+                      )
                     )}
                   </div>
 
@@ -850,20 +853,25 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="font-medium text-indigo-200">Quick add a GitHub credential</div>
+                          <div className="font-medium text-indigo-200">{t('Quick add a GitHub credential')}</div>
                           <div className="text-slate-400 mt-0.5">
-                            Token is encrypted at rest (AES-256-GCM) and never shown again after this dialog closes.
-                            Recommended PAT scopes: <span className="font-mono text-slate-300">repo</span> (private repos)
-                            and <span className="font-mono text-slate-300">admin:repo_hook</span> (auto-deploy
-                            webhooks). Generate one at{' '}
-                            <a
-                              className="text-indigo-300 underline"
-                              href="https://github.com/settings/tokens?type=beta"
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              github.com/settings/tokens
-                            </a>.
+                            {fill(
+                              t('Token is encrypted at rest (AES-256-GCM) and never shown again after this dialog closes. Recommended PAT scopes: {repo} (private repos) and {hook} (auto-deploy webhooks). Generate one at {link}.'),
+                              {
+                                repo: <span className="font-mono text-slate-300">repo</span>,
+                                hook: <span className="font-mono text-slate-300">admin:repo_hook</span>,
+                                link: (
+                                  <a
+                                    className="text-indigo-300 underline"
+                                    href="https://github.com/settings/tokens?type=beta"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    github.com/settings/tokens
+                                  </a>
+                                ),
+                              },
+                            )}
                           </div>
                         </div>
                         <Button
@@ -871,7 +879,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                           variant="ghost"
                           size="sm"
                           onClick={() => setShowQuickAdd(false)}
-                          aria-label="Close quick add"
+                          aria-label={t('Close quick add')}
                         >
                           <X size={14} />
                         </Button>
@@ -894,7 +902,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                                 quickAddAuthKind === k ? 'bg-indigo-500 text-white' : 'text-slate-400',
                               )}
                             >
-                              {k === 'token' ? 'Token (HTTPS)' : 'SSH deploy key'}
+                              {k === 'token' ? t('Token (HTTPS)') : t('SSH deploy key')}
                             </button>
                           ))}
                         </div>
@@ -904,7 +912,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                           <Input
                             value={quickAddToken}
                             onChange={(e) => setQuickAddToken(e.target.value)}
-                            placeholder="github_pat_…  (paste a Personal Access Token)"
+                            placeholder={t('github_pat_…  (paste a Personal Access Token)')}
                             className="font-mono text-xs"
                             type="password"
                           />
@@ -915,7 +923,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                             <Input
                               value={quickAddDeployKey}
                               onChange={(e) => setQuickAddDeployKey(e.target.value)}
-                              placeholder="-----BEGIN OPENSSH PRIVATE KEY----- …(or leave empty to auto-generate)"
+                              placeholder={t('-----BEGIN OPENSSH PRIVATE KEY----- …(or leave empty to auto-generate)')}
                               className="font-mono text-xs"
                             />
                             <Button
@@ -944,24 +952,24 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                               }}
                             >
                               {quickAddKeygen.isPending
-                                ? 'Generating…'
+                                ? t('Generating…')
                                 : quickAddPublicKey
-                                  ? 'Regenerate'
-                                  : 'Generate on panel'}
+                                  ? t('Regenerate')
+                                  : t('Generate on panel')}
                             </Button>
                           </div>
                           {quickAddPublicKey && (
                             <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-2">
-                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Public key (paste into GitHub → Deploy keys)</div>
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">{t('Public key (paste into GitHub → Deploy keys)')}</div>
                               <code className="mt-1 block break-all font-mono text-[10px] text-slate-200">{quickAddPublicKey.publicKey}</code>
-                              <div className="mt-1 text-[10px] text-slate-500">Fingerprint: {quickAddPublicKey.fingerprint}</div>
+                              <div className="mt-1 text-[10px] text-slate-500">{t('Fingerprint: {fingerprint}', { fingerprint: quickAddPublicKey.fingerprint })}</div>
                             </div>
                           )}
                         </div>
                       )}
                       <div className="flex justify-end gap-2">
                         <Button type="button" variant="ghost" size="sm" onClick={() => setShowQuickAdd(false)}>
-                          Cancel
+                          {t('Cancel')}
                         </Button>
                         <Button
                           type="button"
@@ -973,14 +981,14 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                           }
                           onClick={() => quickAdd.mutate()}
                         >
-                          {quickAdd.isPending ? 'Adding…' : 'Save & select'}
+                          {quickAdd.isPending ? t('Adding…') : t('Save & select')}
                         </Button>
                       </div>
                     </div>
                   )}
                   {/* v8 ignore stop */}
 
-                  <L label="Repository URL">
+                  <L label={t('Repository URL')}>
                     <Input
                       value={repoUrl}
                       onChange={(e) => setRepoUrl(e.target.value)}
@@ -994,30 +1002,30 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                       first (possibly wrong) build. Docker type only. */}
                   {type === 'docker' && (
                     <div className="space-y-2">
-                      <L label="Build pack">
-                        <Select aria-label="Build pack" value={buildPack} onChange={(e) => setBuildPack(e.target.value as BuildPack)}>
+                      <L label={t('Build pack')}>
+                        <Select aria-label={t('Build pack')} value={buildPack} onChange={(e) => setBuildPack(e.target.value as BuildPack)}>
                           {BUILD_PACKS.map((b) => (
-                            <option key={b.id} value={b.id}>{b.label}</option>
+                            <option key={b.id} value={b.id}>{t(b.label)}</option>
                           ))}
                         </Select>
                       </L>
-                      <p className="-mt-1 text-[11px] text-slate-500">{BUILD_PACKS.find((b) => b.id === buildPack)?.hint}</p>
+                      <p className="-mt-1 text-[11px] text-slate-500">{t(BUILD_PACKS.find((b) => b.id === buildPack)?.hint ?? '')}</p>
                       {buildPack === 'dockerfile' && (
-                        <L label="Dockerfile path">
+                        <L label={t('Dockerfile path')}>
                           <Input
                             value={dockerfilePath}
                             onChange={(e) => setDockerfilePath(e.target.value)}
-                            placeholder="Dockerfile (relative to the base directory)"
+                            placeholder={t('Dockerfile (relative to the base directory)')}
                             className="font-mono text-xs"
                           />
                         </L>
                       )}
                       {buildPack === 'static' && (
-                        <L label="Output directory">
+                        <L label={t('Output directory')}>
                           <Input
                             value={outputDir}
                             onChange={(e) => setOutputDir(e.target.value)}
-                            placeholder="dist (default) — build, out, public…"
+                            placeholder={t('dist (default) — build, out, public…')}
                             className="font-mono text-xs"
                           />
                         </L>
@@ -1026,7 +1034,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                   )}
 
                   {repoList && repoList.length > 0 && (
-                    <L label="Branch">
+                    <L label={t('Branch')}>
                       {remoteBranches.data && remoteBranches.data.length > 0 ? (
                         <Select value={branch} onChange={(e) => setBranch(e.target.value)}>
                           {remoteBranches.data.map((b) => (
@@ -1042,10 +1050,10 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                   {/* Framework detection + detailed deploy plan for this repo */}
                   <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Repository analysis</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t('Repository analysis')}</span>
                       {insights && !analyzing && (
                         <button type="button" onClick={() => void runAnalyze()} className="text-[11px] text-indigo-300 hover:text-indigo-200 transition">
-                          Re-analyze
+                          {t('Re-analyze')}
                         </button>
                       )}
                     </div>
@@ -1053,20 +1061,20 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                     {analyzing && (
                       <div className="flex items-center gap-2.5 text-xs text-slate-400">
                         <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400/40 border-t-indigo-400" />
-                        Analyzing repository (clone + framework detection)…
+                        {t('Analyzing repository (clone + framework detection)…')}
                       </div>
                     )}
 
                     {!analyzing && !insights && analyzeError && (
                       <div className="space-y-1.5 text-xs leading-relaxed text-amber-200/90">
                         <p>{analyzeError}</p>
-                        <p className="text-slate-500">Private repositories need a Git credential with access selected above — or continue without analysis.</p>
+                        <p className="text-slate-500">{t('Private repositories need a Git credential with access selected above — or continue without analysis.')}</p>
                       </div>
                     )}
 
                     {!analyzing && !insights && !analyzeError && (
                       <p className="text-xs text-slate-500">
-                        Framework detection runs automatically once a repository URL and branch are selected.
+                        {t('Framework detection runs automatically once a repository URL and branch are selected.')}
                       </p>
                     )}
 
@@ -1101,18 +1109,18 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                         </div>
 
                         <div className="space-y-1.5 rounded-lg bg-black/25 p-2.5">
-                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Deploy pipeline for this repository</div>
-                          <PlanStep icon={<GitBranch size={12} />} label="Clone & checkout" value={trimmedBaseDir ? `${branch} · ${trimmedBaseDir}` : branch} />
-                          <PlanStep icon={<Download size={12} />} label="Install dependencies" value={insights.framework.installCmd} mono />
-                          <PlanStep icon={<Hammer size={12} />} label="Build" value={insights.framework.buildCmd} mono />
-                          <PlanStep icon={<Play size={12} />} label="Start server" value={insights.framework.startCmd ? `${insights.framework.startCmd} · :${insights.framework.port}` : null} mono />
-                          <PlanStep icon={<HeartPulse size={12} />} label="Healthcheck" value={`GET ${healthPath}`} mono />
-                          <PlanStep icon={<Globe size={12} />} label="Route traffic" value="Traefik router + auto URL" />
+                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t('Deploy pipeline for this repository')}</div>
+                          <PlanStep icon={<GitBranch size={12} />} label={t('Clone & checkout')} value={trimmedBaseDir ? `${branch} · ${trimmedBaseDir}` : branch} />
+                          <PlanStep icon={<Download size={12} />} label={t('Install dependencies')} value={insights.framework.installCmd} mono />
+                          <PlanStep icon={<Hammer size={12} />} label={t('Build')} value={insights.framework.buildCmd} mono />
+                          <PlanStep icon={<Play size={12} />} label={t('Start server')} value={insights.framework.startCmd ? `${insights.framework.startCmd} · :${insights.framework.port}` : null} mono />
+                          <PlanStep icon={<HeartPulse size={12} />} label={t('Healthcheck')} value={`GET ${healthPath}`} mono />
+                          <PlanStep icon={<Globe size={12} />} label={t('Route traffic')} value={t('Traefik router + auto URL')} />
                         </div>
 
                         {insights.framework.env.length > 0 && (
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-[10px] uppercase tracking-wider text-slate-500">Suggested env:</span>
+                            <span className="text-[10px] uppercase tracking-wider text-slate-500">{t('Suggested env:')}</span>
                             {insights.framework.env.map((e) => (
                               <span key={e.key} className="rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-slate-300">{e.key}</span>
                             ))}
@@ -1121,16 +1129,16 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
 
                         <div className="flex items-center justify-between gap-2 pt-0.5">
                           <span className="text-[11px] text-slate-500">
-                            {insights.dependencyCount + insights.devDependencyCount} packages
+                            {t('{n} packages', { n: insights.dependencyCount + insights.devDependencyCount })}
                             {insights.detectedFiles.length > 0 && ` · ${insights.detectedFiles.slice(0, 4).join(', ')}${insights.detectedFiles.length > 4 ? '…' : ''}`}
                           </span>
                           {suggestionsApplied ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-300">
-                              <Check size={12} /> Suggestions applied
+                              <Check size={12} /> {t('Suggestions applied')}
                             </span>
                           ) : (
                             <Button type="button" size="sm" variant="secondary" onClick={applySuggestions} className="h-7 text-xs">
-                              <Wand2 size={12} /> Apply suggestions
+                              <Wand2 size={12} /> {t('Apply suggestions')}
                             </Button>
                           )}
                         </div>
@@ -1143,7 +1151,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                     {rootInsights?.monorepo && (
                       <div className="space-y-1.5 border-t border-white/[0.06] pt-2.5">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                          Monorepo packages — deploy each as its own service
+                          {t('Monorepo packages — deploy each as its own service')}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           <button
@@ -1156,7 +1164,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                                 : 'bg-white/[0.03] text-slate-400 ring-white/10 hover:text-slate-200',
                             )}
                           >
-                            / (repo root)
+                            {t('/ (repo root)')}
                           </button>
                           {(rootInsights.workspacePackages ?? []).map((p) => {
                             const active = trimmedBaseDir === `/${p.dir}`;
@@ -1180,15 +1188,19 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                           })}
                           {(rootInsights.workspacePackages ?? []).length === 0 && (
                             <span className="text-[11px] text-slate-500">
-                              workspace config found — type a base directory below to scope this service
+                              {t('workspace config found — type a base directory below to scope this service')}
                             </span>
                           )}
                         </div>
                         {!isRootScope && (
                           <p className="text-[11px] leading-relaxed text-indigo-200/80">
-                            This service builds <span className="font-mono">{trimmedBaseDir}</span> only. Create sibling
-                            services from the same repo with other directories, and give each an auto-deploy webhook with
-                            watch path <span className="font-mono">{trimmedBaseDir}/**</span>.
+                            {fill(
+                              t('This service builds {dir} only. Create sibling services from the same repo with other directories, and give each an auto-deploy webhook with watch path {watch}.'),
+                              {
+                                dir: <span className="font-mono">{trimmedBaseDir}</span>,
+                                watch: <span className="font-mono">{trimmedBaseDir}/**</span>,
+                              },
+                            )}
                           </p>
                         )}
                       </div>
@@ -1197,11 +1209,11 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
 
                   {/* Manual base-directory override (monorepo or not) */}
                   {(isAdvanced || rootInsights?.monorepo) && (
-                    <L label="Base directory (build context)">
+                    <L label={t('Base directory (build context)')}>
                       <Input
                         value={baseDir}
                         onChange={(e) => setBaseDir(e.target.value)}
-                        placeholder="/ — repo root, or /apps/web for a monorepo sub-app"
+                        placeholder={t('/ — repo root, or /apps/web for a monorepo sub-app')}
                         className="font-mono text-xs"
                       />
                     </L>
@@ -1209,13 +1221,13 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                 </>
               ) : mode === 'paste' ? (
                 <>
-                  <L label="Compose file">
+                  <L label={t('Compose file')}>
                     <Textarea
                       value={composeContent}
                       onChange={(e) => setComposeContent(e.target.value)}
                       rows={12}
                       spellCheck={false}
-                      aria-label="Compose file"
+                      aria-label={t('Compose file')}
                       placeholder={COMPOSE_PLACEHOLDER}
                       className="font-mono text-xs leading-relaxed"
                     />
@@ -1227,7 +1239,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                   )}
                   {composePreview && composePreview.reasons.length > 0 && (
                     <div className="rounded-xl border border-rose-500/25 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
-                      <div className="font-semibold mb-1">This stack cannot run here</div>
+                      <div className="font-semibold mb-1">{t('This stack cannot run here')}</div>
                       <ul className="list-disc pl-4 space-y-0.5">
                         {composePreview.reasons.map((r) => <li key={r}>{r}</li>)}
                       </ul>
@@ -1241,7 +1253,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                     </div>
                   )}
                   {composePreview && composePreview.services.length > 0 && (
-                    <L label="Main service (Traefik and healthchecks point here)">
+                    <L label={t('Main service (Traefik and healthchecks point here)')}>
                       <Select value={composeService} onChange={(e) => setComposeService(e.target.value)}>
                         {composePreview.services.map((n) => <option key={n} value={n}>{n}</option>)}
                       </Select>
@@ -1251,22 +1263,26 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-[11px] leading-relaxed text-slate-400 space-y-1">
                       {composePreview.magicTokens.length > 0 && (
                         <p>
-                          <span className="font-medium text-slate-300">Generated for you:</span>{' '}
+                          <span className="font-medium text-slate-300">{t('Generated for you:')}</span>{' '}
                           <span className="font-mono">{composePreview.magicTokens.join(', ')}</span>
                         </p>
                       )}
                       {composePreview.openPlaceholders.length > 0 && (
                         <p>
-                          <span className="font-medium text-slate-300">You must supply:</span>{' '}
-                          <span className="font-mono">{composePreview.openPlaceholders.join(', ')}</span>{' '}
-                          — add them on the Environment step, or the stack starts with empty values.
+                          {fill(
+                            t('{label} {names} — add them on the Environment step, or the stack starts with empty values.'),
+                            {
+                              label: <span className="font-medium text-slate-300">{t('You must supply:')}</span>,
+                              names: <span className="font-mono">{composePreview.openPlaceholders.join(', ')}</span>,
+                            },
+                          )}
                         </p>
                       )}
                     </div>
                   )}
                 </>
               ) : (
-                <L label={template?.composeContent ? "Image — set by the stack's compose file" : template ? 'Image — pin a version (same repository, e.g. :11.5)' : 'Image'}>
+                <L label={template?.composeContent ? t("Image — set by the stack's compose file") : template ? t('Image — pin a version (same repository, e.g. :11.5)') : t('Image')}>
                   <Input
                     value={image}
                     disabled={!!template?.composeContent}
@@ -1282,10 +1298,10 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                   <div>
                     <div className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
                       <Zap size={14} className="text-emerald-400" />
-                      Simple 1-Click Ready
+                      {t('Simple 1-Click Ready')}
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      Standard web server ports and healthchecks are automatically configured.
+                      {t('Standard web server ports and healthchecks are automatically configured.')}
                     </div>
                   </div>
                   <Button
@@ -1301,7 +1317,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                     }}
                     className="bg-emerald-600 hover:bg-emerald-500 text-white"
                   >
-                    {deploy.isPending ? 'Deploying…' : 'Quick Deploy'}
+                    {deploy.isPending ? t('Deploying…') : t('Quick Deploy')}
                   </Button>
                 </div>
               )}
@@ -1312,46 +1328,51 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
           {step === 1 && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <L label={template ? 'Registry-managed container port' : 'Container Port'}><Input value={port} disabled={!!template} onChange={(e) => setPort(e.target.value)} inputMode="numeric" autoComplete="off" placeholder="3000" className="font-mono text-xs" /></L>
-                {!composeDeploy && <L label="Public Host Port (optional)"><Input value={publishedPort} onChange={(e) => setPublishedPort(e.target.value)} placeholder="e.g. 8080" className="font-mono text-xs" /></L>}
+                <L label={template ? t('Registry-managed container port') : t('Container Port')}><Input value={port} disabled={!!template} onChange={(e) => setPort(e.target.value)} inputMode="numeric" autoComplete="off" placeholder="3000" className="font-mono text-xs" /></L>
+                {!composeDeploy && <L label={t('Public Host Port (optional)')}><Input value={publishedPort} onChange={(e) => setPublishedPort(e.target.value)} placeholder={t('e.g. 8080')} className="font-mono text-xs" /></L>}
               </div>
-              <L label={template ? 'Registry-managed volume mount' : 'Persistent Volume Mount'}><Input value={volumeMount} disabled={!!template} onChange={(e) => setVolumeMount(e.target.value)} placeholder="/app/data" className="font-mono text-xs" /></L>
-              <L label="Healthcheck Path"><Input value={healthPath} onChange={(e) => setHealthPath(e.target.value)} placeholder="/" className="font-mono text-xs" /></L>
+              <L label={template ? t('Registry-managed volume mount') : t('Persistent Volume Mount')}><Input value={volumeMount} disabled={!!template} onChange={(e) => setVolumeMount(e.target.value)} placeholder="/app/data" className="font-mono text-xs" /></L>
+              <L label={t('Healthcheck Path')}><Input value={healthPath} onChange={(e) => setHealthPath(e.target.value)} placeholder="/" className="font-mono text-xs" /></L>
 
               {/* 0.16.1: where the service lands and how it is reached —
                   asked up front, like Coolify's project/environment step. */}
               {!template && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <L label="Project (optional)">
-                      <Select aria-label="Project" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                        <option value="">No project</option>
+                    <L label={t('Project (optional)')}>
+                      <Select aria-label={t('Project')} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                        <option value="">{t('No project')}</option>
                         {(projects.data ?? []).map((p) => (
                           <option key={p.id} value={String(p.id)}>{p.name}</option>
                         ))}
                       </Select>
                     </L>
-                    <L label="Environment (optional)">
-                      <Select aria-label="Environment" value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}>
-                        <option value="">None</option>
+                    <L label={t('Environment (optional)')}>
+                      <Select aria-label={t('Environment')} value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}>
+                        <option value="">{t('None')}</option>
                         {(environments.data ?? []).map((env) => (
                           <option key={env.id} value={String(env.id)}>{env.name}</option>
                         ))}
                       </Select>
                     </L>
                   </div>
-                  <L label="Domain (optional)">
+                  <L label={t('Domain (optional)')}>
                     <Input
                       value={customDomain}
                       onChange={(e) => setCustomDomain(e.target.value)}
                       placeholder="app.example.com"
-                      aria-label="Custom domain"
+                      aria-label={t('Custom domain')}
                       className="font-mono text-xs"
                     />
                     <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                      Point its DNS {primaryIp.data?.ip?.includes(':') ? 'AAAA' : 'A'} record at{' '}
-                      {primaryIp.data?.ip ? <span className="font-mono text-slate-300">{primaryIp.data.ip}</span> : 'this server'}. Leave empty to use only the automatic URL, when automatic
-                      URLs are on (Settings → Automatic URLs).
+                      {fill(
+                        t('Point its DNS {record} record at {target}. Leave empty to use only the automatic URL, when automatic URLs are on (Settings → Automatic URLs).', {
+                          record: primaryIp.data?.ip?.includes(':') ? 'AAAA' : 'A',
+                        }),
+                        {
+                          target: primaryIp.data?.ip ? <span className="font-mono text-slate-300">{primaryIp.data.ip}</span> : t('this server'),
+                        },
+                      )}
                     </p>
                   </L>
                 </>
@@ -1360,9 +1381,9 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
               {type === 'docker' && <DeploymentSupport node={chosenNode ?? undefined} />}
               {/* Remote-node deploys (operators only, like `serverId` on create). */}
               {nodeChoice && (
-                <L label="Target Server Node">
-                  <Select aria-label="Target Server Node" value={targetNode} onChange={(e) => setTargetNode(e.target.value)}>
-                    <option value="">This panel host</option>
+                <L label={t('Target Server Node')}>
+                  <Select aria-label={t('Target Server Node')} value={targetNode} onChange={(e) => setTargetNode(e.target.value)}>
+                    <option value="">{t('This panel host')}</option>
                     {nodes.map((n) => {
                       const why = nodeRefusal(n);
                       return (
@@ -1374,12 +1395,11 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                   </Select>
                   {chosenNodeRefusal ? (
                     <p role="alert" className="mt-1.5 text-[11px] leading-relaxed text-rose-300">
-                      {chosenNode?.name} cannot run this service: {chosenNodeRefusal}. Pick another host.
+                      {t('{node} cannot run this service: {reason}. Pick another host.', { node: chosenNode?.name ?? '', reason: chosenNodeRefusal })}
                     </p>
                   ) : (
                     <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                      A node builds and runs the service itself and serves its domains, so point their DNS at the node. The panel
-                      re-checks the node when you deploy and says why if it cannot.
+                      {t('A node builds and runs the service itself and serves its domains, so point their DNS at the node. The panel re-checks the node when you deploy and says why if it cannot.')}
                     </p>
                   )}
                 </L>
@@ -1399,22 +1419,22 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                 <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3.5 space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs font-semibold text-indigo-300">Required managed {dbEngine} database</div>
-                      <div className="text-[11px] text-slate-400">The server creates, waits for and attaches a dedicated database before the application is queued.</div>
+                      <div className="text-xs font-semibold text-indigo-300">{t('Required managed {engine} database', { engine: dbEngine })}</div>
+                      <div className="text-[11px] text-slate-400">{t('The server creates, waits for and attaches a dedicated database before the application is queued.')}</div>
                     </div>
-                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold uppercase text-emerald-300 ring-1 ring-inset ring-emerald-500/20">Required</span>
+                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold uppercase text-emerald-300 ring-1 ring-inset ring-emerald-500/20">{t('Required')}</span>
                   </div>
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-slate-400">Environment variables</span>
+                <span className="text-xs font-medium text-slate-400">{t('Environment variables')}</span>
                 <Button type="button" size="sm" variant="ghost" onClick={() => setEnvRows((r) => [...r, { key: '', value: '', secret: false }])} className="h-7 text-xs">
-                  <Plus size={13} /> Add variable
+                  <Plus size={13} /> {t('Add variable')}
                 </Button>
               </div>
               {envRows.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-slate-500">
-                  No environment variables.
+                  {t('No environment variables.')}
                 </div>
               ) : (
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -1430,12 +1450,12 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                         value={r.value}
                         type={r.secret ? 'password' : 'text'}
                         onChange={(e) => setEnv(i, { value: e.target.value })}
-                        placeholder="value"
+                        placeholder={t('value')}
                         className="font-mono text-xs flex-1"
                       />
                       <button
                         type="button"
-                        title="Toggle secret"
+                        title={t('Toggle secret')}
                         onClick={() => setEnv(i, { secret: !r.secret })}
                         className={cn('rounded p-1.5 text-xs transition', r.secret ? 'bg-amber-500/20 text-amber-300' : 'text-slate-500 hover:text-slate-300')}
                       >
@@ -1443,7 +1463,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                       </button>
                       <button
                         type="button"
-                        title="Remove"
+                        title={t('Remove')}
                         onClick={() => setEnvRows((rows) => rows.filter((_, idx) => idx !== i))}
                         className="rounded p-1.5 text-slate-500 hover:text-rose-400 text-xs"
                       >
@@ -1459,15 +1479,17 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
           {/* Step 4: Resource Limits */}
           {step === 3 && composeDeploy && (
             <p className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 text-xs text-slate-400">
-              A compose stack sets its own host ports and resource limits — use <code className="font-mono">ports:</code> and{' '}
-              <code className="font-mono">deploy.resources.limits</code> in the compose file.
+              {fill(t('A compose stack sets its own host ports and resource limits — use {ports} and {limits} in the compose file.'), {
+                ports: <code className="font-mono">ports:</code>,
+                limits: <code className="font-mono">deploy.resources.limits</code>,
+              })}
             </p>
           )}
           {step === 3 && !composeDeploy && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <L label="CPU shares (0 = unlimited)"><Input value={cpuShares} onChange={(e) => setCpuShares(e.target.value)} placeholder="512" className="font-mono text-xs" /></L>
-                <L label="Memory limit MB (0 = unlimited)"><Input value={memLimitMb} onChange={(e) => setMemLimitMb(e.target.value)} placeholder="256" className="font-mono text-xs" /></L>
+                <L label={t('CPU shares (0 = unlimited)')}><Input value={cpuShares} onChange={(e) => setCpuShares(e.target.value)} placeholder="512" className="font-mono text-xs" /></L>
+                <L label={t('Memory limit MB (0 = unlimited)')}><Input value={memLimitMb} onChange={(e) => setMemLimitMb(e.target.value)} placeholder="256" className="font-mono text-xs" /></L>
               </div>
             </div>
           )}
@@ -1475,18 +1497,18 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
           {/* Step 5: Review */}
           {step === 4 && (
             <div className="space-y-2 text-sm">
-              <Row label="Name" value={name} />
-              <Row label="Type" value={type} />
-              {nodeChoice && <Row label="Host" value={chosenNode ? chosenNode.name : 'This panel host'} />}
-              <Row label={mode === 'repo' ? 'Repository' : 'Image'} value={mode === 'repo' ? repoUrl : image} />
+              <Row label={t('Name')} value={name} />
+              <Row label={t('Type')} value={type} />
+              {nodeChoice && <Row label={t('Host')} value={chosenNode ? chosenNode.name : t('This panel host')} />}
+              <Row label={mode === 'repo' ? t('Repository') : t('Image')} value={mode === 'repo' ? repoUrl : image} />
               {/* The review step is repo-mode only (templates finish one step
                   earlier), so the image arms are type-level only. */}
               {/* v8 ignore start */}
-              {trimmedBaseDir && mode === 'repo' && <Row label="Base directory" value={trimmedBaseDir} />}
+              {trimmedBaseDir && mode === 'repo' && <Row label={t('Base directory')} value={trimmedBaseDir} />}
               {/* v8 ignore stop */}
               {insights && mode === 'repo' && (
                 <Row
-                  label="Detected framework"
+                  label={t('Detected framework')}
                   // The optional version/package-manager suffixes render for
                   // every review with insights; the instrumenter cannot see
                   // these nested template-literal arms.
@@ -1496,33 +1518,33 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                 />
               )}
               {buildPackSent !== 'auto' && (
-                <Row label="Build pack" value={BUILD_PACKS.find((b) => b.id === buildPackSent)?.label ?? buildPackSent} />
+                <Row label={t('Build pack')} value={t(BUILD_PACKS.find((b) => b.id === buildPackSent)?.label ?? buildPackSent)} />
               )}
-              {projectId && <Row label="Project" value={projects.data?.find((p) => String(p.id) === projectId)?.name ?? `#${projectId}`} />}
+              {projectId && <Row label={t('Project')} value={projects.data?.find((p) => String(p.id) === projectId)?.name ?? `#${projectId}`} />}
               {environmentId && (
-                <Row label="Environment" value={environments.data?.find((e) => String(e.id) === environmentId)?.name ?? `#${environmentId}`} />
+                <Row label={t('Environment')} value={environments.data?.find((e) => String(e.id) === environmentId)?.name ?? `#${environmentId}`} />
               )}
-              {cleanHost(customDomain) && <Row label="Domain" value={cleanHost(customDomain)} />}
+              {cleanHost(customDomain) && <Row label={t('Domain')} value={cleanHost(customDomain)} />}
               {(installCmd || buildCmd || startCmd) && (
-                <Row label="Build commands" value={[installCmd, buildCmd, startCmd].filter(Boolean).join('  →  ')} />
+                <Row label={t('Build commands')} value={[installCmd, buildCmd, startCmd].filter(Boolean).join('  →  ')} />
               )}
-              {port && <Row label="Port" value={`:${port}`} />}
-              {!composeDeploy && publishedPort && <Row label="Host Port" value={`:${publishedPort}`} />}
-              {volumeMount && <Row label="Volume" value={volumeMount} />}
-              <Row label="Env vars" value={String(envRows.filter((e) => e.key.trim()).length)} />
-              {!composeDeploy && <Row label="Limits" value={cpuShares || memLimitMb ? `${cpuShares || '—'} shares · ${memLimitMb || '—'} MB` : 'none'} />}
+              {port && <Row label={t('Port')} value={`:${port}`} />}
+              {!composeDeploy && publishedPort && <Row label={t('Host Port')} value={`:${publishedPort}`} />}
+              {volumeMount && <Row label={t('Volume')} value={volumeMount} />}
+              <Row label={t('Env vars')} value={String(envRows.filter((e) => e.key.trim()).length)} />
+              {!composeDeploy && <Row label={t('Limits')} value={cpuShares || memLimitMb ? t('{cpu} shares · {mem} MB', { cpu: cpuShares || '—', mem: memLimitMb || '—' }) : t('none')} />}
             </div>
           )}
         </form>
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-white/5 p-4 bg-slate-950/50">
-          <Button type="button" variant="ghost" size="sm" onClick={back} className={cn(step === 0 && 'invisible')}><ArrowLeft size={14} /> Back</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={back} className={cn(step === 0 && 'invisible')}><ArrowLeft size={14} /> {t('Back')}</Button>
           <div className="flex items-center gap-3">
             {provisionStatus && <span className={cn('max-w-xs text-right text-xs', deploy.isError ? 'text-rose-300' : 'text-emerald-300')}>{provisionStatus}</span>}
-            {deploy.isError && <span className="text-xs text-rose-400">Failed — try again</span>}
+            {deploy.isError && <span className="text-xs text-rose-400">{t('Failed — try again')}</span>}
             <Button type="submit" onClick={onSubmit} disabled={!canNext || deploy.isPending || adminOnlyTemplate}>
-              {step === STEPS.length - 1 ? (deploy.isPending ? 'Deploying…' : <><Rocket size={15} /> Deploy</>) : <>Continue <ArrowRight size={14} /></>}
+              {step === STEPS.length - 1 ? (deploy.isPending ? t('Deploying…') : <><Rocket size={15} /> {t('Deploy')}</>) : <>{t('Continue')} <ArrowRight size={14} /></>}
             </Button>
           </div>
         </div>

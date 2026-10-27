@@ -8,6 +8,7 @@ import { errorCode, errorMessage, SWARM_FIREWALL_PORTS, swarmOptInLine } from '.
 import { useToast } from '../../components/Toast.js';
 import { StepUpModal } from '../../components/StepUpModal.js';
 import { Badge, Button, Card, CardBody, ErrorCard, Field, Input, Skeleton, Switch } from '../../components/ui.js';
+import { fill, useT } from '../../lib/i18n.js';
 
 /** A loose IPv4 / IPv6 check; the server validates the address exactly. */
 const ADDRESS = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]*:[0-9a-fA-F:.]*)$/;
@@ -22,6 +23,7 @@ const ADDRESS = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]*:[0-9a-fA-F:.]*)$/;
 export function SwarmSection() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
   const status = useQuery({ queryKey: ['swarm'], queryFn: () => api.swarm.get() });
   const [initOpen, setInitOpen] = useState(false);
   const [enableOpen, setEnableOpen] = useState(false);
@@ -40,17 +42,17 @@ export function SwarmSection() {
       setInitOpen(false);
       setPromptError(null);
       setNotice(null);
-      toast('Swarm initialised on the panel host', 'success');
+      toast(t('Swarm initialised on the panel host'), 'success');
     },
     onError: (err) => {
       if (errorCode(err) === 'swarm_overlay_unavailable') {
         // The swarm exists now, but cannot run NineDeploy services: say why and refresh.
         setInitOpen(false);
-        setNotice(errorMessage(err, 'Encrypted overlay networks are not available on this host.'));
+        setNotice(errorMessage(err, t('Encrypted overlay networks are not available on this host.')));
         void qc.invalidateQueries({ queryKey: ['swarm'] });
         return;
       }
-      setPromptError(errorMessage(err, 'Could not initialise Swarm'));
+      setPromptError(errorMessage(err, t('Could not initialise Swarm')));
     },
   });
 
@@ -61,11 +63,11 @@ export function SwarmSection() {
       store(view);
       setEnableOpen(false);
       setPromptError(null);
-      toast(enabled ? 'Swarm deploys enabled' : 'Swarm deploys disabled', 'success');
+      toast(enabled ? t('Swarm deploys enabled') : t('Swarm deploys disabled'), 'success');
     },
     onError: (err, { enabled }) => {
-      if (enabled) setPromptError(errorMessage(err, 'Could not enable Swarm deploys'));
-      else toast(errorMessage(err, 'Could not disable Swarm deploys'), 'error');
+      if (enabled) setPromptError(errorMessage(err, t('Could not enable Swarm deploys')));
+      else toast(errorMessage(err, t('Could not disable Swarm deploys')), 'error');
     },
   });
 
@@ -80,26 +82,30 @@ export function SwarmSection() {
           <Network size={15} className="text-slate-500" /> Docker Swarm
         </div>
         <p className="text-xs text-slate-500">
-          Swarm runs a service's replicas across the panel host and the nodes that joined, behind Traefik. The panel host is the
-          only manager; nodes join as workers from the{' '}
-          <Link to="/servers" className="text-indigo-300 hover:underline">
-            Servers page
-          </Link>
-          . Each service opts in under Service → Settings → Runtime orchestrator.
+          {fill(
+            t("Swarm runs a service's replicas across the panel host and the nodes that joined, behind Traefik. The panel host is the only manager; nodes join as workers from the {link}. Each service opts in under Service → Settings → Runtime orchestrator."),
+            {
+              link: (
+                <Link to="/servers" className="text-indigo-300 hover:underline">
+                  {t('Servers page')}
+                </Link>
+              ),
+            },
+          )}
         </p>
 
         {status.isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : status.isError || !view ? (
-          <ErrorCard title="Couldn't load the Swarm status" error={status.error} onRetry={() => void status.refetch()} />
+          <ErrorCard title={t("Couldn't load the Swarm status")} error={status.error} onRetry={() => void status.refetch()} />
         ) : (
           <>
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 text-xs">
               <div className="flex flex-wrap items-center gap-2 text-slate-300">
-                Panel host: <Badge tone={active ? 'emerald' : view.localState === 'error' || view.localState === 'locked' ? 'rose' : 'neutral'}>{view.localState}</Badge>
-                {active && (view.controlAvailable ? <Badge tone="indigo">manager</Badge> : <Badge tone="amber">not a manager</Badge>)}
+                {t('Panel host:')} <Badge tone={active ? 'emerald' : view.localState === 'error' || view.localState === 'locked' ? 'rose' : 'neutral'}>{view.localState}</Badge>
+                {active && (view.controlAvailable ? <Badge tone="indigo">{t('manager')}</Badge> : <Badge tone="amber">{t('not a manager')}</Badge>)}
                 {view.managerAddr && (
-                  <span className="font-mono text-slate-400" title="Manager address">
+                  <span className="font-mono text-slate-400" title={t('Manager address')}>
                     {view.managerAddr}
                   </span>
                 )}
@@ -113,7 +119,7 @@ export function SwarmSection() {
                       setInitOpen(true);
                     }}
                   >
-                    Initialise Swarm
+                    {t('Initialise Swarm')}
                   </Button>
                 </div>
               )}
@@ -122,18 +128,18 @@ export function SwarmSection() {
             <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
               <div>
                 <div className="flex items-center gap-2 text-sm text-slate-200">
-                  Swarm deploys {view.enabled ? <Badge tone="amber">enabled</Badge> : <Badge>off</Badge>}
+                  {t('Swarm deploys')} {view.enabled ? <Badge tone="amber">{t('enabled')}</Badge> : <Badge>{t('off')}</Badge>}
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
                   {view.enabled
-                    ? 'Services that opted in deploy as Swarm stacks. Turning this off makes their next deploy refuse until they switch back to plain containers.'
+                    ? t('Services that opted in deploy as Swarm stacks. Turning this off makes their next deploy refuse until they switch back to plain containers.')
                     : active && view.controlAvailable
-                      ? 'Enabling asks for your password again.'
-                      : 'Initialise Swarm on the panel host first.'}
+                      ? t('Enabling asks for your password again.')
+                      : t('Initialise Swarm on the panel host first.')}
                 </p>
               </div>
               <Switch
-                label="Swarm deploys"
+                label={t('Swarm deploys')}
                 checked={view.enabled}
                 disabled={settings.isPending || (!view.enabled && !(active && view.controlAvailable))}
                 onChange={(on) => {
@@ -162,10 +168,10 @@ export function SwarmSection() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-left text-[10px] uppercase tracking-wide text-slate-500">
-                      <th className="py-1 pr-3 font-medium">Node</th>
-                      <th className="py-1 pr-3 font-medium">Role</th>
-                      <th className="py-1 pr-3 font-medium">Availability</th>
-                      <th className="py-1 font-medium">State</th>
+                      <th className="py-1 pr-3 font-medium">{t('Node')}</th>
+                      <th className="py-1 pr-3 font-medium">{t('Role')}</th>
+                      <th className="py-1 pr-3 font-medium">{t('Availability')}</th>
+                      <th className="py-1 font-medium">{t('State')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -173,7 +179,7 @@ export function SwarmSection() {
                       <tr key={n.id} className="border-t border-white/[0.04] align-top text-slate-300">
                         <td className="py-1.5 pr-3">
                           {n.hostname || n.id.slice(0, 12)}
-                          {n.serverId == null && <span className="ml-1 text-[10px] text-slate-500">(panel host or foreign)</span>}
+                          {n.serverId == null && <span className="ml-1 text-[10px] text-slate-500">{t('(panel host or foreign)')}</span>}
                           {n.warnings?.map((w) => (
                             <div key={w} className="mt-1 text-[11px] text-amber-300">
                               {w}
@@ -191,19 +197,19 @@ export function SwarmSection() {
             )}
 
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 text-xs text-slate-400">
-              <div className="mb-1 font-medium text-slate-300">Firewall between the swarm's hosts</div>
+              <div className="mb-1 font-medium text-slate-300">{t("Firewall between the swarm's hosts")}</div>
               <ul className="list-disc space-y-0.5 pl-5">
                 {SWARM_FIREWALL_PORTS.map((p) => (
                   <li key={p}>{p}</li>
                 ))}
               </ul>
               <p className="mt-2">
-                Open these only to the cluster's own hosts, never to the internet. Swarm services route over encrypted overlay networks,
-                which Docker does not support on Windows hosts.
+                {t("Open these only to the cluster's own hosts, never to the internet. Swarm services route over encrypted overlay networks, which Docker does not support on Windows hosts.")}
               </p>
               <p className="mt-2">
-                A node joins only after its owner sets <code className="font-mono text-slate-300">{swarmOptInLine(view.managerAddr)}</code>{' '}
-                in the agent's environment.
+                {fill(t("A node joins only after its owner sets {line} in the agent's environment."), {
+                  line: <code className="font-mono text-slate-300">{swarmOptInLine(view.managerAddr)}</code>,
+                })}
               </p>
             </div>
           </>
@@ -212,13 +218,13 @@ export function SwarmSection() {
 
       {initOpen && (
         <StepUpModal
-          title="Initialise Swarm?"
-          confirmLabel="Initialise Swarm"
+          title={t('Initialise Swarm?')}
+          confirmLabel={t('Initialise Swarm')}
           pending={init.isPending}
           error={promptError}
           onConfirm={(password) => {
             if (!ADDRESS.test(advertiseAddr.trim())) {
-              setPromptError('Enter the IPv4 or IPv6 address the nodes reach the panel host on.');
+              setPromptError(t('Enter the IPv4 or IPv6 address the nodes reach the panel host on.'));
               return;
             }
             init.mutate(password);
@@ -226,28 +232,29 @@ export function SwarmSection() {
           onClose={() => setInitOpen(false)}
           warning={
             <p>
-              Runs <code className="font-mono">docker swarm init</code> on the panel host's Docker daemon. The swarm's management port
-              2377/tcp then accepts joins: firewall it to the cluster's own hosts.
+              {fill(
+                t("Runs {cmd} on the panel host's Docker daemon. The swarm's management port 2377/tcp then accepts joins: firewall it to the cluster's own hosts."),
+                { cmd: <code className="font-mono">docker swarm init</code> },
+              )}
             </p>
           }
         >
-          <Field label="Advertise address" hint="The address nodes reach the panel host on (a private address is best).">
-            <Input aria-label="Advertise address" value={advertiseAddr} onChange={(e) => setAdvertiseAddr(e.target.value)} placeholder="10.0.0.2" className="font-mono" />
+          <Field label={t('Advertise address')} hint={t('The address nodes reach the panel host on (a private address is best).')}>
+            <Input aria-label={t('Advertise address')} value={advertiseAddr} onChange={(e) => setAdvertiseAddr(e.target.value)} placeholder="10.0.0.2" className="font-mono" />
           </Field>
         </StepUpModal>
       )}
       {enableOpen && (
         <StepUpModal
-          title="Enable Swarm deploys?"
-          confirmLabel="Enable Swarm deploys"
+          title={t('Enable Swarm deploys?')}
+          confirmLabel={t('Enable Swarm deploys')}
           pending={settings.isPending}
           error={promptError}
           onConfirm={(password) => settings.mutate({ enabled: true, password })}
           onClose={() => setEnableOpen(false)}
           warning={
             <p>
-              Services that opt in will deploy as Swarm stacks, scheduled on the panel host and the nodes in the swarm. A compromised
-              node in the swarm can run those services' tasks.
+              {t("Services that opt in will deploy as Swarm stacks, scheduled on the panel host and the nodes in the swarm. A compromised node in the swarm can run those services' tasks.")}
             </p>
           }
         />

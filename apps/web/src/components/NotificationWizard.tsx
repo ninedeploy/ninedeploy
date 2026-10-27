@@ -7,8 +7,9 @@ import {
 import { api } from '../lib/api.js';
 import { useToast } from './Toast.js';
 import { Button, Input, Modal, Textarea, cn } from './ui.js';
+import { type Translate, fill, msg, translate, useT } from '../lib/i18n.js';
 
-const STEPS = ['Channel', 'Connect', 'Events', 'Test'];
+const STEPS = [msg('Channel'), msg('Connect'), msg('Events'), msg('Test')];
 const TYPES = [
   { id: 'telegram', label: 'Telegram', emoji: '✈️', color: 'from-sky-500 to-blue-600', icon: MessageCircle },
   { id: 'discord', label: 'Discord', emoji: '🎮', color: 'from-indigo-500 to-purple-600', icon: Plug },
@@ -19,10 +20,10 @@ const TYPES = [
   { id: 'pushover', label: 'Pushover', emoji: '📲', color: 'from-blue-500 to-indigo-600', icon: Send },
   { id: 'lark', label: 'Lark / Feishu', emoji: '🐦', color: 'from-sky-400 to-cyan-600', icon: MessageCircle },
   { id: 'teams', label: 'Microsoft Teams', emoji: '👥', color: 'from-violet-500 to-indigo-600', icon: MessageCircle },
-  { id: 'email', label: 'Email (SMTP)', emoji: '✉️', color: 'from-cyan-500 to-sky-600', icon: Mail },
-  { id: 'resend', label: 'Email (Resend)', emoji: '📨', color: 'from-slate-500 to-zinc-700', icon: Mail },
+  { id: 'email', label: msg('Email (SMTP)'), emoji: '✉️', color: 'from-cyan-500 to-sky-600', icon: Mail },
+  { id: 'resend', label: msg('Email (Resend)'), emoji: '📨', color: 'from-slate-500 to-zinc-700', icon: Mail },
   // G1.5: FCM (G-22) was CLI-only; the target is a device token, the config the service account JSON.
-  { id: 'fcm', label: 'Firebase push (FCM)', emoji: '📱', color: 'from-orange-500 to-amber-600', icon: Smartphone },
+  { id: 'fcm', label: msg('Firebase push (FCM)'), emoji: '📱', color: 'from-orange-500 to-amber-600', icon: Smartphone },
   // G3.7
   { id: 'mattermost', label: 'Mattermost', emoji: '💬', color: 'from-blue-600 to-sky-700', icon: MessageCircle },
   { id: 'googlechat', label: 'Google Chat', emoji: '💬', color: 'from-green-500 to-emerald-600', icon: MessageCircle },
@@ -32,35 +33,39 @@ const TYPES = [
 ] as const;
 
 /** The fields the server requires in an FCM service account (lib/fcm.ts `parseServiceAccount`). */
-export function fcmServiceAccountError(raw: string): string | null {
-  if (!raw.trim()) return 'Paste the service account JSON';
+export function fcmServiceAccountError(
+  raw: string,
+  t: Translate = (text, vars) => translate('en', text, vars),
+): string | null {
+  if (!raw.trim()) return t('Paste the service account JSON');
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return 'Not valid JSON';
+    return t('Not valid JSON');
   }
   const sa = parsed as Record<string, unknown> | null;
-  if (!sa || typeof sa !== 'object' || Array.isArray(sa)) return 'Not a service account JSON object';
+  if (!sa || typeof sa !== 'object' || Array.isArray(sa)) return t('Not a service account JSON object');
   for (const key of ['project_id', 'client_email', 'private_key']) {
-    if (typeof sa[key] !== 'string' || !sa[key]) return `The service account has no ${key}`;
+    if (typeof sa[key] !== 'string' || !sa[key]) return t('The service account has no {key}', { key });
   }
   return null;
 }
 
 const EVENT_GROUPS = [
-  { id: 'deploy', label: 'Deployments', emoji: '🚀', desc: 'Deploy, rollback, build logs' },
-  { id: 'service', label: 'Services', emoji: '🖥️', desc: 'Create, delete, stop, start' },
-  { id: 'alert', label: 'Alerts', emoji: '🔔', desc: 'Metric threshold fired / recovered' },
-  { id: 'database', label: 'Databases', emoji: '🗄️', desc: 'Create, delete, backup' },
-  { id: 'domain', label: 'Domains', emoji: '🌐', desc: 'Add, SSL toggle' },
-  { id: 'backup', label: 'Backups', emoji: '💾', desc: 'Create, restore' },
-  { id: 'user', label: 'Users', emoji: '👤', desc: 'Register, role change' },
+  { id: 'deploy', label: msg('Deployments'), emoji: '🚀', desc: 'Deploy, rollback, build logs' },
+  { id: 'service', label: msg('Services'), emoji: '🖥️', desc: 'Create, delete, stop, start' },
+  { id: 'alert', label: msg('Alerts'), emoji: '🔔', desc: 'Metric threshold fired / recovered' },
+  { id: 'database', label: msg('Databases'), emoji: '🗄️', desc: 'Create, delete, backup' },
+  { id: 'domain', label: msg('Domains'), emoji: '🌐', desc: 'Add, SSL toggle' },
+  { id: 'backup', label: msg('Backups'), emoji: '💾', desc: 'Create, restore' },
+  { id: 'user', label: msg('Users'), emoji: '👤', desc: 'Register, role change' },
 ];
 
 const WIZARD_FORM_ID = 'notification-wizard-form';
 
 export function NotificationWizard({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [step, setStep] = useState(0);
@@ -97,10 +102,10 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notif-channels'] });
-      toast('Notification channel created!', 'success');
+      toast(t('Notification channel created!'), 'success');
       onClose();
     },
-    onError: () => toast('Could not save the channel', 'error'),
+    onError: () => toast(t('Could not save the channel'), 'error'),
   });
 
   const canNext = step === 0 ? !!type : step === 1 ? !!target.trim() && (type !== 'fcm' || fcmServiceAccountError(fcmServiceAccount) === null) : true;
@@ -146,29 +151,29 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
     else { void doTest(); }
   };
 
-  const selectedType = TYPES.find((t) => t.id === type);
+  const selectedType = TYPES.find((ty) => ty.id === type);
 
   return (
     <Modal
-      title={<span className="flex items-center gap-2"><Bell size={18} className="text-indigo-400" /> New Notification</span>}
+      title={<span className="flex items-center gap-2"><Bell size={18} className="text-indigo-400" /> {t('New Notification')}</span>}
       onClose={onClose}
       wide
       footer={
         <>
           <Button type="button" variant="ghost" size="sm" form={WIZARD_FORM_ID} onClick={back} className={cn('mr-auto', step === 0 && 'invisible')}>
-            <ArrowLeft size={14} /> Back
+            <ArrowLeft size={14} /> {t('Back')}
           </Button>
           <Button type="submit" form={WIZARD_FORM_ID} disabled={!canNext || testing || finish.isPending}>
             {step === STEPS.length - 1 ? (
               tested === 'ok' ? (
-                finish.isPending ? 'Saving…' : <><Check size={15} /> Create channel</>
+                finish.isPending ? t('Saving…') : <><Check size={15} /> {t('Create channel')}</>
               ) : testing ? (
-                'Testing…'
+                t('Testing…')
               ) : (
-                <><Send size={15} /> Send test</>
+                <><Send size={15} /> {t('Send test')}</>
               )
             ) : (
-              <>Continue <ArrowRight size={14} /></>
+              <>{t('Continue')} <ArrowRight size={14} /></>
             )}
           </Button>
         </>
@@ -182,7 +187,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
               <div className={cn('grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold transition', i < step ? 'bg-emerald-500 text-white' : i === step ? 'bg-indigo-500 text-white' : 'bg-white/10 text-slate-500')}>
                 {i < step ? <Check size={12} /> : i + 1}
               </div>
-              <span className={cn('truncate text-[11px]', i === step ? 'text-slate-200' : 'text-slate-500')}>{label}</span>
+              <span className={cn('truncate text-[11px]', i === step ? 'text-slate-200' : 'text-slate-500')}>{t(label)}</span>
               {i < STEPS.length - 1 && <div className={cn('h-px flex-1 transition', i < step ? 'bg-emerald-500/50' : 'bg-white/10')} />}
             </div>
           ))}
@@ -191,37 +196,37 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
         {/* Step 1: Choose type — big visual cards */}
         {step === 0 && (
           <div>
-            <p className="mb-4 text-sm text-slate-400">Where do you want to receive notifications?</p>
+            <p className="mb-4 text-sm text-slate-400">{t('Where do you want to receive notifications?')}</p>
             <div className="grid grid-cols-2 gap-3">
-              {TYPES.map((t) => {
-                const Icon = t.icon;
-                const active = type === t.id;
+              {TYPES.map((ty) => {
+                const Icon = ty.icon;
+                const active = type === ty.id;
                 return (
-                  <button key={t.id} type="button" onClick={() => { setType(t.id); setName(''); setTarget(''); setFcmServiceAccount(''); }}
+                  <button key={ty.id} type="button" onClick={() => { setType(ty.id); setName(''); setTarget(''); setFcmServiceAccount(''); }}
                     className={cn('group flex items-center gap-3 rounded-xl border p-3.5 text-left transition', active ? 'border-indigo-500/60 bg-indigo-500/[0.06]' : 'border-white/10 hover:border-white/20 hover:bg-white/[0.02]')}>
-                    <div className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg', t.color)}>
+                    <div className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg', ty.color)}>
                       <Icon size={18} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium text-slate-100">{t.label}</div>
+                      <div className="font-medium text-slate-100">{t(ty.label)}</div>
                       <div className="truncate text-[11px] text-slate-500">
-                        {t.id === 'telegram' ? 'Telegram bot'
-                          : t.id === 'discord' ? 'Discord channel'
-                          : t.id === 'webhook' ? 'Any URL'
-                          : t.id === 'slack' ? 'Slack channel'
-                          : t.id === 'ntfy' ? 'ntfy push'
-                          : t.id === 'gotify' ? 'Self-hosted push'
-                          : t.id === 'pushover' ? 'Mobile push'
-                          : t.id === 'lark' ? 'Lark / Feishu bot'
-                          : t.id === 'teams' ? 'Teams channel'
-                          : t.id === 'resend' ? 'Resend email API'
-                          : t.id === 'fcm' ? 'Mobile / web push'
-                          : t.id === 'mattermost' ? 'Incoming webhook'
-                          : t.id === 'googlechat' ? 'Space webhook'
-                          : t.id === 'matrix' ? 'Matrix room'
-                          : t.id === 'pagerduty' ? 'Incidents (Events v2)'
-                          : t.id === 'opsgenie' ? 'Incidents (Alert API)'
-                          : 'SMTP email'}
+                        {ty.id === 'telegram' ? t('Telegram bot')
+                          : ty.id === 'discord' ? t('Discord channel')
+                          : ty.id === 'webhook' ? t('Any URL')
+                          : ty.id === 'slack' ? t('Slack channel')
+                          : ty.id === 'ntfy' ? t('ntfy push')
+                          : ty.id === 'gotify' ? t('Self-hosted push')
+                          : ty.id === 'pushover' ? t('Mobile push')
+                          : ty.id === 'lark' ? t('Lark / Feishu bot')
+                          : ty.id === 'teams' ? t('Teams channel')
+                          : ty.id === 'resend' ? t('Resend email API')
+                          : ty.id === 'fcm' ? t('Mobile / web push')
+                          : ty.id === 'mattermost' ? t('Incoming webhook')
+                          : ty.id === 'googlechat' ? t('Space webhook')
+                          : ty.id === 'matrix' ? t('Matrix room')
+                          : ty.id === 'pagerduty' ? t('Incidents (Events v2)')
+                          : ty.id === 'opsgenie' ? t('Incidents (Alert API)')
+                          : t('SMTP email')}
                       </div>
                     </div>
                     {active && <Check size={16} className="text-indigo-400 shrink-0" />}
@@ -239,16 +244,16 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
               <>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-xl bg-sky-500/[0.06] p-3 ring-1 ring-inset ring-sky-500/20">
-                    <p className="mb-1.5 text-xs font-medium text-sky-200">1. Create bot</p>
-                    <p className="text-[11px] text-slate-400">Open <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">@BotFather</a>, send <code className="rounded bg-black/30 px-1 text-sky-300">/newbot</code></p>
+                    <p className="mb-1.5 text-xs font-medium text-sky-200">{t('1. Create bot')}</p>
+                    <p className="text-[11px] text-slate-400">{fill(t('Open {bot}, send {command}'), { bot: <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">@BotFather</a>, command: <code className="rounded bg-black/30 px-1 text-sky-300">/newbot</code> })}</p>
                   </div>
                   <div className="rounded-xl bg-sky-500/[0.06] p-3 ring-1 ring-inset ring-sky-500/20">
-                    <p className="mb-1.5 text-xs font-medium text-sky-200">2. Get Chat ID</p>
-                    <p className="text-[11px] text-slate-400">Send message to bot, then visit <a href="https://api.telegram.org/bot<TOKEN>/getUpdates" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">getUpdates</a></p>
+                    <p className="mb-1.5 text-xs font-medium text-sky-200">{t('2. Get Chat ID')}</p>
+                    <p className="text-[11px] text-slate-400">{fill(t('Send message to bot, then visit {link}'), { link: <a href="https://api.telegram.org/bot<TOKEN>/getUpdates" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">getUpdates</a> })}</p>
                   </div>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Bot token : Chat ID</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Bot token : Chat ID')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="789123456:AAEx…:987654321" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -256,11 +261,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'discord' && (
               <>
                 <div className="rounded-xl bg-indigo-500/[0.06] p-3 ring-1 ring-inset ring-indigo-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-indigo-200">Create Discord Webhook</p>
-                  <p className="text-[11px] text-slate-400">Channel settings → Integrations → Create Webhook → Copy URL</p>
+                  <p className="mb-1.5 text-xs font-medium text-indigo-200">{t('Create Discord Webhook')}</p>
+                  <p className="text-[11px] text-slate-400">{t('Channel settings → Integrations → Create Webhook → Copy URL')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Discord Webhook URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Discord Webhook URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://discord.com/api/webhooks/…" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -268,11 +273,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'slack' && (
               <>
                 <div className="rounded-xl bg-emerald-500/[0.06] p-3 ring-1 ring-inset ring-emerald-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-emerald-200">Create Slack Webhook</p>
-                  <p className="text-[11px] text-slate-400">api.slack.com/messaging/webhooks → Create your webhook → Copy URL</p>
+                  <p className="mb-1.5 text-xs font-medium text-emerald-200">{t('Create Slack Webhook')}</p>
+                  <p className="text-[11px] text-slate-400">{t('api.slack.com/messaging/webhooks → Create your webhook → Copy URL')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Slack Webhook URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Slack Webhook URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://hooks.slack.com/services/…" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -280,11 +285,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'ntfy' && (
               <>
                 <div className="rounded-xl bg-rose-500/[0.06] p-3 ring-1 ring-inset ring-rose-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-rose-200">ntfy topic</p>
-                  <p className="text-[11px] text-slate-400">Subscribe to a topic in the ntfy app, then use its URL here.</p>
+                  <p className="mb-1.5 text-xs font-medium text-rose-200">{t('ntfy topic')}</p>
+                  <p className="text-[11px] text-slate-400">{t('Subscribe to a topic in the ntfy app, then use its URL here.')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Topic URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Topic URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://ntfy.sh/my-ninedeploy-alerts" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -292,11 +297,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'gotify' && (
               <>
                 <div className="rounded-xl bg-fuchsia-500/[0.06] p-3 ring-1 ring-inset ring-fuchsia-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-fuchsia-200">Gotify app token</p>
-                  <p className="text-[11px] text-slate-400">In Gotify, create an app (Apps → Create), then paste the message endpoint with its token below.</p>
+                  <p className="mb-1.5 text-xs font-medium text-fuchsia-200">{t('Gotify app token')}</p>
+                  <p className="text-[11px] text-slate-400">{t('In Gotify, create an app (Apps → Create), then paste the message endpoint with its token below.')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Message endpoint URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Message endpoint URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://push.example.com/message?token=Axxxxxxxxxx" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -304,11 +309,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'pushover' && (
               <>
                 <div className="rounded-xl bg-blue-500/[0.06] p-3 ring-1 ring-inset ring-blue-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-blue-200">Pushover credentials</p>
-                  <p className="text-[11px] text-slate-400">Create an <a href="https://pushover.net/apps/build" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">application</a> for its API token; your user key is on the dashboard.</p>
+                  <p className="mb-1.5 text-xs font-medium text-blue-200">{t('Pushover credentials')}</p>
+                  <p className="text-[11px] text-slate-400">{fill(t('Create an {link} for its API token; your user key is on the dashboard.'), { link: <a href="https://pushover.net/apps/build" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">{t('application')}</a> })}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">App token @ User key</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('App token @ User key')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="azGDoR8w……@uQiRzpo4DXghDmr9QzzfQu27cmVRsG" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -316,11 +321,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'lark' && (
               <>
                 <div className="rounded-xl bg-sky-500/[0.06] p-3 ring-1 ring-inset ring-sky-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-sky-200">Lark / Feishu custom bot</p>
-                  <p className="text-[11px] text-slate-400">In a group chat: Settings → Bots → Add Custom Bot, then paste its webhook URL.</p>
+                  <p className="mb-1.5 text-xs font-medium text-sky-200">{t('Lark / Feishu custom bot')}</p>
+                  <p className="text-[11px] text-slate-400">{t('In a group chat: Settings → Bots → Add Custom Bot, then paste its webhook URL.')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Webhook URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/…" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -328,11 +333,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'teams' && (
               <>
                 <div className="rounded-xl bg-violet-500/[0.06] p-3 ring-1 ring-inset ring-violet-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-violet-200">Microsoft Teams webhook</p>
-                  <p className="text-[11px] text-slate-400">In the channel: Workflows → &quot;Post to a channel when a webhook request is received&quot; (or a legacy Incoming Webhook), then paste its URL.</p>
+                  <p className="mb-1.5 text-xs font-medium text-violet-200">{t('Microsoft Teams webhook')}</p>
+                  <p className="text-[11px] text-slate-400">{t('In the channel: Workflows → "Post to a channel when a webhook request is received" (or a legacy Incoming Webhook), then paste its URL.')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Webhook URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://prod-00.westeurope.logic.azure.com:443/workflows/…" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -342,25 +347,25 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                 <div className="rounded-xl bg-orange-500/[0.06] p-3 ring-1 ring-inset ring-orange-500/20">
                   <p className="mb-1.5 text-xs font-medium text-orange-200">Firebase Cloud Messaging</p>
                   <p className="text-[11px] text-slate-400">
-                    In the Firebase console: Project settings → Service accounts → Generate new private key. The JSON is stored encrypted; treat it as a secret.
+                    {t('In the Firebase console: Project settings → Service accounts → Generate new private key. The JSON is stored encrypted; treat it as a secret.')}
                   </p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Device registration token</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Device registration token')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="fMEP0vJqS0-…" className="font-mono text-xs" autoFocus />
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Service account JSON</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Service account JSON')}</span>
                   <Textarea
                     value={fcmServiceAccount}
                     onChange={(e) => setFcmServiceAccount(e.target.value)}
-                    aria-label="Service account JSON"
+                    aria-label={t('Service account JSON')}
                     placeholder='{"type": "service_account", "project_id": "…", …}'
                     rows={5}
                     className="font-mono text-[11px]"
                   />
                   {fcmServiceAccount.trim() && fcmServiceAccountError(fcmServiceAccount) && (
-                    <p className="mt-1 text-[11px] text-rose-400">{fcmServiceAccountError(fcmServiceAccount)}</p>
+                    <p className="mt-1 text-[11px] text-rose-400">{fcmServiceAccountError(fcmServiceAccount, t)}</p>
                   )}
                 </div>
               </>
@@ -368,11 +373,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'mattermost' && (
               <>
                 <div className="rounded-xl bg-blue-500/[0.06] p-3 ring-1 ring-inset ring-blue-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-blue-200">Mattermost incoming webhook</p>
-                  <p className="text-[11px] text-slate-400">Integrations → Incoming Webhooks → Add Incoming Webhook, pick the channel, then paste its URL.</p>
+                  <p className="mb-1.5 text-xs font-medium text-blue-200">{t('Mattermost incoming webhook')}</p>
+                  <p className="text-[11px] text-slate-400">{t('Integrations → Incoming Webhooks → Add Incoming Webhook, pick the channel, then paste its URL.')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Webhook URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://mattermost.example.com/hooks/…" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -380,11 +385,11 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'googlechat' && (
               <>
                 <div className="rounded-xl bg-green-500/[0.06] p-3 ring-1 ring-inset ring-green-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-green-200">Google Chat webhook</p>
-                  <p className="text-[11px] text-slate-400">In the space: Apps &amp; integrations → Webhooks → Add webhook, then paste its URL.</p>
+                  <p className="mb-1.5 text-xs font-medium text-green-200">{t('Google Chat webhook')}</p>
+                  <p className="text-[11px] text-slate-400">{t('In the space: Apps & integrations → Webhooks → Add webhook, then paste its URL.')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Webhook URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://chat.googleapis.com/v1/spaces/…" className="font-mono text-xs" autoFocus />
                 </div>
               </>
@@ -396,18 +401,18 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
             {type === 'webhook' && (
               <>
                 <div className="rounded-xl bg-amber-500/[0.06] p-3 ring-1 ring-inset ring-amber-500/20">
-                  <p className="mb-1.5 text-xs font-medium text-amber-200">Generic Webhook</p>
-                  <p className="text-[11px] text-slate-400">NineDeploy will POST JSON for every matching event.</p>
+                  <p className="mb-1.5 text-xs font-medium text-amber-200">{t('Generic Webhook')}</p>
+                  <p className="text-[11px] text-slate-400">{t('NineDeploy will POST JSON for every matching event.')}</p>
                 </div>
                 <div>
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Webhook URL</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Webhook URL')}</span>
                   <Input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://your-app.com/webhook" className="font-mono text-xs" autoFocus />
                 </div>
               </>
             )}
             <div>
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Name (optional)</span>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={`${selectedType!.label} alerts`} />
+              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">{t('Name (optional)')}</span>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('{channel} alerts', { channel: t(selectedType!.label) })} />
             </div>
           </div>
         )}
@@ -415,7 +420,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
         {/* Step 3: Event selection — visual toggle cards */}
         {step === 2 && (
           <div>
-            <p className="mb-3 text-sm text-slate-400">Which events should trigger a notification?</p>
+            <p className="mb-3 text-sm text-slate-400">{t('Which events should trigger a notification?')}</p>
             <div className="grid grid-cols-3 gap-2">
               {EVENT_GROUPS.map((g) => {
                 const active = selectedEvents.has(g.id);
@@ -423,7 +428,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
                   <button key={g.id} type="button" onClick={() => toggleEvent(g.id)}
                     className={cn('flex items-center gap-2 rounded-lg border p-2.5 text-left transition', active ? 'border-indigo-500/60 bg-indigo-500/[0.06]' : 'border-white/10 hover:border-white/20')}>
                     <span className="text-base">{g.emoji}</span>
-                    <span className={cn('flex-1 text-xs font-medium', active ? 'text-slate-100' : 'text-slate-400')}>{g.label}</span>
+                    <span className={cn('flex-1 text-xs font-medium', active ? 'text-slate-100' : 'text-slate-400')}>{t(g.label)}</span>
                     {active && <Check size={12} className="text-indigo-400 shrink-0" />}
                   </button>
                 );
@@ -439,19 +444,21 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
               {tested === 'ok' ? <Check size={28} /> : tested === 'fail' ? <X size={28} /> : <Zap size={28} />}
             </div>
             <p className="mt-4 text-sm font-medium text-slate-200">
-              {tested === 'ok' ? 'Test message sent!' : tested === 'fail' ? 'Test failed — check your settings' : 'Ready to test?'}
+              {tested === 'ok' ? t('Test message sent!') : tested === 'fail' ? t('Test failed — check your settings') : t('Ready to test?')}
             </p>
             <p className="mt-1 text-xs text-slate-500">
               {tested === 'ok'
-                ? `Check your ${type === 'email' || type === 'resend' ? 'inbox' : selectedType!.label} for a test message.`
-                : 'We\'ll send a test notification to verify your setup.'}
+                ? type === 'email' || type === 'resend'
+                  ? t('Check your inbox for a test message.')
+                  : t('Check your {channel} for a test message.', { channel: t(selectedType!.label) })
+                : t("We'll send a test notification to verify your setup.")}
             </p>
 
             {/* Summary */}
             <div className="mt-5 w-full space-y-1.5 rounded-xl bg-white/[0.02] p-3 text-left">
-              <SummaryRow label="Channel" value={selectedType!.label} />
-              <SummaryRow label="Events" value={selectedEvents.size > 0 ? Array.from(selectedEvents).join(', ') : 'all'} />
-              <SummaryRow label="Target" value={summaryTarget(type, target)} />
+              <SummaryRow label={t('Channel')} value={t(selectedType!.label)} />
+              <SummaryRow label={t('Events')} value={selectedEvents.size > 0 ? Array.from(selectedEvents).join(', ') : t('all')} />
+              <SummaryRow label={t('Target')} value={summaryTarget(type, target, t)} />
             </div>
           </div>
         )}
@@ -462,6 +469,7 @@ export function NotificationWizard({ onClose }: { onClose: () => void }) {
 
 /** Email channel target editor — composes the JSON config the server decrypts. */
 function EmailFields({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT();
   let cfg: Record<string, string> = {};
   try {
     cfg = JSON.parse(value) as Record<string, string>;
@@ -472,32 +480,32 @@ function EmailFields({ value, onChange }: { value: string; onChange: (v: string)
   return (
     <div className="space-y-3">
       <div className="rounded-xl bg-cyan-500/[0.06] p-3 ring-1 ring-inset ring-cyan-500/20">
-        <p className="mb-1 text-xs font-medium text-cyan-200">SMTP settings</p>
-        <p className="text-[11px] text-slate-400">Credentials are encrypted at rest.</p>
+        <p className="mb-1 text-xs font-medium text-cyan-200">{t('SMTP settings')}</p>
+        <p className="text-[11px] text-slate-400">{t('Credentials are encrypted at rest.')}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">SMTP host</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('SMTP host')}</span>
           <Input value={cfg['host'] ?? ''} onChange={(e) => set('host', e.target.value)} placeholder="smtp.example.com" className="h-8 font-mono text-xs" autoFocus />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Port</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('Port')}</span>
           <Input value={cfg['port'] ?? ''} onChange={(e) => set('port', e.target.value)} placeholder="587" className="h-8 font-mono text-xs" />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">From</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('From')}</span>
           <Input value={cfg['from'] ?? ''} onChange={(e) => set('from', e.target.value)} placeholder="ninedeploy@example.com" className="h-8 font-mono text-xs" />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">To</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('To')}</span>
           <Input value={cfg['to'] ?? ''} onChange={(e) => set('to', e.target.value)} placeholder="you@example.com" className="h-8 font-mono text-xs" />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">User</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('User')}</span>
           <Input value={cfg['user'] ?? ''} onChange={(e) => set('user', e.target.value)} className="h-8 font-mono text-xs" />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Password</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('Password')}</span>
           <Input type="password" value={cfg['pass'] ?? ''} onChange={(e) => set('pass', e.target.value)} className="h-8 font-mono text-xs" />
         </div>
       </div>
@@ -509,7 +517,7 @@ function EmailFields({ value, onChange }: { value: string; onChange: (v: string)
  * The Target row of the test summary. Resend, Matrix and incident targets hold
  * a secret, so show only the part that says where messages go.
  */
-function summaryTarget(type: string | null, target: string): string {
+function summaryTarget(type: string | null, target: string, t: Translate): string {
   const field = (key: string): string => {
     try {
       const v = (JSON.parse(target) as Record<string, unknown>)[key];
@@ -520,12 +528,13 @@ function summaryTarget(type: string | null, target: string): string {
   };
   if (type === 'resend') return field('to');
   if (type === 'matrix') return field('roomId');
-  if (type === 'pagerduty' || type === 'opsgenie') return `${(field('region') || 'us').toUpperCase()} region`;
+  if (type === 'pagerduty' || type === 'opsgenie') return t('{region} region', { region: (field('region') || 'us').toUpperCase() });
   return target.slice(0, 40) + (target.length > 40 ? '…' : '');
 }
 
 /** Resend channel target editor — composes the JSON {apiKey, from, to} the server decrypts. */
 function ResendFields({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT();
   let cfg: Record<string, string> = {};
   try {
     cfg = JSON.parse(value) as Record<string, string>;
@@ -537,20 +546,20 @@ function ResendFields({ value, onChange }: { value: string; onChange: (v: string
     <div className="space-y-3">
       <div className="rounded-xl bg-slate-500/[0.06] p-3 ring-1 ring-inset ring-slate-500/20">
         <p className="mb-1 text-xs font-medium text-slate-200">Resend</p>
-        <p className="text-[11px] text-slate-400">Create an API key at resend.com/api-keys; the From address must be on a domain you verified there. The key is encrypted at rest.</p>
+        <p className="text-[11px] text-slate-400">{t('Create an API key at resend.com/api-keys; the From address must be on a domain you verified there. The key is encrypted at rest.')}</p>
       </div>
       <div className="space-y-2">
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">API key</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('API key')}</span>
           <Input type="password" value={cfg['apiKey'] ?? ''} onChange={(e) => set('apiKey', e.target.value)} placeholder="re_…" className="h-8 font-mono text-xs" autoFocus />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">From</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('From')}</span>
             <Input value={cfg['from'] ?? ''} onChange={(e) => set('from', e.target.value)} placeholder="ninedeploy@example.com" className="h-8 font-mono text-xs" />
           </div>
           <div>
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">To (comma-separated)</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('To (comma-separated)')}</span>
             <Input value={cfg['to'] ?? ''} onChange={(e) => set('to', e.target.value)} placeholder="you@example.com" className="h-8 font-mono text-xs" />
           </div>
         </div>
@@ -561,6 +570,7 @@ function ResendFields({ value, onChange }: { value: string; onChange: (v: string
 
 /** Matrix target editor — composes the JSON {homeserver, roomId, accessToken} the server decrypts. */
 function MatrixFields({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT();
   let cfg: Record<string, string> = {};
   try {
     cfg = JSON.parse(value) as Record<string, string>;
@@ -571,20 +581,20 @@ function MatrixFields({ value, onChange }: { value: string; onChange: (v: string
   return (
     <div className="space-y-3">
       <div className="rounded-xl bg-zinc-500/[0.06] p-3 ring-1 ring-inset ring-zinc-500/20">
-        <p className="mb-1 text-xs font-medium text-zinc-200">Matrix room</p>
-        <p className="text-[11px] text-slate-400">Invite a bot account to the room and use its access token. The token is encrypted at rest.</p>
+        <p className="mb-1 text-xs font-medium text-zinc-200">{t('Matrix room')}</p>
+        <p className="text-[11px] text-slate-400">{t('Invite a bot account to the room and use its access token. The token is encrypted at rest.')}</p>
       </div>
       <div className="space-y-2">
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Homeserver</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('Homeserver')}</span>
           <Input value={cfg['homeserver'] ?? ''} onChange={(e) => set('homeserver', e.target.value)} placeholder="https://matrix.example.org" className="h-8 font-mono text-xs" autoFocus />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Room ID or alias</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('Room ID or alias')}</span>
           <Input value={cfg['roomId'] ?? ''} onChange={(e) => set('roomId', e.target.value)} placeholder="!abcdef:example.org" className="h-8 font-mono text-xs" />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Access token</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('Access token')}</span>
           <Input type="password" value={cfg['accessToken'] ?? ''} onChange={(e) => set('accessToken', e.target.value)} placeholder="syt_…" className="h-8 font-mono text-xs" />
         </div>
       </div>
@@ -594,6 +604,7 @@ function MatrixFields({ value, onChange }: { value: string; onChange: (v: string
 
 /** PagerDuty / Opsgenie target editor — composes `{routingKey|apiKey, region}`. */
 function IncidentFields({ type, value, onChange }: { type: 'pagerduty' | 'opsgenie'; value: string; onChange: (v: string) => void }) {
+  const t = useT();
   const keyField = type === 'pagerduty' ? 'routingKey' : 'apiKey';
   let cfg: Record<string, string> = {};
   try {
@@ -608,23 +619,23 @@ function IncidentFields({ type, value, onChange }: { type: 'pagerduty' | 'opsgen
   return (
     <div className="space-y-3">
       <div className="rounded-xl bg-emerald-500/[0.06] p-3 ring-1 ring-inset ring-emerald-500/20">
-        <p className="mb-1 text-xs font-medium text-emerald-200">{type === 'pagerduty' ? 'PagerDuty Events API v2' : 'Opsgenie API integration'}</p>
+        <p className="mb-1 text-xs font-medium text-emerald-200">{type === 'pagerduty' ? t('PagerDuty Events API v2') : t('Opsgenie API integration')}</p>
         <p className="text-[11px] text-slate-400">
           {type === 'pagerduty'
-            ? 'Service → Integrations → Add an integration → Events API V2, then copy its integration (routing) key.'
-            : 'Team → Integrations → Add integration → API, then copy its API key.'}
-          {' '}Only problems open an incident (alerts, monitor or service down, failed deploys, missed backups); the matching recovery or the next successful deploy closes it.
+            ? t('Service → Integrations → Add an integration → Events API V2, then copy its integration (routing) key.')
+            : t('Team → Integrations → Add integration → API, then copy its API key.')}
+          {' '}{t('Only problems open an incident (alerts, monitor or service down, failed deploys, missed backups); the matching recovery or the next successful deploy closes it.')}
         </p>
       </div>
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{type === 'pagerduty' ? 'Routing key' : 'API key'}</span>
-          <Input type="password" aria-label={type === 'pagerduty' ? 'Routing key' : 'API key'} value={key} onChange={(e) => set(e.target.value.trim(), region)} className="h-8 font-mono text-xs" autoFocus />
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{type === 'pagerduty' ? t('Routing key') : t('API key')}</span>
+          <Input type="password" aria-label={type === 'pagerduty' ? t('Routing key') : t('API key')} value={key} onChange={(e) => set(e.target.value.trim(), region)} className="h-8 font-mono text-xs" autoFocus />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Region</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">{t('Region')}</span>
           <select
-            aria-label="Region"
+            aria-label={t('Region')}
             value={region}
             onChange={(e) => set(key, e.target.value)}
             className="h-8 rounded-lg border border-white/10 bg-black/20 px-2 text-xs text-slate-200"

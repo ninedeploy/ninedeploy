@@ -8,27 +8,28 @@ import { useAuth } from '../../lib/auth.js';
 import { formatBytes, formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Badge, Button, Card, CardBody, Field, Input, Select } from '../../components/ui.js';
+import { msg, useT } from '../../lib/i18n.js';
 
 type OptionKey = keyof DatabaseImportOptions;
 
 /** What each engine accepts (the server detects the format by magic bytes). */
 const FORMATS: Record<DatabaseImportEngine, string> = {
-  postgres: 'a pg_dump custom-format (-Fc) archive or plain SQL, optionally gzipped',
-  mysql: 'a plain SQL dump (mysqldump), optionally gzipped',
-  mariadb: 'a plain SQL dump (mariadb-dump), optionally gzipped',
-  mongo: 'a mongodump --archive file, optionally gzipped',
-  redis: 'an RDB snapshot (dump.rdb)',
-  valkey: 'an RDB snapshot (dump.rdb)',
-  keydb: 'an RDB snapshot (dump.rdb)',
-  dragonfly: 'an RDB snapshot (dump.rdb; Redis RDB files up to the version Dragonfly can load)',
+  postgres: msg('a pg_dump custom-format (-Fc) archive or plain SQL, optionally gzipped'),
+  mysql: msg('a plain SQL dump (mysqldump), optionally gzipped'),
+  mariadb: msg('a plain SQL dump (mariadb-dump), optionally gzipped'),
+  mongo: msg('a mongodump --archive file, optionally gzipped'),
+  redis: msg('an RDB snapshot (dump.rdb)'),
+  valkey: msg('an RDB snapshot (dump.rdb)'),
+  keydb: msg('an RDB snapshot (dump.rdb)'),
+  dragonfly: msg('an RDB snapshot (dump.rdb; Redis RDB files up to the version Dragonfly can load)'),
 };
 
 const OPTION_LABELS: Record<OptionKey, string> = {
-  clean: 'Drop existing objects first (--clean --if-exists; custom-format dumps only)',
-  singleTransaction: 'Single transaction: roll everything back on the first error',
-  drop: 'Drop each collection before restoring it (--drop)',
-  confirmReplace: 'I understand the RDB file replaces the whole dataset',
-  skipSafetyBackup: 'Skip the pre-import safety backup',
+  clean: msg('Drop existing objects first (--clean --if-exists; custom-format dumps only)'),
+  singleTransaction: msg('Single transaction: roll everything back on the first error'),
+  drop: msg('Drop each collection before restoring it (--drop)'),
+  confirmReplace: msg('I understand the RDB file replaces the whole dataset'),
+  skipSafetyBackup: msg('Skip the pre-import safety backup'),
 };
 
 const ACTIVE = new Set<DatabaseImport['status']>(['uploading', 'pending', 'running']);
@@ -65,6 +66,7 @@ const isEngine = (engine: string): engine is DatabaseImportEngine => Object.hasO
  * destination. Every import takes a safety backup first unless skipped.
  */
 export function ImportCard({ db }: { db: DatabaseDetail }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -141,12 +143,12 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
       });
     },
     onSuccess: (row) => {
-      toast(`Import #${row.id} started`, 'success');
+      toast(t('Import #{id} started', { id: row.id }), 'success');
       setFile(null);
       setResumeTarget(null);
       if (fileInput.current) fileInput.current.value = '';
     },
-    onError: (err) => toast(message(err, 'The upload failed'), 'error'),
+    onError: (err) => toast(message(err, t('The upload failed')), 'error'),
     onSettled: () => {
       setProgress(null);
       refreshHistory();
@@ -163,28 +165,28 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
       });
       refreshHistory();
       const ready = await api.databases.imports.wait(db.id, created.id, { until: 'uploaded' });
-      if (ready.status !== 'pending') throw new Error(ready.error ?? `The download ended as ${ready.status}`);
+      if (ready.status !== 'pending') throw new Error(ready.error ?? t('The download ended as {status}', { status: ready.status }));
       return api.databases.imports.start(db.id, created.id);
     },
     onSuccess: (row) => {
-      toast(`Import #${row.id} started`, 'success');
+      toast(t('Import #{id} started', { id: row.id }), 'success');
       setObjectKey('');
     },
-    onError: (err) => toast(message(err, 'The import from the destination failed'), 'error'),
+    onError: (err) => toast(message(err, t('The import from the destination failed')), 'error'),
     onSettled: refreshHistory,
   });
 
   const cancel = useMutation({
     mutationFn: (importId: number) => api.databases.imports.cancel(db.id, importId),
-    onSuccess: (row) => toast(`Import #${row.id} cancelled`, 'success'),
-    onError: (err) => toast(message(err, 'Could not cancel the import'), 'error'),
+    onSuccess: (row) => toast(t('Import #{id} cancelled', { id: row.id }), 'success'),
+    onError: (err) => toast(message(err, t('Could not cancel the import')), 'error'),
     onSettled: refreshHistory,
   });
 
   const header = (
     <div className="p-4 border-b border-white/[0.06]">
       <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
-        <Upload size={14} /> Import a dump
+        <Upload size={14} /> {t('Import a dump')}
       </h2>
     </div>
   );
@@ -195,7 +197,7 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
         {header}
         <CardBody>
           <p className="text-sm text-slate-400">
-            {db.engine} has no dump import. Restore one of this database’s snapshots instead, or load the data with the engine’s own tools.
+            {t('{engine} has no dump import. Restore one of this database’s snapshots instead, or load the data with the engine’s own tools.', { engine: db.engine })}
           </p>
         </CardBody>
       </Card>
@@ -206,7 +208,7 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
       <Card className="overflow-hidden">
         {header}
         <CardBody>
-          <p className="text-sm text-slate-500">Importing a dump needs admin rights on this database.</p>
+          <p className="text-sm text-slate-500">{t('Importing a dump needs admin rights on this database.')}</p>
         </CardBody>
       </Card>
     );
@@ -222,8 +224,9 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
       {header}
       <CardBody className="space-y-4">
         <p className="text-xs text-slate-400">
-          Accepts {FORMATS[db.engine as DatabaseImportEngine]}. A safety backup is taken first; if the import goes wrong, restore it from the snapshot
-          list. The database must be running.
+          {t('Accepts {formats}. A safety backup is taken first; if the import goes wrong, restore it from the snapshot list. The database must be running.', {
+            formats: t(FORMATS[db.engine as DatabaseImportEngine]),
+          })}
         </p>
 
         {keys.length > 0 && (
@@ -236,7 +239,7 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
                   onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })}
                   className="rounded border-slate-700 bg-slate-900 text-indigo-500"
                 />
-                {OPTION_LABELS[k]}
+                {t(OPTION_LABELS[k])}
               </label>
             ))}
           </div>
@@ -245,17 +248,21 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
         {resumeTarget && (
           <div className="flex items-center justify-between gap-2 rounded-lg border border-sky-500/30 bg-sky-500/[0.06] p-2 text-xs text-sky-200">
             <span>
-              Resuming import #{resumeTarget.id}: choose {resumeTarget.filename ? `“${resumeTarget.filename}”` : 'the same file'} (
-              {formatBytes(resumeTarget.sizeBytes)}) again. {formatBytes(resumeTarget.receivedBytes)} already uploaded.
+              {t('Resuming import #{id}: choose {file} ({size}) again. {received} already uploaded.', {
+                id: resumeTarget.id,
+                file: resumeTarget.filename ? `“${resumeTarget.filename}”` : t('the same file'),
+                size: formatBytes(resumeTarget.sizeBytes),
+                received: formatBytes(resumeTarget.receivedBytes),
+              })}
             </span>
-            <Button variant="ghost" size="sm" onClick={() => setResumeTarget(null)} title="Stop resuming">
+            <Button variant="ghost" size="sm" onClick={() => setResumeTarget(null)} title={t('Stop resuming')}>
               <X size={12} />
             </Button>
           </div>
         )}
 
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Dump file">
+          <Field label={t('Dump file')}>
             <Input
               ref={fileInput}
               type="file"
@@ -264,12 +271,15 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
             />
           </Field>
           <Button size="sm" onClick={() => file && upload.mutate(file)} disabled={!file || !!sizeMismatch || needsConfirm || busy}>
-            <Upload size={12} /> {resumeTarget ? 'Resume upload' : 'Upload and import'}
+            <Upload size={12} /> {resumeTarget ? t('Resume upload') : t('Upload and import')}
           </Button>
         </div>
         {sizeMismatch && (
           <p className="text-[11px] text-rose-300">
-            This file is {formatBytes(file.size)}; the interrupted upload expects {formatBytes(resumeTarget.sizeBytes)}. Choose the same file.
+            {t('This file is {size}; the interrupted upload expects {expected}. Choose the same file.', {
+              size: formatBytes(file.size),
+              expected: formatBytes(resumeTarget.sizeBytes),
+            })}
           </p>
         )}
         {progress && (
@@ -278,7 +288,7 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
               <div className="h-1.5 rounded bg-indigo-500" style={{ width: `${pct}%` }} />
             </div>
             <p className="text-[11px] text-slate-500">
-              {formatBytes(progress.received)} of {formatBytes(progress.total)} ({pct}%)
+              {t('{received} of {total} ({pct}%)', { received: formatBytes(progress.received), total: formatBytes(progress.total), pct })}
             </p>
           </div>
         )}
@@ -286,10 +296,10 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
         {isOperator && (
           <div className="space-y-3 rounded-xl border border-white/[0.06] p-3">
             <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-              <CloudDownload size={12} /> From a backup destination
+              <CloudDownload size={12} /> {t('From a backup destination')}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Destination">
+              <Field label={t('Destination')}>
                 <Select
                   value={destId}
                   onChange={(e) => {
@@ -299,7 +309,7 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
                     setPrefixDraft('');
                   }}
                 >
-                  <option value="">Choose a destination…</option>
+                  <option value="">{t('Choose a destination…')}</option>
                   {(destinations.data ?? []).map((d) => (
                     <option key={d.id} value={String(d.id)}>
                       {d.name} ({d.bucket})
@@ -309,19 +319,19 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
               </Field>
               {destId !== '' && (
                 <div className="flex items-end gap-2">
-                  <Field label="Prefix">
-                    <Input value={prefixDraft} onChange={(e) => setPrefixDraft(e.target.value)} placeholder="destination prefix" />
+                  <Field label={t('Prefix')}>
+                    <Input value={prefixDraft} onChange={(e) => setPrefixDraft(e.target.value)} placeholder={t('destination prefix')} />
                   </Field>
                   <Button variant="secondary" size="sm" onClick={() => setPrefix(prefixDraft.trim() || undefined)}>
-                    List
+                    {t('List')}
                   </Button>
                 </div>
               )}
             </div>
             {destId !== '' && (
-              <Field label="Object" hint={objects.isLoading ? 'loading…' : undefined}>
+              <Field label={t('Object')} hint={objects.isLoading ? t('loading…') : undefined}>
                 <Select value={objectKey} onChange={(e) => setObjectKey(e.target.value)}>
-                  <option value="">Choose an object…</option>
+                  <option value="">{t('Choose an object…')}</option>
                   {(objects.data ?? []).map((o) => (
                     <option key={o.key} value={o.key}>
                       {o.key} ({formatBytes(o.sizeBytes)})
@@ -330,19 +340,19 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
                 </Select>
               </Field>
             )}
-            {objects.isError && <p className="text-[11px] text-rose-300">{message(objects.error, 'Could not list the destination')}</p>}
+            {objects.isError && <p className="text-[11px] text-rose-300">{message(objects.error, t('Could not list the destination'))}</p>}
             <div className="flex justify-end">
               <Button size="sm" variant="secondary" onClick={() => fromS3.mutate()} disabled={objectKey === '' || needsConfirm || busy}>
-                <CloudDownload size={12} /> Import object
+                <CloudDownload size={12} /> {t('Import object')}
               </Button>
             </div>
           </div>
         )}
 
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Recent imports</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t('Recent imports')}</p>
           {rows.length === 0 ? (
-            <p className="text-xs text-slate-500">{history.isError ? 'Could not load the import history.' : 'No imports yet.'}</p>
+            <p className="text-xs text-slate-500">{history.isError ? t('Could not load the import history.') : t('No imports yet.')}</p>
           ) : (
             <ul className="divide-y divide-white/5 text-xs">
               {rows.map((r) => (
@@ -353,26 +363,26 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
                     <span className="font-mono text-slate-300 break-all">{r.source === 's3' ? r.objectKey : (r.filename ?? 'upload')}</span>
                     <span className="text-slate-500">
                       {r.status === 'uploading'
-                        ? `${formatBytes(r.receivedBytes)} of ${formatBytes(r.sizeBytes)}`
+                        ? t('{received} of {total}', { received: formatBytes(r.receivedBytes), total: formatBytes(r.sizeBytes) })
                         : formatBytes(r.sizeBytes)}
                     </span>
                     {r.format && <span className="text-slate-500">{r.format}</span>}
                     <span className="ml-auto text-slate-500">{formatDateTime(r.createdAt)}</span>
                     {r.status === 'uploading' && r.source === 'upload' && r.createdByUserId === user?.id && (
-                      <Button variant="ghost" size="sm" onClick={() => setResumeTarget(r)} disabled={busy} title={`Resume import #${r.id}`}>
-                        <RotateCcw size={12} /> Resume
+                      <Button variant="ghost" size="sm" onClick={() => setResumeTarget(r)} disabled={busy} title={t('Resume import #{id}', { id: r.id })}>
+                        <RotateCcw size={12} /> {t('Resume')}
                       </Button>
                     )}
                     {(r.status === 'uploading' || r.status === 'pending') && (
-                      <Button variant="ghost" size="sm" onClick={() => cancel.mutate(r.id)} disabled={cancel.isPending} title={`Cancel import #${r.id}`}>
-                        <X size={12} /> Cancel
+                      <Button variant="ghost" size="sm" onClick={() => cancel.mutate(r.id)} disabled={cancel.isPending} title={t('Cancel import #{id}', { id: r.id })}>
+                        <X size={12} /> {t('Cancel')}
                       </Button>
                     )}
                   </div>
                   {r.error && <p className={r.status === 'completed_with_warnings' ? 'text-amber-300' : 'text-rose-300'}>{r.error}</p>}
                   {r.safetyBackupId != null && (
                     <p className="text-slate-500">
-                      Pre-import safety backup #{r.safetyBackupId} is in the snapshot list below; restore it to undo this import.
+                      {t('Pre-import safety backup #{id} is in the snapshot list below; restore it to undo this import.', { id: r.safetyBackupId })}
                     </p>
                   )}
                 </li>

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Turkish interface (G4.6). The web panel now has a translation layer and a Turkish locale.
   - **Choosing a language:** pick it under Settings → Appearance → Language, or with the switch under the sign-in form. The choice is kept in the browser. Without one, a Turkish browser opens in Turkish.
-  - **Translated so far:** the navigation, the top bar, the events drawer, sign-in, password reset, Settings → Appearance, the dashboard, the services list and the service detail tabs (all but Network). Other pages stay English until they are extracted, and they render English rather than raw keys.
+  - **Translated so far:** the navigation, the top bar, the events drawer, sign-in, password reset, Settings → Appearance, the dashboard, the services list, the service detail tabs (all but Network), the deploy, database and notification wizards, the database pages and every Settings section. Other pages stay English until they are extracted, and they render English rather than raw keys.
   - **Catalogue check:** a test fails on any untranslated string, unused entry or placeholder mismatch.
 
   No new dependency and no migration. See TRANSLATIONS.md.

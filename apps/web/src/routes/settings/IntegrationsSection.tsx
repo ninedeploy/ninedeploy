@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Cloud, KeyRound, Server } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
+import { fill, useT } from '../../lib/i18n.js';
 import { Button, Card, CardBody, ErrorCard } from '../../components/ui.js';
 import { SecretManagersCard } from './SecretManagersCard.js';
 import { DnsProviderCard } from './DnsProviderCard.js';
@@ -28,6 +29,7 @@ export function IntegrationsSection() {
 function VaultCard() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
   const vault = useQuery({ queryKey: ['settings-vault'], queryFn: () => api.settings.vault.get() });
   const [provider, setProvider] = useState<'' | 'infisical' | 'doppler'>('infisical');
   const [token, setToken] = useState('');
@@ -60,32 +62,35 @@ function VaultCard() {
     onSuccess: () => {
       setToken('');
       qc.invalidateQueries({ queryKey: ['settings-vault'] });
-      toast('Vault settings saved', 'success');
+      toast(t('Vault settings saved'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Save failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Save failed'), 'error'),
   });
 
   const test = useMutation({
     mutationFn: () => api.settings.vault.test(),
-    onSuccess: (res) => toast(`Connected — ${res.secrets} secrets reachable`, 'success'),
-    onError: (err) => toast(err instanceof Error ? err.message : 'Connection failed', 'error'),
+    onSuccess: (res) => toast(t('Connected — {n} secrets reachable', { n: res.secrets }), 'success'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Connection failed'), 'error'),
   });
 
   return (
     <Card className="mb-5">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <KeyRound size={14} /> Vault provider
+          <KeyRound size={14} /> {t('Vault provider')}
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          Resolve env values from an external secret store at deploy time with{' '}
-          <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_INFISICAL}</code> /
-          <code className="ml-1 rounded bg-white/5 px-1 font-mono text-[10px]">{REF_DOPPLER}</code> references.
-          Resolved values are never stored.
+          {fill(
+            t('Resolve env values from an external secret store at deploy time with {infisical} /{doppler} references. Resolved values are never stored.'),
+            {
+              infisical: <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_INFISICAL}</code>,
+              doppler: <code className="ml-1 rounded bg-white/5 px-1 font-mono text-[10px]">{REF_DOPPLER}</code>,
+            },
+          )}
         </p>
         <div className="grid max-w-md gap-3">
           <label className="block">
-            <span className="mb-1 block text-xs text-slate-500">Provider</span>
+            <span className="mb-1 block text-xs text-slate-500">{t('Provider')}</span>
             <select
               value={provider}
               onChange={(e) => setProvider(e.target.value as '' | 'infisical' | 'doppler')}
@@ -97,20 +102,20 @@ function VaultCard() {
           </label>
           <label className="block">
             <span className="mb-1 block text-xs text-slate-500">
-              API token {vault.data?.hasToken ? '(stored — leave blank to keep)' : ''}
+              {t('API token')} {vault.data?.hasToken ? t('(stored — leave blank to keep)') : ''}
             </span>
             <input
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="Universal Auth / service token"
+              placeholder={t('Universal Auth / service token')}
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="mb-1 block text-xs text-slate-500">
-                {provider === 'infisical' ? 'Workspace ID' : 'Project'}
+                {provider === 'infisical' ? t('Workspace ID') : t('Project')}
               </span>
               <input
                 value={projectId}
@@ -120,7 +125,7 @@ function VaultCard() {
             </label>
             <label className="block">
               <span className="mb-1 block text-xs text-slate-500">
-                {provider === 'infisical' ? 'Environment' : 'Config'}
+                {provider === 'infisical' ? t('Environment') : t('Config')}
               </span>
               <input
                 value={environment}
@@ -134,14 +139,14 @@ function VaultCard() {
               Saved without it (a failed load), a token rotation wrote
               provider=infisical with a blank project over a Doppler setup. */}
           {vault.isError && !vault.data && (
-            <ErrorCard title="Could not load the vault settings" error={vault.error} onRetry={() => void vault.refetch()} />
+            <ErrorCard title={t('Could not load the vault settings')} error={vault.error} onRetry={() => void vault.refetch()} />
           )}
           <div className="flex gap-2">
             <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !vault.data || (!vault.data.hasToken && !token)}>
-              {save.isPending ? 'Saving…' : 'Save'}
+              {save.isPending ? t('Saving…') : t('Save')}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => test.mutate()} disabled={test.isPending || !initialized}>
-              {test.isPending ? 'Testing…' : 'Test connection'}
+              {test.isPending ? t('Testing…') : t('Test connection')}
             </Button>
           </div>
         </div>
@@ -160,24 +165,24 @@ function VaultCard() {
 function VaultAllowlist() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
   const vault = useQuery({ queryKey: ['settings-vault'], queryFn: () => api.settings.vault.get() });
   const allowlist = vault.data?.allowlist;
   const save = useMutation({
     mutationFn: (next: { workspaceIds: number[]; serviceIds: number[] }) => api.settings.vault.setAllowlist(next),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings-vault'] }),
-    onError: (err) => toast(err instanceof Error ? err.message : 'Save failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Save failed'), 'error'),
   });
   if (!allowlist) return null;
   const toggle = (list: number[], id: number, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
   return (
     <div className="mt-5 max-w-md border-t border-slate-800 pt-4">
-      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Allowed workspaces</h3>
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{t('Allowed workspaces')}</h3>
       <p className="mb-3 text-xs text-slate-500">
-        Secret references (Infisical, Doppler, Vault and AWS Secrets Manager) resolve with instance-wide credentials, so only
-        services owned by an operator — or tagged into a workspace ticked here — may use them.
+        {t('Secret references (Infisical, Doppler, Vault and AWS Secrets Manager) resolve with instance-wide credentials, so only services owned by an operator — or tagged into a workspace ticked here — may use them.')}
       </p>
       {(vault.data?.workspaces ?? []).length === 0 ? (
-        <p className="text-xs text-slate-500">No workspaces yet.</p>
+        <p className="text-xs text-slate-500">{t('No workspaces yet.')}</p>
       ) : (
         <ul className="grid gap-1.5">
           {(vault.data?.workspaces ?? []).map((w) => (
@@ -200,10 +205,10 @@ function VaultAllowlist() {
       {(vault.data?.allowedServices ?? []).length > 0 && (
         <>
           <h3 className="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Grandfathered services
+            {t('Grandfathered services')}
           </h3>
           <p className="mb-2 text-xs text-slate-500">
-            Un-tagged services that used vault references before the upgrade. Untick to revoke.
+            {t('Un-tagged services that used vault references before the upgrade. Untick to revoke.')}
           </p>
           <ul className="grid gap-1.5">
             {(vault.data?.allowedServices ?? []).map((s) => (
@@ -230,6 +235,7 @@ function VaultAllowlist() {
 function CloudflareCard() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
   const dns = useQuery({ queryKey: ['settings-dns-records'], queryFn: () => api.settings.dnsRecords.get() });
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [token, setToken] = useState('');
@@ -255,29 +261,28 @@ function CloudflareCard() {
     onSuccess: () => {
       setToken('');
       qc.invalidateQueries({ queryKey: ['settings-dns-records'] });
-      toast('DNS records settings saved', 'success');
+      toast(t('DNS records settings saved'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Save failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Save failed'), 'error'),
   });
 
   const test = useMutation({
     mutationFn: () => api.settings.dnsRecords.test(),
     onSuccess: (res) => {
-      if (res.ok) toast(`Token valid (${res.status ?? 'active'})`, 'success');
-      else toast(res.error ?? 'Token invalid', 'error');
+      if (res.ok) toast(t('Token valid ({status})', { status: res.status ?? t('active') }), 'success');
+      else toast(res.error ?? t('Token invalid'), 'error');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Connection failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Connection failed'), 'error'),
   });
 
   return (
     <Card className="mb-5">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <Cloud size={14} /> Cloudflare DNS records
+          <Cloud size={14} /> {t('Cloudflare DNS records')}
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          When enabled, adding a domain to a service automatically creates the matching Cloudflare record
-          (A for an IP, CNAME for a hostname); deleting the domain removes it.
+          {t('When enabled, adding a domain to a service automatically creates the matching Cloudflare record (A for an IP, CNAME for a hostname); deleting the domain removes it.')}
         </p>
         <div className="grid max-w-md gap-3">
           <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-400">
@@ -287,40 +292,40 @@ function CloudflareCard() {
               onChange={(e) => setEnabled(e.target.checked)}
               className="accent-indigo-500"
             />
-            Enable automatic record creation
+            {t('Enable automatic record creation')}
           </label>
           <label className="block">
             <span className="mb-1 block text-xs text-slate-500">
-              API token {dns.data?.hasToken ? '(stored — leave blank to keep)' : ''}
+              {t('API token')} {dns.data?.hasToken ? t('(stored — leave blank to keep)') : ''}
             </span>
             <input
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="Zone:DNS:Edit-capable token"
+              placeholder={t('Zone:DNS:Edit-capable token')}
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs text-slate-500">Record content (blank = auto-detect public IP)</span>
+            <span className="mb-1 block text-xs text-slate-500">{t('Record content (blank = auto-detect public IP)')}</span>
             <input
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="203.0.113.10 or cname.example.com"
+              placeholder={t('203.0.113.10 or cname.example.com')}
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 font-mono text-xs outline-none focus:border-indigo-500"
             />
           </label>
           {/* r562: unloaded, the switch reads "off" and the content blank — one
               Save turned automatic records off and cleared a custom value. */}
           {dns.isError && !dns.data && (
-            <ErrorCard title="Could not load the DNS record settings" error={dns.error} onRetry={() => void dns.refetch()} />
+            <ErrorCard title={t('Could not load the DNS record settings')} error={dns.error} onRetry={() => void dns.refetch()} />
           )}
           <div className="flex gap-2">
             <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !dns.data || (isOn && !dns.data.hasToken && !token)}>
-              {save.isPending ? 'Saving…' : 'Save'}
+              {save.isPending ? t('Saving…') : t('Save')}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => test.mutate()} disabled={test.isPending || !(dns.data?.hasToken || token)}>
-              {test.isPending ? 'Testing…' : 'Test token'}
+              {test.isPending ? t('Testing…') : t('Test token')}
             </Button>
           </div>
         </div>
@@ -333,6 +338,7 @@ function CloudflareCard() {
 function NamecheapCard() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
   const nc = useQuery({ queryKey: ['settings-dns-records-namecheap'], queryFn: () => api.settings.namecheap.get() });
   // The form starts with the current values from the API so the
   // operator can just edit one field and re-save. The apiKey field
@@ -364,9 +370,9 @@ function NamecheapCard() {
     onSuccess: () => {
       setApiKey('');
       qc.invalidateQueries({ queryKey: ['settings-dns-records-namecheap'] });
-      toast('Namecheap credentials saved', 'success');
+      toast(t('Namecheap credentials saved'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Save failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Save failed'), 'error'),
   });
 
   const canSave = !!apiUser.trim() && !!apiKey.trim() && !!clientIp.trim() && /^\d{1,3}(\.\d{1,3}){3}$/.test(clientIp.trim());
@@ -375,16 +381,14 @@ function NamecheapCard() {
     <Card className="mb-5">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <Server size={14} /> Namecheap DNS records
+          <Server size={14} /> {t('Namecheap DNS records')}
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          Connect a Namecheap account so adding a domain to a service can create the matching
-          host record via Namecheap&apos;s setHosts API. The public IP below must already be
-          whitelisted on the Namecheap account panel.
+          {t("Connect a Namecheap account so adding a domain to a service can create the matching host record via Namecheap's setHosts API. The public IP below must already be whitelisted on the Namecheap account panel.")}
         </p>
         <div className="grid max-w-md gap-3">
           <label className="block">
-            <span className="mb-1 block text-xs text-slate-500">API user (account owner)</span>
+            <span className="mb-1 block text-xs text-slate-500">{t('API user (account owner)')}</span>
             <input
               value={apiUser}
               onChange={(e) => setApiUser(e.target.value)}
@@ -394,19 +398,19 @@ function NamecheapCard() {
           </label>
           <label className="block">
             <span className="mb-1 block text-xs text-slate-500">
-              API key {nc.data?.hasKey ? '(re-enter to rotate — the server requires a non-empty value on every save)' : ''}
+              {t('API key')} {nc.data?.hasKey ? t('(re-enter to rotate — the server requires a non-empty value on every save)') : ''}
             </span>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Namecheap API key"
+              placeholder={t('Namecheap API key')}
               autoComplete="off"
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 font-mono text-xs outline-none focus:border-indigo-500"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs text-slate-500">Whitelisted public IPv4</span>
+            <span className="mb-1 block text-xs text-slate-500">{t('Whitelisted public IPv4')}</span>
             <input
               value={clientIp}
               onChange={(e) => setClientIp(e.target.value)}
@@ -417,12 +421,13 @@ function NamecheapCard() {
           </label>
           <div className="flex gap-2">
             <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !canSave}>
-              {save.isPending ? 'Saving…' : 'Save'}
+              {save.isPending ? t('Saving…') : t('Save')}
             </Button>
           </div>
           <p className="text-[10px] text-slate-600">
-            Activate this provider by setting <code className="font-mono">dns_records_provider=namecheap</code>{' '}
-            in Settings → DNS.
+            {fill(t('Activate this provider by setting {setting} in Settings → DNS.'), {
+              setting: <code className="font-mono">dns_records_provider=namecheap</code>,
+            })}
           </p>
         </div>
       </CardBody>

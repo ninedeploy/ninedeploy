@@ -6,9 +6,11 @@ import { useToast } from '../../components/Toast.js';
 import { QrCode as QrCodeImage } from '../../components/QrCode.js';
 import { Button, Card, CardBody, Skeleton } from '../../components/ui.js';
 import { downloadBlob, formatDateTime, useCopy } from '../../lib/format.js';
+import { fill, useT } from '../../lib/i18n.js';
 
 /** Account: self-service password change + two-factor authentication. */
 export function AccountSection() {
+  const t = useT();
   const { toast } = useToast();
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNext, setPwNext] = useState('');
@@ -25,18 +27,18 @@ export function AccountSection() {
       setPwNext('');
       setPwConfirm('');
       setPasskeysLeft(session.passkeysRemaining ?? 0);
-      toast('Password changed — other sessions signed out', 'success');
+      toast(t('Password changed — other sessions signed out'), 'success');
     },
-    onError: () => toast('Password change failed', 'error'),
+    onError: () => toast(t('Password change failed'), 'error'),
   });
 
   const submitPassword = () => {
     if (pwNext !== pwConfirm) {
-      toast('New passwords do not match', 'error');
+      toast(t('New passwords do not match'), 'error');
       return;
     }
     if (pwNext.length < 8) {
-      toast('New password must be at least 8 characters', 'error');
+      toast(t('New password must be at least 8 characters'), 'error');
       return;
     }
     changePassword.mutate({ currentPassword: pwCurrent, newPassword: pwNext });
@@ -47,14 +49,14 @@ export function AccountSection() {
       <Card className="mb-5">
         <CardBody>
           <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            <KeyRound size={14} /> Account
+            <KeyRound size={14} /> {t('Account')}
           </h2>
           <p className="mb-4 text-xs text-slate-500">
-            Changing your password signs out every other session of this account.
+            {t('Changing your password signs out every other session of this account.')}
           </p>
           <div className="grid max-w-md gap-3">
             <label className="block">
-              <span className="mb-1 block text-xs text-slate-500">Current password</span>
+              <span className="mb-1 block text-xs text-slate-500">{t('Current password')}</span>
               <input
                 type="password"
                 value={pwCurrent}
@@ -64,7 +66,7 @@ export function AccountSection() {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs text-slate-500">New password</span>
+              <span className="mb-1 block text-xs text-slate-500">{t('New password')}</span>
               <input
                 type="password"
                 value={pwNext}
@@ -74,7 +76,7 @@ export function AccountSection() {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs text-slate-500">Confirm new password</span>
+              <span className="mb-1 block text-xs text-slate-500">{t('Confirm new password')}</span>
               <input
                 type="password"
                 value={pwConfirm}
@@ -85,7 +87,7 @@ export function AccountSection() {
             </label>
             <div>
               <Button onClick={submitPassword} disabled={changePassword.isPending || !pwCurrent || !pwNext}>
-                {changePassword.isPending ? 'Changing…' : 'Change password'}
+                {changePassword.isPending ? t('Changing…') : t('Change password')}
               </Button>
             </div>
             {passkeysLeft > 0 && (
@@ -93,12 +95,18 @@ export function AccountSection() {
                 role="status"
                 className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
               >
-                You still have {passkeysLeft} {passkeysLeft === 1 ? 'passkey' : 'passkeys'} — a password change does not
-                remove them, and each one can still sign in. Remove any you don't recognise in{' '}
-                <a href="#passkeys" className="underline hover:text-amber-200">
-                  the passkey list
-                </a>
-                .
+                {fill(
+                  passkeysLeft === 1
+                    ? t("You still have {n} passkey — a password change does not remove them, and each one can still sign in. Remove any you don't recognise in {link}.", { n: passkeysLeft })
+                    : t("You still have {n} passkeys — a password change does not remove them, and each one can still sign in. Remove any you don't recognise in {link}.", { n: passkeysLeft }),
+                  {
+                    link: (
+                      <a href="#passkeys" className="underline hover:text-amber-200">
+                        {t('the passkey list')}
+                      </a>
+                    ),
+                  },
+                )}
               </p>
             )}
           </div>
@@ -114,6 +122,7 @@ export function AccountSection() {
 }
 
 function SsoLinkCard() {
+  const t = useT();
   const { toast } = useToast();
   const providers = useQuery({
     // r342: same key as Login — SsoSection invalidates this one on save.
@@ -123,25 +132,25 @@ function SsoLinkCard() {
   const link = useMutation({
     mutationFn: (slug: string) => api.auth.oidc.link(slug),
     onSuccess: ({ authUrl }) => window.location.assign(authUrl),
-    onError: (error) => toast(error instanceof Error ? error.message : 'Could not link SSO account', 'error'),
+    onError: (error) => toast(error instanceof Error ? error.message : t('Could not link SSO account'), 'error'),
   });
 
   return (
     <Card className="mb-5">
       <CardBody>
-        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Single sign-on</h2>
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Single sign-on')}</h2>
         <p className="mb-4 text-xs text-slate-500">
-          Link your existing account before signing in with an SSO provider. You will continue to the provider to verify your identity.
+          {t('Link your existing account before signing in with an SSO provider. You will continue to the provider to verify your identity.')}
         </p>
         {providers.isLoading ? <Skeleton className="h-10 w-full" /> : providers.isError ? (
-          <p role="alert" className="text-xs text-rose-400">Could not load SSO providers.</p>
+          <p role="alert" className="text-xs text-rose-400">{t('Could not load SSO providers.')}</p>
         ) : !providers.data?.length ? (
-          <p className="text-xs text-slate-500">No SSO providers are configured.</p>
+          <p className="text-xs text-slate-500">{t('No SSO providers are configured.')}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {providers.data.map((provider) => (
               <Button key={provider.id} onClick={() => link.mutate(provider.slug)} disabled={link.isPending}>
-                {link.isPending && link.variables === provider.slug ? 'Connecting…' : `Link ${provider.name}`}
+                {link.isPending && link.variables === provider.slug ? t('Connecting…') : t('Link {name}', { name: provider.name })}
               </Button>
             ))}
           </div>
@@ -153,6 +162,7 @@ function SsoLinkCard() {
 
 // ── Passkeys (WebAuthn) ────────────────────────────────────────────────────
 function PasskeyCard() {
+  const t = useT();
   const { toast } = useToast();
   const [name, setName] = useState('');
   // r502: registering a passkey needs step-up — the current password, or a
@@ -176,34 +186,32 @@ function PasskeyCard() {
       setName('');
       setStepPassword('');
       void queryClient.invalidateQueries({ queryKey: ['passkeys'] });
-      toast('Passkey added', 'success');
+      toast(t('Passkey added'), 'success');
     },
-    onError: (err) => toast(err instanceof Error && err.message ? `Passkey setup failed: ${err.message}` : 'Passkey setup failed or cancelled', 'error'),
+    onError: (err) => toast(err instanceof Error && err.message ? t('Passkey setup failed: {error}', { error: err.message }) : t('Passkey setup failed or cancelled'), 'error'),
   });
 
   const remove = useMutation({
     mutationFn: (id: number) => api.auth.passkeys.remove(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['passkeys'] });
-      toast('Passkey removed', 'success');
+      toast(t('Passkey removed'), 'success');
     },
-    onError: () => toast('Could not remove passkey', 'error'),
+    onError: () => toast(t('Could not remove passkey'), 'error'),
   });
 
   return (
     <Card id="passkeys" className="mb-5 scroll-mt-4">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <Fingerprint size={14} /> Passkeys
+          <Fingerprint size={14} /> {t('Passkeys')}
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          Sign in with biometrics or a security key — no password needed. The relying party is bound to this
-          instance's hostname, so passkeys only work on the URL they were registered on. Adding one asks for your
-          current password; if your account signs in only through SSO, sign in again and add it within 10 minutes.
+          {t("Sign in with biometrics or a security key — no password needed. The relying party is bound to this instance's hostname, so passkeys only work on the URL they were registered on. Adding one asks for your current password; if your account signs in only through SSO, sign in again and add it within 10 minutes.")}
         </p>
         <div className="mb-4 flex max-w-md items-end gap-2">
           <label className="flex-1">
-            <span className="mb-1 block text-xs text-slate-500">Label</span>
+            <span className="mb-1 block text-xs text-slate-500">{t('Label')}</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -212,24 +220,24 @@ function PasskeyCard() {
             />
           </label>
           <label className="flex-1">
-            <span className="mb-1 block text-xs text-slate-500">Your password</span>
+            <span className="mb-1 block text-xs text-slate-500">{t('Your password')}</span>
             <input
               type="password"
               value={stepPassword}
               onChange={(e) => setStepPassword(e.target.value)}
-              placeholder="Confirm it's you"
+              placeholder={t("Confirm it's you")}
               autoComplete="current-password"
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
             />
           </label>
           <Button size="sm" onClick={() => register.mutate()} disabled={register.isPending}>
-            {register.isPending ? 'Waiting for authenticator…' : 'Add passkey'}
+            {register.isPending ? t('Waiting for authenticator…') : t('Add passkey')}
           </Button>
         </div>
         {passkeys.isLoading ? (
           <Skeleton className="h-10 w-full" />
         ) : !passkeys.data || passkeys.data.length === 0 ? (
-          <p className="text-xs text-slate-600">No passkeys registered yet.</p>
+          <p className="text-xs text-slate-600">{t('No passkeys registered yet.')}</p>
         ) : (
           <ul className="space-y-1">
             {passkeys.data.map((p) => (
@@ -240,9 +248,9 @@ function PasskeyCard() {
                 <span className="text-slate-300">{p.name}</span>
                 <span className="flex items-center gap-3">
                   {/* r603: created-at only — last use is not recorded for passkeys. */}
-                  <span className="text-slate-500">Added {formatDateTime(p.createdAt)}</span>
+                  <span className="text-slate-500">{t('Added {date}', { date: formatDateTime(p.createdAt) })}</span>
                   <button type="button" onClick={() => remove.mutate(p.id)} className="text-rose-400 hover:text-rose-300">
-                    Remove
+                    {t('Remove')}
                   </button>
                 </span>
               </li>
@@ -256,6 +264,7 @@ function PasskeyCard() {
 
 // ── Active sessions ────────────────────────────────────────────────────────
 function SessionsCard() {
+  const t = useT();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const sessions = useQuery({
@@ -267,25 +276,24 @@ function SessionsCard() {
     mutationFn: (id: number) => api.auth.sessions.revoke(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['sessions'] });
-      toast('Session revoked', 'success');
+      toast(t('Session revoked'), 'success');
     },
-    onError: () => toast('Could not revoke session', 'error'),
+    onError: () => toast(t('Could not revoke session'), 'error'),
   });
 
   return (
     <Card className="mb-5">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <MonitorSmartphone size={14} /> Active sessions
+          <MonitorSmartphone size={14} /> {t('Active sessions')}
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          Devices holding a valid refresh token for your account. Revoking signs that device out on its
-          next request.
+          {t('Devices holding a valid refresh token for your account. Revoking signs that device out on its next request.')}
         </p>
         {sessions.isLoading ? (
           <Skeleton className="h-10 w-full" />
         ) : !sessions.data || sessions.data.length === 0 ? (
-          <p className="text-xs text-slate-600">No active sessions.</p>
+          <p className="text-xs text-slate-600">{t('No active sessions.')}</p>
         ) : (
           <ul className="space-y-1">
             {sessions.data.map((s) => (
@@ -295,18 +303,18 @@ function SessionsCard() {
               >
                 <span className="min-w-0">
                   <span className="block truncate text-slate-300">
-                    {s.current && <span className="mr-2 rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300">this device</span>}
-                    {s.ip ?? 'unknown ip'}
+                    {s.current && <span className="mr-2 rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300">{t('this device')}</span>}
+                    {s.ip ?? t('unknown ip')}
                   </span>
                   <span className="block truncate text-slate-600" title={s.userAgent ?? undefined}>
-                    {s.userAgent ?? 'unknown client'}
+                    {s.userAgent ?? t('unknown client')}
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   <span className="text-slate-500">{s.lastUsedAt ? formatDateTime(s.lastUsedAt) : formatDateTime(s.createdAt)}</span>
                   {!s.current && (
                     <button type="button" onClick={() => revoke.mutate(s.id)} className="text-rose-400 hover:text-rose-300">
-                      Revoke
+                      {t('Revoke')}
                     </button>
                   )}
                 </span>
@@ -321,6 +329,7 @@ function SessionsCard() {
 
 // ── Two-factor (TOTP) ─────────────────────────────────────────────────────
 function TwoFactorCard() {
+  const t = useT();
   const { toast } = useToast();
   const [setup, setSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
   const [code, setCode] = useState('');
@@ -347,7 +356,7 @@ function TwoFactorCard() {
       setSetupPassword('');
       setShowSetupPassword(false);
     },
-    onError: () => toast(showSetupPassword ? 'Could not start 2FA setup — check your password' : 'Could not start 2FA setup', 'error'),
+    onError: () => toast(showSetupPassword ? t('Could not start 2FA setup — check your password') : t('Could not start 2FA setup'), 'error'),
   });
   const enable = useMutation({
     mutationFn: () => api.auth.twoFactor.enable(code, stepPassword || undefined),
@@ -357,14 +366,14 @@ function TwoFactorCard() {
       setStepPassword('');
       setShownCodes(res.recoveryCodes ?? null);
       void qc.invalidateQueries({ queryKey: ['2fa-recovery'] });
-      toast('Two-factor authentication enabled', 'success');
+      toast(t('Two-factor authentication enabled'), 'success');
     },
     onError: (err) => {
       const errCode = (err as { code?: string } | null)?.code;
       if (errCode === 'invalid_password' || errCode === 'reauth_required') {
-        toast(err instanceof Error && err.message ? err.message : 'Confirm your password and try again', 'error');
+        toast(err instanceof Error && err.message ? err.message : t('Confirm your password and try again'), 'error');
       } else {
-        toast('Invalid or expired code', 'error');
+        toast(t('Invalid or expired code'), 'error');
       }
     },
   });
@@ -375,27 +384,27 @@ function TwoFactorCard() {
       setDisablePassword('');
       setDisableCode('');
       setSetup(null);
-      toast('Two-factor authentication disabled — you were signed out everywhere', 'info');
+      toast(t('Two-factor authentication disabled — you were signed out everywhere'), 'info');
       setTimeout(() => window.location.assign('/login'), 1500);
     },
-    onError: () => toast('Could not disable 2FA — check your password and code', 'error'),
+    onError: () => toast(t('Could not disable 2FA — check your password and code'), 'error'),
   });
 
   const { copy: copyText } = useCopy();
   const copy = async (value: string) => {
     const ok = await copyText(value);
-    if (ok) toast('Copied', 'success');
-    else toast('Copy failed', 'error');
+    if (ok) toast(t('Copied'), 'success');
+    else toast(t('Copy failed'), 'error');
   };
 
   return (
     <Card className="mb-5">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <Smartphone size={14} /> Two-factor authentication
+          <Smartphone size={14} /> {t('Two-factor authentication')}
         </h2>
         <p className="mb-4 text-xs text-slate-500">
-          Require a time-based one-time code (TOTP) from an authenticator app in addition to your password.
+          {t('Require a time-based one-time code (TOTP) from an authenticator app in addition to your password.')}
         </p>
 
         {shownCodes && <RecoveryCodesShown codes={shownCodes} onDone={() => setShownCodes(null)} />}
@@ -405,10 +414,10 @@ function TwoFactorCard() {
         {!setup && !showDisable && !showSetupPassword && (
           <div className="flex gap-2">
             <Button size="sm" onClick={() => setShowSetupPassword(true)} disabled={doSetup.isPending}>
-              {doSetup.isPending ? 'Generating…' : 'Set up 2FA'}
+              {doSetup.isPending ? t('Generating…') : t('Set up 2FA')}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setShowDisable(true)}>
-              Disable 2FA
+              {t('Disable 2FA')}
             </Button>
           </div>
         )}
@@ -422,21 +431,21 @@ function TwoFactorCard() {
             className="flex max-w-md items-end gap-2 rounded-lg border border-slate-700 bg-white/[0.02] p-4"
           >
             <label className="flex-1">
-              <span className="mb-1 block text-xs text-slate-400">Confirm your current password</span>
+              <span className="mb-1 block text-xs text-slate-400">{t('Confirm your current password')}</span>
               <input
                 type="password"
                 value={setupPassword}
                 onChange={(e) => setSetupPassword(e.target.value)}
-                placeholder="Password"
+                placeholder={t('Password')}
                 autoComplete="current-password"
                 className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
               />
             </label>
             <Button type="submit" size="sm" disabled={!setupPassword || doSetup.isPending}>
-              {doSetup.isPending ? 'Generating…' : 'Continue'}
+              {doSetup.isPending ? t('Generating…') : t('Continue')}
             </Button>
             <button type="button" onClick={() => { setShowSetupPassword(false); setSetupPassword(''); }} className="text-xs text-slate-400 hover:underline">
-              Cancel
+              {t('Cancel')}
             </button>
           </form>
         )}
@@ -445,10 +454,10 @@ function TwoFactorCard() {
           <div className="max-w-md space-y-4 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] p-5">
             <div>
               <p className="text-sm font-semibold text-amber-200 flex items-center gap-1.5">
-                <QrCode size={16} /> Scan QR Code with Authenticator
+                <QrCode size={16} /> {t('Scan QR Code with Authenticator')}
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                Scan this QR code with Google Authenticator, 1Password, Bitwarden, or Aegis.
+                {t('Scan this QR code with Google Authenticator, 1Password, Bitwarden, or Aegis.')}
               </p>
             </div>
 
@@ -457,17 +466,17 @@ function TwoFactorCard() {
                 `QRCode.toDataURL` effect while the shared component sat unused
                 (and hi-DPI: it renders at 2× the CSS size). */}
             <div className="flex justify-center py-2">
-              <QrCodeImage value={setup.otpauthUri} size={176} alt="Two-factor authentication QR code" />
+              <QrCodeImage value={setup.otpauthUri} size={176} alt={t('Two-factor authentication QR code')} />
             </div>
 
             <div className="space-y-2 pt-1">
-              <div className="text-[11px] font-medium text-slate-400">Manual Entry Secret Key:</div>
+              <div className="text-[11px] font-medium text-slate-400">{t('Manual Entry Secret Key:')}</div>
               <div className="flex items-center gap-2">
                 <code className="min-w-0 flex-1 break-all rounded-lg bg-black/50 px-2.5 py-2 font-mono text-xs text-amber-200 border border-white/5">
                   {setup.secret}
                 </code>
                 <Button size="sm" variant="secondary" onClick={() => copy(setup.secret)} className="shrink-0 text-xs">
-                  Copy
+                  {t('Copy')}
                 </Button>
               </div>
             </div>
@@ -481,7 +490,7 @@ function TwoFactorCard() {
             >
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-amber-200">
-                  Verify with 6-digit Authenticator Code
+                  {t('Verify with 6-digit Authenticator Code')}
                 </span>
                 <div className="flex items-center gap-2">
                   <input
@@ -492,7 +501,7 @@ function TwoFactorCard() {
                     className="w-36 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 font-mono text-base tracking-widest text-center text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                   />
                   <Button type="submit" size="md" disabled={code.length !== 6 || enable.isPending}>
-                    {enable.isPending ? 'Verifying…' : 'Enable 2FA'}
+                    {enable.isPending ? t('Verifying…') : t('Enable 2FA')}
                   </Button>
                 </div>
               </label>
@@ -505,7 +514,7 @@ function TwoFactorCard() {
                   }}
                   className="text-xs text-slate-400 hover:text-slate-200 hover:underline"
                 >
-                  Cancel setup
+                  {t('Cancel setup')}
                 </button>
               </div>
             </form>
@@ -520,12 +529,12 @@ function TwoFactorCard() {
             }}
             className="grid max-w-md gap-3 rounded-lg border border-rose-500/30 bg-rose-500/[0.05] p-4"
           >
-            <p className="text-xs text-rose-200">Confirm with your password and a current 2FA code.</p>
+            <p className="text-xs text-rose-200">{t('Confirm with your password and a current 2FA code.')}</p>
             <input
               type="password"
               value={disablePassword}
               onChange={(e) => setDisablePassword(e.target.value)}
-              placeholder="Password"
+              placeholder={t('Password')}
               autoComplete="current-password"
               className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
             />
@@ -533,16 +542,16 @@ function TwoFactorCard() {
               type="text"
               value={disableCode}
               onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="6-digit code"
+              placeholder={t('6-digit code')}
               inputMode="numeric"
               className="w-36 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500"
             />
             <div className="flex gap-2">
               <Button type="submit" size="sm" variant="danger" disabled={!disablePassword || disableCode.length !== 6 || disable.isPending}>
-                {disable.isPending ? 'Disabling…' : 'Disable 2FA'}
+                {disable.isPending ? t('Disabling…') : t('Disable 2FA')}
               </Button>
               <button type="button" onClick={() => setShowDisable(false)} className="text-xs text-slate-400 hover:underline">
-                Cancel
+                {t('Cancel')}
               </button>
             </div>
           </form>
@@ -556,6 +565,7 @@ function TwoFactorCard() {
 // ── Two-factor recovery codes (0.16.3) ───────────────────────────────────
 /** How many codes are left, a warning at none, and a new set (password + a current code). */
 function RecoveryCodesStatus({ onIssued }: { onIssued: (codes: string[]) => void }) {
+  const t = useT();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -572,7 +582,7 @@ function RecoveryCodesStatus({ onIssued }: { onIssued: (codes: string[]) => void
       onIssued(res.recoveryCodes);
       void qc.invalidateQueries({ queryKey: ['2fa-recovery'] });
     },
-    onError: (err: Error) => toast(err.message || 'Could not create new recovery codes', 'error'),
+    onError: (err: Error) => toast(err.message || t('Could not create new recovery codes'), 'error'),
   });
 
   if (!status.data?.totpEnabled) return null;
@@ -582,12 +592,14 @@ function RecoveryCodesStatus({ onIssued }: { onIssued: (codes: string[]) => void
       <div className="flex items-center justify-between gap-3">
         <span className={remaining === 0 ? 'text-amber-300' : 'text-slate-400'}>
           {remaining === 0
-            ? 'No recovery codes. Create a set so a lost phone does not lock you out.'
-            : `${remaining} recovery code${remaining === 1 ? '' : 's'} left.`}
+            ? t('No recovery codes. Create a set so a lost phone does not lock you out.')
+            : remaining === 1
+              ? t('{n} recovery code left.', { n: remaining })
+              : t('{n} recovery codes left.', { n: remaining })}
         </span>
         {!open && (
           <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
-            {remaining === 0 ? 'Create recovery codes' : 'New recovery codes'}
+            {remaining === 0 ? t('Create recovery codes') : t('New recovery codes')}
           </Button>
         )}
       </div>
@@ -599,13 +611,13 @@ function RecoveryCodesStatus({ onIssued }: { onIssued: (codes: string[]) => void
           }}
           className="mt-3 grid gap-2"
         >
-          <p className="text-slate-500">A new set replaces the old one: the codes you saved before stop working.</p>
+          <p className="text-slate-500">{t('A new set replaces the old one: the codes you saved before stop working.')}</p>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            aria-label="Password"
+            placeholder={t('Password')}
+            aria-label={t('Password')}
             autoComplete="current-password"
             className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm outline-none focus:border-indigo-500"
           />
@@ -613,17 +625,17 @@ function RecoveryCodesStatus({ onIssued }: { onIssued: (codes: string[]) => void
             type="text"
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-            placeholder="6-digit code"
-            aria-label="Authenticator code"
+            placeholder={t('6-digit code')}
+            aria-label={t('Authenticator code')}
             inputMode="numeric"
             className="w-36 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500"
           />
           <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={!password || code.length !== 6 || regenerate.isPending}>
-              {regenerate.isPending ? 'Creating…' : 'Create new codes'}
+              {regenerate.isPending ? t('Creating…') : t('Create new codes')}
             </Button>
             <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-400 hover:underline">
-              Cancel
+              {t('Cancel')}
             </button>
           </div>
         </form>
@@ -634,18 +646,19 @@ function RecoveryCodesStatus({ onIssued }: { onIssued: (codes: string[]) => void
 
 /** The codes of a new set, shown once, to copy or download. */
 function RecoveryCodesShown({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+  const t = useT();
   const { toast } = useToast();
   const { copy } = useCopy();
   const text = codes.join('\n');
   return (
     <div className="mb-4 max-w-md space-y-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5">
       <div>
-        <p className="text-sm font-semibold text-emerald-200">Save your recovery codes</p>
+        <p className="text-sm font-semibold text-emerald-200">{t('Save your recovery codes')}</p>
         <p className="mt-1 text-xs text-slate-400">
-          If you lose your authenticator, sign in with one of these instead of a code. Each works once. They are shown only now.
+          {t('If you lose your authenticator, sign in with one of these instead of a code. Each works once. They are shown only now.')}
         </p>
       </div>
-      <ul className="grid grid-cols-2 gap-1.5 font-mono text-xs text-slate-200" aria-label="Recovery codes">
+      <ul className="grid grid-cols-2 gap-1.5 font-mono text-xs text-slate-200" aria-label={t('Recovery codes')}>
         {codes.map((c) => (
           <li key={c} className="rounded bg-black/40 px-2 py-1 text-center">
             {c}
@@ -653,14 +666,14 @@ function RecoveryCodesShown({ codes, onDone }: { codes: string[]; onDone: () => 
         ))}
       </ul>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" onClick={() => void copy(text).then((ok) => toast(ok ? 'Copied' : 'Copy failed', ok ? 'success' : 'error'))}>
-          Copy
+        <Button size="sm" variant="secondary" onClick={() => void copy(text).then((ok) => toast(ok ? t('Copied') : t('Copy failed'), ok ? 'success' : 'error'))}>
+          {t('Copy')}
         </Button>
         <Button size="sm" variant="secondary" onClick={() => downloadBlob(`${text}\n`, 'ninedeploy-recovery-codes.txt', 'text/plain')}>
-          Download
+          {t('Download')}
         </Button>
         <Button size="sm" onClick={onDone}>
-          I saved them
+          {t('I saved them')}
         </Button>
       </div>
     </div>

@@ -3,9 +3,11 @@ import { Cpu, Database, HardDrive, Network, Package, Server } from 'lucide-react
 import type { ReactNode } from 'react';
 import { api } from '../../lib/api.js';
 import { Card, CardBody, Skeleton } from '../../components/ui.js';
+import { fill, useT } from '../../lib/i18n.js';
 
 /** System: instance info, host resources, image storage and update check. */
 export function SystemSection() {
+  const t = useT();
   const stats = useQuery({ queryKey: ['stats'], queryFn: () => api.stats.snapshot(), staleTime: 10000 });
   const resources = useQuery({ queryKey: ['docker-resources'], queryFn: () => api.system.resources(), staleTime: 10000 });
   const update = useQuery({ queryKey: ['update-check'], queryFn: () => api.system.updateCheck(), staleTime: 60000 });
@@ -16,27 +18,29 @@ export function SystemSection() {
     <>
       <Card className="mb-5">
         <CardBody>
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">System</h2>
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('System')}</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <InfoRow icon={<Server size={14} />} label="NineDeploy" value={update.data ? `v${update.data.current.replace(/^v/, '')} · MIT` : 'MIT'} />
-            <InfoRow icon={<Network size={14} />} label="Docker network" value={s?.network ?? 'ninedeploy'} />
-            <InfoRow icon={<Cpu size={14} />} label="CPU cores" value={host ? String(host.cpuCores) : '—'} />
-            <InfoRow icon={<HardDrive size={14} />} label="Containers" value={s ? String(s.containers) : '—'} />
-            <InfoRow icon={<Package size={14} />} label="Volumes" value={s ? String(s.volumes) : '—'} />
-            <InfoRow icon={<Database size={14} />} label="Images" value={s?.imagesSummary ? `${s.imagesSummary.active}/${s.imagesSummary.total} active` : '—'} />
+            <InfoRow icon={<Network size={14} />} label={t('Docker network')} value={s?.network ?? 'ninedeploy'} />
+            <InfoRow icon={<Cpu size={14} />} label={t('CPU cores')} value={host ? String(host.cpuCores) : '—'} />
+            <InfoRow icon={<HardDrive size={14} />} label={t('Containers')} value={s ? String(s.containers) : '—'} />
+            <InfoRow icon={<Package size={14} />} label={t('Volumes')} value={s ? String(s.volumes) : '—'} />
+            <InfoRow icon={<Database size={14} />} label={t('Images')} value={s?.imagesSummary ? t('{active}/{total} active', { active: s.imagesSummary.active, total: s.imagesSummary.total }) : '—'} />
             <InfoRow
               icon={<Package size={14} />}
-              label="Update"
+              label={t('Update')}
               value={
                 update.isLoading
-                  ? 'checking…'
+                  ? t('checking…')
                   : update.data
                     ? update.data.updateAvailable
-                      ? `${update.data.latest} available${update.data.stale ? ' (last check failed)' : ''}`
+                      ? update.data.stale
+                        ? t('{version} available (last check failed)', { version: update.data.latest ?? '' })
+                        : t('{version} available', { version: update.data.latest ?? '' })
                       : update.data.updateAvailable == null
-                        ? 'check unavailable'
-                        : 'up to date'
-                    : 'check unavailable'
+                        ? t('check unavailable')
+                        : t('up to date')
+                    : t('check unavailable')
               }
             />
           </div>
@@ -46,20 +50,20 @@ export function SystemSection() {
       {/* Host resources */}
       <Card className="mb-5">
         <CardBody>
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Host Resources</h2>
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Host Resources')}</h2>
           {stats.isLoading ? (
             <Skeleton className="h-8 w-full" />
           ) : host ? (
             <div className="space-y-3">
-              <Bar label="Memory" pct={Math.round((host.memUsedBytes / host.memTotalBytes) * 100)} text={`${fmtB(host.memUsedBytes)} / ${fmtB(host.memTotalBytes)}`} />
-              <Bar label="Disk" pct={Math.round((host.diskUsedBytes / host.diskTotalBytes) * 100)} text={`${fmtB(host.diskUsedBytes)} / ${fmtB(host.diskTotalBytes)}`} />
+              <Bar label={t('Memory')} pct={Math.round((host.memUsedBytes / host.memTotalBytes) * 100)} text={`${fmtB(host.memUsedBytes)} / ${fmtB(host.memTotalBytes)}`} />
+              <Bar label={t('Disk')} pct={Math.round((host.diskUsedBytes / host.diskTotalBytes) * 100)} text={`${fmtB(host.diskUsedBytes)} / ${fmtB(host.diskTotalBytes)}`} />
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Load average (1m)</span>
+                <span className="text-slate-500">{t('Load average (1m)')}</span>
                 <span className="font-mono text-slate-300">{host.load1.toFixed(2)}</span>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-slate-600">Docker daemon not reachable.</p>
+            <p className="text-sm text-slate-600">{t('Docker daemon not reachable.')}</p>
           )}
         </CardBody>
       </Card>
@@ -68,18 +72,18 @@ export function SystemSection() {
       {s?.imagesSummary && (
         <Card className="mb-5">
           <CardBody>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Image Storage</h2>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Image Storage')}</h2>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Images use <span className="font-medium text-slate-200">{s.imagesSummary.size}</span></span>
+              <span className="text-sm text-slate-400">{fill(t('Images use {size}'), { size: <span className="font-medium text-slate-200">{s.imagesSummary.size}</span> })}</span>
               {s.imagesSummary.reclaimable !== '0B' && (
-                <span className="text-xs text-amber-400">{s.imagesSummary.reclaimable} reclaimable</span>
+                <span className="text-xs text-amber-400">{t('{size} reclaimable', { size: s.imagesSummary.reclaimable })}</span>
               )}
             </div>
             <button type="button"
               onClick={() => resources.refetch()}
               className="mt-3 text-xs text-indigo-400 hover:underline"
             >
-              Refresh
+              {t('Refresh')}
             </button>
           </CardBody>
         </Card>

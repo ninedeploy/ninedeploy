@@ -10,6 +10,7 @@ import { useCopy } from '../lib/format.js';
 import { StorageGauge } from '../components/StorageGauge.js';
 import { DatabaseWizard } from '../components/DatabaseWizard.js';
 import { NodeDatabaseBadge } from '../components/NodeDatabaseBadge.js';
+import { useT } from '../lib/i18n.js';
 
 const ENGINE_LABEL: Record<string, string> = {
   postgres: 'PostgreSQL',
@@ -26,6 +27,7 @@ const ENGINE_LABEL: Record<string, string> = {
 };
 
 export function Databases() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [wizard, setWizard] = useState(false);
@@ -55,28 +57,28 @@ export function Databases() {
     mutationFn: ({ id, force }: { id: number; force?: boolean }) => api.databases.remove(id, { force }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['databases'] });
-      toast('Database deleted — its volume was kept (retained)', 'success');
+      toast(t('Database deleted — its volume was kept (retained)'), 'success');
     },
-    onError: () => toast('Could not delete the database', 'error'),
+    onError: () => toast(t('Could not delete the database'), 'error'),
   });
   const backup = useMutation({
     mutationFn: (id: number) => api.backups.backupNow(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['backups'] });
-      toast('Backup started', 'success');
+      toast(t('Backup started'), 'success');
     },
-    onError: () => toast('Backup failed', 'error'),
+    onError: () => toast(t('Backup failed'), 'error'),
   });
 
   return (
     <div>
       <PageHeader
         icon={<Database size={18} />}
-        title="Databases"
-        subtitle="Managed databases with persistent storage."
+        title={t('Databases')}
+        subtitle={t('Managed databases with persistent storage.')}
         actions={
           <Button onClick={() => setWizard(true)}>
-            <Plus size={16} /> New database
+            <Plus size={16} /> {t('New database')}
           </Button>
         }
       />
@@ -93,13 +95,13 @@ export function Databases() {
           ))}
         </div>
       ) : list.isError ? (
-        <ErrorCard title="Couldn't load databases" error={list.error} onRetry={() => list.refetch()} />
+        <ErrorCard title={t("Couldn't load databases")} error={list.error} onRetry={() => list.refetch()} />
       ) : !list.data || list.data.length === 0 ? (
         <Card>
           <EmptyState
             icon={<Database size={26} />}
-            title="No databases"
-            hint="Spin up a managed Postgres, MySQL, Redis or MongoDB instance."
+            title={t('No databases')}
+            hint={t('Spin up a managed Postgres, MySQL, Redis or MongoDB instance.')}
           />
         </Card>
       ) : (
@@ -119,10 +121,10 @@ export function Databases() {
                       {d.attachedServices && d.attachedServices.length > 0 && (
                         <span
                           className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20"
-                          title={`In use by: ${d.attachedServices.map((s) => s.name).join(', ')}`}
+                          title={t('In use by: {names}', { names: d.attachedServices.map((s) => s.name).join(', ') })}
                         >
                           <Link2 size={10} />
-                          {d.attachedServices.length} linked
+                          {t('{n} linked', { n: d.attachedServices.length })}
                         </span>
                       )}
                     </div>
@@ -140,7 +142,7 @@ export function Databases() {
                   <button type="button"
                     onClick={() => void copy(d.connectionString!)}
                     className="group flex w-full items-center gap-2 rounded-lg bg-black/30 px-2.5 py-2 text-left ring-1 ring-inset ring-white/5 hover:ring-white/15"
-                    title="Copy connection string"
+                    title={t('Copy connection string')}
                   >
                     <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-emerald-300/90">
                       {d.connectionString}
@@ -148,7 +150,7 @@ export function Databases() {
                     {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} className="shrink-0 text-slate-500" />}
                   </button>
                 ) : (
-                  <div className="rounded-lg bg-black/20 px-2.5 py-2 text-[11px] text-slate-600">Not running</div>
+                  <div className="rounded-lg bg-black/20 px-2.5 py-2 text-[11px] text-slate-600">{t('Not running')}</div>
                 )}
                 {d.status === 'running' && (
                   <div className="mt-3 space-y-2">
@@ -166,7 +168,7 @@ export function Databases() {
                         </>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-slate-600">
-                          <span className="h-1.5 w-1.5 rounded-full bg-slate-600" /> live stats…
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-600" /> {t('live stats…')}
                         </span>
                       )}
                     </div>
@@ -181,21 +183,21 @@ export function Databases() {
                     to={`/databases/${d.id}`}
                     className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition"
                   >
-                    Manage &rarr;
+                    {t('Manage →')}
                   </Link>
                   <button type="button"
                     onClick={() => backup.mutate(d.id)}
                     disabled={backup.isPending}
                     className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-indigo-300 disabled:opacity-50"
                   >
-                    <HardDriveDownload size={12} /> Backup
+                    <HardDriveDownload size={12} /> {t('Backup')}
                   </button>
                 </div>
                 <button type="button"
                   onClick={() => setPendingRemove({ id: d.id, name: d.name, attachedServices: d.attachedServices })}
                   className={cn('flex items-center gap-1 text-xs text-slate-600 transition hover:text-rose-400')}
                 >
-                  <Trash2 size={12} /> Remove
+                  <Trash2 size={12} /> {t('Remove')}
                 </button>
               </div>
             </Card>
@@ -205,13 +207,17 @@ export function Databases() {
 
       <ConfirmDialog
         open={pendingRemove != null}
-        title={pendingRemove?.attachedServices && pendingRemove.attachedServices.length > 0 ? 'Force delete in-use database' : 'Delete database'}
+        title={pendingRemove?.attachedServices && pendingRemove.attachedServices.length > 0 ? t('Force delete in-use database') : t('Delete database')}
         message={
           pendingRemove?.attachedServices && pendingRemove.attachedServices.length > 0
-            ? `⚠️ Dependency warning: "${pendingRemove.name}" is currently attached to ${pendingRemove.attachedServices.length} service(s) (${pendingRemove.attachedServices.map((s) => s.name).join(', ')}). Deleting it will immediately break these services!`
-            : `Delete "${pendingRemove?.name}"? The container is removed; its data volume is kept and can be freed under Volumes.`
+            ? t('⚠️ Dependency warning: "{name}" is currently attached to {n} service(s) ({services}). Deleting it will immediately break these services!', {
+                name: pendingRemove.name,
+                n: pendingRemove.attachedServices.length,
+                services: pendingRemove.attachedServices.map((s) => s.name).join(', '),
+              })
+            : t('Delete "{name}"? The container is removed; its data volume is kept and can be freed under Volumes.', { name: pendingRemove?.name ?? '' })
         }
-        confirmLabel={pendingRemove?.attachedServices && pendingRemove.attachedServices.length > 0 ? 'Force Delete' : 'Delete'}
+        confirmLabel={pendingRemove?.attachedServices && pendingRemove.attachedServices.length > 0 ? t('Force Delete') : t('Delete')}
         onConfirm={() => pendingRemove && remove.mutate({ id: pendingRemove.id, force: (pendingRemove.attachedServices?.length ?? 0) > 0 })}
         onClose={() => setPendingRemove(null)}
       />

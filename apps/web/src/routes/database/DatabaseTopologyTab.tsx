@@ -25,6 +25,7 @@ import type { DatabaseDetail as IDatabaseDetail } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useThemeMode } from '../../lib/theme.js';
 import { Card, CardBody, StatusBadge } from '../../components/ui.js';
+import { useT } from '../../lib/i18n.js';
 
 type ConsumerNodeData = { id: number; name: string; slug: string; type?: string };
 type MainDbNodeData = {
@@ -39,6 +40,7 @@ type VolumeNodeData = { name: string };
 type BackupDestNodeData = { count: number };
 
 function DbConsumerNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as ConsumerNodeData;
   return (
     <div className="min-w-[190px] rounded-xl border border-indigo-500/30 bg-slate-900/95 p-3 shadow-lg shadow-black/50 backdrop-blur-md transition hover:border-indigo-400">
@@ -49,7 +51,7 @@ function DbConsumerNode(props: NodeProps) {
         </span>
         <div className="min-w-0">
           <p className="truncate font-semibold text-slate-100 text-xs">{data.name}</p>
-          <p className="font-mono text-[10px] text-slate-400">Attached Application</p>
+          <p className="font-mono text-[10px] text-slate-400">{t('Attached Application')}</p>
         </div>
       </Link>
     </div>
@@ -57,6 +59,7 @@ function DbConsumerNode(props: NodeProps) {
 }
 
 function DbCenterNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as MainDbNodeData;
   return (
     <div className="min-w-[240px] rounded-2xl border-2 border-emerald-500/50 bg-slate-900/95 p-4 shadow-xl shadow-black/60 backdrop-blur-md ring-4 ring-emerald-500/10">
@@ -71,7 +74,7 @@ function DbCenterNode(props: NodeProps) {
           </span>
           <div className="min-w-0">
             <p className="truncate font-bold text-slate-100 text-sm">{data.name}</p>
-            <p className="font-mono text-[10px] capitalize text-emerald-400">{data.engine} Engine</p>
+            <p className="font-mono text-[10px] capitalize text-emerald-400">{t('{engine} Engine', { engine: data.engine })}</p>
           </div>
         </div>
         <StatusBadge status={data.status} />
@@ -79,11 +82,11 @@ function DbCenterNode(props: NodeProps) {
 
       <div className="mt-3 space-y-1 rounded-xl bg-white/[0.03] p-2.5 font-mono text-[11px] text-slate-300">
         <div className="flex items-center justify-between">
-          <span className="text-slate-500">Internal Host</span>
+          <span className="text-slate-500">{t('Internal Host')}</span>
           <span className="text-slate-200">{data.host}</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-slate-500">Port</span>
+          <span className="text-slate-500">{t('Port')}</span>
           <span className="text-emerald-300">:{data.port}</span>
         </div>
       </div>
@@ -92,6 +95,7 @@ function DbCenterNode(props: NodeProps) {
 }
 
 function DbVolumeNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as VolumeNodeData;
   return (
     <div className="rounded-xl border border-amber-500/30 bg-slate-900/95 px-3 py-2 shadow-lg backdrop-blur-md">
@@ -99,7 +103,7 @@ function DbVolumeNode(props: NodeProps) {
       <div className="flex items-center gap-2">
         <HardDrive size={14} className="text-amber-400" />
         <div>
-          <p className="text-[10px] font-semibold uppercase text-slate-400">Database Storage</p>
+          <p className="text-[10px] font-semibold uppercase text-slate-400">{t('Database Storage')}</p>
           <p className="font-mono text-xs text-amber-300">{data.name}</p>
         </div>
       </div>
@@ -108,6 +112,7 @@ function DbVolumeNode(props: NodeProps) {
 }
 
 function DbBackupDestNode(props: NodeProps) {
+  const t = useT();
   const data = props.data as BackupDestNodeData;
   return (
     <div className="min-w-[190px] rounded-xl border border-sky-500/30 bg-slate-900/95 p-3 shadow-lg shadow-black/50 backdrop-blur-md">
@@ -117,8 +122,8 @@ function DbBackupDestNode(props: NodeProps) {
           <Archive size={14} />
         </span>
         <div>
-          <p className="font-semibold text-slate-100 text-xs">Backup Vault</p>
-          <p className="text-[10px] text-slate-400">{data.count} snapshot(s) retained</p>
+          <p className="font-semibold text-slate-100 text-xs">{t('Backup Vault')}</p>
+          <p className="text-[10px] text-slate-400">{t('{count} snapshot(s) retained', { count: data.count })}</p>
         </div>
       </div>
     </div>
@@ -133,6 +138,7 @@ const nodeTypes = {
 };
 
 export function DatabaseTopologyTab({ db }: { db: IDatabaseDetail }) {
+  const t = useT();
   const colorMode = useThemeMode();
   const backups = useQuery({ queryKey: ['backups'], queryFn: () => api.backups.list() });
 
@@ -223,14 +229,14 @@ export function DatabaseTopologyTab({ db }: { db: IDatabaseDetail }) {
           <div>
             <h3 className="font-semibold text-slate-100 flex items-center gap-2">
               <Network size={16} className="text-emerald-400" />
-              Database Ecosystem & Mesh Topology
+              {t('Database Ecosystem & Mesh Topology')}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Live layout of consuming client applications, engine container, storage volume, and backup snapshot retention.
+              {t('Live layout of consuming client applications, engine container, storage volume, and backup snapshot retention.')}
             </p>
           </div>
           <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-mono text-emerald-300">
-            Interactive Schema
+            {t('Interactive Schema')}
           </span>
         </div>
 

@@ -38,6 +38,7 @@ import { FirewallSection } from './FirewallSection.js';
 import { PanelBackupSection } from './PanelBackupSection.js';
 import { SwarmSection } from './SwarmSection.js';
 import { AutofillRejectingInput, PageHeader, Select, cn } from '../../components/ui.js';
+import { msg, useT } from '../../lib/i18n.js';
 
 type SectionId =
   | 'account'
@@ -74,39 +75,39 @@ interface SectionCategory {
 
 const SETTING_GROUPS: SectionCategory[] = [
   {
-    category: 'Personal & Access',
+    category: msg('Personal & Access'),
     items: [
-      { id: 'account', label: 'Account', desc: 'Profile, credentials & passkeys', icon: <User size={16} /> },
-      { id: 'appearance', label: 'Appearance', desc: 'Theme colors & density', icon: <Palette size={16} /> },
-      { id: 'security', label: 'Security', desc: '2FA, audit logs & sessions', icon: <Shield size={16} /> },
-      { id: 'sso', label: 'SSO & OIDC', desc: 'Identity providers & auto-enroll', icon: <KeyRound size={16} />, operatorOnly: true },
+      { id: 'account', label: msg('Account'), desc: msg('Profile, credentials & passkeys'), icon: <User size={16} /> },
+      { id: 'appearance', label: msg('Appearance'), desc: msg('Theme colors & density'), icon: <Palette size={16} /> },
+      { id: 'security', label: msg('Security'), desc: msg('2FA, audit logs & sessions'), icon: <Shield size={16} /> },
+      { id: 'sso', label: msg('SSO & OIDC'), desc: msg('Identity providers & auto-enroll'), icon: <KeyRound size={16} />, operatorOnly: true },
     ],
   },
   {
-    category: 'Integrations & Alerts',
+    category: msg('Integrations & Alerts'),
     items: [
-      { id: 'integrations', label: 'Integrations', desc: 'Vault secrets, DNS & S3', icon: <Boxes size={16} />, operatorOnly: true },
-      { id: 'ai', label: 'AI Diagnosis', desc: 'BYO-key failed-deploy analysis', icon: <Bot size={16} /> },
-      { id: 'notifications', label: 'Notifications', desc: 'Webhooks, Slack, Telegram', icon: <Bell size={16} />, operatorOnly: true },
-      { id: 'log-drains', label: 'Log Drains', desc: 'Syslog, Datadog & Vector', icon: <Terminal size={16} />, operatorOnly: true },
+      { id: 'integrations', label: msg('Integrations'), desc: msg('Vault secrets, DNS & S3'), icon: <Boxes size={16} />, operatorOnly: true },
+      { id: 'ai', label: msg('AI Diagnosis'), desc: msg('BYO-key failed-deploy analysis'), icon: <Bot size={16} /> },
+      { id: 'notifications', label: msg('Notifications'), desc: msg('Webhooks, Slack, Telegram'), icon: <Bell size={16} />, operatorOnly: true },
+      { id: 'log-drains', label: msg('Log Drains'), desc: msg('Syslog, Datadog & Vector'), icon: <Terminal size={16} />, operatorOnly: true },
     ],
   },
   {
-    category: 'DevOps & Engine',
+    category: msg('DevOps & Engine'),
     items: [
-      { id: 'firewall', label: 'Firewall (UFW)', desc: 'Host ports & inbound packet filter', icon: <Shield size={16} />, operatorOnly: true },
-      { id: 'storage', label: 'Storage & Prune', desc: 'Disks, Docker prune & logs', icon: <HardDrive size={16} />, operatorOnly: true },
-      { id: 'swarm', label: 'Swarm', desc: 'Multi-node orchestration & cluster', icon: <Network size={16} />, operatorOnly: true },
-      { id: 'config', label: 'Config Center', desc: 'Global key-value configuration', icon: <Sliders size={16} />, operatorOnly: true },
-      { id: 'plugins', label: 'Plugins', desc: 'Community plugins & extensions', icon: <Puzzle size={16} /> },
+      { id: 'firewall', label: msg('Firewall (UFW)'), desc: msg('Host ports & inbound packet filter'), icon: <Shield size={16} />, operatorOnly: true },
+      { id: 'storage', label: msg('Storage & Prune'), desc: msg('Disks, Docker prune & logs'), icon: <HardDrive size={16} />, operatorOnly: true },
+      { id: 'swarm', label: msg('Swarm'), desc: msg('Multi-node orchestration & cluster'), icon: <Network size={16} />, operatorOnly: true },
+      { id: 'config', label: msg('Config Center'), desc: msg('Global key-value configuration'), icon: <Sliders size={16} />, operatorOnly: true },
+      { id: 'plugins', label: msg('Plugins'), desc: msg('Community plugins & extensions'), icon: <Puzzle size={16} /> },
     ],
   },
   {
-    category: 'Platform & Lifecycle',
+    category: msg('Platform & Lifecycle'),
     items: [
-      { id: 'system', label: 'System', desc: 'Resources, version & updates', icon: <Server size={16} />, operatorOnly: true },
-      { id: 'panel-backup', label: 'Panel backup', desc: 'Scheduled, encrypted self-backup', icon: <DatabaseBackup size={16} />, operatorOnly: true },
-      { id: 'migration', label: 'Migration', desc: 'Full backups import/export', icon: <ArrowLeftRight size={16} />, operatorOnly: true },
+      { id: 'system', label: msg('System'), desc: msg('Resources, version & updates'), icon: <Server size={16} />, operatorOnly: true },
+      { id: 'panel-backup', label: msg('Panel backup'), desc: msg('Scheduled, encrypted self-backup'), icon: <DatabaseBackup size={16} />, operatorOnly: true },
+      { id: 'migration', label: msg('Migration'), desc: msg('Full backups import/export'), icon: <ArrowLeftRight size={16} />, operatorOnly: true },
     ],
   },
 ];
@@ -116,6 +117,7 @@ const SETTING_GROUPS: SectionCategory[] = [
 /** Settings page shell: clean vertical sidebar navigation layout with search filter. */
 export function Settings() {
   const { user } = useAuth();
+  const t = useT();
   const isOperator = user?.isOperator === true;
   const [searchParams, setSearchParams] = useSearchParams();
   // Privilege filter first (r472): operator-only sections vanish from the
@@ -148,17 +150,17 @@ export function Settings() {
     return baseGroups.map((group) => ({
       ...group,
       items: group.items.filter(
-        (item) => item.label.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q),
+        (item) => t(item.label).toLowerCase().includes(q) || t(item.desc).toLowerCase().includes(q),
       ),
     })).filter((group) => group.items.length > 0);
-  }, [search, baseGroups]);
+  }, [search, baseGroups, t]);
 
   return (
     <div className="space-y-6 nd-fade">
       <PageHeader
         icon={<SettingsIcon size={20} />}
-        title="Settings & Platform Config"
-        subtitle="Manage instance preferences, security, storage, log sinks and system lifecycle."
+        title={t('Settings & Platform Config')}
+        subtitle={t('Manage instance preferences, security, storage, log sinks and system lifecycle.')}
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -166,16 +168,16 @@ export function Settings() {
             the section itself a whole phone screen down. */}
         <div className="lg:hidden">
           <Select
-            aria-label="Settings section"
+            aria-label={t('Settings section')}
             value={section}
             onChange={(e) => setSection(e.target.value as SectionId)}
             className="h-10"
           >
             {baseGroups.map((group) => (
-              <optgroup key={group.category} label={group.category}>
+              <optgroup key={group.category} label={t(group.category)}>
                 {group.items.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label}
+                    {t(item.label)}
                   </option>
                 ))}
               </optgroup>
@@ -196,8 +198,8 @@ export function Settings() {
                 onAutofillRejected={/* v8 ignore start */ () => setSearch('') /* v8 ignore stop */}
                 name="ninedeploy-settings-filter"
                 type="search"
-                placeholder="Filter settings..."
-                aria-label="Filter settings"
+                placeholder={t('Filter settings...')}
+                aria-label={t('Filter settings')}
                 className="h-8 pl-8 pr-7 text-xs"
               />
               {search && (
@@ -205,21 +207,21 @@ export function Settings() {
                   type="button"
                   onClick={() => setSearch('')}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                  aria-label="Clear filter"
+                  aria-label={t('Clear filter')}
                 >
                   <X size={12} />
                 </button>
               )}
             </div>
 
-            <nav className="space-y-4" aria-label="Settings sections">
+            <nav className="space-y-4" aria-label={t('Settings sections')}>
               {filteredGroups.length === 0 ? (
-                <p className="p-3 text-center text-xs text-slate-500">No settings matching "{search}"</p>
+                <p className="p-3 text-center text-xs text-slate-500">{t('No settings matching "{search}"', { search })}</p>
               ) : (
                 filteredGroups.map((group) => (
                   <div key={group.category} className="space-y-1">
                     <h3 className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      {group.category}
+                      {t(group.category)}
                     </h3>
                     <div className="space-y-0.5">
                       {group.items.map((item) => {
@@ -251,9 +253,9 @@ export function Settings() {
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className={cn('text-xs font-semibold', active ? 'text-slate-100' : 'text-slate-300')}>
-                                {item.label}
+                                {t(item.label)}
                               </div>
-                              <div className="truncate text-[10px] text-slate-500">{item.desc}</div>
+                              <div className="truncate text-[10px] text-slate-500">{t(item.desc)}</div>
                             </div>
                           </button>
                         );

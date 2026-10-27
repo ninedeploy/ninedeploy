@@ -5,6 +5,7 @@ import type { SecretProviderKind, SecretProviderTestResult, SecretProviderView }
 import { api } from '../../lib/api.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
+import { fill, useT, type Translate } from '../../lib/i18n.js';
 import { Badge, Button, Card, CardBody, ConfirmDialog, ErrorCard, Field, Input, Select, Skeleton, Switch, Textarea } from '../../components/ui.js';
 
 // `${{…}}` examples, escaped per repo convention so linters don't read them as template placeholders.
@@ -43,37 +44,43 @@ export function SecretManagersCard() {
   const azure = byKind('azure');
   const onePassword = byKind('onepassword');
   const exec = byKind('exec');
+  const t = useT();
+  const code = (ref: string) => <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{ref}</code>;
 
   return (
     <Card className="mb-5">
       <CardBody>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <Lock size={14} /> Secret managers
+          <Lock size={14} /> {t('Secret managers')}
         </h2>
         <div className="mb-4 space-y-1 text-xs text-slate-500">
           <p>
-            Reference secrets from any env value as <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_VAULT}</code>{' '}
-            (path relative to the KV v2 mount), <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_AWS}</code> or{' '}
-            <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_AWS_KEY}</code> (a key of a JSON secret). Values
-            are fetched at deploy time and never stored.
+            {fill(
+              t('Reference secrets from any env value as {vault} (path relative to the KV v2 mount), {aws} or {awsKey} (a key of a JSON secret). Values are fetched at deploy time and never stored.'),
+              { vault: code(REF_VAULT), aws: code(REF_AWS), awsKey: code(REF_AWS_KEY) },
+            )}
           </p>
           <p>
-            Also <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_SSM}</code> (Parameter Store, with the AWS
-            credentials), <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_GCP}</code>,{' '}
-            <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_AZURE}</code>,{' '}
-            <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_OP}</code> and{' '}
-            <code className="rounded bg-white/5 px-1 font-mono text-[10px]">{REF_EXEC}</code>; all but op take a{' '}
-            <code className="font-mono text-[10px]">#jsonKey</code> too.
+            {fill(
+              t('Also {ssm} (Parameter Store, with the AWS credentials), {gcp}, {azure}, {op} and {exec}; all but op take a {jsonKey} too.'),
+              {
+                ssm: code(REF_SSM),
+                gcp: code(REF_GCP),
+                azure: code(REF_AZURE),
+                op: code(REF_OP),
+                exec: code(REF_EXEC),
+                jsonKey: <code className="font-mono text-[10px]">#jsonKey</code>,
+              },
+            )}
           </p>
           <p>
-            While a provider is not configured (or is disabled) its references stay literal and the deploy log warns. The
-            “Allowed workspaces” list above governs these providers too.
+            {t('While a provider is not configured (or is disabled) its references stay literal and the deploy log warns. The “Allowed workspaces” list above governs these providers too.')}
           </p>
         </div>
         {providers.isLoading ? (
           <Skeleton className="h-32" />
         ) : providers.isError || !vault || !aws ? (
-          <ErrorCard title="Could not load the secret managers" error={providers.error} onRetry={() => void providers.refetch()} />
+          <ErrorCard title={t('Could not load the secret managers')} error={providers.error} onRetry={() => void providers.refetch()} />
         ) : (
           <div className="grid gap-5 lg:grid-cols-2">
             <VaultPanel view={vault} />
@@ -108,6 +115,7 @@ interface ShellProps {
 function ProviderShell({ view, title, enabled, onEnabled, canSave, onSave, onSaved, probeLabel, probeField, children }: ShellProps) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const t = useT();
   const [probe, setProbe] = useState('');
   const [result, setResult] = useState<SecretProviderTestResult | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -121,9 +129,9 @@ function ProviderShell({ view, title, enabled, onEnabled, canSave, onSave, onSav
       onSaved();
       setResult(null);
       refresh();
-      toast(`${title} saved`, 'success');
+      toast(t('{title} saved', { title }), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Save failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Save failed'), 'error'),
   });
   const test = useMutation({
     mutationFn: () => api.settings.secretProviders.test(view.kind, probe.trim() ? { [probeField]: probe.trim() } : {}),
@@ -131,57 +139,57 @@ function ProviderShell({ view, title, enabled, onEnabled, canSave, onSave, onSav
       setResult(res);
       refresh();
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Test failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Test failed'), 'error'),
   });
   const remove = useMutation({
     mutationFn: () => api.settings.secretProviders.delete(view.kind),
     onSuccess: () => {
       setResult(null);
       refresh();
-      toast(`${title} removed`, 'success');
+      toast(t('{title} removed', { title }), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Remove failed', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Remove failed'), 'error'),
   });
 
   return (
     <div className="rounded-lg border border-white/[0.06] p-4" data-testid={`secret-provider-${view.kind}`}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
-        <Badge tone={view.configured ? 'emerald' : 'neutral'}>{view.configured ? 'configured' : 'not configured'}</Badge>
+        <Badge tone={view.configured ? 'emerald' : 'neutral'}>{view.configured ? t('configured') : t('not configured')}</Badge>
       </div>
       <div className="grid gap-3">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-slate-400">Resolve references</span>
-          <Switch checked={enabled} onChange={onEnabled} label={`${title} enabled`} />
+          <span className="text-xs text-slate-400">{t('Resolve references')}</span>
+          <Switch checked={enabled} onChange={onEnabled} label={t('{title} enabled', { title })} />
         </div>
         {children}
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !canSave}>
-            <Save size={12} /> {save.isPending ? 'Saving…' : 'Save'}
+            <Save size={12} /> {save.isPending ? t('Saving…') : t('Save')}
           </Button>
           {saved ? (
             <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(true)} disabled={remove.isPending}>
-              <Trash2 size={12} /> Remove
+              <Trash2 size={12} /> {t('Remove')}
             </Button>
           ) : null}
         </div>
         <div className="border-t border-white/[0.06] pt-3">
-          <Field label={probeLabel} hint="optional">
+          <Field label={probeLabel} hint={t('optional')}>
             <Input value={probe} onChange={(e) => setProbe(e.target.value)} className="font-mono text-xs" />
           </Field>
           <div className="mt-2 flex items-center gap-2">
             <Button size="sm" variant="secondary" onClick={() => test.mutate()} disabled={test.isPending || !saved}>
-              <PlugZap size={12} /> {test.isPending ? 'Testing…' : 'Test connection'}
+              <PlugZap size={12} /> {test.isPending ? t('Testing…') : t('Test connection')}
             </Button>
           </div>
           {result ? (
             <p className={`mt-2 text-xs ${result.ok ? 'text-emerald-300' : 'text-rose-300'}`} data-testid={`secret-provider-${view.kind}-result`}>
-              {result.ok ? 'OK: ' : 'Failed: '}
+              {result.ok ? t('OK: ') : t('Failed: ')}
               {result.detail}
             </p>
           ) : view.lastTestedAt ? (
             <p className={`mt-2 text-xs ${view.lastTestError ? 'text-rose-300' : 'text-slate-500'}`}>
-              Last tested {formatDateTime(view.lastTestedAt)}
+              {t('Last tested {when}', { when: formatDateTime(view.lastTestedAt) })}
               {view.lastTestError ? `: ${view.lastTestError}` : ' — OK'}
             </p>
           ) : null}
@@ -189,9 +197,9 @@ function ProviderShell({ view, title, enabled, onEnabled, canSave, onSave, onSav
       </div>
       <ConfirmDialog
         open={confirmRemove}
-        title={`Remove ${title}?`}
-        message="Its stored credentials are deleted. Deploys keep its references literal (with a warning) until it is configured again."
-        confirmLabel="Remove"
+        title={t('Remove {title}?', { title })}
+        message={t('Its stored credentials are deleted. Deploys keep its references literal (with a warning) until it is configured again.')}
+        confirmLabel={t('Remove')}
         onConfirm={() => remove.mutate()}
         onClose={() => setConfirmRemove(false)}
       />
@@ -199,11 +207,12 @@ function ProviderShell({ view, title, enabled, onEnabled, canSave, onSave, onSav
   );
 }
 
-const credentialHint = (stored: boolean) => (stored ? 'stored — blank keeps it' : undefined);
+const credentialHint = (t: Translate, stored: boolean) => (stored ? t('stored — blank keeps it') : undefined);
 
 // ── HashiCorp Vault / OpenBao ──────────────────────────────────────────────
 
 function VaultPanel({ view }: { view: SecretProviderView }) {
+  const t = useT();
   const c = view.config;
   const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
   const [address, setAddress] = useState(str(c['address']));
@@ -245,47 +254,47 @@ function VaultPanel({ view }: { view: SecretProviderView }) {
         setRoleId('');
         setSecretId('');
       }}
-      probeLabel="Probe path"
+      probeLabel={t('Probe path')}
       probeField="probePath"
     >
-      <Field label="Vault address" hint="https">
+      <Field label={t('Vault address')} hint="https">
         <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://vault.example.com:8200" />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="KV v2 mount">
+        <Field label={t('KV v2 mount')}>
           <Input value={mount} onChange={(e) => setMount(e.target.value)} className="font-mono text-xs" />
         </Field>
-        <Field label="Namespace" hint="optional">
+        <Field label={t('Namespace')} hint={t('optional')}>
           <Input value={namespace} onChange={(e) => setNamespace(e.target.value)} className="font-mono text-xs" />
         </Field>
       </div>
-      <Field label="Auth method">
+      <Field label={t('Auth method')}>
         <Select value={authMethod} onChange={(e) => setAuthMethod(e.target.value as 'token' | 'approle')}>
-          <option value="token">Token</option>
+          <option value="token">{t('Token')}</option>
           <option value="approle">AppRole</option>
         </Select>
       </Field>
       {authMethod === 'token' ? (
-        <Field label="Vault token" hint={credentialHint(stored)}>
+        <Field label={t('Vault token')} hint={credentialHint(t, stored)}>
           <Input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder={stored ? '••••••••' : 'hvs.…'} />
         </Field>
       ) : (
         <>
-          <Field label="AppRole mount">
+          <Field label={t('AppRole mount')}>
             <Input value={approleMount} onChange={(e) => setApproleMount(e.target.value)} className="font-mono text-xs" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Role ID" hint={credentialHint(stored)}>
+            <Field label={t('Role ID')} hint={credentialHint(t, stored)}>
               <Input type="password" autoComplete="off" value={roleId} onChange={(e) => setRoleId(e.target.value)} placeholder={stored ? '••••••••' : ''} />
             </Field>
-            <Field label="Secret ID" hint={credentialHint(stored)}>
+            <Field label={t('Secret ID')} hint={credentialHint(t, stored)}>
               <Input type="password" autoComplete="off" value={secretId} onChange={(e) => setSecretId(e.target.value)} placeholder={stored ? '••••••••' : ''} />
             </Field>
           </div>
         </>
       )}
       <p className="text-[11px] text-slate-500">
-        A token is not renewed: use a periodic token or AppRole. An http address or a private IP needs NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1.
+        {t('A token is not renewed: use a periodic token or AppRole. An http address or a private IP needs NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1.')}
       </p>
     </ProviderShell>
   );
@@ -294,6 +303,7 @@ function VaultPanel({ view }: { view: SecretProviderView }) {
 // ── AWS Secrets Manager ────────────────────────────────────────────────────
 
 function AwsPanel({ view }: { view: SecretProviderView }) {
+  const t = useT();
   const c = view.config;
   const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
   const [region, setRegion] = useState(str(c['region']));
@@ -330,40 +340,40 @@ function AwsPanel({ view }: { view: SecretProviderView }) {
         setSecretAccessKey('');
         setSessionToken('');
       }}
-      probeLabel="Probe secret id"
+      probeLabel={t('Probe secret id')}
       probeField="probeSecretId"
     >
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Region">
+        <Field label={t('Region')}>
           <Input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="eu-west-1" className="font-mono text-xs" />
         </Field>
-        <Field label="Endpoint" hint="optional, https">
+        <Field label={t('Endpoint')} hint={t('optional, https')}>
           <Input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} className="font-mono text-xs" />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Access key ID" hint={credentialHint(stored)}>
+        <Field label={t('Access key ID')} hint={credentialHint(t, stored)}>
           <Input type="password" autoComplete="off" value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} placeholder={stored ? '••••••••' : 'AKIA…'} />
         </Field>
-        <Field label="Secret access key" hint={credentialHint(stored)}>
+        <Field label={t('Secret access key')} hint={credentialHint(t, stored)}>
           <Input type="password" autoComplete="off" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} placeholder={stored ? '••••••••' : ''} />
         </Field>
       </div>
-      <Field label="Session token" hint="optional">
+      <Field label={t('Session token')} hint={t('optional')}>
         <Input type="password" autoComplete="off" value={sessionToken} onChange={(e) => setSessionToken(e.target.value)} />
       </Field>
-      <Field label="Assume role ARN" hint="optional">
+      <Field label={t('Assume role ARN')} hint={t('optional')}>
         <Input value={roleArn} onChange={(e) => setRoleArn(e.target.value)} placeholder="arn:aws:iam::123456789012:role/ninedeploy" className="font-mono text-xs" />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="External ID" hint="needs a role">
+        <Field label={t('External ID')} hint={t('needs a role')}>
           <Input value={externalId} onChange={(e) => setExternalId(e.target.value)} className="font-mono text-xs" />
         </Field>
-        <Field label="Role session name">
+        <Field label={t('Role session name')}>
           <Input value={roleSessionName} onChange={(e) => setRoleSessionName(e.target.value)} placeholder="ninedeploy" className="font-mono text-xs" />
         </Field>
       </div>
-      <p className="text-[11px] text-slate-500">Instance and ECS roles (IMDS) are not supported: use an access key, optionally with an assumed role.</p>
+      <p className="text-[11px] text-slate-500">{t('Instance and ECS roles (IMDS) are not supported: use an access key, optionally with an assumed role.')}</p>
     </ProviderShell>
   );
 }
@@ -371,6 +381,7 @@ function AwsPanel({ view }: { view: SecretProviderView }) {
 // ── G3.2: GCP Secret Manager ───────────────────────────────────────────────
 
 function GcpPanel({ view }: { view: SecretProviderView }) {
+  const t = useT();
   const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
   const [projectId, setProjectId] = useState(str(view.config['projectId']));
   const [serviceAccountJson, setServiceAccountJson] = useState('');
@@ -392,15 +403,15 @@ function GcpPanel({ view }: { view: SecretProviderView }) {
         });
       }}
       onSaved={() => setServiceAccountJson('')}
-      probeLabel="Probe secret"
+      probeLabel={t('Probe secret')}
       probeField="probeName"
     >
-      <Field label="Project ID" hint="optional, defaults to the project of the key">
+      <Field label={t('Project ID')} hint={t('optional, defaults to the project of the key')}>
         <Input value={projectId} onChange={(e) => setProjectId(e.target.value)} placeholder="my-project" className="font-mono text-xs" />
       </Field>
-      <Field label="Service account key (JSON)" hint={credentialHint(stored)}>
+      <Field label={t('Service account key (JSON)')} hint={credentialHint(t, stored)}>
         <Textarea
-          aria-label="Service account key (JSON)"
+          aria-label={t('Service account key (JSON)')}
           value={serviceAccountJson}
           onChange={(e) => setServiceAccountJson(e.target.value)}
           placeholder={stored ? '••••••••' : '{"type": "service_account", …}'}
@@ -408,7 +419,7 @@ function GcpPanel({ view }: { view: SecretProviderView }) {
           className="font-mono text-[11px]"
         />
       </Field>
-      <p className="text-[11px] text-slate-500">The account needs Secret Manager Secret Accessor on the secrets it reads.</p>
+      <p className="text-[11px] text-slate-500">{t('The account needs Secret Manager Secret Accessor on the secrets it reads.')}</p>
     </ProviderShell>
   );
 }
@@ -416,6 +427,7 @@ function GcpPanel({ view }: { view: SecretProviderView }) {
 // ── G3.2: Azure Key Vault ──────────────────────────────────────────────────
 
 function AzurePanel({ view }: { view: SecretProviderView }) {
+  const t = useT();
   const c = view.config;
   const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
   const [vaultUrl, setVaultUrl] = useState(str(c['vaultUrl']));
@@ -445,24 +457,24 @@ function AzurePanel({ view }: { view: SecretProviderView }) {
         });
       }}
       onSaved={() => setClientSecret('')}
-      probeLabel="Probe secret"
+      probeLabel={t('Probe secret')}
       probeField="probeName"
     >
-      <Field label="Vault URL">
+      <Field label={t('Vault URL')}>
         <Input value={vaultUrl} onChange={(e) => setVaultUrl(e.target.value)} placeholder="https://my-vault.vault.azure.net" className="font-mono text-xs" />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Tenant ID">
+        <Field label={t('Tenant ID')}>
           <Input value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="font-mono text-xs" />
         </Field>
-        <Field label="Client ID">
+        <Field label={t('Client ID')}>
           <Input value={clientId} onChange={(e) => setClientId(e.target.value)} className="font-mono text-xs" />
         </Field>
       </div>
-      <Field label="Client secret" hint={credentialHint(stored)}>
+      <Field label={t('Client secret')} hint={credentialHint(t, stored)}>
         <Input type="password" autoComplete="off" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={stored ? '••••••••' : ''} />
       </Field>
-      <p className="text-[11px] text-slate-500">The app registration needs the Key Vault Secrets User role (or a get-secret access policy).</p>
+      <p className="text-[11px] text-slate-500">{t('The app registration needs the Key Vault Secrets User role (or a get-secret access policy).')}</p>
     </ProviderShell>
   );
 }
@@ -470,6 +482,7 @@ function AzurePanel({ view }: { view: SecretProviderView }) {
 // ── G3.2: 1Password Connect ────────────────────────────────────────────────
 
 function OnePasswordPanel({ view }: { view: SecretProviderView }) {
+  const t = useT();
   const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
   const [address, setAddress] = useState(str(view.config['address']));
   const [token, setToken] = useState('');
@@ -492,16 +505,16 @@ function OnePasswordPanel({ view }: { view: SecretProviderView }) {
         });
       }}
       onSaved={() => setToken('')}
-      probeLabel="Probe reference (vault/item/field)"
+      probeLabel={t('Probe reference (vault/item/field)')}
       probeField="probeName"
     >
-      <Field label="Connect server" hint="https">
+      <Field label={t('Connect server')} hint="https">
         <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://connect.example.com" />
       </Field>
-      <Field label="Access token" hint={credentialHint(stored)}>
+      <Field label={t('Access token')} hint={credentialHint(t, stored)}>
         <Input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder={stored ? '••••••••' : 'eyJ…'} />
       </Field>
-      <p className="text-[11px] text-slate-500">A Connect server on a private network needs NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1 (http as well).</p>
+      <p className="text-[11px] text-slate-500">{t('A Connect server on a private network needs NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1 (http as well).')}</p>
     </ProviderShell>
   );
 }
@@ -509,6 +522,7 @@ function OnePasswordPanel({ view }: { view: SecretProviderView }) {
 // ── G3.2: exec command ─────────────────────────────────────────────────────
 
 function ExecPanel({ view }: { view: SecretProviderView }) {
+  const t = useT();
   const c = view.config;
   const [enabled, setEnabled] = useState(view.configured ? view.enabled : true);
   const [command, setCommand] = useState(Array.isArray(c['command']) ? (c['command'] as string[]).join('\n') : '');
@@ -522,18 +536,18 @@ function ExecPanel({ view }: { view: SecretProviderView }) {
   return (
     <ProviderShell
       view={view}
-      title="exec command"
+      title={t('exec command')}
       enabled={enabled}
       onEnabled={setEnabled}
       canSave={argv.length > 0 && argv[0]!.startsWith('/') && Number.isInteger(timeout) && timeout >= 1 && timeout <= 60}
       onSave={() => api.settings.secretProviders.set('exec', { enabled, config: { command: argv, timeoutSeconds: timeout } })}
       onSaved={() => undefined}
-      probeLabel="Probe name"
+      probeLabel={t('Probe name')}
       probeField="probeName"
     >
-      <Field label="Command" hint={`one argument per line; ${NAME_PLACEHOLDER} is the reference name`}>
+      <Field label={t('Command')} hint={t('one argument per line; {name} is the reference name', { name: NAME_PLACEHOLDER })}>
         <Textarea
-          aria-label="Command"
+          aria-label={t('Command')}
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           placeholder={['/usr/local/bin/bw', 'get', 'password', NAME_PLACEHOLDER].join('\n')}
@@ -541,11 +555,11 @@ function ExecPanel({ view }: { view: SecretProviderView }) {
           className="font-mono text-[11px]"
         />
       </Field>
-      <Field label="Timeout (seconds)">
-        <Input aria-label="Timeout (seconds)" value={timeoutSeconds} onChange={(e) => setTimeoutSeconds(e.target.value)} inputMode="numeric" className="w-24 font-mono text-xs" />
+      <Field label={t('Timeout (seconds)')}>
+        <Input aria-label={t('Timeout (seconds)')} value={timeoutSeconds} onChange={(e) => setTimeoutSeconds(e.target.value)} inputMode="numeric" className="w-24 font-mono text-xs" />
       </Field>
       <p className="text-[11px] text-slate-500">
-        Runs on the panel host without a shell; its stdout is the value. Off unless the panel was started with NINEDEPLOY_SECRET_EXEC=1.
+        {t('Runs on the panel host without a shell; its stdout is the value. Off unless the panel was started with NINEDEPLOY_SECRET_EXEC=1.')}
       </p>
     </ProviderShell>
   );

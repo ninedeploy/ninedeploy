@@ -21,6 +21,7 @@ import type { InstallPluginInput, MarketplacePluginItem } from '@ninedeploy/sdk'
 import { Button, Card, CardBody, Input, Modal, Skeleton } from '../../components/ui.js';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
+import { fill, useT } from '../../lib/i18n.js';
 import { useExperienceMode } from '../../lib/mode.js';
 
 // F969: the server's compiled-in plugins (BUILT_IN_PLUGIN_IDS in
@@ -42,6 +43,7 @@ const BUILT_IN_PLUGIN_IDS: ReadonlySet<string> = new Set([
 ]);
 
 export function PluginsSection() {
+  const t = useT();
   const { user } = useAuth();
   const { isSimple } = useExperienceMode();
   const isAdmin = user?.isOperator === true;
@@ -153,9 +155,9 @@ export function PluginsSection() {
         <CardBody>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold tracking-tight">Plugin Ecosystem</h2>
+              <h2 className="text-base font-semibold tracking-tight">{t('Plugin Ecosystem')}</h2>
               <p className="text-xs text-slate-400">
-                Modular architecture extensions, background workers, custom drivers, and dynamic UI integrations.
+                {t('Modular architecture extensions, background workers, custom drivers, and dynamic UI integrations.')}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -167,18 +169,18 @@ export function PluginsSection() {
                   className="self-start sm:self-auto"
                 >
                   <Plus size={14} className="mr-1.5" />
-                  Install Plugin
+                  {t('Install Plugin')}
                 </Button>
               )}
               <Button
                 variant="secondary"
                 size="sm"
-                aria-label="Refresh plugins"
+                aria-label={t('Refresh plugins')}
                 onClick={() => pluginsQuery.refetch()}
                 disabled={pluginsQuery.isFetching}
               >
                 <RefreshCw size={14} className={pluginsQuery.isFetching ? 'animate-spin mr-1.5' : 'mr-1.5'} />
-                Refresh
+                {t('Refresh')}
               </Button>
             </div>
           </div>
@@ -196,9 +198,9 @@ export function PluginsSection() {
           <Card>
             <CardBody className="py-12 text-center">
               <Layers size={36} className="mx-auto text-slate-600 mb-3" />
-              <h3 className="text-sm font-medium text-slate-300">No plugins installed</h3>
+              <h3 className="text-sm font-medium text-slate-300">{t('No plugins installed')}</h3>
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                Extend NineDeploy with official or community-developed features from the marketplace.
+                {t('Extend NineDeploy with official or community-developed features from the marketplace.')}
               </p>
               {isAdmin && (
                 <Button
@@ -208,7 +210,7 @@ export function PluginsSection() {
                   className="mt-4"
                 >
                   <Store size={14} className="mr-1.5" />
-                  Browse Marketplace
+                  {t('Browse Marketplace')}
                 </Button>
               )}
             </CardBody>
@@ -230,7 +232,7 @@ export function PluginsSection() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      Installed Extensions & Add-ons ({extList.length})
+                      {t('Installed Extensions & Add-ons ({n})', { n: extList.length })}
                     </h3>
                   </div>
                   {/* Both the empty and populated extension lists render
@@ -238,7 +240,7 @@ export function PluginsSection() {
                   {/* v8 ignore start */}
                   {extList.length === 0 ? (
                     <div className="rounded-xl border border-white/5 bg-white/[0.01] p-6 text-center text-xs text-slate-500">
-                      No optional extensions installed. Built-in core services are actively powering the platform.
+                      {t('No optional extensions installed. Built-in core services are actively powering the platform.')}
                     </div>
                   ) : (
                     extList.map((p) => (
@@ -268,9 +270,9 @@ export function PluginsSection() {
                   <div className="space-y-3 pt-2">
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                        <ShieldCheck size={14} /> Built-in Core Drivers & Kernel ({coreList.length})
+                        <ShieldCheck size={14} /> {t('Built-in Core Drivers & Kernel ({n})', { n: coreList.length })}
                       </h3>
-                      <span className="text-[10px] text-slate-500 font-mono">Always Active</span>
+                      <span className="text-[10px] text-slate-500 font-mono">{t('Always Active')}</span>
                     </div>
                     {isSimple ? (
                       <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-4">
@@ -279,12 +281,12 @@ export function PluginsSection() {
                             <ShieldCheck size={18} />
                           </div>
                           <div>
-                            <div className="text-xs font-semibold text-slate-200">Core Kernel & Service Drivers Active</div>
-                            <div className="text-[11px] text-slate-400">Traefik reverse proxy, Docker monitoring, TLS issuance and database drivers are running seamlessly.</div>
+                            <div className="text-xs font-semibold text-slate-200">{t('Core Kernel & Service Drivers Active')}</div>
+                            <div className="text-[11px] text-slate-400">{t('Traefik reverse proxy, Docker monitoring, TLS issuance and database drivers are running seamlessly.')}</div>
                           </div>
                         </div>
                         <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30">
-                          Nominal
+                          {t('Nominal')}
                         </span>
                       </div>
                     ) : (
@@ -315,7 +317,7 @@ export function PluginsSection() {
       {/* Install Plugin & Marketplace Modal */}
       {isInstallModalOpen && (
         <Modal
-          title="Install Plugin"
+          title={t('Install Plugin')}
           wide
           onClose={() => setIsInstallModalOpen(false)}
         >
@@ -332,7 +334,7 @@ export function PluginsSection() {
                 onClick={() => setActiveTab('marketplace')}
               >
                 <Store size={14} />
-                Marketplace Catalog
+                {t('Marketplace Catalog')}
               </button>
               <button
                 type="button"
@@ -344,7 +346,7 @@ export function PluginsSection() {
                 onClick={() => setActiveTab('custom')}
               >
                 <Download size={14} />
-                Custom Package / Repo
+                {t('Custom Package / Repo')}
               </button>
             </div>
 
@@ -356,7 +358,7 @@ export function PluginsSection() {
                   <div className="relative">
                     <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                     <Input
-                      placeholder="Search plugins by name, keyword, or author..."
+                      placeholder={t('Search plugins by name, keyword, or author...')}
                       value={marketplaceSearch}
                       onChange={(e) => setMarketplaceSearch(e.target.value)}
                       className="pl-9 text-xs"
@@ -375,7 +377,7 @@ export function PluginsSection() {
                               : 'bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200'
                           }`}
                         >
-                          {cat}
+                          {cat === 'all' ? t('all') : cat}
                         </button>
                       ))}
                     </div>
@@ -388,10 +390,10 @@ export function PluginsSection() {
                     <Skeleton className="h-20 w-full" />
                   </div>
                 ) : catalog.length === 0 ? (
-                  <p className="text-center text-xs text-slate-500 py-6">Catalog is currently unavailable.</p>
+                  <p className="text-center text-xs text-slate-500 py-6">{t('Catalog is currently unavailable.')}</p>
                 ) : filteredCatalog.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">
-                    <p className="text-xs text-slate-400">No plugins match your filter criteria.</p>
+                    <p className="text-xs text-slate-400">{t('No plugins match your filter criteria.')}</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -410,17 +412,17 @@ export function PluginsSection() {
                             </div>
                             {item.isOfficial ? (
                               <span className="rounded bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-medium text-indigo-400 border border-indigo-500/20">
-                                Official
+                                {t('Official')}
                               </span>
                             ) : (
                               <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">
-                                Community
+                                {t('Community')}
                               </span>
                             )}
                           </div>
                           <p className="text-xs text-slate-400 line-clamp-2">{item.description}</p>
                           <div className="text-[10px] text-slate-500 flex items-center gap-2">
-                            <span>Author: {item.author}</span>
+                            <span>{t('Author: {author}', { author: item.author })}</span>
                             <span>•</span>
                             <span className="capitalize">{item.category}</span>
                           </div>
@@ -437,22 +439,23 @@ export function PluginsSection() {
                             item.builtIn ? (
                               <>
                                 <span className="text-xs text-slate-500">
-                                  Already available as{' '}
-                                  <span className="text-slate-300">{item.builtIn.label}</span>
+                                  {fill(t('Already available as {feature}'), {
+                                    feature: <span className="text-slate-300">{item.builtIn.label}</span>,
+                                  })}
                                 </span>
                                 <Link
                                   to={item.builtIn.path}
                                   className="inline-flex items-center gap-1 text-xs font-medium text-indigo-300 transition hover:brightness-125"
                                 >
-                                  Open <ArrowRight size={12} />
+                                  {t('Open')} <ArrowRight size={12} />
                                 </Link>
                               </>
                             ) : (
-                              <span className="text-xs text-slate-500">Planned — not available yet</span>
+                              <span className="text-xs text-slate-500">{t('Planned — not available yet')}</span>
                             )
                           ) : item.isInstalled ? (
                             <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
-                              <CheckCircle2 size={12} /> Installed
+                              <CheckCircle2 size={12} /> {t('Installed')}
                             </span>
                           ) : (
                             <Button
@@ -468,7 +471,7 @@ export function PluginsSection() {
                               }
                             >
                               <Download size={12} className="mr-1" />
-                              Install
+                              {t('Install')}
                             </Button>
                           )}
                         </div>
@@ -483,7 +486,7 @@ export function PluginsSection() {
             {activeTab === 'custom' && (
               <div className="space-y-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">Source Type</label>
+                  <label className="mb-1 block text-xs font-medium text-slate-400">{t('Source Type')}</label>
                   <div className="flex gap-2">
                     {(['npm', 'git', 'local'] as const).map((s) => (
                       <button
@@ -505,19 +508,19 @@ export function PluginsSection() {
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-400">
                     {customSource === 'npm'
-                      ? 'NPM Package Name'
+                      ? t('NPM Package Name')
                       : customSource === 'git'
-                      ? 'Git Repository URL'
-                      : 'Local Directory Path'}
+                      ? t('Git Repository URL')
+                      : t('Local Directory Path')}
                   </label>
                   <Input
                     type="text"
                     placeholder={
                       customSource === 'npm'
-                        ? 'e.g. @ninedeploy-plugin/datadog-tracer'
+                        ? t('e.g. @ninedeploy-plugin/datadog-tracer')
                         : customSource === 'git'
-                        ? 'e.g. https://github.com/my-org/my-plugin.git'
-                        : 'e.g. /var/lib/ninedeploy/plugins/custom-hook'
+                        ? t('e.g. https://github.com/my-org/my-plugin.git')
+                        : t('e.g. /var/lib/ninedeploy/plugins/custom-hook')
                     }
                     value={customTarget}
                     onChange={(e) => setCustomTarget(e.target.value)}
@@ -526,16 +529,16 @@ export function PluginsSection() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-400">Display Name (Optional)</label>
+                    <label className="mb-1 block text-xs font-medium text-slate-400">{t('Display Name (Optional)')}</label>
                     <Input
                       type="text"
-                      placeholder="My Custom Plugin"
+                      placeholder={t('My Custom Plugin')}
                       value={customName}
                       onChange={(e) => setCustomName(e.target.value)}
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-400">Version</label>
+                    <label className="mb-1 block text-xs font-medium text-slate-400">{t('Version')}</label>
                     <Input
                       type="text"
                       placeholder="1.0.0"
@@ -546,10 +549,10 @@ export function PluginsSection() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">Description (Optional)</label>
+                  <label className="mb-1 block text-xs font-medium text-slate-400">{t('Description (Optional)')}</label>
                   <Input
                     type="text"
-                    placeholder="Brief description of this extension"
+                    placeholder={t('Brief description of this extension')}
                     value={customDescription}
                     onChange={(e) => setCustomDescription(e.target.value)}
                   />
@@ -557,7 +560,7 @@ export function PluginsSection() {
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-white/[0.08]">
                   <Button variant="secondary" onClick={() => setIsInstallModalOpen(false)}>
-                    Cancel
+                    {t('Cancel')}
                   </Button>
                   <Button
                     variant="primary"
@@ -573,7 +576,7 @@ export function PluginsSection() {
                     }
                   >
                     <Download size={14} className="mr-1.5" />
-                    Install Extension
+                    {t('Install Extension')}
                   </Button>
                 </div>
               </div>
@@ -609,6 +612,7 @@ function PluginInspectModal({
   onReload: (id: string) => void;
   isReloading: boolean;
 }) {
+  const t = useT();
   const inspectQuery = useQuery({
     queryKey: ['plugin-inspect', id],
     queryFn: () => api.plugins.inspect(id),
@@ -617,7 +621,7 @@ function PluginInspectModal({
   const p = inspectQuery.data;
 
   return (
-    <Modal title={`Plugin Details: ${id}`} wide onClose={onClose}>
+    <Modal title={t('Plugin Details: {id}', { id })} wide onClose={onClose}>
       {inspectQuery.isLoading || !p ? (
         <div className="space-y-3 p-4">
           <Skeleton className="h-20 w-full" />
@@ -633,16 +637,16 @@ function PluginInspectModal({
                 <span className="font-mono text-[11px] text-slate-400">v{p.version}</span>
                 {p.isOfficial ? (
                   <span className="rounded bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/20">
-                    Official
+                    {t('Official')}
                   </span>
                 ) : (
                   <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400">
-                    Community
+                    {t('Community')}
                   </span>
                 )}
               </div>
-              <p className="text-slate-400">{p.description || 'No description provided.'}</p>
-              <div className="text-[11px] text-slate-500">Author: {p.author || 'NineDeploy'}</div>
+              <p className="text-slate-400">{p.description || t('No description provided.')}</p>
+              <div className="text-[11px] text-slate-500">{t('Author: {author}', { author: p.author || 'NineDeploy' })}</div>
             </div>
             {/* F920: the server refuses (409) reloading a disabled plugin.
                 F969: and every built-in (404/409). */}
@@ -654,7 +658,7 @@ function PluginInspectModal({
                 onClick={() => onReload(id)}
               >
                 <RefreshCw size={13} className="mr-1.5" />
-                Hot Reload
+                {t('Hot Reload')}
               </Button>
             )}
           </div>
@@ -664,7 +668,7 @@ function PluginInspectModal({
             <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3.5 text-rose-300">
               <div className="flex items-center gap-2 font-medium">
                 <AlertTriangle size={14} className="text-rose-400" />
-                Runtime Diagnostic Error
+                {t('Runtime Diagnostic Error')}
               </div>
               <p className="mt-1 font-mono text-[11px] text-rose-200">{p.error}</p>
             </div>
@@ -673,7 +677,7 @@ function PluginInspectModal({
           {/* Architecture Grid */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg bg-black/40 p-3 ring-1 ring-inset ring-white/5">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Hooks Tapped</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('Hooks Tapped')}</span>
               <div className="mt-1.5 font-mono text-[11px] text-slate-300">
                 {p.hooks.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
@@ -682,13 +686,13 @@ function PluginInspectModal({
                     ))}
                   </div>
                 ) : (
-                  <span className="text-slate-500">None</span>
+                  <span className="text-slate-500">{t('None')}</span>
                 )}
               </div>
             </div>
 
             <div className="rounded-lg bg-black/40 p-3 ring-1 ring-inset ring-white/5">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Services &amp; Workers</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('Services & Workers')}</span>
               <div className="mt-1.5 font-mono text-[11px] text-slate-300">
                 {p.services.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
@@ -697,17 +701,29 @@ function PluginInspectModal({
                     ))}
                   </div>
                 ) : (
-                  <span className="text-slate-500">None</span>
+                  <span className="text-slate-500">{t('None')}</span>
                 )}
               </div>
             </div>
 
             <div className="rounded-lg bg-black/40 p-3 ring-1 ring-inset ring-white/5">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Runtime Telemetry</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('Runtime Telemetry')}</span>
               <div className="mt-1.5 space-y-1 font-mono text-[11px] text-slate-300">
                 {/* r286: null = the kernel does not track this per plugin. */}
-                <div>Events: <span className="text-indigo-300">{p.runtimeStats.eventsHandled ?? 'not tracked'}</span></div>
-                <div>Uptime: <span className="text-emerald-300">{p.runtimeStats.uptimeSeconds == null ? 'not tracked' : `${p.runtimeStats.uptimeSeconds}s`}</span></div>
+                <div>
+                  {fill(t('Events: {value}'), {
+                    value: <span className="text-indigo-300">{p.runtimeStats.eventsHandled ?? t('not tracked')}</span>,
+                  })}
+                </div>
+                <div>
+                  {fill(t('Uptime: {value}'), {
+                    value: (
+                      <span className="text-emerald-300">
+                        {p.runtimeStats.uptimeSeconds == null ? t('not tracked') : `${p.runtimeStats.uptimeSeconds}s`}
+                      </span>
+                    ),
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -715,7 +731,7 @@ function PluginInspectModal({
           {/* Configuration Schema & Menus */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="rounded-xl border border-white/5 bg-black/20 p-3.5">
-              <span className="text-xs font-medium text-slate-300">Config Schema ({p.configSchema.length})</span>
+              <span className="text-xs font-medium text-slate-300">{t('Config Schema ({n})', { n: p.configSchema.length })}</span>
               <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
                 {p.configSchema.length > 0 ? (
                   p.configSchema.map((c, i) => (
@@ -725,13 +741,13 @@ function PluginInspectModal({
                     </div>
                   ))
                 ) : (
-                  <p className="text-[11px] text-slate-500">No custom settings registered.</p>
+                  <p className="text-[11px] text-slate-500">{t('No custom settings registered.')}</p>
                 )}
               </div>
             </div>
 
             <div className="rounded-xl border border-white/5 bg-black/20 p-3.5">
-              <span className="text-xs font-medium text-slate-300">Navigation Menus ({p.menus.length})</span>
+              <span className="text-xs font-medium text-slate-300">{t('Navigation Menus ({n})', { n: p.menus.length })}</span>
               <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
                 {p.menus.length > 0 ? (
                   p.menus.map((m) => (
@@ -741,7 +757,7 @@ function PluginInspectModal({
                     </div>
                   ))
                 ) : (
-                  <p className="text-[11px] text-slate-500">No navigation items registered.</p>
+                  <p className="text-[11px] text-slate-500">{t('No navigation items registered.')}</p>
                 )}
               </div>
             </div>
@@ -749,7 +765,7 @@ function PluginInspectModal({
 
           <div className="flex justify-end border-t border-white/[0.08] pt-3">
             <Button variant="secondary" onClick={onClose}>
-              Close
+              {t('Close')}
             </Button>
           </div>
         </div>
@@ -783,6 +799,7 @@ function PluginCard({
   isUninstallPending,
   isCore,
 }: PluginCardProps) {
+  const t = useT();
   return (
     <Card className="transition-all hover:border-white/20">
       <CardBody>
@@ -799,39 +816,39 @@ function PluginCard({
                 </span>
                 {isCore ? (
                   <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/20">
-                    <ShieldCheck size={10} /> Core Built-in
+                    <ShieldCheck size={10} /> {t('Core Built-in')}
                   </span>
                 ) : p.isOfficial ? (
                   <span className="inline-flex items-center gap-1 rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-400 border border-indigo-500/20">
-                    <ShieldCheck size={10} /> Official
+                    <ShieldCheck size={10} /> {t('Official')}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
-                    <Globe size={10} /> Community
+                    <Globe size={10} /> {t('Community')}
                   </span>
                 )}
                 {p.status === 'active' && (
                   <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/20">
-                    <CheckCircle2 size={10} /> Active
+                    <CheckCircle2 size={10} /> {t('Active')}
                   </span>
                 )}
                 {p.status === 'disabled' && (
                   <span className="inline-flex items-center gap-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
-                    Disabled
+                    {t('Disabled')}
                   </span>
                 )}
                 {p.status === 'errored' && (
                   <span className="inline-flex items-center gap-1 rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-400 border border-rose-500/20">
-                    <AlertTriangle size={10} /> Errored
+                    <AlertTriangle size={10} /> {t('Errored')}
                   </span>
                 )}
                 {/* r600: sandbox plugin on a Node that cannot deny it the network. */}
                 {p.networkRestricted === false && (
                   <span
                     className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/20"
-                    title="This Node.js has no network permission scope (needs Node 25+): the sandbox cannot stop this plugin from making network requests."
+                    title={t('This Node.js has no network permission scope (needs Node 25+): the sandbox cannot stop this plugin from making network requests.')}
                   >
-                    <AlertTriangle size={10} /> Unrestricted network
+                    <AlertTriangle size={10} /> {t('Unrestricted network')}
                   </span>
                 )}
               </div>
@@ -842,7 +859,7 @@ function PluginCard({
 
               {p.dependencies && p.dependencies.length > 0 && (
                 <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                  <span>Depends on:</span>
+                  <span>{t('Depends on:')}</span>
                   {p.dependencies.map((dep: string) => (
                     <span key={dep} className="font-mono bg-white/[0.04] px-1 rounded text-slate-400">
                       {dep}
@@ -866,7 +883,7 @@ function PluginCard({
               onClick={onInspect}
             >
               <Info size={14} className="mr-1.5" />
-              Inspect
+              {t('Inspect')}
             </Button>
             {/* F920: reload is operator-only and refused (409) for a disabled
                 plugin — enable is what loads it. F969: and for a built-in. */}
@@ -874,8 +891,8 @@ function PluginCard({
               <Button
                 variant="secondary"
                 size="sm"
-                aria-label={`Reload ${p.name}`}
-                title="Reload Plugin"
+                aria-label={t('Reload {name}', { name: p.name })}
+                title={t('Reload Plugin')}
                 disabled={isReloadPending}
                 onClick={onReload}
               >
@@ -891,16 +908,16 @@ function PluginCard({
                   onClick={() => onToggle(!p.enabled)}
                 >
                   <Power size={14} className="mr-1.5" />
-                  {p.enabled ? 'Disable' : 'Enable'}
+                  {p.enabled ? t('Disable') : t('Enable')}
                 </Button>
                 {!p.isOfficial && (
                   <Button
                     variant="secondary"
                     size="sm"
-                    title="Uninstall Plugin"
+                    title={t('Uninstall Plugin')}
                     disabled={isUninstallPending}
                     onClick={() => {
-                      if (confirm(`Are you sure you want to uninstall plugin "${p.name}"?`)) {
+                      if (confirm(t('Are you sure you want to uninstall plugin "{name}"?', { name: p.name }))) {
                         onUninstall();
                       }
                     }}

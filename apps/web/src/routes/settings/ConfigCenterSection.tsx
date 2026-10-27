@@ -8,6 +8,7 @@ import { Button, Card, CardBody, Input, Modal, Skeleton, cn } from '../../compon
 import { useToast } from '../../components/Toast.js';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
+import { type Translate, useT } from '../../lib/i18n.js';
 
 /** Placeholder the server returns for unrevealed secrets. */
 const SECRET_MASK = '••••••••';
@@ -26,41 +27,42 @@ interface PluginMeta {
   badgeTone: string;
 }
 
-function resolvePluginMeta(item: ConfigItem): PluginMeta {
+function resolvePluginMeta(item: ConfigItem, t: Translate): PluginMeta {
   const pid = (item.pluginId || '').toLowerCase();
   const k = item.key.toLowerCase();
 
   if (pid === 'traefik' || k.startsWith('traefik.') || k.startsWith('proxy.')) {
-    return { id: 'traefik', name: 'Traefik Proxy & HTTP/3 Engine', description: 'Reverse proxy routing, SSL automation and entrypoints', icon: Globe, badgeTone: 'text-sky-300 bg-sky-500/10 border-sky-500/20' };
+    return { id: 'traefik', name: t('Traefik Proxy & HTTP/3 Engine'), description: t('Reverse proxy routing, SSL automation and entrypoints'), icon: Globe, badgeTone: 'text-sky-300 bg-sky-500/10 border-sky-500/20' };
   }
   if (pid === 'docker' || k.startsWith('docker.') || k.startsWith('container.')) {
-    return { id: 'docker', name: 'Docker Engine & Container Runtime', description: 'Container builder, network namespaces and daemon limits', icon: Package, badgeTone: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20' };
+    return { id: 'docker', name: t('Docker Engine & Container Runtime'), description: t('Container builder, network namespaces and daemon limits'), icon: Package, badgeTone: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20' };
   }
   if (pid === 'auth' || pid === 'security' || k.startsWith('auth.') || k.startsWith('security.') || k.startsWith('totp.') || k.startsWith('jwt.')) {
-    return { id: 'auth', name: 'Authentication & Security Vault', description: 'RBAC policies, JWT signing, MFA and secret cryptography', icon: Shield, badgeTone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' };
+    return { id: 'auth', name: t('Authentication & Security Vault'), description: t('RBAC policies, JWT signing, MFA and secret cryptography'), icon: Shield, badgeTone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' };
   }
   if (pid === 'notifications' || pid === 'smtp' || pid === 'alerts' || k.startsWith('smtp.') || k.startsWith('mail.') || k.startsWith('discord.') || k.startsWith('slack.') || k.startsWith('ntfy.') || k.startsWith('notify.')) {
-    return { id: 'notifications', name: 'Notifications & Alerting Plugin', description: 'Email delivery, Slack, Discord and push webhooks', icon: Bell, badgeTone: 'text-amber-300 bg-amber-500/10 border-amber-500/20' };
+    return { id: 'notifications', name: t('Notifications & Alerting Plugin'), description: t('Email delivery, Slack, Discord and push webhooks'), icon: Bell, badgeTone: 'text-amber-300 bg-amber-500/10 border-amber-500/20' };
   }
   if (pid === 'git' || pid === 'github' || pid === 'gitlab' || k.startsWith('git.') || k.startsWith('github.') || k.startsWith('gitlab.')) {
-    return { id: 'git', name: 'Git & VCS Integration Plugin', description: 'Source code providers, SSH deploy keys and webhook secrets', icon: GitBranch, badgeTone: 'text-purple-300 bg-purple-500/10 border-purple-500/20' };
+    return { id: 'git', name: t('Git & VCS Integration Plugin'), description: t('Source code providers, SSH deploy keys and webhook secrets'), icon: GitBranch, badgeTone: 'text-purple-300 bg-purple-500/10 border-purple-500/20' };
   }
   if (pid === 'dns' || pid === 'cloudflare' || k.startsWith('dns.') || k.startsWith('cloudflare.')) {
-    return { id: 'dns', name: 'DNS & Cloudflare Sync Plugin', description: 'DNS-01 ACME solvers, automated A/CNAME record provisioner', icon: Cloud, badgeTone: 'text-orange-300 bg-orange-500/10 border-orange-500/20' };
+    return { id: 'dns', name: t('DNS & Cloudflare Sync Plugin'), description: t('DNS-01 ACME solvers, automated A/CNAME record provisioner'), icon: Cloud, badgeTone: 'text-orange-300 bg-orange-500/10 border-orange-500/20' };
   }
   if (pid === 'telemetry' || pid === 'metrics' || k.startsWith('metric.') || k.startsWith('stats.') || k.startsWith('telemetry.')) {
-    return { id: 'telemetry', name: 'Monitoring & Telemetry Plugin', description: 'Container CPU/RAM polling intervals and historical retention', icon: Activity, badgeTone: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/20' };
+    return { id: 'telemetry', name: t('Monitoring & Telemetry Plugin'), description: t('Container CPU/RAM polling intervals and historical retention'), icon: Activity, badgeTone: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/20' };
   }
   if (pid === 'storage' || pid === 'backups' || k.startsWith('backup.') || k.startsWith('s3.') || k.startsWith('storage.')) {
-    return { id: 'storage', name: 'Backups & Storage Provider Plugin', description: 'S3/R2 storage buckets, retention timers and prune policies', icon: HardDrive, badgeTone: 'text-rose-300 bg-rose-500/10 border-rose-500/20' };
+    return { id: 'storage', name: t('Backups & Storage Provider Plugin'), description: t('S3/R2 storage buckets, retention timers and prune policies'), icon: HardDrive, badgeTone: 'text-rose-300 bg-rose-500/10 border-rose-500/20' };
   }
   if (pid) {
-    return { id: pid, name: `Plugin: ${pid.toUpperCase()}`, description: `Custom configuration for plugin extension ${pid}`, icon: Cpu, badgeTone: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20' };
+    return { id: pid, name: t('Plugin: {id}', { id: pid.toUpperCase() }), description: t('Custom configuration for plugin extension {id}', { id: pid }), icon: Cpu, badgeTone: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20' };
   }
-  return { id: 'core', name: 'NineDeploy Core Platform Vault', description: 'Base system parameters, instance hostnames and kernel defaults', icon: Cpu, badgeTone: 'text-slate-300 bg-slate-500/10 border-slate-500/20' };
+  return { id: 'core', name: t('NineDeploy Core Platform Vault'), description: t('Base system parameters, instance hostnames and kernel defaults'), icon: Cpu, badgeTone: 'text-slate-300 bg-slate-500/10 border-slate-500/20' };
 }
 
 export function ConfigCenterSection() {
+  const t = useT();
   const { user } = useAuth();
   const isAdmin = user?.isOperator === true;
   const queryClient = useQueryClient();
@@ -98,7 +100,7 @@ export function ConfigCenterSection() {
       setIsAddModalOpen(false);
       resetNewForm();
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Failed to save setting', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Failed to save setting'), 'error'),
   });
 
   const deleteMutation = useMutation({
@@ -106,7 +108,7 @@ export function ConfigCenterSection() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['config-entries'] });
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Failed to delete setting', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Failed to delete setting'), 'error'),
   });
 
   function resetNewForm() {
@@ -126,7 +128,7 @@ export function ConfigCenterSection() {
     const map = new Map<string, { meta: PluginMeta; items: ConfigItem[] }>();
 
     for (const item of entries) {
-      const meta = resolvePluginMeta(item);
+      const meta = resolvePluginMeta(item, t);
       if (!map.has(meta.id)) {
         map.set(meta.id, { meta, items: [] });
       }
@@ -144,7 +146,7 @@ export function ConfigCenterSection() {
     /* v8 ignore stop */
 
     return { grouped: list, pluginList: list.map((g) => ({ id: g.meta.id, name: g.meta.name, count: g.items.length })) };
-  }, [entries]);
+  }, [entries, t]);
 
   // Filter grouped items based on search & plugin filter
   const filteredGroups = useMemo(() => {
@@ -158,7 +160,7 @@ export function ConfigCenterSection() {
           const matchKey = item.key.toLowerCase().includes(q);
           const matchLabel = item.label.toLowerCase().includes(q);
           const matchDesc = item.description?.toLowerCase().includes(q) ?? false;
-          const matchTags = item.tags.some((t) => t.toLowerCase().includes(q));
+          const matchTags = item.tags.some((tag) => tag.toLowerCase().includes(q));
           return matchKey || matchLabel || matchDesc || matchTags;
         });
         return { ...g, items: matchingItems };
@@ -177,10 +179,10 @@ export function ConfigCenterSection() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                <Cpu size={18} className="text-indigo-400" /> Configuration Center
+                <Cpu size={18} className="text-indigo-400" /> {t('Configuration Center')}
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Centralized settings vault organized by plugin modules with AES-256-GCM encryption &amp; live config watchers.
+                {t('Centralized settings vault organized by plugin modules with AES-256-GCM encryption & live config watchers.')}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -190,21 +192,21 @@ export function ConfigCenterSection() {
                     variant={revealSecrets ? 'danger' : 'secondary'}
                     size="sm"
                     onClick={() => setRevealSecrets(!revealSecrets)}
-                    title={revealSecrets ? 'Mask secrets' : 'Reveal secrets (Admin)'}
+                    title={revealSecrets ? t('Mask secrets') : t('Reveal secrets (Admin)')}
                   >
                     {revealSecrets ? <EyeOff size={14} className="mr-1.5" /> : <Eye size={14} className="mr-1.5" />}
-                    {revealSecrets ? 'Hide Secrets' : 'Reveal Secrets'}
+                    {revealSecrets ? t('Hide Secrets') : t('Reveal Secrets')}
                   </Button>
                   <Button variant="primary" size="sm" onClick={() => setIsAddModalOpen(true)}>
                     <Plus size={14} className="mr-1.5" />
-                    New Setting
+                    {t('New Setting')}
                   </Button>
                 </>
               )}
               <Button
                 variant="secondary"
                 size="sm"
-                aria-label="Refresh config"
+                aria-label={t('Refresh config')}
                 onClick={() => configQuery.refetch()}
                 disabled={configQuery.isFetching}
               >
@@ -226,7 +228,7 @@ export function ConfigCenterSection() {
                     : 'bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200',
                 )}
               >
-                All Plugins ({entries.length})
+                {t('All Plugins ({n})', { n: entries.length })}
               </button>
               {pluginList.map((p) => (
                 <button
@@ -252,7 +254,7 @@ export function ConfigCenterSection() {
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
               <Input
                 type="text"
-                placeholder="Search keys, values, tags..."
+                placeholder={t('Search keys, values, tags...')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-8 text-xs font-mono"
@@ -270,7 +272,7 @@ export function ConfigCenterSection() {
         </div>
       ) : filteredGroups.length === 0 ? (
         <Card className="py-12 text-center text-sm text-slate-500">
-          No configuration entries found matching your search or plugin filter.
+          {t('No configuration entries found matching your search or plugin filter.')}
         </Card>
       ) : (
         <div className="space-y-4">
@@ -304,8 +306,12 @@ export function ConfigCenterSection() {
 
                   <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right font-mono text-[11px] text-slate-400 hidden sm:block">
-                      <span>{group.items.length} setting{group.items.length > 1 ? 's' : ''}</span>
-                      {secretCount > 0 && <span className="text-amber-400/80 ml-1.5">({secretCount} secret)</span>}
+                      <span>
+                        {group.items.length > 1
+                          ? t('{n} settings', { n: group.items.length })
+                          : t('{n} setting', { n: group.items.length })}
+                      </span>
+                      {secretCount > 0 && <span className="text-amber-400/80 ml-1.5">{t('({n} secret)', { n: secretCount })}</span>}
                     </div>
                     <div className="text-slate-400">
                       {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
@@ -326,11 +332,11 @@ export function ConfigCenterSection() {
                             <span className="font-mono text-xs font-semibold text-slate-200">{item.key}</span>
                             {item.isSecret ? (
                               <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/20">
-                                <KeyRound size={10} /> Secret
+                                <KeyRound size={10} /> {t('Secret')}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/20">
-                                <Shield size={10} /> Public
+                                <Shield size={10} /> {t('Public')}
                               </span>
                             )}
                             <span className="rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
@@ -338,7 +344,7 @@ export function ConfigCenterSection() {
                             </span>
                             {!item.isConfigured && (
                               <span className="rounded bg-slate-800/80 px-1.5 py-0.5 text-[10px] text-slate-500 italic">
-                                default
+                                {t('default')}
                               </span>
                             )}
                           </div>
@@ -347,9 +353,9 @@ export function ConfigCenterSection() {
                           )}
                           {item.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {item.tags.map((t) => (
-                                <span key={t} className="rounded bg-white/[0.02] px-1.5 py-0.2 font-mono text-[10px] text-slate-500">
-                                  #{t}
+                              {item.tags.map((tag) => (
+                                <span key={tag} className="rounded bg-white/[0.02] px-1.5 py-0.2 font-mono text-[10px] text-slate-500">
+                                  #{tag}
                                 </span>
                               ))}
                             </div>
@@ -374,7 +380,7 @@ export function ConfigCenterSection() {
                                   setEditValue(formatConfigValue(item.value) === SECRET_MASK ? '' : formatConfigValue(item.value));
                                 }}
                                 className="rounded-lg p-1.5 text-slate-400 hover:bg-white/[0.08] hover:text-slate-200 transition-colors"
-                                title="Edit Value"
+                                title={t('Edit Value')}
                               >
                                 <Edit2 size={13} />
                               </button>
@@ -382,12 +388,12 @@ export function ConfigCenterSection() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (confirm(`Delete config key "${item.key}"?`)) {
+                                    if (confirm(t('Delete config key "{key}"?', { key: item.key }))) {
                                       deleteMutation.mutate(item.key);
                                     }
                                   }}
                                   className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-500/20 hover:text-rose-400 transition-colors"
-                                  title="Delete"
+                                  title={t('Delete')}
                                 >
                                   <Trash2 size={13} />
                                 </button>
@@ -408,20 +414,20 @@ export function ConfigCenterSection() {
       {/* Edit Modal */}
       {editingItem && (
         <Modal
-          title={`Edit Config: ${editingItem.key}`}
+          title={t('Edit Config: {key}', { key: editingItem.key })}
           onClose={() => setEditingItem(null)}
         >
           <div className="space-y-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Value ({editingItem.type})</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Value ({type})', { type: editingItem.type })}</label>
               <Input
                 type={editingItem.isSecret && !revealSecrets ? 'password' : 'text'}
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 placeholder={
                   editingItem.isSecret && editValue === ''
-                    ? 'Leave blank to keep the current value'
-                    : 'Enter value'
+                    ? t('Leave blank to keep the current value')
+                    : t('Enter value')
                 }
                 autoFocus
               />
@@ -431,7 +437,7 @@ export function ConfigCenterSection() {
             )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setEditingItem(null)}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -449,7 +455,7 @@ export function ConfigCenterSection() {
                     try {
                       val = JSON.parse(editValue);
                     } catch {
-                      alert('Invalid JSON format');
+                      alert(t('Invalid JSON format'));
                       return;
                     }
                   }
@@ -463,7 +469,7 @@ export function ConfigCenterSection() {
                   });
                 }}
               >
-                <Check size={14} className="mr-1.5" /> Save Changes
+                <Check size={14} className="mr-1.5" /> {t('Save Changes')}
               </Button>
             </div>
           </div>
@@ -473,49 +479,49 @@ export function ConfigCenterSection() {
       {/* Add New Setting Modal */}
       {isAddModalOpen && (
         <Modal
-          title="Create Configuration Key"
+          title={t('Create Configuration Key')}
           onClose={() => setIsAddModalOpen(false)}
         >
           <div className="space-y-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Key Name</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Key Name')}</label>
               <Input
                 type="text"
-                placeholder="e.g. system.custom_timeout or plugin:traefik:idle_timeout"
+                placeholder={t('e.g. system.custom_timeout or plugin:traefik:idle_timeout')}
                 value={newKey}
                 onChange={(e) => setNewKey(e.target.value)}
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Value</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Value')}</label>
               <Input
                 type={newIsSecret ? 'password' : 'text'}
-                placeholder="Setting value"
+                placeholder={t('Setting value')}
                 value={newValue}
                 onChange={(e) => setNewValue(e.target.value)}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">Target Plugin</label>
+                <label className="mb-1 block text-xs font-medium text-slate-400">{t('Target Plugin')}</label>
                 <select
                   value={newPluginId}
                   onChange={(e) => setNewPluginId(e.target.value)}
                   className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                 >
-                  <option value="core">Core Platform (core)</option>
-                  <option value="traefik">Traefik Proxy (traefik)</option>
-                  <option value="docker">Docker Engine (docker)</option>
-                  <option value="auth">Authentication & Security (auth)</option>
-                  <option value="notifications">Notifications & SMTP (notifications)</option>
-                  <option value="dns">DNS & Cloudflare (dns)</option>
-                  <option value="git">Git & Sources (git)</option>
-                  <option value="telemetry">Monitoring (telemetry)</option>
-                  <option value="storage">Backups & S3 (storage)</option>
+                  <option value="core">{t('Core Platform (core)')}</option>
+                  <option value="traefik">{t('Traefik Proxy (traefik)')}</option>
+                  <option value="docker">{t('Docker Engine (docker)')}</option>
+                  <option value="auth">{t('Authentication & Security (auth)')}</option>
+                  <option value="notifications">{t('Notifications & SMTP (notifications)')}</option>
+                  <option value="dns">{t('DNS & Cloudflare (dns)')}</option>
+                  <option value="git">{t('Git & Sources (git)')}</option>
+                  <option value="telemetry">{t('Monitoring (telemetry)')}</option>
+                  <option value="storage">{t('Backups & S3 (storage)')}</option>
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">Category</label>
+                <label className="mb-1 block text-xs font-medium text-slate-400">{t('Category')}</label>
                 <Input
                   type="text"
                   placeholder="general, security, network..."
@@ -532,20 +538,20 @@ export function ConfigCenterSection() {
                   onChange={(e) => setNewIsSecret(e.target.checked)}
                   className="rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-indigo-500"
                 />
-                <span>Encrypt as Secret (AES-256-GCM)</span>
+                <span>{t('Encrypt as Secret (AES-256-GCM)')}</span>
               </label>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Description (optional)</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Description (optional)')}</label>
               <Input
                 type="text"
-                placeholder="Brief description of this setting"
+                placeholder={t('Brief description of this setting')}
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Tags (comma-separated)</label>
+              <label className="mb-1 block text-xs font-medium text-slate-400">{t('Tags (comma-separated)')}</label>
               <Input
                 type="text"
                 placeholder="e.g. timeout, critical, cloudflare"
@@ -556,7 +562,7 @@ export function ConfigCenterSection() {
 
             <div className="flex justify-end gap-2 pt-3">
               <Button variant="secondary" onClick={() => setIsAddModalOpen(false)}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -564,7 +570,7 @@ export function ConfigCenterSection() {
                 onClick={() => {
                   const tags = newTags
                     .split(',')
-                    .map((t) => t.trim())
+                    .map((tag) => tag.trim())
                     .filter(Boolean);
                   saveMutation.mutate({
                     key: newKey,
@@ -575,7 +581,7 @@ export function ConfigCenterSection() {
                   });
                 }}
               >
-                <Plus size={14} className="mr-1.5" /> Create Setting
+                <Plus size={14} className="mr-1.5" /> {t('Create Setting')}
               </Button>
             </div>
           </div>

@@ -8,12 +8,13 @@ import { describeCron, isValidCron } from '../../lib/cron.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, Field, Input, Select, Skeleton, Switch } from '../../components/ui.js';
+import { msg, useT } from '../../lib/i18n.js';
 
 /** Schedule presets (server local time); anything else is "custom". */
 export const BACKUP_SCHEDULE_PRESETS = [
-  { id: 'daily', label: 'Daily (03:00)', cron: '0 3 * * *' },
-  { id: '6h', label: 'Every 6 hours', cron: '0 */6 * * *' },
-  { id: 'weekly', label: 'Weekly (Sunday 03:00)', cron: '0 3 * * 0' },
+  { id: 'daily', label: msg('Daily (03:00)'), cron: '0 3 * * *' },
+  { id: '6h', label: msg('Every 6 hours'), cron: '0 */6 * * *' },
+  { id: 'weekly', label: msg('Weekly (Sunday 03:00)'), cron: '0 3 * * 0' },
 ] as const;
 
 const RETAIN_MIN = 1;
@@ -53,6 +54,7 @@ const inRange = (v: string) => /^\d+$/.test(v) && Number(v) >= RETAIN_MIN && Num
  * destination) — the card says so until the first save.
  */
 export function BackupScheduleCard({ dbId }: { dbId: number }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -89,9 +91,9 @@ export function BackupScheduleCard({ dbId }: { dbId: number }) {
     },
     onSuccess: (saved) => {
       qc.setQueryData(['backup-policy', dbId], saved);
-      toast('Backup schedule saved', 'success');
+      toast(t('Backup schedule saved'), 'success');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not save the backup schedule', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not save the backup schedule'), 'error'),
   });
 
   if (policy.isLoading || (!form && !policy.isError)) {
@@ -107,7 +109,7 @@ export function BackupScheduleCard({ dbId }: { dbId: number }) {
     return (
       <Card>
         <CardBody>
-          <p className="text-sm text-rose-300">Could not load the backup schedule.</p>
+          <p className="text-sm text-rose-300">{t('Could not load the backup schedule.')}</p>
         </CardBody>
       </Card>
     );
@@ -116,9 +118,9 @@ export function BackupScheduleCard({ dbId }: { dbId: number }) {
   const current = policy.data;
   const set = (patch: Partial<FormState>) => setForm({ ...form, ...patch });
   const cronExpr = form.preset === 'custom' ? form.customCron.trim() : (BACKUP_SCHEDULE_PRESETS.find((p) => p.id === form.preset)?.cron ?? '');
-  const cronError = form.preset === 'custom' && cronExpr !== '' && !isValidCron(cronExpr) ? 'Expected 5 fields: minute hour day month weekday' : null;
-  const retainError = inRange(form.retainCount) ? null : `Between ${RETAIN_MIN} and ${RETAIN_MAX}`;
-  const remoteError = form.retainRemoteCount.trim() === '' || inRange(form.retainRemoteCount) ? null : `Between ${RETAIN_MIN} and ${RETAIN_MAX}, or blank`;
+  const cronError = form.preset === 'custom' && cronExpr !== '' && !isValidCron(cronExpr) ? t('Expected 5 fields: minute hour day month weekday') : null;
+  const retainError = inRange(form.retainCount) ? null : t('Between {min} and {max}', { min: RETAIN_MIN, max: RETAIN_MAX });
+  const remoteError = form.retainRemoteCount.trim() === '' || inRange(form.retainRemoteCount) ? null : t('Between {min} and {max}, or blank', { min: RETAIN_MIN, max: RETAIN_MAX });
   const invalid = cronExpr === '' || cronError != null || retainError != null || (form.destination !== 'local' && remoteError != null);
   const knownDestinations = destinations.data ?? [];
   const pinnedId = current.destinationId;
@@ -128,40 +130,40 @@ export function BackupScheduleCard({ dbId }: { dbId: number }) {
     <Card className="overflow-hidden">
       <div className="p-4 border-b border-white/[0.06] flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
-          <CalendarClock size={14} /> Backup schedule
+          <CalendarClock size={14} /> {t('Backup schedule')}
         </h2>
         <span className="text-xs text-slate-500" data-testid="backup-schedule-status">
           {!current.configured
-            ? `Built-in: daily, ${current.retainCount} kept`
+            ? t('Built-in: daily, {n} kept', { n: current.retainCount })
             : !current.enabled
-              ? 'Scheduled backups off'
+              ? t('Scheduled backups off')
               : current.nextRunAt
-                ? `Next run ${formatDateTime(current.nextRunAt)}`
-                : 'Scheduled'}
+                ? t('Next run {time}', { time: formatDateTime(current.nextRunAt) })
+                : t('Scheduled')}
         </span>
       </div>
       <CardBody className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm text-slate-200">Scheduled backups</p>
-            <p className="text-xs text-slate-500">Manual “Backup now” snapshots are never pruned by the schedule.</p>
+            <p className="text-sm text-slate-200">{t('Scheduled backups')}</p>
+            <p className="text-xs text-slate-500">{t('Manual “Backup now” snapshots are never pruned by the schedule.')}</p>
           </div>
-          <Switch checked={form.enabled} onChange={(v) => set({ enabled: v })} label="Scheduled backups" />
+          <Switch checked={form.enabled} onChange={(v) => set({ enabled: v })} label={t('Scheduled backups')} />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Schedule" hint={cronExpr && !cronError ? (describeCron(cronExpr) ?? cronExpr) : undefined}>
+          <Field label={t('Schedule')} hint={cronExpr && !cronError ? (describeCron(cronExpr) ?? cronExpr) : undefined}>
             <Select value={form.preset} onChange={(e) => set({ preset: e.target.value })} disabled={!form.enabled}>
               {BACKUP_SCHEDULE_PRESETS.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.label}
+                  {t(p.label)}
                 </option>
               ))}
-              <option value="custom">Custom cron…</option>
+              <option value="custom">{t('Custom cron…')}</option>
             </Select>
           </Field>
           {form.preset === 'custom' && (
-            <Field label="Cron expression" hint="server local time" error={cronError}>
+            <Field label={t('Cron expression')} hint={t('server local time')} error={cronError}>
               <Input
                 value={form.customCron}
                 onChange={(e) => set({ customCron: e.target.value })}
@@ -171,7 +173,7 @@ export function BackupScheduleCard({ dbId }: { dbId: number }) {
               />
             </Field>
           )}
-          <Field label="Keep (local)" hint={`${RETAIN_MIN}–${RETAIN_MAX} scheduled dumps`} error={retainError}>
+          <Field label={t('Keep (local)')} hint={t('{min}–{max} scheduled dumps', { min: RETAIN_MIN, max: RETAIN_MAX })} error={retainError}>
             <Input
               type="number"
               min={RETAIN_MIN}
@@ -180,20 +182,20 @@ export function BackupScheduleCard({ dbId }: { dbId: number }) {
               onChange={(e) => set({ retainCount: e.target.value })}
             />
           </Field>
-          <Field label="Destination">
+          <Field label={t('Destination')}>
             <Select value={form.destination} onChange={(e) => set({ destination: e.target.value as DestinationChoice })}>
-              <option value="active">Active destination</option>
-              <option value="local">Local only (no off-site copy)</option>
+              <option value="active">{t('Active destination')}</option>
+              <option value="local">{t('Local only (no off-site copy)')}</option>
               {knownDestinations.map((d) => (
                 <option key={d.id} value={`dest-${d.id}`}>
                   {d.name} ({d.bucket})
                 </option>
               ))}
-              {pinnedUnlisted && <option value={`dest-${pinnedId}`}>Destination #{pinnedId} (chosen by an operator)</option>}
+              {pinnedUnlisted && <option value={`dest-${pinnedId}`}>{t('Destination #{id} (chosen by an operator)', { id: pinnedId ?? '' })}</option>}
             </Select>
           </Field>
           {form.destination !== 'local' && (
-            <Field label="Keep (remote)" hint="blank = same as local" error={remoteError}>
+            <Field label={t('Keep (remote)')} hint={t('blank = same as local')} error={remoteError}>
               <Input
                 type="number"
                 min={RETAIN_MIN}
@@ -208,7 +210,7 @@ export function BackupScheduleCard({ dbId }: { dbId: number }) {
 
         <div className="flex justify-end">
           <Button size="sm" onClick={() => save.mutate(form)} disabled={invalid || save.isPending}>
-            <Save size={12} /> Save schedule
+            <Save size={12} /> {t('Save schedule')}
           </Button>
         </div>
       </CardBody>
