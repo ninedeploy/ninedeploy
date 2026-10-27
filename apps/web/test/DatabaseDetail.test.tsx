@@ -281,6 +281,36 @@ describe('DatabaseDetail', () => {
     await waitFor(() => expect(authedFetch).toHaveBeenCalledWith('/v1/backups/101/download'));
   });
 
+  // G1.5: the G-17 backup drill, previously CLI-only.
+  it('checks a backup and shows the latest drill verdict per backup', async () => {
+    mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([
+        { id: 1, databaseId: 1, backupId: 101, status: 'failed', engine: 'postgres', durationMs: 5, error: 'old', details: null, startedAt: 1, completedAt: 2 },
+        { id: 2, databaseId: 1, backupId: 101, status: 'passed', engine: 'postgres', durationMs: 5, error: null, details: null, startedAt: 3, completedAt: 4 },
+      ] as any);
+    mockOf(api.databases.drillBackup)
+      .mockResolvedValueOnce({ ok: true, drillId: 2, status: 'passed', durationMs: 5, details: null, error: null } as any)
+      .mockResolvedValueOnce({ ok: true, drillId: 3, status: 'failed', durationMs: 5, details: null, error: 'truncated dump' } as any)
+      .mockResolvedValueOnce({ ok: true, drillId: 4, status: 'unverifiable', durationMs: 5, details: null, error: null } as any)
+      .mockRejectedValueOnce(new Error('Backup not found'));
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    expect(await screen.findByText('never')).toBeInTheDocument();
+    const check = screen.getByRole('button', { name: 'Check backup 101' });
+    fireEvent.click(check);
+    await waitFor(() => expect(api.databases.drillBackup).toHaveBeenCalledWith(1, { backupId: 101 }));
+    expect(await screen.findByText('Backup check passed')).toBeInTheDocument();
+    expect(await screen.findByText('passed')).toBeInTheDocument();
+    fireEvent.click(check);
+    expect(await screen.findByText('Backup check failed: truncated dump')).toBeInTheDocument();
+    fireEvent.click(check);
+    expect(await screen.findByText('Backup could not be checked')).toBeInTheDocument();
+    fireEvent.click(check);
+    expect(await screen.findByText('Backup not found')).toBeInTheDocument();
+  });
+
   it('handles restore failure and download error responses', async () => {
     mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);

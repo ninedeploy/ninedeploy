@@ -16,6 +16,7 @@ import {
   RefreshCw,
   RotateCcw,
   Server,
+  ShieldCheck,
   Square,
   Terminal,
   Trash2,
@@ -23,7 +24,7 @@ import {
   MemoryStick,
 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import type { DatabaseDetail as IDatabaseDetail } from '@ninedeploy/sdk';
+import type { BackupDrillEntry, DatabaseDetail as IDatabaseDetail } from '@ninedeploy/sdk';
 import { DATABASE_STUDIO_ENGINES } from '@ninedeploy/schemas';
 import { api, authedFetch } from '../lib/api.js';
 import { apiUrl } from '../lib/apiUrl.js';
@@ -699,6 +700,31 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
     return (backupsQuery.data ?? []).filter((b) => b.databaseId === dbId);
   }, [backupsQuery.data, dbId]);
 
+  // G1.5: integrity drills (G-17) had no web control. The latest drill of
+  // each backup is shown next to it; a drill checks the file, never restores.
+  const drillsQuery = useQuery({
+    queryKey: ['database-drills', dbId],
+    queryFn: () => api.databases.drills(dbId),
+  });
+  const latestDrill = useMemo(() => {
+    const byBackup = new Map<number, BackupDrillEntry>();
+    for (const d of drillsQuery.data ?? []) {
+      const seen = byBackup.get(d.backupId);
+      if (!seen || d.startedAt > seen.startedAt) byBackup.set(d.backupId, d);
+    }
+    return byBackup;
+  }, [drillsQuery.data]);
+  const drillMutation = useMutation({
+    mutationFn: (backupId: number) => api.databases.drillBackup(dbId, { backupId }),
+    onSuccess: (result) => {
+      void qc.invalidateQueries({ queryKey: ['database-drills', dbId] });
+      if (result.status === 'passed') toast('Backup check passed', 'success');
+      else if (result.status === 'failed') toast(`Backup check failed${result.error ? `: ${result.error}` : ''}`, 'error');
+      else toast(`Backup could not be checked${result.error ? `: ${result.error}` : ''}`, 'error');
+    },
+    onError: (err) => toast(err instanceof Error ? err.message : 'Backup check failed', 'error'),
+  });
+
   const restoreMutation = useMutation({
     mutationFn: (backupId: number) => api.backups.restore(dbId, backupId),
     onSuccess: () => {
@@ -744,6 +770,7 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
               <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3 font-medium">Size</th>
               <th className="px-5 py-3 font-medium">Created</th>
+              <th className="px-5 py-3 font-medium">Last check</th>
               <th className="px-5 py-3 text-right">Actions</th>
             </tr>
           </thead>
@@ -755,8 +782,29 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
                 </td>
                 <td className="px-5 py-3 font-mono text-xs text-slate-400">{formatBytes(b.sizeBytes)}</td>
                 <td className="px-5 py-3 text-xs text-slate-500">{formatDateTime(b.createdAt)}</td>
+                <td className="px-5 py-3">
+                  {latestDrill.get(b.id) ? (
+                    <StatusBadge
+                      status={latestDrill.get(b.id)!.status}
+                      title={latestDrill.get(b.id)!.error ?? `Checked ${formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString())}`}
+                    />
+                  ) : (
+                    <span className="text-xs text-slate-600">never</span>
+                  )}
+                </td>
                 <td className="px-5 py-3 text-right">
                   <div className="flex items-center justify-end gap-1.5">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => drillMutation.mutate(b.id)}
+                      disabled={drillMutation.isPending || b.status !== 'completed'}
+                      className="text-xs"
+                      title="Check that this dump is readable, without restoring it"
+                      aria-label={`Check backup ${b.id}`}
+                    >
+                      <ShieldCheck size={12} /> {drillMutation.isPending && drillMutation.variables === b.id ? 'Checking…' : 'Check'}
+                    </Button>
                     <Button
                       variant="secondary"
                       size="sm"

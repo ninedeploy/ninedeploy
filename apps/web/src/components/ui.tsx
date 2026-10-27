@@ -337,6 +337,9 @@ const STATUS_TONES: Record<string, string> = {
   // 0.16.13: a deploy into an approval-gated lane, waiting for an admin.
   awaiting_approval: 'bg-violet-500/15 text-violet-300 ring-violet-500/20',
   awaiting_ci: 'bg-amber-500/15 text-amber-300 ring-amber-500/20',
+  // G1.5: backup drill verdicts.
+  passed: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20',
+  unverifiable: 'bg-slate-500/15 text-slate-300 ring-slate-500/20',
 };
 
 /** Statuses whose wire name is not the words to show. */

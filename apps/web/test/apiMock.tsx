@@ -280,6 +280,12 @@ export function createFakeApiModule() {
         get: vi.fn(), cancel: vi.fn(), wait: vi.fn(),
       },
       importFile: vi.fn(),
+      // G1.5: PgBouncer and backup drills got web controls; an off sidecar and no drills by default.
+      pgbouncerStatus: vi.fn().mockResolvedValue({ enabled: false, containerName: null, port: 6432, running: false, poolMode: null, pooledConnectionString: null }),
+      enablePgbouncer: vi.fn(),
+      disablePgbouncer: vi.fn(),
+      drills: vi.fn().mockResolvedValue([]),
+      drillBackup: vi.fn(),
     },
     attachments: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     env: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },

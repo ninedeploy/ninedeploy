@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Backup checks in the web UI (G1.5): each backup in a database's Backups tab has a **Check** button that runs the existing integrity drill, and a *Last check* column with the newest verdict (`passed`, `failed` or `unverifiable`). Until now drills ran only from the CLI and API.
+
 - PgBouncer in the web UI (G1.5): a PostgreSQL database on the panel host gets a *PgBouncer connection pooling* card showing the sidecar's state, port, pool mode and the pooled connection URL to copy. Instance operators can enable it (with an optional port) or disable it there; until now this was only possible through the CLI, SDK and API.
 
 - Self-hosted GitLab sources (G1.2): a `gitlab` source can now have a base URL, including a relative path such as `https://example.com/gitlab`, with the same https and private-address rules as Gitea. The project list, the branch picker and the live token test use that instance; without a base URL a source still means gitlab.com. GitLab branches are now actually listed, including projects in nested groups; until now they always fell back to `main`/`master`. Available in the web UI, `ninedeploy sources add --base-url` and the API. No migration.
