@@ -184,6 +184,22 @@ describe('GCP Secret Manager', () => {
     egress.guardedFetch.mockResolvedValueOnce(json({ access_token: 't' }));
     await expect(gcpDriver.test({}, noProject, opts)).rejects.toThrow('No GCP project');
   });
+
+  it('rejects malformed references, token responses and missing secret payloads', async () => {
+    await expect(gcpDriver.read({}, GCP_CREDS, 'bad@version', opts)).rejects.toThrow('Invalid GCP secret reference');
+    expect(egress.guardedFetch).not.toHaveBeenCalled();
+    egress.guardedFetch.mockResolvedValueOnce(json({}));
+    await expect(gcpDriver.read({}, GCP_CREDS, 'good', opts)).rejects.toThrow('Google OAuth answered without an access token');
+    egress.guardedFetch.mockResolvedValueOnce(json({ access_token: 'token' })).mockResolvedValueOnce(json({ payload: {} }));
+    await expect(gcpDriver.read({}, GCP_CREDS, 'good', opts)).rejects.toThrow('Secret Manager answered without a payload');
+  });
+
+  it('checks an actual GCP probe without requesting a second token', async () => {
+    egress.guardedFetch.mockResolvedValueOnce(json({ access_token: 'token' }))
+      .mockResolvedValueOnce(json({ payload: { data: Buffer.from('value').toString('base64') } }));
+    await expect(gcpDriver.test({}, GCP_CREDS, { ...opts, probeName: 'probe' })).resolves.toContain('probe secret readable');
+    expect(egress.guardedFetch).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('Azure Key Vault', () => {
@@ -217,6 +233,24 @@ describe('Azure Key Vault', () => {
     const err = await azureDriver.read(cfg, { clientSecret: 'cs~secret' }, 'x', opts).catch((e: Error) => e);
     expect(String(err)).toMatch(/Microsoft Entra ID token request answered 401/);
     expect(String(err)).not.toContain('cs~secret');
+  });
+
+  it('uses US Government endpoints and tests an actual secret probe', async () => {
+    const gov = { ...cfg, vaultUrl: 'https://kv.vault.usgovcloudapi.net' };
+    egress.guardedFetch.mockResolvedValueOnce(json({ access_token: 'token' })).mockResolvedValueOnce(json({ value: 'value' }));
+    await expect(azureDriver.test(gov, { clientSecret: 'secret' }, { ...opts, probeName: 'probe' })).resolves.toContain('probe secret readable');
+    expect(call(0).url).toContain('https://login.microsoftonline.us/');
+    expect(new URLSearchParams(call(0).body).get('scope')).toBe('https://vault.usgovcloudapi.net/.default');
+  });
+
+  it('refuses missing credentials, malformed references and missing API fields', async () => {
+    await expect(azureDriver.read(cfg, {}, 'ok', opts)).rejects.toThrow('No Azure client secret is stored');
+    await expect(azureDriver.read(cfg, { clientSecret: 'secret' }, 'bad_name', opts)).rejects.toThrow('Invalid Azure Key Vault reference');
+    expect(egress.guardedFetch).not.toHaveBeenCalled();
+    egress.guardedFetch.mockResolvedValueOnce(json({}));
+    await expect(azureDriver.read(cfg, { clientSecret: 'secret' }, 'ok', opts)).rejects.toThrow('answered without an access token');
+    egress.guardedFetch.mockResolvedValueOnce(json({ access_token: 'token' })).mockResolvedValueOnce(json({}));
+    await expect(azureDriver.read(cfg, { clientSecret: 'secret' }, 'ok', opts)).rejects.toThrow('answered without a value');
   });
 });
 
@@ -261,6 +295,29 @@ describe('1Password Connect', () => {
     vi.stubEnv('NINEDEPLOY_ALLOW_PRIVATE_EGRESS', '1');
     expect(() => onePasswordDriver.validate({ address: 'http://connect:8080' })).not.toThrow();
     vi.stubEnv('NINEDEPLOY_ALLOW_PRIVATE_EGRESS', '');
+  });
+
+  it('rejects missing credentials and malformed or ambiguous item data', async () => {
+    await expect(onePasswordDriver.read(cfg, {}, 'vault/item/field', opts)).rejects.toThrow('No 1Password Connect token is stored');
+    await expect(onePasswordDriver.read(cfg, creds, 'vault/item', opts)).rejects.toThrow('Invalid 1Password reference');
+    egress.guardedFetch.mockResolvedValueOnce(new Response('not-json'));
+    await expect(onePasswordDriver.read(cfg, creds, 'vault/item/field', opts)).rejects.toThrow('body that is not JSON');
+    egress.guardedFetch.mockResolvedValueOnce(json([{ id: 'v'.repeat(26), name: 'vault' }])).mockResolvedValueOnce(json([]));
+    await expect(onePasswordDriver.read(cfg, creds, 'vault/item/field', opts)).rejects.toThrow('1Password item "item" was not found');
+    egress.guardedFetch.mockResolvedValueOnce(json({ fields: [{ id: 'field', value: null }] }));
+    await expect(onePasswordDriver.read(cfg, creds, `${'v'.repeat(26)}/${'i'.repeat(26)}/field`, opts)).rejects.toThrow('has no value');
+    egress.guardedFetch.mockResolvedValueOnce(json({ fields: [] }));
+    await expect(onePasswordDriver.read(cfg, creds, `${'v'.repeat(26)}/${'i'.repeat(26)}/field`, opts)).rejects.toThrow('field "field" was not found');
+  });
+
+  it('tests a token with a probe and does not expose it in errors', async () => {
+    egress.guardedFetch.mockResolvedValueOnce(json([])).mockResolvedValueOnce(json({ fields: [{ id: 'field', value: 'value' }] }));
+    const probeName = `${'v'.repeat(26)}/${'i'.repeat(26)}/field`;
+    await expect(onePasswordDriver.test(cfg, creds, { ...opts, probeName })).resolves.toContain('probe field readable');
+    egress.guardedFetch.mockResolvedValueOnce(new Response('rejected op-token', { status: 401 }));
+    const error = await onePasswordDriver.test(cfg, creds, opts).catch((e: Error) => e);
+    expect(String(error)).not.toContain('op-token');
+    expect(String(error)).toContain('401');
   });
 });
 
