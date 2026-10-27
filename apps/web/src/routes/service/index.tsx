@@ -16,6 +16,7 @@ import { ArchitectureTab } from './ArchitectureTab.js';
 import { ManifestTab } from './ManifestTab.js';
 import { ComposeTab } from './ComposeTab.js';
 import { RuntimeLogsCard } from './RuntimeLogsCard.js';
+import { ShippedLogSearchCard } from './ShippedLogSearchCard.js';
 import { DeploysTab, IN_FLIGHT, WAITING } from './DeploysTab.js';
 import { UploadSourceCard } from '../../components/UploadSource.js';
 import { EnvironmentTab } from './EnvironmentTab.js';
@@ -480,7 +481,12 @@ export function ServiceDetail() {
               and Save wrote them onto B. */}
           {tab === 'settings' && <SettingsTab key={id} serviceId={id} svc={svc} />}
           {tab === 'framework' && <FrameworkTab serviceId={id} svc={svc} />}
-          {tab === 'activity' && <ActivityTab serviceId={id} name={svc.name} />}
+          {tab === 'activity' && (
+            <>
+              <ActivityTab serviceId={id} name={svc.name} />
+              <ShippedLogSearchCard serviceId={id} />
+            </>
+          )}
           {tab === 'danger' && (
             <DangerZone
               slug={svc.slug}

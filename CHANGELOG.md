@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Shipped-log search in the web UI (G1.5): a service's Activity Logs tab can search the lines its Loki log drain received, over a window from 15 minutes to 7 days, including lines of containers that no longer exist. Until now only `ninedeploy logs search` and the API could do this.
+
 - Backup checks in the web UI (G1.5): each backup in a database's Backups tab has a **Check** button that runs the existing integrity drill, and a *Last check* column with the newest verdict (`passed`, `failed` or `unverifiable`). Until now drills ran only from the CLI and API.
 
 - PgBouncer in the web UI (G1.5): a PostgreSQL database on the panel host gets a *PgBouncer connection pooling* card showing the sidecar's state, port, pool mode and the pooled connection URL to copy. Instance operators can enable it (with an optional port) or disable it there; until now this was only possible through the CLI, SDK and API.

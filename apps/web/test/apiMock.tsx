@@ -354,6 +354,8 @@ export function createFakeApiModule() {
     plugins: { list: vi.fn(), marketplace: vi.fn(), install: vi.fn(), enable: vi.fn(), disable: vi.fn(), reload: vi.fn(), inspect: vi.fn(), uninstall: vi.fn() },
     menus: { list: vi.fn() },
     logDrains: {
+      // G1.5: shipped-log search on the service Activity tab.
+      search: vi.fn(),
       queue: vi.fn().mockResolvedValue({ pendingBatches: 0, pendingEntries: 0, payloadBytes: 0, blockedBatches: 0, pausedSources: 0, oldestAt: null }),
       retryQueue: vi.fn(), discardQueue: vi.fn(),
       list: vi.fn(),

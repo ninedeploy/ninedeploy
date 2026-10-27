@@ -143,6 +143,20 @@ Retry schedules delivery for the next cycle; it does not certify delivery.
 Discard permanently removes pending batches without rewinding the source cursor.
 The panel requires an explicit confirmation for the same operation.
 
+## Search shipped logs
+
+When a Loki drain is enabled, the lines it received can be searched, including
+those of containers that no longer exist. On a service, open **Activity Logs →
+Search shipped logs** (web UI since G1.5), type the text to find and pick a
+window from 15 minutes to 7 days; up to 500 matching lines are shown. The CLI
+(`ninedeploy logs search`) and `POST /v1/log-drains/search` do the same, and an
+operator can also search across all services there. Searching one service needs
+`member` on it, and on a protected lane the lane's admin rights. A member's
+window never starts before the service was created, because a reused service
+name could otherwise show a deleted service's lines. Without an enabled Loki
+drain the search answers that no drain exists; drains of other types cannot be
+searched.
+
 ## API and SDK
 
 All monitoring settings/export and log-queue management routes require an
