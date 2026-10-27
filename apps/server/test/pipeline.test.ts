@@ -52,6 +52,17 @@ const h = vi.hoisted(() => {
   return { builder, checkoutCommit, decrypt, connectionString, ENGINES, writeDynamicConfig, getAcmeEmail, config, agentOp, reconcileTemplateDependencies, railpackUnavailableReason, installationToken, agentTransportSealed, revokeInstallationToken, buildSourceImage, shipImageByStream, panelImageInfo };
 });
 
+// These node-built artifact fixtures use a public GitHub URL while the node and
+// Git operations are mocked. Keep their DNS boundary deterministic; the real
+// egress policy still checks the returned address.
+const dnsFixture = vi.hoisted(() => ({ publicGithub: false }));
+vi.mock('node:dns/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:dns/promises')>();
+  return { ...actual, lookup: async (host: string, options: { all: true }) => {
+    if (dnsFixture.publicGithub && host === 'github.com') return [{ address: '140.82.112.3', family: 4 }];
+    return actual.lookup(host, options);
+  } };
+});
 vi.mock('../src/config.js', () => ({ config: h.config }));
 // The finalize grace period sleeps 2s in real life — stub it for tests.
 const execMock = vi.hoisted(() => ({
@@ -661,11 +672,13 @@ describe('node-built artifact pipeline', () => {
   const originalShip = h.shipImageByStream.getMockImplementation()!;
   beforeEach(() => { vi.clearAllMocks(); });
   afterEach(() => {
+    dnsFixture.publicGithub = false;
     h.agentOp.mockReset().mockImplementation(originalAgent);
     execMock.capture.mockReset().mockImplementation(originalCapture);
     h.shipImageByStream.mockReset().mockImplementation(originalShip);
   });
   function sourceNode(caps = ['stream', 'image.manage', 'build-path-guard']) {
+    dnsFixture.publicGithub = true;
     const state = makeDb(); baseSetup(state.db, { serverId: 4 });
     h.checkoutCommit.mockResolvedValueOnce(sha);
     state.db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'dockerfile' });
