@@ -199,3 +199,12 @@ seat role. Tell guests before you roll back. See [ROLLBACK.md](./ROLLBACK.md).
 1. **Invite Links**: Admins generate time-limited invitation tokens or send direct email invites.
 2. **Role Assignment**: Assign appropriate roles upon invitation or update existing member privileges.
 3. **Revocation**: Removing a member immediately revokes their workspace tokens and active sessions.
+
+### 3.1 Email templates
+
+A workspace admin can replace the subject and text of the emails the workspace sends, under **Workspaces → Email templates** (web UI since G1.5), with `ninedeploy email-templates`, or with `GET`/`PUT`/`DELETE /v1/workspaces/:wid/email-templates`. **Preview** renders what would be sent; **Reset to built-in** deletes the override.
+
+- Variables such as `{{workspaceName}}` are filled in when the email is sent. A template whose email carries a link must keep it: an invitation override without `{{acceptUrl}}` is refused.
+- The password reset is about the user's account, not one workspace, so it is always sent with the built-in text and cannot be overridden.
+- Custom emails are sent from the instance's own mail server, so overrides can only be saved for workspaces an instance operator owns; elsewhere saving is refused and the built-in text is used.
+- A template marked *not sent yet* is stored, but nothing sends that email yet.

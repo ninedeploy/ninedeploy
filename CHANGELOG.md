@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Email templates in the web UI (G1.5): workspace admins can edit, preview and reset the workspace's email templates on the Workspaces page. Account emails such as the password reset are shown as fixed. Until now this needed `ninedeploy email-templates` or the API.
+
 - Outgoing IP per project in the web UI (G1.5): Settings → Security has an operator-only *Outgoing IP per project* card that lists the egress rules and sets or removes one, picking the project and one of the panel host's IPv4 addresses. Traffic from that project's containers then leaves through that address (iptables SNAT). Until now this needed `ninedeploy egress` or the API.
 
 - Firebase push (FCM) channels in the web UI (G1.5): the notification wizard creates an FCM channel from a device registration token and a Firebase service account JSON, checking that the JSON has the fields the server needs before continuing. Until now only `ninedeploy notifications create-fcm` could create one.

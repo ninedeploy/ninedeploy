@@ -416,6 +416,11 @@ export function createFakeApiModule() {
       summary: vi.fn(),
       service: vi.fn().mockResolvedValue({ enabled: false, range: '24h', granularity: 60, totals: { requests: 0, status1xx: 0, status2xx: 0, status3xx: 0, status4xx: 0, status5xx: 0, statusOther: 0, bytesOut: 0, durationSumMs: 0, durationMaxMs: 0, p50Ms: null, p95Ms: null, p99Ms: null }, series: [], domains: [] }),
     },
+    // G1.5: the Workspaces email templates card; built-in text for every template by default.
+    emailTemplates: {
+      list: vi.fn().mockResolvedValue({ workspaceId: 1, templates: [] }),
+      preview: vi.fn(), set: vi.fn(), reset: vi.fn(),
+    },
     accessGrants: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
     access: { me: vi.fn().mockResolvedValue({ grants: [], guestWorkspaces: [] }), project: vi.fn().mockResolvedValue([]) },
   };

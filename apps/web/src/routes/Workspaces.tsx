@@ -28,6 +28,7 @@ import {
 } from '../components/ui.js';
 import { useToast } from '../components/Toast.js';
 import { AccessGrantsCard } from '../components/access/AccessGrantsCard.js';
+import { EmailTemplatesCard } from './workspaces/EmailTemplatesCard.js';
 import type {
   WorkspaceInvitationEntry,
   WorkspaceMemberAddInput,
@@ -537,6 +538,7 @@ export function Workspaces() {
 
       {/* 0.15: project and environment access grants (workspace admins). */}
       {isAdmin && workspaceId !== undefined && <AccessGrantsCard workspaceId={workspaceId} cap="admin" />}
+      {isAdmin && workspaceId !== undefined && <EmailTemplatesCard workspaceId={workspaceId} />}
 
       {/* Danger Zone (Workspace Deletion) */}
       {isOwner && (
