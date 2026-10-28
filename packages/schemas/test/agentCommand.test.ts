@@ -23,6 +23,12 @@ describe('r175: agentDockerRunCommand', () => {
     expect(auto).not.toContain('NINEDEPLOY_AGENT_TOKEN');
   });
 
+  it('requires a bootstrap rekey only when explicitly requested', () => {
+    const options = { hostPort: 4600, imageTag: 'latest' };
+    expect(agentDockerRunCommand({ ...options, requireRekey: true })).toContain('-e NINEDEPLOY_AGENT_REKEY_REQUIRED=1');
+    expect(agentDockerRunCommand({ ...options, requireRekey: false })).not.toContain('NINEDEPLOY_AGENT_REKEY_REQUIRED');
+  });
+
   it('r473: shell-metacharacter values get quoted, plain ones stay bare', () => {
     // A panel URL may legitimately carry `&` — unquoted, it backgrounds the
     // pasted command and mangles the rest of the line.
