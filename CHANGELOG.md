@@ -18,10 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - a personal App needs `administration: write`.
   - **Isolation:**
     - no Docker socket;
-    - its own network;
-    - CPU, memory and pid limits;
-    - public repositories refused unless allowed;
-    - an optional repository list.
+    - its own network, firewalled off from the host itself and from private, cloud-metadata and CGNAT ranges, with internet access open. Without these rules no runner starts, unless `NINEDEPLOY_GHA_RUNNERS_UNISOLATED=1` is set;
+    - CPU, memory and pid limits.
+  - **Which repositories:** public repositories are refused unless allowed, and an optional repository list narrows it further.
+    - GitHub enforces this as well: an organization runner is registered in an App-owned runner group, open only to the allowed repositories. Without that group, a job from another repository could take the runner.
+    - Custom runner groups need GitHub Team or Enterprise; on another plan, organization runners do not start.
+    - A personal installation registers repository runners, which serve only their own repository.
   - **Limits and queue:** jobs above the per-App limit wait and start as slots free up. Runners that never pick up a job are removed after 10 minutes.
   - **Image:** pinned by digest (`actions-runner` 2.338.2).
 

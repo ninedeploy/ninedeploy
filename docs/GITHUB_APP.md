@@ -241,15 +241,26 @@ A queued job is taken only when all of these hold:
 - its repository is private, unless **Allow public repositories** is on;
 - its repository is on the repository list, if a list is set.
 
-Other jobs are left for other runners. Organization runners go into the default runner group, which GitHub does not open to public repositories by default.
+Other jobs are left for other runners.
+
+GitHub, not only the panel, enforces the repository rules:
+
+- **Repository runners** (a personal installation) serve only the repository they were registered for.
+- **Organization runners** are registered in a runner group the App owns, named `NineDeploy runners (App <id>)`. The panel creates the group and keeps it open only to the allowed repositories: the repository list, or every repository the installation sees, without public ones unless allowed. GitHub hands an organization runner any queued job its group may serve, so without its own group a job from another repository could take the runner.
+- Custom runner groups need GitHub Team or Enterprise. On another plan, no organization runner starts, and the section shows the error.
 
 **Isolation and limits**
 
-- The runner container never gets the Docker socket.
-- It runs on its own bridge network, `nd-gha-runners`, not on any service network.
-- It has a pid limit, plus the CPU and memory limits you set.
-- Because it has no Docker, workflows that use `container:`, `services:` or `docker build` do not run on it. Use GitHub-hosted runners for those.
-- The runner process itself is not further sandboxed: a job can use the host's network like any container. Only allow repositories whose workflows you trust.
+- **No Docker access:** the runner container never gets the Docker socket. Workflows that use `container:`, `services:` or `docker build` therefore do not run on it; use GitHub-hosted runners for those.
+- **Its own network:** the container runs on its own bridge network, `nd-gha-runners` (interface `nd-gha0`), not on any service network. Runners cannot reach each other.
+- **Firewall rules:** before every start, the panel makes sure these rules are in place:
+  - `INPUT -i nd-gha0 -j DROP`: nothing reaches the host itself, such as the panel, databases or a Docker API.
+  - `DOCKER-USER -i nd-gha0 -d <range> -j DROP` for 10/8, 172.16/12, 192.168/16, 169.254/16 (cloud metadata), 100.64/10, 127/8 and 224/4: nothing reaches private networks or other containers.
+
+  Internet access stays open, which GitHub and package registries need. The rules are checked again on every start, so a firewall reload or a reboot does not leave runners unguarded.
+- **No rules, no runner:** if the panel cannot apply the rules, the runner does not start. That happens when iptables is missing, or when the panel runs in its own network namespace and cannot see `nd-gha0`. `NINEDEPLOY_GHA_RUNNERS_UNISOLATED=1` lets runners start without the rules. Set it only if you accept runners that can reach the host and the LAN.
+- **Resource limits:** a pid limit, plus the CPU and memory limits you set.
+- **IPv6:** the runner network has none.
 
 **Queue and upkeep**
 

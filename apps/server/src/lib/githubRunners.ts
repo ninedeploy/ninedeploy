@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { githubAppInstallations, type DB, type GithubApp, type GithubAppInstallation } from '@ninedeploy/db';
@@ -12,7 +13,7 @@ import {
 } from '@ninedeploy/schemas';
 import { audit } from './audit.js';
 import { capture } from './exec.js';
-import { GithubAppError, githubApi, installationToken } from './githubApp.js';
+import { GithubAppError, githubApi, installationToken, listInstallationRepositories } from './githubApp.js';
 import { writeSecretFile } from './secretFile.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 
@@ -27,7 +28,13 @@ import { getSettingJson, setSettingJson } from './settings.js';
  *
  * Isolation: the container never gets the Docker socket, runs on its own
  * bridge network (not on any service network), with CPU, memory and pid
- * limits. Workflows that need Docker themselves (`container:`, `services:`,
+ * limits. Firewall rules on that bridge drop traffic to the host itself and
+ * to private, link-local (cloud metadata) and CGNAT ranges, so a job reaches
+ * the internet but not the panel, its services or the LAN; a runner never
+ * starts without them unless `NINEDEPLOY_GHA_RUNNERS_UNISOLATED=1`. An
+ * organization runner registers in an App-owned runner group that GitHub
+ * opens only to the allowed repositories, so the allow-list holds for which
+ * job a runner takes, not only for when one is started. Workflows that need Docker themselves (`container:`, `services:`,
  * `docker build`) therefore do not run here. Public repositories are refused
  * unless the operator allows them: anyone can open a pull request there.
  *
@@ -38,6 +45,10 @@ import { getSettingJson, setSettingJson } from './settings.js';
  */
 
 export const RUNNER_NETWORK = 'nd-gha-runners';
+/** The bridge interface of {@link RUNNER_NETWORK}, named so firewall rules can match it. */
+export const RUNNER_BRIDGE = 'nd-gha0';
+/** Destinations a runner may not reach: private, loopback, link-local (cloud metadata), CGNAT, multicast. */
+export const BLOCKED_RANGES = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', '100.64.0.0/10', '127.0.0.0/8', '224.0.0.0/4'];
 const LABEL = 'ninedeploy.gha-runner';
 const settingKey = (githubAppId: number) => `github_runners:${githubAppId}`;
 
@@ -115,11 +126,15 @@ interface PendingJob {
 }
 
 const pending = new Map<string, PendingJob>();
+/** The last runner start that failed, per App, until one succeeds (shown in the status). */
+const lastFailure = new Map<number, string>();
 const pendingKey = (githubAppId: number, jobId: number) => `${githubAppId}:${jobId}`;
 
 /** Test seam. */
 export function resetGithubRunnersForTests(): void {
   pending.clear();
+  groupCache.clear();
+  lastFailure.clear();
   drainChain = Promise.resolve();
 }
 
@@ -173,14 +188,64 @@ export async function listRunnerContainers(): Promise<RunnerContainer[]> {
     });
 }
 
+const NETWORK_CREATE_ARGS = [
+  'network',
+  'create',
+  '--label',
+  `${LABEL}=1`,
+  '-o',
+  `com.docker.network.bridge.name=${RUNNER_BRIDGE}`,
+  // Runners cannot reach each other either.
+  '-o',
+  'com.docker.network.bridge.enable_icc=false',
+  RUNNER_NETWORK,
+];
+
 async function ensureRunnerNetwork(): Promise<void> {
-  const existing = (await capture('docker', ['network', 'ls', '-q', '--filter', `name=^${RUNNER_NETWORK}$`], { timeoutMs: 30_000 })).trim();
-  if (!existing) {
-    await capture('docker', ['network', 'create', '--label', `${LABEL}=1`, RUNNER_NETWORK], { timeoutMs: 30_000 }).catch(async (err) => {
+  const ls = async () => (await capture('docker', ['network', 'ls', '-q', '--filter', `name=^${RUNNER_NETWORK}$`], { timeoutMs: 30_000 })).trim();
+  if (!(await ls())) {
+    await capture('docker', NETWORK_CREATE_ARGS, { timeoutMs: 30_000 }).catch(async (err) => {
       // Two starts racing: the other one created it.
-      const again = (await capture('docker', ['network', 'ls', '-q', '--filter', `name=^${RUNNER_NETWORK}$`], { timeoutMs: 30_000 })).trim();
-      if (!again) throw err;
+      if (!(await ls())) throw err;
     });
+  }
+}
+
+/** The iptables rules that keep runners off the host and private networks. */
+export function isolationRules(): Array<{ chain: string; rule: string[] }> {
+  return [
+    // Anything a runner sends to the host itself (panel API, databases, a Docker API on TCP).
+    { chain: 'INPUT', rule: ['-i', RUNNER_BRIDGE, '-j', 'DROP'] },
+    // Anything it would forward to a private or metadata address.
+    ...BLOCKED_RANGES.map((cidr) => ({ chain: 'DOCKER-USER', rule: ['-i', RUNNER_BRIDGE, '-d', cidr, '-j', 'DROP'] })),
+  ];
+}
+
+const isolationSkipped = () => process.env['NINEDEPLOY_GHA_RUNNERS_UNISOLATED'] === '1';
+
+/**
+ * Put the isolation rules in place (idempotent: `-C` first). Called before
+ * every start, since a host firewall reload or a reboot drops them. Refuses
+ * when the panel cannot see the runner bridge: it then runs in another
+ * network namespace (a container), where its iptables would not guard the host.
+ */
+export async function ensureRunnerIsolation(bridgeVisible: (iface: string) => boolean = (iface) => existsSync(`/sys/class/net/${iface}`)): Promise<void> {
+  if (isolationSkipped()) return;
+  if (!bridgeVisible(RUNNER_BRIDGE)) {
+    throw new Error(
+      `The panel cannot see the runner network's bridge (${RUNNER_BRIDGE}), so it cannot firewall it. Run the panel on the host, or set NINEDEPLOY_GHA_RUNNERS_UNISOLATED=1 to run runners without isolation.`,
+    );
+  }
+  for (const { chain, rule } of isolationRules()) {
+    try {
+      await capture('iptables', ['-C', chain, ...rule], { timeoutMs: 15_000 });
+    } catch {
+      try {
+        await capture('iptables', ['-I', chain, '1', ...rule], { timeoutMs: 15_000 });
+      } catch (err) {
+        throw new Error(`Could not add the runner firewall rule (iptables ${chain} ${rule.join(' ')}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 }
 
@@ -252,6 +317,81 @@ function parseScopeLabel(label: string | null): { kind: 'org'; org: string } | {
   return null;
 }
 
+// ── organization runner group ──────────────────────────────────────────────
+
+interface RunnerGroup {
+  id: number;
+  name: string;
+}
+
+/** Group id per (App, installation), refreshed when the allowed repositories change or after 10 minutes. */
+const groupCache = new Map<string, { fingerprint: string; groupId: number; at: number }>();
+const GROUP_REFRESH_MS = 10 * 60 * 1000;
+
+export const runnerGroupName = (ghApp: Pick<GithubApp, 'id'>) => `NineDeploy runners (App ${ghApp.id})`;
+
+/**
+ * The repositories an organization runner may serve: the configured list (or
+ * every repository the installation sees), minus public ones unless allowed.
+ */
+async function allowedRepositoryIds(db: DB, ghApp: GithubApp, inst: GithubAppInstallation, config: GithubRunnerConfig): Promise<number[]> {
+  const token = await installationToken(db, ghApp, inst, { permissions: { metadata: 'read' } });
+  const { repositories } = await listInstallationRepositories(ghApp, token);
+  const wanted = new Set(config.repositories.map((r) => r.toLowerCase()));
+  return repositories
+    .filter((r) => (wanted.size === 0 || wanted.has(r.full_name.toLowerCase())) && (r.private || config.allowPublicRepos))
+    .map((r) => r.id)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * The App's own runner group in the organization, open only to the allowed
+ * repositories. GitHub hands an organization runner any queued job its group
+ * may serve, so this is what makes the repository list and the public-repo
+ * refusal binding. Runner groups beyond the default need GitHub Team or
+ * Enterprise; without one, no runner is started.
+ */
+export async function ensureRunnerGroup(
+  db: DB,
+  ghApp: GithubApp,
+  inst: GithubAppInstallation,
+  org: string,
+  token: string,
+  config: GithubRunnerConfig,
+  now: number = Date.now(),
+): Promise<number> {
+  const repoIds = await allowedRepositoryIds(db, ghApp, inst, config);
+  if (repoIds.length === 0) throw new Error('No allowed repository: the runner group would serve none.');
+  const fingerprint = `${config.allowPublicRepos}:${repoIds.join(',')}`;
+  const key = `${ghApp.id}:${inst.id}`;
+  const cached = groupCache.get(key);
+  if (cached && cached.fingerprint === fingerprint && now - cached.at < GROUP_REFRESH_MS) return cached.groupId;
+
+  const base = `/orgs/${encodeURIComponent(org)}/actions/runner-groups`;
+  const name = runnerGroupName(ghApp);
+  const settings = { visibility: 'selected', allows_public_repositories: config.allowPublicRepos };
+  let group: RunnerGroup | undefined;
+  try {
+    const listed = await githubApi<{ runner_groups?: RunnerGroup[] }>(ghApp, token, 'GET', `${base}?per_page=100`);
+    group = (listed.data?.runner_groups ?? []).find((g) => g.name === name);
+    if (!group) {
+      const created = await githubApi<RunnerGroup>(ghApp, token, 'POST', base, { name, ...settings, selected_repository_ids: repoIds });
+      group = created.data;
+    } else {
+      await githubApi(ghApp, token, 'PATCH', `${base}/${group.id}`, settings);
+      await githubApi(ghApp, token, 'PUT', `${base}/${group.id}/repositories`, { selected_repository_ids: repoIds });
+    }
+  } catch (err) {
+    groupCache.delete(key);
+    throw new Error(
+      `Could not set up the runner group "${name}" in ${org} (runner groups need GitHub Team or Enterprise): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!group || !Number.isSafeInteger(group.id)) throw new Error('GitHub answered without a runner group');
+  groupCache.set(key, { fingerprint, groupId: group.id, at: now });
+  return group.id;
+}
+
 // ── start ──────────────────────────────────────────────────────────────────
 
 async function loadInstallation(db: DB, id: number): Promise<GithubAppInstallation | undefined> {
@@ -265,19 +405,23 @@ async function startRunner(db: DB, log: FastifyBaseLogger, ghApp: GithubApp, job
   if (!inst) return;
   const scope = runnerScope(inst, job.repo, job.repoId);
   const token = await scopeToken(db, ghApp, inst, scope);
+  // Isolation first: nothing is registered on GitHub for a runner that cannot start safely.
+  await ensureRunnerNetwork();
+  await ensureRunnerIsolation();
+  // A repository runner serves only its repository; an organization runner, only its group's.
+  const runnerGroupId = scope.kind === 'org' ? await ensureRunnerGroup(db, ghApp, inst, scope.org, token, config) : 1;
   const runnerName = `nd-${ghApp.id}-${job.jobId}-${randomBytes(3).toString('hex')}`;
   const res = await githubApi<{ runner?: { id?: number }; encoded_jit_config?: string }>(
     ghApp,
     token,
     'POST',
     `${runnersPath(scope)}/generate-jitconfig`,
-    { name: runnerName, runner_group_id: 1, labels: config.labels, work_folder: '_work' },
+    { name: runnerName, runner_group_id: runnerGroupId, labels: config.labels, work_folder: '_work' },
   );
   const jit = res.data?.encoded_jit_config;
   const runnerId = res.data?.runner?.id;
   if (typeof jit !== 'string' || !jit || !Number.isSafeInteger(runnerId)) throw new Error('GitHub answered without a runner configuration');
 
-  await ensureRunnerNetwork();
   const envFile = writeSecretFile('nd-gha', 'runner.env', `ND_JITCONFIG=${jit}\n`);
   try {
     await capture(
@@ -344,7 +488,9 @@ async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boole
       running += 1;
       try {
         await startRunner(db, log, ghApp, job, config);
+        lastFailure.delete(githubAppId);
       } catch (err) {
+        lastFailure.set(githubAppId, err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500));
         log.warn({ err, component: 'github-runners', githubAppId, jobId: job.jobId }, 'could not start a runner');
         await audit(db, null, 'github_runner.failed', job.repo, {
           githubAppId,
@@ -537,6 +683,8 @@ export async function runnerStatus(db: DB, ghApp: GithubApp): Promise<GithubRunn
   const config = await getRunnerConfig(db, ghApp.id);
   let containers: RunnerContainer[] = [];
   const problems = await runnerProblems(db, ghApp, config);
+  const failure = lastFailure.get(ghApp.id);
+  if (failure) problems.push(`The last runner could not start: ${failure}`);
   try {
     containers = await listRunnerContainers();
   } catch {

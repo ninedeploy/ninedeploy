@@ -17,7 +17,15 @@ const h = vi.hoisted(() => {
     capture: vi.fn<(cmd: string, args: string[], opts?: unknown) => Promise<string>>(),
     githubApi: vi.fn(),
     installationToken: vi.fn(async () => 'ghs_token'),
+    listInstallationRepositories: vi.fn(),
+    bridge: true,
   };
+});
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const existsSync = (p: Parameters<typeof actual.existsSync>[0]) => (String(p) === '/sys/class/net/nd-gha0' ? h.bridge : actual.existsSync(p));
+  return { ...actual, existsSync, default: { ...actual, existsSync } };
 });
 
 vi.mock('../../src/lib/exec.js', async (importOriginal) => {
@@ -26,7 +34,7 @@ vi.mock('../../src/lib/exec.js', async (importOriginal) => {
 });
 vi.mock('../../src/lib/githubApp.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/githubApp.js')>();
-  return { ...actual, githubApi: h.githubApi, installationToken: h.installationToken };
+  return { ...actual, githubApi: h.githubApi, installationToken: h.installationToken, listInstallationRepositories: h.listInstallationRepositories };
 });
 
 const {
@@ -37,6 +45,7 @@ const {
   runnerProblems,
   runnerRunArgs,
   runnerStatus,
+  isolationRules,
   setRunnerConfig,
   sweepGithubRunners,
 } = await import('../../src/lib/githubRunners.js');
@@ -54,6 +63,9 @@ let key: string;
 let psRows: string[];
 /** Env-file contents seen by `docker run`. */
 let envFiles: string[];
+/** iptables invocations. */
+let iptables: string[];
+let networkExists: boolean;
 
 function queued(over: { id?: number; labels?: string[]; private?: boolean; repo?: string } = {}) {
   return {
@@ -75,10 +87,28 @@ beforeEach(async () => {
   ({ inst } = await seedInstallation(db, ghApp, { accountType: 'Organization', permissions: { organization_self_hosted_runners: 'write' } }));
   psRows = [];
   envFiles = [];
+  iptables = [];
+  networkExists = true;
+  h.bridge = true;
+  delete process.env['NINEDEPLOY_GHA_RUNNERS_UNISOLATED'];
+  h.listInstallationRepositories.mockReset();
+  h.listInstallationRepositories.mockResolvedValue({
+    repositories: [
+      { id: 5, full_name: 'acme/api', private: true },
+      { id: 6, full_name: 'acme/site', private: false },
+      { id: 8, full_name: 'acme/web', private: true },
+    ],
+    truncated: false,
+  });
   h.capture.mockReset();
   h.capture.mockImplementation(async (_cmd, args) => {
     if (args[0] === 'ps') return psRows.join('\n');
-    if (args[0] === 'network' && args[1] === 'ls') return 'net1\n';
+    if (_cmd === 'iptables') {
+      iptables.push(args.join(' '));
+      if (args[0] === '-C') throw new Error('rule missing');
+      return '';
+    }
+    if (args[0] === 'network' && args[1] === 'ls') return networkExists ? 'net1\n' : '';
     if (args[0] === 'run') {
       const file = args[args.indexOf('--env-file') + 1]!;
       envFiles.push(readFileSync(file, 'utf8'));
@@ -90,6 +120,10 @@ beforeEach(async () => {
   h.githubApi.mockImplementation(async (_app: unknown, _token: string, method: string, path: string) => {
     if (method === 'POST' && path.endsWith('/generate-jitconfig')) {
       return { status: 201, data: { runner: { id: 31 }, encoded_jit_config: 'JITSECRET' }, headers: new Headers() };
+    }
+    if (method === 'GET' && path.includes('/actions/runner-groups')) return { status: 200, data: { runner_groups: [] }, headers: new Headers() };
+    if (method === 'POST' && path.endsWith('/actions/runner-groups')) {
+      return { status: 201, data: { id: 7, name: 'NineDeploy runners' }, headers: new Headers() };
     }
     return { status: 200, data: {}, headers: new Headers() };
   });
@@ -158,7 +192,10 @@ describe('handleWorkflowJob', () => {
 
     const jit = h.githubApi.mock.calls.find(([, , m, p]) => m === 'POST' && String(p).endsWith('generate-jitconfig'))!;
     expect(jit[3]).toBe('/orgs/acme/actions/runners/generate-jitconfig');
-    expect(jit[4]).toMatchObject({ runner_group_id: 1, labels: ['ninedeploy'] });
+    // The App's own group, open only to the private repositories of the installation.
+    expect(jit[4]).toMatchObject({ runner_group_id: 7, labels: ['ninedeploy'] });
+    const group = h.githubApi.mock.calls.find(([, , m, p]) => m === 'POST' && p === '/orgs/acme/actions/runner-groups')!;
+    expect(group[4]).toMatchObject({ visibility: 'selected', allows_public_repositories: false, selected_repository_ids: [5, 8] });
     expect(h.installationToken).toHaveBeenCalledWith(db, ghApp, expect.anything(), { permissions: { organization_self_hosted_runners: 'write' } });
 
     expect(runCalls()).toHaveLength(1);
@@ -176,6 +213,8 @@ describe('handleWorkflowJob', () => {
     await drainPending(db, log);
     const jit = h.githubApi.mock.calls.find(([, , m]) => m === 'POST')!;
     expect(jit[3]).toBe('/repos/jane/site/actions/runners/generate-jitconfig');
+    // A repository runner serves only its repository: no group is needed.
+    expect(h.githubApi.mock.calls.some(([, , , p]) => String(p).includes('runner-groups'))).toBe(false);
     expect(h.installationToken).toHaveBeenCalledWith(db, ghApp, expect.anything(), { permissions: { administration: 'write' }, repositoryIds: [5] });
   });
 
@@ -221,6 +260,90 @@ describe('handleWorkflowJob', () => {
     expect(h.githubApi.mock.calls.some(([, , m, p]) => m === 'DELETE' && p === '/orgs/acme/actions/runners/31')).toBe(true);
     const rows = await db.select().from(auditLog);
     expect(rows.map((r) => r.action)).toContain('github_runner.failed');
+  });
+});
+
+describe('runner isolation and groups (security review)', () => {
+  it('firewalls the runner bridge before anything is registered on GitHub', async () => {
+    networkExists = false;
+    await setRunnerConfig(db, ghApp.id, enabled());
+    await handleWorkflowJob(db, log, ghApp, inst, queued());
+    await drainPending(db, log);
+    const inserted = iptables.filter((c) => c.startsWith('-I'));
+    expect(inserted).toEqual(isolationRules().map(({ chain, rule }) => ['-I', chain, '1', ...rule].join(' ')));
+    expect(inserted).toContain('-I INPUT 1 -i nd-gha0 -j DROP');
+    expect(inserted).toContain('-I DOCKER-USER 1 -i nd-gha0 -d 169.254.0.0/16 -j DROP');
+    const network = h.capture.mock.calls.find(([, a]) => a[0] === 'network' && a[1] === 'create');
+    expect(network?.[1]).toEqual(expect.arrayContaining(['com.docker.network.bridge.name=nd-gha0', 'com.docker.network.bridge.enable_icc=false']));
+  });
+
+  it('starts nothing when the panel cannot see the bridge, and says why', async () => {
+    h.bridge = false;
+    await setRunnerConfig(db, ghApp.id, enabled());
+    await handleWorkflowJob(db, log, ghApp, inst, queued());
+    await drainPending(db, log);
+    expect(h.githubApi.mock.calls.some(([, , m, p]) => m === 'POST' && String(p).endsWith('generate-jitconfig'))).toBe(false);
+    expect(runCalls()).toHaveLength(0);
+    expect((await runnerStatus(db, ghApp)).problems.join('\n')).toContain('cannot see the runner network');
+  });
+
+  it('runs without the firewall only when explicitly told to', async () => {
+    h.bridge = false;
+    process.env['NINEDEPLOY_GHA_RUNNERS_UNISOLATED'] = '1';
+    await setRunnerConfig(db, ghApp.id, enabled());
+    await handleWorkflowJob(db, log, ghApp, inst, queued());
+    await drainPending(db, log);
+    expect(iptables).toEqual([]);
+    expect(runCalls()).toHaveLength(1);
+  });
+
+  it('starts no organization runner when the runner group cannot be set up', async () => {
+    await setRunnerConfig(db, ghApp.id, enabled());
+    h.githubApi.mockImplementation(async (_a: unknown, _t: string, method: string, path: string) => {
+      if (path.includes('runner-groups')) {
+        if (method === 'GET') return { status: 200, data: { runner_groups: [] }, headers: new Headers() };
+        throw new GithubAppError('GitHub API POST failed (HTTP 403): upgrade your plan', 'forbidden', 403);
+      }
+      return { status: 201, data: { runner: { id: 31 }, encoded_jit_config: 'JITSECRET' }, headers: new Headers() };
+    });
+    await handleWorkflowJob(db, log, ghApp, inst, queued());
+    await drainPending(db, log);
+    expect(h.githubApi.mock.calls.some(([, , , p]) => String(p).endsWith('generate-jitconfig'))).toBe(false);
+    expect((await runnerStatus(db, ghApp)).problems.join('\n')).toContain('GitHub Team or Enterprise');
+  });
+
+  it('keeps the group to the repository list and lets public repositories in only when allowed', async () => {
+    await setRunnerConfig(db, ghApp.id, enabled({ repositories: ['acme/web'] }));
+    await handleWorkflowJob(db, log, ghApp, inst, queued({ repo: 'acme/web' }));
+    await drainPending(db, log);
+    const first = h.githubApi.mock.calls.find(([, , m, p]) => m === 'POST' && p === '/orgs/acme/actions/runner-groups')!;
+    expect(first[4]).toMatchObject({ selected_repository_ids: [8] });
+
+    resetGithubRunnersForTests();
+    h.githubApi.mockClear();
+    await setRunnerConfig(db, ghApp.id, enabled({ allowPublicRepos: true }));
+    await handleWorkflowJob(db, log, ghApp, inst, queued({ id: 90 }));
+    await drainPending(db, log);
+    const second = h.githubApi.mock.calls.find(([, , m, p]) => m === 'POST' && p === '/orgs/acme/actions/runner-groups')!;
+    expect(second[4]).toMatchObject({ allows_public_repositories: true, selected_repository_ids: [5, 6, 8] });
+  });
+
+  it('updates an existing group instead of making another', async () => {
+    await setRunnerConfig(db, ghApp.id, enabled());
+    h.githubApi.mockImplementation(async (_a: unknown, _t: string, method: string, path: string) => {
+      if (method === 'GET' && path.includes('runner-groups')) {
+        return { status: 200, data: { runner_groups: [{ id: 12, name: `NineDeploy runners (App ${ghApp.id})` }] }, headers: new Headers() };
+      }
+      if (path.endsWith('generate-jitconfig')) return { status: 201, data: { runner: { id: 31 }, encoded_jit_config: 'J' }, headers: new Headers() };
+      return { status: 204, data: null, headers: new Headers() };
+    });
+    await handleWorkflowJob(db, log, ghApp, inst, queued());
+    await drainPending(db, log);
+    const calls = h.githubApi.mock.calls.map(([, , m, p]) => `${m} ${p}`);
+    expect(calls).toContain('PATCH /orgs/acme/actions/runner-groups/12');
+    expect(calls).toContain('PUT /orgs/acme/actions/runner-groups/12/repositories');
+    expect(calls).not.toContain('POST /orgs/acme/actions/runner-groups');
+    expect(h.githubApi.mock.calls.find(([, , , p]) => String(p).endsWith('generate-jitconfig'))![4]).toMatchObject({ runner_group_id: 12 });
   });
 });
 
