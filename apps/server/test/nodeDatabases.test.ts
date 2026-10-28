@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -162,7 +162,7 @@ const { serverRoutes } = await import('../src/modules/servers.js');
 const { remoteDatabaseRefusal } = await import('../src/lib/remoteDeploy.js');
 const { attachedDatabasesHostMismatch } = await import('../src/lib/remoteDatabaseRefusal.js');
 const { databaseRuntime } = await import('../src/lib/databaseRuntime.js');
-const { connectServiceToNodeDatabases, nodeReachability, resetNodeReachability } = await import('../src/lib/nodeDatabase.js');
+const { connectServiceToNodeDatabases, nodeDatabaseRuntime, nodeReachability, resetNodeReachability } = await import('../src/lib/nodeDatabase.js');
 const { sweepNodeDatabases } = await import('../src/plugins/nodeDatabases.js');
 const { createBackupReadStream, stageForRestore } = await import('../src/engine/database.js');
 const { sniffFile } = await import('../src/lib/databaseImport.js');
@@ -431,6 +431,46 @@ describe('lifecycle routes on a node database: every action reaches the node, no
 });
 
 describe('backups, restores and imports over the stream channel', () => {
+  it('retains an existing backup and removes partial output when the node dump fails', async () => {
+    const d = await nodeRow();
+    const directory = mkdtempSync(path.join(tmp, 'failed-dump-'));
+    const file = path.join(directory, 'backup.dump');
+    writeFileSync(file, 'previous backup');
+    const abort = vi.fn();
+    const runtime = nodeDatabaseRuntime(db, d, { openStream: async () => ({
+      kind: 'db.dump', direction: 'agent-to-panel', readable: new PassThrough(),
+      done: Promise.reject(new Error('node dump interrupted')), abort,
+    }) as never });
+
+    await expect(runtime.backup(file, () => undefined)).rejects.toThrow('node dump interrupted');
+    expect(readFileSync(file, 'utf8')).toBe('previous backup');
+    expect(readdirSync(directory)).toEqual(['backup.dump']);
+    expect(abort).toHaveBeenCalledOnce();
+  });
+
+  it('refuses an import after its safety backup fails and reports the failure', async () => {
+    const d = await nodeRow();
+    const directory = mkdtempSync(path.join(tmp, 'failed-safety-'));
+    const file = path.join(directory, 'import.sql');
+    const backup = path.join(directory, 'safety.dump');
+    writeFileSync(file, 'SELECT 1;');
+    const onFailed = vi.fn(async () => undefined);
+    const onDone = vi.fn(async () => undefined);
+    const openStream = vi.fn(async () => ({
+      kind: 'db.dump', direction: 'agent-to-panel', readable: new PassThrough(),
+      done: Promise.reject(new Error('node dump interrupted')), abort: vi.fn(),
+    }) as never);
+    const runtime = nodeDatabaseRuntime(db, d, { openStream });
+
+    await expect(runtime.import(file, { format: 'pg_plain', safetyBackup: { file: backup, onDone, onFailed } }, () => undefined))
+      .rejects.toThrow('node dump interrupted');
+    expect(onFailed).toHaveBeenCalledWith(expect.objectContaining({ message: 'node dump interrupted' }));
+    expect(onDone).not.toHaveBeenCalled();
+    expect(openStream).toHaveBeenCalledOnce();
+    expect(existsSync(backup)).toBe(false);
+    expect(readdirSync(directory)).toEqual(['import.sql']);
+  });
+
   it('a manual backup lands in the backups directory encrypted, the row records the node; it decrypts to the dump and restores back', async () => {
     const d = await nodeRow();
     const app = await appWith([databaseBackupRoutes, '/databases']);
