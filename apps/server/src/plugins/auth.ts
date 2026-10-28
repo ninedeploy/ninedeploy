@@ -3,7 +3,8 @@ import { apiTokens } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { narrowScopes, resolveUser } from '../lib/auth.js';
 import { sha256 } from '../lib/crypto.js';
-import { forbidden, unauthorized } from '../lib/errors.js';
+import { forbidden, HttpError, unauthorized } from '../lib/errors.js';
+import { isEnrolmentRoute } from '../lib/twoFactorPolicy.js';
 
 export interface AuthUser {
   id: number;
@@ -28,6 +29,13 @@ export interface AuthUser {
    * routes key off this instead (see `requireInteractive`).
    */
   viaApiToken?: boolean;
+  /**
+   * G1.4: a workspace this user belongs to requires 2FA and they have none
+   * yet. Only the enrolment routes answer (`lib/twoFactorPolicy.ts`).
+   */
+  twoFactorPending?: boolean;
+  /** G1.4: the session began with an SSO sign-in. */
+  ssoSession?: boolean;
 }
 
 /** Methods that cannot change server state. */
@@ -180,6 +188,9 @@ export default fp(
       const token = header.slice('Bearer '.length).trim();
       const user = await resolveUser(fastify.db, token);
       if (!user) throw unauthorized();
+      if (user.twoFactorPending && !isEnrolmentRoute(req.method, req.url)) {
+        throw new HttpError(403, 'two_factor_required', 'A workspace you belong to requires two-factor authentication. Set up an authenticator app or a passkey to continue.');
+      }
 
       // Apply API-token scopes. This is the single enforcement point: doing it
       // here (rather than annotating every route) means a new endpoint is
@@ -285,6 +296,7 @@ export default fp(
  * URL being opened (read semantics). Returns false when the token may not.
  */
 export function authorizeWebsocketUser(user: AuthUser, url: string): boolean {
+  if (user.twoFactorPending) return false;
   narrowScopes(user);
   const scopes = user.tokenScopes;
   if (!Array.isArray(scopes) || !scopes.some((s) => s.startsWith('nd://scope/'))) return true;

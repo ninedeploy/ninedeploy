@@ -16,6 +16,8 @@ export interface AppJwtPayload extends JWTPayload {
    * or stolen old refresh token cannot mint new pairs.
    */
   gen?: number;
+  /** G1.4: `sso` when the session began with an SSO sign-in (OIDC, SAML, GitHub). Carried across refreshes. */
+  amr?: 'sso';
 }
 
 function sign(
@@ -25,8 +27,10 @@ function sign(
   ver?: number,
   jti?: string,
   gen?: number,
+  amr?: 'sso',
 ): Promise<string> {
   const claims: Record<string, unknown> = { type };
+  if (amr !== undefined) claims['amr'] = amr;
   if (ver !== undefined) claims['ver'] = ver;
   if (jti !== undefined) claims['jti'] = jti;
   if (gen !== undefined) claims['gen'] = gen;
@@ -38,10 +42,10 @@ function sign(
     .sign(secret);
 }
 
-export const signAccessToken = (userId: number, ver?: number, jti?: string) =>
-  sign(userId, 'access', config.jwt.accessTtl, ver, jti);
-export const signRefreshToken = (userId: number, ver?: number, jti?: string, gen?: number) =>
-  sign(userId, 'refresh', config.jwt.refreshTtl, ver, jti, gen);
+export const signAccessToken = (userId: number, ver?: number, jti?: string, amr?: 'sso') =>
+  sign(userId, 'access', config.jwt.accessTtl, ver, jti, undefined, amr);
+export const signRefreshToken = (userId: number, ver?: number, jti?: string, gen?: number, amr?: 'sso') =>
+  sign(userId, 'refresh', config.jwt.refreshTtl, ver, jti, gen, amr);
 
 export async function verifyJwt(token: string): Promise<AppJwtPayload> {
   // Pin the algorithm explicitly. jose already refuses a non-HMAC `alg` for a

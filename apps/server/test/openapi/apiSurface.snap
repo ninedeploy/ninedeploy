@@ -86,6 +86,7 @@ GET /v1/activity operator -
 GET /v1/ai/config authed -
 GET /v1/alerts authed nd://scope/read/alerts
 GET /v1/auth/2fa/recovery-codes self -
+GET /v1/auth/2fa/requirement self -
 GET /v1/auth/me self -
 GET /v1/auth/oidc/:slug/callback token -
 GET /v1/auth/oidc/:slug/login public -
@@ -289,6 +290,7 @@ GET /v1/volumes/:name/files/content operator nd://scope/read/volumes
 GET /v1/workspaces authed -
 GET /v1/workspaces/:id viewer -
 GET /v1/workspaces/:id/invitations admin -
+GET /v1/workspaces/:id/two-factor viewer -
 GET /v1/workspaces/:wid/email-templates member -
 PATCH /scim/v2/Users/:id scim -
 PATCH /v1/alerts/:id operator nd://scope/write/alerts
@@ -563,4 +565,5 @@ PUT /v1/traefik/certificates/shared operator -
 PUT /v1/traefik/custom-config operator -
 PUT /v1/traefik/http3 operator -
 PUT /v1/volumes/:name/files operator nd://scope/write/volumes
+PUT /v1/workspaces/:id/two-factor admin -
 PUT /v1/workspaces/:wid/email-templates/:name admin -

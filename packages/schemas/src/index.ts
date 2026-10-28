@@ -48,3 +48,4 @@ export * from './imageScan.js';
 export * from './sizing.js';
 export * from './pendingChanges.js';
 export * from './restartLimit.js';
+export * from './twoFactorPolicy.js';

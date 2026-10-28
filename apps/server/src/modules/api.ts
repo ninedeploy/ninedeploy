@@ -47,6 +47,7 @@ import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { databaseTunnelRoutes } from './databaseTunnel.js';
 import { pendingChangeRoutes } from './pendingChanges.js';
 import { restartLimitRoutes } from './restartLimit.js';
+import { twoFactorRequirementRoutes, workspaceTwoFactorRoutes } from './twoFactorPolicy.js';
 import { publicRegistryHookRoutes, serviceRegistryHookRoutes } from './registryHooks.js';
 import { projectRoutes } from './projects.js';
 import { notificationRoutes } from './notifications.js';
@@ -115,6 +116,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(githubAppHookRoutes, { prefix: '/hooks/github-app' });
 
   await app.register(authRoutes, { prefix: '/auth' });
+  // G1.4: what the workspace 2FA policies ask of this session.
+  await app.register(twoFactorRequirementRoutes, { prefix: '/auth/2fa' });
   // Public invitation routes (token-only access) MUST be registered before the
   // authenticated workspace routes so that the unmatched :token path resolves
   // here, not as a /workspaces/:id sub-route.
@@ -122,6 +125,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // Authenticated accept route — public path, but requires a valid session.
   await app.register(acceptInvitationRoutes);
   await app.register(workspaceRoutes, { prefix: '/workspaces' });
+  await app.register(workspaceTwoFactorRoutes, { prefix: '/workspaces' });
   // Email template overrides (G-30) — workspace-scoped.
   // The /:wid path is owned by workspaceRoutes; the new
   // module re-uses it as the prefix and the routes add

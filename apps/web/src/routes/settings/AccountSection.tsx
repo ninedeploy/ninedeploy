@@ -161,7 +161,7 @@ function SsoLinkCard() {
 }
 
 // ── Passkeys (WebAuthn) ────────────────────────────────────────────────────
-function PasskeyCard() {
+export function PasskeyCard() {
   const t = useT();
   const { toast } = useToast();
   const [name, setName] = useState('');
@@ -186,6 +186,8 @@ function PasskeyCard() {
       setName('');
       setStepPassword('');
       void queryClient.invalidateQueries({ queryKey: ['passkeys'] });
+      // G1.4: a passkey satisfies a workspace's 2FA requirement.
+      void queryClient.invalidateQueries({ queryKey: ['2fa-requirement'] });
       toast(t('Passkey added'), 'success');
     },
     onError: (err) => toast(err instanceof Error && err.message ? t('Passkey setup failed: {error}', { error: err.message }) : t('Passkey setup failed or cancelled'), 'error'),
@@ -328,7 +330,7 @@ function SessionsCard() {
 }
 
 // ── Two-factor (TOTP) ─────────────────────────────────────────────────────
-function TwoFactorCard() {
+export function TwoFactorCard() {
   const t = useT();
   const { toast } = useToast();
   const [setup, setSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
@@ -366,6 +368,7 @@ function TwoFactorCard() {
       setStepPassword('');
       setShownCodes(res.recoveryCodes ?? null);
       void qc.invalidateQueries({ queryKey: ['2fa-recovery'] });
+      void qc.invalidateQueries({ queryKey: ['2fa-requirement'] });
       toast(t('Two-factor authentication enabled'), 'success');
     },
     onError: (err) => {

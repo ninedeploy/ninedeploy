@@ -5602,4 +5602,18 @@ export const TR: Readonly<Record<string, string>> = {
   'New registry webhook URL?': 'Yeni registry webhook URL\'si?',
   'The current URL stops working; update the webhook in your registry with the new one. The hook deploys as you from now on.':
     'Mevcut URL çalışmayı bırakır; registry\'deki webhook\'u yenisiyle güncelleyin. Webhook bundan sonra sizin adınıza deploy eder.',
+
+  // ── Workspace 2FA (G1.4) ──────────────────────────────────────────────
+  'Two-factor authentication required': 'İki adımlı doğrulama zorunlu',
+  '{workspaces} requires two-factor authentication of every member. Set up an authenticator app or a passkey to continue.':
+    '{workspaces} her üyeden iki adımlı doğrulama istiyor. Devam etmek için bir doğrulayıcı uygulama ya da passkey kurun.',
+  'I have set it up': 'Kurdum',
+  'Require two-factor authentication': 'İki adımlı doğrulamayı zorunlu kıl',
+  'Two-factor authentication is now required in this workspace': 'Bu workspace\'te iki adımlı doğrulama artık zorunlu',
+  'Two-factor authentication is no longer required': 'İki adımlı doğrulama artık zorunlu değil',
+  'Members without an authenticator app or a passkey must set one up before they can use the panel. API tokens they already have keep working. You need two-factor authentication on your own account to turn this on.':
+    'Doğrulayıcı uygulaması ya da passkey\'i olmayan üyeler paneli kullanmadan önce birini kurmalı. Ellerindeki API token\'ları çalışmaya devam eder. Bunu açmak için kendi hesabınızda iki adımlı doğrulama olmalı.',
+  'Exempt SSO sign-ins (your identity provider enforces MFA)':
+    'SSO girişlerini muaf tut (kimlik sağlayıcınız MFA uyguluyor)',
+  '{n} members have no second factor yet': '{n} üyenin henüz ikinci doğrulama yöntemi yok',
 };

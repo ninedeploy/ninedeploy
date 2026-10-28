@@ -118,6 +118,14 @@ export const authSpecs: RouteSpecMap = {
     floor: 'self',
     responseType: 'PublicUser',
   },
+  'GET /v1/auth/2fa/requirement': {
+    summary: 'What the workspace two-factor policies ask of this session',
+    tag: 'auth',
+    description:
+      'G1.4. `required` is true when a workspace the caller belongs to requires 2FA of this session (SSO sessions are exempt where the workspace says so). While `required && !enrolled`, every route except this one, `GET /v1/auth/me`, `GET /v1/auth/status`, TOTP and passkey setup and logout answers 403 `two_factor_required`. Always `required: false` for an API token.',
+    floor: 'self',
+    responseType: 'TwoFactorRequirementView',
+  },
   'POST /v1/auth/logout': {
     summary: 'Sign out everywhere (revokes every outstanding JWT)',
     tag: 'auth',

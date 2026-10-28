@@ -37,6 +37,9 @@ import type {
   AccessGrantUpdate,
   AccessMe,
   ProjectAccessEntry,
+  TwoFactorRequirementView,
+  WorkspaceTwoFactorInput,
+  WorkspaceTwoFactorView,
 } from '@ninedeploy/schemas';
 import { apiGetUrl } from '../apiPath.js';
 import type { TokenIntrospection } from '../types.js';
@@ -85,6 +88,8 @@ export interface AuthApi {
         status: () => Promise<{ totpEnabled: boolean; remaining: number }>;
         regenerate: (input: { code: string; password?: string }) => Promise<{ recoveryCodes: string[] }>;
       };
+      /** G1.4: what the workspace 2FA policies ask of this session (403 `two_factor_required` elsewhere until enrolled). */
+      requirement: () => Promise<TwoFactorRequirementView>;
     };
     me: () => Promise<PublicUser>;
     tokens: {
@@ -133,6 +138,11 @@ export interface AuthApi {
     create: (input: WorkspaceCreateInput) => Promise<WorkspaceEntry>;
     update: (id: number, input: WorkspaceUpdateInput) => Promise<WorkspaceEntry>;
     delete: (id: number) => Promise<{ ok: boolean }>;
+    /** G1.4: require TOTP or a passkey of every member (admins and owners). */
+    twoFactor: {
+      get: (id: number) => Promise<WorkspaceTwoFactorView>;
+      set: (id: number, input: WorkspaceTwoFactorInput) => Promise<WorkspaceTwoFactorView>;
+    };
     /**
      * Add a member by email. r604: only an instance operator gets a direct
      * add (a `WorkspaceMemberEntry`) for a registered address; for everyone
@@ -253,6 +263,7 @@ export function authApi(t: Transport): AuthApi {
           status: () => get<{ totpEnabled: boolean; remaining: number }>('/v1/auth/2fa/recovery-codes'),
           regenerate: (input) => send<{ recoveryCodes: string[] }>('POST', '/v1/auth/2fa/recovery-codes', input),
         },
+        requirement: () => get<TwoFactorRequirementView>('/v1/auth/2fa/requirement'),
       },
       me: () => get<PublicUser>('/v1/auth/me'),
       tokens: {
@@ -302,6 +313,10 @@ export function authApi(t: Transport): AuthApi {
       get: (id) => get<WorkspaceDetail>(`/v1/workspaces/${id}`),
       create: (input) => send<WorkspaceEntry>('POST', '/v1/workspaces', input),
       update: (id, input) => send<WorkspaceEntry>('PATCH', `/v1/workspaces/${id}`, input),
+      twoFactor: {
+        get: (id) => get<WorkspaceTwoFactorView>(`/v1/workspaces/${id}/two-factor`),
+        set: (id, input) => send<WorkspaceTwoFactorView>('PUT', `/v1/workspaces/${id}/two-factor`, input),
+      },
       delete: (id) => send<{ ok: boolean }>('DELETE', `/v1/workspaces/${id}`),
       addMember: (id, input) =>
         send<WorkspaceMemberEntry | WorkspaceMemberInviteEntry>('POST', `/v1/workspaces/${id}/members`, input),

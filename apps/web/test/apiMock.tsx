@@ -36,6 +36,7 @@ export function createFakeApiModule() {
         enable: vi.fn(),
         disable: vi.fn(),
         recoveryCodes: { status: vi.fn().mockResolvedValue({ totpEnabled: false, remaining: 0 }), regenerate: vi.fn() },
+        requirement: vi.fn().mockResolvedValue({ required: false, enrolled: false, workspaces: [] }),
       },
       passkeys: {
         list: vi.fn(),
@@ -66,6 +67,7 @@ export function createFakeApiModule() {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      twoFactor: { get: vi.fn().mockResolvedValue({ required: false, ssoExempt: false, membersWithout: 0 }), set: vi.fn() },
       addMember: vi.fn(),
       updateMemberRole: vi.fn(),
       removeMember: vi.fn(),

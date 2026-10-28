@@ -35,6 +35,8 @@ function makeDb(scopes: string[] | undefined, isInstanceOperator = true) {
       workspaceMembers: { findMany: vi.fn(async () => []) },
     },
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => undefined) })) })),
+    // G1.4: the workspace 2FA policies (none here).
+    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(async () => []) })) })),
   };
 }
 

@@ -6,6 +6,7 @@ import {
   workspaceInvitationCreate,
   workspaceMemberAdd,
   workspaceMemberRoleUpdate,
+  workspaceTwoFactorInput,
   workspaceUpdate,
 } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
@@ -42,6 +43,23 @@ export const workspacesSpecs: RouteSpecMap = {
     floor: 'admin',
     body: workspaceUpdate,
     responseType: 'WorkspaceEntry',
+    validation: 'zod',
+  },
+  'GET /v1/workspaces/:id/two-factor': {
+    summary: "The workspace's two-factor requirement",
+    tag: 'workspaces',
+    description: 'G1.4. With `membersWithout`, the members who have neither TOTP nor a passkey.',
+    floor: 'viewer',
+    responseType: 'WorkspaceTwoFactorView',
+  },
+  'PUT /v1/workspaces/:id/two-factor': {
+    summary: 'Require two-factor authentication of every member',
+    tag: 'workspaces',
+    description:
+      'G1.4. Members without TOTP or a passkey are held to the enrolment routes on their next request (403 `two_factor_required` elsewhere). `ssoExempt` exempts sessions from an SSO sign-in. Turning it on needs 2FA on the caller’s own account (409 `enrol_first`). API tokens are not held. Audited workspace.two_factor.set.',
+    floor: 'admin',
+    body: workspaceTwoFactorInput,
+    responseType: 'WorkspaceTwoFactorView',
     validation: 'zod',
   },
   'DELETE /v1/workspaces/:id': {

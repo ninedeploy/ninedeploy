@@ -705,7 +705,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // against — see refreshSessionTokens. Absent on pre-rotation tokens.
     return {
       user: toUser(user, await isOperator(app.db, user)),
-      tokens: await refreshSessionTokens(app.db, user, payload.jti, payload.gen),
+      tokens: await refreshSessionTokens(app.db, user, payload.jti, payload.gen, payload.amr === 'sso' ? 'sso' : undefined),
     };
   });
 
@@ -1083,7 +1083,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const joined = await acceptInvitationsForUser(app.db, { id: user.id, email: user.email, emailVerified: userInfo.emailVerified && normalizeEmail(user.email) === normalizeEmail(userInfo.email) });
     for (const w of joined) void audit(app.db, user.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
 
-    const tokens = await issueSessionTokens(app.db, user, { ip: req.ip, userAgent: req.headers['user-agent'] });
+    const tokens = await issueSessionTokens(app.db, user, { ip: req.ip, userAgent: req.headers['user-agent'], amr: 'sso' });
     void audit(app.db, user.id, 'auth.sso_login', `${provider.name} (${userInfo.email})`, undefined, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],

@@ -30,6 +30,12 @@ Integrate enterprise identity providers for unified authentication — configure
 - **Passkeys (WebAuthn / FIDO2)**: Passwordless biometric authentication (Touch ID, Face ID, YubiKey) with hardware-backed security.
 - **Two-Factor Authentication (TOTP)**: RFC 6238 compliant 6-digit TOTP with QR code setup and ±30s clock-drift tolerance.
 - **Recovery codes (0.16.3)**: turning 2FA on hands out ten single-use recovery codes, shown once. At sign-in, one of them stands in for the authenticator code ("Lost your authenticator? Use a recovery code"; the CLI takes one at the same prompt). Only their SHA-256 is stored; a wrong one counts toward lockout like a wrong 2FA code. Settings → Account shows how many are left and creates a new set, which needs the password and a current 2FA code and replaces the old one. Turning 2FA off or enrolling again deletes the set. Accounts that turned 2FA on before 0.16.3 have no codes until they create a set. API: `GET`/`POST /v1/auth/2fa/recovery-codes`, `recoveryCode` on `POST /v1/auth/login`.
+- **Workspace-enforced 2FA (G1.4)**: a workspace admin or owner can require TOTP or a passkey of every member (Workspaces → *Require two-factor authentication*, or `PUT /v1/workspaces/:id/two-factor` with `{ "required": true }`).
+  - **Who is held:** a member without either one, signed in with a panel session, gets 403 `two_factor_required` from every route except the enrolment ones: `GET /v1/auth/me`, `GET /v1/auth/status`, `GET /v1/auth/2fa/requirement`, TOTP setup, passkey registration and logout. The web app shows an enrolment screen until they finish.
+  - **SSO exemption:** with `ssoExempt`, sessions that began with an SSO sign-in (OIDC, SAML, GitHub) are exempt, for an IdP that enforces MFA itself. The session carries an `amr: "sso"` claim that survives refreshes.
+  - **What is not held:** API tokens the member already holds keep working; a held session cannot create new ones.
+  - **Who can turn it on:** the admin turning it on needs 2FA on their own account (409 `enrol_first`). It is audited as `workspace.two_factor.set`.
+  - **Storage:** no migration is needed; it is a settings row per workspace.
 - **Argon2id Password Hashing**: State-of-the-art memory-hard password hashing with automatic salt generation.
 
 ---

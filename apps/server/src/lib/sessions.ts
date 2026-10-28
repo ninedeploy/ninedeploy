@@ -18,7 +18,7 @@ import { signAccessToken, signRefreshToken, ttlSeconds } from './jwt.js';
 export async function issueSessionTokens(
   db: Pick<DB, 'insert' | 'update'>,
   user: Pick<User, 'id' | 'tokenVersion'> & { deactivatedAt?: Date | null },
-  ctx?: { ip?: string; userAgent?: string },
+  ctx?: { ip?: string; userAgent?: string; amr?: 'sso' },
 ): Promise<TokenPair> {
   // r151: every sign-in path funnels through here (password, passkey, OIDC,
   // SAML, 2FA) — refuse a SCIM-deactivated account once, not per route.
@@ -33,8 +33,8 @@ export async function issueSessionTokens(
   // refresh token skipped the rotation check in refreshSessionTokens and could
   // be replayed for the whole session, sliding its expiry each time.
   const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(user.id, user.tokenVersion, jti),
-    signRefreshToken(user.id, user.tokenVersion, jti, expiresAt.getTime()),
+    signAccessToken(user.id, user.tokenVersion, jti, ctx?.amr),
+    signRefreshToken(user.id, user.tokenVersion, jti, expiresAt.getTime(), ctx?.amr),
   ]);
   // Best-effort row write. If it fails the pair is dead on arrival — the
   // refresh needs a live row, and since r503 so does every access-token
@@ -75,6 +75,7 @@ export async function refreshSessionTokens(
   user: Pick<User, 'id' | 'tokenVersion'> & { deactivatedAt?: Date | null },
   jti: string,
   tokenGen?: number,
+  amr?: 'sso',
 ): Promise<TokenPair> {
   if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
   // Also accept generations minted before issuance aligned to SQLite seconds.
@@ -109,8 +110,8 @@ export async function refreshSessionTokens(
   if (!rotated.length) throw new Error('session_revoked');
   const nextGen = expiresAt.getTime();
   const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(user.id, user.tokenVersion, jti),
-    signRefreshToken(user.id, user.tokenVersion, jti, nextGen),
+    signAccessToken(user.id, user.tokenVersion, jti, amr),
+    signRefreshToken(user.id, user.tokenVersion, jti, nextGen, amr),
   ]);
   return { accessToken, refreshToken, expiresIn: ttlSeconds(config.jwt.accessTtl) };
 }

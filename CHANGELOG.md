@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Workspace-enforced 2FA (G1.4). A workspace admin can require TOTP or a passkey of every member.
+  - **Effect:** a member without one is held to an enrolment screen. Every other route answers 403 `two_factor_required` until they set one up.
+  - **SSO:** SSO sign-ins can be exempted when the IdP enforces MFA.
+  - **API tokens:** existing ones keep working.
+  - **API:** `GET/PUT /v1/workspaces/:id/two-factor` and `GET /v1/auth/2fa/requirement`. There is no migration.
+
+  See SECURITY_SSO.md.
 - Registry push webhooks (G1.7). Under Settings → Registry webhook, an image service gets a secret URL for Docker Hub, GitHub Packages, Harbor, a `registry:2` or a CI step.
   - **What it does:** a push of the service's own image and tag queues a deploy as the member who made the hook. Other pushes are ignored.
   - **Storage:** the URL is shown once and stored as a hash. The routes are `GET/POST/DELETE /v1/services/:id/registry-hook` and `POST /v1/registry-hooks/:serviceId/:token`. There is no migration.

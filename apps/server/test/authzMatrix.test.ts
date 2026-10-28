@@ -664,6 +664,7 @@ export const MATRIX: Record<string, Rule> = {
 
   // ── own account ──
   'GET /v1/auth/me': R('self'),
+  'GET /v1/auth/2fa/requirement': R('self'),
   'POST /v1/auth/logout': R('self'),
   'POST /v1/auth/password': R('self'),
   'POST /v1/auth/2fa/setup': R('self', { noPositive: 'step-up: needs the current password' }),
@@ -726,6 +727,8 @@ export const MATRIX: Record<string, Rule> = {
   // ── workspaces ──
   'GET /v1/workspaces/:id': R('viewer'),
   'PATCH /v1/workspaces/:id': R('admin', { body: () => ({ description: 'renamed' }) }),
+  'GET /v1/workspaces/:id/two-factor': R('viewer'),
+  'PUT /v1/workspaces/:id/two-factor': R('admin', { body: () => ({ required: false }) }),
   'DELETE /v1/workspaces/:id': R('owner', {
     note: "its services lose their tags and become their creators' personal services; its projects' databases likewise",
   }),

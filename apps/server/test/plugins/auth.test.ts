@@ -33,6 +33,8 @@ function makeDb(
     update,
     findFirst,
     set: () => undefined,
+    // G1.4: the workspace 2FA policies (none here).
+    select: () => ({ from: () => ({ where: async () => [] }) }),
   };
 }
 

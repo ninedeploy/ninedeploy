@@ -5,6 +5,7 @@ import type { AuthUser } from '../plugins/auth.js';
 import { sha256 } from './crypto.js';
 import { verifyJwt, type AppJwtPayload } from './jwt.js';
 import { bindAuthCredential } from './authCredential.js';
+import { twoFactorRequirement } from './twoFactorPolicy.js';
 
 /**
  * Narrow an API-token-authed user in place: only an explicit `operator` scope
@@ -73,7 +74,9 @@ export async function resolveUser(db: DB, token: string): Promise<AuthUser | nul
     if (payload.ver === undefined || payload.ver !== baseUser.tokenVersion) return null;
     // Interactive sessions are never scope-restricted; scopes are an
     // API-token concept.
-    return bindAuthCredential({ id: baseUser.id, isOperator: baseUser.isInstanceOperator, tokenScopes: null, viaApiToken: false },
+    // G1.4: a workspace that requires 2FA holds a session without it to the enrolment routes.
+    const twoFactor = await twoFactorRequirement(db, baseUser.id, { sso: payload.amr === 'sso' });
+    return bindAuthCredential({ id: baseUser.id, isOperator: baseUser.isInstanceOperator, tokenScopes: null, viaApiToken: false, ...(twoFactor.required && !twoFactor.enrolled && { twoFactorPending: true }), ...(payload.amr === 'sso' && { ssoSession: true }) },
       payload.jti ? { kind: 'session', jti: payload.jti } : { kind: 'legacy-access', expiresAt: payload.exp ?? Math.floor(Date.now() / 1000) });
   }
 

@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router';
 import { Compass } from 'lucide-react';
 import { Layout } from './components/Layout.js';
+import { TwoFactorGate } from './components/TwoFactorGate.js';
 import { Button, Card, EmptyState, FullScreenSpinner } from './components/ui.js';
 import { useAuth } from './lib/auth.js';
 import { WorkspaceProvider } from './lib/workspace.js';
@@ -59,7 +60,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
   // 0.13: the query string travels too — GitHub's redirect to
   // /github-apps/callback carries its single-use `code` and `state` there.
   if (!user) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
-  return <>{children}</>;
+  // G1.4: a workspace that requires 2FA holds the session to enrolment.
+  return <TwoFactorGate>{children}</TwoFactorGate>;
 }
 
 /**
