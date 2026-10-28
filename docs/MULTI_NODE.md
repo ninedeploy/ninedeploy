@@ -220,7 +220,7 @@ The panel pings the new agent every 15 seconds for up to 20 minutes, and marks t
 
 **What to know**
 
-- The agent token's hash is in the VM's user data. Hetzner keeps the user data and serves it to the VM's metadata endpoint. Whoever can read it, such as the project's members or root on the VM, already controls the VM.
+- The first agent key's hash is in the VM's user data. Hetzner keeps the user data and serves it to the VM's metadata endpoint, which any container on the node can reach. So right after the agent first answers, the panel rekeys it with `agent.rekey` (agent 0.18.6): the new hash is written to `.agent-token-sha256` in the agent's volume, the agent restarts with it, and the hash in the metadata no longer opens anything. The node counts as online only after that; until then the Hetzner card shows it as *rekeying*. The new key is stored (encrypted) before the agent hears of it, so a rekey cut short by a panel restart never locks the panel out; a sweep every 2 minutes finishes it.
 - Hetzner gives the VM no firewall. Like any node, the agent port accepts only sealed, token-authenticated requests.
 - No migration:
   - the token is the encrypted setting `hetzner_cloud_token_encrypted`;

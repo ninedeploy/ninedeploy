@@ -66,6 +66,7 @@ vi.mock('../src/plugins/swarmRecovery.js', () => noop('authz-swarm-recovery'));
 vi.mock('../src/plugins/fanoutRecovery.js', () => noop('authz-fanout-recovery'));
 vi.mock('../src/plugins/autoUpdateScheduler.js', () => noop('authz-autoupdate'));
 vi.mock('../src/plugins/githubRunnerScheduler.js', () => noop('authz-github-runners'));
+vi.mock('../src/plugins/cloudNodeScheduler.js', () => noop('authz-cloud-nodes'));
 vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
 vi.mock('../src/plugins/logShipper.js', () => noop('authz-logshipper'));
 vi.mock('../src/plugins/jobScheduler.js', () => noop('authz-jobs'));

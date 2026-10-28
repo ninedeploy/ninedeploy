@@ -56,6 +56,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'docker.mutations',
   // G4.2: `host.packages` reads the host's pending OS updates and switches automatic security updates.
   'host.packages',
+  // G4.3 security review: `agent.rekey` replaces the agent's shared-key hash (sealed).
+  'agent.rekey',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

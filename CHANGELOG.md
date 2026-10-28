@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Create nodes on Hetzner Cloud (G4.3). On the Servers page, an operator saves a Hetzner Cloud API token, then picks a location, server type, image and SSH keys.
-  - **What the panel does:** it creates the VM and registers it as a node. The VM's cloud-init installs Docker for its distribution, using the same script as the SSH bootstrap, and starts the NineDeploy agent. The node turns online when the agent first answers.
+  - **What the panel does:** it creates the VM and registers it as a node. The VM's cloud-init installs Docker for its distribution, using the same script as the SSH bootstrap, and starts the NineDeploy agent. The node turns online once the agent has been rekeyed (below).
+  - **Rekey after first contact:** the first agent key's hash is in the VM's user data, which any container on the node can read from the metadata service. Right after the agent first answers, the panel replaces that key through the new `agent.rekey` op (agent 0.18.6). The new key is stored before the agent hears of it, and a sweep every 2 minutes finishes a rekey that a panel restart cut short. Until then the node shows as *rekeying*.
+  - **Key rotation:** the Hetzner token setting is now re-encrypted with the other secrets when the master key rotates.
   - **Deleting:** **Delete** destroys the VM and removes the node. It is refused while the node still hosts services, databases or Swarm work.
   - **The token:** it is checked before it is stored, stored encrypted, and never shown back.
   - **No migration:** the token and each node's link to its VM are settings rows.

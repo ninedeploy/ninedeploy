@@ -389,6 +389,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'proxy.traffic': '0.18.0',
   // G4.2 OS security updates
   'host.packages': '0.18.6',
+  'agent.rekey': '0.18.6',
 };
 
 /**

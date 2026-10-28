@@ -12,7 +12,7 @@ import {
 } from '@ninedeploy/schemas';
 import { NODE_DOCKER_INSTALL_SCRIPT } from '../engine/serverProvisioner.js';
 import { VERSION } from '../version.js';
-import { agentPing, generateAgentToken } from './agentClient.js';
+import { agentOp, agentPing, generateAgentToken } from './agentClient.js';
 import { decrypt, encrypt } from './crypto.js';
 import { guardedFetch } from './egressGuard.js';
 import { HttpError, conflict, notFound } from './errors.js';
@@ -31,15 +31,22 @@ import { getSettingJson, getSettingString, setSettingJson, setSettingString } fr
  * Migration-free: the API token is one encrypted setting, and the link from a
  * node to its VM is a settings row per node (`cloud_server:<serverId>`).
  *
- * The agent token's hash travels in the VM's user data, which Hetzner keeps
- * and serves to the VM's metadata endpoint. Anyone who can read it (the
- * project's members, root on the VM) can already control the VM.
+ * The first agent key's hash travels in the VM's user data, which Hetzner
+ * keeps and serves to the metadata endpoint — readable from ANY container on
+ * the node, so a member who deploys there could take the agent over. The
+ * panel therefore rekeys the node (`agent.rekey`) right after the first
+ * sealed ping, before it counts as online and before anything is deployed
+ * to it; the hash in the metadata then opens nothing. A rekey that was cut
+ * short (panel restart) is finished by {@link sweepCloudNodes}.
  */
 
 const API = 'https://api.hetzner.cloud/v1';
 const TOKEN_KEY = 'hetzner_cloud_token_encrypted';
 const LINK_PREFIX = 'cloud_server:';
 const linkKey = (serverId: number) => `${LINK_PREFIX}${serverId}`;
+/** The new agent token of a rekey in progress (encrypted), kept until the agent answers with it. */
+const REKEY_PREFIX = 'cloud_rekey:';
+const rekeyKey = (serverId: number) => `${REKEY_PREFIX}${serverId}`;
 const MANAGED_LABEL = 'managed-by';
 const MANAGED_VALUE = 'ninedeploy';
 
@@ -175,6 +182,8 @@ interface StoredLink {
   image: string;
   ipv4: string;
   createdAt: string;
+  /** The first key (the one in the user data) was replaced. */
+  rekeyed?: boolean;
 }
 
 /** The VM's cloud-init user data: Docker for its distribution, then the agent. */
@@ -247,44 +256,146 @@ export async function createHetznerServer(
     image: input.image,
     ipv4,
     createdAt: new Date().toISOString(),
+    rekeyed: false,
   };
   await setSettingJson(db, linkKey(row.id), link);
   opts.waitForAgent?.(row.id, ipv4, input.agentPort, agentToken);
   return { serverId: row.id, providerServerId, ipv4 };
 }
 
+// ── rekey ────────────────────────────────────────────────────────────────
+
+const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
+
+export interface RekeyDeps {
+  ping?: typeof agentPing;
+  op?: typeof agentOp;
+  /** How long to wait for the restarted agent to answer with the new key. */
+  settleMs?: number;
+  stepMs?: number;
+}
+
+async function finishRekey(db: DB, serverId: number, token: string): Promise<void> {
+  await db
+    .update(servers)
+    .set({ tokenEncrypted: encrypt(token), status: 'online', lastSeenAt: new Date(), updatedAt: new Date() })
+    .where(eq(servers.id, serverId));
+  const link = await getSettingJson<StoredLink>(db, linkKey(serverId));
+  if (link) await setSettingJson(db, linkKey(serverId), { ...link, rekeyed: true });
+  await db.delete(settings).where(eq(settings.key, rekeyKey(serverId)));
+}
+
 /**
- * Ping the new node's agent until it answers (cloud-init takes a few
- * minutes), then mark it online. In-process: after a panel restart the
- * operator presses Test on the Servers page instead.
+ * Replace a cloud node's first agent key. The new token is stored (encrypted)
+ * before the agent hears of it, and the node row switches only once the
+ * agent answers with it, so a cut-short rekey never locks the panel out:
+ * {@link sweepCloudNodes} finishes it from the stored token. Resolves true
+ * when the node answers with the new key.
+ */
+export async function rekeyCloudNode(db: DB, serverId: number, deps: RekeyDeps = {}): Promise<boolean> {
+  const ping = deps.ping ?? agentPing;
+  const op = deps.op ?? agentOp;
+  const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
+  if (!node) return false;
+
+  // A rekey already under way: does the agent answer with the new key yet?
+  const pendingRaw = await getSettingString(db, rekeyKey(serverId), null);
+  if (pendingRaw) {
+    let pending: string | null = null;
+    try {
+      pending = decrypt(pendingRaw);
+    } catch {
+      pending = null;
+    }
+    if (pending) {
+      try {
+        await ping(node.host, node.port, pending);
+        await finishRekey(db, serverId, pending);
+        return true;
+      } catch {
+        /* still on the old key, or not up: start over below */
+      }
+    }
+  }
+
+  const fresh = generateAgentToken();
+  await setSettingString(db, rekeyKey(serverId), encrypt(fresh));
+  await op(db, serverId, 'agent.rekey', { tokenSha256: sha256(fresh) }, () => undefined);
+  const settle = deps.settleMs ?? 60_000;
+  const step = deps.stepMs ?? 2_000;
+  const until = Date.now() + settle;
+  for (;;) {
+    try {
+      await ping(node.host, node.port, fresh);
+      await finishRekey(db, serverId, fresh);
+      return true;
+    } catch {
+      if (Date.now() >= until) return false;
+      await new Promise((r) => setTimeout(r, step));
+    }
+  }
+}
+
+/**
+ * Ping the new node's agent until it answers with its first key (cloud-init
+ * takes a few minutes), then rekey it; the node turns online with the new
+ * key. In-process: after a panel restart {@link sweepCloudNodes} takes over.
  */
 export function waitForAgentInBackground(
   db: DB,
   log: FastifyBaseLogger,
-  opts: { intervalMs?: number; timeoutMs?: number; ping?: typeof agentPing } = {},
+  opts: { intervalMs?: number; timeoutMs?: number; ping?: typeof agentPing; rekey?: (serverId: number) => Promise<boolean> } = {},
 ): (serverId: number, host: string, port: number, token: string) => void {
   const interval = opts.intervalMs ?? 15_000;
   const deadline = opts.timeoutMs ?? 20 * 60_000;
   const ping = opts.ping ?? agentPing;
+  const rekey = opts.rekey ?? ((id: number) => rekeyCloudNode(db, id));
   return (serverId, host, port, token) => {
     const started = Date.now();
     const attempt = async () => {
       try {
         await ping(host, port, token);
-        await db.update(servers).set({ status: 'online', lastSeenAt: new Date(), updatedAt: new Date() }).where(eq(servers.id, serverId));
-        log.info({ component: 'hetzner', serverId }, 'cloud node agent answered; node online');
-        return;
       } catch {
-        /* not up yet */
-      }
-      if (Date.now() - started >= deadline) {
-        log.warn({ component: 'hetzner', serverId }, 'cloud node agent did not answer in time; press Test on the Servers page once it boots');
+        if (Date.now() - started >= deadline) {
+          log.warn({ component: 'hetzner', serverId }, 'cloud node agent did not answer in time; the cloud node sweep keeps trying');
+          return;
+        }
+        setTimeout(() => void attempt(), interval).unref();
         return;
       }
-      setTimeout(() => void attempt(), interval).unref();
+      try {
+        if (await rekey(serverId)) log.info({ component: 'hetzner', serverId }, 'cloud node rekeyed; node online');
+        else log.warn({ component: 'hetzner', serverId }, 'cloud node rekey not confirmed yet; the cloud node sweep finishes it');
+      } catch (err) {
+        log.warn({ err, component: 'hetzner', serverId }, 'cloud node rekey failed; the cloud node sweep retries');
+      }
     };
     setTimeout(() => void attempt(), interval).unref();
   };
+}
+
+/** Finish the rekey of every cloud node still on its first key (after a restart, or a rekey cut short). */
+export async function sweepCloudNodes(db: DB, log: FastifyBaseLogger, deps: RekeyDeps = {}): Promise<void> {
+  const ping = deps.ping ?? agentPing;
+  for (const { serverId, link } of await readLinks(db)) {
+    if (link.rekeyed) continue;
+    const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
+    if (!node) continue;
+    const pending = await getSettingString(db, rekeyKey(serverId), null);
+    if (!pending) {
+      // Only an agent that answers with its first key can be rekeyed.
+      try {
+        await ping(node.host, node.port, decrypt(node.tokenEncrypted));
+      } catch {
+        continue;
+      }
+    }
+    try {
+      if (await rekeyCloudNode(db, serverId, deps)) log.info({ component: 'hetzner', serverId }, 'cloud node rekeyed by the sweep');
+    } catch (err) {
+      log.warn({ err, component: 'hetzner', serverId }, 'cloud node rekey failed');
+    }
+  }
 }
 
 // ── list and delete ────────────────────────────────────────────────────────
@@ -331,7 +442,7 @@ export async function listHetznerServers(db: DB): Promise<CloudServer[]> {
       image: link.image,
       ipv4: link.ipv4,
       providerStatus: remote ? (remote.get(link.providerServerId) ?? 'deleted') : null,
-      nodeStatus: node?.status ?? 'removed',
+      nodeStatus: node ? (link.rekeyed === false && node.status === 'online' ? 'rekeying' : node.status) : 'removed',
       createdAt: link.createdAt,
     });
   }
@@ -367,5 +478,6 @@ export async function deleteHetznerServer(db: DB, serverId: number): Promise<{ p
   }
   if (node) await db.delete(servers).where(eq(servers.id, serverId));
   await db.delete(settings).where(eq(settings.key, linkKey(serverId)));
+  await db.delete(settings).where(eq(settings.key, rekeyKey(serverId)));
   return { providerServerId: link.providerServerId, name: link.name };
 }

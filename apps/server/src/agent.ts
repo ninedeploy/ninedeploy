@@ -8,6 +8,7 @@ import { closeAllStudioChannels } from './agentOps/studios.js';
 import { nodeProxyTraffic } from './lib/nodeProxyTraffic.js';
 import { advertisedCapabilities, AGENT_OPS, registeredCapabilities, runRegisteredOp } from './agentOps/index.js';
 import { gitCredentialEnv } from './agentOps/gitCredential.js';
+import { loadRekeyedTokenHash } from './agentOps/agentRekey.js';
 import {
   GIT_EGRESS_FLAGS,
   intOperand,
@@ -1511,6 +1512,11 @@ async function main(): Promise<void> {
     rawToken = rawToken || loadOrCreateAgentToken(() => randomBytes(32).toString('hex'));
     tokenHash = createHash('sha256').update(rawToken).digest('hex');
   }
+
+  // G4.3: a key the panel rotated with `agent.rekey` replaces the one in the
+  // environment (a cloud node's first key is readable from its metadata).
+  const rekeyed = loadRekeyedTokenHash();
+  if (rekeyed) tokenHash = rekeyed;
 
   if (!tokenHash) {
     // eslint-disable-next-line no-console

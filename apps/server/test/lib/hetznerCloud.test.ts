@@ -167,12 +167,93 @@ describe('create', () => {
     expect(await lib.listHetznerServers(db)).toEqual([]);
   });
 
-  it('marks the node online once the agent answers', async () => {
+  it('rekeys the node once its agent first answers', async () => {
     const [row] = await db.insert(servers).values({ name: 'n', host: '203.0.113.5', port: 4600, tokenEncrypted: 'x', status: 'offline' }).returning();
     const ping = vi.fn().mockRejectedValueOnce(new Error('ECONNREFUSED')).mockResolvedValueOnce(undefined);
-    lib.waitForAgentInBackground(db, log, { intervalMs: 5, ping })(row!.id, '203.0.113.5', 4600, 'tok');
-    await vi.waitFor(async () => expect((await db.query.servers.findFirst({ where: eq(servers.id, row!.id) }))?.status).toBe('online'));
+    const rekey = vi.fn(async () => true);
+    lib.waitForAgentInBackground(db, log, { intervalMs: 5, ping, rekey })(row!.id, '203.0.113.5', 4600, 'tok');
+    await vi.waitFor(() => expect(rekey).toHaveBeenCalledWith(row!.id));
     expect(ping).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('rekey (security review: the first key is readable from the metadata service)', () => {
+  async function cloudNode() {
+    await saveToken();
+    on('POST', /^\/servers$/, () => json(201, { server: { id: 4242, public_net: { ipv4: { ip: '203.0.113.9' } } } }));
+    const created = await lib.createHetznerServer(db, { name: 'edge-1', location: 'fsn1', serverType: 'cx22', image: 'ubuntu-24.04' });
+    const node = await db.query.servers.findFirst({ where: eq(servers.id, created.serverId) });
+    return { serverId: created.serverId, firstToken: decrypt(node!.tokenEncrypted) };
+  }
+  const tokenOf = async (id: number) => decrypt((await db.query.servers.findFirst({ where: eq(servers.id, id) }))!.tokenEncrypted);
+  const pendingOf = async (id: number) => (await db.query.settings.findFirst({ where: eq(settings.key, `cloud_rekey:${id}`) }))?.value;
+
+  it('sends only the new hash, stores the new token first, and switches when the agent answers with it', async () => {
+    const { serverId, firstToken } = await cloudNode();
+    let sentHash = '';
+    const op = vi.fn(async (_db: unknown, _id: number, name: string, params: Record<string, unknown>) => {
+      expect(name).toBe('agent.rekey');
+      sentHash = String(params['tokenSha256']);
+      // The new token is already stored, encrypted, before the agent hears of it.
+      const pending = await pendingOf(serverId);
+      expect(typeof pending).toBe('string');
+      expect(createHash('sha256').update(decrypt(String(pending))).digest('hex')).toBe(sentHash);
+      return { exitCode: 0, lines: ['ND-REKEY ok'] };
+    });
+    const ping = vi.fn(async (_h: string, _p: number, token: string) => {
+      if (createHash('sha256').update(token).digest('hex') !== sentHash) throw new Error('401');
+    });
+    expect(await lib.rekeyCloudNode(db, serverId, { op: op as never, ping, settleMs: 1000, stepMs: 1 })).toBe(true);
+    const now = await tokenOf(serverId);
+    expect(now).not.toBe(firstToken);
+    expect(createHash('sha256').update(now).digest('hex')).toBe(sentHash);
+    expect((await db.query.servers.findFirst({ where: eq(servers.id, serverId) }))?.status).toBe('online');
+    expect(await pendingOf(serverId)).toBeUndefined();
+    expect((await lib.listHetznerServers(db))[0]!.nodeStatus).toBe('online');
+  });
+
+  it('keeps the old key and the pending one when the agent has not come back, and the sweep finishes later', async () => {
+    const { serverId, firstToken } = await cloudNode();
+    let agentKey = firstToken;
+    let sentHash = '';
+    const op = vi.fn(async (_db: unknown, _id: number, _n: string, params: Record<string, unknown>) => {
+      sentHash = String(params['tokenSha256']);
+      return { exitCode: 0, lines: [] };
+    });
+    // The agent is still restarting: nothing answers.
+    const down = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    expect(await lib.rekeyCloudNode(db, serverId, { op: op as never, ping: down, settleMs: 5, stepMs: 1 })).toBe(false);
+    expect(await tokenOf(serverId)).toBe(firstToken);
+    expect(await pendingOf(serverId)).toBeDefined();
+    // A manual Test marked it online meanwhile: shown as still rekeying.
+    await db.update(servers).set({ status: 'online' }).where(eq(servers.id, serverId));
+    expect((await lib.listHetznerServers(db))[0]!.nodeStatus).toBe('rekeying');
+
+    // Back up with the new key: the sweep finishes without a second rekey.
+    const pending = decrypt(String(await pendingOf(serverId)));
+    expect(createHash('sha256').update(pending).digest('hex')).toBe(sentHash);
+    agentKey = pending;
+    const up = vi.fn(async (_h: string, _p: number, token: string) => {
+      if (token !== agentKey) throw new Error('401');
+    });
+    await lib.sweepCloudNodes(db, log, { op: op as never, ping: up, settleMs: 5, stepMs: 1 });
+    expect(op).toHaveBeenCalledTimes(1);
+    expect(await tokenOf(serverId)).toBe(pending);
+    expect(await pendingOf(serverId)).toBeUndefined();
+
+    // A rekeyed node is left alone.
+    await lib.sweepCloudNodes(db, log, { op: op as never, ping: up, settleMs: 5, stepMs: 1 });
+    expect(op).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a node whose agent is not up yet for a later sweep', async () => {
+    const { serverId } = await cloudNode();
+    const op = vi.fn();
+    await lib.sweepCloudNodes(db, log, { op: op as never, ping: async () => { throw new Error('down'); } });
+    expect(op).not.toHaveBeenCalled();
+    expect(await pendingOf(serverId)).toBeUndefined();
   });
 });
 

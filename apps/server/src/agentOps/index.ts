@@ -23,6 +23,7 @@ import { containerIdentityOps } from './containerIdentity.js';
 import { containerToolOps } from './containerTools.js';
 import { volumeFileOps } from './volumeFiles.js';
 import { osUpdateOps } from './osUpdates.js';
+import { agentRekeyOps } from './agentRekey.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -102,6 +103,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   fileMountOps,
   // G4.2 OS security updates (agentOps/osUpdates.ts)
   osUpdateOps,
+  // G4.3 rekey after a cloud bootstrap (agentOps/agentRekey.ts)
+  agentRekeyOps,
 ];
 
 /**
