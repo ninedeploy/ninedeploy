@@ -12,7 +12,7 @@ const command = (name: string, flags = '') => `node scripts/${name}.mjs --image=
 const expected = [
   'node scripts/smoke-upgrade.mjs --from="$FROM_TAG" --to="$RELEASE_TAG"',
   command('smoke-user-journey'), command('smoke-user-journey', ' --compose-release-only'),
-  command('smoke-multinode', ' --node-operations-only --no-swarm'), command('smoke-container-readiness'),
+  command('smoke-multinode', ' --node-operations-only --no-swarm'), command('smoke-container-readiness'), command('smoke-local-docker-readiness'),
   command('smoke-container-metrics'), command('smoke-container-lifecycle'), command('smoke-container-generation-stop'),
   command('smoke-agent-creation-drain'), command('smoke-node-lifecycle-controller'),
   command('smoke-node-lifecycle-fanout'), command('smoke-node-canary'), command('smoke-node-canary', ' --lifecycle-only'),
