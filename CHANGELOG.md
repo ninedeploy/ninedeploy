@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Instance GitOps (G5.3). Under Settings → GitOps, an operator points the panel at a YAML file in a repository that describes the instance: projects, their services, domains and project grants.
+  - **Drift:** the panel reads the file on an interval or on request and lists what is only in the file, only in the panel, or different.
+  - **Alerts:** a new drift is audited as `alert.gitops_drift`, and an unreadable file as `alert.gitops_failed`.
+  - **Apply:** creates and updates through the ordinary API with the operator's rights. It never deletes.
+  - **Export:** the panel can be exported as the file, to commit edits made in the UI.
+  - **Rules:** the file is size-limited, secret-scanned and strictly validated.
+  - **API:** routes under `/v1/gitops`; SDK `gitops`. No migration. See docs/INSTANCE_GITOPS.md.
 - Move a service with its data (G3.1). Under Service → Settings → Move with data, an operator moves a stopped docker service between the panel host and nodes together with its `nd-svc-<slug>-data` volume.
   - **Steps:** the host change is the plain `PATCH /v1/services/:id { serverId }` with all its checks; then the volume is archived on the source, created and restored on the target (node transfers use the sealed, checksummed stream channel), and the service is deployed there.
   - **Limits:** the service must be stopped, not deploying, and have no extra volume attachments; Swarm, compose and PM2 services are refused. The source volume is kept until it is removed.

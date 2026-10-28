@@ -172,6 +172,30 @@ export const DEPLOY_TOPICS: Record<string, HelpTopic> = {
     related: [{ label: 'Service · Deploys tab', helpId: 'service.deploys' }],
   },
 
+  'settings.gitops': {
+    title: 'Settings · GitOps',
+    summary:
+      'The instance as one YAML file in a repository: projects, their services, domains and project grants. The panel shows what differs from the file, alerts when that changes, and applies the file on request.',
+    sections: [
+      {
+        heading: 'The file',
+        bullets: [
+          'version: "1", then projects, each with slug, name, an optional workspace slug and description, services (slug, name, type, image or repoUrl and branch, port, domains) and grants (email and role).',
+          'Fields you leave out are not managed. Secrets never belong in it: a file that looks like it holds one is refused.',
+          'Export the panel as the file to start, or to write edits made in the panel back: commit the downloaded file.',
+        ],
+      },
+      {
+        heading: 'Drift and applying',
+        bullets: [
+          'Each difference is in the file only, in the panel only, or different. The panel reads the file on the interval you set, or when you press Check now.',
+          'A new difference, or a file that cannot be read, is audited as alert.gitops_drift or alert.gitops_failed, which notifies the channels that receive alerts.',
+          'Applying reads the file again and creates and updates through the ordinary API with your rights, so every check still applies. It never deletes: what is in the panel only stays until you remove it.',
+        ],
+      },
+    ],
+  },
+
   'settings.image-scanning': {
     title: 'Settings · Image scanning',
     summary:

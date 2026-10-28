@@ -25,11 +25,27 @@ import type {
   PanelBackupRestore,
   PanelBackupSettingsPatch,
   PanelBackupStatus,
+  GitopsApplyStep,
+  GitopsCheck,
+  GitopsConfigInput,
+  GitopsView,
 } from '@ninedeploy/schemas';
 import type { HealthStatus, ImageInfo, PruneImagesInput, PruneImagesResult } from '../types.js';
 import type { Transport } from '../transport.js';
 
 export interface SystemApi {
+  /** G5.3 instance GitOps (operators): the instance as a file in a repository. */
+  gitops: {
+    get: () => Promise<GitopsView>;
+    configure: (input: GitopsConfigInput) => Promise<GitopsView>;
+    remove: () => Promise<{ ok: true }>;
+    /** Read the file now and report the drift. */
+    check: () => Promise<GitopsCheck>;
+    /** Create and update what the file names (never deletes). */
+    apply: () => Promise<{ steps: GitopsApplyStep[]; check: GitopsCheck }>;
+    /** The live instance as the file, to commit. */
+    export: () => Promise<{ file: string }>;
+  };
   system: {
     resources: () => Promise<DockerResources>;
     pruneImages: () => Promise<{ ok: boolean }>;
@@ -175,6 +191,14 @@ export interface SystemApi {
 export function systemApi(t: Transport): SystemApi {
   const { get, send, request } = t;
   return {
+    gitops: {
+      get: () => get<GitopsView>('/v1/gitops'),
+      configure: (input) => send<GitopsView>('PUT', '/v1/gitops', input),
+      remove: () => send<{ ok: true }>('DELETE', '/v1/gitops'),
+      check: () => send<GitopsCheck>('POST', '/v1/gitops/check'),
+      apply: () => send<{ steps: GitopsApplyStep[]; check: GitopsCheck }>('POST', '/v1/gitops/apply'),
+      export: () => get<{ file: string }>('/v1/gitops/export?format=json'),
+    },
     system: {
       resources: () => get<DockerResources>('/v1/system/resources'),
       pruneImages: () => send<{ ok: boolean }>('POST', '/v1/system/prune-images'),

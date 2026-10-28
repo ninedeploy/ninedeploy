@@ -68,6 +68,7 @@ vi.mock('../src/plugins/autoUpdateScheduler.js', () => noop('authz-autoupdate'))
 vi.mock('../src/plugins/githubRunnerScheduler.js', () => noop('authz-github-runners'));
 vi.mock('../src/plugins/cloudNodeScheduler.js', () => noop('authz-cloud-nodes'));
 vi.mock('../src/plugins/imageScanScheduler.js', () => noop('authz-image-scans'));
+vi.mock('../src/plugins/gitopsScheduler.js', () => noop('authz-gitops'));
 vi.mock('../src/plugins/sharedCertificateSync.js', () => noop('authz-shared-certificates'));
 vi.mock('../src/plugins/restartLimiter.js', () => noop('authz-restart-limit'));
 vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
@@ -1169,6 +1170,12 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/system/resources': OP,
   'GET /v1/system/docker-events': OP,
   'GET /v1/system/export': OP,
+  'GET /v1/gitops': OP,
+  'PUT /v1/gitops': R('operator', { body: () => ({ enabled: false, repoUrl: 'https://github.com/acme/instance' }) }),
+  'DELETE /v1/gitops': OP,
+  'POST /v1/gitops/check': OP,
+  'POST /v1/gitops/apply': OP,
+  'GET /v1/gitops/export': OP,
   'POST /v1/system/import': OP,
   'POST /v1/system/prune-images': OP,
   'GET /v1/system/update-check': OP,

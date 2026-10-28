@@ -5722,4 +5722,27 @@ export const TR: Readonly<Record<string, string>> = {
   'Stop the service to move it with its data.': 'Verisiyle taşımak için servisi durdurun.',
   'The move to {to} failed: {error}': '{to} sunucusuna taşıma başarısız: {error}',
   'copying the data': 'veri kopyalanıyor',
+
+  // ── G5.3 instance GitOps ──────────────────────────────────────────────
+  'Applied steps': 'Uygulanan adımlar',
+  'Apply the file': 'Dosyayı uygula',
+  'Check every (minutes, 0 = on request)': 'Kontrol aralığı (dakika, 0 = yalnızca istekle)',
+  'Export the panel as the file': 'Paneli dosya olarak dışa aktar',
+  'File path': 'Dosya yolu',
+  'Git source (private repositories)': 'Git kaynağı (özel depolar)',
+  'GitOps': 'GitOps',
+  'GitOps settings saved': 'GitOps ayarları kaydedildi',
+  'In sync': 'Eşit',
+  'Instance GitOps': 'Kurulum GitOps',
+  'None (public repository)': 'Yok (herkese açık depo)',
+  'Projects, their services, domains and project grants as one YAML file in a repository. The panel reads it on a schedule, shows what differs and alerts when that changes. Applying creates and updates through the API; it never deletes. Secrets stay in the panel.':
+    'Projeler, servisleri, alan adları ve proje yetkileri bir depoda tek bir YAML dosyası olarak. Panel dosyayı düzenli olarak okur, farkları gösterir ve farklar değiştiğinde uyarır. Uygulama API üzerinden oluşturur ve günceller; hiçbir şeyi silmez. Gizli değerler panelde kalır.',
+  'Scheduled checks': 'Zamanlanmış kontroller',
+  'The file was applied': 'Dosya uygulandı',
+  'The instance as a file in a repository': 'Kurulum, bir depoda dosya olarak',
+  'different': 'farklı',
+  'in the file only': 'yalnızca dosyada',
+  'in the panel only': 'yalnızca panelde',
+  '{n} difference(s)': '{n} fark',
+  '{n} step(s) failed': '{n} adım başarısız',
 };

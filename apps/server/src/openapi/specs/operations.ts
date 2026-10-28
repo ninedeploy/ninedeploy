@@ -1,6 +1,7 @@
 import {
   autoPruneConfigUpdate,
   deployFreezeCreate,
+  gitopsConfigInput,
   imageScanPolicyPatch,
   doctorFixRequest,
   hetznerServerCreate,
@@ -23,6 +24,51 @@ import type { RouteSpecMap } from '../types.js';
  * cross-checks every entry); bodies name the zod schema the handler parses.
  */
 export const operationsSpecs: RouteSpecMap = {
+  'GET /v1/gitops': {
+    summary: 'Instance GitOps: the repository and the last drift check',
+    tag: 'system',
+    floor: 'operator',
+    responseType: 'GitopsView',
+  },
+  'PUT /v1/gitops': {
+    summary: 'Configure instance GitOps',
+    tag: 'system',
+    description: 'The repository, branch and path of the instance file, an optional git source for a private repository, and the minutes between scheduled checks (0 = on request only). Audited gitops.config. G5.3.',
+    floor: 'operator',
+    body: gitopsConfigInput,
+    validation: 'zod',
+    responseType: 'GitopsView',
+  },
+  'DELETE /v1/gitops': {
+    summary: 'Remove the instance GitOps configuration',
+    tag: 'system',
+    floor: 'operator',
+    responseType: '{ ok: true }',
+  },
+  'POST /v1/gitops/check': {
+    summary: 'Read the instance file now and report the drift',
+    tag: 'system',
+    description: 'A shallow checkout of the configured branch; the file is size-limited, scanned for secrets and validated. Items are `missing` (in the file only), `extra` (in the instance only) or `changed`. Audited gitops.check. G5.3.',
+    floor: 'operator',
+    responseType: 'GitopsCheck',
+  },
+  'POST /v1/gitops/apply': {
+    summary: 'Apply the instance file through the API',
+    tag: 'system',
+    description:
+      'Reads the file afresh, then creates and updates projects, services, domains and project grants by calling the ordinary routes with the credentials of the caller, so their checks apply. Never deletes: `extra` items stay. Answers each step and the drift left. Audited gitops.apply. G5.3.',
+    floor: 'operator',
+    responseType: '{ steps: GitopsApplyStep[]; check: GitopsCheck }',
+  },
+  'GET /v1/gitops/export': {
+    summary: 'The live instance as the instance file (YAML)',
+    tag: 'system',
+    description: 'Commit it to write edits made in the panel back to the repository. `?format=json` answers `{ file }`. G5.3.',
+    floor: 'operator',
+    queryType: '{ format?: "json" }',
+    validation: 'handler',
+    responseType: 'string | { file: string }',
+  },
   'GET /v1/system/resources': {
     summary: 'Host resource usage',
     tag: 'system',

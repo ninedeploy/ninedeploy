@@ -53,3 +53,4 @@ export * from './maintenance.js';
 export * from './forwardAuth.js';
 export * from './inlineDockerfile.js';
 export * from './serviceMove.js';
+export * from './instanceGitops.js';

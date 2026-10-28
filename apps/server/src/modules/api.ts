@@ -50,6 +50,7 @@ import { restartLimitRoutes } from './restartLimit.js';
 import { serviceMaintenanceRoutes } from './maintenance.js';
 import { inlineDockerfileRoutes } from './inlineDockerfile.js';
 import { serviceMoveRoutes } from './serviceMoveWithData.js';
+import { instanceGitopsRoutes } from './instanceGitops.js';
 import { domainComposeRouteRoutes } from './composeRoutes.js';
 import { samlLoginRoutes } from './samlLogin.js';
 import { domainForwardAuthRoutes, forwardAuthGrantRoutes } from './forwardAuth.js';
@@ -317,6 +318,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(inlineDockerfileRoutes, { prefix: '/services' });
   // G3.1: move a service with its data volume
   await app.register(serviceMoveRoutes(), { prefix: '/services' });
+  // G5.3: the instance as a file in a repository
+  await app.register(instanceGitopsRoutes(), { prefix: '/gitops' });
   // G2.1: a domain per compose service
   await app.register(domainComposeRouteRoutes, { prefix: '/domains' });
   // G2.3: panel sign-in in front of a domain

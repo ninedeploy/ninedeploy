@@ -29,6 +29,7 @@ DELETE /v1/environments/:id admin -
 DELETE /v1/firewall/rules/:id operator nd://scope/write/firewall
 DELETE /v1/github-apps/:id operator -
 DELETE /v1/github-apps/:id/runners/:name operator -
+DELETE /v1/gitops operator -
 DELETE /v1/host-ips/:ip operator -
 DELETE /v1/labels/:id member -
 DELETE /v1/log-drains/:id operator -
@@ -154,6 +155,8 @@ GET /v1/github-apps operator -
 GET /v1/github-apps/:id operator -
 GET /v1/github-apps/:id/installations operator -
 GET /v1/github-apps/:id/runners operator -
+GET /v1/gitops operator -
+GET /v1/gitops/export operator -
 GET /v1/host-ips operator -
 GET /v1/host-ips/primary authed -
 GET /v1/housekeeping/images operator nd://scope/read/housekeeping
@@ -404,6 +407,8 @@ POST /v1/github-apps/:id/webhook-secret/rotate operator -
 POST /v1/github-apps/:id/webhook/sync operator -
 POST /v1/github-apps/manifest operator -
 POST /v1/github-apps/manifest/complete operator -
+POST /v1/gitops/apply operator -
+POST /v1/gitops/check operator -
 POST /v1/hooks/:id token -
 POST /v1/hooks/github-app/:hookKey token -
 POST /v1/housekeeping/images/prune operator nd://scope/write/housekeeping
@@ -549,6 +554,7 @@ PUT /v1/domains/:id/compose-route member nd://scope/write/domains
 PUT /v1/domains/:id/forward-auth member nd://scope/write/domains
 PUT /v1/github-apps/:id/private-key operator -
 PUT /v1/github-apps/:id/runners operator -
+PUT /v1/gitops operator -
 PUT /v1/host-ips/:ip operator -
 PUT /v1/image-scanning operator -
 PUT /v1/onboarding/dismissed operator -

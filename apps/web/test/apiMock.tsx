@@ -214,6 +214,7 @@ export function createFakeApiModule() {
       downloadUrl: vi.fn((volumeName: string, id: number) => `/v1/volumes/${volumeName}/backups/${id}/download`),
     },
     containers: { inspect: vi.fn(), compose: vi.fn(), listFiles: vi.fn(), readFile: vi.fn(), writeFile: vi.fn(), mkdir: vi.fn(), deleteFile: vi.fn() },
+    gitops: { get: vi.fn().mockResolvedValue({ config: null, lastCheck: null }), configure: vi.fn(), remove: vi.fn(), check: vi.fn(), apply: vi.fn(), export: vi.fn() },
     system: { resources: vi.fn(), pruneImages: vi.fn(), exportUrl: vi.fn(), updateCheck: vi.fn(), updateStatus: vi.fn(), updateStart: vi.fn(), dockerEvents: vi.fn() },
     networks: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), attach: vi.fn(), detach: vi.fn() },
     // G1.5: Settings → Security outgoing IP card; no rules on the iptables driver by default.
