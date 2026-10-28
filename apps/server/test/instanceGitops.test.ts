@@ -122,6 +122,32 @@ describe('the instance file', () => {
   });
 });
 
+describe('the checkout', () => {
+  it('never repeats a credential from git output, stops at the size cap and reads into a fresh directory each time', async () => {
+    const leaky = {
+      checkout: vi.fn(async () => {
+        throw new Error('fatal: unable to access https://x-access-token:ghs_SECRETSECRET@github.com/acme/instance/: 403');
+      }),
+    };
+    const err = await lib.readSpecFromRepo(db, CFG, leaky as never).catch((e: Error) => e);
+    expect(String(err)).toMatch(/Could not clone/);
+    expect(String(err)).not.toContain('ghs_SECRETSECRET');
+
+    const saved = { ...lib.GITOPS_CHECKOUT_LIMITS };
+    lib.GITOPS_CHECKOUT_LIMITS.maxBytes = 100;
+    try {
+      await expect(lib.readSpecFromRepo(db, CFG, repo({ 'ninedeploy-instance.yaml': FILE, 'big.bin': 'x'.repeat(1000) }))).rejects.toThrow(/larger than/);
+    } finally {
+      Object.assign(lib.GITOPS_CHECKOUT_LIMITS, saved);
+    }
+
+    const deps = repo({ 'ninedeploy-instance.yaml': FILE });
+    await Promise.all([lib.readSpecFromRepo(db, CFG, deps), lib.readSpecFromRepo(db, CFG, deps)]);
+    const dirs = deps.checkout.mock.calls.map((c) => c[3]);
+    expect(new Set(dirs).size).toBe(2);
+  });
+});
+
 describe('routes', () => {
   async function app(deps: lib.GitopsDeps, calls: Array<[string, string, unknown]>) {
     const a = await buildTestApp({ db });

@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, readdirSync, realpathSync, rmSync, type Dirent } from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { and, eq, isNull, isNotNull } from 'drizzle-orm';
@@ -14,7 +14,8 @@ import {
   type InstanceSpecService,
 } from '@ninedeploy/schemas';
 import { config } from '../config.js';
-import { checkoutCommit } from './git.js';
+import { classifyCloneFailure, displayRepoUrl, redactGitOutput } from './cloneFailure.js';
+import { checkoutCommit, type CloneCreds } from './git.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 import { resolveCloneCreds } from './sourceCreds.js';
 
@@ -77,24 +78,109 @@ export interface GitopsDeps {
 }
 const defaultDeps: GitopsDeps = { checkout: checkoutCommit };
 
-/** Check the repository out (shallow) and read the file at its path. */
-export async function readSpecFromRepo(db: DB, cfg: GitopsConfig, deps: GitopsDeps = defaultDeps): Promise<{ spec: InstanceSpec; commit: string | null }> {
-  const dir = path.join(config.paths.reposDir, '_instance-gitops');
-  const creds = cfg.sourceId ? await resolveCloneCreds(db, { sourceId: cfg.sourceId, repoUrl: cfg.repoUrl }) : undefined;
-  const commit = await deps.checkout(cfg.repoUrl, cfg.branch, undefined, dir, () => undefined, creds, { shallow: true, signal: AbortSignal.timeout(120_000) });
-  const file = path.resolve(dir, cfg.path);
-  let real: string;
-  try {
-    real = realpathSync(file);
-  } catch {
-    throw new Error(`${cfg.path} is not in the repository on ${cfg.branch}`);
+/** Bounds for the checkout, as for a repository inspection. Mutable so a test can shrink them. */
+export const GITOPS_CHECKOUT_LIMITS = { timeoutMs: 120_000, maxBytes: 50 * 1024 * 1024, pollMs: 1_000 };
+
+/** Bytes under `dir`, stopping as soon as `cap` is exceeded. Symlinks are not followed. */
+function sizeExceeds(dir: string, cap: number): boolean {
+  let total = 0;
+  const stack = [dir];
+  while (stack.length > 0) {
+    let entries: Dirent[];
+    const current = stack.pop()!;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else {
+        try {
+          total += lstatSync(full).size;
+        } catch {
+          /* vanished mid-walk */
+        }
+        if (total > cap) return true;
+      }
+    }
   }
-  // A symlink in the repository must not read a file of the panel host.
-  const root = realpathSync(dir);
-  if (!real.startsWith(root + path.sep)) throw new Error(`${cfg.path} points outside the repository`);
-  if (!statSync(real).isFile()) throw new Error(`${cfg.path} is not a file`);
-  if (statSync(real).size > MAX_SPEC_BYTES) throw new Error(`The instance file is larger than ${MAX_SPEC_BYTES / 1024} KiB`);
-  return { spec: parseInstanceSpec(readFileSync(real, 'utf8')), commit: commit || null };
+  return false;
+}
+
+/** A clone failure as a message without credentials or git's raw output. */
+function cloneError(err: unknown, cfg: GitopsConfig, creds: CloneCreds | undefined): Error {
+  const failure = classifyCloneFailure(err, cfg.branch, creds, cfg.repoUrl);
+  if (failure) return new Error(`Could not clone ${displayRepoUrl(cfg.repoUrl)} (${failure.reason}): ${failure.advice}`);
+  const message = redactGitOutput(err instanceof Error ? err.message : String(err), creds).split('\n')[0]?.slice(0, 300);
+  return new Error(`Could not clone ${displayRepoUrl(cfg.repoUrl)}: ${message}`);
+}
+
+// One read at a time: each in its own fresh directory, removed afterwards.
+let readQueue: Promise<unknown> = Promise.resolve();
+
+/** Check the repository out (shallow, bounded) into a fresh directory and read the file at its path. */
+export function readSpecFromRepo(db: DB, cfg: GitopsConfig, deps: GitopsDeps = defaultDeps): Promise<{ spec: InstanceSpec; commit: string | null }> {
+  const run = readQueue.then(() => readSpecOnce(db, cfg, deps));
+  readQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function readSpecOnce(db: DB, cfg: GitopsConfig, deps: GitopsDeps): Promise<{ spec: InstanceSpec; commit: string | null }> {
+  mkdirSync(config.paths.reposDir, { recursive: true });
+  const parent = mkdtempSync(path.join(config.paths.reposDir, '_instance-gitops-'));
+  const dir = path.join(parent, 'repo');
+  const creds = cfg.sourceId ? await resolveCloneCreds(db, { sourceId: cfg.sourceId, repoUrl: cfg.repoUrl }) : undefined;
+  const controller = new AbortController();
+  const stop: { reason: 'timeout' | 'size' | null } = { reason: null };
+  const timer = setTimeout(() => {
+    stop.reason = 'timeout';
+    controller.abort();
+  }, GITOPS_CHECKOUT_LIMITS.timeoutMs);
+  const watcher = setInterval(() => {
+    if (sizeExceeds(dir, GITOPS_CHECKOUT_LIMITS.maxBytes)) {
+      stop.reason = 'size';
+      controller.abort();
+    }
+  }, GITOPS_CHECKOUT_LIMITS.pollMs);
+  try {
+    let commit: string;
+    try {
+      commit = await deps.checkout(cfg.repoUrl, cfg.branch, undefined, dir, () => undefined, creds, { shallow: true, signal: controller.signal });
+      if (stop.reason === null && sizeExceeds(dir, GITOPS_CHECKOUT_LIMITS.maxBytes)) stop.reason = 'size';
+      if (stop.reason) throw new Error('checkout limit');
+    } catch (err) {
+      if (stop.reason === 'timeout') throw new Error(`The checkout took longer than ${GITOPS_CHECKOUT_LIMITS.timeoutMs / 1000}s; keep the instance file in a small repository`);
+      if (stop.reason === 'size') throw new Error(`The checkout is larger than ${GITOPS_CHECKOUT_LIMITS.maxBytes / (1024 * 1024)} MB; keep the instance file in a small repository`);
+      throw cloneError(err, cfg, creds);
+    }
+    let real: string;
+    try {
+      real = realpathSync(path.resolve(dir, cfg.path));
+    } catch {
+      throw new Error(`${cfg.path} is not in the repository on ${cfg.branch}`);
+    }
+    // A symlink in the repository must not read a file of the panel host.
+    if (!real.startsWith(realpathSync(dir) + path.sep)) throw new Error(`${cfg.path} points outside the repository`);
+    // Size and type from the open handle, then at most the limit is read.
+    const fd = openSync(real, 'r');
+    try {
+      const st = fstatSync(fd);
+      if (!st.isFile()) throw new Error(`${cfg.path} is not a file`);
+      if (st.size > MAX_SPEC_BYTES) throw new Error(`The instance file is larger than ${MAX_SPEC_BYTES / 1024} KiB`);
+      const buf = Buffer.alloc(MAX_SPEC_BYTES + 1);
+      const n = readSync(fd, buf, 0, buf.length, 0);
+      if (n > MAX_SPEC_BYTES) throw new Error(`The instance file is larger than ${MAX_SPEC_BYTES / 1024} KiB`);
+      return { spec: parseInstanceSpec(buf.subarray(0, n).toString('utf8')), commit: commit || null };
+    } finally {
+      closeSync(fd);
+    }
+  } finally {
+    clearTimeout(timer);
+    clearInterval(watcher);
+    rmSync(parent, { recursive: true, force: true });
+  }
 }
 
 /** The live instance, with the ids applying needs. */
