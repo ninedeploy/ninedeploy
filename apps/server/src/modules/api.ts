@@ -41,6 +41,7 @@ import { insightsRoutes, serviceInsightsRoutes } from './insights.js';
 import { jobRoutes } from './jobs.js';
 import { serverRoutes } from './servers.js';
 import { nodeOsUpdateRoutes, osUpdateRoutes } from './osUpdates.js';
+import { cloudRoutes } from './cloud.js';
 import { projectRoutes } from './projects.js';
 import { notificationRoutes } from './notifications.js';
 import { networkRoutes } from './networks.js';
@@ -182,6 +183,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // G4.2 OS security updates: the panel host and each node (operator only).
   await app.register(osUpdateRoutes, { prefix: '/os-updates' });
   await app.register(nodeOsUpdateRoutes, { prefix: '/servers/:serverId/os-updates' });
+  // G4.3 cloud servers (Hetzner Cloud), operator only.
+  await app.register(cloudRoutes, { prefix: '/cloud' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
   // 0.16.1: the operator's Getting started checklist (Dashboard card).
   await app.register(onboardingRoutes, { prefix: '/onboarding' });

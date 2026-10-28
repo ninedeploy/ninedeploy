@@ -11,6 +11,10 @@ import type {
   SwarmSettingsInput,
   SwarmStatus,
   OsUpdateStatus,
+  CloudServer,
+  HetznerOptions,
+  HetznerServerCreate,
+  HetznerStatus,
 } from '@ninedeploy/schemas';
 import type { ServerListEntry, ServerRolesResult, SwarmJoinResult, SwarmLeaveResult } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -81,6 +85,22 @@ export interface ServersApi {
     /** Turn automatic security updates on or off; answers the status read afterwards. */
     setAuto: (serverId: number | null, enabled: boolean) => Promise<OsUpdateStatus>;
   };
+  /**
+   * G4.3 cloud servers (operator only). The Hetzner Cloud token is write-only;
+   * a created server bootstraps the agent itself and turns online when it answers.
+   */
+  cloud: {
+    hetzner: {
+      status: () => Promise<HetznerStatus>;
+      setToken: (token: string) => Promise<HetznerStatus>;
+      deleteToken: () => Promise<HetznerStatus>;
+      options: () => Promise<HetznerOptions>;
+      servers: () => Promise<CloudServer[]>;
+      createServer: (input: HetznerServerCreate) => Promise<{ serverId: number; providerServerId: number; ipv4: string }>;
+      /** Delete the VM and its node (409 while the node hosts anything). */
+      deleteServer: (serverId: number) => Promise<{ ok: boolean }>;
+    };
+  };
   orchestrators: {
     /** Every `IOrchestrator` the running kernel has registered. G-10 PR-A. */
     list: () => Promise<{
@@ -147,6 +167,18 @@ export function serversApi(t: Transport): ServersApi {
           { method: 'POST', body: { enabled } },
           OS_UPDATE_CALL_TIMEOUT_MS,
         ),
+    },
+    cloud: {
+      hetzner: {
+        status: () => get<HetznerStatus>('/v1/cloud/hetzner'),
+        setToken: (token) => send<HetznerStatus>('PUT', '/v1/cloud/hetzner/token', { token }),
+        deleteToken: () => send<HetznerStatus>('DELETE', '/v1/cloud/hetzner/token'),
+        options: () => get<HetznerOptions>('/v1/cloud/hetzner/options'),
+        servers: () => get<CloudServer[]>('/v1/cloud/hetzner/servers'),
+        createServer: (input) =>
+          send<{ serverId: number; providerServerId: number; ipv4: string }>('POST', '/v1/cloud/hetzner/servers', input),
+        deleteServer: (serverId) => send<{ ok: boolean }>('DELETE', `/v1/cloud/hetzner/servers/${serverId}`),
+      },
     },
     orchestrators: {
       list: () => get<{

@@ -5405,4 +5405,37 @@ export const TR: Readonly<Record<string, string>> = {
   'checked {time}': 'kontrol: {time}',
   'security': 'güvenlik',
   '{n} pending updates, {s} of them security updates': '{n} bekleyen güncelleme, {s} tanesi güvenlik güncellemesi',
+
+  // ── Hetzner Cloud servers (G4.3) ──────────────────────────────────────
+  'Could not create the server: {error}': 'Sunucu oluşturulamadı: {error}',
+  'Could not delete the server: {error}': 'Sunucu silinemedi: {error}',
+  'Could not load the servers: {error}': 'Sunucular yüklenemedi: {error}',
+  'Could not read the Hetzner project: {error}': 'Hetzner projesi okunamadı: {error}',
+  'Create server': 'Sunucu oluştur',
+  'Create servers on Hetzner Cloud that join this panel by themselves. Paste a Cloud project API token with Read & Write access; it is stored encrypted and never shown again.':
+    'Hetzner Cloud\'da bu panele kendiliğinden katılan sunucular oluşturun. Okuma ve yazma yetkili bir Cloud projesi API token\'ı yapıştırın; şifreli saklanır ve bir daha gösterilmez.',
+  'Delete "{name}" on Hetzner Cloud and remove its node? The VM and everything on its disk are destroyed. This is refused while the node hosts services or databases.':
+    '"{name}" Hetzner Cloud\'da silinsin ve düğümü kaldırılsın mı? Sanal makine ve diskindeki her şey yok edilir. Düğümde servis veya veritabanı varken bu işlem reddedilir.',
+  'Delete server': 'Sunucuyu sil',
+  'Forget token': 'Token\'ı unut',
+  'Hetzner Cloud': 'Hetzner Cloud',
+  'Hetzner Cloud token': 'Hetzner Cloud token\'ı',
+  'Hetzner Cloud token saved': 'Hetzner Cloud token\'ı kaydedildi',
+  'Hetzner bills the server from the moment it is created. Its cloud-init installs Docker and starts the NineDeploy agent on port 4600; the agent token travels in the server\'s user data.':
+    'Hetzner sunucuyu oluşturulduğu andan itibaren faturalar. Cloud-init\'i Docker\'ı kurar ve NineDeploy ajanını 4600 portunda başlatır; ajan token\'ı sunucunun user data\'sı içinde taşınır.',
+  'Location': 'Konum',
+  'No server created from this panel yet.': 'Bu panelden henüz sunucu oluşturulmadı.',
+  'Reading the Hetzner project…': 'Hetzner projesi okunuyor…',
+  'SSH keys for root': 'Root için SSH anahtarları',
+  'Server created at {ip}; it joins as a node in a few minutes':
+    'Sunucu {ip} adresinde oluşturuldu; birkaç dakika içinde düğüm olarak katılır',
+  'Server deleted on Hetzner Cloud': 'Sunucu Hetzner Cloud\'da silindi',
+  'Server type': 'Sunucu tipi',
+  'Token refused: {error}': 'Token reddedildi: {error}',
+  'Token {hint}': 'Token {hint}',
+  'VM: {status}': 'VM: {status}',
+  'node: {status}': 'düğüm: {status}',
+  'waiting for the agent to answer (a few minutes after creation)':
+    'ajanın yanıt vermesi bekleniyor (oluşturmadan birkaç dakika sonra)',
+  '{cores} vCPU, {memory} GB RAM, {disk} GB': '{cores} vCPU, {memory} GB RAM, {disk} GB',
 };

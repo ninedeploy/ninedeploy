@@ -178,3 +178,60 @@ For 0.18.2, Swarm preloading uses three bounded image slots per service rather t
 
 
 0.18.2 implements sealed node Web Studio for the supported SQL/KV engines; see [node Studio operations](NODE_OPERATIONS.md#node-database-web-studio-unreleased-0180). Its full acceptance is tracked separately from published 0.17.1.
+
+## Creating nodes on Hetzner Cloud (G4.3)
+
+Servers → *Hetzner Cloud* creates a VM that joins the panel by itself. Operators only.
+
+**Set up**
+
+1. In the Hetzner Cloud Console, create a project API token with **Read & Write**.
+2. Paste it on the Servers page. The panel checks it with a read call first, then stores it encrypted. The page shows only its last four characters; **Forget token** removes it.
+
+**Create a server**
+
+1. Pick a location, a server type and an image.
+   - Only the server types offered in that location are listed.
+   - Only images for that type's architecture are listed.
+   - Images: Ubuntu, Debian, Rocky, Alma, CentOS Stream and Fedora.
+2. Optionally pick SSH keys from the project for root.
+
+The panel then:
+
+- creates the VM with the label `managed-by=ninedeploy`;
+- registers it as an `offline` node with a fresh agent token.
+
+The VM's cloud-init user data does two things:
+
+- installs Docker the same way the SSH bootstrap does (signed repositories per distribution);
+- starts the NineDeploy agent on port 4600.
+
+The panel pings the new agent every 15 seconds for up to 20 minutes, and marks the node online when it answers. If the panel restarts in between, press **Test** on the node once the VM has booted.
+
+**Hetzner bills the server from the moment it is created.**
+
+**Delete a server**
+
+**Delete** destroys the VM and removes the node.
+
+- It is refused while the node hosts services, fan-out targets or managed databases, or is a Swarm member, with the same messages as deleting a node.
+- A VM that is already gone on Hetzner only cleans up the panel side.
+- Deleting the node from the Servers list instead leaves the VM running. The Hetzner card then shows `node: removed`, and **Delete** there removes the VM.
+
+**What to know**
+
+- The agent token's hash is in the VM's user data. Hetzner keeps the user data and serves it to the VM's metadata endpoint. Whoever can read it, such as the project's members or root on the VM, already controls the VM.
+- Hetzner gives the VM no firewall. Like any node, the agent port accepts only sealed, token-authenticated requests.
+- No migration:
+  - the token is the encrypted setting `hetzner_cloud_token_encrypted`;
+  - each node's link to its VM is the setting `cloud_server:<serverId>`.
+
+**Routes** (operator only), all audited (`cloud.*`):
+
+- `GET /v1/cloud/hetzner`
+- `PUT` and `DELETE /v1/cloud/hetzner/token`
+- `GET /v1/cloud/hetzner/options`
+- `GET` and `POST /v1/cloud/hetzner/servers`
+- `DELETE /v1/cloud/hetzner/servers/:serverId`
+
+DigitalOcean and Vultr would follow the same shape.

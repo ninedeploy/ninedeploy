@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Create nodes on Hetzner Cloud (G4.3). On the Servers page, an operator saves a Hetzner Cloud API token, then picks a location, server type, image and SSH keys.
+  - **What the panel does:** it creates the VM and registers it as a node. The VM's cloud-init installs Docker for its distribution, using the same script as the SSH bootstrap, and starts the NineDeploy agent. The node turns online when the agent first answers.
+  - **Deleting:** **Delete** destroys the VM and removes the node. It is refused while the node still hosts services, databases or Swarm work.
+  - **The token:** it is checked before it is stored, stored encrypted, and never shown back.
+  - **No migration:** the token and each node's link to its VM are settings rows.
+  - **Not tested against Hetzner:** the Hetzner API was only exercised through a fake in tests; no real server was created.
+
+  See MULTI_NODE.md → *Creating nodes on Hetzner Cloud*.
+
 - More Linux distributions (G4.1). `install.sh` now sets up a panel host on these distributions, not only Debian and Ubuntu:
   - **RHEL, Rocky, Alma, CentOS Stream, Oracle Linux and Fedora:**
     - Docker and Node come from Docker's and NodeSource's signed RPM repositories.

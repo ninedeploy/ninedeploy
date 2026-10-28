@@ -351,6 +351,7 @@ export function createFakeApiModule() {
     // Multi-node: Swarm on the panel host (Settings → Swarm).
     swarm: { get: vi.fn(), init: vi.fn(), settings: vi.fn() },
     osUpdates: { get: vi.fn(), setAuto: vi.fn() },
+    cloud: { hetzner: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() } },
     traefik: {
       get: vi.fn(),
       status: vi.fn(),

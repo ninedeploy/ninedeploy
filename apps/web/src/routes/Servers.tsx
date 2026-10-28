@@ -22,6 +22,7 @@ import type { NodeTerminalCapability, ServerBootstrapResult, ServerSshTestResult
 import { api } from '../lib/api.js';
 import { useToast } from '../components/Toast.js';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, cn } from '../components/ui.js';
+import { HetznerCloudCard } from '../components/HetznerCloudCard.js';
 import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
 import { formatRelative, useCopy } from '../lib/format.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
@@ -385,6 +386,9 @@ export function Servers() {
           {isOperator && <EnrolmentTokenCard />}
         </div>
       </Card>
+
+      {/* G4.3: nodes created on Hetzner Cloud (operator-only routes). */}
+      {isOperator && <HetznerCloudCard />}
 
       {/* Discovery & Pending Approval Section */}
       {pendingServers.length > 0 && (

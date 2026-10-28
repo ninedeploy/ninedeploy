@@ -1,6 +1,8 @@
 import {
   autoPruneConfigUpdate,
   doctorFixRequest,
+  hetznerServerCreate,
+  hetznerTokenInput,
   logDrainCreate,
   logDrainUpdate,
   observabilityPatch,
@@ -319,5 +321,37 @@ export const operationsSpecs: RouteSpecMap = {
     body: osAutoUpdatesInput,
     validation: 'zod',
     responseType: 'OsUpdateStatus',
+  },
+  // G4.3 cloud servers (Hetzner Cloud)
+  'GET /v1/cloud/hetzner': { summary: 'Whether a Hetzner Cloud API token is saved', tag: 'cloud', floor: 'operator', responseType: 'HetznerStatus' },
+  'PUT /v1/cloud/hetzner/token': {
+    summary: 'Save the Hetzner Cloud API token (checked with a read call first)',
+    tag: 'cloud',
+    floor: 'operator',
+    body: hetznerTokenInput,
+    validation: 'zod',
+    responseType: 'HetznerStatus',
+    sensitive: true,
+  },
+  'DELETE /v1/cloud/hetzner/token': { summary: 'Forget the Hetzner Cloud API token', tag: 'cloud', floor: 'operator', responseType: 'HetznerStatus' },
+  'GET /v1/cloud/hetzner/options': {
+    summary: 'Locations, server types, supported images and SSH keys of the Hetzner project',
+    tag: 'cloud',
+    floor: 'operator',
+    responseType: 'HetznerOptions',
+  },
+  'GET /v1/cloud/hetzner/servers': { summary: 'Nodes created on Hetzner Cloud', tag: 'cloud', floor: 'operator', responseType: 'CloudServer[]' },
+  'POST /v1/cloud/hetzner/servers': {
+    summary: 'Create a Hetzner Cloud server that bootstraps the agent and registers as a node',
+    tag: 'cloud',
+    floor: 'operator',
+    body: hetznerServerCreate,
+    validation: 'zod',
+    responseType: '{ serverId: number; providerServerId: number; ipv4: string }',
+  },
+  'DELETE /v1/cloud/hetzner/servers/:serverId': {
+    summary: 'Delete a Hetzner Cloud server and its node (refused while it hosts anything)',
+    tag: 'cloud',
+    floor: 'operator',
   },
 };
