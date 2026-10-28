@@ -3,6 +3,9 @@ import { providerBaseUrl } from '../src/common.js';
 import {
   GITHUB_API_BASE_URL,
   GITHUB_WEB_BASE_URL,
+  GITHUB_RUNNER_DEFAULTS,
+  githubRunnerConfig,
+  githubRunnerStatus,
   githubApp,
   githubAppCreate,
   githubAppInstallation,
@@ -118,17 +121,23 @@ describe('manifest flow', () => {
       target: 'user',
       webBaseUrl: GITHUB_WEB_BASE_URL,
       checks: false,
+      runners: false,
     });
   });
 
   it('needs org for an org App and refuses it for a personal one', () => {
     expect(
       githubAppManifestRequest.parse({ target: 'org', org: 'acme', webBaseUrl: 'https://ghe.acme.io/', apiBaseUrl: 'https://ghe.acme.io/api/v3', checks: true }),
-    ).toEqual({ target: 'org', org: 'acme', webBaseUrl: 'https://ghe.acme.io', apiBaseUrl: 'https://ghe.acme.io/api/v3', checks: true });
+    ).toEqual({ target: 'org', org: 'acme', webBaseUrl: 'https://ghe.acme.io', apiBaseUrl: 'https://ghe.acme.io/api/v3', checks: true, runners: false });
     expect(githubAppManifestRequest.safeParse({ target: 'org' }).success).toBe(false);
     expect(githubAppManifestRequest.safeParse({ target: 'user', org: 'acme' }).success).toBe(false);
     expect(githubAppManifestRequest.safeParse({ target: 'org', org: 'a/b' }).success).toBe(false);
     expect(githubAppManifestRequest.safeParse({ target: 'team' }).success).toBe(false);
+  });
+
+  it('enables runner permissions only when explicitly requested', () => {
+    expect(githubAppManifestRequest.parse({ target: 'user', runners: true }).runners).toBe(true);
+    expect(githubAppManifestRequest.safeParse({ target: 'user', runners: 'true' }).success).toBe(false);
   });
 
   it('describes the manifest response', () => {
@@ -299,5 +308,29 @@ describe('service link', () => {
     expect(serviceGithubLink.parse(link)).toEqual(link);
     expect(serviceGithubStatus.parse({ link })).toEqual({ link });
     expect(serviceGithubStatus.parse({ link: null })).toEqual({ link: null });
+  });
+});
+
+describe('self-hosted runner settings', () => {
+  it('defaults to disabled, private-only runners and accepts bounded resource settings', () => {
+    expect(githubRunnerConfig.parse(GITHUB_RUNNER_DEFAULTS)).toEqual(GITHUB_RUNNER_DEFAULTS);
+    expect(GITHUB_RUNNER_DEFAULTS).toMatchObject({ enabled: false, allowPublicRepos: false });
+    expect(githubRunnerConfig.parse({ ...GITHUB_RUNNER_DEFAULTS, enabled: true, cpus: null, memoryMb: null, repositories: ['acme/app'] }).enabled).toBe(true);
+  });
+
+  it('rejects ambiguous labels, duplicate repositories and out-of-range limits', () => {
+    for (const patch of [
+      { labels: [] }, { labels: ['linux'] }, { labels: ['custom', 'CUSTOM'] },
+      { labels: ['bad label'] }, { repositories: ['acme/app', 'ACME/APP'] },
+      { repositories: ['invalid'] }, { maxConcurrent: 21 }, { cpus: 0.1 }, { memoryMb: 128 },
+    ]) expect(githubRunnerConfig.safeParse({ ...GITHUB_RUNNER_DEFAULTS, ...patch }).success).toBe(false);
+  });
+
+  it('validates pending and active jobs in the status response', () => {
+    const status = { config: GITHUB_RUNNER_DEFAULTS, image: 'runner@sha256:abc', problems: [],
+      pending: [{ jobId: 1, repo: 'acme/app', jobName: null, queuedAt: 'now' }],
+      active: [{ name: 'runner', jobId: null, repo: null, state: 'running', startedAt: null }] };
+    expect(githubRunnerStatus.parse(status)).toEqual(status);
+    expect(githubRunnerStatus.safeParse({ ...status, pending: [{ ...status.pending[0], jobId: '1' }] }).success).toBe(false);
   });
 });
