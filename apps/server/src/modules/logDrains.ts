@@ -7,6 +7,7 @@ import { audit } from '../lib/audit.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { notFound, unprocessable, parseId as num } from '../lib/errors.js';
 import { testLogDrainConnection } from '../engine/logDrainManager.js';
+import { extraDrainUrlProblem, isExtraDrainType } from '../engine/logDrainTargets.js';
 
 /**
  * F601: the only transport (`guardedFetch`) speaks http(s) and refuses every
@@ -23,6 +24,13 @@ function assertDeliverableUrl(raw: string): void {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw unprocessable(`Drain URL must use http:// or https:// (logs are delivered over HTTP), not ${parsed.protocol}//`);
   }
+}
+
+/** G3.4: a target that reads its index, dataset or log stream from the URL must find it there. */
+function assertUrlFitsType(type: string, url: string): void {
+  if (!isExtraDrainType(type)) return;
+  const problem = extraDrainUrlProblem(type, url);
+  if (problem) throw unprocessable(problem);
 }
 
 export const logDrainRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -154,6 +162,7 @@ export const logDrainRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     const { name, type, url, apiKey, serviceId, enabled = true, format = 'json', headers } = parsed.data;
     assertDeliverableUrl(url);
+    assertUrlFitsType(type, url);
     if (serviceId != null) await assertServiceExists(serviceId);
 
     let apiKeyEncrypted: string | null = null;
@@ -205,6 +214,7 @@ export const logDrainRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const [existing] = await app.db.select().from(logDrains).where(eq(logDrains.id, numId));
     if (!existing) throw notFound('Log drain not found');
     if (parsed.data.url !== undefined) assertDeliverableUrl(parsed.data.url);
+    if (parsed.data.url !== undefined || parsed.data.type !== undefined) assertUrlFitsType(parsed.data.type ?? existing.type, parsed.data.url ?? existing.url);
     if (parsed.data.serviceId != null) await assertServiceExists(parsed.data.serviceId);
 
     const patch: Partial<typeof logDrains.$inferInsert> = {};

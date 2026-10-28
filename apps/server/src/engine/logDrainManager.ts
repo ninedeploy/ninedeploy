@@ -1,5 +1,6 @@
 import type { LogDrainFormat, LogDrainType } from '@ninedeploy/schemas';
 import { guardedFetch } from '../lib/egressGuard.js';
+import { elasticsearchBulkFailed, extraAuthHeaders, formatExtraBatch, isExtraDrainType, postCloudWatch } from './logDrainTargets.js';
 
 /** Drains are always addressed by a URL string; the narrower contract keeps
  * the guarded default assignable while tests may still inject a mock. */
@@ -44,7 +45,10 @@ export function formatLogBatch(
   type: LogDrainType,
   format: LogDrainFormat,
   entries: LogPayloadEntry[],
+  /** G3.4: some targets read their index, dataset or log stream from the URL. */
+  url = '',
 ): { body: string; contentType: string } {
+  if (isExtraDrainType(type)) return formatExtraBatch(type, url, entries);
   if (type === 'loki') {
     const streams = new Map<string, { stream: Record<string, string>; values: Array<[string, string]> }>();
     for (const e of entries) {
@@ -142,7 +146,8 @@ export async function dispatchLogToDrain(
   // compromised admin credential should not get for free.
   fetchImpl: FetchLike = guardedFetch,
 ): Promise<{ ok: boolean; status: number; error?: string }> {
-  return postToDrain(drain, formatLogPayload(drain.type, drain.format, entry), fetchImpl);
+  const payload = isExtraDrainType(drain.type) ? formatExtraBatch(drain.type, drain.url, [entry]) : formatLogPayload(drain.type, drain.format, entry);
+  return postToDrain(drain, payload, fetchImpl);
 }
 
 async function postToDrain(
@@ -151,13 +156,18 @@ async function postToDrain(
   fetchImpl: FetchLike,
   signal?: AbortSignal,
 ): Promise<{ ok: boolean; status: number; error?: string }> {
+  const timeout = signal ? AbortSignal.any([signal, AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000);
+  // G3.4: CloudWatch is a signed AWS API call, not a plain POST.
+  if (drain.type === 'cloudwatch') return postCloudWatch(fetchImpl, drain, body, timeout);
   const headers: Record<string, string> = {
     'Content-Type': contentType,
     'User-Agent': 'NineDeploy-LogDrain/1.0',
     ...(drain.headers ?? {}),
   };
 
-  if (drain.apiKey) {
+  if (isExtraDrainType(drain.type)) {
+    Object.assign(headers, extraAuthHeaders(drain.type, drain.apiKey));
+  } else if (drain.apiKey) {
     if (drain.type === 'datadog') {
       headers['DD-API-KEY'] = drain.apiKey;
     } else {
@@ -170,8 +180,12 @@ async function postToDrain(
       method: 'POST',
       headers,
       body,
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000),
+      signal: timeout,
     });
+    if (res.ok && drain.type === 'elasticsearch') {
+      const failed = await elasticsearchBulkFailed(res);
+      return failed ? { ok: false, status: res.status, error: failed } : { ok: true, status: res.status };
+    }
     // Release the connection: an unread body keeps the socket busy.
     await res.body?.cancel().catch(() => undefined);
     return { ok: res.ok, status: res.status };
@@ -194,7 +208,7 @@ export async function dispatchLogBatch(
   fetchImpl: FetchLike = guardedFetch,
   signal?: AbortSignal,
 ): Promise<{ ok: boolean; status: number; error?: string }> {
-  return postToDrain(drain, formatLogBatch(drain.type, drain.format, entries), fetchImpl, signal);
+  return postToDrain(drain, formatLogBatch(drain.type, drain.format, entries, drain.url), fetchImpl, signal);
 }
 
 export async function testLogDrainConnection(

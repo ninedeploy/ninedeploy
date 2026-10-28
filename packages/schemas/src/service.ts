@@ -1393,7 +1393,8 @@ export const tunnelEntry = z.object({
 export type TunnelEntry = z.infer<typeof tunnelEntry>;
 
 // ── Log Drains ─────────────────────────────────────────────────────────────
-export const logDrainType = z.enum(['syslog', 'loki', 'vector', 'datadog', 'http']);
+// G3.4 added elasticsearch (also OpenSearch), splunk, betterstack, newrelic, axiom and cloudwatch.
+export const logDrainType = z.enum(['syslog', 'loki', 'vector', 'datadog', 'http', 'elasticsearch', 'splunk', 'betterstack', 'newrelic', 'axiom', 'cloudwatch']);
 export type LogDrainType = z.infer<typeof logDrainType>;
 
 export const logDrainFormat = z.enum(['json', 'raw', 'rfc5424']);

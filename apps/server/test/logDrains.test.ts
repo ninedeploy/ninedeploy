@@ -189,6 +189,19 @@ describe('log drains API', () => {
     expect(resInvalid.statusCode).toBe(422);
   });
 
+  it('G3.4: accepts the new targets and refuses a URL that does not name what they need', async () => {
+    const app = await buildTestApp({ db: createFakeDb({ insert: { log_drains: [drainRow({ name: 'CW', type: 'cloudwatch' })] } }) });
+    await app.register(logDrainRoutes);
+    const post = (type: string, url: string) => app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { name: 'x', type, url } });
+    const bad = await post('cloudwatch', 'https://logs.eu-west-1.amazonaws.com/?group=g');
+    expect(bad.statusCode).toBe(422);
+    expect(bad.json().error.message).toMatch(/group=<log group>&stream=<log stream>/);
+    expect((await post('elasticsearch', 'https://es.example.com:9200/')).statusCode).toBe(422);
+    expect((await post('cloudwatch', 'https://logs.eu-west-1.amazonaws.com/?group=g&stream=s')).statusCode).toBe(201);
+    expect((await post('unknown', 'https://x.example.com/')).statusCode).toBe(422);
+    await app.close();
+  });
+
   it('updates an existing log drain with all optional fields', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

@@ -5661,4 +5661,18 @@ export const TR: Readonly<Record<string, string>> = {
   '{host} is open again': '{host} yeniden açık',
   'Least role for {host}': '{host} için en düşük rol',
   'Panel sign-in for {host}': '{host} için panel girişi',
+
+  // ── Log drain targets (G3.4) ──────────────────────────────────────────
+  'Elasticsearch / OpenSearch': 'Elasticsearch / OpenSearch',
+  'user:password, or an Elasticsearch API key': 'kullanıcı:parola ya da bir Elasticsearch API anahtarı',
+  'Splunk HEC': 'Splunk HEC',
+  'HEC token': 'HEC token\'ı',
+  'Better Stack': 'Better Stack',
+  'Source token': 'Kaynak token\'ı',
+  'New Relic': 'New Relic',
+  'License or ingest key': 'Lisans ya da ingest anahtarı',
+  'Axiom': 'Axiom',
+  'API token with ingest access': 'Ingest erişimi olan API token\'ı',
+  'AWS CloudWatch Logs': 'AWS CloudWatch Logs',
+  'ACCESS_KEY_ID:SECRET_ACCESS_KEY': 'ACCESS_KEY_ID:SECRET_ACCESS_KEY',
 };

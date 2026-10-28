@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- More log-drain targets (G3.4): Elasticsearch/OpenSearch (`_bulk`), Splunk HEC, Better Stack, New Relic, Axiom and AWS CloudWatch Logs (SigV4 `PutLogEvents`, creating the group and stream when missing).
+  - **Delivery:** they use the existing shipper and queue.
+  - **Validation:** a URL that does not name the index (Elasticsearch) or the group and stream (CloudWatch) is refused when the drain is saved. There is no migration.
+
+  See OBSERVABILITY.md → *Log drain targets*.
 - Panel sign-in in front of any app (forward auth, G2.3). Under Service → Settings → Panel sign-in, a domain can require visitors to sign in on the panel and hold a chosen role on the service. Traefik's `forwardAuth` asks the panel, so no extra container runs.
   - **Flow:** a one-time code on the app's domain, bound by a state cookie, sets a 12-hour session cookie.
   - **Revocation:** Sign out everywhere and role changes end access.

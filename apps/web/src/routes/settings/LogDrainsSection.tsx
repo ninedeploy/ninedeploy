@@ -27,12 +27,19 @@ const INITIAL_FORM: DrainFormState = {
   enabled: true,
 };
 
-const DRAIN_TYPES: Array<{ id: LogDrainType; label: string; desc: string; defaultFormat: LogDrainFormat }> = [
+const DRAIN_TYPES: Array<{ id: LogDrainType; label: string; desc: string; defaultFormat: LogDrainFormat; url?: string; key?: string }> = [
   { id: 'loki', label: msg('Grafana Loki'), desc: 'Push logs via Loki /loki/api/v1/push endpoint', defaultFormat: 'json' },
   { id: 'datadog', label: msg('Datadog'), desc: 'Push logs to Datadog HTTP Log Ingestion API', defaultFormat: 'json' },
   { id: 'vector', label: msg('Vector / Aggregator'), desc: 'Push to Vector, Fluentd, or custom HTTP sinks', defaultFormat: 'json' },
   { id: 'syslog', label: msg('Syslog (RFC5424)'), desc: 'RFC5424 formatted logs over HTTP/HTTPS', defaultFormat: 'rfc5424' },
   { id: 'http', label: msg('Custom HTTP Webhook'), desc: 'Raw or JSON structured HTTP POST webhooks', defaultFormat: 'json' },
+  // G3.4: the body format is the target's own, so the format setting does not apply to these.
+  { id: 'elasticsearch', label: msg('Elasticsearch / OpenSearch'), desc: '', defaultFormat: 'json', url: 'https://es.example.com:9200/logs-ninedeploy', key: msg('user:password, or an Elasticsearch API key') },
+  { id: 'splunk', label: msg('Splunk HEC'), desc: '', defaultFormat: 'json', url: 'https://splunk.example.com:8088/services/collector/event', key: msg('HEC token') },
+  { id: 'betterstack', label: msg('Better Stack'), desc: '', defaultFormat: 'json', url: 'https://in.logs.betterstack.com', key: msg('Source token') },
+  { id: 'newrelic', label: msg('New Relic'), desc: '', defaultFormat: 'json', url: 'https://log-api.newrelic.com/log/v1', key: msg('License or ingest key') },
+  { id: 'axiom', label: msg('Axiom'), desc: '', defaultFormat: 'json', url: 'https://api.axiom.co/v1/datasets/<dataset>/ingest', key: msg('API token with ingest access') },
+  { id: 'cloudwatch', label: msg('AWS CloudWatch Logs'), desc: '', defaultFormat: 'json', url: 'https://logs.<region>.amazonaws.com/?group=<log group>&stream=<log stream>', key: msg('ACCESS_KEY_ID:SECRET_ACCESS_KEY') },
 ];
 
 export function LogDrainsSection() {
@@ -277,7 +284,7 @@ export function LogDrainsSection() {
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-300">{t('Endpoint Ingestion URL')}</label>
               <Input
-                placeholder="https://loki.example.com/loki/api/v1/push"
+                placeholder={DRAIN_TYPES.find((dt) => dt.id === formData.type)?.url ?? 'https://loki.example.com/loki/api/v1/push'}
                 value={formData.url}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -291,7 +298,10 @@ export function LogDrainsSection() {
               <label className="mb-1 block text-xs font-medium text-slate-300">{t('API Key / Ingest Token (Optional)')}</label>
               <Input
                 type="password"
-                placeholder={t('Bearer token or Datadog API Key')}
+                placeholder={(() => {
+                  const hint = DRAIN_TYPES.find((dt) => dt.id === formData.type)?.key;
+                  return hint ? t(hint) : t('Bearer token or Datadog API Key');
+                })()}
                 value={formData.apiKey}
                 onChange={(e) => {
                   const val = e.target.value;

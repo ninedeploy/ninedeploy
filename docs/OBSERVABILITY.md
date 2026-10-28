@@ -143,6 +143,26 @@ Retry schedules delivery for the next cycle; it does not certify delivery.
 Discard permanently removes pending batches without rewinding the source cursor.
 The panel requires an explicit confirmation for the same operation.
 
+## Log drain targets (G3.4)
+
+Besides Loki, Datadog, Vector, syslog-over-HTTP and plain HTTP, a drain can send to the services below. They use the same shipper, with batches, retries, the durable queue and the egress guard. The body format is the target's own, so the drain's format setting does not apply to them.
+
+| Type | URL | API key |
+| --- | --- | --- |
+| `elasticsearch` (also OpenSearch) | the index or data stream, `https://es.example.com:9200/logs-ninedeploy`; batches go to `_bulk` as `create` actions | `user:password` (basic auth) or an Elasticsearch API key |
+| `splunk` | the HEC event endpoint, `https://splunk:8088/services/collector/event` | the HEC token |
+| `betterstack` | the source's ingesting host | the source token |
+| `newrelic` | `https://log-api.newrelic.com/log/v1` (or the EU host) | a license or ingest key (`Api-Key`) |
+| `axiom` | `https://api.axiom.co/v1/datasets/<dataset>/ingest` | an API token |
+| `cloudwatch` | `https://logs.<region>.amazonaws.com/?group=<log group>&stream=<log stream>` | `ACCESS_KEY_ID:SECRET_ACCESS_KEY[:SESSION_TOKEN]` |
+
+**Notes per target**
+- **Elasticsearch:** answers 200 even when some documents were refused. The shipper reads the `errors` flag and retries the batch, reporting the first reason.
+- **CloudWatch:** signed with SigV4 (`PutLogEvents`). The log group and stream are created the first time AWS says they do not exist. The key needs `logs:PutLogEvents`, plus `logs:CreateLogStream` and `logs:CreateLogGroup` if they should be created.
+- **Saving a drain:** a URL that does not name what its target needs is refused (422). That means the index for Elasticsearch, and the region, group and stream for CloudWatch.
+
+**Storage:** no migration is needed; the drain type is a text column without a CHECK.
+
 ## Search shipped logs
 
 When a Loki drain is enabled, the lines it received can be searched, including

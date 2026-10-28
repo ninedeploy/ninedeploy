@@ -2495,7 +2495,8 @@ export const installedPlugins = sqliteTable(
 );
 
 // ─── log drains ───────────────────────────────────────────────────────────
-export const logDrainType = ['syslog', 'loki', 'vector', 'datadog', 'http'] as const;
+// G3.4 added the last six; the column is plain text (no CHECK), so no migration.
+export const logDrainType = ['syslog', 'loki', 'vector', 'datadog', 'http', 'elasticsearch', 'splunk', 'betterstack', 'newrelic', 'axiom', 'cloudwatch'] as const;
 export const logDrainFormat = ['json', 'raw', 'rfc5424'] as const;
 
 export const logDrains = sqliteTable(
