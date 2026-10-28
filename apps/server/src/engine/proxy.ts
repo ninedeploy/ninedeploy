@@ -34,7 +34,7 @@ import {
 import { canaryRouteFor } from './canaryState.js';
 import { panelWakeUpstream } from '../lib/panelUpstream.js';
 import { routingOverrides } from '../lib/maintenance.js';
-import { composeServiceContainer } from '../lib/composeRoutes.js';
+import { composeRouteCollides, composeServiceContainer } from '../lib/composeRoutes.js';
 import { FA_PREFIX, forwardAuthDomains } from '../lib/forwardAuth.js';
 import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
 
@@ -1070,8 +1070,11 @@ export async function renderDynamicConfig(
     overrides.maintenance.clear();
     overrides.errorPages.clear();
   }
+  const allServices = await db.select().from(services);
+  // G2.1: every compose stack's slug, to refuse a route whose container name is another stack's.
+  const composeSlugs = allServices.filter((s) => s.type === 'compose').map((s) => s.slug);
   const servicesById = new Map(
-    (await db.select().from(services))
+    allServices
       // G2.2: a stopped service in maintenance still answers its maintenance page.
       .filter(s => s.status !== 'stopped' || overrides.maintenance.has(s.id))
       .filter((s) =>
@@ -1359,7 +1362,8 @@ export async function renderDynamicConfig(
       // request would 502 forever). Route them through the host gateway,
       // same as the panel router below.
       // G2.1: a compose domain may name another service of the stack, and its port.
-      const composeRoute = svc.type === 'compose' ? overrides.composeRoutes.get(d.id) : undefined;
+      const requestedRoute = svc.type === 'compose' ? overrides.composeRoutes.get(d.id) : undefined;
+      const composeRoute = requestedRoute && !composeRouteCollides(svc.slug, requestedRoute.service, composeSlugs) ? requestedRoute : undefined;
       const upstreamHost = composeRoute
         ? composeServiceContainer(svc.slug, composeRoute.service)
         : svc.type === 'pm2' ? 'host.docker.internal' : (targetRuntimeByService.get(svc.id) ?? svc.runtimeId);

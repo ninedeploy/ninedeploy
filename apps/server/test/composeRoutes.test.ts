@@ -59,6 +59,23 @@ describe('compose routes', () => {
     expect(yaml).toContain('    svc_shop_11:\n      loadBalancer:\n        servers:\n          - url: "http://ndcmp-shop-web-1:80"');
   });
 
+  it('never routes to a container name another stack owns, in either direction', async () => {
+    const a = await app();
+    // A stack "shop-x" exists: "x-web" of "shop" would be its "web" container.
+    await db.insert(services).values({ id: 7, name: 'shop-x', slug: 'shop-x', type: 'compose', branch: 'main', ownerUserId: 1, composeContent: STACK, composeService: 'web', runtimeId: 'ndcmp-shop-x-web-1', port: 80, status: 'running' } as never);
+    await db.update(services).set({ composeContent: `${STACK}  x-web:\n    image: nginx\n` }).where((await import('drizzle-orm')).eq(services.id, 5));
+    const refused = await put(a, 12, { service: 'x-web', port: 80 });
+    expect(refused.statusCode).toBe(400);
+    expect(JSON.stringify(refused.json())).toContain('compose_route_ambiguous');
+    await a.close();
+    // A route saved before the other stack appeared falls back to the main service when rendered.
+    const { setComposeRoute } = await import('../src/lib/composeRoutes.js');
+    await setComposeRoute(db, 12, { service: 'x-web', port: 80 });
+    const yaml = await renderDynamicConfig(db, { serverId: null });
+    expect(yaml).not.toContain('ndcmp-shop-x-web-1:80"\n    svc_shop_12');
+    expect(yaml).toContain('    svc_shop_12:\n      loadBalancer:\n        servers:\n          - url: "http://ndcmp-shop-web-1:80"');
+  });
+
   it('names a routed service in the environment, keeping values the service sets', async () => {
     const a = await app();
     await put(a, 12, { service: 'admin-ui', port: 8080 });

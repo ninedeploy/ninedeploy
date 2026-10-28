@@ -91,6 +91,7 @@ Every domain of a compose stack routes to the stack's main service unless it nam
 **How it routes**
 - Traefik already joins the stack's default network, so it reaches the service as `ndcmp-<slug>-<service>-1` on the port you give. The service must be on that default network.
 - For an inline stack, the service must be one the compose file declares.
+- A route whose container name another stack could also own is refused when saved, and falls back to the main service if such a stack appears later. For example, `x-web` in stack `shop` and `web` in stack `shop-x` would both be `ndcmp-shop-x-web-1`.
 - The next deploy sets `SERVICE_FQDN_<SERVICE>` (the host) and `SERVICE_URL_<SERVICE>` (scheme, host and path) for each routed service, unless the stack already sets them. `<SERVICE>` is the name in upper case with other characters as `_`.
 
 **Storage:** no migration is needed; it is a settings row, `compose_route:<domainId>`, read with the other routing overrides in one query.

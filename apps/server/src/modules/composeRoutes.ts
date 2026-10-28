@@ -1,11 +1,11 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
-import { domains } from '@ninedeploy/db';
+import { domains, services } from '@ninedeploy/db';
 import { composeRouteInput, type ComposeRouteView } from '@ninedeploy/schemas';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, notFound, parseId } from '../lib/errors.js';
-import { getComposeRoute, inlineComposeServices, setComposeRoute } from '../lib/composeRoutes.js';
+import { composeRouteCollides, getComposeRoute, inlineComposeServices, setComposeRoute } from '../lib/composeRoutes.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
 
 /**
@@ -43,6 +43,11 @@ export const domainComposeRouteRoutes: FastifyPluginAsync = async (app) => {
       const declared = inlineComposeServices(svc.composeContent);
       if (declared && !declared.includes(route.service)) {
         throw badRequest(`The compose file has no service "${route.service}" (it has: ${declared.join(', ')})`, 'compose_route_unknown_service');
+      }
+      // The container name must not also be another stack's.
+      const stacks = await app.db.select({ slug: services.slug }).from(services).where(eq(services.type, 'compose'));
+      if (composeRouteCollides(svc.slug, route.service, stacks.map((s) => s.slug))) {
+        throw badRequest(`"${route.service}" would name a container of another stack; rename the service in the compose file`, 'compose_route_ambiguous');
       }
     }
     await setComposeRoute(app.db, d.id, route);

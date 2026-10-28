@@ -38,6 +38,21 @@ export function composeServiceContainer(slug: string, service: string): string {
   return `ndcmp-${slug}-${service}-1`;
 }
 
+/**
+ * Whether `ndcmp-<slug>-<service>-1` could also be ANOTHER stack's container:
+ * a stack `shop` routing to `x-web` names `ndcmp-shop-x-web-1`, which is the
+ * `web` container of a stack `shop-x`. Traefik shares every stack's network,
+ * so such a route would reach someone else's service. Refused when saved and
+ * skipped (main service) when rendered.
+ */
+export function composeRouteCollides(slug: string, service: string, composeSlugs: Iterable<string>): boolean {
+  const name = `${slug}-${service}`;
+  for (const other of composeSlugs) {
+    if (other !== slug && other.startsWith(`${slug}-`) && name.startsWith(`${other}-`)) return true;
+  }
+  return false;
+}
+
 /** The services an inline compose file declares, or null when it cannot be read. */
 export function inlineComposeServices(content: string | null | undefined): string[] | null {
   if (!content) return null;
