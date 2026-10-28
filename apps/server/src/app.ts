@@ -19,6 +19,7 @@ import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import githubRunnerSchedulerPlugin from './plugins/githubRunnerScheduler.js';
 import cloudNodeSchedulerPlugin from './plugins/cloudNodeScheduler.js';
 import imageScanSchedulerPlugin from './plugins/imageScanScheduler.js';
+import sharedCertificateSyncPlugin from './plugins/sharedCertificateSync.js';
 import collectorPlugin from './plugins/collector.js';
 import observabilityPlugin from './plugins/observability.js';
 import uptimePlugin from './plugins/uptime.js';
@@ -183,6 +184,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(cloudNodeSchedulerPlugin);
   // G5.1: rescan running images on the policy's interval (off by default)
   await app.register(imageScanSchedulerPlugin);
+  // G5.7: push renewed panel certificates to node proxies (idle while sharing is off)
+  await app.register(sharedCertificateSyncPlugin);
   // Periodic log/audit/notification-log retention (disk-fill prevention)
   await app.register(housekeepingPlugin);
   // Container output → configured log drains (r231: drains had no sender)

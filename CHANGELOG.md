@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Panel certificates shared with node proxies (G5.7). With `PUT /v1/traefik/certificates/shared` `{ enabled: true }`, a node proxy gets the panel's own ACME certificates (including a DNS-01 wildcard) for the hosts it routes.
+  - **Why:** a domain served by several ingress nodes then has one certificate everywhere, and a wildcard is issued once rather than once per node.
+  - **How the node behaves:** checked on Traefik 3, the node serves the shared certificate and skips ACME for the hosts it covers. An uploaded certificate still wins.
+  - **Renewals:** they reach the nodes within the hour.
+  - **Off by default:** it copies private keys to those nodes. There is no migration.
+
+  See TRAEFIK_INGRESS.md → *Panel certificates shared with node proxies*.
 - Pending changes tray (G5.2). Under Settings → Pending changes, a service can stage its edits instead of applying them one by one.
   - **Review:** the tray shows each change with its value now and after.
   - **Apply:** **Apply and deploy** (or **Apply only**) applies them together through the normal service PATCH with your own credentials, so every existing check applies. A deploy into an approval-gated lane waits for review. A refused apply keeps the tray.

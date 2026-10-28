@@ -24,6 +24,8 @@ import {
   validateCustomConfig,
 } from '../lib/traefikCustomConfig.js';
 import { getAcmeEmail, writeDynamicConfig } from '../engine/proxy.js';
+import { setSharedCertificates, sharedCertificatesEnabled } from '../lib/sharedCertificates.js';
+import { sharedCertificatesInput } from '@ninedeploy/schemas';
 
 /**
  * Proxy management (0.14): the operator's custom Traefik dynamic config
@@ -240,6 +242,18 @@ export const traefikCustomRoutes: FastifyPluginAsync = async (app) => {
       hostnames: existing.hostnames,
     });
     return { ok: true };
+  });
+
+  // G5.7: share the panel's ACME certificates with node proxies (off by default).
+  app.get('/certificates/shared', guard, async () => ({ enabled: await sharedCertificatesEnabled(app.db) }));
+
+  app.put('/certificates/shared', guard, async (req) => {
+    const { enabled } = sharedCertificatesInput.parse(req.body ?? {});
+    await setSharedCertificates(app.db, enabled);
+    // Push the change to every node proxy now (with or without the certificates).
+    await rerender();
+    void audit(app.db, req.user!.id, 'traefik.certificate.share', 'node proxies', { enabled });
+    return { enabled };
   });
 };
 

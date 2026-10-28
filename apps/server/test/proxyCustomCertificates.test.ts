@@ -310,6 +310,45 @@ describe('M9: rendering with uploaded certificates', () => {
   });
 });
 
+describe('G5.7 panel certificates shared with node proxies', () => {
+  const nodeSvc = { ...svc, serverId: 4 };
+  const acme = { acme_email: 'ops@example.test' };
+  const writeAcme = (pairs: Array<[string, string]>) => {
+    mkdirSync(traefikDir, { recursive: true });
+    const b64 = (s: string) => Buffer.from(s).toString('base64');
+    writeFileSync(
+      path.join(traefikDir, 'acme.json'),
+      JSON.stringify({ letsencrypt: { Certificates: pairs.map(([c, k]) => ({ domain: { main: 'x' }, certificate: b64(fx(c)), key: b64(fx(k)) })) } }),
+    );
+  };
+
+  it('a node gets the panel certificate covering its host only while sharing is on', async () => {
+    writeAcme([['valid.crt', 'valid.key']]);
+    const dbWith = (share: string | undefined) =>
+      fakeDb({ settings: { ...acme, ...(share ? { node_shared_certificates: share } : {}) }, services: [nodeSvc], domains: [dom(1, 'app.example.test')] });
+    expect(await proxy.renderDynamicConfig(dbWith(undefined), { serverId: 4 })).not.toContain('certFile');
+    const shared = await proxy.renderDynamicConfig(dbWith('true'), { serverId: 4 });
+    const doc = load(shared) as { tls: { certificates: Array<{ certFile: string; keyFile: string }> } };
+    expect(doc.tls.certificates).toHaveLength(1);
+    expect(doc.tls.certificates[0]!.certFile).toContain('BEGIN CERTIFICATE');
+    expect(doc.tls.certificates[0]!.keyFile).toContain('PRIVATE KEY');
+    // The panel's own render never inlines them: its Traefik has them already.
+    expect(await proxy.renderDynamicConfig(fakeDb({ settings: { ...acme, node_shared_certificates: 'true' }, services: [svc], domains: [dom(1, 'app.example.test')] }), { serverId: null })).not.toContain('keyFile');
+  });
+
+  it('an uploaded certificate for the host wins, and hosts the node does not route get nothing', async () => {
+    writeAcme([['wildcard.crt', 'wildcard.key']]);
+    const settings = { ...acme, node_shared_certificates: 'true' };
+    const covered = await proxy.renderDynamicConfig(
+      fakeDb({ settings, services: [nodeSvc], domains: [dom(1, 'a.example.test')], certs: [row(1, 'wildcard.crt', 'wildcard.key')] }),
+      { serverId: 4 },
+    );
+    expect(covered.match(/certFile/g)).toHaveLength(1); // the upload only
+    const elsewhere = await proxy.renderDynamicConfig(fakeDb({ settings, services: [nodeSvc], domains: [dom(1, 'b.other.test')] }), { serverId: 4 });
+    expect(elsewhere).not.toContain('certFile');
+  });
+});
+
 describe('certificates.yml and readCertificates', () => {
   beforeEach(() => mkdirSync(traefikDir, { recursive: true }));
 

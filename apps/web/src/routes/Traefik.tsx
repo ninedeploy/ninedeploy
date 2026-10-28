@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, ErrorCard, PageHeader, Skeleton, StatusBadge, Tabs, cn } from '../components/ui.js';
 import { CertificatesCard } from './traefik/CertificatesCard.js';
+import { SharedCertificatesCard } from './traefik/SharedCertificatesCard.js';
 import { CustomConfigCard } from './traefik/CustomConfigCard.js';
 import { TrafficAnalyticsCard } from './traefik/TrafficAnalyticsCard.js';
 import { Http3Card } from './traefik/Http3Card.js';
@@ -78,6 +79,7 @@ export function Traefik() {
             <CertificatesTab certificates={info.data.certificates} />
             {/* 0.14: uploaded certificates — operator-only routes. */}
             {isAdmin && <CertificatesCard />}
+            {isAdmin && <SharedCertificatesCard />}
           </div>
         )}
         {activeTab === 'routers' && info.data && <RoutersTab data={info.data} />}

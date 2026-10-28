@@ -76,6 +76,11 @@ export interface TraefikApi {
       replace: (id: number, input: CustomCertificateReplace) => Promise<CustomCertificateSaved>;
       delete: (id: number) => Promise<{ ok: boolean }>;
     };
+    /** G5.7: give node proxies the panel's ACME certificates for the hosts they route (operator; off by default). */
+    sharedCertificates: {
+      get: () => Promise<{ enabled: boolean }>;
+      set: (enabled: boolean) => Promise<{ enabled: boolean }>;
+    };
   };
 }
 
@@ -119,6 +124,10 @@ export function traefikApi(t: Transport): TraefikApi {
         upload: (input) => send<CustomCertificateSaved>('POST', '/v1/traefik/certificates/custom', input),
         replace: (id, input) => send<CustomCertificateSaved>('PUT', `/v1/traefik/certificates/custom/${id}`, input),
         delete: (id) => send<{ ok: boolean }>('DELETE', `/v1/traefik/certificates/custom/${id}`),
+      },
+      sharedCertificates: {
+        get: () => get<{ enabled: boolean }>('/v1/traefik/certificates/shared'),
+        set: (enabled) => send<{ enabled: boolean }>('PUT', '/v1/traefik/certificates/shared', { enabled }),
       },
     },
   };

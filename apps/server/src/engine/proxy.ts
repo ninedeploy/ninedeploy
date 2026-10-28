@@ -1,4 +1,5 @@
 import { hostPathFor } from '../lib/hostPath.js';
+import { certificatesForNode, readAcmeStorage, sharedCertificatesEnabled } from '../lib/sharedCertificates.js';
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -352,6 +353,8 @@ const PRIVATE_FILE_MODE = 0o600;
 // ACME account key + issued certificates live here; persisted under the data
 // dir so renewals survive container recreates.
 const acmePath = () => path.join(dir(), 'acme.json');
+/** G5.7: where the panel's Traefik keeps its ACME certificates. */
+export const acmeStoragePath = acmePath;
 // DNS provider credentials for the ACME DNS-01 challenge. Written as a docker
 // --env-file (0600) so the token never appears in `ps` argv or the config dir
 // mounts; docker injects the vars into the Traefik container at start.
@@ -1475,6 +1478,14 @@ export async function renderDynamicConfig(
       ),
     );
     if (entries.length) tlsCerts = (tlsCerts || 'tls:\n  certificates:\n') + entries.join('');
+    // G5.7: with sharing on, the panel's own ACME certificates for hosts this
+    // node routes (an upload always wins), so the node does not request its own.
+    if (await sharedCertificatesEnabled(db)) {
+      const shared = renderCertificateEntries(
+        certificatesForNode(readAcmeStorage(acmePath()), routedHosts, (h) => certificatesCovering(h, customCerts, now).length > 0, now),
+      );
+      if (shared.length) tlsCerts = (tlsCerts || 'tls:\n  certificates:\n') + shared.join('');
+    }
   }
 
   if (httpsRedirectUsed) {

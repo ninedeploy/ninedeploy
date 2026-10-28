@@ -1,4 +1,4 @@
-import { customCertificateReplace, customCertificateUpload, traefikCustomConfigInput } from '@ninedeploy/schemas';
+import { customCertificateReplace, customCertificateUpload, sharedCertificatesInput, traefikCustomConfigInput } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -154,6 +154,20 @@ export const traefikSpecs: RouteSpecMap = {
     tag: 'traefik',
     floor: 'operator',
     responseType: '{ ok: boolean; cleared: boolean }',
+  },
+  'GET /v1/traefik/certificates/shared': {
+    summary: "Whether node proxies get the panel's ACME certificates for the hosts they route (G5.7)",
+    tag: 'traefik',
+    floor: 'operator',
+    responseType: '{ enabled: boolean }',
+  },
+  'PUT /v1/traefik/certificates/shared': {
+    summary: "Share the panel's ACME certificates with node proxies, or stop (re-renders every proxy)",
+    tag: 'traefik',
+    floor: 'operator',
+    body: sharedCertificatesInput,
+    validation: 'zod',
+    responseType: '{ enabled: boolean }',
   },
   'GET /v1/traefik/certificates/custom': {
     summary: 'List custom certificates',

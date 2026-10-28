@@ -191,6 +191,21 @@ The chain is stored as is; the key is encrypted with the master key. A key that 
 
 **Inventory and alerts.** Uploaded certificates appear in the certificate inventory with their real issuer and subject, `source: static` and `autoRenew: false`, and they feed the `cert-expiry` alert metric. Renew them yourself with *replace*. Uploads, replacements and deletions are audited as `traefik.certificate.upload`, `.replace` and `.delete`, with the fingerprint and hostnames, never the PEM.
 
+### Panel certificates shared with node proxies (G5.7)
+
+Each node proxy normally requests its own Let's Encrypt certificates. That breaks down in two cases:
+
+- **A domain points at several ingress hosts,** such as fan-out targets behind round-robin DNS. An HTTP-01 challenge for one node can land on another.
+- **Every node asks for the same wildcard.** Let's Encrypt allows 5 duplicate certificates a week, which many nodes use up quickly.
+
+With sharing on, a node proxy gets the panel's own ACME certificates inline, the same way uploaded certificates reach it. It gets only the certificates covering hosts that node routes, and an uploaded certificate for a host always wins. The node's Traefik then serves the shared certificate and skips ACME for the hosts it covers. This was checked against Traefik 3: a covered host logged *No ACME certificate generation required*, and an uncovered one still went to ACME.
+
+- Turn it on with `PUT /v1/traefik/certificates/shared` `{ "enabled": true }` (operator). `GET` reads it. Changing it re-renders every proxy and is audited as `traefik.certificate.share`.
+- When the panel renews a certificate, the change in `acme.json` re-renders the proxies within the hour, long before the old copy expires (renewal starts 30 days ahead).
+- The panel only has certificates for hosts it serves itself, or the DNS-01 wildcard of a configured wildcard domain. Every other host on a node keeps its own ACME.
+- **The trade-off:** sharing copies those certificates' private keys to the nodes that route the hosts. It is off by default.
+- No migration is needed: the switch is a settings row.
+
 > **Expiry alerts start firing after the 0.14 upgrade.** Before 0.14 the panel could not read the expiry dates in `acme.json` (Traefik stores the certificates base64-encoded), so every ACME certificate's expiry was unknown and the `cert-expiry` alert never fired. If an alert fires right after the upgrade, that certificate really is close to expiry. Check why Traefik is not renewing it (port 80 reachability, DNS, rate limits).
 
 ---

@@ -363,6 +363,7 @@ export function createFakeApiModule() {
     deployFreezes: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), lift: vi.fn() },
     imageScans: { policy: vi.fn(), setPolicy: vi.fn(), get: vi.fn().mockResolvedValue({ result: null, scanning: false }), scan: vi.fn() },
     traefik: {
+      sharedCertificates: { get: vi.fn().mockResolvedValue({ enabled: false }), set: vi.fn() },
       get: vi.fn(),
       status: vi.fn(),
       certificates: vi.fn(),

@@ -137,3 +137,6 @@ export const customCertificateSaved = customCertificate.extend({
   warnings: z.array(z.string()),
 });
 export type CustomCertificateSaved = z.infer<typeof customCertificateSaved>;
+
+/** G5.7: share the panel's ACME certificates with node proxies (`PUT /v1/traefik/certificates/shared`). */
+export const sharedCertificatesInput = z.object({ enabled: z.boolean() }).strict();
