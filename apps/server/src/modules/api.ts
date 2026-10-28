@@ -47,6 +47,7 @@ import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { databaseTunnelRoutes } from './databaseTunnel.js';
 import { pendingChangeRoutes } from './pendingChanges.js';
 import { restartLimitRoutes } from './restartLimit.js';
+import { publicRegistryHookRoutes, serviceRegistryHookRoutes } from './registryHooks.js';
 import { projectRoutes } from './projects.js';
 import { notificationRoutes } from './notifications.js';
 import { networkRoutes } from './networks.js';
@@ -245,6 +246,9 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(serviceDeployHookRoutes, { prefix: '/services' });
   await app.register(serviceFileRoutes, { prefix: '/services' });
   await app.register(publicDeployHookRoutes, { prefix: '/deploy-hooks' });
+  // G1.7 registry push webhooks: management (member) and the public POST (token).
+  await app.register(serviceRegistryHookRoutes, { prefix: '/services' });
+  await app.register(publicRegistryHookRoutes, { prefix: '/registry-hooks' });
   // 0.16.8 uptime monitors and status pages (operator), and the public page JSON.
   await app.register(monitorRoutes, { prefix: '/monitors' });
   await app.register(statusPageRoutes, { prefix: '/status-pages' });

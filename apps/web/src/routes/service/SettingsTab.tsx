@@ -22,6 +22,7 @@ import { RestartLimitCard } from './RestartLimitCard.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
+import { RegistryHookCard } from './RegistryHookCard.js';
 import { PrimaryRecoveryCard } from './PrimaryRecoveryCard.js';
 import { SwarmRecoveryCard } from './SwarmRecoveryCard.js';
 import { FanoutRecoveryCard } from './FanoutRecoveryCard.js';
@@ -51,6 +52,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <CanaryCard svc={svc} />
       <StatusBadgeCard serviceId={serviceId} serviceName={svc.name} />
       <DeployHookCard serviceId={serviceId} />
+      {/* G1.7: redeploy when the registry says the image tag was pushed. */}
+      <RegistryHookCard svc={svc} />
       <ScalingCard svc={svc} />
       {/* 0.16.10: next to Scaling, whose replicas it manages while on. */}
       <AutoscaleCard svc={svc} />

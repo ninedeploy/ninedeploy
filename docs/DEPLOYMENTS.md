@@ -488,6 +488,27 @@ node scripts/smoke-user-journey.mjs --image=ninedeploy-local:YOUR_BUILD --compos
 
 The model comes from [`docker compose config`](https://docs.docker.com/reference/cli/docker/compose/config/); restore uses [`up --pull never --no-build`](https://docs.docker.com/reference/cli/docker/compose/up/). Compose's canonical dollar escaping is retained during replay rather than escaped a second time.
 
+### Registry webhook: redeploy when the image is pushed (G1.7)
+
+An image service can redeploy as soon as its tag is pushed, instead of waiting for the 30-minute auto-update sweep. Turn it on under **Settings → Registry webhook** (or `POST /v1/services/:id/registry-hook`). Copy the URL then: it is shown once, because only its SHA-256 is stored. Paste it into the registry:
+
+| Registry | Where |
+| --- | --- |
+| Docker Hub | Repository → Webhooks |
+| GitHub Packages (GHCR) | A repository or organization webhook with the **Packages** event (`registry_package`) |
+| Harbor | Project → Webhooks, event *Artifact pushed* |
+| `registry:2` / Distribution | `notifications.endpoints[].url` in the registry config |
+| A CI step | `curl -fsS -X POST -H 'content-type: application/json' -d '{"image":"ghcr.io/acme/api:v1"}' <url>` |
+
+**What a call does**
+- When a pushed repository and tag are the service's image (and the registry, when the payload names one), it queues a deploy, which pulls the new image. The deploy runs as the member who made the hook, with every check a manual deploy makes, and waits for approval in an approval-gated lane.
+- Other pushes answer `202 { "ignored": true }`. A second push while the deploy is still queued answers with that deploy.
+- The auto-update baseline is cleared, so the sweep does not deploy the same push again.
+
+**Limits and storage**
+- Turning it off, or making a new URL, makes the old URL answer 404, as does deleting the member who made it.
+- No migration is needed: the hook is a settings row, `registry_hook:<serviceId>`.
+
 ### Deploy hook: redeploy from CI (0.16.2)
 
 **Service → Settings → Deploy hook** gives the service a secret URL; a POST to it queues a deploy, the same as the Deploy button:

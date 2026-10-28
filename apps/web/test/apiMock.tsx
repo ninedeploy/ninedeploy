@@ -116,6 +116,11 @@ export function createFakeApiModule() {
         enable: vi.fn(),
         disable: vi.fn(),
       },
+      registryHook: {
+        get: vi.fn().mockResolvedValue({ enabled: false, mine: false, url: null, createdAt: null, lastPushAt: null }),
+        enable: vi.fn(),
+        disable: vi.fn(),
+      },
       badge: {
         get: vi.fn().mockResolvedValue({ enabled: false, url: null }),
         enable: vi.fn(),

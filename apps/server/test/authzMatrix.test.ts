@@ -489,6 +489,9 @@ function paramValue(url: string, param: string, r: Res): string {
       return 'zz-name';
     case 'container':
       return `nd-app-${r.serviceSlug}`;
+    // G1.7 registry webhook: the matrix service, with no hook minted (404 at every role).
+    case 'serviceId':
+      return String(r.service);
     case 'serverId':
       // No node is seeded; forbidden callers must be refused before lookup.
       return '999999';
@@ -821,6 +824,10 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/deploy-hook': R('member', { note: 'the hook URL is its credential' }),
   'POST /v1/services/:id/deploy-hook': R('member'),
   'DELETE /v1/services/:id/deploy-hook': R('member'),
+  'GET /v1/services/:id/registry-hook': R('member'),
+  'POST /v1/services/:id/registry-hook': R('member'),
+  'DELETE /v1/services/:id/registry-hook': R('member'),
+  'POST /v1/registry-hooks/:serviceId/:token': R('token', { allow404: 'no hook is minted in the shared seed; the token path is covered by test/registryHooks.test.ts' }),
   'GET /v1/services/:id/files': R('viewer'),
   'GET /v1/services/:id/files/:fileId': R('member', { allow404: 'no file is seeded; reads are covered by test/serviceFiles.test.ts' }),
   'PUT /v1/services/:id/files': R('member', { body: () => ({ path: '/app/authz.conf', content: 'x' }) }),

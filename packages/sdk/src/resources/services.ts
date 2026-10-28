@@ -54,6 +54,15 @@ import type { ApplyManifestResult, ApplyManifestInput, ServiceDetail } from '../
 import type { Transport } from '../transport.js';
 
 /** 0.16.1: one kept upload of a service's source archive. */
+/** G1.7: the registry push webhook of one service. `url` is set only in the answer that made it. */
+export interface RegistryHookView {
+  enabled: boolean;
+  mine: boolean;
+  url: string | null;
+  createdAt: string | null;
+  lastPushAt: string | null;
+}
+
 export interface SourceUpload {
   /** First 40 hex chars of the archive's SHA-256 (the deployment's `commitSha`). */
   sha: string;
@@ -202,6 +211,16 @@ export interface ServicesApi {
     autoscale: (id: number) => Promise<AutoscaleStatusView>;
     /** G5.6: memory and CPU limit suggestions from the metric history (viewer; advisory). */
     sizing: (id: number) => Promise<SizingReport>;
+    /**
+     * G1.7 registry push webhook: a secret URL a registry (Docker Hub, GHCR,
+     * Harbor, registry:2) calls after a push; the service redeploys when the
+     * pushed tag is its image. The URL is returned once, by `enable`.
+     */
+    registryHook: {
+      get: (id: number) => Promise<RegistryHookView>;
+      enable: (id: number) => Promise<RegistryHookView>;
+      disable: (id: number) => Promise<RegistryHookView>;
+    };
     /** G1.3: stop the service when its containers keep restarting (opt-in; member to set). */
     restartLimit: {
       get: (id: number) => Promise<RestartLimitView>;
@@ -363,6 +382,11 @@ export function servicesApi(t: Transport): ServicesApi {
       retrySwarmRecovery: id => request<SwarmRecoveryResult>(`/v1/services/${id}/swarm/recovery`, { method: 'POST' }, 600_000),
       autoscale: (id) => get<AutoscaleStatusView>(`/v1/services/${id}/autoscale`),
       sizing: (id) => get<SizingReport>(`/v1/services/${id}/sizing`),
+      registryHook: {
+        get: (id) => get<RegistryHookView>(`/v1/services/${id}/registry-hook`),
+        enable: (id) => send<RegistryHookView>('POST', `/v1/services/${id}/registry-hook`),
+        disable: (id) => request<RegistryHookView>(`/v1/services/${id}/registry-hook`, { method: 'DELETE' }),
+      },
       restartLimit: {
         get: (id) => get<RestartLimitView>(`/v1/services/${id}/restart-limit`),
         set: (id, limit) => send<RestartLimitView>('PUT', `/v1/services/${id}/restart-limit`, { limit }),

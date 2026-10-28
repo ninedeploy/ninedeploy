@@ -5585,4 +5585,21 @@ export const TR: Readonly<Record<string, string>> = {
   'Within (minutes)': 'Süre (dakika)',
   'last stopped by the limit {time}': 'sınır en son {time} tarihinde durdurdu',
   '{n} restarts in the window now': 'şu an pencerede {n} yeniden başlatma',
+
+  // ── Registry webhook (G1.7) ───────────────────────────────────────────
+  'Registry webhook': 'Registry webhook\'u',
+  'Registry webhook on': 'Registry webhook\'u açıldı',
+  'Registry webhook off': 'Registry webhook\'u kapatıldı',
+  'New registry webhook URL — the old one no longer works': 'Yeni registry webhook URL\'si — eskisi artık çalışmıyor',
+  'Paste this URL into Docker Hub, GitHub Packages, Harbor or a registry:2 notification endpoint. When {image} is pushed, the service redeploys, as you, with your access checked on every call. Pushes of other images or tags are ignored.':
+    'Bu URL\'yi Docker Hub, GitHub Packages, Harbor ya da bir registry:2 bildirim uç noktasına yapıştırın. {image} push edildiğinde servis sizin adınıza yeniden deploy edilir; erişiminiz her çağrıda denetlenir. Başka imaj ya da etiketlerin push\'ları yok sayılır.',
+  'Copy URL': 'URL\'yi kopyala',
+  'Copy it now: it is shown only once.': 'Şimdi kopyalayın: yalnızca bir kez gösterilir.',
+  'On. The URL was shown once when it was made; make a new one if you lost it.':
+    'Açık. URL oluşturulduğunda bir kez gösterildi; kaybettiyseniz yenisini oluşturun.',
+  'Turned on by another member — it deploys as them.': 'Başka bir üye açtı — onun adına deploy eder.',
+  'last push {time}': 'son push {time}',
+  'New registry webhook URL?': 'Yeni registry webhook URL\'si?',
+  'The current URL stops working; update the webhook in your registry with the new one. The hook deploys as you from now on.':
+    'Mevcut URL çalışmayı bırakır; registry\'deki webhook\'u yenisiyle güncelleyin. Webhook bundan sonra sizin adınıza deploy eder.',
 };

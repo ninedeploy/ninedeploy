@@ -147,6 +147,37 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'token',
     responseType: '{ deploymentId: number; alreadyInProgress?: boolean }',
   },
+  'GET /v1/services/:id/registry-hook': {
+    summary: 'Whether the registry push webhook is on',
+    tag: 'deploys',
+    description:
+      'The token is stored only as a hash, so `url` is always null here; it is returned once by POST. `mine` says whether the hook deploys as the caller. G1.7.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; mine: boolean; url: string | null; createdAt: string | null; lastPushAt: string | null }',
+  },
+  'POST /v1/services/:id/registry-hook': {
+    summary: 'Turn the registry push webhook on, or rotate its URL',
+    tag: 'deploys',
+    description:
+      'Image services only (400 not_an_image_service otherwise). Mints a new token, returns the URL once, and makes the hook deploy as the caller with every check a manual deploy makes re-done on each call. Audited service.registry_hook.enable / rotate. G1.7.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; mine: boolean; url: string | null; createdAt: string | null; lastPushAt: string | null }',
+  },
+  'DELETE /v1/services/:id/registry-hook': {
+    summary: 'Turn the registry push webhook off',
+    tag: 'deploys',
+    description: 'The URL answers 404 from now on. Audited service.registry_hook.disable. G1.7.',
+    floor: 'member',
+    responseType: '{ enabled: boolean; mine: boolean; url: string | null; createdAt: string | null; lastPushAt: string | null }',
+  },
+  'POST /v1/registry-hooks/:serviceId/:token': {
+    summary: 'Redeploy an image service when its tag is pushed (registry webhook)',
+    tag: 'deploys',
+    description:
+      'No session: the token in the path is the credential. Reads Docker Hub, GitHub Packages (registry_package), Harbor (PUSH_ARTIFACT), registry:2 notifications and `{ image }` / `{ repository, tag }`. When a pushed repository and tag are the service image, queues a deploy as the member who made the hook and answers 202 `{ deploymentId }` (or the queued one with `alreadyQueued: true`); any other push answers 202 `{ ignored: true, reason }`. 404 for an unknown token or a hook whose creator was deleted. Audited deploy.trigger (via registry_hook). G1.7.',
+    floor: 'token',
+    responseType: '{ deploymentId?: number; alreadyQueued?: boolean; ignored?: boolean; reason?: string }',
+  },
   'GET /v1/badges/:badge': {
     summary: 'A deploy status badge (SVG) for a README',
     tag: 'deploys',

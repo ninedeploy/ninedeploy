@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Registry push webhooks (G1.7). Under Settings → Registry webhook, an image service gets a secret URL for Docker Hub, GitHub Packages, Harbor, a `registry:2` or a CI step.
+  - **What it does:** a push of the service's own image and tag queues a deploy as the member who made the hook. Other pushes are ignored.
+  - **Storage:** the URL is shown once and stored as a hash. The routes are `GET/POST/DELETE /v1/services/:id/registry-hook` and `POST /v1/registry-hooks/:serviceId/:token`. There is no migration.
+
+  See DEPLOYMENTS.md → *Registry webhook*.
 - Restart-loop limit (G1.3). Under Settings → Restart-loop limit, a docker service on the panel host is stopped when its containers restart N times within M minutes.
   - **How it stops:** the same way as the Stop button. It is audited as `service.restart_limit`, which notifies. A deploy in progress is left alone.
   - **Off by default:** set it with `PUT /v1/services/:id/restart-limit`. There is no migration.

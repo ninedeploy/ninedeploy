@@ -50,6 +50,7 @@ DELETE /v1/services/:id/files/:fileId member nd://scope/write/services
 DELETE /v1/services/:id/github operator nd://scope/write/services
 DELETE /v1/services/:id/jobs/:jobId member nd://scope/write/services
 DELETE /v1/services/:id/pending member nd://scope/write/services
+DELETE /v1/services/:id/registry-hook member nd://scope/write/services
 DELETE /v1/services/:id/volumes/:attId admin nd://scope/write/volumes
 DELETE /v1/services/:id/webhooks/:hookId admin nd://scope/write/webhooks
 DELETE /v1/settings/dns-records/provider operator nd://scope/write/settings
@@ -216,6 +217,7 @@ GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
 GET /v1/services/:id/pending viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
+GET /v1/services/:id/registry-hook member nd://scope/read/services
 GET /v1/services/:id/restart-limit viewer nd://scope/read/services
 GET /v1/services/:id/routing viewer nd://scope/read/services
 GET /v1/services/:id/runtime-recovery viewer nd://scope/read/services
@@ -411,6 +413,7 @@ POST /v1/plugins/install operator -
 POST /v1/plugins/marketplace/refresh operator -
 POST /v1/projects member nd://scope/write/projects
 POST /v1/projects/:id/env member nd://scope/write/env
+POST /v1/registry-hooks/:serviceId/:token token -
 POST /v1/scim/tokens operator -
 POST /v1/servers operator -
 POST /v1/servers/:id/approve operator -
@@ -452,6 +455,7 @@ POST /v1/services/:id/lifecycle/retry member nd://scope/write/services
 POST /v1/services/:id/manifest/apply operator nd://scope/write/services
 POST /v1/services/:id/pending/apply member nd://scope/write/services
 POST /v1/services/:id/promote member nd://scope/write/services
+POST /v1/services/:id/registry-hook member nd://scope/write/services
 POST /v1/services/:id/restart member nd://scope/write/services
 POST /v1/services/:id/runtime-recovery operator nd://scope/write/services
 POST /v1/services/:id/sleep member nd://scope/write/services
