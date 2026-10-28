@@ -611,6 +611,12 @@ replaces the project in place, so expect a brief gap. Compose files often
 bind-mount host paths or request privileged containers, so creating and
 deploying one is **operator-only**.
 
+**Unchanged builds are skipped (G2.4).** Before it builds, a compose deploy fingerprints its inputs: the commit and the resolved compose model from `docker compose config`, which covers the build contexts, Dockerfiles, build args and interpolated environment.
+- When the fingerprint matches the last build, the deploy logs *Build inputs are unchanged* and reuses the built images. An image that has gone missing is still built by `up`.
+- A deploy without an exact commit always builds.
+- A base image that changed upstream is not picked up while the inputs stay the same. Set `NINEDEPLOY_COMPOSE_BUILD_SKIP=off` to build on every deploy.
+- The fingerprint lives in the panel's data directory (`compose-build/<slug>.sha256`). Panel host only.
+
 Three ways to get a stack in:
 
 | Source | Where the file lives | Edit it in |

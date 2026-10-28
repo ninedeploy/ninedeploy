@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Compose deploys skip the build when nothing that goes into it changed (G2.4).
+  - **What counts as unchanged:** the same commit and the same resolved compose model (build contexts, Dockerfiles, args and environment) as the last build. The images are then reused; a missing image is still built.
+  - **Building every time:** `NINEDEPLOY_COMPOSE_BUILD_SKIP=off` builds on every deploy, for stacks that need fresh base images.
+
+  See DEPLOYMENTS.md → *Docker Compose Stacks*.
 - Panel certificates shared with node proxies (G5.7). With `PUT /v1/traefik/certificates/shared` `{ enabled: true }`, a node proxy gets the panel's own ACME certificates (including a DNS-01 wildcard) for the hosts it routes.
   - **Why:** a domain served by several ingress nodes then has one certificate everywhere, and a wildcard is issued once rather than once per node.
   - **How the node behaves:** checked on Traefik 3, the node serves the shared certificate and skips ACME for the hosts it covers. An uploaded certificate still wins.

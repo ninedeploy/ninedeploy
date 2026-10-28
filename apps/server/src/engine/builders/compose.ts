@@ -1,6 +1,8 @@
-import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Builder, DeployRuntime } from '../types.js';
+import { config } from '../../config.js';
 import { capture, run } from '../../lib/exec.js';
 import { repoRelative } from '../../lib/repoPath.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
@@ -149,6 +151,51 @@ export function parseComposePs(out: string): ComposePsEntry | null {
   return null;
 }
 
+// ── G2.4 compose build fingerprints ────────────────────────────────────────
+
+const fingerprintFile = (slug: string) => path.join(config.paths.dataDir, 'compose-build', `${slug}.sha256`);
+
+/** `NINEDEPLOY_COMPOSE_BUILD_SKIP=off` always builds (stacks that want fresh base images each deploy). */
+export const composeBuildSkipDisabled = (): boolean =>
+  /^(off|false|0|no|disabled)$/i.test((process.env['NINEDEPLOY_COMPOSE_BUILD_SKIP'] ?? '').trim());
+
+/**
+ * The build inputs' fingerprint: the commit and the resolved compose model
+ * (`docker compose config`: build contexts, Dockerfiles, args and the
+ * interpolated environment). Null when no skip is possible: no exact commit,
+ * the switch is off, or the model cannot be read.
+ */
+export async function composeBuildFingerprint(
+  stackArgs: string[],
+  opts: { cwd: string; env: Record<string, string> },
+  commitSha: string,
+): Promise<string | null> {
+  if (composeBuildSkipDisabled() || !/^[0-9a-f]{40}$/i.test(commitSha)) return null;
+  try {
+    const model = await capture('docker', [...stackArgs, 'config'], { ...opts, timeoutMs: 120_000 });
+    return createHash('sha256').update(`${commitSha}\n${model}`).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+export function readComposeFingerprint(slug: string): string | null {
+  try {
+    return readFileSync(fingerprintFile(slug), 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeComposeFingerprint(slug: string, fp: string): void {
+  try {
+    mkdirSync(path.dirname(fingerprintFile(slug)), { recursive: true });
+    writeFileSync(fingerprintFile(slug), `${fp}\n`, { mode: 0o600 });
+  } catch {
+    /* without a record the next deploy simply builds */
+  }
+}
+
 export const composeBuilder: Builder = {
   async buildAndRun(ctx): Promise<DeployRuntime> {
     const { service, buildConfig, workDir, env, log } = ctx;
@@ -286,12 +333,21 @@ export const composeBuilder: Builder = {
       // with the deploy failing — no previous revision to fall back to. Now a
       // build failure throws here, before `down`, and the live stack keeps
       // serving. Services without a `build:` section are a no-op for compose.
-      await run(
-        'docker',
-        [...stackArgs, 'build'],
-        { ...gateOpts, timeoutMs: 1_200_000, heartbeatLabel: `Building images for ${project} (the previous revision keeps serving)` },
-        log,
-      );
+      // G2.4: skip the build when its inputs are unchanged since the last
+      // one: the same commit and the same resolved compose model (build
+      // contexts, args, env). An image that is gone is still built by `up`.
+      const fingerprint = await composeBuildFingerprint(stackArgs, gateOpts, ctx.commitSha);
+      if (fingerprint && readComposeFingerprint(service.slug) === fingerprint) {
+        log('Build inputs are unchanged since the last build (same commit and resolved compose model): reusing the built images');
+      } else {
+        await run(
+          'docker',
+          [...stackArgs, 'build'],
+          { ...gateOpts, timeoutMs: 1_200_000, heartbeatLabel: `Building images for ${project} (the previous revision keeps serving)` },
+          log,
+        );
+        if (fingerprint) writeComposeFingerprint(service.slug, fingerprint);
+      }
       }
 
       // Stop the previous project revision — no blue-green for compose. Kept

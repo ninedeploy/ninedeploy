@@ -107,6 +107,43 @@ describe('composeBuilder.buildAndRun', () => {
     expect(runtime.imageDigest).toBeUndefined();
   });
 
+  it('G2.4: skips the build when the commit and the resolved model are unchanged, and builds again when either changes', async () => {
+    const { config } = await import('../../src/config.js');
+    const dataBefore = config.paths.dataDir;
+    (config.paths as { dataDir: string }).dataDir = mkdtempSync(path.join(os.tmpdir(), 'nd-compose-fp-'));
+    try {
+      let model = 'services:\n  api:\n    build: .\n';
+      h.capture.mockImplementation(async (_cmd: string, args: unknown[]) => ((args as string[]).includes('config') ? model : 'running'));
+      const sha = 'a'.repeat(40);
+      const builds = () => h.run.mock.calls.filter((c) => (c[1] as string[])[5] === 'build').length;
+
+      await composeBuilder.buildAndRun(makeCtx({ commitSha: sha }) as never);
+      expect(builds()).toBe(1);
+      const ctx = makeCtx({ commitSha: sha });
+      await composeBuilder.buildAndRun(ctx as never);
+      expect(builds()).toBe(1); // reused
+      expect(JSON.stringify(ctx.log.mock.calls)).toContain('Build inputs are unchanged');
+      // `up` still runs, without --no-build: an image that is gone gets built there.
+      expect(h.run.mock.calls.filter((c) => (c[1] as string[])[5] === 'up').at(-1)![1]).not.toContain('--no-build');
+
+      model = 'services:\n  api:\n    build: .\n    args: { V: 2 }\n';
+      await composeBuilder.buildAndRun(makeCtx({ commitSha: sha }) as never);
+      expect(builds()).toBe(2);
+      await composeBuilder.buildAndRun(makeCtx({ commitSha: 'b'.repeat(40) }) as never);
+      expect(builds()).toBe(3);
+      // No exact commit, or the switch off: always build.
+      await composeBuilder.buildAndRun(makeCtx({ commitSha: 'abcdef1' }) as never);
+      await composeBuilder.buildAndRun(makeCtx({ commitSha: 'abcdef1' }) as never);
+      expect(builds()).toBe(5);
+      process.env['NINEDEPLOY_COMPOSE_BUILD_SKIP'] = 'off';
+      await composeBuilder.buildAndRun(makeCtx({ commitSha: 'b'.repeat(40) }) as never);
+      expect(builds()).toBe(6);
+    } finally {
+      delete process.env['NINEDEPLOY_COMPOSE_BUILD_SKIP'];
+      (config.paths as { dataDir: string }).dataDir = dataBefore;
+    }
+  });
+
   it('writes secrets into the temporary .env and removes it even on failure', async () => {
     const dotEnvPath = path.join(tmp, '.env');
     // Capture content mid-flight: inspect after the up call starts.
