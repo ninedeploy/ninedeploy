@@ -18,7 +18,7 @@ export function TwoFactorPolicyCard({ workspaceId }: { workspaceId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const q = useQuery({ queryKey: ['workspace-2fa', workspaceId], queryFn: () => api.workspaces.twoFactor.get(workspaceId), retry: false });
-  const providers = useQuery({ queryKey: ['oidc-public-providers'], queryFn: () => api.auth.oidc.publicProviders(), retry: false });
+  const providers = useQuery({ queryKey: ['public-oidc-providers'], queryFn: () => api.auth.oidc.publicProviders(), retry: false });
   const save = useMutation({
     mutationFn: (input: { required: boolean; ssoExemptProviders: string[] }) => api.workspaces.twoFactor.set(workspaceId, input),
     onSuccess: (view: WorkspaceTwoFactorView, input) => {
