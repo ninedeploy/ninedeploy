@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { NineDeployClient } from '@ninedeploy/sdk';
 import { PendingChangesTray } from '../src/routes/service/PendingChangesTray.js';
@@ -59,5 +59,23 @@ describe('PendingChangesTray (G5.2)', () => {
     await userEvent.click(screen.getByRole('checkbox'));
     await userEvent.click(apply);
     await waitFor(() => expect(api.services.pending.apply).toHaveBeenCalledWith(5, { deploy: false, includeOthers: true, version: '2026-10-28T10:00:00.000Z' }));
+  });
+
+  it.each(['2026-10-28T10:01:00.000Z', '2026-10-28T10:00:00.000Z'])('requires review again if staged content changes (version %s)', async updatedAt => {
+    mockOf(api.services.pending.apply).mockReset();
+    const first = { serviceId: 5, staging: true, changes: [change('port', 99, 'Mallory')], updatedAt: '2026-10-28T10:00:00.000Z', updatedBy: null };
+    mockOf(api.services.pending.get).mockResolvedValue(first as never);
+    const { queryClient } = renderWithProviders(<PendingChangesTray serviceId={5} />);
+    await screen.findByText('Mallory');
+    await userEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: 'Apply only' })).toBeEnabled();
+
+    act(() => queryClient.setQueryData(['pending', 5], {
+      ...first, changes: [change('runtimeOptions', 99, 'Mallory')], updatedAt,
+    }));
+    expect(await screen.findByText('runtimeOptions')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Apply only' })).toBeDisabled();
+    expect(api.services.pending.apply).not.toHaveBeenCalled();
   });
 });

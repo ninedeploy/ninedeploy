@@ -28,7 +28,11 @@ export function PendingChangesTray({ serviceId }: { serviceId: number }) {
   const { toast } = useToast();
   const q = useQuery({ queryKey: ['pending', serviceId], queryFn: () => api.services.pending.get(serviceId) });
   const staging = q.data?.staging ?? false;
-  const [vouch, setVouch] = useState(false);
+  const [reviewed, setReviewed] = useState<string | null>(null);
+  // Confirmation applies only to the exact tray the user reviewed, even if
+  // another update arrives before an effect could clear local state.
+  const reviewIdentity = JSON.stringify([serviceId, q.data?.updatedAt ?? null, q.data?.changes ?? []]);
+  const vouch = reviewed !== null && reviewed === reviewIdentity;
 
   useEffect(() => {
     setServiceStaging(serviceId, staging);
@@ -57,7 +61,7 @@ export function PendingChangesTray({ serviceId }: { serviceId: number }) {
   const apply = useMutation({
     mutationFn: (deploy: boolean) => api.services.pending.apply(serviceId, { deploy, includeOthers: vouch, version: q.data?.updatedAt ?? null }),
     onSuccess: (res) => {
-      setVouch(false);
+      setReviewed(null);
       refresh();
       void qc.invalidateQueries({ queryKey: ['deploys', serviceId] });
       toast(
@@ -119,7 +123,7 @@ export function PendingChangesTray({ serviceId }: { serviceId: number }) {
             </div>
             {fromOthers.length > 0 && (
               <label className="flex items-start gap-2 text-xs text-amber-200">
-                <input type="checkbox" checked={vouch} onChange={(e) => setVouch(e.target.checked)} className="mt-0.5" />
+                <input type="checkbox" checked={vouch} onChange={(e) => setReviewed(e.target.checked ? reviewIdentity : null)} className="mt-0.5" />
                 {t('{n} of these changes were staged by someone else. They apply with your permissions: I reviewed them.', { n: fromOthers.length })}
               </label>
             )}
