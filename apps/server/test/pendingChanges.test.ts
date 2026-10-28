@@ -133,6 +133,19 @@ describe('pending changes', () => {
     expect(await row()).toMatchObject({ port: 8080 });
   });
 
+  it('rotates the version after clearing an applied snapshot while preserving later edits', async () => {
+    const { clearApplied, readPending } = await import('../src/lib/pendingChanges.js');
+    await call('PUT', '/pending', { port: 8080 });
+    const applied = await readPending(db, 5);
+    await call('PUT', '/pending', { healthPath: '/later' });
+    const prior = await version();
+    await clearApplied(db, 5, applied);
+    const remaining = (await call('GET', '/pending')).json();
+    expect(remaining.version).not.toBe(prior);
+    expect(remaining.changes.map((item: { field: string }) => item.field)).toEqual(['healthPath']);
+    expect((await call('POST', '/pending/apply', { version: prior })).json().error.code).toBe('pending_changed');
+  });
+
   it('security review: a caller sees in the tray only what GET shows them (the stack YAML is operator-only)', async () => {
     await db.update(services).set({ type: 'compose', composeContent: ['services:', '  web:', '    image: nginx', ''].join('\n') } as never);
     const OPERATOR = asUser({ id: 2, isOperator: true });
