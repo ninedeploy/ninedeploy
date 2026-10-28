@@ -156,6 +156,7 @@ GET /v1/openapi.json authed -
 GET /v1/orchestrators operator nd://scope/read/orchestrators
 GET /v1/orchestrators/:name/stacks operator nd://scope/read/orchestrators
 GET /v1/orchestrators/:name/stacks/:stack operator nd://scope/read/orchestrators
+GET /v1/os-updates operator -
 GET /v1/plugins authed -
 GET /v1/plugins/:id/inspect authed -
 GET /v1/plugins/marketplace authed -
@@ -169,6 +170,7 @@ GET /v1/servers/:serverId/containers/:container/compose operator -
 GET /v1/servers/:serverId/containers/:container/files operator -
 GET /v1/servers/:serverId/containers/:container/files/content operator -
 GET /v1/servers/:serverId/containers/:container/inspect operator -
+GET /v1/servers/:serverId/os-updates operator -
 GET /v1/servers/:serverId/volumes/:name/files operator -
 GET /v1/servers/:serverId/volumes/:name/files/content operator -
 GET /v1/services authed nd://scope/read/services
@@ -383,6 +385,7 @@ POST /v1/networks/attach operator -
 POST /v1/networks/detach operator -
 POST /v1/notifications/channels operator nd://scope/write/notifications
 POST /v1/notifications/channels/:id/test operator nd://scope/write/notifications
+POST /v1/os-updates/auto operator -
 POST /v1/plugins/:id/disable operator -
 POST /v1/plugins/:id/enable operator -
 POST /v1/plugins/:id/reload operator -
@@ -399,6 +402,7 @@ POST /v1/servers/:id/swarm/join operator -
 POST /v1/servers/:id/swarm/leave operator -
 POST /v1/servers/:id/test operator -
 POST /v1/servers/:serverId/containers/:container/files/dir operator -
+POST /v1/servers/:serverId/os-updates/auto operator -
 POST /v1/servers/:serverId/volumes/:name/files/dir operator -
 POST /v1/servers/announce token -
 POST /v1/servers/ssh-bootstrap operator -

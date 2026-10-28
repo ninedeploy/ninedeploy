@@ -369,3 +369,54 @@ The database page requests `/v1/stats?databaseId=<id>`. The response is access-s
 Sealed agent calls honor a canonical positive Retry-After of 1–60 seconds on HTTP 429, with at most two retries and one original request deadline. The encrypted request and nonce are reused; already-executed requests remain protected by replay refusal. Unsupported headers, other HTTP failures, transport errors and legacy plaintext calls are not retried. Cancellation also stops a capacity wait. The agent operation route permits at most 1,000 requests/minute. Invalid authentication/validation retains a separate 120/minute rejection response budget, including concurrent failures; unrelated peers have independent buckets. The panel request limits, sealed authentication, nonce replay checks and original request deadlines remain in force.
 
 Remote readiness RPCs and diagnostic log retrieval share the remaining readiness deadline. Replies arriving after it cannot admit a candidate. HTTP/TCP readiness still requires explicit configuration; container-state readiness alone does not establish HTTP application readiness. Packaged Docker health uses the configured `NINEDEPLOY_AGENT_PORT` and `/agent/ping` for agent role, or `NINEDEPLOY_PORT` and `/health` for panel role.
+
+## OS security updates (G4.2)
+
+Operators can see each host's pending package updates and turn automatic **security** updates on or off:
+
+- **Panel host:** Settings → System → *OS security updates*.
+- **A node:** Servers → node panel.
+
+The card reads nothing until you press **Check updates**: every read runs a short-lived helper container on the host.
+
+**What it shows**
+
+- the distribution and package manager;
+- the pending updates, security ones first;
+- whether automatic security updates are on;
+- whether the host is waiting for a reboot and, on Debian or Ubuntu, which packages asked for it.
+
+**Refresh package lists** runs `apt-get update` or `dnf --refresh` first.
+
+**What switching it on does**
+
+| Package manager | On | Off |
+| :--- | :--- | :--- |
+| apt (Debian, Ubuntu) | Installs `unattended-upgrades` if it is missing. Writes `/etc/apt/apt.conf.d/20auto-upgrades` (periodic list updates and unattended upgrades). Writes `/etc/apt/apt.conf.d/52ninedeploy-no-reboot`, which sets `Unattended-Upgrade::Automatic-Reboot "false"`. The distribution's default origins are its security pockets. | Rewrites `20auto-upgrades` with unattended upgrades set to `0`. The package stays installed. |
+| dnf (Fedora, RHEL, Rocky, Alma) | Installs `dnf-automatic` (or `dnf5-plugin-automatic`) if it is missing. Sets `upgrade_type = security` and `apply_updates = yes` in `/etc/dnf/automatic.conf`. Enables the `dnf-automatic.timer` (or `dnf5-automatic.timer`). | Disables the timer. |
+
+Other package managers (Alpine, Arch, SUSE) are reported as unsupported; nothing is changed there.
+
+**Never a reboot.** NineDeploy does not reboot a host and turns unattended-upgrades' own automatic reboot off. The card shows **Reboot required** when the host reports it:
+
+- on Debian or Ubuntu, from `/var/run/reboot-required`;
+- on dnf hosts, from `needs-restarting -r`. Without it, the card says the host cannot tell.
+
+Plan reboots yourself.
+
+**How it runs**
+
+Each action is a fixed script, picked by name. Nothing a caller sends reaches a shell.
+
+- The script runs in a privileged helper with `--pid=host` that enters PID 1's namespaces with `nsenter -t 1`, the same helper as host shells.
+- The image is `NINEDEPLOY_HOST_SHELL_IMAGE`, or else the proxy image that is already on the host.
+- On a node, the agent runs it through the sealed op `host.packages`. The node's owner can refuse it with `NINEDEPLOY_AGENT_HOST_PACKAGES=off`; the panel then answers `403 node_feature_disabled`.
+- An agent older than 0.18.6 gets `422 node_agent_outdated`.
+- One action runs per host at a time; a second one answers `409 os_updates_busy`.
+
+**Routes and audit** (operator only):
+
+- `GET /v1/os-updates[?refresh=1]` and `POST /v1/os-updates/auto {enabled}` for the panel host;
+- `GET /v1/servers/:serverId/os-updates[?refresh=1]` and `POST /v1/servers/:serverId/os-updates/auto {enabled}` for a node.
+
+Switching is audited as `os_updates.auto_enable` or `os_updates.auto_disable`.

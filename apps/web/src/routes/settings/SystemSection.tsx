@@ -4,10 +4,13 @@ import type { ReactNode } from 'react';
 import { api } from '../../lib/api.js';
 import { Card, CardBody, Skeleton } from '../../components/ui.js';
 import { fill, useT } from '../../lib/i18n.js';
+import { useAuth } from '../../lib/auth.js';
+import { OsUpdatesCard } from '../../components/OsUpdatesCard.js';
 
 /** System: instance info, host resources, image storage and update check. */
 export function SystemSection() {
   const t = useT();
+  const { user } = useAuth();
   const stats = useQuery({ queryKey: ['stats'], queryFn: () => api.stats.snapshot(), staleTime: 10000 });
   const resources = useQuery({ queryKey: ['docker-resources'], queryFn: () => api.system.resources(), staleTime: 10000 });
   const update = useQuery({ queryKey: ['update-check'], queryFn: () => api.system.updateCheck(), staleTime: 60000 });
@@ -67,6 +70,15 @@ export function SystemSection() {
           )}
         </CardBody>
       </Card>
+
+      {/* G4.2: the panel host's OS updates (operator-only routes). */}
+      {user?.isOperator === true && (
+        <Card className="mb-5">
+          <CardBody>
+            <OsUpdatesCard serverId={null} />
+          </CardBody>
+        </Card>
+      )}
 
       {/* Image storage */}
       {s?.imagesSummary && (

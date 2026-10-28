@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- OS security updates from the panel (G4.2). For the panel host (Settings → System) and each node (Servers), operators can:
+  - see the pending package updates, security ones first;
+  - see whether the host is waiting for a reboot;
+  - turn automatic **security** updates on or off.
+
+  How each package manager is handled:
+  - **apt (Debian, Ubuntu):** uses unattended-upgrades, with its automatic reboot turned off explicitly.
+  - **dnf (Fedora, RHEL, Rocky, Alma):** uses dnf-automatic, with `upgrade_type = security`.
+  - **Other package managers:** reported as unsupported.
+
+  NineDeploy never reboots a host.
+
+  How it runs:
+  - Every action is a fixed script, run on the host through the same `nsenter` helper as host shells.
+  - On a node, it goes through the new sealed agent op `host.packages` (capability `host.packages`, agent 0.18.6). The node's owner can turn it off with `NINEDEPLOY_AGENT_HOST_PACKAGES=off`.
+
+  The scripts were run against real Debian 12, Ubuntu 24.04, Rocky 9 and Fedora 41 images, and through the nsenter helper on a Docker host. No migration. See NODE_OPERATIONS.md.
+
 - Self-hosted GitHub Actions runners (G4.5). A GitHub App can now run Actions jobs on the panel host.
   - **How it works:** on a queued `workflow_job` whose `runs-on` names one of the App's runner labels, the panel registers a just-in-time runner and starts one `actions-runner` container for it. That container takes one job and is removed.
   - **Setup:** Sources → GitHub App → *Self-hosted Actions runners*. The section shows what the App still lacks. New Apps can request the event and permission from the setup form:

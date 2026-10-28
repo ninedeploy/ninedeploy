@@ -350,6 +350,7 @@ export function createFakeApiModule() {
     },
     // Multi-node: Swarm on the panel host (Settings → Swarm).
     swarm: { get: vi.fn(), init: vi.fn(), settings: vi.fn() },
+    osUpdates: { get: vi.fn(), setAuto: vi.fn() },
     traefik: {
       get: vi.fn(),
       status: vi.fn(),

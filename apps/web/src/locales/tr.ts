@@ -5373,4 +5373,36 @@ export const TR: Readonly<Record<string, string>> = {
   'job #{id}': 'görev #{id}',
   'owner/repo, one per line; empty = every repository the App is installed on':
     'owner/repo, her satıra bir tane; boş = App\'in kurulu olduğu tüm depolar',
+
+  // ── OS security updates (G4.2) ────────────────────────────────────────
+  '(list cut short)': '(liste kısaltıldı)',
+  'Automatic security updates are off': 'Otomatik güvenlik güncellemeleri kapalı',
+  'Automatic security updates are on': 'Otomatik güvenlik güncellemeleri açık',
+  'Check updates': 'Güncellemeleri kontrol et',
+  'Could not change automatic updates: {error}': 'Otomatik güncellemeler değiştirilemedi: {error}',
+  'Could not read the host: {error}': 'Sunucu okunamadı: {error}',
+  'Could not refresh the package lists: {error}': 'Paket listeleri yenilenemedi: {error}',
+  'Install security updates automatically': 'Güvenlik güncellemelerini otomatik kur',
+  'NineDeploy never reboots the host; plan reboots yourself.':
+    'NineDeploy sunucuyu asla yeniden başlatmaz; yeniden başlatmaları siz planlayın.',
+  'No pending updates.': 'Bekleyen güncelleme yok.',
+  'OS security updates': 'İşletim sistemi güvenlik güncellemeleri',
+  'Reading the host…': 'Sunucu okunuyor…',
+  'Reboot required': 'Yeniden başlatma gerekli',
+  'Refresh package lists': 'Paket listelerini yenile',
+  'Refreshing…': 'Yenileniyor…',
+  'Show all {n}': '{n} öğenin tümünü göster',
+  'Show fewer': 'Daha az göster',
+  'This host cannot tell whether a reboot is pending.':
+    'Bu sunucu yeniden başlatma bekleyip beklemediğini bildiremiyor.',
+  'This host has neither apt nor dnf, so NineDeploy cannot read or manage its updates.':
+    'Bu sunucuda apt veya dnf yok; NineDeploy güncellemelerini okuyamaz veya yönetemez.',
+  'Uses dnf-automatic (installed if missing) with security updates only.':
+    'Yalnızca güvenlik güncellemeleriyle dnf-automatic kullanır (yoksa kurulur).',
+  'Uses unattended-upgrades (installed if missing), with its automatic reboot turned off.':
+    'unattended-upgrades kullanır (yoksa kurulur); kendi otomatik yeniden başlatması kapalıdır.',
+  'Waiting for a reboot: {packages}': 'Yeniden başlatma bekleyen paketler: {packages}',
+  'checked {time}': 'kontrol: {time}',
+  'security': 'güvenlik',
+  '{n} pending updates, {s} of them security updates': '{n} bekleyen güncelleme, {s} tanesi güvenlik güncellemesi',
 };

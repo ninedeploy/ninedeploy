@@ -40,6 +40,7 @@ import { serviceGithubRoutes } from './serviceGithub.js';
 import { insightsRoutes, serviceInsightsRoutes } from './insights.js';
 import { jobRoutes } from './jobs.js';
 import { serverRoutes } from './servers.js';
+import { nodeOsUpdateRoutes, osUpdateRoutes } from './osUpdates.js';
 import { projectRoutes } from './projects.js';
 import { notificationRoutes } from './notifications.js';
 import { networkRoutes } from './networks.js';
@@ -178,6 +179,9 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // (0.15, DESIGN §1.6); operator only.
   await app.register(terminalRoutes, { prefix: '/terminals' });
   await app.register(statsRoutes, { prefix: '/stats' });
+  // G4.2 OS security updates: the panel host and each node (operator only).
+  await app.register(osUpdateRoutes, { prefix: '/os-updates' });
+  await app.register(nodeOsUpdateRoutes, { prefix: '/servers/:serverId/os-updates' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
   // 0.16.1: the operator's Getting started checklist (Dashboard card).
   await app.register(onboardingRoutes, { prefix: '/onboarding' });

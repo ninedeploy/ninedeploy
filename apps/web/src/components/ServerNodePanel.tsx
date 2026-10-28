@@ -9,6 +9,7 @@ import { errorCode, errorMessage, missingFeatures, NODE_FEATURES, swarmOptInLine
 import { useToast } from './Toast.js';
 import { Badge, Button, ConfirmDialog, Input, Switch } from './ui.js';
 import { DeploymentSupport } from './DeploymentSupport.js';
+import { OsUpdatesCard } from './OsUpdatesCard.js';
 import { fill, useT } from '../lib/i18n.js';
 
 /** True when the panel sent any multi-node field for this node (an older panel sends none). */
@@ -53,6 +54,10 @@ export function ServerNodePanel({
         <SwarmRow server={server} managerAddr={managerAddr} warnings={swarmWarnings ?? []} />
       )}
       {(server.databases !== undefined || isSwarmMember(server)) && <HostedRow server={server} />}
+      {/* G4.2: the node's OS updates, read on request through its agent. */}
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 md:col-span-2">
+        <OsUpdatesCard serverId={server.id} />
+      </div>
     </div>
   );
 }

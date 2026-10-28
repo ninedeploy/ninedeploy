@@ -83,6 +83,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.lifecycle': 'control immutable container state',
   'docker.lifecycle.generations': 'stop retained container generations',
   'docker.mutations': 'prepare, fence and retire owned container sets',
+  'host.packages': 'read and change OS updates',
 };
 
 let db: DB;

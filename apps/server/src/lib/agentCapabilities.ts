@@ -387,6 +387,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'db.client': '0.18.0',
   'db.studio': '0.18.0',
   'proxy.traffic': '0.18.0',
+  // G4.2 OS security updates
+  'host.packages': '0.18.6',
 };
 
 /**
@@ -410,6 +412,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'git.sshkey': 'NINEDEPLOY_AGENT_STATIC_CREDENTIALS',
   'db.manage': 'NINEDEPLOY_AGENT_DATABASES',
   'docker.runtimeOptions': 'NINEDEPLOY_AGENT_RUNTIME_OPTIONS',
+  'host.packages': 'NINEDEPLOY_AGENT_HOST_PACKAGES',
   // ── 0.16 T7 swarm ── opt-in (security review M2): unset means off.
   swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
   // ── end 0.16 T7 ──

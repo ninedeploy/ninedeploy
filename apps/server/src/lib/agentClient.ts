@@ -67,6 +67,8 @@ export function agentRequestTimeoutMs(op: string, params: Record<string, unknown
   if (op === 'db.studio.open') return 20_000;
   if (op === 'volume.fileTool') return 145_000;
   if (op === 'docker.containerTool') return 45_000;
+  // G4.2: two helper runs, one of which may install a package.
+  if (op === 'host.packages') return 2 * 8 * 60_000 + 30_000;
   if (op === 'docker.identity') return 15_000;
   if (op === 'docker.retire') {
     const raw = params['graceSeconds'];

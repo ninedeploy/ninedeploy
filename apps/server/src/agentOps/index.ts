@@ -22,6 +22,7 @@ import { proxyRoutingOps } from './proxyRouting.js';
 import { containerIdentityOps } from './containerIdentity.js';
 import { containerToolOps } from './containerTools.js';
 import { volumeFileOps } from './volumeFiles.js';
+import { osUpdateOps } from './osUpdates.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -99,6 +100,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   // ── end 0.16 T7 ──
   // 0.16.5 file mounts on a node (agentOps/fileMounts.ts; the `fileMounts` field of docker.runSpec)
   fileMountOps,
+  // G4.2 OS security updates (agentOps/osUpdates.ts)
+  osUpdateOps,
 ];
 
 /**
@@ -124,6 +127,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'db.manage': ['NINEDEPLOY_AGENT_DATABASES'],
   // 0.16.6: GPUs and added Linux capabilities are the node owner's call.
   'docker.runtimeOptions': ['NINEDEPLOY_AGENT_RUNTIME_OPTIONS'],
+  // G4.2: the host's package configuration is the node owner's call too.
+  'host.packages': ['NINEDEPLOY_AGENT_HOST_PACKAGES'],
 };
 
 /**

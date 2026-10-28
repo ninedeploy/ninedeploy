@@ -10,12 +10,15 @@ import type {
   SwarmInitInput,
   SwarmSettingsInput,
   SwarmStatus,
+  OsUpdateStatus,
 } from '@ninedeploy/schemas';
 import type { ServerListEntry, ServerRolesResult, SwarmJoinResult, SwarmLeaveResult } from '../types.js';
 import type { Transport } from '../transport.js';
 
 /** Long Swarm calls: a leave drains for up to 5 minutes; init and join run Docker on two hosts. */
 const SWARM_CALL_TIMEOUT_MS = 10 * 60_000;
+/** G4.2: a refresh or an install of unattended-upgrades / dnf-automatic can take minutes. */
+const OS_UPDATE_CALL_TIMEOUT_MS = 18 * 60_000;
 
 export interface ServersApi {
   servers: {
@@ -69,6 +72,15 @@ export interface ServersApi {
     /** Enable (step-up; 409 `swarm_not_manager`) or disable Swarm deploys. */
     settings: (input: SwarmSettingsInput) => Promise<SwarmStatus>;
   };
+  /**
+   * G4.2 OS security updates (operator only). `serverId` null is the panel
+   * host. `refresh` refreshes the package lists first. Nothing here reboots.
+   */
+  osUpdates: {
+    get: (serverId: number | null, options?: { refresh?: boolean }) => Promise<OsUpdateStatus>;
+    /** Turn automatic security updates on or off; answers the status read afterwards. */
+    setAuto: (serverId: number | null, enabled: boolean) => Promise<OsUpdateStatus>;
+  };
   orchestrators: {
     /** Every `IOrchestrator` the running kernel has registered. G-10 PR-A. */
     list: () => Promise<{
@@ -121,6 +133,20 @@ export function serversApi(t: Transport): ServersApi {
       get: () => get<SwarmStatus>('/v1/swarm'),
       init: (input) => request<SwarmStatus>('/v1/swarm/init', { method: 'POST', body: input }, SWARM_CALL_TIMEOUT_MS),
       settings: (input) => send<SwarmStatus>('PUT', '/v1/swarm/settings', input),
+    },
+    osUpdates: {
+      get: (serverId, options) =>
+        request<OsUpdateStatus>(
+          `${serverId == null ? '/v1/os-updates' : `/v1/servers/${serverId}/os-updates`}${options?.refresh ? '?refresh=1' : ''}`,
+          { method: 'GET' },
+          OS_UPDATE_CALL_TIMEOUT_MS,
+        ),
+      setAuto: (serverId, enabled) =>
+        request<OsUpdateStatus>(
+          serverId == null ? '/v1/os-updates/auto' : `/v1/servers/${serverId}/os-updates/auto`,
+          { method: 'POST', body: { enabled } },
+          OS_UPDATE_CALL_TIMEOUT_MS,
+        ),
     },
     orchestrators: {
       list: () => get<{
