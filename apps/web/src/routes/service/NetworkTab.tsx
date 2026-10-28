@@ -5,6 +5,7 @@ import { DomainRedirects } from './DomainRedirects.js';
 import { PortMappingsCard } from './PortMappingsCard.js';
 import { RoutingCard } from './RoutingCard.js';
 import { api } from '../../lib/api.js';
+import { fill, useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
 
@@ -25,6 +26,7 @@ export function NetworkTab({ serviceId, svc }: { serviceId: number; svc?: Servic
 
 // ── Internal Container Port / Traefik Target ────────────────────────────────
 function ContainerPortCard({ serviceId, svc }: { serviceId: number; svc?: Service | null }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [portInput, setPortInput] = useState(String(svc?.port ?? 3000));
@@ -36,9 +38,9 @@ function ContainerPortCard({ serviceId, svc }: { serviceId: number; svc?: Servic
     onSuccess: (_, port) => {
       qc.invalidateQueries({ queryKey: ['service', serviceId] });
       qc.invalidateQueries({ queryKey: ['services'] });
-      toast(`Container port :${port} saved — Traefik routing updated`, 'success');
+      toast(t('Container port :{port} saved — Traefik routing updated', { port }), 'success');
     },
-    onError: () => toast('Could not update the container port', 'error'),
+    onError: () => toast(t('Could not update the container port'), 'error'),
   });
 
   const parsed = Number(portInput);
@@ -48,10 +50,12 @@ function ContainerPortCard({ serviceId, svc }: { serviceId: number; svc?: Servic
     <Card>
       <CardBody>
         <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
-          <Globe size={15} className="text-indigo-400" /> Container Port / Traefik Target
+          <Globe size={15} className="text-indigo-400" /> {t('Container Port / Traefik Target')}
         </div>
         <p className="mb-4 text-xs text-slate-400">
-          The TCP port your application listens on inside the container. Domains, healthchecks and direct host publishing all route to this port. Redeploy after changing it so buildpack apps receive the same value through <span className="font-mono text-slate-300">PORT</span>.
+          {fill(t('The TCP port your application listens on inside the container. Domains, healthchecks and direct host publishing all route to this port. Redeploy after changing it so buildpack apps receive the same value through {env}.'), {
+            env: <span className="font-mono text-slate-300">PORT</span>,
+          })}
         </p>
         <form
           className="flex items-end gap-3"
@@ -65,9 +69,9 @@ function ContainerPortCard({ serviceId, svc }: { serviceId: number; svc?: Servic
           }}
         >
           <label className="flex-1 text-[11px] font-medium text-slate-400">
-            Internal container port
+            {t('Internal container port')}
             <Input
-              aria-label="Internal container port"
+              aria-label={t('Internal container port')}
               value={portInput}
               onChange={(e) => setPortInput(e.target.value)}
               inputMode="numeric"
@@ -77,10 +81,10 @@ function ContainerPortCard({ serviceId, svc }: { serviceId: number; svc?: Servic
             />
           </label>
           <Button type="submit" size="sm" disabled={!valid || update.isPending}>
-            {update.isPending ? 'Saving…' : 'Save Port'}
+            {update.isPending ? t('Saving…') : t('Save Port')}
           </Button>
         </form>
-        {!valid && portInput !== '' && <p className="mt-2 text-xs text-rose-400">Enter a port from 1 to 65535.</p>}
+        {!valid && portInput !== '' && <p className="mt-2 text-xs text-rose-400">{t('Enter a port from 1 to 65535.')}</p>}
       </CardBody>
     </Card>
   );
@@ -88,6 +92,7 @@ function ContainerPortCard({ serviceId, svc }: { serviceId: number; svc?: Servic
 
 // ── Direct Port Publishing ───────────────────────────────────────────────────
 function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service | null }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [portInput, setPortInput] = useState<string>('');
@@ -99,13 +104,13 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
       qc.invalidateQueries({ queryKey: ['service', serviceId] });
       qc.invalidateQueries({ queryKey: ['services'] });
       setEditing(false);
-      toast(publishedPort ? `Host port :${publishedPort} exposed` : 'Direct host port disabled', 'success');
+      toast(publishedPort ? t('Host port :{port} exposed', { port: publishedPort }) : t('Direct host port disabled'), 'success');
     },
-    onError: () => toast('Could not update host port mapping', 'error'),
+    onError: () => toast(t('Could not update host port mapping'), 'error'),
   });
 
   const currentPublished = svc?.publishedPort ?? null;
-  const containerPort = svc?.port ?? currentPublished ?? 'unknown';
+  const containerPort = svc?.port ?? currentPublished ?? t('unknown');
   const hostUrl = currentPublished ? `http://${window.location.hostname}:${currentPublished}` : null;
 
   // F986: the server refuses a host port for compose services (F961) — the
@@ -115,17 +120,18 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
       <Card>
         <CardBody>
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Radio size={15} className="text-slate-500" /> Direct Host Port Publishing
+            <Radio size={15} className="text-slate-500" /> {t('Direct Host Port Publishing')}
           </div>
           <p className="text-xs text-slate-500">
-            A compose stack publishes its own host ports — set them under the service's{' '}
-            <code className="font-mono">ports:</code> in the stack's compose file.
+            {fill(t("A compose stack publishes its own host ports — set them under the service's {ports} in the stack's compose file."), {
+              ports: <code className="font-mono">ports:</code>,
+            })}
           </p>
           {currentPublished && (
             <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-400">
-              <span>A stored host port :{currentPublished} is not applied to compose stacks.</span>
+              <span>{t('A stored host port :{port} is not applied to compose stacks.', { port: currentPublished })}</span>
               <Button size="sm" variant="ghost" onClick={() => update.mutate(null)} disabled={update.isPending}>
-                Clear
+                {t('Clear')}
               </Button>
             </div>
           )}
@@ -139,18 +145,18 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
       <CardBody>
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Radio size={15} className="text-slate-500" /> Direct Host Port Publishing
+            <Radio size={15} className="text-slate-500" /> {t('Direct Host Port Publishing')}
           </div>
           {currentPublished && (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Published on :{currentPublished}
+              {t('Published on :{port}', { port: currentPublished })}
             </span>
           )}
         </div>
 
         <p className="text-xs text-slate-400 mb-4">
-          Expose this service directly on a host TCP port without needing a domain or reverse proxy routing.
+          {t('Expose this service directly on a host TCP port without needing a domain or reverse proxy routing.')}
         </p>
 
         {currentPublished && !editing ? (
@@ -181,7 +187,7 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
                   setEditing(true);
                 }}
               >
-                Change Port
+                {t('Change Port')}
               </Button>
               <Button
                 size="sm"
@@ -190,7 +196,7 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
                 disabled={update.isPending}
                 className="text-slate-400 hover:text-rose-400"
               >
-                Disable
+                {t('Disable')}
               </Button>
             </div>
           </div>
@@ -202,7 +208,7 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
               if (p >= 1 && p <= 65535) {
                 update.mutate(p);
               } else {
-                toast('Please enter a valid port between 1 and 65535', 'error');
+                toast(t('Please enter a valid port between 1 and 65535'), 'error');
               }
             }}
             className="flex items-center gap-2"
@@ -214,12 +220,12 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
                 max={65535}
                 value={portInput}
                 onChange={(e) => setPortInput(e.target.value)}
-                placeholder="e.g. 8080 or 3000"
+                placeholder={t('e.g. 8080 or 3000')}
                 className="h-9 font-mono"
               />
             </div>
             <Button type="submit" size="sm" disabled={!portInput.trim() || update.isPending}>
-              {update.isPending ? 'Saving…' : 'Publish Port'}
+              {update.isPending ? t('Saving…') : t('Publish Port')}
             </Button>
             {editing && (
               <Button
@@ -228,7 +234,7 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
                 variant="ghost"
                 onClick={() => setEditing(false)}
               >
-                Cancel
+                {t('Cancel')}
               </Button>
             )}
           </form>
@@ -291,6 +297,7 @@ export function pastedPath(raw: string): string {
 export type DomainChallenge = DomainVerificationChallenge;
 
 function DomainsCard({ serviceId }: { serviceId: number }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [hostname, setHostname] = useState('');
@@ -307,7 +314,7 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
       const verification = (created as { verification?: DomainChallenge | null } | undefined)?.verification;
       if (created && verification) {
         setChallenges((c) => ({ ...c, [created.id]: verification }));
-        toast(`${created.hostname} added — publish the TXT record to bring it live`, 'info');
+        toast(t('{host} added — publish the TXT record to bring it live', { host: created.hostname }), 'info');
       }
       setHostname('');
       setPath('');
@@ -315,14 +322,17 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
       qc.invalidateQueries({ queryKey: ['domains-all'] });
     },
     // The server says why (taken by another service, outside the zone …).
-    onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not add the domain', 'error'),
+    onError: (err) => toast(err instanceof Error && err.message ? err.message : t('Could not add the domain'), 'error'),
   });
   // 0.16.1: the service's automatic URL (Settings → Automatic URLs) now,
   // instead of on its next deploy. The server explains when none applies.
   const generate = useMutation({
     mutationFn: () => api.domains.generate(serviceId),
     onSuccess: (d) => {
-      toast(d.created ? `${d.hostname} is routed to this service` : `${d.hostname} is already attached`, d.created ? 'success' : 'info');
+      toast(
+        d.created ? t('{host} is routed to this service', { host: d.hostname }) : t('{host} is already attached', { host: d.hostname }),
+        d.created ? 'success' : 'info',
+      );
       qc.invalidateQueries({ queryKey: ['domains', serviceId] });
       qc.invalidateQueries({ queryKey: ['domains-all'] });
     },
@@ -334,7 +344,7 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
       <CardBody>
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Globe size={15} className="text-slate-500" /> Domains
+            <Globe size={15} className="text-slate-500" /> {t('Domains')}
           </div>
           <Button
             type="button"
@@ -342,9 +352,9 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
             variant="ghost"
             onClick={() => generate.mutate()}
             disabled={generate.isPending}
-            title="Add this service's automatic URL (a free sslip.io name or <slug>.<your base domain>)"
+            title={t("Add this service's automatic URL (a free sslip.io name or <slug>.<your base domain>)")}
           >
-            <Wand2 size={13} /> {generate.isPending ? 'Generating…' : 'Generate URL'}
+            <Wand2 size={13} /> {generate.isPending ? t('Generating…') : t('Generate URL')}
           </Button>
         </div>
 
@@ -369,8 +379,8 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
               if (host !== hostname) setHostname(host);
             }}
             placeholder="app.example.com"
-            aria-label="Domain"
-            title="You can paste a full URL; its path goes to the path field."
+            aria-label={t('Domain')}
+            title={t('You can paste a full URL; its path goes to the path field.')}
             className="h-9 min-w-0 flex-1 basis-full sm:basis-0"
           />
           <Input
@@ -378,12 +388,12 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
             onChange={(e) => setPath(e.target.value)}
             onBlur={() => path && setPath(cleanPathInput(path))}
             placeholder="/path"
-            aria-label="Path"
-            title="Optional. Route only this path prefix to the service (e.g. /api); the request keeps its path."
+            aria-label={t('Path')}
+            title={t('Optional. Route only this path prefix to the service (e.g. /api); the request keeps its path.')}
             className="h-9 w-28 shrink-0 font-mono text-xs"
           />
           <Button type="submit" size="sm" variant="secondary" disabled={!hostname.trim() || add.isPending}>
-            <Plus size={14} /> Add
+            <Plus size={14} /> {t('Add')}
           </Button>
         </form>
 
@@ -391,7 +401,7 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
           {domains.isLoading ? (
             <Skeleton className="h-8 w-full" />
           ) : !domains.data || domains.data.length === 0 ? (
-            <p className="py-2 text-xs text-slate-600">No domains attached.</p>
+            <p className="py-2 text-xs text-slate-600">{t('No domains attached.')}</p>
           ) : (
             domains.data.map((d) => (
               <DomainItemRow
@@ -429,6 +439,7 @@ export function DomainItemRow({
   onReplaced?: (created: CreatedDomain) => void;
   initialEditing?: boolean;
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const pending = d.status === 'pending';
@@ -467,13 +478,13 @@ export function DomainItemRow({
       onReplaced?.(created);
       toast(
         live
-          ? `${d.hostname} now routes as ${created.hostname}${created.path !== '/' ? created.path : ''}`
-          : `${created.hostname} added as pending — ${d.hostname} keeps routing until you verify the new one, then remove it`,
+          ? t('{old} now routes as {host}', { old: d.hostname, host: `${created.hostname}${created.path !== '/' ? created.path : ''}` })
+          : t('{host} added as pending — {old} keeps routing until you verify the new one, then remove it', { host: created.hostname, old: d.hostname }),
         live ? 'success' : 'info',
       );
     },
     // The server says why (taken, outside the zone, reserved …); nothing was removed.
-    onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not change the domain', 'error'),
+    onError: (err) => toast(err instanceof Error && err.message ? err.message : t('Could not change the domain'), 'error'),
   });
   const submitEdit = () => {
     const host = cleanDomainInput(editHost);
@@ -493,15 +504,15 @@ export function DomainItemRow({
     mutationFn: () => api.domains.verify(serviceId, d.id),
     onSuccess: (res) => {
       if (res.verified) {
-        toast(`${d.hostname} verified — it is routed now`, 'success');
+        toast(t('{host} verified — it is routed now', { host: d.hostname }), 'success');
         qc.invalidateQueries({ queryKey: ['domains', serviceId] });
         qc.invalidateQueries({ queryKey: ['domains-all'] });
         return;
       }
       if (res.verification) onChallenge(res.verification);
-      toast(res.error ?? 'The TXT record was not found yet — DNS can take a few minutes', 'error');
+      toast(res.error ?? t('The TXT record was not found yet — DNS can take a few minutes'), 'error');
     },
-    onError: (err) => toast(err instanceof Error ? err.message : 'Could not verify the domain', 'error'),
+    onError: (err) => toast(err instanceof Error ? err.message : t('Could not verify the domain'), 'error'),
   });
   const [expanded, setExpanded] = useState(false);
   const [basicAuth, setBasicAuth] = useState(d.basicAuth ?? '');
@@ -517,7 +528,7 @@ export function DomainItemRow({
       qc.invalidateQueries({ queryKey: ['domains', serviceId] });
       setDnsResult(res);
     },
-    onError: () => toast('Could not run the DNS check', 'error'),
+    onError: () => toast(t('Could not run the DNS check'), 'error'),
   });
   const [dnsResult, setDnsResult] = useState<{ status: 'ok' | 'mismatch' | 'unresolved'; addresses: { a: string[]; aaaa: string[] }; expected: string[] } | null>(null);
 
@@ -527,7 +538,7 @@ export function DomainItemRow({
       qc.invalidateQueries({ queryKey: ['domains', serviceId] });
       qc.invalidateQueries({ queryKey: ['domains-all'] });
     },
-    onError: () => toast('Could not remove the domain', 'error'),
+    onError: () => toast(t('Could not remove the domain'), 'error'),
   });
   // Removing a domain instantly unroutes production traffic for that host —
   // confirm it, like every other destructive action in the app.
@@ -539,7 +550,7 @@ export function DomainItemRow({
       qc.invalidateQueries({ queryKey: ['domains', serviceId] });
       qc.invalidateQueries({ queryKey: ['domains-all'] });
     },
-    onError: () => toast('Could not toggle SSL', 'error'),
+    onError: () => toast(t('Could not toggle SSL'), 'error'),
   });
 
   const toggleWww = useMutation({
@@ -548,7 +559,7 @@ export function DomainItemRow({
       qc.invalidateQueries({ queryKey: ['domains', serviceId] });
       qc.invalidateQueries({ queryKey: ['domains-all'] });
     },
-    onError: () => toast('Could not toggle the www redirect', 'error'),
+    onError: () => toast(t('Could not toggle the www redirect'), 'error'),
   });
 
   const updateMiddlewares = useMutation({
@@ -562,10 +573,10 @@ export function DomainItemRow({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['domains', serviceId] });
       qc.invalidateQueries({ queryKey: ['domains-all'] });
-      toast('Domain security settings updated', 'success');
+      toast(t('Domain security settings updated'), 'success');
       setExpanded(false);
     },
-    onError: () => toast('Could not update domain security settings', 'error'),
+    onError: () => toast(t('Could not update domain security settings'), 'error'),
   });
 
   const hasActiveSecurity = !!(d.basicAuth || d.ipAllowlist || d.rateLimitAverage);
@@ -587,9 +598,9 @@ export function DomainItemRow({
           {pending && (
             <span
               className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20"
-              title="Ownership not proven yet — this domain is not routed"
+              title={t('Ownership not proven yet — this domain is not routed')}
             >
-              pending
+              {t('pending')}
             </span>
           )}
         </div>
@@ -600,9 +611,9 @@ export function DomainItemRow({
               onClick={() => verify.mutate()}
               disabled={verify.isPending}
               className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition hover:bg-amber-500/25"
-              title="Check the ownership TXT record and bring the domain live"
+              title={t('Check the ownership TXT record and bring the domain live')}
             >
-              {verify.isPending ? 'verifying…' : 'Verify'}
+              {verify.isPending ? t('verifying…') : t('Verify')}
             </button>
           )}
           <button
@@ -619,11 +630,15 @@ export function DomainItemRow({
             )}
             title={
               dnsResult
-                ? `A: ${dnsResult.addresses.a.join(', ') || '—'} · AAAA: ${dnsResult.addresses.aaaa.join(', ') || '—'} · expected: ${dnsResult.expected.join(', ') || '—'} — click to re-check`
-                : 'Check whether this hostname resolves to this server'
+                ? t('A: {a} · AAAA: {aaaa} · expected: {expected} — click to re-check', {
+                    a: dnsResult.addresses.a.join(', ') || '—',
+                    aaaa: dnsResult.addresses.aaaa.join(', ') || '—',
+                    expected: dnsResult.expected.join(', ') || '—',
+                  })
+                : t('Check whether this hostname resolves to this server')
             }
           >
-            {checkDns.isPending ? 'checking…' : dnsResult ? `DNS: ${dnsResult.status}` : 'Check DNS'}
+            {checkDns.isPending ? t('checking…') : dnsResult ? `DNS: ${dnsResult.status}` : t('Check DNS')}
           </button>
           <button
             type="button"
@@ -634,10 +649,10 @@ export function DomainItemRow({
                 ? 'bg-amber-500/15 text-amber-300 ring-amber-500/20 hover:bg-amber-500/25'
                 : 'bg-slate-500/15 text-slate-400 ring-slate-500/20 hover:bg-slate-500/25',
             )}
-            title="Configure Basic Auth, IP allowlist, rate limiting and redirects"
+            title={t('Configure Basic Auth, IP allowlist, rate limiting and redirects')}
           >
             <Shield size={10} />
-            Security
+            {t('Security')}
           </button>
           <button
             type="button"
@@ -648,7 +663,7 @@ export function DomainItemRow({
                 ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/20 hover:bg-emerald-500/25'
                 : 'bg-slate-500/15 text-slate-400 ring-slate-500/20 hover:bg-slate-500/25',
             )}
-            title={d.ssl ? 'HTTPS on — click to disable' : 'HTTPS off — click to issue a certificate'}
+            title={d.ssl ? t('HTTPS on — click to disable') : t('HTTPS off — click to issue a certificate')}
           >
             {d.ssl ? 'HTTPS' : 'HTTP'}
           </button>
@@ -661,7 +676,7 @@ export function DomainItemRow({
                 ? 'bg-sky-500/15 text-sky-300 ring-sky-500/20 hover:bg-sky-500/25'
                 : 'bg-slate-500/15 text-slate-400 ring-slate-500/20 hover:bg-slate-500/25',
             )}
-            title={d.redirectWww ? 'www→apex redirect on — click to disable' : 'Redirect www. to the apex host — click to enable'}
+            title={d.redirectWww ? t('www→apex redirect on — click to disable') : t('Redirect www. to the apex host — click to enable')}
           >
             www
           </button>
@@ -669,8 +684,8 @@ export function DomainItemRow({
             type="button"
             onClick={() => setEditing(!editing)}
             className="text-slate-600 transition hover:text-indigo-300"
-            title="Change hostname or path"
-            aria-label={`Edit ${d.hostname}`}
+            title={t('Change hostname or path')}
+            aria-label={t('Edit {host}', { host: d.hostname })}
           >
             <Pencil size={13} />
           </button>
@@ -678,8 +693,8 @@ export function DomainItemRow({
             type="button"
             onClick={() => setConfirmRemove(true)}
             className="text-slate-600 transition hover:text-rose-400"
-            title="Remove domain"
-            aria-label={`Remove ${d.hostname}`}
+            title={t('Remove domain')}
+            aria-label={t('Remove {host}', { host: d.hostname })}
           >
             <Trash2 size={13} />
           </button>
@@ -698,7 +713,7 @@ export function DomainItemRow({
             value={editHost}
             onChange={(e) => setEditHost(e.target.value)}
             placeholder="app.example.com"
-            aria-label="New hostname"
+            aria-label={t('New hostname')}
             className="h-8 min-w-0 flex-1 basis-full font-mono text-xs sm:basis-0"
           />
           <Input
@@ -706,34 +721,34 @@ export function DomainItemRow({
             onChange={(e) => setEditPath(e.target.value)}
             onBlur={() => editPath && setEditPath(cleanPathInput(editPath))}
             placeholder="/path"
-            aria-label="New path"
+            aria-label={t('New path')}
             className="h-8 w-28 shrink-0 font-mono text-xs"
           />
           <Button size="sm" variant="ghost" type="button" onClick={() => setEditing(false)}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button size="sm" type="submit" disabled={!editHost.trim() || replace.isPending}>
-            {replace.isPending ? 'Saving…' : 'Save'}
+            {replace.isPending ? t('Saving…') : t('Save')}
           </Button>
         </form>
       )}
 
       <ConfirmDialog
         open={confirmRemove}
-        title={`Remove ${d.hostname}?`}
-        message="The domain stops routing immediately — requests to it will fail until it is added back and verified. The service itself keeps running."
-        confirmLabel="Remove"
+        title={t('Remove {host}?', { host: d.hostname })}
+        message={t('The domain stops routing immediately — requests to it will fail until it is added back and verified. The service itself keeps running.')}
+        confirmLabel={t('Remove')}
         onConfirm={() => remove.mutate()}
         onClose={() => setConfirmRemove(false)}
       />
 
       {pending && challenge && (
         <div className="border-t border-white/5 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-slate-400">
-          <p>Prove you control this domain: publish this DNS record, then press Verify.</p>
+          <p>{t('Prove you control this domain: publish this DNS record, then press Verify.')}</p>
           <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono">
             <dt className="text-slate-500">{challenge.recordType}</dt>
             <dd className="break-all text-slate-200">{challenge.recordName}</dd>
-            <dt className="text-slate-500">value</dt>
+            <dt className="text-slate-500">{t('value')}</dt>
             <dd className="break-all text-slate-200">{challenge.recordValue}</dd>
           </dl>
         </div>
@@ -743,16 +758,16 @@ export function DomainItemRow({
         <div className="border-t border-white/5 bg-slate-950/40 p-3 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
             <div>
-              <label className="block text-slate-400 font-medium mb-1">Basic Auth (user:pass or htpasswd)</label>
+              <label className="block text-slate-400 font-medium mb-1">{t('Basic Auth (user:pass or htpasswd)')}</label>
               <Input
                 value={basicAuth}
                 onChange={(e) => setBasicAuth(e.target.value)}
-                placeholder="admin:password or ['user:hash']"
+                placeholder={t("admin:password or ['user:hash']")}
                 className="h-8 font-mono text-xs"
               />
             </div>
             <div>
-              <label className="block text-slate-400 font-medium mb-1">IP Allowlist (CIDR comma-separated)</label>
+              <label className="block text-slate-400 font-medium mb-1">{t('IP Allowlist (CIDR comma-separated)')}</label>
               <Input
                 value={ipAllowlist}
                 onChange={(e) => setIpAllowlist(e.target.value)}
@@ -761,34 +776,34 @@ export function DomainItemRow({
               />
             </div>
             <div>
-              <label className="block text-slate-400 font-medium mb-1">Rate Limit (Average req/sec)</label>
+              <label className="block text-slate-400 font-medium mb-1">{t('Rate Limit (Average req/sec)')}</label>
               <Input
                 type="number"
                 min={0}
                 value={rateLimitAvg}
                 onChange={(e) => setRateLimitAvg(e.target.value)}
-                placeholder="e.g. 50 (0 = disabled)"
+                placeholder={t('e.g. 50 (0 = disabled)')}
                 className="h-8 font-mono text-xs"
               />
             </div>
             <div>
-              <label className="block text-slate-400 font-medium mb-1">Rate Limit (Burst peak)</label>
+              <label className="block text-slate-400 font-medium mb-1">{t('Rate Limit (Burst peak)')}</label>
               <Input
                 type="number"
                 min={0}
                 value={rateLimitBurst}
                 onChange={(e) => setRateLimitBurst(e.target.value)}
-                placeholder="e.g. 100"
+                placeholder={t('e.g. 100')}
                 className="h-8 font-mono text-xs"
               />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <Button size="sm" variant="ghost" onClick={() => setExpanded(false)}>
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button size="sm" onClick={() => updateMiddlewares.mutate()} disabled={updateMiddlewares.isPending}>
-              Save Security Settings
+              {t('Save Security Settings')}
             </Button>
           </div>
           {/* 0.16.1: shown only by a panel that reports the field. */}

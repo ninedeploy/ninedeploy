@@ -3,6 +3,7 @@ import { ArrowRight, ChevronDown, Globe, Lock, Pencil, Plus, Trash2, Wand2 } fro
 import { Fragment, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
+import { useT } from '../lib/i18n.js';
 import { useToast } from '../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, EmptyState, ErrorCard, Input, PageHeader, Select, Skeleton, StatusBadge, Switch, cn } from '../components/ui.js';
 import { cleanDomainInput, cleanPathInput, DomainItemRow, pastedPath, type DomainChallenge } from './service/NetworkTab.js';
@@ -15,6 +16,7 @@ function daysUntil(iso: string): number {
 }
 
 export function Domains() {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const list = useQuery({ queryKey: ['domains-all'], queryFn: () => api.domains.all() });
@@ -22,9 +24,9 @@ export function Domains() {
     mutationFn: (d: { id: number; ssl: boolean }) => api.domains.setSsl(d.id, d.ssl),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['domains-all'] });
-      toast(vars.ssl ? 'HTTPS enabled for the domain' : 'HTTPS disabled — the domain now serves plain HTTP', 'success');
+      toast(vars.ssl ? t('HTTPS enabled for the domain') : t('HTTPS disabled — the domain now serves plain HTTP'), 'success');
     },
-    onError: () => toast('Could not update the SSL setting', 'error'),
+    onError: () => toast(t('Could not update the SSL setting'), 'error'),
   });
   // Which row's management panel is open, and whether it opened on Edit.
   const [open, setOpen] = useState<{ id: number; editing: boolean } | null>(null);
@@ -37,17 +39,17 @@ export function Domains() {
       qc.invalidateQueries({ queryKey: ['domains-all'] });
       qc.invalidateQueries({ queryKey: ['domains', d.serviceId] });
       if (open?.id === d.id) setOpen(null);
-      toast(`${d.hostname} removed`, 'success');
+      toast(t('{host} removed', { host: d.hostname }), 'success');
     },
-    onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not remove the domain', 'error'),
+    onError: (err) => toast(err instanceof Error && err.message ? err.message : t('Could not remove the domain'), 'error'),
   });
 
   return (
     <div>
       <PageHeader
         icon={<Globe size={18} />}
-        title="Domains"
-        subtitle="Routing map & SSL — where each domain points."
+        title={t('Domains')}
+        subtitle={t('Routing map & SSL — where each domain points.')}
       />
 
       <AddDomainCard onChallenge={(id, ch) => setChallenges((c) => ({ ...c, [id]: ch }))} />
@@ -55,20 +57,20 @@ export function Domains() {
       {list.isLoading ? (
         <Card className="p-5"><Skeleton className="h-10 w-full" /></Card>
       ) : list.isError ? (
-        <ErrorCard title="Couldn't load domains" error={list.error} onRetry={() => list.refetch()} />
+        <ErrorCard title={t("Couldn't load domains")} error={list.error} onRetry={() => list.refetch()} />
       ) : !list.data || list.data.length === 0 ? (
-        <Card><EmptyState icon={<Globe size={26} />} title="No domains" hint="Add one above, or from a service's Network tab." /></Card>
+        <Card><EmptyState icon={<Globe size={26} />} title={t('No domains')} hint={t("Add one above, or from a service's Network tab.")} /></Card>
       ) : (
         <Card className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-3 font-medium">Domain</th>
-                <th className="px-5 py-3 font-medium">Routes to</th>
-                <th className="px-5 py-3 font-medium">Container</th>
+                <th className="px-5 py-3 font-medium">{t('Domain')}</th>
+                <th className="px-5 py-3 font-medium">{t('Routes to')}</th>
+                <th className="px-5 py-3 font-medium">{t('Container')}</th>
                 <th className="px-5 py-3 font-medium">SSL</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium"><span className="sr-only">Actions</span></th>
+                <th className="px-5 py-3 font-medium">{t('Status')}</th>
+                <th className="px-5 py-3 font-medium"><span className="sr-only">{t('Actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -79,7 +81,7 @@ export function Domains() {
                     {/* r409: a pending domain is not routed — linking it just
                         opened a connection error. Plain text until verified. */}
                     {d.status === 'pending' ? (
-                      <span className="font-mono text-xs text-slate-200" title="Awaiting DNS ownership proof — not routed yet">
+                      <span className="font-mono text-xs text-slate-200" title={t('Awaiting DNS ownership proof — not routed yet')}>
                         {d.hostname}
                       </span>
                     ) : (
@@ -103,7 +105,7 @@ export function Domains() {
                     <Switch
                       checked={d.ssl}
                       onChange={(v) => toggle.mutate({ id: d.id, ssl: v })}
-                      label={d.ssl ? 'HTTPS on' : 'Enable HTTPS'}
+                      label={d.ssl ? t('HTTPS on') : t('Enable HTTPS')}
                     />
                     {d.ssl && <Lock size={11} className="ml-1.5 inline text-emerald-400" />}
                     {d.certExpiresAt && (() => {
@@ -121,9 +123,9 @@ export function Domains() {
                                 ? 'bg-amber-500/15 text-amber-300 ring-amber-500/20'
                                 : 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/20',
                           )}
-                          title={expired ? 'Certificate EXPIRED — reissue by toggling HTTPS off/on' : "Certificate expiry (Let's Encrypt)"}
+                          title={expired ? t('Certificate EXPIRED — reissue by toggling HTTPS off/on') : t("Certificate expiry (Let's Encrypt)")}
                         >
-                          {expired ? `expired ${Math.abs(days)}d ago` : `cert ${days}d`}
+                          {expired ? t('expired {n}d ago', { n: Math.abs(days) }) : t('cert {n}d', { n: days })}
                         </span>
                       );
                     })()}
@@ -132,7 +134,7 @@ export function Domains() {
                     {/* r345: the row's real routing status. `ssl` says nothing
                         about it — a `pending` domain (ownership unproven) is
                         not routed at all, whatever its HTTPS toggle. */}
-                    <span title={d.status === 'pending' ? 'Awaiting DNS ownership proof — not routed yet. Open Manage to verify it.' : undefined}>
+                    <span title={d.status === 'pending' ? t('Awaiting DNS ownership proof — not routed yet. Open Manage to verify it.') : undefined}>
                       <StatusBadge status={d.status} />
                     </span>
                   </td>
@@ -145,8 +147,8 @@ export function Domains() {
                           type="button"
                           onClick={() => setOpen(open?.id === d.id && open.editing ? null : { id: d.id, editing: true })}
                           className="text-slate-500 transition hover:text-indigo-300"
-                          title="Change hostname or path"
-                          aria-label={`Edit ${d.hostname}`}
+                          title={t('Change hostname or path')}
+                          aria-label={t('Edit {name}', { name: d.hostname })}
                         >
                           <Pencil size={13} />
                         </button>
@@ -154,8 +156,8 @@ export function Domains() {
                           type="button"
                           onClick={() => setRemoving(d)}
                           className="text-slate-500 transition hover:text-rose-400"
-                          title="Remove domain"
-                          aria-label={`Remove ${d.hostname}`}
+                          title={t('Remove domain')}
+                          aria-label={t('Remove {name}', { name: d.hostname })}
                         >
                           <Trash2 size={13} />
                         </button>
@@ -163,10 +165,10 @@ export function Domains() {
                           type="button"
                           onClick={() => setOpen(open?.id === d.id ? null : { id: d.id, editing: false })}
                           className="flex items-center gap-1 rounded-full bg-slate-500/15 px-2 py-0.5 text-[10px] font-medium text-slate-300 ring-1 ring-inset ring-slate-500/20 transition hover:bg-slate-500/25"
-                          title="Verify, DNS check, HTTPS, www redirect, security and redirect rules"
+                          title={t('Verify, DNS check, HTTPS, www redirect, security and redirect rules')}
                           aria-expanded={open?.id === d.id}
                         >
-                          Manage <ChevronDown size={11} className={cn('transition', open?.id === d.id && 'rotate-180')} />
+                          {t('Manage')} <ChevronDown size={11} className={cn('transition', open?.id === d.id && 'rotate-180')} />
                         </button>
                       </div>
                     )}
@@ -195,13 +197,13 @@ export function Domains() {
       )}
       <ConfirmDialog
         open={removing != null}
-        title={`Remove ${removing?.hostname ?? 'domain'}?`}
-        message="The domain stops routing immediately — requests to it will fail until it is added back and verified. The service itself keeps running."
-        confirmLabel="Remove"
+        title={t('Remove {title}?', { title: removing?.hostname ?? t('domain') })}
+        message={t('The domain stops routing immediately — requests to it will fail until it is added back and verified. The service itself keeps running.')}
+        confirmLabel={t('Remove')}
         onConfirm={() => removing && remove.mutate(removing)}
         onClose={() => setRemoving(null)}
       />
-      <p className="mt-3 text-xs text-slate-600">HTTPS uses Traefik&apos;s certificate on :443. On a public domain, NineDeploy provisions a Let&apos;s Encrypt cert automatically.</p>
+      <p className="mt-3 text-xs text-slate-600">{t("HTTPS uses Traefik's certificate on :443. On a public domain, NineDeploy provisions a Let's Encrypt cert automatically.")}</p>
     </div>
   );
 }
@@ -224,11 +226,12 @@ function ManagedDomain({
   onChallenge: (domainId: number, ch: DomainChallenge) => void;
   onReplaced: () => void;
 }) {
+  const t = useT();
   const domains = useQuery({ queryKey: ['domains', entry.serviceId], queryFn: () => api.domains.list(entry.serviceId) });
   if (domains.isLoading) return <Skeleton className="h-8 w-full" />;
-  if (domains.isError) return <ErrorCard title="Couldn't load this domain" error={domains.error} onRetry={() => domains.refetch()} />;
+  if (domains.isError) return <ErrorCard title={t("Couldn't load this domain")} error={domains.error} onRetry={() => domains.refetch()} />;
   const d = domains.data?.find((row) => row.id === entry.id);
-  if (!d) return <p className="text-xs text-slate-500">This domain is no longer attached to {entry.serviceName}.</p>;
+  if (!d) return <p className="text-xs text-slate-500">{t('This domain is no longer attached to {service}.', { service: entry.serviceName ?? '' })}</p>;
   return (
     <DomainItemRow
       domain={d}
@@ -246,6 +249,7 @@ function ManagedDomain({
 
 /** Attach a domain to any service — the same add / generate the service's Network tab offers. */
 function AddDomainCard({ onChallenge }: { onChallenge: (domainId: number, ch: DomainChallenge) => void }) {
+  const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const services = useQuery({ queryKey: ['services'], queryFn: () => api.services.list(), staleTime: 60_000 });
@@ -266,21 +270,21 @@ function AddDomainCard({ onChallenge }: { onChallenge: (domainId: number, ch: Do
       if (created.verification) {
         onChallenge(created.id, created.verification);
         setChallenge({ hostname: created.hostname, ch: created.verification });
-        toast(`${created.hostname} added — publish the TXT record to bring it live`, 'info');
+        toast(t('{host} added — publish the TXT record to bring it live', { host: created.hostname }), 'info');
       } else {
         setChallenge(null);
-        toast(`${created.hostname} is routed to the service`, 'success');
+        toast(t('{host} is routed to the service', { host: created.hostname }), 'success');
       }
       setHostname('');
       setPath('');
       refresh();
     },
-    onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not add the domain', 'error'),
+    onError: (err) => toast(err instanceof Error && err.message ? err.message : t('Could not add the domain'), 'error'),
   });
   const generate = useMutation({
     mutationFn: () => api.domains.generate(sid),
     onSuccess: (d) => {
-      toast(d.created ? `${d.hostname} is routed to the service` : `${d.hostname} is already attached`, d.created ? 'success' : 'info');
+      toast(d.created ? t('{host} is routed to the service', { host: d.hostname }) : t('{host} is already attached', { host: d.hostname }), d.created ? 'success' : 'info');
       refresh();
     },
     onError: (err: Error) => toast(err.message, 'error'),
@@ -291,7 +295,7 @@ function AddDomainCard({ onChallenge }: { onChallenge: (domainId: number, ch: Do
       <CardBody>
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Plus size={15} className="text-slate-500" /> Add domain
+            <Plus size={15} className="text-slate-500" /> {t('Add domain')}
           </div>
           <Button
             type="button"
@@ -299,9 +303,9 @@ function AddDomainCard({ onChallenge }: { onChallenge: (domainId: number, ch: Do
             variant="ghost"
             onClick={() => generate.mutate()}
             disabled={!sid || generate.isPending}
-            title="Add the chosen service's automatic URL (a free sslip.io name or <slug>.<your base domain>)"
+            title={t("Add the chosen service's automatic URL (a free sslip.io name or <slug>.<your base domain>)")}
           >
-            <Wand2 size={13} /> {generate.isPending ? 'Generating…' : 'Generate URL'}
+            <Wand2 size={13} /> {generate.isPending ? t('Generating…') : t('Generate URL')}
           </Button>
         </div>
         <form
@@ -317,10 +321,10 @@ function AddDomainCard({ onChallenge }: { onChallenge: (domainId: number, ch: Do
           <Select
             value={serviceId}
             onChange={(e) => setServiceId(e.target.value)}
-            aria-label="Service"
+            aria-label={t('Service')}
             className="h-9 basis-full text-xs md:w-48 md:basis-auto md:shrink-0"
           >
-            <option value="">{services.isLoading ? 'Loading services…' : 'Choose a service'}</option>
+            <option value="">{services.isLoading ? t('Loading services…') : t('Choose a service')}</option>
             {services.data?.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
@@ -336,8 +340,8 @@ function AddDomainCard({ onChallenge }: { onChallenge: (domainId: number, ch: Do
               if (host !== hostname) setHostname(host);
             }}
             placeholder="app.example.com"
-            aria-label="Domain"
-            title="You can paste a full URL; its path goes to the path field."
+            aria-label={t('Domain')}
+            title={t('You can paste a full URL; its path goes to the path field.')}
             className="h-9 min-w-0 flex-1 basis-full md:basis-0"
           />
           <Input
@@ -345,21 +349,21 @@ function AddDomainCard({ onChallenge }: { onChallenge: (domainId: number, ch: Do
             onChange={(e) => setPath(e.target.value)}
             onBlur={() => path && setPath(cleanPathInput(path))}
             placeholder="/path"
-            aria-label="Path"
-            title="Optional. Route only this path prefix to the service (e.g. /api); the request keeps its path."
+            aria-label={t('Path')}
+            title={t('Optional. Route only this path prefix to the service (e.g. /api); the request keeps its path.')}
             className="h-9 w-28 shrink-0 font-mono text-xs"
           />
           <Button type="submit" size="sm" variant="secondary" disabled={!sid || !hostname.trim() || add.isPending}>
-            <Plus size={14} /> Add
+            <Plus size={14} /> {t('Add')}
           </Button>
         </form>
         {challenge && (
           <div className="mt-3 rounded-lg bg-amber-500/[0.04] px-3 py-2 text-[11px] text-slate-400 ring-1 ring-inset ring-amber-500/15">
-            <p>Prove you control {challenge.hostname}: publish this DNS record, then press Verify under Manage.</p>
+            <p>{t('Prove you control {host}: publish this DNS record, then press Verify under Manage.', { host: challenge.hostname })}</p>
             <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono">
               <dt className="text-slate-500">{challenge.ch.recordType}</dt>
               <dd className="break-all text-slate-200">{challenge.ch.recordName}</dd>
-              <dt className="text-slate-500">value</dt>
+              <dt className="text-slate-500">{t('value')}</dt>
               <dd className="break-all text-slate-200">{challenge.ch.recordValue}</dd>
             </dl>
           </div>

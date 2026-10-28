@@ -5774,4 +5774,125 @@ export const TR: Readonly<Record<string, string>> = {
   'Hostname': 'Ana makine adı',
   '{type} record for {host} created in {zone} ({content})':
     '{host} için {type} kaydı {zone} bölgesinde oluşturuldu ({content})',
+
+  // ── Service Network tab ───────────────────────────────────────────────
+  'Container port :{port} saved — Traefik routing updated':
+    'Konteyner portu :{port} kaydedildi — Traefik yönlendirmesi güncellendi',
+  'Could not update the container port': 'Konteyner portu güncellenemedi',
+  'Container Port / Traefik Target': 'Konteyner Portu / Traefik Hedefi',
+  'The TCP port your application listens on inside the container. Domains, healthchecks and direct host publishing all route to this port. Redeploy after changing it so buildpack apps receive the same value through {env}.':
+    'Uygulamanızın konteyner içinde dinlediği TCP portu. Alan adları, sağlık kontrolleri ve doğrudan host yayını bu porta yönlenir. Değiştirdikten sonra yeniden dağıtın; böylece buildpack uygulamaları aynı değeri {env} üzerinden alır.',
+  'Internal container port': 'Dahili konteyner portu',
+  'Save Port': 'Portu Kaydet',
+  'Enter a port from 1 to 65535.': '1 ile 65535 arasında bir port girin.',
+  'Host port :{port} exposed': 'Host portu :{port} açıldı',
+  'Direct host port disabled': 'Doğrudan host portu devre dışı bırakıldı',
+  'Could not update host port mapping': 'Host port eşlemesi güncellenemedi',
+  'Direct Host Port Publishing': 'Doğrudan Host Port Yayını',
+  'A compose stack publishes its own host ports — set them under the service\'s {ports} in the stack\'s compose file.':
+    'Bir compose yığını kendi host portlarını yayınlar — bunları yığının compose dosyasında servisin {ports} bölümünde ayarlayın.',
+  'A stored host port :{port} is not applied to compose stacks.':
+    'Kayıtlı host portu :{port} compose yığınlarına uygulanmaz.',
+  'Published on :{port}': ':{port} üzerinde yayında',
+  'Expose this service directly on a host TCP port without needing a domain or reverse proxy routing.':
+    'Bu servisi alan adı veya ters vekil yönlendirmesi gerekmeden doğrudan bir host TCP portunda yayınlayın.',
+  'Change Port': 'Portu Değiştir',
+  'Please enter a valid port between 1 and 65535': 'Lütfen 1 ile 65535 arasında geçerli bir port girin',
+  'e.g. 8080 or 3000': 'örn. 8080 veya 3000',
+  'Publish Port': 'Portu Yayınla',
+  '{host} added — publish the TXT record to bring it live': '{host} eklendi — yayına almak için TXT kaydını yayınlayın',
+  'Could not add the domain': 'Alan adı eklenemedi',
+  '{host} is routed to this service': '{host} bu servise yönlendirildi',
+  '{host} is already attached': '{host} zaten bağlı',
+  'Add this service\'s automatic URL (a free sslip.io name or <slug>.<your base domain>)':
+    'Bu servisin otomatik URL\'sini ekle (ücretsiz bir sslip.io adı veya <slug>.<temel alan adınız>)',
+  'Generate URL': 'URL Oluştur',
+  'You can paste a full URL; its path goes to the path field.':
+    'Tam bir URL yapıştırabilirsiniz; yolu, yol alanına taşınır.',
+  'Optional. Route only this path prefix to the service (e.g. /api); the request keeps its path.':
+    'İsteğe bağlı. Servise yalnızca bu yol önekini yönlendir (örn. /api); istek yolunu korur.',
+  'No domains attached.': 'Bağlı alan adı yok.',
+  '{old} now routes as {host}': '{old} artık {host} olarak yönlendiriliyor',
+  '{host} added as pending — {old} keeps routing until you verify the new one, then remove it':
+    '{host} beklemede olarak eklendi — yenisini doğrulayana kadar {old} yönlendirmeye devam eder, ardından onu kaldırın',
+  'Could not change the domain': 'Alan adı değiştirilemedi',
+  '{host} verified — it is routed now': '{host} doğrulandı — artık yönlendiriliyor',
+  'The TXT record was not found yet — DNS can take a few minutes':
+    'TXT kaydı henüz bulunamadı — DNS birkaç dakika sürebilir',
+  'Could not verify the domain': 'Alan adı doğrulanamadı',
+  'Could not run the DNS check': 'DNS kontrolü çalıştırılamadı',
+  'Could not remove the domain': 'Alan adı kaldırılamadı',
+  'Could not toggle SSL': 'SSL değiştirilemedi',
+  'Could not toggle the www redirect': 'www yönlendirmesi değiştirilemedi',
+  'Domain security settings updated': 'Alan adı güvenlik ayarları güncellendi',
+  'Could not update domain security settings': 'Alan adı güvenlik ayarları güncellenemedi',
+  'Ownership not proven yet — this domain is not routed': 'Sahiplik henüz kanıtlanmadı — bu alan adı yönlendirilmiyor',
+  'Check the ownership TXT record and bring the domain live': 'Sahiplik TXT kaydını kontrol et ve alan adını yayına al',
+  'verifying…': 'doğrulanıyor…',
+  'Verify': 'Doğrula',
+  'A: {a} · AAAA: {aaaa} · expected: {expected} — click to re-check':
+    'A: {a} · AAAA: {aaaa} · beklenen: {expected} — yeniden kontrol için tıklayın',
+  'Check whether this hostname resolves to this server':
+    'Bu ana bilgisayar adının bu sunucuya çözümlenip çözümlenmediğini kontrol et',
+  'Check DNS': 'DNS\'i Kontrol Et',
+  'Configure Basic Auth, IP allowlist, rate limiting and redirects':
+    'Basic Auth, IP izin listesi, hız sınırı ve yönlendirmeleri yapılandır',
+  'HTTPS on — click to disable': 'HTTPS açık — kapatmak için tıklayın',
+  'HTTPS off — click to issue a certificate': 'HTTPS kapalı — sertifika almak için tıklayın',
+  'www→apex redirect on — click to disable': 'www→kök yönlendirmesi açık — kapatmak için tıklayın',
+  'Redirect www. to the apex host — click to enable': 'www. adresini kök alan adına yönlendir — açmak için tıklayın',
+  'Change hostname or path': 'Ana bilgisayar adını veya yolu değiştir',
+  'Edit {host}': '{host} düzenle',
+  'Remove domain': 'Alan adını kaldır',
+  'Remove {host}': '{host} kaldır',
+  'New hostname': 'Yeni ana bilgisayar adı',
+  'New path': 'Yeni yol',
+  'Remove {host}?': '{host} kaldırılsın mı?',
+  'The domain stops routing immediately — requests to it will fail until it is added back and verified. The service itself keeps running.':
+    'Alan adı hemen yönlendirmeyi durdurur — yeniden eklenip doğrulanana kadar ona gelen istekler başarısız olur. Servisin kendisi çalışmaya devam eder.',
+  'Prove you control this domain: publish this DNS record, then press Verify.':
+    'Bu alan adını kontrol ettiğinizi kanıtlayın: bu DNS kaydını yayınlayın, ardından Doğrula\'ya basın.',
+  'Basic Auth (user:pass or htpasswd)': 'Basic Auth (kullanıcı:parola veya htpasswd)',
+  'admin:password or [\'user:hash\']': 'admin:parola veya [\'user:hash\']',
+  'IP Allowlist (CIDR comma-separated)': 'IP İzin Listesi (CIDR, virgülle ayrılmış)',
+  'Rate Limit (Average req/sec)': 'Hız Sınırı (ortalama istek/sn)',
+  'e.g. 50 (0 = disabled)': 'örn. 50 (0 = devre dışı)',
+  'Rate Limit (Burst peak)': 'Hız Sınırı (anlık tepe)',
+  'e.g. 100': 'örn. 100',
+  'Save Security Settings': 'Güvenlik Ayarlarını Kaydet',
+
+  // ── Domains page ──────────────────────────────────────────────────────
+  'HTTPS enabled for the domain': 'Alan adı için HTTPS açıldı',
+  'HTTPS disabled — the domain now serves plain HTTP': 'HTTPS kapatıldı — alan adı artık düz HTTP sunuyor',
+  'Could not update the SSL setting': 'SSL ayarı güncellenemedi',
+  '{host} removed': '{host} kaldırıldı',
+  'Routing map & SSL — where each domain points.': 'Yönlendirme haritası ve SSL — her alan adının nereye yönlendiği.',
+  'Couldn\'t load domains': 'Alan adları yüklenemedi',
+  'No domains': 'Alan adı yok',
+  'Add one above, or from a service\'s Network tab.': 'Yukarıdan ya da bir servisin Ağ sekmesinden ekleyin.',
+  'Routes to': 'Yönlendirildiği yer',
+  'Awaiting DNS ownership proof — not routed yet': 'DNS sahiplik kanıtı bekleniyor — henüz yönlendirilmiyor',
+  'HTTPS on': 'HTTPS açık',
+  'Enable HTTPS': 'HTTPS\'i aç',
+  'Certificate EXPIRED — reissue by toggling HTTPS off/on':
+    'Sertifikanın süresi DOLDU — HTTPS\'i kapatıp açarak yeniden alın',
+  'Certificate expiry (Let\'s Encrypt)': 'Sertifika bitiş tarihi (Let\'s Encrypt)',
+  'expired {n}d ago': '{n} gün önce doldu',
+  'cert {n}d': 'sertifika {n} gün',
+  'Awaiting DNS ownership proof — not routed yet. Open Manage to verify it.':
+    'DNS sahiplik kanıtı bekleniyor — henüz yönlendirilmiyor. Doğrulamak için Yönet\'i açın.',
+  'Verify, DNS check, HTTPS, www redirect, security and redirect rules':
+    'Doğrulama, DNS kontrolü, HTTPS, www yönlendirmesi, güvenlik ve yönlendirme kuralları',
+  'HTTPS uses Traefik\'s certificate on :443. On a public domain, NineDeploy provisions a Let\'s Encrypt cert automatically.':
+    'HTTPS, :443 üzerinde Traefik\'in sertifikasını kullanır. Herkese açık bir alan adında NineDeploy otomatik olarak bir Let\'s Encrypt sertifikası alır.',
+  'Couldn\'t load this domain': 'Bu alan adı yüklenemedi',
+  'This domain is no longer attached to {service}.': 'Bu alan adı artık {service} servisine bağlı değil.',
+  '{host} is routed to the service': '{host} servise yönlendiriliyor',
+  'Add domain': 'Alan adı ekle',
+  'Add the chosen service\'s automatic URL (a free sslip.io name or <slug>.<your base domain>)':
+    'Seçilen servisin otomatik URL\'sini ekle (ücretsiz bir sslip.io adı ya da <slug>.<temel alan adınız>)',
+  'Loading services…': 'Servisler yükleniyor…',
+  'Choose a service': 'Bir servis seçin',
+  'Prove you control {host}: publish this DNS record, then press Verify under Manage.':
+    '{host} alan adının sizde olduğunu kanıtlayın: bu DNS kaydını yayımlayın, ardından Yönet altında Doğrula\'ya basın.',
 };

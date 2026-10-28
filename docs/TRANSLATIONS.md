@@ -28,7 +28,7 @@ Use string literals inside `t()` and `msg()`. The test reads them from the sourc
 
 ## What is translated so far
 
-Every page and shared component of the panel, except two: the service **Network** tab and the **Domains** page, which are next.
+Every page and shared component of the panel, including the service **Network** tab and the **Domains** page.
 
 These stay English on purpose:
 
