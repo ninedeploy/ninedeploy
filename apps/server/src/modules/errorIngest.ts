@@ -6,6 +6,7 @@ import { audit } from '../lib/audit.js';
 import { notFound, parseId } from '../lib/errors.js';
 import {
   MAX_INGEST_BYTES,
+  OVERFLOW_FINGERPRINT,
   alertDecision,
   decodeBody,
   ingestAllowed,
@@ -66,7 +67,8 @@ export const errorIngestPublicRoutes: FastifyPluginAsync = async (app) => {
       // a per-service hourly budget. The title is the sender's text (a browser
       // DSN is public), so the alert names only the service and issue number.
       if (isNew || regressed) {
-        const decision = alertDecision(serviceId);
+        // Reaching the issue cap always alerts, whatever the hourly budget.
+        const decision = isNew && issue.fingerprint === OVERFLOW_FINGERPRINT ? 'alert' : alertDecision(serviceId);
         if (decision === 'alert') {
           void audit(app.db, null, isNew ? 'alert.error_new' : 'alert.error_regressed', `${svc.name}: ${isNew ? 'new' : 'reopened'} error issue #${issue.id}`, { serviceId, issueId: issue.id });
         } else if (decision === 'burst') {

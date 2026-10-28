@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
-import { and, desc, eq, inArray, like, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, lt, ne, or, sql } from 'drizzle-orm';
 import { deployments, errorEvents, errorIssues, settings, type DB, type ErrorIssue } from '@ninedeploy/db';
 import { getSettingJson, setSettingJson } from './settings.js';
 
@@ -211,10 +211,13 @@ export async function deploymentFor(db: DB, serviceId: number, release: string |
  * Storage bounds. A browser DSN is public, so anyone can send events: an
  * issue keeps its latest events only, payloads are capped, and past the
  * issue cap new fingerprints are counted under one overflow issue.
- * Worst case per service: 500 issues × 20 events × 32 KiB.
+ * Only unresolved issues count toward the cap, so resolving or ignoring
+ * squatted issues makes room. An issue keeps its first events and its
+ * latest ones, so a flood cannot evict the original evidence.
+ * Worst case per service: 500 unresolved issues × 20 events × 32 KiB.
  */
-export const ERROR_LIMITS = { payloadChars: 32 * 1024, eventsPerIssue: 20, issuesPerService: 500 };
-const OVERFLOW_FINGERPRINT = 'overflow';
+export const ERROR_LIMITS = { payloadChars: 32 * 1024, eventsPerIssue: 20, firstEventsKept: 5, issuesPerService: 500 };
+export const OVERFLOW_FINGERPRINT = 'overflow';
 
 export interface Recorded {
   issue: ErrorIssue;
@@ -230,7 +233,7 @@ export async function recordEvent(db: DB, serviceId: number, event: Record<strin
   const deploymentId = await deploymentFor(db, serviceId, release);
   let existing = await db.query.errorIssues.findFirst({ where: and(eq(errorIssues.serviceId, serviceId), eq(errorIssues.fingerprint, g.fingerprint)) });
   if (!existing) {
-    const [{ n } = { n: 0 }] = await db.select({ n: sql<number>`count(*)` }).from(errorIssues).where(eq(errorIssues.serviceId, serviceId));
+    const [{ n } = { n: 0 }] = await db.select({ n: sql<number>`count(*)` }).from(errorIssues).where(and(eq(errorIssues.serviceId, serviceId), eq(errorIssues.status, 'unresolved'), ne(errorIssues.fingerprint, OVERFLOW_FINGERPRINT)));
     if (Number(n) >= ERROR_LIMITS.issuesPerService) {
       g.fingerprint = OVERFLOW_FINGERPRINT;
       g.title = `More than ${ERROR_LIMITS.issuesPerService} distinct issues; resolve or wait for old ones to expire`;
@@ -278,9 +281,13 @@ export async function recordEvent(db: DB, serviceId: number, event: Record<strin
       payload: payload.length > cap ? JSON.stringify({ truncated: true, head: payload.slice(0, cap - 100) }) : payload,
       receivedAt: now,
     });
-    // Only the latest events of an issue are kept.
+    // The first events of an issue and its latest ones are kept.
+    const first = ERROR_LIMITS.firstEventsKept;
+    const latest = Math.max(ERROR_LIMITS.eventsPerIssue - first, 1);
     await db.run(
-      sql`DELETE FROM error_events WHERE issue_id = ${issue.id} AND id NOT IN (SELECT id FROM error_events WHERE issue_id = ${issue.id} ORDER BY id DESC LIMIT ${ERROR_LIMITS.eventsPerIssue})`,
+      sql`DELETE FROM error_events WHERE issue_id = ${issue.id}
+        AND id NOT IN (SELECT id FROM error_events WHERE issue_id = ${issue.id} ORDER BY id ASC LIMIT ${first})
+        AND id NOT IN (SELECT id FROM error_events WHERE issue_id = ${issue.id} ORDER BY id DESC LIMIT ${latest})`,
     );
   }
   return { issue, isNew, regressed };

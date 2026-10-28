@@ -209,9 +209,9 @@ Without a release, an issue is linked to the deploy that was live when it first 
 
 **Bounds**
 - A browser DSN is public, so anyone can send events.
-- An issue keeps its latest 20 events, each payload capped at 32 KiB. An SDK retry with the same `event_id` is counted but not stored twice.
-- Past 500 issues in a service, new fingerprints are counted under one overflow issue.
-- Alerts are limited to 10 per service per hour. The next one is `alert.error_burst`, and then alerts stay quiet until the hour ends.
+- An issue keeps its first 5 events and its latest 15, each payload capped at 32 KiB. A flood therefore cannot evict the first evidence. An SDK retry with the same `event_id` is counted but not stored twice.
+- Past 500 unresolved issues in a service, new fingerprints are counted under one overflow issue. Resolving or ignoring issues makes room again.
+- Alerts are limited to 10 per service per hour. The next one is `alert.error_burst`, and then alerts stay quiet until the hour ends. Reaching the issue cap always alerts.
 - Alerts name the service and the issue number, never the text the sender chose.
 
 **Retention**

@@ -156,6 +156,7 @@ describe('bounds (a browser DSN is public)', () => {
     const saved = { ...lib.ERROR_LIMITS };
     const savedBudget = lib.ALERT_BUDGET.perHour;
     lib.ERROR_LIMITS.eventsPerIssue = 2;
+    lib.ERROR_LIMITS.firstEventsKept = 1;
     lib.ERROR_LIMITS.issuesPerService = 2;
     lib.ALERT_BUDGET.perHour = 1;
     try {
@@ -165,7 +166,8 @@ describe('bounds (a browser DSN is public)', () => {
       for (const id of ['1', '2', '3', '3']) await post(event({ id: id.repeat(32) }));
       const [first] = await db.select().from(errorIssues);
       expect(first!.count).toBe(4);
-      expect((await db.select().from(errorEvents)).map((e) => e.eventId)).toEqual(['2'.repeat(32), '3'.repeat(32)]);
+      // The first event stays; the latest replaces the one before it.
+      expect((await db.select().from(errorEvents)).map((e) => e.eventId)).toEqual(['1'.repeat(32), '3'.repeat(32)]);
       // A second distinct issue fits; the third and fourth fold into the overflow issue.
       await post({ event_id: 'a'.repeat(32), message: 'second' });
       await post({ event_id: 'b'.repeat(32), message: 'third' });
@@ -175,8 +177,14 @@ describe('bounds (a browser DSN is public)', () => {
       expect(all).toHaveLength(3);
       expect(all.find((i) => i.fingerprint === 'overflow')?.count).toBe(2);
       const actions = audit.mock.calls.map((c) => (c as unknown[])[2]);
-      expect(actions.filter((x) => x === 'alert.error_new')).toHaveLength(1);
+      // The first issue alerts, the second hits the budget (burst), and the overflow issue alerts regardless.
+      expect(actions.filter((x) => x === 'alert.error_new')).toHaveLength(2);
       expect(actions.filter((x) => x === 'alert.error_burst')).toHaveLength(1);
+      // Resolving makes room: a new fingerprint gets its own issue again.
+      const second = all.find((i) => i.title === 'second')!;
+      await a.inject({ method: 'PATCH', url: `/services/5/errors/${second.id}`, headers: asUser(1), payload: { status: 'resolved' } });
+      await post({ event_id: 'd'.repeat(32), message: 'fifth' });
+      expect((await db.select().from(errorIssues)).some((i) => i.title === 'fifth')).toBe(true);
       await a.close();
     } finally {
       Object.assign(lib.ERROR_LIMITS, saved);
