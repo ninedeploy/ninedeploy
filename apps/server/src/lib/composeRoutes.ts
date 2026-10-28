@@ -42,13 +42,18 @@ export function composeServiceContainer(slug: string, service: string): string {
  * Whether `ndcmp-<slug>-<service>-1` could also be ANOTHER stack's container:
  * a stack `shop` routing to `x-web` names `ndcmp-shop-x-web-1`, which is the
  * `web` container of a stack `shop-x`. Traefik shares every stack's network,
- * so such a route would reach someone else's service. Refused when saved and
- * skipped (main service) when rendered.
+ * so such a route would reach someone else's service. The same holds the other
+ * way round: in a stack `shop-x`, any route could be a container of `shop`.
+ * Refused when saved and skipped (main service) when rendered.
  */
 export function composeRouteCollides(slug: string, service: string, composeSlugs: Iterable<string>): boolean {
   const name = `${slug}-${service}`;
   for (const other of composeSlugs) {
-    if (other !== slug && other.startsWith(`${slug}-`) && name.startsWith(`${other}-`)) return true;
+    if (other === slug) continue;
+    // A longer slug: `shop` → `x-web` is `shop-x`'s `web`.
+    if (other.startsWith(`${slug}-`) && name.startsWith(`${other}-`)) return true;
+    // A shorter one: in `shop-x`, `web` is also what `shop` names its `x-web`.
+    if (slug.startsWith(`${other}-`)) return true;
   }
   return false;
 }

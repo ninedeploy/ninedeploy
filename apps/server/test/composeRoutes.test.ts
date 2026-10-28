@@ -76,6 +76,15 @@ describe('compose routes', () => {
     expect(yaml).toContain('    svc_shop_12:\n      loadBalancer:\n        servers:\n          - url: "http://ndcmp-shop-web-1:80"');
   });
 
+  it('treats a shorter stack slug as ambiguous too', async () => {
+    const { composeRouteCollides } = await import('../src/lib/composeRoutes.js');
+    // In `shop-x`, `web` is `ndcmp-shop-x-web-1`, which `shop` names its `x-web`.
+    expect(composeRouteCollides('shop-x', 'web', ['shop', 'shop-x'])).toBe(true);
+    expect(composeRouteCollides('shop', 'x-web', ['shop', 'shop-x'])).toBe(true);
+    expect(composeRouteCollides('shop', 'admin-ui', ['shop', 'shop-x'])).toBe(false);
+    expect(composeRouteCollides('shop', 'x-web', ['shop', 'shopx'])).toBe(false);
+  });
+
   it('names a routed service in the environment, keeping values the service sets', async () => {
     const a = await app();
     await put(a, 12, { service: 'admin-ui', port: 8080 });
