@@ -141,6 +141,13 @@ export const uptimeSpecs: RouteSpecMap = {
     description: 'The same as `/_nd/maintenance/:serviceId`, for every path below it.',
     floor: 'public',
   },
+  'ALL /_nd/fa/verify/:domainId': {
+    summary: "Forward-auth check for a domain behind panel sign-in (Traefik only)",
+    tag: 'domains',
+    description:
+      "No session; Traefik's `forwardAuth` sends the visitor's request headers. `200` with `X-Forwarded-User` for a valid session cookie of a user with the role; for the domain's callback, spends the code and answers `302` with the session cookie; otherwise a browser gets `302` to the panel's sign-in page (with a state cookie) and anything else `401`. `403` for a host that is not the domain's. G2.3.",
+    floor: 'public',
+  },
   'ALL /_nd/errors/:serviceId/:status': {
     summary: 'Custom error page of a service (Traefik only)',
     tag: 'services',

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Panel sign-in in front of any app (forward auth, G2.3). Under Service → Settings → Panel sign-in, a domain can require visitors to sign in on the panel and hold a chosen role on the service. Traefik's `forwardAuth` asks the panel, so no extra container runs.
+  - **Flow:** a one-time code on the app's domain, bound by a state cookie, sets a 12-hour session cookie.
+  - **Revocation:** Sign out everywhere and role changes end access.
+  - **API:** `GET/PUT /v1/domains/:id/forward-auth` and `POST /v1/forward-auth/grant`. There is no migration.
+
+  See TRAEFIK_INGRESS.md → *Panel sign-in in front of an app*.
 - Maintenance mode and custom error pages (G2.2). Under Service → Settings → Maintenance mode, for services on the panel host.
   - **Maintenance:** a service's domains answer a 503 maintenance page served by the panel. Addresses on a bypass list still reach the app.
   - **Error pages:** custom 502/503/504 HTML is shown through Traefik's `errors` middleware.

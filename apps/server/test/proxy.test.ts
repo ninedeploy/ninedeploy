@@ -199,11 +199,12 @@ describe('writeDynamicConfig', () => {
     expect(yaml).toContain('svc_web_1:');
     expect(yaml).toContain('svc_web_2:');
     expect(yaml).toContain('url: "http://web-1:3000"');
-    // (G2.2) maintenance / error-page settings, domains + services + (0.14)
-    // uploaded certificates to render, then `servers` to decide whether any
-    // node proxy needs the same refresh. A single-host install pays that
-    // select over an empty table and fans out to nobody.
-    expect(db.select).toHaveBeenCalledTimes(5);
+    // (G2.2) maintenance / error-page settings, (G2.3) forward-auth domains,
+    // domains + services + (0.14) uploaded certificates to render, then
+    // `servers` to decide whether any node proxy needs the same refresh. A
+    // single-host install pays that select over an empty table and fans out
+    // to nobody.
+    expect(db.select).toHaveBeenCalledTimes(6);
   });
 
   it('load-balances a docker service with replicas and health-checks each server', async () => {
@@ -1710,6 +1711,8 @@ describe('golden dynamic config is valid Traefik v3 (r638)', () => {
         [
           { key: 'maintenance:4', value: { title: 'Back soon', message: '', retryAfterSeconds: 300, bypass: ['203.0.113.7', '2001:db8::/32'], since: '2026-10-28T00:00:00.000Z' } },
           { key: 'error_pages:5', value: { pages: { '502': '<h1>Oops</h1>', '504': '<h1>Slow</h1>' } } },
+          // G2.3: panel sign-in in front of a domain (forwardAuth).
+          { key: 'forward_auth:7', value: { minRole: 'viewer' } },
         ],
       );
       const yaml = await renderDynamicConfig(db as never, { serverId: null });

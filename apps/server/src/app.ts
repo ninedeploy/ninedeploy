@@ -28,6 +28,7 @@ import autoscalerPlugin from './plugins/autoscaler.js';
 import sleeperPlugin from './plugins/sleeper.js';
 import { wakeRoutes } from './modules/wake.js';
 import { maintenancePageRoutes } from './modules/maintenance.js';
+import { forwardAuthVerifyRoutes } from './modules/forwardAuth.js';
 import dbPlugin from './plugins/db.js';
 import housekeepingPlugin from './plugins/housekeeping.js';
 import logShipperPlugin from './plugins/logShipper.js';
@@ -147,6 +148,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(wakeRoutes());
   // G2.2: the maintenance and custom error pages Traefik fetches from the panel
   await app.register(maintenancePageRoutes);
+  // G2.3: what Traefik's forwardAuth asks for a domain behind panel sign-in
+  await app.register(forwardAuthVerifyRoutes);
   // SCIM 2.0 lives OUTSIDE /v1: IdPs hardcode the RFC path `${base}/scim/v2`.
   await app.register(scimRoutes, { prefix: '/scim/v2' });
   // Background deploy worker

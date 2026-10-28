@@ -34,6 +34,7 @@ import {
 import { canaryRouteFor } from './canaryState.js';
 import { panelWakeUpstream } from '../lib/panelUpstream.js';
 import { routingOverrides } from '../lib/maintenance.js';
+import { FA_PREFIX, forwardAuthDomains } from '../lib/forwardAuth.js';
 import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
 
 /** 0.16.11: the path prefix the wake endpoint answers under (modules/wake.ts). */
@@ -1082,6 +1083,8 @@ export async function renderDynamicConfig(
   const customCerts = await refreshCustomCertificates(db);
   /** Per-service maintenance / error-page middlewares already emitted. */
   const overrideMws = new Set<string>();
+  // G2.3: domains behind panel sign-in (panel host only, like the pages above).
+  const forwardAuthIds = forNode ? new Set<number>() : await forwardAuthDomains(db);
   const now = new Date();
   /** Hosts this proxy routes — a node inlines only certificates covering them. */
   const routedHosts = new Set<string>();
@@ -1131,6 +1134,14 @@ export async function renderDynamicConfig(
     const entry = d.ssl ? 'websecure' : 'web';
     // Per-domain middlewares: www→apex redirect + custom response headers + basicAuth + ipAllowlist + rateLimit.
     const mwList: string[] = [];
+    // G2.3: panel sign-in first, so nothing else runs for a visitor who is not let in.
+    if (forwardAuthIds.has(d.id)) {
+      const mw = `mw_${key}_fa`;
+      mwList.push(mw);
+      middlewares.push(
+        `    ${mw}:\n      forwardAuth:\n        address: "${panelWakeUpstream()}${FA_PREFIX}/verify/${d.id}"\n        trustForwardHeader: false\n        authResponseHeaders:\n          - X-Forwarded-User\n`,
+      );
+    }
 
     // www→apex redirect. The router must claim BOTH hosts of the pair or the
     // feature is dead on the wire: a request for the `www.` form matches no

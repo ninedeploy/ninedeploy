@@ -797,6 +797,9 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/maintenance': R('viewer'),
   'PUT /v1/services/:id/maintenance': R('member', { body: () => ({ maintenance: null }) }),
   'GET /v1/services/:id/error-pages': R('viewer'),
+  'GET /v1/domains/:id/forward-auth': R('viewer'),
+  'PUT /v1/domains/:id/forward-auth': R('member', { body: () => ({ forwardAuth: null }) }),
+  'POST /v1/forward-auth/grant': R('self', { body: () => ({ domainId: 999999, returnTo: 'https://x.example.com/', state: 'abcdefghijklmnopqrstuv' }), allow404: 'no domain is protected in the shared seed; the grant is covered by test/forwardAuth.test.ts' }),
   'PUT /v1/services/:id/error-pages': R('member', { body: () => ({ pages: {} }) }),
   'PUT /v1/services/:id/pending': R('member', { body: () => ({ healthPath: '/staged' }) }),
   'DELETE /v1/services/:id/pending': R('member'),
@@ -859,6 +862,7 @@ export const MATRIX: Record<string, Rule> = {
   'ALL /_nd/maintenance/:serviceId': R('public', { allow404: 'no domain routes the matrix host; covered by test/maintenance.test.ts' }),
   'ALL /_nd/maintenance/:serviceId/*': R('public', { allow404: 'no domain routes the matrix host; covered by test/maintenance.test.ts' }),
   'ALL /_nd/errors/:serviceId/:status': R('public', { allow404: 'no domain routes the matrix host; covered by test/maintenance.test.ts' }),
+  'ALL /_nd/fa/verify/:domainId': R('public', { allow404: 'Traefik only; covered by test/forwardAuth.test.ts' }),
   'POST /v1/services/:id/deploys/:depId/approve': R('admin', {
     allow404: 'the seeded deployment may not exist; with one, it is not waiting and the answer is 400 not_awaiting_approval (test/deployApprovals.test.ts)',
   }),

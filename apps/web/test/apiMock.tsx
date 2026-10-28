@@ -182,6 +182,7 @@ export function createFakeApiModule() {
       reject: vi.fn(),
     },
     domains: {
+      forwardAuth: { get: vi.fn().mockResolvedValue({ domainId: 0, forwardAuth: null }), set: vi.fn(), grant: vi.fn() },
       list: vi.fn(),
       create: vi.fn(),
       remove: vi.fn(),

@@ -110,6 +110,26 @@ Checked on Traefik 3:
 - A client in the bypass range reaches the app.
 - Everyone else gets `/_nd/maintenance/5/cart?x=1` at the panel.
 
+### Panel sign-in in front of an app (forward auth, G2.3)
+
+Any domain of a service on the panel host can require panel sign-in. Turn it on under **Service → Settings → Panel sign-in**, or with `PUT /v1/domains/:id/forward-auth` and `{ "forwardAuth": { "minRole": "viewer" } }`. No extra container runs: Traefik's `forwardAuth` middleware asks the panel about every request. It is the first middleware on the domain's router.
+
+**How a visitor gets in**
+1. Without a valid session cookie, a browser is redirected to the panel's `/forward-auth` page. The domain sets a short-lived `state` cookie on the way. API clients get `401`.
+2. Signed in on the panel, with 2FA and every other panel check, the page calls `POST /v1/forward-auth/grant`. The answer is a one-time code, valid for 60 seconds, bound to the user, the domain, the return URL and that state.
+3. The browser opens `<domain path>/_nd/fa/callback?code=…` on the app's own domain. The panel spends the code there, but only together with the matching `state` cookie, so nobody can sign a visitor in as someone else. It then sets the domain's session cookie (HttpOnly, SameSite=Lax, 12 hours) and sends the visitor back to where they were going.
+
+**After sign-in**
+- Each request checks the cookie's signature, the domain and the user.
+- It also checks the user's token version, so *Sign out everywhere* ends access, and their role on the service against `minRole`. The result is cached for 30 seconds.
+- The app receives the user's email in `X-Forwarded-User`.
+
+**Limits**
+- The return URL must be on the protected domain, so the flow is never an open redirect.
+- The session cookie only works for its own domain id and host.
+- Panel-host services only, and Traefik must reach the panel (the same check scale-to-zero uses).
+- No migration is needed: it is a settings row, `forward_auth:<domainId>`.
+
 ## 🚇 4. Cloudflare Tunnels Integration
 
 Deploy services on private servers, home labs, or NAT-restricted environments without opening public ports or configuring firewall port-forwarding.

@@ -5649,4 +5649,16 @@ export const TR: Readonly<Record<string, string>> = {
   'HTML for {status}': '{status} için HTML',
   'Save error pages': 'Hata sayfalarını kaydet',
   'Error pages saved': 'Hata sayfaları kaydedildi',
+
+  // ── Panel sign-in (G2.3) ──────────────────────────────────────────────
+  'This sign-in link is incomplete. Open the protected page again.':
+    'Bu giriş bağlantısı eksik. Korunan sayfayı yeniden açın.',
+  'Could not open the protected page': 'Korunan sayfa açılamadı',
+  'Panel sign-in': 'Panel girişi',
+  'Visitors of a protected domain sign in on this panel first and need the chosen role on this service. The app receives their email in the X-Forwarded-User header. Signing out everywhere ends their access.':
+    'Korunan bir domain\'in ziyaretçileri önce bu panelde giriş yapar ve bu serviste seçilen role sahip olmalıdır. Uygulama e-posta adreslerini X-Forwarded-User başlığında alır. Her yerden çıkış yapmak erişimlerini sonlandırır.',
+  '{host} is behind panel sign-in': '{host} artık panel girişinin arkasında',
+  '{host} is open again': '{host} yeniden açık',
+  'Least role for {host}': '{host} için en düşük rol',
+  'Panel sign-in for {host}': '{host} için panel girişi',
 };

@@ -1,5 +1,7 @@
 import {
   errorPagesInput,
+  forwardAuthGrantInput,
+  forwardAuthInput,
   maintenanceInput,
   restartLimitInput,
   pendingApplyInput,
@@ -217,6 +219,32 @@ export const servicesSpecs: RouteSpecMap = {
     body: errorPagesInput,
     validation: 'zod',
     responseType: 'ErrorPagesView',
+  },
+  'GET /v1/domains/:id/forward-auth': {
+    summary: 'Whether a domain is behind panel sign-in, and the role it needs (G2.3)',
+    tag: 'domains',
+    floor: 'viewer',
+    responseType: 'ForwardAuthView',
+  },
+  'PUT /v1/domains/:id/forward-auth': {
+    summary: 'Put a domain behind panel sign-in (a config) or take it off (null)',
+    tag: 'domains',
+    description:
+      "Traefik's `forwardAuth` asks the panel about every request to the domain. A visitor without a valid cookie signs in on the panel and needs `minRole` or higher on the service. Panel-host services only; refused when Traefik cannot reach the panel. Re-renders the proxy config. Audited domain.forward_auth.on / off.",
+    floor: 'member',
+    body: forwardAuthInput,
+    validation: 'zod',
+    responseType: 'ForwardAuthView',
+  },
+  'POST /v1/forward-auth/grant': {
+    summary: 'Trade the signed-in session for a one-time code on a protected domain (G2.3)',
+    tag: 'domains',
+    description:
+      "Interactive sessions only. `returnTo` must be on the protected domain and `state` is the one the domain set as a cookie. Answers `{ url }`, the domain's callback, which spends the code (once, within 60 s, with the matching state cookie), sets the domain's session cookie (12 h) and redirects to `returnTo`. 403 without `minRole` on the service. Audited domain.forward_auth.grant.",
+    floor: 'self',
+    body: forwardAuthGrantInput,
+    validation: 'zod',
+    responseType: 'ForwardAuthGrant',
   },
   'GET /v1/services/:id/pending': {
     summary: "A service's pending changes as a field-level diff, with who staged each, and whether staging is on (G5.2)",

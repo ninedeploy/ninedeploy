@@ -48,6 +48,7 @@ import { databaseTunnelRoutes } from './databaseTunnel.js';
 import { pendingChangeRoutes } from './pendingChanges.js';
 import { restartLimitRoutes } from './restartLimit.js';
 import { serviceMaintenanceRoutes } from './maintenance.js';
+import { domainForwardAuthRoutes, forwardAuthGrantRoutes } from './forwardAuth.js';
 import { twoFactorRequirementRoutes, workspaceTwoFactorRoutes } from './twoFactorPolicy.js';
 import { publicRegistryHookRoutes, serviceRegistryHookRoutes } from './registryHooks.js';
 import { projectRoutes } from './projects.js';
@@ -306,6 +307,9 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(restartLimitRoutes, { prefix: '/services' });
   // G2.2: maintenance mode and custom error pages
   await app.register(serviceMaintenanceRoutes, { prefix: '/services' });
+  // G2.3: panel sign-in in front of a domain
+  await app.register(domainForwardAuthRoutes, { prefix: '/domains' });
+  await app.register(forwardAuthGrantRoutes, { prefix: '/forward-auth' });
   await app.register(labelRoutes, { prefix: '/labels' });
   await app.register(traefikRoutes, { prefix: '' });
   // Custom dynamic config and custom certificates (0.14, DESIGN §2.5),

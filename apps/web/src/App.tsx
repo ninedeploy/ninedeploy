@@ -19,6 +19,7 @@ const Login = lazy(() => import('./routes/Login.js').then((m) => ({ default: m.L
 const ForgotPassword = lazy(() => import('./routes/ForgotPassword.js').then((m) => ({ default: m.ForgotPassword })));
 const ResetPassword = lazy(() => import('./routes/ResetPassword.js').then((m) => ({ default: m.ResetPassword })));
 const AcceptInvite = lazy(() => import('./routes/AcceptInvite.js').then((m) => ({ default: m.AcceptInvite })));
+const ForwardAuthPage = lazy(() => import('./routes/forwardAuth/ForwardAuthPage.js').then((m) => ({ default: m.ForwardAuthPage })));
 const Monitoring = lazy(() => import('./routes/Monitoring.js').then((m) => ({ default: m.Monitoring })));
 const About = lazy(() => import('./routes/About.js').then((m) => ({ default: m.About })));
 const Backups = lazy(() => import('./routes/Backups.js').then((m) => ({ default: m.Backups })));
@@ -107,6 +108,15 @@ export default function App() {
             authenticated users alike; the page itself routes them through
             login/register if they are not yet a member. */}
         <Route path="/invite/:token" element={<AcceptInvite />} />
+        {/* G2.3: a domain behind panel sign-in sends its visitors here. */}
+        <Route
+          path="/forward-auth"
+          element={
+            <RequireAuth>
+              <ForwardAuthPage />
+            </RequireAuth>
+          }
+        />
         <Route
           element={
             <RequireAuth>

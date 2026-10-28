@@ -2,6 +2,10 @@
 // Split out of the former single-file SDK entry (src/index.ts); the public
 // surface is re-exported unchanged from there.
 import type {
+  ForwardAuthConfig,
+  ForwardAuthGrant,
+  ForwardAuthGrantInput,
+  ForwardAuthView,
   CreateDomainInput,
   Domain,
   DomainPatch,
@@ -12,6 +16,16 @@ import type { Transport } from '../transport.js';
 
 export interface DomainsApi {
   domains: {
+    /**
+     * G2.3: panel sign-in in front of a domain. `set(id, null)` takes it off;
+     * `grant` is what the panel's /forward-auth page calls to send a signed-in
+     * user back to the protected domain.
+     */
+    forwardAuth: {
+      get: (domainId: number) => Promise<ForwardAuthView>;
+      set: (domainId: number, forwardAuth: Partial<ForwardAuthConfig> | null) => Promise<ForwardAuthView>;
+      grant: (input: ForwardAuthGrantInput) => Promise<ForwardAuthGrant>;
+    };
     list: (serviceId: number) => Promise<Domain[]>;
     /** Add a domain. A non-operator's hostname outside the instance zone comes back `pending` with a TXT `verification` challenge. */
     create: (serviceId: number, input: CreateDomainInput) => Promise<CreatedDomain>;
@@ -100,6 +114,11 @@ export function domainsApi(t: Transport): DomainsApi {
   const { get, send, request } = t;
   return {
     domains: {
+      forwardAuth: {
+        get: (domainId) => get<ForwardAuthView>(`/v1/domains/${domainId}/forward-auth`),
+        set: (domainId, forwardAuth) => send<ForwardAuthView>('PUT', `/v1/domains/${domainId}/forward-auth`, { forwardAuth }),
+        grant: (input) => send<ForwardAuthGrant>('POST', '/v1/forward-auth/grant', input),
+      },
       list: (serviceId) => get<Domain[]>(`/v1/services/${serviceId}/domains`),
       create: (serviceId, input) => send<CreatedDomain>('POST', `/v1/services/${serviceId}/domains`, input),
       verify: (serviceId, domainId) =>

@@ -86,7 +86,7 @@ export async function routingOverrides(db: DB): Promise<{ maintenance: Map<numbe
       const id = Number(row.key.slice(MAINT.length));
       const m = value && typeof value === 'object' ? parseMaintenance(value) : null;
       if (Number.isInteger(id) && m) maintenance.set(id, m);
-    } else {
+    } else if (row.key.startsWith(PAGES)) {
       const id = Number(row.key.slice(PAGES.length));
       const pages = (value as { pages?: Record<string, unknown> } | null)?.pages ?? {};
       const statuses = ERROR_PAGE_STATUSES.filter((s) => typeof pages[s] === 'string' && (pages[s] as string).trim() !== '');

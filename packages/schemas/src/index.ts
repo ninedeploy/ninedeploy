@@ -50,3 +50,4 @@ export * from './pendingChanges.js';
 export * from './restartLimit.js';
 export * from './twoFactorPolicy.js';
 export * from './maintenance.js';
+export * from './forwardAuth.js';
