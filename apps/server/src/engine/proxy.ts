@@ -33,10 +33,14 @@ import {
 } from '../lib/customCertificates.js';
 import { canaryRouteFor } from './canaryState.js';
 import { panelWakeUpstream } from '../lib/panelUpstream.js';
+import { routingOverrides } from '../lib/maintenance.js';
 import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
 
 /** 0.16.11: the path prefix the wake endpoint answers under (modules/wake.ts). */
 export const WAKE_PREFIX = '/_nd/wake';
+/** G2.2: the path prefixes the maintenance and error-page endpoints answer under (modules/maintenance.ts). */
+export const MAINTENANCE_PREFIX = '/_nd/maintenance';
+export const ERROR_PAGE_PREFIX = '/_nd/errors';
 const WAKE_MW = 'mw_ninedeploy_wake';
 const WAKE_SVC = 'svc_ninedeploy_wake';
 import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
@@ -1056,9 +1060,13 @@ export async function renderDynamicConfig(
   const targetRuntimeByService = new Map(
     targetsOnNode.filter((t) => t.runtimeId).map((t) => [t.serviceId, t.runtimeId as string]),
   );
+  // G2.2: maintenance mode and custom error pages are served by the panel, so
+  // only the panel host's proxy routes them (a node cannot reach the panel).
+  const overrides = forNode ? { maintenance: new Map(), errorPages: new Map() } : await routingOverrides(db);
   const servicesById = new Map(
     (await db.select().from(services))
-      .filter(s => s.status !== 'stopped')
+      // G2.2: a stopped service in maintenance still answers its maintenance page.
+      .filter(s => s.status !== 'stopped' || overrides.maintenance.has(s.id))
       .filter((s) =>
         forNode
           ? s.serverId === opts.serverId || targetRuntimeByService.has(s.id)
@@ -1072,6 +1080,8 @@ export async function renderDynamicConfig(
   // 0.14 (M9): uploaded certificates. With none stored this is `[]` and every
   // branch below renders exactly what 0.13 rendered.
   const customCerts = await refreshCustomCertificates(db);
+  /** Per-service maintenance / error-page middlewares already emitted. */
+  const overrideMws = new Set<string>();
   const now = new Date();
   /** Hosts this proxy routes — a node inlines only certificates covering them. */
   const routedHosts = new Set<string>();
@@ -1250,15 +1260,55 @@ export async function renderDynamicConfig(
     // 0.16.11 scale to zero: a sleeping service's domains reach the panel's
     // wake endpoint (modules/wake.ts), after the domain's own middlewares, so
     // a protected domain still asks for its credentials before anything wakes.
+    const maint = overrides.maintenance.get(svc.id);
     const asleep = !forNode && svc.type === 'docker' && svc.asleepAt != null;
-    if (asleep) {
+    if (asleep && !maint) {
       mwList.push(WAKE_MW);
       wakeUsed = true;
     }
+    // G2.2: custom 502/503/504 pages, fetched from the panel by Traefik's
+    // `errors` middleware when the app answers one of those (or is down).
+    const errorStatuses: string[] | undefined = overrides.errorPages.get(svc.id);
+    if (errorStatuses && !maint) {
+      const mw = `mw_ninedeploy_errors_${svc.id}`;
+      mwList.push(mw);
+      wakeUsed = true;
+      if (!overrideMws.has(mw)) {
+        overrideMws.add(mw);
+        const statusLines = errorStatuses.map((s) => `          - "${s}"`).join('\n');
+        middlewares.push(`    ${mw}:\n      errors:\n        status:\n${statusLines}\n        service: ${WAKE_SVC}\n        query: "${ERROR_PAGE_PREFIX}/${svc.id}/{status}"\n`);
+      }
+    }
+    // G2.2 maintenance: the domain answers the panel's maintenance page. The
+    // bypass addresses get a twin router (longer rule, so it wins) to the app.
+    if (maint) {
+      const ips = maint.bypass.map((ip: string) => ip.replace(/[^0-9a-fA-F:./]/g, '')).filter(Boolean);
+      if (ips.length) {
+        const bypassRule = `(${fullRule}) && (${ips.map((ip: string) => `ClientIP(\`${ip}\`)`).join(' || ')})`;
+        routers.push(
+          `    ${key}_bypass:\n` +
+            `      rule: "${yamlDoubleQuoted(bypassRule)}"\n` +
+            `      service: ${asleep ? WAKE_SVC : `svc_${key}`}\n` +
+            (priority ? `      priority: ${EXACT_OVER_WILDCARD_PRIORITY + bypassRule.length}\n` : '') +
+            ((asleep ? [...mwList, WAKE_MW] : mwList).length ? `      middlewares:\n${(asleep ? [...mwList, WAKE_MW] : mwList).map((m) => `        - ${m}`).join('\n')}\n` : '') +
+            `      entryPoints:\n        - ${entry}` +
+            tlsBlock,
+        );
+        if (asleep) wakeUsed = true;
+      }
+      const mw = `mw_ninedeploy_maint_${svc.id}`;
+      mwList.push(mw);
+      wakeUsed = true;
+      if (!overrideMws.has(mw)) {
+        overrideMws.add(mw);
+        middlewares.push(`    ${mw}:\n      addPrefix:\n        prefix: "${MAINTENANCE_PREFIX}/${svc.id}"\n`);
+      }
+    }
+    const toPanel = asleep || !!maint;
     routers.push(
       `    ${key}:\n` +
         `      rule: "${yamlDoubleQuoted(fullRule)}"\n` +
-        `      service: ${asleep ? WAKE_SVC : `svc_${key}`}\n` +
+        `      service: ${toPanel ? WAKE_SVC : `svc_${key}`}\n` +
         priority +
         (mwList.length ? `      middlewares:\n${mwList.map((m) => `        - ${m}`).join('\n')}\n` : '') +
         `      entryPoints:\n        - ${entry}` +

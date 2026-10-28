@@ -48,6 +48,10 @@ import type {
   ServiceLifecycleResult,
   ServiceLifecycleView,
   ServiceLifecycleRetry,
+  ErrorPagesInput,
+  ErrorPagesView,
+  MaintenanceInput,
+  MaintenanceView,
 } from '@ninedeploy/schemas';
 import { apiGetUrl } from '../apiPath.js';
 import type { ApplyManifestResult, ApplyManifestInput, ServiceDetail } from '../types.js';
@@ -211,6 +215,15 @@ export interface ServicesApi {
     autoscale: (id: number) => Promise<AutoscaleStatusView>;
     /** G5.6: memory and CPU limit suggestions from the metric history (viewer; advisory). */
     sizing: (id: number) => Promise<SizingReport>;
+    /** G2.2: maintenance mode (a config turns it on, null off) and custom 502/503/504 pages. */
+    maintenance: {
+      get: (id: number) => Promise<MaintenanceView>;
+      set: (id: number, maintenance: MaintenanceInput['maintenance']) => Promise<MaintenanceView>;
+    };
+    errorPages: {
+      get: (id: number) => Promise<ErrorPagesView>;
+      set: (id: number, pages: ErrorPagesInput['pages']) => Promise<ErrorPagesView>;
+    };
     /**
      * G1.7 registry push webhook: a secret URL a registry (Docker Hub, GHCR,
      * Harbor, registry:2) calls after a push; the service redeploys when the
@@ -382,6 +395,14 @@ export function servicesApi(t: Transport): ServicesApi {
       retrySwarmRecovery: id => request<SwarmRecoveryResult>(`/v1/services/${id}/swarm/recovery`, { method: 'POST' }, 600_000),
       autoscale: (id) => get<AutoscaleStatusView>(`/v1/services/${id}/autoscale`),
       sizing: (id) => get<SizingReport>(`/v1/services/${id}/sizing`),
+      maintenance: {
+        get: (id) => get<MaintenanceView>(`/v1/services/${id}/maintenance`),
+        set: (id, maintenance) => send<MaintenanceView>('PUT', `/v1/services/${id}/maintenance`, { maintenance }),
+      },
+      errorPages: {
+        get: (id) => get<ErrorPagesView>(`/v1/services/${id}/error-pages`),
+        set: (id, pages) => send<ErrorPagesView>('PUT', `/v1/services/${id}/error-pages`, { pages }),
+      },
       registryHook: {
         get: (id) => get<RegistryHookView>(`/v1/services/${id}/registry-hook`),
         enable: (id) => send<RegistryHookView>('POST', `/v1/services/${id}/registry-hook`),

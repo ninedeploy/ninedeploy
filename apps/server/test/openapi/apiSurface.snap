@@ -1,3 +1,6 @@
+ALL /_nd/errors/:serviceId/:status public -
+ALL /_nd/maintenance/:serviceId public -
+ALL /_nd/maintenance/:serviceId/* public -
 ALL /_nd/wake public -
 ALL /_nd/wake/* public -
 ALL /v1/databases/:id/studio-proxy token nd://scope/read/databases
@@ -203,6 +206,7 @@ GET /v1/services/:id/domains/:domainId/dns viewer nd://scope/read/domains
 GET /v1/services/:id/env viewer nd://scope/read/env
 GET /v1/services/:id/env/export admin nd://scope/read/env
 GET /v1/services/:id/env/preview viewer nd://scope/read/env
+GET /v1/services/:id/error-pages viewer nd://scope/read/services
 GET /v1/services/:id/exec operator nd://scope/read/services
 GET /v1/services/:id/export operator nd://scope/read/services
 GET /v1/services/:id/files viewer nd://scope/read/services
@@ -216,6 +220,7 @@ GET /v1/services/:id/jobs viewer nd://scope/read/services
 GET /v1/services/:id/jobs/:jobId/runs viewer nd://scope/read/services
 GET /v1/services/:id/lifecycle viewer nd://scope/read/services
 GET /v1/services/:id/logs viewer nd://scope/read/services
+GET /v1/services/:id/maintenance viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
 GET /v1/services/:id/pending viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
@@ -535,8 +540,10 @@ PUT /v1/image-scanning operator -
 PUT /v1/onboarding/dismissed operator -
 PUT /v1/servers/:serverId/containers/:container/files operator -
 PUT /v1/servers/:serverId/volumes/:name/files operator -
+PUT /v1/services/:id/error-pages member nd://scope/write/services
 PUT /v1/services/:id/files member nd://scope/write/services
 PUT /v1/services/:id/github operator nd://scope/write/services
+PUT /v1/services/:id/maintenance member nd://scope/write/services
 PUT /v1/services/:id/pending member nd://scope/write/services
 PUT /v1/services/:id/pending/staging member nd://scope/write/services
 PUT /v1/services/:id/placement operator nd://scope/write/services

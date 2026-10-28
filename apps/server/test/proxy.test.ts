@@ -2,7 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { domains, serviceTargets, services } from '@ninedeploy/db';
+import { domains, serviceTargets, services, settings } from '@ninedeploy/db';
 import { encryptDnsToken, ensureNetwork, ensureTraefik, getAcmeEmail, getDnsConfig, NETWORK, parseBasicAuth, parseCertExpiry, parseIpAllowlist, readCertificates, renderDynamicConfig, renderStaticConfig, traefikConfigFingerprint, writeDynamicConfig } from '../src/engine/proxy.js';
 import { load } from 'js-yaml';
 import { hashBasicAuthEntry } from '../src/lib/htpasswd.js';
@@ -129,13 +129,14 @@ describe('certificate tracking', () => {
   });
 });
 
-const makeDb = (domainRows: unknown[], serviceRows: unknown[], targetRows: unknown[] = []) => ({
+const makeDb = (domainRows: unknown[], serviceRows: unknown[], targetRows: unknown[] = [], settingRows: unknown[] = []) => ({
   select: vi.fn(() => ({
     from: vi.fn((t: unknown) => {
       const resolve = async () => {
         if (t === domains) return domainRows;
         if (t === services) return serviceRows;
         if (t === serviceTargets) return targetRows;
+        if (t === settings) return settingRows;
         return [];
       };
       // A real promise (so `await` works) carrying a `.where` for callers
@@ -198,11 +199,11 @@ describe('writeDynamicConfig', () => {
     expect(yaml).toContain('svc_web_1:');
     expect(yaml).toContain('svc_web_2:');
     expect(yaml).toContain('url: "http://web-1:3000"');
-    // domains + services + (0.14) uploaded certificates to render, then
-    // `servers` to decide whether any node proxy needs the same refresh. A
-    // single-host install pays that select over an empty table and fans out
-    // to nobody.
-    expect(db.select).toHaveBeenCalledTimes(4);
+    // (G2.2) maintenance / error-page settings, domains + services + (0.14)
+    // uploaded certificates to render, then `servers` to decide whether any
+    // node proxy needs the same refresh. A single-host install pays that
+    // select over an empty table and fans out to nobody.
+    expect(db.select).toHaveBeenCalledTimes(5);
   });
 
   it('load-balances a docker service with replicas and health-checks each server', async () => {
@@ -1352,8 +1353,9 @@ const stickyDb = (
   serviceRows: unknown[],
   enabled: Record<number, boolean>,
   extra: Record<string, unknown> = {},
+  settingRows: unknown[] = [],
 ) => ({
-  ...makeDb(domainRows, serviceRows),
+  ...makeDb(domainRows, serviceRows, [], settingRows),
   query: {
     settings: {
       findFirst: async (args?: { where?: unknown }) => {
@@ -1692,14 +1694,23 @@ describe('golden dynamic config is valid Traefik v3 (r638)', () => {
           { id: 4, serviceId: 2, hostname: 'awaiting.example.org', path: '/', ssl: true, status: 'pending' },
           // 0.16.11: a sleeping service routes to the wake endpoint (addPrefix).
           { id: 5, serviceId: 3, hostname: 'sleepy.example.org', path: '/', ssl: false, status: 'active' },
+          // G2.2: maintenance (addPrefix + a ClientIP bypass router) and custom error pages (errors).
+          { id: 6, serviceId: 4, hostname: 'shop.example.org', path: '/', ssl: true, status: 'active' },
+          { id: 7, serviceId: 5, hostname: 'docs.example.org', path: '/', ssl: true, status: 'active' },
         ],
         [
           { ...svc(1, 'web'), replicas: 3, runtimeReplicas: 3, healthPath: '/healthz' },
           { ...svc(2, 'api'), type: 'pm2' },
           { ...svc(3, 'sleepy'), asleepAt: new Date(0) },
+          { ...svc(4, 'shop'), status: 'stopped' },
+          svc(5, 'docs'),
         ],
         { 1: true },
         { panel_domain: 'panel.example.com' },
+        [
+          { key: 'maintenance:4', value: { title: 'Back soon', message: '', retryAfterSeconds: 300, bypass: ['203.0.113.7', '2001:db8::/32'], since: '2026-10-28T00:00:00.000Z' } },
+          { key: 'error_pages:5', value: { pages: { '502': '<h1>Oops</h1>', '504': '<h1>Slow</h1>' } } },
+        ],
       );
       const yaml = await renderDynamicConfig(db as never, { serverId: null });
       const doc = load(yaml) as {

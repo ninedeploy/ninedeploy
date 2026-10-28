@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Maintenance mode and custom error pages (G2.2). Under Service → Settings → Maintenance mode, for services on the panel host.
+  - **Maintenance:** a service's domains answer a 503 maintenance page served by the panel. Addresses on a bypass list still reach the app.
+  - **Error pages:** custom 502/503/504 HTML is shown through Traefik's `errors` middleware.
+  - **API:** `GET/PUT /v1/services/:id/maintenance` and `/v1/services/:id/error-pages`. There is no migration.
+
+  See TRAEFIK_INGRESS.md → *Maintenance mode and custom error pages*.
 - Backup replica destinations (G3.3). Under Database → Backups → Backup replicas, an operator can name up to three more destinations for a database's scheduled dumps.
   - **How:** each replica receives the same encrypted dump after the main upload and keeps its own number of copies. A failing replica is shown on the card and never fails the backup.
   - **API:** `GET/PUT /v1/databases/:id/backup-replicas`. There is no migration.

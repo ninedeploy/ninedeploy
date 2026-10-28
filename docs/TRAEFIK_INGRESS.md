@@ -84,6 +84,32 @@ Apply security middlewares directly from the dashboard:
 
 ---
 
+### Maintenance mode and custom error pages (G2.2)
+
+Both live under **Service → Settings → Maintenance mode**, or in the API as `PUT /v1/services/:id/maintenance` and `PUT /v1/services/:id/error-pages`. They work for services on the panel host.
+
+**Maintenance mode**
+- While it is on, every domain of the service answers a 503 page with `Retry-After`, served by the panel. The page shows the title and message you set.
+- The path and query are kept, so the panel can tell which service the visitor asked for.
+- Addresses on the bypass list still reach the app, so the team can check a release before switching maintenance off. Matching uses Traefik's `ClientIP`, which is the connecting address. Behind a CDN, list the address the CDN connects from.
+- A stopped service in maintenance still shows the page.
+- In the dynamic config, the service's routers point at the panel with an `addPrefix` of `/_nd/maintenance/<id>`. Each domain gets a `<router>_bypass` twin with a `ClientIP(...)` rule. Its rule is longer, so it wins.
+
+**Custom error pages**
+- HTML for 502, 503 and 504, at most 64 KiB each.
+- Traefik's `errors` middleware fetches the page from the panel at `/_nd/errors/<id>/{status}` when the app answers one of those codes or cannot be reached. The visitor gets that status with your HTML.
+- A status left empty keeps the default page.
+
+**Shared rules**
+- The panel serves a page only when the request's Host header is one of the service's active domains, and never on the panel's own domain. Custom HTML never runs on another origin.
+- Both need Traefik to reach the panel, the same check scale-to-zero uses.
+- No migration is needed: they are settings rows, `maintenance:<id>` and `error_pages:<id>`.
+
+Checked on Traefik 3:
+- The error page request keeps the visitor's Host and the original 502.
+- A client in the bypass range reaches the app.
+- Everyone else gets `/_nd/maintenance/5/cart?x=1` at the panel.
+
 ## 🚇 4. Cloudflare Tunnels Integration
 
 Deploy services on private servers, home labs, or NAT-restricted environments without opening public ports or configuring firewall port-forwarding.

@@ -127,4 +127,25 @@ export const uptimeSpecs: RouteSpecMap = {
     description: 'The same as `/_nd/wake`, for every path below it.',
     floor: 'public',
   },
+  // G2.2 (modules/maintenance.ts). Traefik only, with the visitor's Host header.
+  'ALL /_nd/maintenance/:serviceId': {
+    summary: 'Maintenance page of a service (Traefik only)',
+    tag: 'services',
+    description:
+      "No session. A service in maintenance has its domains routed here (`addPrefix`). Answers `503` with `Retry-After` and the service's title and message, as HTML for a browser and text otherwise. `404` unless the Host header is one of the service's active domains (never the panel's own). G2.2.",
+    floor: 'public',
+  },
+  'ALL /_nd/maintenance/:serviceId/*': {
+    summary: 'Maintenance page of a service (Traefik only)',
+    tag: 'services',
+    description: 'The same as `/_nd/maintenance/:serviceId`, for every path below it.',
+    floor: 'public',
+  },
+  'ALL /_nd/errors/:serviceId/:status': {
+    summary: 'Custom error page of a service (Traefik only)',
+    tag: 'services',
+    description:
+      "No session. Traefik's `errors` middleware fetches the page here when the app answers 502, 503 or 504. Answers that status with the service's custom HTML, or a plain default page. `404` unless the Host header is one of the service's active domains (never the panel's own). G2.2.",
+    floor: 'public',
+  },
 };

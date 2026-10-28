@@ -19,6 +19,7 @@ import { AutoscaleCard } from './AutoscaleCard.js';
 import { SizingCard } from './SizingCard.js';
 import { PendingChangesTray } from './PendingChangesTray.js';
 import { RestartLimitCard } from './RestartLimitCard.js';
+import { MaintenanceCard } from './MaintenanceCard.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
@@ -61,6 +62,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <SleepCard svc={svc} />
       {/* G1.3: stop a crash-looping service (opt-in). */}
       <RestartLimitCard svc={svc} />
+      {/* G2.2: maintenance page and custom error pages. */}
+      <MaintenanceCard svc={svc} />
     </div>
   );
 }

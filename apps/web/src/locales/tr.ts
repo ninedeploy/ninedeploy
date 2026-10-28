@@ -5632,4 +5632,21 @@ export const TR: Readonly<Record<string, string>> = {
   '{n} copies there': 'orada {n} kopya',
   'newest {time}': 'en yenisi {time}',
   'Add replica': 'Replika ekle',
+
+  // ── Maintenance mode (G2.2) ───────────────────────────────────────────
+  'Maintenance mode': 'Bakım modu',
+  'Maintenance mode is on': 'Bakım modu açık',
+  'Maintenance mode is off': 'Bakım modu kapalı',
+  'While on, every domain of this service shows a maintenance page (503) instead of the app. Addresses on the bypass list still reach the app, to check the release before you switch it off.':
+    'Açıkken bu servisin her domain\'i uygulama yerine bir bakım sayfası (503) gösterir. Atlama listesindeki adresler uygulamaya ulaşmaya devam eder; böylece kapatmadan önce sürümü kontrol edebilirsiniz.',
+  'On since {time}': '{time} tarihinden beri açık',
+  'Bypass addresses': 'Atlama adresleri',
+  'IP addresses or CIDR ranges, one per line': 'IP adresleri ya da CIDR aralıkları, her satıra bir tane',
+  'Update the page': 'Sayfayı güncelle',
+  'Custom error pages': 'Özel hata sayfaları',
+  'HTML shown instead of the proxy’s plain page when the app answers 502, 503 or 504, or cannot be reached. Leave one empty to keep the default.':
+    'Uygulama 502, 503 ya da 504 döndüğünde veya ulaşılamadığında proxy\'nin düz sayfası yerine gösterilen HTML. Varsayılanı korumak için boş bırakın.',
+  'HTML for {status}': '{status} için HTML',
+  'Save error pages': 'Hata sayfalarını kaydet',
+  'Error pages saved': 'Hata sayfaları kaydedildi',
 };

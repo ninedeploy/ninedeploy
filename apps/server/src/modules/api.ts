@@ -47,6 +47,7 @@ import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { databaseTunnelRoutes } from './databaseTunnel.js';
 import { pendingChangeRoutes } from './pendingChanges.js';
 import { restartLimitRoutes } from './restartLimit.js';
+import { serviceMaintenanceRoutes } from './maintenance.js';
 import { twoFactorRequirementRoutes, workspaceTwoFactorRoutes } from './twoFactorPolicy.js';
 import { publicRegistryHookRoutes, serviceRegistryHookRoutes } from './registryHooks.js';
 import { projectRoutes } from './projects.js';
@@ -303,6 +304,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(pendingChangeRoutes, { prefix: '/services' });
   // G1.3: the restart-loop limit
   await app.register(restartLimitRoutes, { prefix: '/services' });
+  // G2.2: maintenance mode and custom error pages
+  await app.register(serviceMaintenanceRoutes, { prefix: '/services' });
   await app.register(labelRoutes, { prefix: '/labels' });
   await app.register(traefikRoutes, { prefix: '' });
   // Custom dynamic config and custom certificates (0.14, DESIGN §2.5),

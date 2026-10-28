@@ -1,4 +1,6 @@
 import {
+  errorPagesInput,
+  maintenanceInput,
   restartLimitInput,
   pendingApplyInput,
   pendingStagingInput,
@@ -183,6 +185,38 @@ export const servicesSpecs: RouteSpecMap = {
     body: restartLimitInput,
     validation: 'zod',
     responseType: 'RestartLimitView',
+  },
+  'GET /v1/services/:id/maintenance': {
+    summary: "A service's maintenance mode (G2.2)",
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'MaintenanceView',
+  },
+  'PUT /v1/services/:id/maintenance': {
+    summary: 'Turn maintenance mode on (a config) or off (null)',
+    tag: 'services',
+    description:
+      "While on, the service's domains answer the panel's 503 maintenance page with `Retry-After`; addresses in `bypass` still reach the app (Traefik `ClientIP`, the connecting address). A stopped service in maintenance still shows the page. Panel-host services only; refused when Traefik cannot reach the panel. Re-renders the proxy config. Audited service.maintenance.on / off.",
+    floor: 'member',
+    body: maintenanceInput,
+    validation: 'zod',
+    responseType: 'MaintenanceView',
+  },
+  'GET /v1/services/:id/error-pages': {
+    summary: "A service's custom 502/503/504 pages (G2.2)",
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'ErrorPagesView',
+  },
+  'PUT /v1/services/:id/error-pages': {
+    summary: "Set a service's custom 502/503/504 pages",
+    tag: 'services',
+    description:
+      "HTML per status, at most 64 KiB each; a status left out keeps the proxy's default, `{}` turns them off. Traefik's `errors` middleware fetches the page from the panel when the app answers that status or cannot be reached. Panel-host services only. Audited service.error_pages.set.",
+    floor: 'member',
+    body: errorPagesInput,
+    validation: 'zod',
+    responseType: 'ErrorPagesView',
   },
   'GET /v1/services/:id/pending': {
     summary: "A service's pending changes as a field-level diff, with who staged each, and whether staging is on (G5.2)",

@@ -123,6 +123,8 @@ export function createFakeApiModule() {
         enable: vi.fn(),
         disable: vi.fn(),
       },
+      maintenance: { get: vi.fn().mockResolvedValue({ maintenance: null, since: null }), set: vi.fn() },
+      errorPages: { get: vi.fn().mockResolvedValue({ pages: {} }), set: vi.fn() },
       badge: {
         get: vi.fn().mockResolvedValue({ enabled: false, url: null }),
         enable: vi.fn(),
