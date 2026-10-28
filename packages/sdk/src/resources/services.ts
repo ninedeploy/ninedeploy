@@ -49,6 +49,7 @@ import type {
   ServiceLifecycleView,
   ServiceLifecycleRetry,
   ErrorPagesInput,
+  InlineDockerfileView,
   ErrorPagesView,
   MaintenanceInput,
   MaintenanceView,
@@ -223,6 +224,11 @@ export interface ServicesApi {
     errorPages: {
       get: (id: number) => Promise<ErrorPagesView>;
       set: (id: number, pages: ErrorPagesInput['pages']) => Promise<ErrorPagesView>;
+    };
+    /** G1.1: a Dockerfile pasted in the panel (null builds from the repository again). */
+    inlineDockerfile: {
+      get: (id: number) => Promise<InlineDockerfileView>;
+      set: (id: number, content: string | null) => Promise<InlineDockerfileView>;
     };
     /**
      * G1.7 registry push webhook: a secret URL a registry (Docker Hub, GHCR,
@@ -402,6 +408,10 @@ export function servicesApi(t: Transport): ServicesApi {
       errorPages: {
         get: (id) => get<ErrorPagesView>(`/v1/services/${id}/error-pages`),
         set: (id, pages) => send<ErrorPagesView>('PUT', `/v1/services/${id}/error-pages`, { pages }),
+      },
+      inlineDockerfile: {
+        get: (id) => get<InlineDockerfileView>(`/v1/services/${id}/inline-dockerfile`),
+        set: (id, content) => send<InlineDockerfileView>('PUT', `/v1/services/${id}/inline-dockerfile`, { content }),
       },
       registryHook: {
         get: (id) => get<RegistryHookView>(`/v1/services/${id}/registry-hook`),

@@ -5675,4 +5675,15 @@ export const TR: Readonly<Record<string, string>> = {
   'API token with ingest access': 'Ingest erişimi olan API token\'ı',
   'AWS CloudWatch Logs': 'AWS CloudWatch Logs',
   'ACCESS_KEY_ID:SECRET_ACCESS_KEY': 'ACCESS_KEY_ID:SECRET_ACCESS_KEY',
+
+  // ── Inline Dockerfile (G1.1) ──────────────────────────────────────────
+  'Inline Dockerfile': 'Satır içi Dockerfile',
+  'Inline Dockerfile saved; it builds on the next deploy':
+    'Satır içi Dockerfile kaydedildi; bir sonraki deploy\'da derlenir',
+  'Inline Dockerfile removed; the next deploy builds from the repository':
+    'Satır içi Dockerfile kaldırıldı; bir sonraki deploy depodan derler',
+  'Builds with this Dockerfile instead of the one in the repository, from the base directory. Leave it empty to build from the repository again.':
+    'Depodaki yerine bu Dockerfile ile, temel dizinden derler. Yeniden depodan derlemek için boş bırakın.',
+  'This service has no repository: the Dockerfile builds from an uploaded source if there is one, otherwise from an empty context.':
+    'Bu servisin deposu yok: Dockerfile varsa yüklenen kaynaktan, yoksa boş bir bağlamdan derlenir.',
 };

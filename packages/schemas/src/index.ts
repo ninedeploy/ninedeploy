@@ -51,3 +51,4 @@ export * from './restartLimit.js';
 export * from './twoFactorPolicy.js';
 export * from './maintenance.js';
 export * from './forwardAuth.js';
+export * from './inlineDockerfile.js';

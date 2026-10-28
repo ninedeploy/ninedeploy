@@ -1,5 +1,6 @@
 import {
   errorPagesInput,
+  inlineDockerfileInput,
   forwardAuthGrantInput,
   forwardAuthInput,
   maintenanceInput,
@@ -245,6 +246,22 @@ export const servicesSpecs: RouteSpecMap = {
     body: forwardAuthGrantInput,
     validation: 'zod',
     responseType: 'ForwardAuthGrant',
+  },
+  'GET /v1/services/:id/inline-dockerfile': {
+    summary: "A service's inline Dockerfile (G1.1)",
+    tag: 'services',
+    floor: 'member',
+    responseType: 'InlineDockerfileView',
+  },
+  'PUT /v1/services/:id/inline-dockerfile': {
+    summary: 'Build the service from a Dockerfile pasted here (null builds from the repository again)',
+    tag: 'services',
+    description:
+      'Docker services that build from source. On the next deploy the text is written into the base directory as `.ninedeploy.Dockerfile` and built with the `dockerfile` pack, also when the repository has its own. A service with neither a repository nor an upload builds it from an empty context. At most 64 KiB. Audited service.inline_dockerfile.set / clear.',
+    floor: 'member',
+    body: inlineDockerfileInput,
+    validation: 'zod',
+    responseType: 'InlineDockerfileView',
   },
   'GET /v1/services/:id/pending': {
     summary: "A service's pending changes as a field-level diff, with who staged each, and whether staging is on (G5.2)",

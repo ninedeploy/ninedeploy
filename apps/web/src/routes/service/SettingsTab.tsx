@@ -21,6 +21,7 @@ import { PendingChangesTray } from './PendingChangesTray.js';
 import { RestartLimitCard } from './RestartLimitCard.js';
 import { MaintenanceCard } from './MaintenanceCard.js';
 import { ForwardAuthCard } from './ForwardAuthCard.js';
+import { InlineDockerfileCard } from './InlineDockerfileCard.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
@@ -49,6 +50,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <LimitsCard svc={svc} />
       {/* G5.6: suggestions from the metric history, under the limits they are about. */}
       <SizingCard serviceId={serviceId} />
+      {/* G1.1: a Dockerfile pasted here instead of kept in the repository. */}
+      <InlineDockerfileCard svc={svc} />
       <ContainerOptionsCard svc={svc} />
       {/* 0.16.9: docker services on a panel that reports the field. */}
       <CanaryCard svc={svc} />

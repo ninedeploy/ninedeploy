@@ -17,7 +17,8 @@ import { detectDeployHints } from '../lib/deployHints.js';
 import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { renderComposeRelease } from '../lib/composeRelease.js';
 import { assertReleaseTarget, readReleaseRecord, storeReleaseRecord } from '../lib/releaseRecords.js';
-import { extractSourceUpload, isUploadSourced, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
+import { extractSourceUpload, isUploadSourced, listSourceUploads, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
+import { getInlineDockerfile, inlineDockerfileSha, prepareEmptyContext, writeInlineDockerfile } from '../lib/inlineDockerfile.js';
 import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp } from '../lib/agentClient.js';
@@ -1114,6 +1115,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   // (when placed), the effective build config and the volume attachments.
   let placed: PlacedBuild | undefined;
   let fanoutBuildConfig: typeof buildConfig = buildConfig;
+  // G1.1: a Dockerfile pasted in the panel, for a docker service that builds from source.
+  let inlineDockerfile: string | null = null;
+  // Its path in the checkout, once written (repository-root relative).
+  let inlineDockerfilePath: string | null = null;
   let fanoutAttachments: Array<{ volumeName: string; containerPath: string; readOnly?: boolean | null }> = [];
   try {
     // Cancel checkpoint: the route may have flipped the row between claim and here.
@@ -1155,7 +1160,14 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     } else {
       // 0.16.3: the checkout's credential, reused for the Git LFS API below.
       let lfsCreds: CloneCreds | undefined;
-      if (isUploadSourced(service)) {
+      inlineDockerfile = service.type === 'docker' && !restore ? await getInlineDockerfile(db, service.id) : null;
+      if (isUploadSourced(service) && inlineDockerfile && listSourceUploads(service.id).length === 0) {
+        // G1.1 "Dockerfile only": no repository and nothing uploaded, so the
+        // build context is empty and the Dockerfile is all there is.
+        prepareEmptyContext(workDir);
+        sha = inlineDockerfileSha(inlineDockerfile);
+        log(`Inline Dockerfile ${sha.slice(0, 7)} (no repository): building from an empty context`);
+      } else if (isUploadSourced(service)) {
         // 0.16.1: no repository — the code is the archive uploaded for this
         // service (POST /v1/services/:id/source, `ninedeploy deploy`). A
         // redeploy of an older deployment extracts that upload again.
@@ -1271,6 +1283,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       } catch (err) {
         log(`warning: .ninedeploy apply failed: ${msg(err)}`);
       }
+      // G1.1: the pasted Dockerfile goes into the build context last, so it
+      // is what builds even when the repository ships one of its own.
+      if (inlineDockerfile) {
+        inlineDockerfilePath = writeInlineDockerfile(workDir, buildConfig?.baseDir, inlineDockerfile);
+        log(`Inline Dockerfile (${Buffer.byteLength(inlineDockerfile)} bytes) written to ${inlineDockerfilePath}; building with it`);
+      }
     }
     log('##[stage:PREPARE:success]');
 
@@ -1339,6 +1357,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
         log(`📋 .ninedeploy build config: ${changed.join(', ')} (panel values win; these fields were empty)`);
       }
       effectiveBuildConfig = merged;
+    }
+    // G1.1: for this deployment only, the dockerfile pack with the pasted file.
+    if (inlineDockerfilePath) {
+      effectiveBuildConfig = { ...(effectiveBuildConfig ?? ({ serviceId: service.id } as NonNullable<typeof buildConfig>)), buildPack: 'dockerfile', dockerfilePath: inlineDockerfilePath };
     }
     fanoutBuildConfig = effectiveBuildConfig;
 

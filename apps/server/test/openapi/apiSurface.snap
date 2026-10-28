@@ -217,6 +217,7 @@ GET /v1/services/:id/github viewer nd://scope/read/services
 GET /v1/services/:id/host-addresses member nd://scope/read/services
 GET /v1/services/:id/image-scan viewer nd://scope/read/services
 GET /v1/services/:id/image-transfers viewer nd://scope/read/services
+GET /v1/services/:id/inline-dockerfile member nd://scope/read/services
 GET /v1/services/:id/insights viewer nd://scope/read/manifests
 GET /v1/services/:id/jobs viewer nd://scope/read/services
 GET /v1/services/:id/jobs/:jobId/runs viewer nd://scope/read/services
@@ -547,6 +548,7 @@ PUT /v1/servers/:serverId/volumes/:name/files operator -
 PUT /v1/services/:id/error-pages member nd://scope/write/services
 PUT /v1/services/:id/files member nd://scope/write/services
 PUT /v1/services/:id/github operator nd://scope/write/services
+PUT /v1/services/:id/inline-dockerfile member nd://scope/write/services
 PUT /v1/services/:id/maintenance member nd://scope/write/services
 PUT /v1/services/:id/pending member nd://scope/write/services
 PUT /v1/services/:id/pending/staging member nd://scope/write/services

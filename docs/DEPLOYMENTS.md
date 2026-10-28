@@ -254,6 +254,20 @@ A service's settings normally apply as each card is saved. Turn on **Settings �
 - Audited as `service.changes.stage`, `service.changes.staging`, `service.changes.discard` and `service.changes.apply`.
 - No migration is needed: the tray is one settings row per service.
 
+### Inline Dockerfile (G1.1)
+
+A docker service that builds from source can use a Dockerfile pasted in the panel instead of one kept in the repository. Set it under **Service → Settings → Inline Dockerfile**, or with `PUT /v1/services/:id/inline-dockerfile` and `{ "content": "FROM …" }`. `{ "content": null }` builds from the repository again.
+
+**How it builds**
+- On the next deploy the text is written into the base directory as `.ninedeploy.Dockerfile`. That deploy builds with the `dockerfile` pack and that file, even when the repository has a Dockerfile of its own.
+- The build arguments, the build target and the other build settings still apply.
+- **Dockerfile only:** a docker service with neither a repository nor an image builds the Dockerfile from an uploaded source if there is one, otherwise from an empty context. The deployment's commit is then the hash of the Dockerfile.
+- It works with the panel builder and with build placement on nodes, since both read the same build config. Checked with a real `docker build` from an empty context.
+
+**Limits and storage**
+- At most 64 KiB, and the text must start with `FROM` (or `ARG` before `FROM`).
+- No migration is needed: the text is a settings row, `inline_dockerfile:<id>`.
+
 ### Restart-loop limit (G1.3)
 
 A docker service on the panel host can be stopped when its containers keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off.

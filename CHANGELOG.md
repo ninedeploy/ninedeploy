@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Inline Dockerfile (G1.1). Under Service → Settings → Inline Dockerfile, a docker service builds from a Dockerfile pasted in the panel instead of the repository's.
+  - **How:** it is written into the base directory as `.ninedeploy.Dockerfile` and built with the `dockerfile` pack.
+  - **Dockerfile only:** a service with no repository and no image builds it from an empty context.
+  - **API:** `GET/PUT /v1/services/:id/inline-dockerfile`. There is no migration.
+
+  See DEPLOYMENTS.md → *Inline Dockerfile*.
 - More log-drain targets (G3.4): Elasticsearch/OpenSearch (`_bulk`), Splunk HEC, Better Stack, New Relic, Axiom and AWS CloudWatch Logs (SigV4 `PutLogEvents`, creating the group and stream when missing).
   - **Delivery:** they use the existing shipper and queue.
   - **Validation:** a URL that does not name the index (Elasticsearch) or the group and stream (CloudWatch) is refused when the drain is saved. There is no migration.
