@@ -5708,4 +5708,18 @@ export const TR: Readonly<Record<string, string>> = {
   'e.g. example.com, one or more': 'ör. example.com, bir ya da daha fazla',
   'IdP metadata XML': 'IdP metadata XML\'i',
   'Add SAML provider': 'SAML sağlayıcısı ekle',
+
+  // ── G3.1 move with data ───────────────────────────────────────────────
+  'Choose a host…': 'Bir sunucu seçin…',
+  'Move': 'Taşı',
+  'Move to': 'Taşınacak yer',
+  'Move with data': 'Verisiyle taşı',
+  'Moved from {from} to {to}.': '{from} sunucusundan {to} sunucusuna taşındı.',
+  'Moves the service to another host and copies its data volume there, then deploys it. Stop the service first; the volume on the old host is kept until you remove it.':
+    'Servisi başka bir sunucuya taşır, veri volume\'unu oraya kopyalar ve ardından dağıtır. Önce servisi durdurun; eski sunucudaki volume siz silene kadar saklanır.',
+  'Moving from {from} to {to}: {step}': '{from} → {to} taşınıyor: {step}',
+  'Moving the service with its data': 'Servis verisiyle birlikte taşınıyor',
+  'Stop the service to move it with its data.': 'Verisiyle taşımak için servisi durdurun.',
+  'The move to {to} failed: {error}': '{to} sunucusuna taşıma başarısız: {error}',
+  'copying the data': 'veri kopyalanıyor',
 };

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Move a service with its data (G3.1). Under Service → Settings → Move with data, an operator moves a stopped docker service between the panel host and nodes together with its `nd-svc-<slug>-data` volume.
+  - **Steps:** the host change is the plain `PATCH /v1/services/:id { serverId }` with all its checks; then the volume is archived on the source, created and restored on the target (node transfers use the sealed, checksummed stream channel), and the service is deployed there.
+  - **Limits:** the service must be stopped, not deploying, and have no extra volume attachments; Swarm, compose and PM2 services are refused. The source volume is kept until it is removed.
+  - **API:** `POST /v1/services/:id/move` answers 202; `GET /v1/services/:id/move` shows the step or the error. SDK: `services.move`. No migration.
 - SAML sign-in that works with real identity providers (G3.6). It is SP-initiated, verified with `@node-saml/node-saml` 5.1.0 (exclusive c14n, enveloped signatures).
   - **Binding:** responses are bound to the panel's own AuthnRequest and accepted once.
   - **Accounts:** like OIDC, an identity signs in only the account it was linked to from Settings → Account, within the provider's email domains.

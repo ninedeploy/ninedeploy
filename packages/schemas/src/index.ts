@@ -52,3 +52,4 @@ export * from './twoFactorPolicy.js';
 export * from './maintenance.js';
 export * from './forwardAuth.js';
 export * from './inlineDockerfile.js';
+export * from './serviceMove.js';

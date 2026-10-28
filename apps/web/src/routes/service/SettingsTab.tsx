@@ -22,6 +22,7 @@ import { RestartLimitCard } from './RestartLimitCard.js';
 import { MaintenanceCard } from './MaintenanceCard.js';
 import { ForwardAuthCard } from './ForwardAuthCard.js';
 import { InlineDockerfileCard } from './InlineDockerfileCard.js';
+import { MoveWithDataCard } from './MoveWithDataCard.js';
 import { ComposeRoutesCard } from './ComposeRoutesCard.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
@@ -42,6 +43,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <TagsCard serviceId={serviceId} svc={svc} />
       <PreviewEnvironmentsCard svc={svc} />
       <TargetNodeCard svc={svc} />
+      {/* G3.1: the same move, with the data volume. */}
+      <MoveWithDataCard svc={svc} />
       {svc.type === 'docker' && <PrimaryRecoveryCard serviceId={serviceId} />}
       {svc.type === 'docker' && <SwarmRecoveryCard serviceId={serviceId} />}
       {svc.type === 'docker' && <FanoutRecoveryCard serviceId={serviceId} />}

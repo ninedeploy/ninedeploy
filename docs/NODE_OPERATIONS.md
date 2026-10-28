@@ -420,3 +420,14 @@ Each action is a fixed script, picked by name. Nothing a caller sends reaches a 
 - `GET /v1/servers/:serverId/os-updates[?refresh=1]` and `POST /v1/servers/:serverId/os-updates/auto {enabled}` for a node.
 
 Switching is audited as `os_updates.auto_enable` or `os_updates.auto_disable`.
+
+## Move a service with its data (G3.1)
+
+`PATCH /v1/services/:id { serverId }` moves only the configuration: the next deploy starts the service on the new host with an empty volume. **Service → Settings → Move with data** (`POST /v1/services/:id/move`, operators) also moves the data:
+
+1. The service must be stopped, with no deployment running and no extra volume attachments. Its primary volume `nd-svc-<slug>-data` must be on the current host. Docker services only; Swarm, compose and PM2 are refused.
+2. The host change is that same PATCH, with every check it makes: attached databases stay on their host, and a volume of the same name already on the target is refused.
+3. The volume is archived on the source, created on the target and restored there. Node archives travel over the agent's sealed stream channel, which checks the size and sha256 end to end. The temporary archive under the backups directory is deleted afterwards.
+4. The service is deployed on the target.
+
+The request answers 202 at once. `GET /v1/services/:id/move` reports `copying`, then `deploying`, then `done` with the deployment id, or `failed` with the reason. After a failed copy the service stays on the target, undeployed; moving it back is a plain host change, because the source volume is never deleted. Remove the old volume from the Volumes page once the service runs on the target. The state is the settings row `service_move:<id>`; there is no migration.

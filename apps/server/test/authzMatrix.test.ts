@@ -804,6 +804,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/error-pages': R('viewer'),
   'GET /v1/services/:id/inline-dockerfile': R('member'),
   'PUT /v1/services/:id/inline-dockerfile': R('member', { body: () => ({ content: null }) }),
+  'GET /v1/services/:id/move': R('operator'),
+  'POST /v1/services/:id/move': R('operator', { body: () => ({ serverId: null }), allow404: 'the seeded service is not a stopped docker service with a data volume; covered by test/serviceMoveWithData.test.ts' }),
   'GET /v1/domains/:id/forward-auth': R('viewer'),
   'GET /v1/domains/:id/compose-route': R('viewer'),
   'PUT /v1/domains/:id/compose-route': R('member', { body: () => ({ route: null }), note: 'the matrix service is not a compose stack, so the at-floor call is a 400; covered by test/composeRoutes.test.ts' }),

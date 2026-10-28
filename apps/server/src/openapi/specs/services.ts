@@ -2,6 +2,7 @@ import {
   composeRouteInput,
   errorPagesInput,
   inlineDockerfileInput,
+  serviceMoveInput,
   forwardAuthGrantInput,
   forwardAuthInput,
   maintenanceInput,
@@ -280,6 +281,23 @@ export const servicesSpecs: RouteSpecMap = {
     body: inlineDockerfileInput,
     validation: 'zod',
     responseType: 'InlineDockerfileView',
+  },
+  'GET /v1/services/:id/move': {
+    summary: 'The last move of this service with its data',
+    tag: 'services',
+    description: 'State `none` when the service never moved with its data; otherwise the running step (`copying`, then `deploying`), or the outcome with the error and the deployment started on the target. G3.1.',
+    floor: 'operator',
+    responseType: 'ServiceMoveView',
+  },
+  'POST /v1/services/:id/move': {
+    summary: 'Move a stopped docker service to another host with its data volume',
+    tag: 'services',
+    description:
+      'Operators only. The service must be stopped, not deploying, and have no extra volume attachments; its `nd-svc-<slug>-data` volume must be on the current host. The host change itself is `PATCH /v1/services/:id { serverId }` with all its checks. Then the volume is archived on the source, created and restored on the target, and the service is deployed there. Answers 202 with the state; follow it on `GET …/move`. The source volume is kept. Audited service.move_with_data. G3.1.',
+    floor: 'operator',
+    body: serviceMoveInput,
+    validation: 'zod',
+    responseType: 'ServiceMoveView',
   },
   'GET /v1/services/:id/pending': {
     summary: "A service's pending changes as a field-level diff, with who staged each, and whether staging is on (G5.2)",

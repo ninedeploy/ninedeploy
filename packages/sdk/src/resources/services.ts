@@ -50,6 +50,7 @@ import type {
   ServiceLifecycleRetry,
   ErrorPagesInput,
   InlineDockerfileView,
+  ServiceMoveView,
   ErrorPagesView,
   MaintenanceInput,
   MaintenanceView,
@@ -226,6 +227,12 @@ export interface ServicesApi {
       set: (id: number, pages: ErrorPagesInput['pages']) => Promise<ErrorPagesView>;
     };
     /** G1.1: a Dockerfile pasted in the panel (null builds from the repository again). */
+    /** G3.1: move a stopped docker service to another host with its data volume (operators). */
+    move: {
+      get: (id: number) => Promise<ServiceMoveView>;
+      /** `serverId` null = the panel host. Answers at once; follow it with `get`. */
+      start: (id: number, serverId: number | null) => Promise<ServiceMoveView>;
+    };
     inlineDockerfile: {
       get: (id: number) => Promise<InlineDockerfileView>;
       set: (id: number, content: string | null) => Promise<InlineDockerfileView>;
@@ -408,6 +415,10 @@ export function servicesApi(t: Transport): ServicesApi {
       errorPages: {
         get: (id) => get<ErrorPagesView>(`/v1/services/${id}/error-pages`),
         set: (id, pages) => send<ErrorPagesView>('PUT', `/v1/services/${id}/error-pages`, { pages }),
+      },
+      move: {
+        get: (id) => get<ServiceMoveView>(`/v1/services/${id}/move`),
+        start: (id, serverId) => send<ServiceMoveView>('POST', `/v1/services/${id}/move`, { serverId }),
       },
       inlineDockerfile: {
         get: (id) => get<InlineDockerfileView>(`/v1/services/${id}/inline-dockerfile`),

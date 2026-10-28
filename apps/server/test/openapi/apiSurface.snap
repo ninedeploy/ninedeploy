@@ -229,6 +229,7 @@ GET /v1/services/:id/lifecycle viewer nd://scope/read/services
 GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/maintenance viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
+GET /v1/services/:id/move operator nd://scope/read/services
 GET /v1/services/:id/pending viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
 GET /v1/services/:id/registry-hook member nd://scope/read/services
@@ -471,6 +472,7 @@ POST /v1/services/:id/jobs member nd://scope/write/services
 POST /v1/services/:id/jobs/:jobId/run member nd://scope/write/services
 POST /v1/services/:id/lifecycle/retry member nd://scope/write/services
 POST /v1/services/:id/manifest/apply operator nd://scope/write/services
+POST /v1/services/:id/move operator nd://scope/write/services
 POST /v1/services/:id/pending/apply member nd://scope/write/services
 POST /v1/services/:id/promote member nd://scope/write/services
 POST /v1/services/:id/registry-hook member nd://scope/write/services
