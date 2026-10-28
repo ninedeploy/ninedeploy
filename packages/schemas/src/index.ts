@@ -46,3 +46,4 @@ export * from './cloud.js';
 export * from './deployFreeze.js';
 export * from './imageScan.js';
 export * from './sizing.js';
+export * from './pendingChanges.js';

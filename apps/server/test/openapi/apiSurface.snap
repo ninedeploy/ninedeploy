@@ -49,6 +49,7 @@ DELETE /v1/services/:id/env/preview/:varId member nd://scope/write/env
 DELETE /v1/services/:id/files/:fileId member nd://scope/write/services
 DELETE /v1/services/:id/github operator nd://scope/write/services
 DELETE /v1/services/:id/jobs/:jobId member nd://scope/write/services
+DELETE /v1/services/:id/pending member nd://scope/write/services
 DELETE /v1/services/:id/volumes/:attId admin nd://scope/write/volumes
 DELETE /v1/services/:id/webhooks/:hookId admin nd://scope/write/webhooks
 DELETE /v1/settings/dns-records/provider operator nd://scope/write/settings
@@ -213,6 +214,7 @@ GET /v1/services/:id/jobs/:jobId/runs viewer nd://scope/read/services
 GET /v1/services/:id/lifecycle viewer nd://scope/read/services
 GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
+GET /v1/services/:id/pending viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
 GET /v1/services/:id/routing viewer nd://scope/read/services
 GET /v1/services/:id/runtime-recovery viewer nd://scope/read/services
@@ -446,6 +448,7 @@ POST /v1/services/:id/jobs member nd://scope/write/services
 POST /v1/services/:id/jobs/:jobId/run member nd://scope/write/services
 POST /v1/services/:id/lifecycle/retry member nd://scope/write/services
 POST /v1/services/:id/manifest/apply operator nd://scope/write/services
+POST /v1/services/:id/pending/apply member nd://scope/write/services
 POST /v1/services/:id/promote member nd://scope/write/services
 POST /v1/services/:id/restart member nd://scope/write/services
 POST /v1/services/:id/runtime-recovery operator nd://scope/write/services
@@ -524,6 +527,8 @@ PUT /v1/servers/:serverId/containers/:container/files operator -
 PUT /v1/servers/:serverId/volumes/:name/files operator -
 PUT /v1/services/:id/files member nd://scope/write/services
 PUT /v1/services/:id/github operator nd://scope/write/services
+PUT /v1/services/:id/pending member nd://scope/write/services
+PUT /v1/services/:id/pending/staging member nd://scope/write/services
 PUT /v1/services/:id/placement operator nd://scope/write/services
 PUT /v1/services/:id/tags admin nd://scope/write/services
 PUT /v1/settings/acme-email operator nd://scope/write/settings

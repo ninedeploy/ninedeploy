@@ -1,4 +1,6 @@
 import {
+  pendingApplyInput,
+  pendingStagingInput,
   composePreviewRequest,
   createAttachment,
   createService,
@@ -166,6 +168,40 @@ export const servicesSpecs: RouteSpecMap = {
     body: setServiceTags,
     responseType: 'ServiceTags',
     validation: 'zod',
+  },
+  'GET /v1/services/:id/pending': {
+    summary: "A service's pending changes as a field-level diff, with who staged each, and whether staging is on (G5.2)",
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'PendingChangesView',
+  },
+  'PUT /v1/services/:id/pending': {
+    summary: 'Stage an edit (a PATCH body) instead of applying it',
+    tag: 'services',
+    floor: 'member',
+    responseType: 'PendingChangesView',
+  },
+  'DELETE /v1/services/:id/pending': {
+    summary: 'Discard the pending changes',
+    tag: 'services',
+    floor: 'member',
+    responseType: 'PendingChangesView',
+  },
+  'PUT /v1/services/:id/pending/staging': {
+    summary: 'Turn staging on or off for the service',
+    tag: 'services',
+    floor: 'member',
+    body: pendingStagingInput,
+    validation: 'zod',
+    responseType: 'PendingChangesView',
+  },
+  'POST /v1/services/:id/pending/apply': {
+    summary: "Apply the pending changes through PATCH with the caller's credentials, optionally with a deploy (409 others_changes without includeOthers)",
+    tag: 'services',
+    floor: 'member',
+    body: pendingApplyInput,
+    validation: 'zod',
+    responseType: 'PendingApplyResult',
   },
   'GET /v1/services/:id/image-scan': {
     summary: "The latest vulnerability scan of a service's image, and whether one is running",

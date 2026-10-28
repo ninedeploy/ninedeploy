@@ -5,6 +5,9 @@ import type {
   Attachment,
   AutoscaleStatusView,
   SizingReport,
+  PendingChangesView,
+  PendingApplyInput,
+  PendingApplyResult,
   ComposePreviewRequestInput,
   ComposePreviewResponse,
   CreateProjectInput,
@@ -197,6 +200,18 @@ export interface ServicesApi {
     autoscale: (id: number) => Promise<AutoscaleStatusView>;
     /** G5.6: memory and CPU limit suggestions from the metric history (viewer; advisory). */
     sizing: (id: number) => Promise<SizingReport>;
+    /**
+     * G5.2 pending changes tray. With staging on, edits collect (`stage`, a
+     * PATCH body) instead of applying; `apply` sends them through
+     * `update` together, optionally with a deploy.
+     */
+    pending: {
+      get: (id: number) => Promise<PendingChangesView>;
+      stage: (id: number, patch: UpdateServiceInput) => Promise<PendingChangesView>;
+      setStaging: (id: number, staging: boolean) => Promise<PendingChangesView>;
+      discard: (id: number) => Promise<PendingChangesView>;
+      apply: (id: number, input?: PendingApplyInput) => Promise<PendingApplyResult>;
+    };
     // ── 0.16.11 scale to zero ──
     /**
      * Put a docker service to sleep now (`POST /v1/services/:id/sleep`,
@@ -341,6 +356,13 @@ export function servicesApi(t: Transport): ServicesApi {
       retrySwarmRecovery: id => request<SwarmRecoveryResult>(`/v1/services/${id}/swarm/recovery`, { method: 'POST' }, 600_000),
       autoscale: (id) => get<AutoscaleStatusView>(`/v1/services/${id}/autoscale`),
       sizing: (id) => get<SizingReport>(`/v1/services/${id}/sizing`),
+      pending: {
+        get: (id) => get<PendingChangesView>(`/v1/services/${id}/pending`),
+        stage: (id, patch) => send<PendingChangesView>('PUT', `/v1/services/${id}/pending`, patch),
+        setStaging: (id, staging) => send<PendingChangesView>('PUT', `/v1/services/${id}/pending/staging`, { staging }),
+        discard: (id) => send<PendingChangesView>('DELETE', `/v1/services/${id}/pending`),
+        apply: (id, input) => send<PendingApplyResult>('POST', `/v1/services/${id}/pending/apply`, input ?? {}),
+      },
       sleep: (id) => send<{ ok: boolean; asleep: boolean }>('POST', `/v1/services/${id}/sleep`),
       wake: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/wake`),
       // ── end 0.16 T8 ──

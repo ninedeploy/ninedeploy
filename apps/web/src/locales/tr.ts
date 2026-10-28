@@ -5545,4 +5545,28 @@ export const TR: Readonly<Record<string, string>> = {
   'Wed': 'Çar',
   'over the last {hours} h': 'son {hours} saatte',
 
+  // ── G5.2 pending changes, G5.7 shared certificates ────────────────────
+  'After': 'Sonra',
+  'Apply and deploy': 'Uygula ve deploy et',
+  'Apply only': 'Yalnızca uygula',
+  'Could not apply the changes: {error}': 'Değişiklikler uygulanamadı: {error}',
+  'Discard': 'Vazgeç',
+  'Edits below collect here instead of applying at once. Review them, then apply them together.':
+    'Aşağıdaki düzenlemeler hemen uygulanmak yerine burada toplanır. Gözden geçirin, sonra hepsini birlikte uygulayın.',
+  'Field': 'Alan',
+  'Node proxies get the panel\'s Let\'s Encrypt certificates, a DNS-01 wildcard included, for the hosts they route, instead of each requesting its own. A domain served by several nodes then has one certificate everywhere. Renewals reach the nodes within the hour; an uploaded certificate still wins.':
+    'Node proxy\'leri, yönlendirdikleri hostlar için her biri kendi sertifikasını istemek yerine panelin Let\'s Encrypt sertifikalarını (DNS-01 wildcard dahil) alır. Böylece birkaç node\'un sunduğu bir alan adının her yerde tek sertifikası olur. Yenilemeler bir saat içinde node\'lara ulaşır; yüklenmiş bir sertifika yine önceliklidir.',
+  'Node proxies now get the panel certificates': 'Node proxy\'leri artık panel sertifikalarını alıyor',
+  'Node proxies request their own certificates again': 'Node proxy\'leri yine kendi sertifikalarını istiyor',
+  'Pending changes': 'Bekleyen değişiklikler',
+  'Pending changes discarded': 'Bekleyen değişikliklerden vazgeçildi',
+  'Share panel certificates with nodes': 'Panel sertifikalarını node\'larla paylaş',
+  'Stage edits before applying': 'Düzenlemeleri uygulamadan önce biriktir',
+  'Staged by': 'Biriktiren',
+  'This copies those certificates’ private keys to the nodes that route the hosts.':
+    'Bu, o sertifikaların özel anahtarlarını hostları yönlendiren node\'lara kopyalar.',
+  '{n} changes applied': '{n} değişiklik uygulandı',
+  '{n} changes applied; deploy #{id} queued': '{n} değişiklik uygulandı; deploy #{id} kuyruğa alındı',
+  '{n} of these changes were staged by someone else. They apply with your permissions: I reviewed them.':
+    'Bu değişikliklerden {n} tanesini başka biri biriktirdi. Sizin yetkilerinizle uygulanırlar: inceledim.',
 };

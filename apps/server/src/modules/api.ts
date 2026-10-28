@@ -45,6 +45,7 @@ import { cloudRoutes } from './cloud.js';
 import { deployFreezeRoutes } from './deployFreezes.js';
 import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { databaseTunnelRoutes } from './databaseTunnel.js';
+import { pendingChangeRoutes } from './pendingChanges.js';
 import { projectRoutes } from './projects.js';
 import { notificationRoutes } from './notifications.js';
 import { networkRoutes } from './networks.js';
@@ -289,6 +290,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // under /labels so the new endpoints share a router.
   await app.register(serviceTagRoutes, { prefix: '/services' });
   await app.register(serviceImageScanRoutes, { prefix: '/services' });
+  // G5.2: the pending changes tray
+  await app.register(pendingChangeRoutes, { prefix: '/services' });
   await app.register(labelRoutes, { prefix: '/labels' });
   await app.register(traefikRoutes, { prefix: '' });
   // Custom dynamic config and custom certificates (0.14, DESIGN §2.5),

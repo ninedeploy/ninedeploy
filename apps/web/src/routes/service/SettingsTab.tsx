@@ -17,6 +17,7 @@ import { ContainerOptionsCard } from './ContainerOptionsCard.js';
 import { CanaryCard } from './CanaryCard.js';
 import { AutoscaleCard } from './AutoscaleCard.js';
 import { SizingCard } from './SizingCard.js';
+import { PendingChangesTray } from './PendingChangesTray.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
@@ -28,6 +29,8 @@ import { FanoutRecoveryCard } from './FanoutRecoveryCard.js';
 export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: ServiceDetail }) {
   return (
     <div className="mt-5 space-y-5">
+      {/* G5.2: staged edits, reviewed and applied together. */}
+      <PendingChangesTray serviceId={serviceId} />
       <SettingsCard serviceId={serviceId} />
       <GithubCard svc={svc} />
       <TagsCard serviceId={serviceId} svc={svc} />

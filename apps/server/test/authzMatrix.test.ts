@@ -783,6 +783,12 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/services/:id/sticky-session': R('admin', { body: () => ({ enabled: true }) }),
   'GET /v1/services/:id/tags': R('viewer'),
   'GET /v1/services/:id/image-scan': R('viewer'),
+  'GET /v1/services/:id/pending': R('viewer'),
+  'PUT /v1/services/:id/pending': R('member', { body: () => ({ healthPath: '/staged' }) }),
+  'DELETE /v1/services/:id/pending': R('member'),
+  'PUT /v1/services/:id/pending/staging': R('member', { body: () => ({ staging: false }) }),
+  // Nothing is staged in the matrix: the at-floor call answers 409 nothing_pending.
+  'POST /v1/services/:id/pending/apply': R('member', { body: () => ({}) }),
   // Scanning is off in the matrix: the at-floor call answers 409 image_scanning_off.
   'POST /v1/services/:id/image-scan': R('admin'),
   'PUT /v1/services/:id/tags': R('admin', {

@@ -1,4 +1,5 @@
 import { createClient, type NineDeployClient } from '@ninedeploy/sdk';
+import { installStaging } from './pendingStaging.js';
 import { apiUrl } from './apiUrl.js';
 
 const TOKEN_KEY = 'ninedeploy.token';
@@ -173,6 +174,8 @@ export const api: NineDeployClient = createClient({
   // user's patience (and React Query's error UI) than to an abort.
   timeoutMs: 0,
 });
+// G5.2: a staged service's settings edits go to its pending changes tray.
+installStaging(api);
 
 function getWsBase(): { proto: string; host: string; pathPrefix: string } {
   const apiUrl = import.meta.env['VITE_API_URL'];

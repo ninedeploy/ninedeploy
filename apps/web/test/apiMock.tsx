@@ -87,6 +87,13 @@ export function createFakeApiModule() {
       revokeToken: vi.fn(),
     },
     services: {
+      pending: {
+        get: vi.fn().mockResolvedValue({ serviceId: 1, staging: false, changes: [], updatedAt: null, updatedBy: null }),
+        stage: vi.fn(),
+        setStaging: vi.fn(),
+        discard: vi.fn(),
+        apply: vi.fn(),
+      },
       sizing: vi.fn().mockResolvedValue({ serviceId: 1, spanHours: 0, samples: 0, memory: null, cpu: null, limits: { memoryMiB: null, cpuCores: null }, enoughHistory: false, hints: [] }),
       lifecycle: vi.fn().mockResolvedValue({ command: null }),
       retryLifecycle: vi.fn(),

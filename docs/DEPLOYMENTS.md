@@ -233,6 +233,24 @@ Requirements and limits:
 - Panel host only; not for node or Swarm services. Nothing sleeps during a deploy or a canary, and the autoscaler holds while a service sleeps.
 - The idle window starts again after a panel restart and after each deploy.
 
+### Pending changes (G5.2)
+
+A service's settings normally apply as each card is saved. Turn on **Settings → Pending changes → Stage edits before applying** to collect edits instead, then apply them together.
+
+**How it works**
+- While staging is on, every settings card stages its edit. The service stays as it is.
+- The tray shows each change as a field with its value now and after. A field set back to its current value leaves the tray.
+- **Apply and deploy** applies the changes together and queues a deploy, which an approval-gated lane then holds for review. **Apply only** applies them without a deploy. **Discard** empties the tray.
+- Applying sends the staged changes as one `PATCH /v1/services/:id` with your own credentials. Every check of a direct edit applies: your role on the service, operator-only fields, and validation. The changes land together or not at all.
+- If PATCH refuses them, the tray keeps them, so you can fix or discard the refused change.
+- Staging is per service and shared by everyone who edits it. Tags and environment variables keep their own routes and apply directly.
+
+**API, SDK and storage**
+- API: `GET`/`PUT`/`DELETE /v1/services/:id/pending`, `PUT …/pending/staging` with `{ staging }`, and `POST …/pending/apply` with `{ deploy }`.
+- SDK: `services.pending.*`.
+- Audited as `service.changes.stage`, `service.changes.staging`, `service.changes.discard` and `service.changes.apply`.
+- No migration is needed: the tray is one settings row per service.
+
 ### Healthcheck timeout (0.16.1)
 
 The ordinary panel-host Docker HTTP gate in step 3 accepts HTTP **200–499** on the health path and waits **300 seconds** by default. If direct container-IP access fails, the sibling container checks the same HTTP path from the runtime's bridge; it never downgrades HTTP readiness to an open TCP socket. Exposed-port recovery also requires an HTTP response. Redirects are checked without following them to another host. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pending changes tray (G5.2). Under Settings → Pending changes, a service can stage its edits instead of applying them one by one.
+  - **Review:** the tray shows each change with its value now and after.
+  - **Apply:** **Apply and deploy** (or **Apply only**) applies them together through the normal service PATCH with your own credentials, so every existing check applies. A deploy into an approval-gated lane waits for review. A refused apply keeps the tray.
+  - **API, audit and storage:** `/v1/services/:id/pending` and `services.pending.*`. Each step is audited. There is no migration.
+
+  See DEPLOYMENTS.md → *Pending changes*.
 - Scheduled minimums and right-sizing hints (G5.6).
   - **Scheduled minimums:** an autoscaled service can raise its minimum in weekly time windows (`schedules` with days, from, to and a minimum, in an IANA `timezone`), set under Settings → Autoscaling. Windows may run past midnight. The highest floor in force wins, capped at the maximum, and the scaling event names the window.
   - **Right-sizing hints:** Settings → Right-sizing suggests setting, raising or lowering the memory and CPU limits from up to a week of metric history (95th percentile and peak). It is advisory, and needs at least 12 hours of history. `GET /v1/services/:id/sizing` returns the same.
