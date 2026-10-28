@@ -185,6 +185,12 @@ describe('bounds (a browser DSN is public)', () => {
       await a.inject({ method: 'PATCH', url: `/services/5/errors/${second.id}`, headers: asUser(1), payload: { status: 'resolved' } });
       await post({ event_id: 'd'.repeat(32), message: 'fifth' });
       expect((await db.select().from(errorIssues)).some((i) => i.title === 'fifth')).toBe(true);
+      // The hard cap counts every status: resolving no longer makes room past it.
+      lib.ERROR_LIMITS.totalIssuesPerService = 3;
+      const fifth = (await db.select().from(errorIssues)).find((i) => i.title === 'fifth')!;
+      await a.inject({ method: 'PATCH', url: `/services/5/errors/${fifth.id}`, headers: asUser(1), payload: { status: 'resolved' } });
+      await post({ event_id: 'e'.repeat(32), message: 'sixth' });
+      expect((await db.select().from(errorIssues)).some((i) => i.title === 'sixth')).toBe(false);
       await a.close();
     } finally {
       Object.assign(lib.ERROR_LIMITS, saved);

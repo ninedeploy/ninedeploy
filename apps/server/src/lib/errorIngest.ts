@@ -214,9 +214,10 @@ export async function deploymentFor(db: DB, serviceId: number, release: string |
  * Only unresolved issues count toward the cap, so resolving or ignoring
  * squatted issues makes room. An issue keeps its first events and its
  * latest ones, so a flood cannot evict the original evidence.
- * Worst case per service: 500 unresolved issues × 20 events × 32 KiB.
+ * A hard cap on all issues, whatever their status, keeps the storage bound.
+ * Worst case per service: 1,500 issues × 20 events × 32 KiB.
  */
-export const ERROR_LIMITS = { payloadChars: 32 * 1024, eventsPerIssue: 20, firstEventsKept: 5, issuesPerService: 500 };
+export const ERROR_LIMITS = { payloadChars: 32 * 1024, eventsPerIssue: 20, firstEventsKept: 5, issuesPerService: 500, totalIssuesPerService: 1500 };
 export const OVERFLOW_FINGERPRINT = 'overflow';
 
 export interface Recorded {
@@ -233,8 +234,14 @@ export async function recordEvent(db: DB, serviceId: number, event: Record<strin
   const deploymentId = await deploymentFor(db, serviceId, release);
   let existing = await db.query.errorIssues.findFirst({ where: and(eq(errorIssues.serviceId, serviceId), eq(errorIssues.fingerprint, g.fingerprint)) });
   if (!existing) {
-    const [{ n } = { n: 0 }] = await db.select({ n: sql<number>`count(*)` }).from(errorIssues).where(and(eq(errorIssues.serviceId, serviceId), eq(errorIssues.status, 'unresolved'), ne(errorIssues.fingerprint, OVERFLOW_FINGERPRINT)));
-    if (Number(n) >= ERROR_LIMITS.issuesPerService) {
+    const [{ open = 0, total = 0 } = {}] = await db
+      .select({
+        open: sql<number>`sum(case when ${errorIssues.status} = 'unresolved' then 1 else 0 end)`,
+        total: sql<number>`count(*)`,
+      })
+      .from(errorIssues)
+      .where(and(eq(errorIssues.serviceId, serviceId), ne(errorIssues.fingerprint, OVERFLOW_FINGERPRINT)));
+    if (Number(open) >= ERROR_LIMITS.issuesPerService || Number(total) >= ERROR_LIMITS.totalIssuesPerService) {
       g.fingerprint = OVERFLOW_FINGERPRINT;
       g.title = `More than ${ERROR_LIMITS.issuesPerService} distinct issues; resolve or wait for old ones to expire`;
       g.culprit = null;
