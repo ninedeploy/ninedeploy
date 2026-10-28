@@ -3,7 +3,7 @@ import { eq, like } from 'drizzle-orm';
 import { settings, type DB } from '@ninedeploy/db';
 import { forwardAuthConfig, type ForwardAuthConfig } from '@ninedeploy/schemas';
 import { config } from '../config.js';
-import { getSettingJson, setSettingJson } from './settings.js';
+import { setSettingJson } from './settings.js';
 
 /**
  * G2.3 forward auth: put any app behind panel sign-in, per domain. No
@@ -34,9 +34,25 @@ const CODE_TTL_MS = 60_000;
 const STATE_TTL_S = 10 * 60;
 
 export async function getForwardAuth(db: DB, domainId: number): Promise<ForwardAuthConfig | null> {
-  const raw = await getSettingJson<unknown>(db, key(domainId), null);
+  const state = await forwardAuthState(db, domainId);
+  return state === 'off' || state === 'invalid' ? null : state;
+}
+
+/** `off` when the domain has no row; `invalid` when a row exists but does not parse (the verify endpoint denies then). */
+export async function forwardAuthState(db: DB, domainId: number): Promise<ForwardAuthConfig | 'off' | 'invalid'> {
+  // The row itself, not getSettingJson: that reads an unparsable value as absent.
+  const row = await db.query.settings.findFirst({ where: eq(settings.key, key(domainId)) });
+  if (!row) return 'off';
+  let raw: unknown = row.value;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return 'invalid';
+    }
+  }
   const parsed = forwardAuthConfig.safeParse(raw);
-  return raw && parsed.success ? parsed.data : null;
+  return parsed.success ? parsed.data : 'invalid';
 }
 
 export async function setForwardAuth(db: DB, domainId: number, value: ForwardAuthConfig | null): Promise<void> {
@@ -44,14 +60,10 @@ export async function setForwardAuth(db: DB, domainId: number, value: ForwardAut
   else await setSettingJson(db, key(domainId), forwardAuthConfig.parse(value));
 }
 
-/** For the proxy render: the protected domain ids. */
+/** For the proxy render: the protected domain ids. A read error propagates: the render must not drop the protection. */
 export async function forwardAuthDomains(db: DB): Promise<Set<number>> {
-  try {
-    const rows = await db.select({ key: settings.key }).from(settings).where(like(settings.key, `${PREFIX}%`));
-    return new Set(rows.filter((r) => r.key.startsWith(PREFIX)).map((r) => Number(r.key.slice(PREFIX.length))).filter((n) => Number.isInteger(n) && n > 0));
-  } catch {
-    return new Set();
-  }
+  const rows = await db.select({ key: settings.key }).from(settings).where(like(settings.key, `${PREFIX}%`));
+  return new Set(rows.filter((r) => r.key.startsWith(PREFIX)).map((r) => Number(r.key.slice(PREFIX.length))).filter((n) => Number.isInteger(n) && n > 0));
 }
 
 /** The callback path of a domain: under its own path, so a path-routed domain's router still matches it. */

@@ -137,4 +137,21 @@ describe('forward auth', () => {
     expect(yaml).toContain('/_nd/fa/verify/11"\n        trustForwardHeader: false\n');
     expect(yaml).toMatch(/grafana_11:\n[\s\S]*?middlewares:\n {8}- mw_grafana_11_fa/);
   });
+
+  it('fails closed: a node proxy does not route a protected domain, a service on nodes is refused, and an unreadable row denies', async () => {
+    // A service that also runs on a node: its node proxy routes the domain, unless protected.
+    await db.run(sql`insert into servers (id, name, host, status, token_encrypted) values (3, 'n1', '10.0.0.3', 'online', 'x')`);
+    await db.run(sql`insert into service_targets (service_id, server_id, runtime_id, status) values (5, 3, 'grafana-n1', 'running')`);
+    expect(await renderDynamicConfig(db, { serverId: 3 })).toContain('grafana.example.com');
+    const a = await app();
+    const refused = await a.inject({ method: 'PUT', url: '/domains/11/forward-auth', headers: member, payload: { forwardAuth: {} } });
+    expect(refused.statusCode).toBe(400);
+    expect(JSON.stringify(refused.json())).toContain('also runs on nodes');
+    // A row written some other way still keeps the domain off the node proxy.
+    await db.run(sql`insert into settings (key, value, updated_at) values ('forward_auth:11', '"garbage"', 0)`);
+    expect(await renderDynamicConfig(db, { serverId: 3 })).not.toContain('grafana.example.com');
+    // And the panel's verify endpoint denies instead of letting an unreadable protection through.
+    expect((await a.inject({ method: 'GET', url: '/_nd/fa/verify/11', headers: traefik('/') })).statusCode).toBe(403);
+    await a.close();
+  });
 });

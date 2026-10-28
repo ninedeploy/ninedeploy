@@ -127,7 +127,12 @@ Any domain of a service on the panel host can require panel sign-in. Turn it on 
 **Limits**
 - The return URL must be on the protected domain, so the flow is never an open redirect.
 - The session cookie only works for its own domain id and host.
-- Panel-host services only, and Traefik must reach the panel (the same check scale-to-zero uses).
+- Panel-host services only, not one that also runs on nodes, and Traefik must reach the panel (the same check scale-to-zero uses).
+
+**Failing closed**
+- A node's proxy never routes a protected domain.
+- A settings row that cannot be read makes the verify endpoint answer 403.
+- A failed read of the protected domains stops the config render, so the last config stays.
 - No migration is needed: it is a settings row, `forward_auth:<domainId>`.
 
 ## 🚇 4. Cloudflare Tunnels Integration

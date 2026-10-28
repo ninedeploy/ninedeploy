@@ -1,12 +1,13 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
-import { domains, services, users, type Domain } from '@ninedeploy/db';
+import { domains, serviceTargets, services, users, type Domain } from '@ninedeploy/db';
 import { forwardAuthGrantInput, forwardAuthInput, type ForwardAuthView } from '@ninedeploy/schemas';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
 import {
   FA_PREFIX,
+  forwardAuthState,
   SESSION_TTL_S,
   STATE_COOKIE_TTL_S,
   cachedDecision,
@@ -64,6 +65,9 @@ export const domainForwardAuthRoutes: FastifyPluginAsync = async (app) => {
     const { forwardAuth } = forwardAuthInput.parse(req.body ?? {});
     if (forwardAuth) {
       if (svc.serverId != null) throw badRequest('Panel sign-in is for domains of services on the panel host for now', 'forward_auth_unsupported');
+      // A service that also runs on nodes would be routed by their proxies, which cannot ask the panel.
+      const onNodes = await app.db.query.serviceTargets.findFirst({ where: eq(serviceTargets.serviceId, svc.id) });
+      if (onNodes) throw badRequest('Panel sign-in is not available for a service that also runs on nodes', 'forward_auth_unsupported');
       const unreachable = await wakeUnreachableReason();
       if (unreachable) throw badRequest(`Cannot put the domain behind panel sign-in: ${unreachable}`, 'forward_auth_unreachable');
     }
@@ -117,10 +121,12 @@ export const forwardAuthVerifyRoutes: FastifyPluginAsync = async (app) => {
   const handler = async (req: FastifyRequest, reply: FastifyReply) => {
     const domainId = Number((req.params as { domainId: string }).domainId);
     const d = Number.isSafeInteger(domainId) && domainId > 0 ? await loadDomain(app.db, domainId) : undefined;
-    const fa = d ? await getForwardAuth(app.db, d.id) : null;
-    // Turned off a moment ago (the routes follow): let the request through.
-    if (d && !fa) return reply.code(200).send();
-    if (!d || !fa || d.status !== 'active') return deny(reply, 403, 'Forbidden');
+    const protection = d ? await forwardAuthState(app.db, d.id) : 'invalid';
+    // Turned off a moment ago (no row; the routes follow): let the request through.
+    if (d && protection === 'off') return reply.code(200).send();
+    // A row that does not parse denies: an unreadable protection is not an open door.
+    if (!d || protection === 'off' || protection === 'invalid' || d.status !== 'active') return deny(reply, 403, 'Forbidden');
+    const fa = protection;
     const host = String(req.headers['x-forwarded-host'] ?? '').replace(/:\d+$/, '').toLowerCase();
     if (!host || !hostMatches(String(d.hostname), host)) return deny(reply, 403, 'Forbidden');
     const proto = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';

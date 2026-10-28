@@ -1083,8 +1083,11 @@ export async function renderDynamicConfig(
   const customCerts = await refreshCustomCertificates(db);
   /** Per-service maintenance / error-page middlewares already emitted. */
   const overrideMws = new Set<string>();
-  // G2.3: domains behind panel sign-in (panel host only, like the pages above).
-  const forwardAuthIds = forNode ? new Set<number>() : await forwardAuthDomains(db);
+  // G2.3: domains behind panel sign-in. Every render reads them, and a read
+  // error aborts the render (the last config stays). The panel's proxy puts
+  // forwardAuth in front of them; a node's proxy does not route them at all,
+  // so a protected domain is never served without the check.
+  const forwardAuthIds = await forwardAuthDomains(db);
   const now = new Date();
   /** Hosts this proxy routes — a node inlines only certificates covering them. */
   const routedHosts = new Set<string>();
@@ -1114,6 +1117,7 @@ export async function renderDynamicConfig(
     if (d.status !== 'active') continue;
     const svc = servicesById.get(d.serviceId);
     if (!svc?.port || !svc.runtimeId) continue; // need a running container to route to
+    if (forNode && forwardAuthIds.has(d.id)) continue; // G2.3: fail closed off the panel host
     const key = `${svc.slug}_${d.id}`;
     // Sanitize operands against rule/YAML injection (see HOST_RE/PATH_RE).
     const stored = String(d.hostname ?? '').trim();
