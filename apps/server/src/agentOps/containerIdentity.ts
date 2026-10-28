@@ -1,16 +1,8 @@
 import { join } from 'node:path';
-import { guardLegacyNodeTarget } from '../lib/nodeLegacyMutation.js';
+import { confirmsMissingContainer, guardLegacyNodeTarget } from '../lib/nodeLegacyMutation.js';
 import { spawnValidated } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { RE_NAME, str } from './operands.js';
-
-function confirmsMissing(lines: string[], reference: string): boolean {
-  if (lines.length !== 1) return false;
-  const line = lines[0]!.trim();
-  return line === `Error: No such object: ${reference}` ||
-    line === `Error: No such container: ${reference}` ||
-    line === `Error response from daemon: No such container: ${reference}`;
-}
 
 export const containerIdentityOps: AgentOpModule = {
   name: 'containerIdentity', caps: ['docker.recovery'],
@@ -30,7 +22,7 @@ export const containerIdentityOps: AgentOpModule = {
         }, { timeoutMs: 10_000 });
         if (overflow) throw new Error('Container identity unavailable');
         if (code !== 0) {
-          if (confirmsMissing(lines, name)) { onLine('ND-CONTAINER null'); return 0; }
+          if (confirmsMissingContainer(lines, name)) { onLine('ND-CONTAINER null'); return 0; }
           throw new Error('Container identity unavailable');
         }
         let value: { id: string; name: string; managed?: string; serviceId?: string; deploymentId?: string };
@@ -60,7 +52,7 @@ export const containerIdentityOps: AgentOpModule = {
               if (bytes > 1024) { overflow = true; return; }
               errors.push(line);
             }, { timeoutMs: Math.min(remaining(), args[0] === 'stop' ? Math.max(10_000, (grace + 5) * 1000) : 10_000) });
-            current(); if (code !== 0 && (overflow || !confirmsMissing(errors, id))) throw new Error('Container retirement unconfirmed');
+            current(); if (code !== 0 && (overflow || !confirmsMissingContainer(errors, id))) throw new Error('Container retirement unconfirmed');
           }
           onLine(`ND-RETIRED ${id}`); return 0;
         }, Math.max(35_000, (grace + 30) * 1000));

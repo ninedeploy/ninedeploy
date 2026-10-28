@@ -24,7 +24,7 @@ beforeEach(() => {
   io.spawn.mockReset().mockImplementation(async (_bin, args: string[], sink: (line: string) => void) => {
     const find = (reference: string) => rows.find(row => row.id === reference || row.name === reference);
     if (args[0] === 'ps') { for (const row of rows.filter(row => row.managed === 'service' && row.serviceId === '7')) sink(row.id); return 0; }
-    if (args[0] === 'inspect') { const row = find(args.at(-1)!); if (!row) { sink('Error: No such container'); return 1; } sink(args.includes('{{.Name}}') ? '/' + row.name : JSON.stringify({ ...row, name: '/' + row.name })); return 0; }
+    if (args[0] === 'inspect') { const row = find(args.at(-1)!); if (!row) { sink(`Error: No such container: ${args.at(-1)}`); return 1; } sink(args.includes('{{.Name}}') ? '/' + row.name : JSON.stringify({ ...row, name: '/' + row.name })); return 0; }
     if (args[0] === 'create' || args[0] === 'run') {
       const label = (key: string) => args.find(value => value.startsWith(key + '='))?.slice(key.length + 1) ?? null;
       const row: Row = { id: (++sequence).toString(16).padStart(64, '0'), name: args[args.indexOf('--name') + 1]!, managed: label('ninedeploy.managed')!,

@@ -60,6 +60,21 @@ describe('sealed immutable container recovery operations', () => {
     await expect(runRegisteredOp('docker.retire', { id, name: 'web-9' }, s => out.push(s), { sealed: true })).rejects.toThrow('unconfirmed');
     expect(out).toEqual([]);
   });
+  it('does not report retirement when inspection says a different ID is missing', async () => {
+    io.spawn.mockImplementationOnce(async (_e, _argv, sink) => {
+      sink(`Error: No such object: ${'b'.repeat(64)}`);
+      return 1;
+    });
+    const out: string[] = [];
+    await expect(runRegisteredOp('docker.retire', { id, name: 'web-9' }, s => out.push(s), { sealed: true })).rejects.toThrow('unavailable');
+    expect(out).toEqual([]);
+  });
+  it('confirms an already absent retirement target only for its exact ID', async () => {
+    io.spawn.mockImplementationOnce(async (_e, _argv, sink) => { sink(`Error: No such object: ${id}`); return 1; });
+    const out: string[] = [];
+    expect(await runRegisteredOp('docker.retire', { id, name: 'web-9' }, s => out.push(s), { sealed: true })).toBe(0);
+    expect(out).toEqual([`ND-RETIRED ${id}`]);
+  });
   it('accepts an exact missing-ID response during retirement', async () => {
     io.spawn.mockImplementation(async (_e, argv, sink) => {
       if (argv[0] === 'inspect') return retireDockerStub()(_e, argv, sink);
