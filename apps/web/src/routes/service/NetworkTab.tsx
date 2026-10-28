@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Globe, Plus, Radio, Shield, Trash2, Wand2 } from 'lucide-react';
+import { ExternalLink, Globe, Pencil, Plus, Radio, Shield, Trash2, Wand2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DomainRedirects } from './DomainRedirects.js';
 import { PortMappingsCard } from './PortMappingsCard.js';
@@ -8,7 +8,7 @@ import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Card, CardBody, ConfirmDialog, Input, Skeleton, cn } from '../../components/ui.js';
 
-import type { DomainVerificationChallenge, Service } from '@ninedeploy/sdk';
+import type { CreatedDomain, DomainVerificationChallenge, Service } from '@ninedeploy/sdk';
 
 /** Custom domains and direct host port publishing for a service. */
 export function NetworkTab({ serviceId, svc }: { serviceId: number; svc?: Service | null }) {
@@ -242,7 +242,7 @@ function DirectPortCard({ serviceId, svc }: { serviceId: number; svc?: Service |
 /** Accept pasted URLs (`https://app.example.com/`) as well as bare hosts:
  *  everything but the hostname is discarded — scheme, credentials, port,
  *  path/query/hash — then lowercased for DNS case-insensitivity. */
-function cleanDomainInput(raw: string): string {
+export function cleanDomainInput(raw: string): string {
   let value = raw.trim().toLowerCase();
   if (/^[a-z][a-z0-9+.-]*:\/\//.test(value)) {
     try {
@@ -276,7 +276,7 @@ export function cleanPathInput(raw: string): string {
 }
 
 /** The path part of a pasted URL or `host/path` (`''` when there is none or it is `/`). */
-function pastedPath(raw: string): string {
+export function pastedPath(raw: string): string {
   const value = raw.trim();
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
   try {
@@ -288,7 +288,7 @@ function pastedPath(raw: string): string {
 }
 
 /** The TXT record a `pending` domain must publish to prove ownership. */
-type DomainChallenge = DomainVerificationChallenge;
+export type DomainChallenge = DomainVerificationChallenge;
 
 function DomainsCard({ serviceId }: { serviceId: number }) {
   const qc = useQueryClient();
@@ -400,6 +400,10 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
                 serviceId={serviceId}
                 challenge={challenges[d.id] ?? null}
                 onChallenge={(ch) => setChallenges((c) => ({ ...c, [d.id]: ch }))}
+                onReplaced={(created) => {
+                  const ch = created.verification;
+                  if (ch) setChallenges((c) => ({ ...c, [created.id]: ch }));
+                }}
               />
             ))
           )}
@@ -409,20 +413,79 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
   );
 }
 
-function DomainItemRow({
+export function DomainItemRow({
   domain: d,
   serviceId,
   challenge,
   onChallenge,
+  onReplaced,
+  initialEditing = false,
 }: {
   domain: any;
   serviceId: number;
   challenge: DomainChallenge | null;
   onChallenge: (ch: DomainChallenge) => void;
+  /** A hostname/path change added this domain in the row's place (it may still be pending). */
+  onReplaced?: (created: CreatedDomain) => void;
+  initialEditing?: boolean;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const pending = d.status === 'pending';
+
+  // A domain's hostname is its ownership claim, so the server has no rename:
+  // a change adds the new host with this row's settings, and the old one goes
+  // only once the new one is live — a pending replacement keeps traffic on
+  // the old host until it is verified.
+  const [editing, setEditing] = useState(initialEditing);
+  const [editHost, setEditHost] = useState<string>(d.hostname);
+  const [editPath, setEditPath] = useState<string>(d.path === '/' ? '' : d.path);
+  const replace = useMutation({
+    mutationFn: async ({ host, routePath }: { host: string; routePath: string }) => {
+      const created = await api.domains.create(serviceId, {
+        hostname: host,
+        path: routePath,
+        ssl: d.ssl,
+        ...(d.redirectWww ? { redirectWww: true } : {}),
+        ...(d.headers && d.headers !== '[]' ? { headers: d.headers } : {}),
+        basicAuth: d.basicAuth ?? null,
+        ipAllowlist: d.ipAllowlist ?? null,
+        rateLimitAverage: d.rateLimitAverage ?? null,
+        rateLimitBurst: d.rateLimitBurst ?? null,
+      });
+      if (Array.isArray(d.redirects) && d.redirects.length > 0) {
+        await api.domains.update(serviceId, created.id, { redirects: d.redirects });
+      }
+      const live = created.status !== 'pending';
+      if (live) await api.domains.remove(serviceId, d.id);
+      return { created, live };
+    },
+    onSuccess: ({ created, live }) => {
+      qc.invalidateQueries({ queryKey: ['domains', serviceId] });
+      qc.invalidateQueries({ queryKey: ['domains-all'] });
+      setEditing(false);
+      onReplaced?.(created);
+      toast(
+        live
+          ? `${d.hostname} now routes as ${created.hostname}${created.path !== '/' ? created.path : ''}`
+          : `${created.hostname} added as pending — ${d.hostname} keeps routing until you verify the new one, then remove it`,
+        live ? 'success' : 'info',
+      );
+    },
+    // The server says why (taken, outside the zone, reserved …); nothing was removed.
+    onError: (err) => toast(err instanceof Error && err.message ? err.message : 'Could not change the domain', 'error'),
+  });
+  const submitEdit = () => {
+    const host = cleanDomainInput(editHost);
+    const routePath = cleanPathInput(editPath || pastedPath(editHost));
+    setEditHost(host);
+    if (!host.includes('.')) return;
+    if (host === d.hostname && routePath === d.path) {
+      setEditing(false);
+      return;
+    }
+    replace.mutate({ host, routePath });
+  };
 
   const verify = useMutation({
     // r563: the SDK has had `domains.verify` all along — the raw fetch and its
@@ -604,14 +667,56 @@ function DomainItemRow({
           </button>
           <button
             type="button"
+            onClick={() => setEditing(!editing)}
+            className="text-slate-600 transition hover:text-indigo-300"
+            title="Change hostname or path"
+            aria-label={`Edit ${d.hostname}`}
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            type="button"
             onClick={() => setConfirmRemove(true)}
             className="text-slate-600 transition hover:text-rose-400"
             title="Remove domain"
+            aria-label={`Remove ${d.hostname}`}
           >
             <Trash2 size={13} />
           </button>
         </div>
       </div>
+
+      {editing && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitEdit();
+          }}
+          className="flex flex-wrap items-center gap-2 border-t border-white/5 bg-slate-950/40 px-3 py-2 sm:flex-nowrap"
+        >
+          <Input
+            value={editHost}
+            onChange={(e) => setEditHost(e.target.value)}
+            placeholder="app.example.com"
+            aria-label="New hostname"
+            className="h-8 min-w-0 flex-1 basis-full font-mono text-xs sm:basis-0"
+          />
+          <Input
+            value={editPath}
+            onChange={(e) => setEditPath(e.target.value)}
+            onBlur={() => editPath && setEditPath(cleanPathInput(editPath))}
+            placeholder="/path"
+            aria-label="New path"
+            className="h-8 w-28 shrink-0 font-mono text-xs"
+          />
+          <Button size="sm" variant="ghost" type="button" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+          <Button size="sm" type="submit" disabled={!editHost.trim() || replace.isPending}>
+            {replace.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </form>
+      )}
 
       <ConfirmDialog
         open={confirmRemove}

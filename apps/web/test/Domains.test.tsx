@@ -102,6 +102,90 @@ describe('Domains', () => {
     await screen.findByText(/Could not update the SSL setting/);
   });
 
+  it('adds a domain to the chosen service from the routing map', async () => {
+    mockOf(api.domains.all).mockResolvedValue(domains as never);
+    mockOf(api.services.list).mockResolvedValue([{ id: 5, name: 'app' }, { id: 9, name: 'api' }] as never);
+    mockOf(api.domains.create).mockResolvedValue({ id: 7, hostname: 'new.example.com', path: '/api', status: 'active', verification: null } as never);
+    renderWithProviders(<Domains />);
+    await screen.findByText('app.example.com');
+    const add = screen.getByRole('button', { name: /^Add$/ });
+    // No service chosen yet: nothing to attach the domain to.
+    expect(add).toBeDisabled();
+    await screen.findByRole('option', { name: 'api' });
+    fireEvent.change(screen.getByLabelText('Service'), { target: { value: '9' } });
+    // A pasted URL keeps its path.
+    fireEvent.change(screen.getByLabelText('Domain'), { target: { value: 'https://New.example.com/api/' } });
+    fireEvent.click(add);
+    await waitFor(() => expect(api.domains.create).toHaveBeenCalledWith(9, { hostname: 'new.example.com', path: '/api' }));
+  });
+
+  it('shows the TXT challenge for a pending add and generates the automatic URL', async () => {
+    mockOf(api.domains.all).mockResolvedValue(domains as never);
+    mockOf(api.services.list).mockResolvedValue([{ id: 5, name: 'app' }] as never);
+    mockOf(api.domains.create).mockResolvedValue({
+      id: 8, hostname: 'theirs.org', path: '/', status: 'pending',
+      verification: { recordName: '_ninedeploy-challenge.theirs.org', recordType: 'TXT', recordValue: 'tok-123' },
+    } as never);
+    mockOf(api.domains.generate).mockResolvedValue({ id: 9, hostname: 'app.1-2-3-4.sslip.io', created: true } as never);
+    renderWithProviders(<Domains />);
+    await screen.findByRole('option', { name: 'app' });
+    fireEvent.change(screen.getByLabelText('Service'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText('Domain'), { target: { value: 'theirs.org' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Add$/ }));
+    expect(await screen.findByText('tok-123')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Generate URL/ }));
+    await waitFor(() => expect(api.domains.generate).toHaveBeenCalledWith(5));
+  });
+
+  it('removes a domain after confirmation', async () => {
+    mockOf(api.domains.all).mockResolvedValue(domains as never);
+    mockOf(api.domains.remove).mockResolvedValue(undefined as never);
+    renderWithProviders(<Domains />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove app.example.com' }));
+    // A row without a service has no actions.
+    expect(screen.queryByRole('button', { name: 'Remove blog.example.com' })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /^Remove$/ }));
+    await waitFor(() => expect(api.domains.remove).toHaveBeenCalledWith(5, 1));
+  });
+
+  it('changes a hostname by adding the new one with the same settings, then removing the old', async () => {
+    mockOf(api.domains.all).mockResolvedValue(domains as never);
+    mockOf(api.domains.list).mockResolvedValue([
+      { id: 1, serviceId: 5, hostname: 'app.example.com', path: '/', ssl: true, redirectWww: true, headers: '[]', basicAuth: null, ipAllowlist: '10.0.0.0/8', rateLimitAverage: 5, rateLimitBurst: 10, redirects: [], status: 'active' },
+    ] as never);
+    mockOf(api.domains.create).mockResolvedValue({ id: 11, hostname: 'shop.example.com', path: '/', status: 'active', verification: null } as never);
+    mockOf(api.domains.remove).mockResolvedValue(undefined as never);
+    renderWithProviders(<Domains />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit app.example.com' }));
+    const host = await screen.findByLabelText('New hostname');
+    fireEvent.change(host, { target: { value: 'shop.example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(api.domains.create).toHaveBeenCalledWith(5, {
+        hostname: 'shop.example.com', path: '/', ssl: true, redirectWww: true,
+        basicAuth: null, ipAllowlist: '10.0.0.0/8', rateLimitAverage: 5, rateLimitBurst: 10,
+      }),
+    );
+    await waitFor(() => expect(api.domains.remove).toHaveBeenCalledWith(5, 1));
+  });
+
+  it('keeps the old hostname routing while its replacement is pending', async () => {
+    mockOf(api.domains.all).mockResolvedValue(domains as never);
+    mockOf(api.domains.list).mockResolvedValue([
+      { id: 1, serviceId: 5, hostname: 'app.example.com', path: '/', ssl: true, redirectWww: false, headers: '[]', status: 'active' },
+    ] as never);
+    mockOf(api.domains.create).mockResolvedValue({
+      id: 12, hostname: 'theirs.org', path: '/', status: 'pending',
+      verification: { recordName: '_ninedeploy-challenge.theirs.org', recordType: 'TXT', recordValue: 'tok' },
+    } as never);
+    renderWithProviders(<Domains />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit app.example.com' }));
+    fireEvent.change(await screen.findByLabelText('New hostname'), { target: { value: 'theirs.org' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText(/keeps routing until you verify/);
+    expect(api.domains.remove).not.toHaveBeenCalled();
+  });
+
   it('shows an error card with retry when the domains query fails', async () => {
     mockOf(api.domains.all).mockRejectedValue(new Error('no dns') as never);
     renderWithProviders(<Domains />);
