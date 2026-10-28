@@ -59,7 +59,7 @@ const traefik = (uri: string, extra: Record<string, string> = {}) => ({
   ...extra,
 });
 const setCookies = (res: { headers: Record<string, unknown> }) => ([] as string[]).concat((res.headers['set-cookie'] as string | string[] | undefined) ?? []);
-const value = (cookies: string[], name: string) => cookies.find((c) => c.startsWith(`${name}=`))?.split(';')[0]!.slice(name.length + 1);
+const value = (cookies: string[], name: string) => cookies.find((c) => c.startsWith(`${name}=`))?.split(';')[0]?.slice(name.length + 1);
 
 describe('forward auth', () => {
   it('signs a member in through the panel and lets the session through until they sign out everywhere', async () => {
