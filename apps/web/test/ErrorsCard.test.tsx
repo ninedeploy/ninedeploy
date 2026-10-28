@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ErrorsCard } from '../src/routes/service/ErrorsCard.js';
@@ -26,6 +26,13 @@ const ISSUE = {
 };
 
 describe('ErrorsCard (G5.4)', () => {
+  beforeEach(() => {
+    mockOf(api.services.errors.list).mockReset().mockResolvedValue([] as never);
+    mockOf(api.services.errors.get).mockReset();
+    mockOf(api.services.errors.setStatus).mockReset();
+    for (const fn of Object.values(api.services.errors.ingest)) mockOf(fn as never).mockReset();
+    mockOf(api.services.errors.ingest.get).mockResolvedValue({ enabled: false, createdAt: null } as never);
+  });
   it('shows the DSN once when it is created', async () => {
     mockOf(api.services.errors.ingest.create).mockResolvedValue({ enabled: true, createdAt: 'x', dsn: 'https://k@panel.example.com/5' } as never);
     renderWithProviders(<ErrorsCard serviceId={5} />);
@@ -48,5 +55,31 @@ describe('ErrorsCard (G5.4)', () => {
     expect(await screen.findByText('handler — /app/src/app.js:10')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Resolve' }));
     await waitFor(() => expect(api.services.errors.setStatus).toHaveBeenCalledWith(5, 3, 'resolved'));
+  });
+
+  it('filters resolved issues and reopens one', async () => {
+    mockOf(api.services.errors.ingest.get).mockResolvedValue({ enabled: true, createdAt: 'x' } as never);
+    mockOf(api.services.errors.list).mockImplementation(async (_id, status) => status === 'resolved' ? [{ ...ISSUE, status: 'resolved' }] as never : [] as never);
+    mockOf(api.services.errors.get).mockResolvedValue({ issue: { ...ISSUE, status: 'resolved' }, events: [] } as never);
+    mockOf(api.services.errors.setStatus).mockResolvedValue({ ...ISSUE, status: 'unresolved' } as never);
+    renderWithProviders(<ErrorsCard serviceId={5} />);
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Issue status' }), 'resolved');
+    await userEvent.click(await screen.findByText(ISSUE.title));
+    await userEvent.click(screen.getByRole('button', { name: 'Reopen' }));
+    await waitFor(() => expect(api.services.errors.setStatus).toHaveBeenCalledWith(5, 3, 'unresolved'));
+  });
+
+  it('keeps collection active on a failed stop and hides the DSN after success', async () => {
+    mockOf(api.services.errors.ingest.create).mockResolvedValue({ enabled: true, createdAt: 'x', dsn: 'https://key@panel.test/5' } as never);
+    mockOf(api.services.errors.ingest.remove).mockRejectedValueOnce(new Error('stop denied')).mockResolvedValueOnce({ enabled: false, createdAt: null } as never);
+    renderWithProviders(<ErrorsCard serviceId={5} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Create DSN' }));
+    expect(await screen.findByText('https://key@panel.test/5')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Stop collecting' }));
+    expect(await screen.findByText('stop denied')).toBeInTheDocument();
+    expect(screen.getByText('https://key@panel.test/5')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Stop collecting' }));
+    await waitFor(() => expect(screen.queryByText('https://key@panel.test/5')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Create DSN' })).toBeInTheDocument();
   });
 });
