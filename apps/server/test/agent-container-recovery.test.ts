@@ -35,6 +35,41 @@ describe('sealed immutable container recovery operations', () => {
     io.spawn.mockImplementationOnce(async (_e, _a, sink) => { sink('Cannot connect to Docker daemon'); return 1; });
     await expect(runRegisteredOp('docker.identity', { name: 'web-9' }, () => {}, { sealed: true })).rejects.toThrow('unavailable');
   });
+  it('does not report an absent container when Docker also reports another error', async () => {
+    io.spawn.mockImplementationOnce(async (_e, _a, sink) => {
+      sink('Error: No such object: web-9');
+      sink('Cannot connect to Docker daemon');
+      return 1;
+    });
+    const out: string[] = [];
+    await expect(runRegisteredOp('docker.identity', { name: 'web-9' }, s => out.push(s), { sealed: true })).rejects.toThrow('unavailable');
+    expect(out).toEqual([]);
+  });
+  it('does not treat a different container as the missing requested container', async () => {
+    io.spawn.mockImplementationOnce(async (_e, _a, sink) => { sink('Error: No such object: other'); return 1; });
+    await expect(runRegisteredOp('docker.identity', { name: 'web-9' }, () => {}, { sealed: true })).rejects.toThrow('unavailable');
+  });
+  it('does not report retirement after a mixed Docker removal failure', async () => {
+    io.spawn.mockImplementation(async (_e, argv, sink) => {
+      if (argv[0] === 'inspect') return retireDockerStub()(_e, argv, sink);
+      sink(`Error: No such container: ${id}`);
+      sink('Docker daemon unavailable');
+      return 1;
+    });
+    const out: string[] = [];
+    await expect(runRegisteredOp('docker.retire', { id, name: 'web-9' }, s => out.push(s), { sealed: true })).rejects.toThrow('unconfirmed');
+    expect(out).toEqual([]);
+  });
+  it('accepts an exact missing-ID response during retirement', async () => {
+    io.spawn.mockImplementation(async (_e, argv, sink) => {
+      if (argv[0] === 'inspect') return retireDockerStub()(_e, argv, sink);
+      sink(`Error response from daemon: No such container: ${id}`);
+      return 1;
+    });
+    const out: string[] = [];
+    expect(await runRegisteredOp('docker.retire', { id, name: 'web-9' }, s => out.push(s), { sealed: true })).toBe(0);
+    expect(out).toEqual([`ND-RETIRED ${id}`]);
+  });
   it('stops and removes only the immutable ID, after matching its expected name', async () => {
     io.spawn.mockImplementation(retireDockerStub());
     const out: string[] = [];

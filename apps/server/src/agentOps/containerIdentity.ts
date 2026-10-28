@@ -4,6 +4,14 @@ import { spawnValidated } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { RE_NAME, str } from './operands.js';
 
+function confirmsMissing(lines: string[], reference: string): boolean {
+  if (lines.length !== 1) return false;
+  const line = lines[0]!.trim();
+  return line === `Error: No such object: ${reference}` ||
+    line === `Error: No such container: ${reference}` ||
+    line === `Error response from daemon: No such container: ${reference}`;
+}
+
 export const containerIdentityOps: AgentOpModule = {
   name: 'containerIdentity', caps: ['docker.recovery'],
   ops: {
@@ -14,13 +22,15 @@ export const containerIdentityOps: AgentOpModule = {
         if (!name || name.length > 128 || !RE_NAME.test(name)) throw new Error('Invalid container name');
         const format = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}}}';
         let output = '', overflow = false;
+        const lines: string[] = [];
         const code = await spawnValidated('docker', ['inspect', '--type', 'container', '--format', format, name], line => {
           if (Buffer.byteLength(output) + Buffer.byteLength(line) > 16_384) { overflow = true; return; }
           output += line;
+          lines.push(line);
         }, { timeoutMs: 10_000 });
         if (overflow) throw new Error('Container identity unavailable');
         if (code !== 0) {
-          if (/No such (object|container)/i.test(output)) { onLine('ND-CONTAINER null'); return 0; }
+          if (confirmsMissing(lines, name)) { onLine('ND-CONTAINER null'); return 0; }
           throw new Error('Container identity unavailable');
         }
         let value: { id: string; name: string; managed?: string; serviceId?: string; deploymentId?: string };
@@ -44,9 +54,13 @@ export const containerIdentityOps: AgentOpModule = {
           if (!target) { onLine(`ND-RETIRED ${id}`); return 0; }
           if (target.name !== name) throw new Error('Container generation changed; retained');
           for (const args of [['stop', '-t', String(grace), id], ['rm', '-f', id]]) {
-            let error = ''; current();
-            const code = await spawnValidated('docker', args, line => { if (error.length < 1024) error += line; }, { timeoutMs: Math.min(remaining(), args[0] === 'stop' ? Math.max(10_000, (grace + 5) * 1000) : 10_000) });
-            current(); if (code !== 0 && !/No such (object|container)/i.test(error)) throw new Error('Container retirement unconfirmed');
+            const errors: string[] = []; let bytes = 0, overflow = false; current();
+            const code = await spawnValidated('docker', args, line => {
+              bytes += Buffer.byteLength(line);
+              if (bytes > 1024) { overflow = true; return; }
+              errors.push(line);
+            }, { timeoutMs: Math.min(remaining(), args[0] === 'stop' ? Math.max(10_000, (grace + 5) * 1000) : 10_000) });
+            current(); if (code !== 0 && (overflow || !confirmsMissing(errors, id))) throw new Error('Container retirement unconfirmed');
           }
           onLine(`ND-RETIRED ${id}`); return 0;
         }, Math.max(35_000, (grace + 30) * 1000));
