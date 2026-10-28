@@ -65,10 +65,16 @@ export const databaseTunnelRoutes: FastifyPluginAsync = async (app) => {
     if (d.serverId != null) return refuse('the database runs on a node; tunnels reach panel-host databases only for now');
     if (d.status !== 'running' || !d.containerName || !d.internalPort) return refuse('the database is not running');
     if ((open.get(user.id) ?? 0) >= MAX_TUNNELS_PER_USER) return refuse(`at most ${MAX_TUNNELS_PER_USER} tunnels at once`);
-    const host = await tunnelDeps.resolveAddress(d.containerName);
-    if (!host) return refuse('the database container has no address');
-
+    // Reserve the slot before the next await, so parallel opens cannot all pass the check.
     open.set(user.id, (open.get(user.id) ?? 0) + 1);
+    const release = () => open.set(user.id, Math.max(0, (open.get(user.id) ?? 1) - 1));
+    const host = await tunnelDeps.resolveAddress(d.containerName);
+    if (!host) {
+      release();
+      return refuse('the database container has no address');
+    }
+    // The client may have left while the address was resolved: open nothing for it.
+    if (socket.readyState !== socket.OPEN) return release();
     const started = Date.now();
     let bytesIn = 0;
     let bytesOut = 0;
@@ -81,7 +87,7 @@ export const databaseTunnelRoutes: FastifyPluginAsync = async (app) => {
       if (closed) return;
       closed = true;
       clearInterval(timer);
-      open.set(user.id, Math.max(0, (open.get(user.id) ?? 1) - 1));
+      release();
       tcp.destroy();
       try {
         socket.close(code, reason);

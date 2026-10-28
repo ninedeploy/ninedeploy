@@ -149,6 +149,24 @@ describe('database tunnels', () => {
     ws.close(1000);
   });
 
+  it('holds the per-user cap when many tunnels open at once (security review)', async () => {
+    const { MAX_TUNNELS_PER_USER } = await import('../src/modules/databaseTunnel.js');
+    // A slow address lookup: every open passes the cap check before any finishes it.
+    tunnelDeps.resolveAddress = async () => {
+      await new Promise((r) => setTimeout(r, 200));
+      return '127.0.0.1';
+    };
+    const sockets = Array.from({ length: MAX_TUNNELS_PER_USER + 2 }, () => open(1, 'op'));
+    const refusals = sockets.map((ws) => closed(ws));
+    await vi.waitFor(() => expect(echoSockets.size).toBe(MAX_TUNNELS_PER_USER), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 300)); // let the refusals arrive
+    const refused = (await Promise.all(sockets.map((ws, i) => (ws.readyState === WebSocket.CLOSED ? refusals[i] : null)))).filter(Boolean);
+    expect(refused).toHaveLength(2);
+    expect(refused[0]).toEqual({ code: 1008, reason: `at most ${MAX_TUNNELS_PER_USER} tunnels at once` });
+    for (const ws of sockets) ws.close(1000);
+    await Promise.all(refusals);
+  });
+
   it('refuses a database on a node', async () => {
     const { servers } = await import('@ninedeploy/db');
     await db.insert(servers).values({ id: 3, name: 'n', host: '203.0.113.1', port: 4600, tokenEncrypted: 'x', status: 'online' });
