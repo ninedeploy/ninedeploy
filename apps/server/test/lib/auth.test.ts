@@ -32,6 +32,8 @@ function mockDb(opts: {
       // legacy `users.role` column is gone and is no longer consulted.
       workspaceMembers: { findMany: vi.fn(async () => opts.memberships ?? []) },
     },
+    // G1.4: the workspace 2FA policies (none here).
+    select: () => ({ from: () => ({ where: async () => [] }) }),
   };
 }
 
