@@ -9,6 +9,7 @@ import { autoscaleKeys } from '../../lib/autoscaleApi.js';
 import { useToast } from '../../components/Toast.js';
 import { type Translate, fill, msg, translate, useT } from '../../lib/i18n.js';
 import { Button, Card, CardBody, Field, Input, Select, Switch } from '../../components/ui.js';
+import { AutoscaleSchedules, browserTimeZone, type ScheduleRow, scheduleRowsFrom, schedulesFromRows } from './AutoscaleSchedules.js';
 
 export interface AutoscaleForm {
   minReplicas: string;
@@ -17,6 +18,9 @@ export interface AutoscaleForm {
   target: string;
   scaleUpSeconds: string;
   scaleDownSeconds: string;
+  /** G5.6 scheduled floors and the time zone they are in. */
+  schedules: ScheduleRow[];
+  timezone: string;
 }
 
 type FieldKey = keyof AutoscaleForm;
@@ -35,6 +39,8 @@ export function autoscaleFormFrom(cfg: AutoscaleConfig | null | undefined): Auto
     target: cfg ? String(cfg.target) : '',
     scaleUpSeconds: String(cfg?.scaleUpSeconds ?? DEFAULT_UP_SECONDS),
     scaleDownSeconds: String(cfg?.scaleDownSeconds ?? DEFAULT_DOWN_SECONDS),
+    schedules: scheduleRowsFrom(cfg?.schedules),
+    timezone: cfg?.timezone ?? browserTimeZone(),
   };
 }
 
@@ -53,6 +59,10 @@ function fieldProblem(key: FieldKey, metric: AutoscaleMetric, t: Translate): str
       return t('A whole number of seconds, 30–3600');
     case 'scaleDownSeconds':
       return t('A whole number of seconds, 60–3600');
+    case 'schedules':
+      return t('Each window needs at least one day, different start and end times, and a minimum of 1 up to the maximum');
+    case 'timezone':
+      return t('An IANA time zone, such as Europe/Istanbul');
   }
 }
 
@@ -74,6 +84,7 @@ export function parseAutoscaleForm(form: AutoscaleForm, t: Translate = ENGLISH):
     target: num(form.target),
     scaleUpSeconds: num(form.scaleUpSeconds),
     scaleDownSeconds: num(form.scaleDownSeconds),
+    ...(form.schedules.length > 0 ? { schedules: schedulesFromRows(form.schedules), timezone: form.timezone.trim() || 'UTC' } : {}),
   });
   if (res.success) return { config: res.data, errors: {} };
   const errors: Partial<Record<FieldKey, string>> = {};
@@ -122,6 +133,7 @@ export function AutoscaleCard({ svc }: { svc: ServiceDetail }) {
   const unit = form.metric === 'rps' ? 'req/s' : '%';
   // A problem in a collapsed part opens it, so the error is never hidden.
   const advancedOpen = advanced || parsed.errors.scaleUpSeconds !== undefined || parsed.errors.scaleDownSeconds !== undefined;
+  const scheduleError = parsed.errors.schedules ?? parsed.errors.timezone;
 
   return (
     <Card>
@@ -189,6 +201,16 @@ export function AutoscaleCard({ svc }: { svc: ServiceDetail }) {
                 {form.metric === 'memory' && !svc.memLimitMb && (
                   <p className="text-amber-300">{t("This service has no memory limit, so memory would read the host's memory. Set one under Resource limits.")}</p>
                 )}
+              </div>
+              <div className="rounded-lg border border-white/[0.06] p-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{t('Scheduled minimums')}</div>
+                <AutoscaleSchedules
+                  rows={form.schedules}
+                  onRows={(schedules) => setForm({ ...form, schedules })}
+                  timezone={form.timezone}
+                  onTimezone={(timezone) => setForm({ ...form, timezone })}
+                  {...(scheduleError ? { error: scheduleError } : {})}
+                />
               </div>
               <div className="rounded-lg border border-white/[0.06]">
                 <button

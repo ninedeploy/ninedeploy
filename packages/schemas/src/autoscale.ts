@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AUTOSCALE_SCHEDULES_MAX, autoscaleSchedule, isTimeZone } from './sizing.js';
 
 /**
  * 0.16.10 autoscaling.
@@ -33,9 +34,18 @@ export const autoscaleConfig = z
     target: z.number().positive().max(100_000),
     scaleUpSeconds: z.number().int().min(30).max(3600).default(60),
     scaleDownSeconds: z.number().int().min(60).max(3600).default(300),
+    /** G5.6: raised minimums in weekly time windows (lib/autoscaleSchedule.ts). */
+    schedules: z.array(autoscaleSchedule).max(AUTOSCALE_SCHEDULES_MAX).optional(),
+    /** G5.6: the IANA time zone the windows are in; UTC when unset. */
+    timezone: z.string().max(64).refine(isTimeZone, 'An IANA time zone, such as Europe/Istanbul').optional(),
   })
   .strict()
   .superRefine((c, ctx) => {
+    c.schedules?.forEach((w, i) => {
+      if (w.minReplicas > c.maxReplicas) {
+        ctx.addIssue({ code: 'custom', path: ['schedules', i, 'minReplicas'], message: 'A scheduled minimum must not be above maxReplicas' });
+      }
+    });
     if (c.maxReplicas <= c.minReplicas) {
       ctx.addIssue({ code: 'custom', path: ['maxReplicas'], message: 'maxReplicas must be above minReplicas' });
     }
@@ -70,6 +80,8 @@ export interface AutoscaleStatusView {
   /** Why the autoscaler is holding, when it is (a deploy in progress, no traffic analytics, …). */
   holding?: string | null;
   lastEvent?: AutoscaleEvent | null;
+  /** G5.6: the scheduled floor in force now (null outside every window). */
+  scheduledFloor?: { minReplicas: number; window: string } | null;
 }
 
 /**

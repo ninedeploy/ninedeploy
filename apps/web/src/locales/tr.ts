@@ -5512,4 +5512,37 @@ export const TR: Readonly<Record<string, string>> = {
   'The CLI offers this database on a local port through the panel, so its port stays closed to the internet. It needs the admin role on the database; the database login still applies.':
     'CLI bu veritabanını panel üzerinden yerel bir portta sunar; böylece portu internete kapalı kalır. Veritabanında admin rolü gerekir; veritabanının kendi girişi yine geçerlidir.',
   'Tunnel from your machine': 'Kendi makinenden tünel',
+
+  // ── G5.6 autoscale schedules and sizing ───────────────────────────────
+  'Add window': 'Pencere ekle',
+  'An IANA time zone, such as Europe/Istanbul': 'Europe/Istanbul gibi bir IANA saat dilimi',
+  'At least': 'En az',
+  'CPU': 'CPU',
+  'CPU: {p95} cores at the 95th percentile, peak {peak}': 'CPU: 95. yüzdelikte {p95} çekirdek, en yüksek {peak}',
+  'Days': 'Günler',
+  'Each window needs at least one day, different start and end times, and a minimum of 1 up to the maximum':
+    'Her pencere en az bir gün, farklı başlangıç ve bitiş saatleri ve 1 ile maksimum arasında bir minimum ister',
+  'Fri': 'Cum',
+  'From the primary container’s metrics. Nothing changes until you edit the limits above.':
+    'Birincil container\'ın metriklerinden. Yukarıdaki limitleri düzenleyene kadar hiçbir şey değişmez.',
+  'Lower the limit': 'Limiti düşür',
+  'Memory: {p95} MiB at the 95th percentile, peak {peak} MiB': 'Bellek: 95. yüzdelikte {p95} MiB, en yüksek {peak} MiB',
+  'Mon': 'Pzt',
+  'Raise the limit': 'Limiti yükselt',
+  'Raise the minimum in time windows, for example on weekdays during office hours. The highest floor in force wins, up to the maximum. A window that ends before it starts runs past midnight.':
+    'Minimumu zaman pencerelerinde yükseltin; örneğin hafta içi mesai saatlerinde. Yürürlükteki en yüksek taban geçerli olur, en fazla maksimuma kadar. Başlamadan önce biten bir pencere gece yarısını aşar.',
+  'Remove window': 'Pencereyi kaldır',
+  'Right-sizing': 'Doğru boyutlandırma',
+  'Sat': 'Cmt',
+  'Scheduled minimums': 'Zamanlanmış minimumlar',
+  'Set a limit': 'Limit koy',
+  'Suggestions start after 12 hours of history.': 'Öneriler 12 saatlik geçmişten sonra başlar.',
+  'Sun': 'Paz',
+  'The limits fit how the service runs.': 'Limitler servisin çalışmasına uygun.',
+  'Thu': 'Per',
+  'Time zone': 'Saat dilimi',
+  'Tue': 'Sal',
+  'Wed': 'Çar',
+  'over the last {hours} h': 'son {hours} saatte',
+
 };

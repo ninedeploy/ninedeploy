@@ -193,6 +193,14 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: '{ ok: boolean; status: string }',
   },
+  'GET /v1/services/:id/sizing': {
+    summary: 'Memory and CPU limit suggestions from the metric history (advisory)',
+    description:
+      'G5.6. The 95th percentile and the peak of the primary container (memory in MiB, CPU in cores) over up to a week, the current limits, and hints to set, raise or lower them. No hints under 12 hours of history.',
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'SizingReport',
+  },
   'GET /v1/services/:id/autoscale': {
     summary: 'What the autoscaler sees for a service',
     description:

@@ -54,6 +54,7 @@ describe('autoscale configuration and status', () => {
       desired: null,
       holding: null,
       lastEvent: null,
+      scheduledFloor: null,
     });
   });
 

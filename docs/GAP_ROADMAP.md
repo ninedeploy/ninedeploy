@@ -69,7 +69,7 @@ None of the Docker-based rivals has these.
 | G5.3 | **Instance-wide GitOps.** The whole instance (projects, services, domains, grants) as files in a repository, with a drift diff, an alert and an optional write-back of UI edits. | Komodo Resource Sync | L | ⬜ |
 | G5.4 | **Sentry-compatible error ingest** per project, grouped by fingerprint and linked to the deploy that introduced it. | Canine | M | ⬜ |
 | G5.5 | **Deploy freeze.** An admin block on deploys for a project or environment, with a reason and an expiry, checked by the queue. | Tsuru event blocks | S | ✅ unreleased (operator only; held deploys wait as queued and start when it ends) |
-| G5.6 | **Autoscale on schedules and right-sizing hints.** Cron-scheduled replica floors, and memory and CPU limit suggestions from the metric history. | Tsuru | M | ⬜ |
+| G5.6 | **Autoscale on schedules and right-sizing hints.** Cron-scheduled replica floors, and memory and CPU limit suggestions from the metric history. | Tsuru | M | ✅ unreleased (weekly floor windows in a time zone; hints are advisory) |
 | G5.7 | **Certificates shared across node proxies,** so any ingress node can serve any domain. | Uncloud 0.21 | M | ⬜ |
 | G5.8 | **`ninedeploy tunnel`.** Forward a local port to a service or database through the panel, so database ports stay closed. | Haloy, Disco | S | ✅ unreleased (`ninedeploy tunnel db`; panel-host databases; services and node databases not yet) |
 

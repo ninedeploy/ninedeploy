@@ -216,6 +216,7 @@ GET /v1/services/:id/metrics viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
 GET /v1/services/:id/routing viewer nd://scope/read/services
 GET /v1/services/:id/runtime-recovery viewer nd://scope/read/services
+GET /v1/services/:id/sizing viewer nd://scope/read/services
 GET /v1/services/:id/source viewer nd://scope/read/services
 GET /v1/services/:id/swarm viewer nd://scope/read/services
 GET /v1/services/:id/swarm/recovery viewer nd://scope/read/services

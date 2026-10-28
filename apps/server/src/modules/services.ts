@@ -47,6 +47,7 @@ import { assertMayLeaveLane, assertMaySeeLaneSecrets } from '../lib/protectedLan
 import { readRuntimeLogs } from '../lib/runtimeLogs.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { autoscaleStatus, resetAutoscaleState } from '../lib/autoscaler.js';
+import { sizingHints } from '../lib/sizingHints.js';
 import { putToSleep, wakeService } from '../lib/sleep.js';
 import { sleepDeps } from '../lib/sleepRuntime.js';
 import { wakeUnreachableReason } from '../lib/panelUpstream.js';
@@ -1393,6 +1394,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:id/autoscale', async (req) => {
     const id = num((req.params as { id: string }).id);
     return autoscaleStatus(await loadServiceForUser(app.db, id, req.user!));
+  });
+
+  // G5.6: memory and CPU limit suggestions from the metric history.
+  app.get('/:id/sizing', async (req) => {
+    const id = num((req.params as { id: string }).id);
+    return sizingHints(app.db, await loadServiceForUser(app.db, id, req.user!));
   });
 
   app.get('/:id/targets', async (req) => {

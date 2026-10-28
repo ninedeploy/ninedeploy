@@ -167,6 +167,40 @@ Notes:
 - Autoscaling holds for services on a node and for Swarm services (Swarm scales with its own replicas).
 - Stopped spare containers take disk space only. With `--restart always`, a Docker restart starts them again; the autoscaler stops them at its next look.
 
+#### Scheduled minimums (G5.6)
+
+An autoscaled service can raise its minimum in weekly time windows, for example weekdays from 08:00 to 18:00. Set them under **Settings → Autoscaling → Scheduled minimums**, or as `schedules` and `timezone` in the `autoscale` configuration:
+
+```json
+{ "minReplicas": 1, "maxReplicas": 6, "metric": "cpu", "target": 70,
+  "timezone": "Europe/Istanbul",
+  "schedules": [{ "days": [1, 2, 3, 4, 5], "from": "08:00", "to": "18:00", "minReplicas": 3 }] }
+```
+
+- Days run from 0 (Sunday) to 6. The times are local to `timezone`, an IANA name that defaults to UTC.
+- A window whose end is before its start runs past midnight and counts for the day it starts on.
+- The highest floor in force wins, capped at `maxReplicas`. A floor may not be above `maxReplicas`.
+- When a window begins, the autoscaler starts containers up to the floor within 30 seconds; the scaling event names the window. When the window ends, the floor stops holding capacity and normal scale-down applies.
+- The status (`GET /v1/services/:id/autoscale`) shows `scheduledFloor` while one is in force.
+- At most 20 windows per service. No migration is needed: they are part of the stored autoscale configuration.
+
+### Right-sizing hints (G5.6)
+
+**Settings → Right-sizing**, under Resource limits, suggests memory and CPU limits from the service's metric history. `GET /v1/services/:id/sizing` returns the same (viewer).
+
+**What it reads**
+- The primary container's 95th percentile and peak, memory in MiB and CPU in cores.
+- Up to a week of history: the raw samples of the last day, plus the 5-minute summaries when the metric retention keeps more.
+
+**What it suggests**
+- **Memory**, with no limit: set one with room above the peak.
+- **Memory**, with a peak above 90 % of its limit: raise the limit.
+- **Memory**, with a peak under 40 % of a limit of 256 MiB or more: lower the limit.
+- **CPU**, with the 95th percentile above 80 % of its limit: raise the limit.
+- **CPU**, with a peak under 25 % of a limit of half a core or more: lower the limit.
+
+There are no suggestions under 12 hours of history. The hints are advisory: nothing changes until someone edits the limits.
+
 ### Scale to zero (0.16.11)
 
 A docker service on the panel host can sleep when nobody uses it and wake on the next request. Set **Service → Settings → Sleep when idle**, or `sleepAfterMinutes` (5–1440) on `PATCH /v1/services/:id`; `null` turns it off.

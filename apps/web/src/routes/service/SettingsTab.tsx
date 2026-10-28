@@ -16,6 +16,7 @@ import { BuildArgsField, parseBuildArgNames } from './BuildArgsField.js';
 import { ContainerOptionsCard } from './ContainerOptionsCard.js';
 import { CanaryCard } from './CanaryCard.js';
 import { AutoscaleCard } from './AutoscaleCard.js';
+import { SizingCard } from './SizingCard.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
@@ -39,6 +40,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <BuildPlacementCard svc={svc} />
       <OrchestratorCard svc={svc} />
       <LimitsCard svc={svc} />
+      {/* G5.6: suggestions from the metric history, under the limits they are about. */}
+      <SizingCard serviceId={serviceId} />
       <ContainerOptionsCard svc={svc} />
       {/* 0.16.9: docker services on a panel that reports the field. */}
       <CanaryCard svc={svc} />

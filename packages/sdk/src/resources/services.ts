@@ -4,6 +4,7 @@
 import type {
   Attachment,
   AutoscaleStatusView,
+  SizingReport,
   ComposePreviewRequestInput,
   ComposePreviewResponse,
   CreateProjectInput,
@@ -194,6 +195,8 @@ export interface ServicesApi {
     swarmRecovery: (id: number) => Promise<SwarmRecoveryEntry | null>;
     retrySwarmRecovery: (id: number) => Promise<SwarmRecoveryResult>;
     autoscale: (id: number) => Promise<AutoscaleStatusView>;
+    /** G5.6: memory and CPU limit suggestions from the metric history (viewer; advisory). */
+    sizing: (id: number) => Promise<SizingReport>;
     // ── 0.16.11 scale to zero ──
     /**
      * Put a docker service to sleep now (`POST /v1/services/:id/sleep`,
@@ -337,6 +340,7 @@ export function servicesApi(t: Transport): ServicesApi {
       swarmRecovery: async id => (await get<{ entry: SwarmRecoveryEntry | null }>(`/v1/services/${id}/swarm/recovery`)).entry,
       retrySwarmRecovery: id => request<SwarmRecoveryResult>(`/v1/services/${id}/swarm/recovery`, { method: 'POST' }, 600_000),
       autoscale: (id) => get<AutoscaleStatusView>(`/v1/services/${id}/autoscale`),
+      sizing: (id) => get<SizingReport>(`/v1/services/${id}/sizing`),
       sleep: (id) => send<{ ok: boolean; asleep: boolean }>('POST', `/v1/services/${id}/sleep`),
       wake: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/wake`),
       // ── end 0.16 T8 ──

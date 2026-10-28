@@ -38,11 +38,11 @@ const form = (over: Partial<ReturnType<typeof autoscaleFormFrom>> = {}) => ({ ..
 
 describe('autoscaleFormFrom', () => {
   it('starts from the defaults, with no maximum or target', () => {
-    expect(autoscaleFormFrom(null)).toEqual({ minReplicas: '1', maxReplicas: '', metric: 'cpu', target: '', scaleUpSeconds: '60', scaleDownSeconds: '300' });
+    expect(autoscaleFormFrom(null)).toEqual({ minReplicas: '1', maxReplicas: '', metric: 'cpu', target: '', scaleUpSeconds: '60', scaleDownSeconds: '300', schedules: [], timezone: expect.any(String) });
   });
 
   it('shows a stored configuration', () => {
-    expect(autoscaleFormFrom(STORED)).toEqual({ minReplicas: '2', maxReplicas: '6', metric: 'rps', target: '40', scaleUpSeconds: '90', scaleDownSeconds: '600' });
+    expect(autoscaleFormFrom(STORED)).toEqual({ minReplicas: '2', maxReplicas: '6', metric: 'rps', target: '40', scaleUpSeconds: '90', scaleDownSeconds: '600', schedules: [], timezone: expect.any(String) });
   });
 });
 
@@ -64,8 +64,18 @@ describe('parseAutoscaleForm', () => {
     expect(parseAutoscaleForm(form({ metric: 'rps', target: '150' })).config?.target).toBe(150);
   });
 
+  it('G5.6: carries scheduled floors with their time zone, and names a bad window or zone', () => {
+    const office = { days: [5, 1, 2], from: '08:00', to: '18:00', minReplicas: '3' };
+    const ok = parseAutoscaleForm(form({ maxReplicas: '4', schedules: [office], timezone: 'Europe/Istanbul' }));
+    expect(ok.config).toMatchObject({ schedules: [{ days: [1, 2, 5], from: '08:00', to: '18:00', minReplicas: 3 }], timezone: 'Europe/Istanbul' });
+    expect(parseAutoscaleForm(form({ maxReplicas: '4', schedules: [{ ...office, minReplicas: '9' }] })).errors.schedules).toMatch(/up to the maximum/);
+    expect(parseAutoscaleForm(form({ maxReplicas: '4', schedules: [office], timezone: 'Mars/Olympus' })).errors.timezone).toMatch(/IANA/);
+    // No windows: no schedule fields are stored at all.
+    expect(parseAutoscaleForm(form({ maxReplicas: '4' })).config).not.toHaveProperty('schedules');
+  });
+
   it('names the range of every field that does not fit', () => {
-    const { config, errors } = parseAutoscaleForm({ minReplicas: '0', maxReplicas: '', metric: 'cpu', target: 'x', scaleUpSeconds: '10', scaleDownSeconds: '4000' });
+    const { config, errors } = parseAutoscaleForm({ minReplicas: '0', maxReplicas: '', metric: 'cpu', target: 'x', scaleUpSeconds: '10', scaleDownSeconds: '4000', schedules: [], timezone: 'UTC' });
     expect(config).toBeNull();
     expect(errors).toEqual({
       minReplicas: 'A whole number of containers, 1–10',

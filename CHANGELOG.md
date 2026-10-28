@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Scheduled minimums and right-sizing hints (G5.6).
+  - **Scheduled minimums:** an autoscaled service can raise its minimum in weekly time windows (`schedules` with days, from, to and a minimum, in an IANA `timezone`), set under Settings → Autoscaling. Windows may run past midnight. The highest floor in force wins, capped at the maximum, and the scaling event names the window.
+  - **Right-sizing hints:** Settings → Right-sizing suggests setting, raising or lowering the memory and CPU limits from up to a week of metric history (95th percentile and peak). It is advisory, and needs at least 12 hours of history. `GET /v1/services/:id/sizing` returns the same.
+  - **No migration:** schedules are part of the stored autoscale configuration.
+
+  See DEPLOYMENTS.md → *Scheduled minimums* and *Right-sizing hints*.
 - `ninedeploy tunnel db <id>` (G5.8). It offers a panel-host database on a local port through the panel, so the database port stays closed to the internet.
   - **How it works:** each local connection travels over its own WebSocket (`GET /v1/databases/:id/tunnel`) to the database container, byte for byte. Checked against a real PostgreSQL 15: SCRAM login, a 2 MiB row in and out, parallel connections.
   - **Access:** it needs the database admin role, the same as its credentials. Scoped API tokens must be allowed to write databases. Access is re-checked every minute.

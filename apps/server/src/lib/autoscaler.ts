@@ -1,4 +1,5 @@
 import { deployments, primaryTransitions, type Service, services, type DB } from '@ninedeploy/db';
+import { describeWindow, effectiveMinimum } from './autoscaleSchedule.js';
 import {
   autoscaleConfig,
   desiredReplicas,
@@ -321,13 +322,20 @@ export async function autoscaleStep(
     ...(ctx.sampledAt !== undefined ? { sampledAt: ctx.sampledAt } : {}) });
   st.value = m.value;
   st.holding = m.holding;
-  // Outside the bounds (the configuration changed since the deploy): move inside first.
-  const bounded = Math.min(cfg.maxReplicas, Math.max(cfg.minReplicas, current));
+  // G5.6: a scheduled floor raises the minimum while its window is in force.
+  const floor = effectiveMinimum(cfg, ctx.now);
+  const eff = floor.window ? { ...cfg, minReplicas: floor.minReplicas } : cfg;
+  // Outside the bounds (the configuration changed since the deploy, or a
+  // scheduled floor began): move inside first.
+  const bounded = Math.min(eff.maxReplicas, Math.max(eff.minReplicas, current));
   if (bounded !== current) {
-    return scaleService(deps, svc, current, bounded, `the configured bounds are ${cfg.minReplicas}–${cfg.maxReplicas}`, ctx.now);
+    const why = floor.window && bounded > current
+      ? `the scheduled minimum is ${floor.minReplicas} (${describeWindow(floor.window, cfg.timezone)})`
+      : `the configured bounds are ${eff.minReplicas}–${eff.maxReplicas}`;
+    return scaleService(deps, svc, current, bounded, why, ctx.now);
   }
   if (m.value == null) { resetWindow(st); return current; }
-  const d = decide(svc.id, current, m.value, cfg, ctx.now);
+  const d = decide(svc.id, current, m.value, eff, ctx.now);
   if (!d) return current;
   return scaleService(deps, svc, current, d.to, d.reason, ctx.now);
 }
@@ -349,6 +357,10 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
     desired: st?.desired ?? null,
     holding: st?.holding ?? null,
     lastEvent: st?.lastEvent ?? null,
+    scheduledFloor: (() => {
+      const f = effectiveMinimum(cfg, Date.now());
+      return f.window ? { minReplicas: f.minReplicas, window: describeWindow(f.window, cfg.timezone) } : null;
+    })(),
   };
 }
 

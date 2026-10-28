@@ -240,6 +240,25 @@ describe('autoscaleStep', () => {
     expect(deps.audit).toHaveBeenCalledWith('service.autoscale', 'web: 2 → 3', expect.objectContaining({ reason: 'the configured bounds are 3–4' }));
   });
 
+  it('G5.6: raises to a scheduled floor while its window is in force, and names it', async () => {
+    const { deps } = fakeDeps();
+    // 1970-01-01 (now 0) was a Thursday; 00:00 UTC.
+    const floored = { ...cfg, schedules: [{ days: [4], from: '00:00', to: '06:00', minReplicas: 3 }] };
+    expect(await autoscaleStep(deps, await row(), floored, ctx({ now: 0 }))).toBe(3);
+    expect(deps.audit).toHaveBeenCalledWith(
+      'service.autoscale',
+      'web: 2 → 3',
+      expect.objectContaining({ reason: 'the scheduled minimum is 3 (Thu 00:00–06:00 UTC)' }),
+    );
+  });
+
+  it('G5.6: outside the window the floor does not hold capacity', async () => {
+    const { deps } = fakeDeps();
+    const floored = { ...cfg, schedules: [{ days: [1], from: '00:00', to: '06:00', minReplicas: 3 }] };
+    expect(await autoscaleStep(deps, await row(), floored, ctx({ now: 0 }))).toBe(2);
+    expect(deps.audit).not.toHaveBeenCalled();
+  });
+
   it('measures, waits the window, then scales; status shows what it saw', async () => {
     const { deps } = fakeDeps();
     expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 0 }))).toBe(2);
