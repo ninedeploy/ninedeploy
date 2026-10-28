@@ -52,6 +52,8 @@ The immutable committed snapshot `d863daed9a648ec05c4312be1ae5b47b20f69cb3` pass
 
 This snapshot predates the subsequent node environment receipt and fan-out ordering changes. It is a preliminary local result only: the final commit needs a new full gate, the node Stop failure remains open, and no GitHub Release was published.
 
+A later immutable snapshot `160e1be2f459bce37c7628bbda636b8e05a9543b`, which includes the environment receipt change, failed its full local gate: 17 server tests failed in two fixture files, while 10,904 server tests passed. The four fan-out routing failures and thirteen pipeline failures came from mocks that did not return the agent’s actual environment-file receipt. The mock corrections passed all 24 fan-out routing tests and all 259 pipeline tests in isolated runs; the complete gate on the corrected final source remains outstanding. Evidence: `.temp_files/preflight-0186-node-env-20261028/` and `.temp_files/node-receipt-pipeline-tests-20261028/`.
+
 ## Node environment receipt checkpoint — 2026-10-28
 
 A real builder call with a mocked node response showed that missing, duplicated or wrong-file environment receipts still led to container startup. The same wrong-file response also allowed fan-out and a managed node database to start. A host-port fan-out additionally retired its previous generation before validating the replacement environment receipt. Five new cases failed before the narrow changes and passed afterwards; a sixth host-port case failed before the ordering change and passed afterwards.
