@@ -88,7 +88,8 @@ describe('ingest', () => {
     const issues = (await a.inject({ method: 'GET', url: '/services/5/errors', headers: asUser(1) })).json();
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({ title: "TypeError: Cannot read properties of undefined (reading 'id')", culprit: 'handler (app)', count: 3, firstDeploymentId: 40, lastDeploymentId: 41, firstRelease: 'aaaaaaa' });
-    expect(audit).toHaveBeenCalledWith(db, null, 'alert.error_new', expect.stringContaining('api: TypeError'), expect.objectContaining({ serviceId: 5 }));
+    // The alert names the issue, never the sender's text.
+    expect(audit).toHaveBeenCalledWith(db, null, 'alert.error_new', `api: new error issue #${issues[0].id}`, expect.objectContaining({ serviceId: 5 }));
     expect(audit).toHaveBeenCalledTimes(2); // the key, then the new issue
 
     const detail = (await a.inject({ method: 'GET', url: `/services/5/errors/${issues[0].id}`, headers: asUser(1) })).json();
@@ -147,6 +148,40 @@ describe('ingest', () => {
       [JSON.stringify({}), JSON.stringify({ type: 'session' }), '{"sid":"x"}', JSON.stringify({ type: 'event', length: Buffer.byteLength(ev) }), ev].join('\n'),
     );
     expect(lib.parseEnvelope(raw).events).toHaveLength(1);
+  });
+});
+
+describe('bounds (a browser DSN is public)', () => {
+  it('keeps the latest events of an issue, stores a retried event once, folds issues past the cap and pauses alerts past the budget', async () => {
+    const saved = { ...lib.ERROR_LIMITS };
+    const savedBudget = lib.ALERT_BUDGET.perHour;
+    lib.ERROR_LIMITS.eventsPerIssue = 2;
+    lib.ERROR_LIMITS.issuesPerService = 2;
+    lib.ALERT_BUDGET.perHour = 1;
+    try {
+      const a = await app();
+      const { dsn } = (await a.inject({ method: 'POST', url: '/services/5/error-ingest', headers: asUser(1) })).json();
+      const post = (ev: object) => a.inject({ method: 'POST', url: '/api/5/envelope/', headers: { 'content-type': 'text/plain' }, payload: envelope(ev, dsn) });
+      for (const id of ['1', '2', '3', '3']) await post(event({ id: id.repeat(32) }));
+      const [first] = await db.select().from(errorIssues);
+      expect(first!.count).toBe(4);
+      expect((await db.select().from(errorEvents)).map((e) => e.eventId)).toEqual(['2'.repeat(32), '3'.repeat(32)]);
+      // A second distinct issue fits; the third and fourth fold into the overflow issue.
+      await post({ event_id: 'a'.repeat(32), message: 'second' });
+      await post({ event_id: 'b'.repeat(32), message: 'third' });
+      await post({ event_id: 'c'.repeat(32), message: 'fourth' });
+      const all = await db.select().from(errorIssues);
+      expect(all.map((i) => i.fingerprint).filter((f) => f === 'overflow')).toHaveLength(1);
+      expect(all).toHaveLength(3);
+      expect(all.find((i) => i.fingerprint === 'overflow')?.count).toBe(2);
+      const actions = audit.mock.calls.map((c) => (c as unknown[])[2]);
+      expect(actions.filter((x) => x === 'alert.error_new')).toHaveLength(1);
+      expect(actions.filter((x) => x === 'alert.error_burst')).toHaveLength(1);
+      await a.close();
+    } finally {
+      Object.assign(lib.ERROR_LIMITS, saved);
+      lib.ALERT_BUDGET.perHour = savedBudget;
+    }
   });
 });
 

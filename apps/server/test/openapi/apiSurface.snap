@@ -218,7 +218,7 @@ GET /v1/services/:id/env/export admin nd://scope/read/env
 GET /v1/services/:id/env/preview viewer nd://scope/read/env
 GET /v1/services/:id/error-ingest viewer nd://scope/read/services
 GET /v1/services/:id/error-pages viewer nd://scope/read/services
-GET /v1/services/:id/errors viewer nd://scope/read/services
+GET /v1/services/:id/errors member nd://scope/read/services
 GET /v1/services/:id/errors/:issueId member nd://scope/read/services
 GET /v1/services/:id/exec operator nd://scope/read/services
 GET /v1/services/:id/export operator nd://scope/read/services

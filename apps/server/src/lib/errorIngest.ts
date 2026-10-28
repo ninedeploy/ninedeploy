@@ -207,7 +207,14 @@ export async function deploymentFor(db: DB, serviceId: number, release: string |
   return live[0]?.id ?? null;
 }
 
-const MAX_PAYLOAD_CHARS = 64 * 1024;
+/**
+ * Storage bounds. A browser DSN is public, so anyone can send events: an
+ * issue keeps its latest events only, payloads are capped, and past the
+ * issue cap new fingerprints are counted under one overflow issue.
+ * Worst case per service: 500 issues × 20 events × 32 KiB.
+ */
+export const ERROR_LIMITS = { payloadChars: 32 * 1024, eventsPerIssue: 20, issuesPerService: 500 };
+const OVERFLOW_FINGERPRINT = 'overflow';
 
 export interface Recorded {
   issue: ErrorIssue;
@@ -221,7 +228,16 @@ export async function recordEvent(db: DB, serviceId: number, event: Record<strin
   const release = str(event['release'])?.slice(0, 200) ?? null;
   const environment = str(event['environment'])?.slice(0, 100) ?? null;
   const deploymentId = await deploymentFor(db, serviceId, release);
-  const existing = await db.query.errorIssues.findFirst({ where: and(eq(errorIssues.serviceId, serviceId), eq(errorIssues.fingerprint, g.fingerprint)) });
+  let existing = await db.query.errorIssues.findFirst({ where: and(eq(errorIssues.serviceId, serviceId), eq(errorIssues.fingerprint, g.fingerprint)) });
+  if (!existing) {
+    const [{ n } = { n: 0 }] = await db.select({ n: sql<number>`count(*)` }).from(errorIssues).where(eq(errorIssues.serviceId, serviceId));
+    if (Number(n) >= ERROR_LIMITS.issuesPerService) {
+      g.fingerprint = OVERFLOW_FINGERPRINT;
+      g.title = `More than ${ERROR_LIMITS.issuesPerService} distinct issues; resolve or wait for old ones to expire`;
+      g.culprit = null;
+      existing = await db.query.errorIssues.findFirst({ where: and(eq(errorIssues.serviceId, serviceId), eq(errorIssues.fingerprint, OVERFLOW_FINGERPRINT)) });
+    }
+  }
   let issue: ErrorIssue;
   let isNew = false;
   let regressed = false;
@@ -247,17 +263,45 @@ export async function recordEvent(db: DB, serviceId: number, event: Record<strin
       .returning();
     issue = updated!;
   }
-  const payload = JSON.stringify(event);
-  await db.insert(errorEvents).values({
-    issueId: issue.id,
-    eventId: str(event['event_id'])?.slice(0, 64) ?? null,
-    release,
-    environment,
-    deploymentId,
-    payload: payload.length > MAX_PAYLOAD_CHARS ? JSON.stringify({ truncated: true, head: payload.slice(0, MAX_PAYLOAD_CHARS - 100) }) : payload,
-    receivedAt: now,
-  });
+  const eventId = str(event['event_id'])?.slice(0, 64) ?? null;
+  // An SDK retry sends the same event again: counted, not stored twice.
+  const seen = eventId ? await db.query.errorEvents.findFirst({ where: and(eq(errorEvents.issueId, issue.id), eq(errorEvents.eventId, eventId)) }) : null;
+  if (!seen) {
+    const payload = JSON.stringify(event);
+    const cap = ERROR_LIMITS.payloadChars;
+    await db.insert(errorEvents).values({
+      issueId: issue.id,
+      eventId,
+      release,
+      environment,
+      deploymentId,
+      payload: payload.length > cap ? JSON.stringify({ truncated: true, head: payload.slice(0, cap - 100) }) : payload,
+      receivedAt: now,
+    });
+    // Only the latest events of an issue are kept.
+    await db.run(
+      sql`DELETE FROM error_events WHERE issue_id = ${issue.id} AND id NOT IN (SELECT id FROM error_events WHERE issue_id = ${issue.id} ORDER BY id DESC LIMIT ${ERROR_LIMITS.eventsPerIssue})`,
+    );
+  }
   return { issue, isNew, regressed };
+}
+
+/**
+ * Alerts per service per hour. Past the budget one `alert.error_burst` says
+ * so and the rest stay quiet until the hour is over; the issues are still
+ * recorded. Mutable so a test can shrink it.
+ */
+export const ALERT_BUDGET = { perHour: 10 };
+const alertWindows = new Map<number, { start: number; count: number }>();
+export function alertDecision(serviceId: number, now = Date.now()): 'alert' | 'burst' | 'quiet' {
+  const w = alertWindows.get(serviceId);
+  if (!w || now - w.start >= 3_600_000) {
+    alertWindows.set(serviceId, { start: now, count: 1 });
+    return 'alert';
+  }
+  w.count++;
+  if (w.count <= ALERT_BUDGET.perHour) return 'alert';
+  return w.count === ALERT_BUDGET.perHour + 1 ? 'burst' : 'quiet';
 }
 
 /** Per-service events per minute; past it SDKs get 429 and back off. */
@@ -272,7 +316,10 @@ export function ingestAllowed(serviceId: number, now = Date.now()): boolean {
   w.count++;
   return w.count <= INGEST_RATE.perMinute;
 }
-export const resetIngestWindows = () => windows.clear();
+export const resetIngestWindows = () => {
+  windows.clear();
+  alertWindows.clear();
+};
 
 /** Events are kept 30 days; an issue not seen for 90 days goes, with its events. */
 export const ERROR_EVENT_RETENTION_DAYS = 30;

@@ -880,7 +880,7 @@ export const MATRIX: Record<string, Rule> = {
   'ALL /_nd/fa/verify/:domainId': R('public', { allow404: 'Traefik only; covered by test/forwardAuth.test.ts' }),
   'POST /api/:serviceId/envelope/': R('public', { allow404: 'DSN-key authenticated; covered by test/errorIngest.test.ts' }),
   'POST /api/:serviceId/store/': R('public', { allow404: 'DSN-key authenticated; covered by test/errorIngest.test.ts' }),
-  'GET /v1/services/:id/errors': R('viewer'),
+  'GET /v1/services/:id/errors': R('member'),
   'GET /v1/services/:id/errors/:issueId': R('member', { allow404: 'no issue is seeded; covered by test/errorIngest.test.ts' }),
   'PATCH /v1/services/:id/errors/:issueId': R('member', { body: () => ({ status: 'resolved' }), allow404: 'no issue is seeded; covered by test/errorIngest.test.ts' }),
   'GET /v1/services/:id/error-ingest': R('viewer'),

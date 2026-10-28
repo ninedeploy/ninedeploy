@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Alerts:** new issues are audited as `alert.error_new`. A resolved issue that happens again reopens and is audited as `alert.error_regressed`.
   - **Ingest:** `/api/<serviceId>/envelope/` and `/store/` accept plain, gzip, deflate and br bodies up to 1 MiB. Limits: 600 requests a minute per client and 300 events a minute per service; past them SDKs get 429 with `X-Sentry-Rate-Limits`.
   - **Storage:** the key is stored hashed. Events are kept 30 days, and issues not seen for 90 days are removed.
-  - **Who sees what:** event payloads (request headers, user data) are for members and up; viewers see the issue list.
+  - **Who sees what:** issue titles and event payloads (exception messages, request headers, user data) are for members and up.
+  - **Bounds (a browser DSN is public):** each issue keeps its latest 20 events (32 KiB each) and retries are stored once. Past 500 issues, new ones fold into an overflow issue. Alerts are limited to 10 per service per hour, then one `alert.error_burst`. Alerts never repeat the sender's text.
   - **Migration:** `0105_error_ingest` adds the `error_issues` and `error_events` tables and changes nothing else.
 
   See OBSERVABILITY.md → *Error tracking*.

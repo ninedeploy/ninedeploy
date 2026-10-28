@@ -286,8 +286,8 @@ export const servicesSpecs: RouteSpecMap = {
   'GET /v1/services/:id/errors': {
     summary: 'Error issues of the service (Sentry-compatible ingest)',
     tag: 'services',
-    description: 'Most recently seen first, at most 200; `?status=unresolved|resolved|ignored` filters. Each names the deploy it first appeared under. G5.4.',
-    floor: 'viewer',
+    description: 'Most recently seen first, at most 200; `?status=unresolved|resolved|ignored` filters. Each names the deploy it first appeared under. Members and up: titles are exception messages, which can carry user data. G5.4.',
+    floor: 'member',
     queryType: '{ status?: string }',
     validation: 'handler',
     responseType: 'ErrorIssueView[]',

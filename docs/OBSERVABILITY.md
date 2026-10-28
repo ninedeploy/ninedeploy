@@ -204,8 +204,15 @@ Without a release, an issue is linked to the deploy that was live when it first 
 - Both reach the notification channels that receive alerts.
 
 **Access**
-- Viewers see the issue list.
-- Event payloads may carry request headers and user data, so they are for members and up, as are creating, replacing and removing the DSN.
+- Issue titles are exception messages, and event payloads may carry request headers and user data. Both are for members and up, as are creating, replacing and removing the DSN.
+- Viewers only see whether the service has a DSN.
+
+**Bounds**
+- A browser DSN is public, so anyone can send events.
+- An issue keeps its latest 20 events, each payload capped at 32 KiB. An SDK retry with the same `event_id` is counted but not stored twice.
+- Past 500 issues in a service, new fingerprints are counted under one overflow issue.
+- Alerts are limited to 10 per service per hour. The next one is `alert.error_burst`, and then alerts stay quiet until the hour ends.
+- Alerts name the service and the issue number, never the text the sender chose.
 
 **Retention**
 - Events are kept 30 days.

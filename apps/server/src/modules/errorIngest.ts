@@ -6,6 +6,7 @@ import { audit } from '../lib/audit.js';
 import { notFound, parseId } from '../lib/errors.js';
 import {
   MAX_INGEST_BYTES,
+  alertDecision,
   decodeBody,
   ingestAllowed,
   ingestKeyInfo,
@@ -61,9 +62,16 @@ export const errorIngestPublicRoutes: FastifyPluginAsync = async (app) => {
       }
       const { issue, isNew, regressed } = await recordEvent(app.db, serviceId, event);
       firstId ??= typeof event['event_id'] === 'string' ? event['event_id'] : null;
-      // New and reopened issues reach the channels that receive alerts.
+      // New and reopened issues reach the channels that receive alerts, within
+      // a per-service hourly budget. The title is the sender's text (a browser
+      // DSN is public), so the alert names only the service and issue number.
       if (isNew || regressed) {
-        void audit(app.db, null, isNew ? 'alert.error_new' : 'alert.error_regressed', `${svc.name}: ${issue.title}`.slice(0, 300), { serviceId, issueId: issue.id });
+        const decision = alertDecision(serviceId);
+        if (decision === 'alert') {
+          void audit(app.db, null, isNew ? 'alert.error_new' : 'alert.error_regressed', `${svc.name}: ${isNew ? 'new' : 'reopened'} error issue #${issue.id}`, { serviceId, issueId: issue.id });
+        } else if (decision === 'burst') {
+          void audit(app.db, null, 'alert.error_burst', `${svc.name}: more new error issues this hour; alerts paused until it ends`, { serviceId });
+        }
       }
     }
     return cors(reply).send({ id: firstId });
@@ -98,6 +106,8 @@ export const serviceErrorRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/:id/errors', async (req): Promise<ErrorIssueView[]> => {
     const svc = await loadServiceForUser(app.db, parseId((req.params as { id: string }).id), req.user!);
+    // Titles are exception messages, which can carry user data: members and up.
+    await assertServiceRole(app.db, svc, req.user!, 'member');
     const status = (req.query as { status?: string }).status;
     const rows = await app.db
       .select()
