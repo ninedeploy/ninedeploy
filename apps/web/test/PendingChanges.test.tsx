@@ -39,13 +39,13 @@ const change = (field: string, stagedByUserId: number, stagedBy: string) => ({ f
 
 describe('PendingChangesTray (G5.2)', () => {
   it('lists changes with their stager and applies them with a deploy', async () => {
-    mockOf(api.services.pending.get).mockResolvedValue({ serviceId: 5, staging: true, changes: [change('port', 1, 'Me')], updatedAt: '2026-10-28T10:00:00.000Z', updatedBy: null } as never);
+    mockOf(api.services.pending.get).mockResolvedValue({ serviceId: 5, staging: true, changes: [change('port', 1, 'Me')], version: 'opaque-revision', updatedAt: '2026-10-28T10:00:00.000Z', updatedBy: null } as never);
     mockOf(api.services.pending.apply).mockResolvedValue({ applied: ['port'], deploymentId: 9 } as never);
     renderWithProviders(<PendingChangesTray serviceId={5} />);
     expect(await screen.findByText('port')).toBeInTheDocument();
     expect(screen.getByText('8080')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Apply and deploy' }));
-    await waitFor(() => expect(api.services.pending.apply).toHaveBeenCalledWith(5, { deploy: true, includeOthers: false, version: '2026-10-28T10:00:00.000Z' }));
+    await waitFor(() => expect(api.services.pending.apply).toHaveBeenCalledWith(5, { deploy: true, includeOthers: false, version: 'opaque-revision' }));
   });
 
   it('needs an explicit review before applying changes someone else staged', async () => {

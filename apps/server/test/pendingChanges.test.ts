@@ -46,7 +46,7 @@ afterEach(async () => {
 
 const row = async () => db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, 5) });
 /** The tray's version as the caller sees it (apply needs it). */
-const version = async (headers = OWNER) => (await call('GET', '/pending', undefined, headers)).json().updatedAt as string | null;
+const version = async (headers = OWNER) => (await call('GET', '/pending', undefined, headers)).json().version as string | null;
 const call = (method: 'GET' | 'PUT' | 'POST' | 'DELETE', url: string, payload?: unknown, headers = OWNER) =>
   app.inject({ method, url: `/v1/services/5${url}`, headers, ...(payload !== undefined ? { payload: payload as object } : {}) });
 
@@ -63,7 +63,7 @@ describe('pending changes', () => {
     expect(view.updatedBy).toBe('Owner');
     expect(await row()).toMatchObject({ port: 3000, healthPath: '/' });
 
-    const applied = await call('POST', '/pending/apply', { deploy: true, version: view.updatedAt });
+    const applied = await call('POST', '/pending/apply', { deploy: true, version: view.version });
     expect(applied.statusCode).toBe(200);
     expect(applied.json()).toEqual({ applied: ['port', 'healthPath'], deploymentId: 77 });
     expect(await row()).toMatchObject({ port: 8080, healthPath: '/healthz' });
@@ -99,6 +99,38 @@ describe('pending changes', () => {
     expect(stale.statusCode).toBe(409);
     expect(stale.json().error.code).toBe('pending_changed');
     expect(await row()).toMatchObject({ port: 3000, healthPath: '/' });
+  });
+
+  it('rejects a reviewed version after another edit in the same clock millisecond', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-29T10:00:00.000Z'));
+    try {
+      expect((await call('PUT', '/pending', { port: 8080 })).statusCode).toBe(200);
+      const reviewed = await version();
+      const timestampOnly = await call('POST', '/pending/apply', { version: '2026-10-29T10:00:00.000Z' });
+      expect(timestampOnly.statusCode).toBe(409);
+      expect(timestampOnly.json().error.code).toBe('pending_changed');
+      expect((await call('PUT', '/pending', { healthPath: '/late' })).statusCode).toBe(200);
+      const stale = await call('POST', '/pending/apply', { version: reviewed });
+      expect(stale.statusCode).toBe(409);
+      expect(stale.json().error.code).toBe('pending_changed');
+      expect(await row()).toMatchObject({ port: 3000, healthPath: '/' });
+      const current = (await call('GET', '/pending')).json();
+      expect(current.version).not.toBe(reviewed);
+      expect(current.updatedAt).toBe('2026-10-29T10:00:00.000Z');
+      expect((await call('POST', '/pending/apply', { version: current.version })).statusCode).toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('accepts an existing legacy tray using its stored timestamp', async () => {
+    const { setSettingJson } = await import('../src/lib/settings.js');
+    const updatedAt = '2026-10-28T10:00:00.000Z';
+    await setSettingJson(db, 'pending_changes:5', { staging: true, patch: { port: 8080 }, stagedBy: { port: 2 }, updatedAt, updatedByUserId: 2 });
+    expect(await version()).toBe(updatedAt);
+    expect((await call('POST', '/pending/apply', { version: updatedAt })).statusCode).toBe(200);
+    expect(await row()).toMatchObject({ port: 8080 });
   });
 
   it('security review: a caller sees in the tray only what GET shows them (the stack YAML is operator-only)', async () => {

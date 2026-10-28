@@ -19,7 +19,7 @@ export const pendingApplyInput = z
      */
     includeOthers: z.boolean().default(false),
     /**
-     * The tray's `updatedAt` as reviewed. A tray that changed since is
+     * The tray's `version` as reviewed. A tray that changed since is
      * refused (409 pending_changed), so only what was reviewed applies.
      */
     version: z.string().nullable(),
@@ -45,6 +45,8 @@ export const pendingChangesView = z.object({
   /** Edits collect here instead of applying at once. */
   staging: z.boolean(),
   changes: z.array(pendingChange),
+  /** Opaque review token; older panels expose only updatedAt. */
+  version: z.string().nullable().optional(),
   updatedAt: z.string().nullable(),
   updatedBy: z.string().nullable(),
 });

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
 import { buildConfigs, settings, users, type DB, type Service } from '@ninedeploy/db';
 import { updateService, type PendingChange, type PendingChangesView } from '@ninedeploy/schemas';
@@ -18,7 +19,7 @@ import { getSettingJson, setSettingJson } from './settings.js';
  *    an explicit `includeOthers`.
  *  - Disclosure: the diff shows a caller only what `GET /v1/services/:id`
  *    shows them (`VisibleView`); any other field is masked, now and after.
- *  - TOCTOU: apply names the tray `version` it reviewed (its `updatedAt`),
+ *  - TOCTOU: apply names the opaque tray `version` it reviewed,
  *    and works from one snapshot; the tray is then cleared field by field,
  *    only where the stored value is still the applied one.
  *
@@ -33,6 +34,7 @@ export interface Stored {
   /** Who staged each change: `field`, or `build.<key>` for a build setting. */
   stagedBy: Record<string, number>;
   updatedAt: string | null;
+  version?: string | null;
   updatedByUserId: number | null;
 }
 
@@ -123,6 +125,7 @@ export async function pendingChanges(db: DB, svc: Service, view: VisibleView, st
       };
     }),
     updatedAt: s.updatedAt,
+    version: s.version ?? s.updatedAt,
     updatedBy: s.updatedByUserId !== null ? (who.get(s.updatedByUserId) ?? null) : null,
   };
 }
@@ -165,7 +168,7 @@ export async function stageChanges(db: DB, svc: Service, body: unknown, userId: 
   }
   const live = new Set((await rawChanges(db, svc, patch)).map((c) => c.field));
   for (const f of Object.keys(stagedBy)) if (!live.has(f)) delete stagedBy[f];
-  await setSettingJson(db, key(svc.id), { ...s, patch, stagedBy, updatedAt: new Date().toISOString(), updatedByUserId: userId } satisfies Stored);
+  await setSettingJson(db, key(svc.id), { ...s, patch, stagedBy, version: randomUUID(), updatedAt: new Date().toISOString(), updatedByUserId: userId } satisfies Stored);
   return pendingChanges(db, svc, view);
 }
 
@@ -182,7 +185,7 @@ export async function clearPending(db: DB, serviceId: number): Promise<void> {
     await db.delete(settings).where(eq(settings.key, key(serviceId)));
     return;
   }
-  await setSettingJson(db, key(serviceId), { ...s, patch: {}, stagedBy: {}, updatedAt: null, updatedByUserId: null } satisfies Stored);
+  await setSettingJson(db, key(serviceId), { ...s, patch: {}, stagedBy: {}, version: null, updatedAt: null, updatedByUserId: null } satisfies Stored);
 }
 
 /**
@@ -219,6 +222,7 @@ export async function clearApplied(db: DB, serviceId: number, applied: Stored): 
     ...s,
     patch,
     stagedBy,
+    version: empty ? null : randomUUID(),
     ...(empty ? { updatedAt: null, updatedByUserId: null } : {}),
   } satisfies Stored);
 }

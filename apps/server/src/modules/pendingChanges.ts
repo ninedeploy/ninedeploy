@@ -97,7 +97,7 @@ export const pendingChangeRoutes: FastifyPluginAsync = async (app) => {
     const changes = await rawChanges(app.db, svc, snapshot.patch);
     if (changes.length === 0) throw new HttpError(409, 'nothing_pending', 'There are no pending changes to apply');
     // Security review (TOCTOU): only the tray the caller reviewed is applied.
-    if (snapshot.updatedAt !== version) {
+    if ((snapshot.version ?? snapshot.updatedAt) !== version) {
       throw new HttpError(409, 'pending_changed', 'The pending changes changed since you reviewed them; review them again');
     }
     // Security review: the PATCH runs with the caller's authority. Changes

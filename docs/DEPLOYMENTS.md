@@ -249,7 +249,7 @@ A service's settings normally apply as each card is saved. Turn on **Settings �
 - Staging is per service and shared by everyone who edits it. Tags and environment variables keep their own routes and apply directly.
 
 **API, SDK and storage**
-- API: `GET`/`PUT`/`DELETE /v1/services/:id/pending`, `PUT …/pending/staging` with `{ staging }`, and `POST …/pending/apply` with `{ deploy }`.
+- API: `GET`/`PUT`/`DELETE /v1/services/:id/pending`, `PUT …/pending/staging` with `{ staging }`, and `POST …/pending/apply` with `{ deploy, includeOthers, version }`. Read `version` from the reviewed tray and send it back unchanged; `updatedAt` is a display timestamp, not the review token. Older stored trays without a token expose their timestamp as `version`. Clients that send only `updatedAt` for a newly staged tray receive `409 pending_changed` and must refresh and use `version`.
 - SDK: `services.pending.*`.
 - Audited as `service.changes.stage`, `service.changes.staging`, `service.changes.discard` and `service.changes.apply`.
 - No migration is needed: the tray is one settings row per service.

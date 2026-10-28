@@ -31,7 +31,7 @@ export function PendingChangesTray({ serviceId }: { serviceId: number }) {
   const [reviewed, setReviewed] = useState<string | null>(null);
   // Confirmation applies only to the exact tray the user reviewed, even if
   // another update arrives before an effect could clear local state.
-  const reviewIdentity = JSON.stringify([serviceId, q.data?.updatedAt ?? null, q.data?.changes ?? []]);
+  const reviewIdentity = JSON.stringify([serviceId, q.data?.version ?? q.data?.updatedAt ?? null, q.data?.changes ?? []]);
   const vouch = reviewed !== null && reviewed === reviewIdentity;
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function PendingChangesTray({ serviceId }: { serviceId: number }) {
     onError: (err) => toast(errorText(err), 'error'),
   });
   const apply = useMutation({
-    mutationFn: (deploy: boolean) => api.services.pending.apply(serviceId, { deploy, includeOthers: vouch, version: q.data?.updatedAt ?? null }),
+    mutationFn: (deploy: boolean) => api.services.pending.apply(serviceId, { deploy, includeOthers: vouch, version: q.data?.version ?? q.data?.updatedAt ?? null }),
     onSuccess: (res) => {
       setReviewed(null);
       refresh();
