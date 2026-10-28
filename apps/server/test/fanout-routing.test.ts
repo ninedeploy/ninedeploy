@@ -37,6 +37,7 @@ beforeEach(async () => {
   h.sealed.mockResolvedValue(true);
   h.agent.mockReset().mockImplementation(async (_db, _id, op, p) => {
     if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.17.2', caps })}`] };
+    if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(p.name)}.env`] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: [p.format === 'health' ? 'running|none|0|0' : 'running|172.18.0.2'] };
     if (op === 'docker.identity') {
       const isOld = p.name === old || p.name === 'a'.repeat(64);
