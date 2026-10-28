@@ -129,9 +129,9 @@ export function readSpecFromRepo(db: DB, cfg: GitopsConfig, deps: GitopsDeps = d
 
 async function readSpecOnce(db: DB, cfg: GitopsConfig, deps: GitopsDeps): Promise<{ spec: InstanceSpec; commit: string | null }> {
   mkdirSync(config.paths.reposDir, { recursive: true });
+  const creds = cfg.sourceId ? await resolveCloneCreds(db, { sourceId: cfg.sourceId, repoUrl: cfg.repoUrl }) : undefined;
   const parent = mkdtempSync(path.join(config.paths.reposDir, '_instance-gitops-'));
   const dir = path.join(parent, 'repo');
-  const creds = cfg.sourceId ? await resolveCloneCreds(db, { sourceId: cfg.sourceId, repoUrl: cfg.repoUrl }) : undefined;
   const controller = new AbortController();
   const stop: { reason: 'timeout' | 'size' | null } = { reason: null };
   const timer = setTimeout(() => {
