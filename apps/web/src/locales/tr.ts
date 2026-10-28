@@ -5569,4 +5569,7 @@ export const TR: Readonly<Record<string, string>> = {
   '{n} changes applied; deploy #{id} queued': '{n} değişiklik uygulandı; deploy #{id} kuyruğa alındı',
   '{n} of these changes were staged by someone else. They apply with your permissions: I reviewed them.':
     'Bu değişikliklerden {n} tanesini başka biri biriktirdi. Sizin yetkilerinizle uygulanırlar: inceledim.',
+
+  // ── G5.2 security review ──────────────────────────────────────────────
+  'hidden': 'gizli',
 };

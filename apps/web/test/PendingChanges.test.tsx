@@ -35,22 +35,22 @@ vi.mock('../src/lib/auth.js', () => ({
   useAuth: () => ({ user: { id: 1, email: 'me@test', name: 'Me', isOperator: true }, loading: false }),
 }));
 
-const change = (field: string, stagedByUserId: number, stagedBy: string) => ({ field, current: 3000, next: 8080, stagedByUserId, stagedBy });
+const change = (field: string, stagedByUserId: number, stagedBy: string) => ({ field, current: 3000, next: 8080, masked: false, stagedByUserId, stagedBy });
 
 describe('PendingChangesTray (G5.2)', () => {
   it('lists changes with their stager and applies them with a deploy', async () => {
-    mockOf(api.services.pending.get).mockResolvedValue({ serviceId: 5, staging: true, changes: [change('port', 1, 'Me')], updatedAt: null, updatedBy: null } as never);
+    mockOf(api.services.pending.get).mockResolvedValue({ serviceId: 5, staging: true, changes: [change('port', 1, 'Me')], updatedAt: '2026-10-28T10:00:00.000Z', updatedBy: null } as never);
     mockOf(api.services.pending.apply).mockResolvedValue({ applied: ['port'], deploymentId: 9 } as never);
     renderWithProviders(<PendingChangesTray serviceId={5} />);
     expect(await screen.findByText('port')).toBeInTheDocument();
     expect(screen.getByText('8080')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Apply and deploy' }));
-    await waitFor(() => expect(api.services.pending.apply).toHaveBeenCalledWith(5, { deploy: true, includeOthers: false }));
+    await waitFor(() => expect(api.services.pending.apply).toHaveBeenCalledWith(5, { deploy: true, includeOthers: false, version: '2026-10-28T10:00:00.000Z' }));
   });
 
   it('needs an explicit review before applying changes someone else staged', async () => {
     mockOf(api.services.pending.apply).mockReset();
-    mockOf(api.services.pending.get).mockResolvedValue({ serviceId: 5, staging: true, changes: [change('runtimeOptions', 99, 'Mallory')], updatedAt: null, updatedBy: null } as never);
+    mockOf(api.services.pending.get).mockResolvedValue({ serviceId: 5, staging: true, changes: [change('runtimeOptions', 99, 'Mallory')], updatedAt: '2026-10-28T10:00:00.000Z', updatedBy: null } as never);
     mockOf(api.services.pending.apply).mockResolvedValue({ applied: ['runtimeOptions'], deploymentId: null } as never);
     renderWithProviders(<PendingChangesTray serviceId={5} />);
     expect(await screen.findByText('Mallory')).toBeInTheDocument();
@@ -58,6 +58,6 @@ describe('PendingChangesTray (G5.2)', () => {
     expect(apply).toBeDisabled();
     await userEvent.click(screen.getByRole('checkbox'));
     await userEvent.click(apply);
-    await waitFor(() => expect(api.services.pending.apply).toHaveBeenCalledWith(5, { deploy: false, includeOthers: true }));
+    await waitFor(() => expect(api.services.pending.apply).toHaveBeenCalledWith(5, { deploy: false, includeOthers: true, version: '2026-10-28T10:00:00.000Z' }));
   });
 });

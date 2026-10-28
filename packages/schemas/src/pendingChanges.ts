@@ -18,6 +18,11 @@ export const pendingApplyInput = z
      * reviewed them; without it, such a tray is refused (409 others_changes).
      */
     includeOthers: z.boolean().default(false),
+    /**
+     * The tray's `updatedAt` as reviewed. A tray that changed since is
+     * refused (409 pending_changed), so only what was reviewed applies.
+     */
+    version: z.string().nullable(),
   })
   .strict();
 export type PendingApplyInput = z.input<typeof pendingApplyInput>;
@@ -27,6 +32,8 @@ export const pendingChange = z.object({
   field: z.string(),
   current: z.unknown(),
   next: z.unknown(),
+  /** The caller may not see this field (as on GET /v1/services/:id): `current` and `next` are null. */
+  masked: z.boolean(),
   /** Who staged it (null for a tray stored before stagers were recorded). */
   stagedByUserId: z.number().int().nullable(),
   stagedBy: z.string().nullable(),

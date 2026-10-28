@@ -55,7 +55,7 @@ export function PendingChangesTray({ serviceId }: { serviceId: number }) {
     onError: (err) => toast(errorText(err), 'error'),
   });
   const apply = useMutation({
-    mutationFn: (deploy: boolean) => api.services.pending.apply(serviceId, { deploy, includeOthers: vouch }),
+    mutationFn: (deploy: boolean) => api.services.pending.apply(serviceId, { deploy, includeOthers: vouch, version: q.data?.updatedAt ?? null }),
     onSuccess: (res) => {
       setVouch(false);
       refresh();
@@ -109,8 +109,8 @@ export function PendingChangesTray({ serviceId }: { serviceId: number }) {
                   {changes.map((c) => (
                     <tr key={c.field} className="border-t border-white/[0.05] align-top">
                       <td className="py-1 pr-3 font-mono text-slate-300">{c.field}</td>
-                      <td className="whitespace-pre-wrap break-all py-1 pr-3 font-mono text-rose-200/80">{show(c.current)}</td>
-                      <td className="whitespace-pre-wrap break-all py-1 pr-3 font-mono text-emerald-200">{show(c.next)}</td>
+                      <td className="whitespace-pre-wrap break-all py-1 pr-3 font-mono text-rose-200/80">{c.masked ? <span className="text-slate-500">{t('hidden')}</span> : show(c.current)}</td>
+                      <td className="whitespace-pre-wrap break-all py-1 pr-3 font-mono text-emerald-200">{c.masked ? <span className="text-slate-500">{t('hidden')}</span> : show(c.next)}</td>
                       <td className={c.stagedByUserId === me ? 'py-1 text-slate-400' : 'py-1 text-amber-200'}>{c.stagedBy ?? t('unknown')}</td>
                     </tr>
                   ))}

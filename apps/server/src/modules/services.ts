@@ -128,7 +128,7 @@ async function tagIdsOf(db: DB, serviceId: number): Promise<TagIds> {
 }
 
 /** Shape a DB row into the API representation (Date → ISO string). */
-function serialize(s: Service, sourceName: string | null = null, tags: TagIds = NO_TAGS) {
+export function serialize(s: Service, sourceName: string | null = null, tags: TagIds = NO_TAGS) {
   return {
     id: s.id,
     // Services link to any number of projects, workspaces and labels through
@@ -223,7 +223,7 @@ function uniqueBuildArgs(names: readonly string[] | undefined): string[] | null 
 }
 
 /** Build-config row → API representation. */
-function serializeBuild(b: typeof buildConfigs.$inferSelect) {
+export function serializeBuild(b: typeof buildConfigs.$inferSelect) {
   return {
     buildPack: b.buildPack,
     baseDir: b.baseDir,

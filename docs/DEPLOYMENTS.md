@@ -243,6 +243,9 @@ A service's settings normally apply as each card is saved. Turn on **Settings â†
 - **Apply and deploy** applies the changes together and queues a deploy, which an approval-gated lane then holds for review. **Apply only** applies them without a deploy. **Discard** empties the tray.
 - Applying sends the staged changes as one `PATCH /v1/services/:id` with your own credentials. Every check of a direct edit applies: your role on the service, operator-only fields, and validation. The changes land together or not at all.
 - If PATCH refuses them, the tray keeps them, so you can fix or discard the refused change.
+- Changes someone else staged apply only with **I reviewed them** (`includeOthers`), because they run with your permissions. Each change shows who staged it.
+- Apply names the version of the tray you reviewed. If someone staged more in the meantime, apply is refused (`409 pending_changed`) until you review again. Afterwards only the applied changes leave the tray.
+- The tray shows you only what the service page shows you. A field you cannot see there, such as a stack's YAML for a non-operator, is shown as hidden.
 - Staging is per service and shared by everyone who edits it. Tags and environment variables keep their own routes and apply directly.
 
 **API, SDK and storage**

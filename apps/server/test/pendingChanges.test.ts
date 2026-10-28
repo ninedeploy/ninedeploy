@@ -45,6 +45,8 @@ afterEach(async () => {
 });
 
 const row = async () => db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, 5) });
+/** The tray's version as the caller sees it (apply needs it). */
+const version = async (headers = OWNER) => (await call('GET', '/pending', undefined, headers)).json().updatedAt as string | null;
 const call = (method: 'GET' | 'PUT' | 'POST' | 'DELETE', url: string, payload?: unknown, headers = OWNER) =>
   app.inject({ method, url: `/v1/services/5${url}`, headers, ...(payload !== undefined ? { payload: payload as object } : {}) });
 
@@ -55,13 +57,13 @@ describe('pending changes', () => {
     const view = (await call('PUT', '/pending', { healthPath: '/healthz', branch: 'main' })).json();
     // `branch` is unchanged, so it is not a change.
     expect(view.changes).toEqual([
-      { field: 'port', current: 3000, next: 8080, stagedByUserId: 2, stagedBy: 'Owner' },
-      { field: 'healthPath', current: '/', next: '/healthz', stagedByUserId: 2, stagedBy: 'Owner' },
+      { field: 'port', current: 3000, next: 8080, masked: false, stagedByUserId: 2, stagedBy: 'Owner' },
+      { field: 'healthPath', current: '/', next: '/healthz', masked: false, stagedByUserId: 2, stagedBy: 'Owner' },
     ]);
     expect(view.updatedBy).toBe('Owner');
     expect(await row()).toMatchObject({ port: 3000, healthPath: '/' });
 
-    const applied = await call('POST', '/pending/apply', { deploy: true });
+    const applied = await call('POST', '/pending/apply', { deploy: true, version: view.updatedAt });
     expect(applied.statusCode).toBe(200);
     expect(applied.json()).toEqual({ applied: ['port', 'healthPath'], deploymentId: 77 });
     expect(await row()).toMatchObject({ port: 8080, healthPath: '/healthz' });
@@ -80,11 +82,36 @@ describe('pending changes', () => {
     expect((await call('PUT', '/pending', { tagLabelIds: [1] })).json().error.code).toBe('tags_via_put');
     // Valid for the schema, refused by the route: an operator-only field.
     await call('PUT', '/pending', { runtimeOptions: { shmSizeMb: 512 } });
-    const res = await call('POST', '/pending/apply', {});
+    const res = await call('POST', '/pending/apply', { version: await version() });
     expect(res.statusCode).toBe(403);
     expect((await call('GET', '/pending')).json().changes).toHaveLength(1);
     expect((await call('DELETE', '/pending')).json().changes).toEqual([]);
-    expect((await call('POST', '/pending/apply', {})).statusCode).toBe(409);
+    expect((await call('POST', '/pending/apply', { version: null })).statusCode).toBe(409);
+  });
+
+  it('security review: applies only the tray version that was reviewed, and keeps what was staged meanwhile', async () => {
+    await call('PUT', '/pending', { port: 8080 });
+    const reviewed = await version();
+    // Someone stages more after the review.
+    await new Promise((r) => setTimeout(r, 5));
+    await call('PUT', '/pending', { healthPath: '/late' });
+    const stale = await call('POST', '/pending/apply', { version: reviewed });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe('pending_changed');
+    expect(await row()).toMatchObject({ port: 3000, healthPath: '/' });
+  });
+
+  it('security review: a caller sees in the tray only what GET shows them (the stack YAML is operator-only)', async () => {
+    await db.update(services).set({ type: 'compose', composeContent: ['services:', '  web:', '    image: nginx', ''].join('\n') } as never);
+    const OPERATOR = asUser({ id: 2, isOperator: true });
+    const yaml = ['services:', '  web:', '    image: nginx', '    environment:', '      PASSWORD: hunter2', ''].join('\n');
+    await call('PUT', '/pending', { composeContent: yaml }, OPERATOR);
+    const member = (await call('GET', '/pending')).json().changes[0];
+    expect(member).toMatchObject({ field: 'composeContent', masked: true, current: null, next: null });
+    expect(JSON.stringify(member)).not.toContain('hunter2');
+    const op = (await call('GET', '/pending', undefined, OPERATOR)).json().changes[0];
+    expect(op).toMatchObject({ field: 'composeContent', masked: false });
+    expect(String(op.next)).toContain('hunter2');
   });
 
   it("security review: someone else's staged change is applied only with includeOthers, under the applier's own checks", async () => {
@@ -102,14 +129,15 @@ describe('pending changes', () => {
       ['port', 3],
     ]);
     // An operator pressing Apply without reviewing someone else's changes is refused.
-    const blind = await call('POST', '/pending/apply', {}, OPERATOR);
+    const v = await version(OPERATOR);
+    const blind = await call('POST', '/pending/apply', { version: v }, OPERATOR);
     expect(blind.statusCode).toBe(409);
     expect(blind.json().error.code).toBe('others_changes');
     expect(await row()).toMatchObject({ port: 3000 });
     // The member cannot apply its own operator-only change: PATCH refuses it for them.
-    expect((await call('POST', '/pending/apply', {}, OTHER)).statusCode).toBe(403);
+    expect((await call('POST', '/pending/apply', { version: v }, OTHER)).statusCode).toBe(403);
     // With includeOthers the operator vouches for them.
-    expect((await call('POST', '/pending/apply', { includeOthers: true }, OPERATOR)).statusCode).toBe(200);
+    expect((await call('POST', '/pending/apply', { includeOthers: true, version: v }, OPERATOR)).statusCode).toBe(200);
     expect(await row()).toMatchObject({ port: 8081 });
   });
 
