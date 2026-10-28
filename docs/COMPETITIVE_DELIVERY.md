@@ -46,6 +46,12 @@ A derivative of the v0.18.5 image containing the three freshly compiled modified
 
 The published v0.18.4 image was upgraded to the patched v0.18.5 test image containing the local-retirement fix. The real isolated Docker upgrade smoke exited 0: existing users, service, domain, history and running application survived; the interrupted deployment recovered; a new deploy succeeded; and all 104 recorded migrations were applied once. Additional Traefik, terminal, data-access and settings checks passed on the upgraded state. Evidence: `.temp_files/r2-prepare-receipt-replay-20261027-6096c41a/upgrade-local-retire-fix/`. This proves the tested derivative, not the final v0.18.6 artifact or the unresolved node Stop case.
 
+## 0.18.6 preliminary source gate — 2026-10-28
+
+The immutable committed snapshot `d863daed9a648ec05c4312be1ae5b47b20f69cb3` passed the complete uncached local `pnpm release:check`: 11 of 11 tasks, 15,601 tests in 927 files, exit 0. Server coverage was 93.26% statements, 87.90% branches, 91.54% functions and 96.37% lines; web coverage was 98.16%, 93.63%, 97.52% and 98.70% respectively. Evidence: `.temp_files/preflight-0186-20261028/`.
+
+This snapshot predates the subsequent node environment receipt and fan-out ordering changes. It is a preliminary local result only: the final commit needs a new full gate, the node Stop failure remains open, and no GitHub Release was published.
+
 ## Node environment receipt checkpoint — 2026-10-28
 
 A real builder call with a mocked node response showed that missing, duplicated or wrong-file environment receipts still led to container startup. The same wrong-file response also allowed fan-out and a managed node database to start. A host-port fan-out additionally retired its previous generation before validating the replacement environment receipt. Five new cases failed before the narrow changes and passed afterwards; a sixth host-port case failed before the ordering change and passed afterwards.
