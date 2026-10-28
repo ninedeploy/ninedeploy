@@ -2794,3 +2794,56 @@ export const hostIps = sqliteTable(
   }),
 );
 export type HostIp = typeof hostIps.$inferSelect;
+
+// ── G5.4 Sentry-compatible error ingest ──────────────────────────────────────
+// An issue is one fingerprint of one service; `first_deployment_id` is the
+// deploy it first appeared under (matched by release, else the live deploy).
+// Events keep a bounded copy of the payload and are swept by `error-events`.
+export const errorIssueStatus = ['unresolved', 'resolved', 'ignored'] as const;
+export const errorIssues = sqliteTable(
+  'error_issues',
+  {
+    id: id(),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    fingerprint: text('fingerprint').notNull(),
+    title: text('title').notNull(),
+    culprit: text('culprit'),
+    level: text('level').notNull().default('error'),
+    status: text('status', { enum: errorIssueStatus }).notNull().default('unresolved'),
+    count: integer('count').notNull().default(1),
+    firstSeen: ts('first_seen'),
+    lastSeen: ts('last_seen'),
+    firstRelease: text('first_release'),
+    firstDeploymentId: integer('first_deployment_id').references(() => deployments.id, { onDelete: 'set null' }),
+    lastDeploymentId: integer('last_deployment_id').references(() => deployments.id, { onDelete: 'set null' }),
+  },
+  (t) => ({
+    serviceFingerprintIdx: uniqueIndex('error_issues_service_fingerprint_idx').on(t.serviceId, t.fingerprint),
+    serviceLastSeenIdx: index('error_issues_service_last_seen_idx').on(t.serviceId, t.lastSeen),
+  }),
+);
+export type ErrorIssue = typeof errorIssues.$inferSelect;
+
+export const errorEvents = sqliteTable(
+  'error_events',
+  {
+    id: id(),
+    issueId: integer('issue_id')
+      .notNull()
+      .references(() => errorIssues.id, { onDelete: 'cascade' }),
+    eventId: text('event_id'),
+    release: text('release'),
+    environment: text('environment'),
+    deploymentId: integer('deployment_id').references(() => deployments.id, { onDelete: 'set null' }),
+    /** The event as sent, truncated to 64 KiB. */
+    payload: text('payload').notNull(),
+    receivedAt: ts('received_at'),
+  },
+  (t) => ({
+    issueReceivedIdx: index('error_events_issue_received_idx').on(t.issueId, t.receivedAt),
+    receivedIdx: index('error_events_received_idx').on(t.receivedAt),
+  }),
+);
+export type ErrorEvent = typeof errorEvents.$inferSelect;

@@ -5745,4 +5745,23 @@ export const TR: Readonly<Record<string, string>> = {
   'in the panel only': 'yalnızca panelde',
   '{n} difference(s)': '{n} fark',
   '{n} step(s) failed': '{n} adım başarısız',
+
+  // ── G5.4 error ingest ─────────────────────────────────────────────────
+  'Copy the DSN now; it is not shown again.': 'DSN\'yi şimdi kopyalayın; bir daha gösterilmez.',
+  'Create DSN': 'DSN oluştur',
+  'Ignore': 'Yok say',
+  'Ignored': 'Yok sayılan',
+  'Issue status': 'Sorun durumu',
+  'No issues.': 'Sorun yok.',
+  'Point a Sentry SDK at this DSN to collect the errors of the service here. Set the release to the commit SHA, so each issue names the deploy that introduced it.':
+    'Servisin hatalarını burada toplamak için bir Sentry SDK\'sını bu DSN\'ye yönlendirin. Release değerini commit SHA\'sı yapın; böylece her sorun onu getiren dağıtımı gösterir.',
+  'Reopen': 'Yeniden aç',
+  'Replace DSN': 'DSN\'yi değiştir',
+  'Resolve': 'Çözüldü işaretle',
+  'Resolved': 'Çözülen',
+  'Stop collecting': 'Toplamayı durdur',
+  'Unresolved': 'Çözülmemiş',
+  'last seen {when}': 'son görülme {when}',
+  'since deploy #{id}': '#{id} dağıtımından beri',
+  '{n} events': '{n} olay',
 };

@@ -128,6 +128,12 @@ export function createFakeApiModule() {
       maintenance: { get: vi.fn().mockResolvedValue({ maintenance: null, since: null }), set: vi.fn() },
       errorPages: { get: vi.fn().mockResolvedValue({ pages: {} }), set: vi.fn() },
       inlineDockerfile: { get: vi.fn().mockResolvedValue({ content: null }), set: vi.fn() },
+      errors: {
+        list: vi.fn().mockResolvedValue([]),
+        get: vi.fn(),
+        setStatus: vi.fn(),
+        ingest: { get: vi.fn().mockResolvedValue({ enabled: false, createdAt: null }), create: vi.fn(), remove: vi.fn() },
+      },
       move: { get: vi.fn().mockResolvedValue({ state: 'none', from: null, to: null, step: null, error: null, startedAt: null, finishedAt: null, deploymentId: null }), start: vi.fn() },
       badge: {
         get: vi.fn().mockResolvedValue({ enabled: false, url: null }),

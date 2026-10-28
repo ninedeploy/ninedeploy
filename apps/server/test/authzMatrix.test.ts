@@ -496,6 +496,9 @@ function paramValue(url: string, param: string, r: Res): string {
     case 'serverId':
       // No node is seeded; forbidden callers must be refused before lookup.
       return '999999';
+    case 'issueId':
+      // G5.4: no error issue is seeded; the floor is checked before the lookup.
+      return '999999';
     case 'token':
       return at('/v1/invitations') ? r.inviteToken : r.transferToken;
     case 'slug':
@@ -875,6 +878,14 @@ export const MATRIX: Record<string, Rule> = {
   'ALL /_nd/maintenance/:serviceId/*': R('public', { allow404: 'no domain routes the matrix host; covered by test/maintenance.test.ts' }),
   'ALL /_nd/errors/:serviceId/:status': R('public', { allow404: 'no domain routes the matrix host; covered by test/maintenance.test.ts' }),
   'ALL /_nd/fa/verify/:domainId': R('public', { allow404: 'Traefik only; covered by test/forwardAuth.test.ts' }),
+  'POST /api/:serviceId/envelope/': R('public', { allow404: 'DSN-key authenticated; covered by test/errorIngest.test.ts' }),
+  'POST /api/:serviceId/store/': R('public', { allow404: 'DSN-key authenticated; covered by test/errorIngest.test.ts' }),
+  'GET /v1/services/:id/errors': R('viewer'),
+  'GET /v1/services/:id/errors/:issueId': R('member', { allow404: 'no issue is seeded; covered by test/errorIngest.test.ts' }),
+  'PATCH /v1/services/:id/errors/:issueId': R('member', { body: () => ({ status: 'resolved' }), allow404: 'no issue is seeded; covered by test/errorIngest.test.ts' }),
+  'GET /v1/services/:id/error-ingest': R('viewer'),
+  'POST /v1/services/:id/error-ingest': R('member'),
+  'DELETE /v1/services/:id/error-ingest': R('member'),
   'POST /v1/services/:id/deploys/:depId/approve': R('admin', {
     allow404: 'the seeded deployment may not exist; with one, it is not waiting and the answer is 400 not_awaiting_approval (test/deployApprovals.test.ts)',
   }),

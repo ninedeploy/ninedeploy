@@ -17,6 +17,7 @@ import { ManifestTab } from './ManifestTab.js';
 import { ComposeTab } from './ComposeTab.js';
 import { RuntimeLogsCard } from './RuntimeLogsCard.js';
 import { ShippedLogSearchCard } from './ShippedLogSearchCard.js';
+import { ErrorsCard } from './ErrorsCard.js';
 import { DeploysTab, IN_FLIGHT, WAITING } from './DeploysTab.js';
 import { UploadSourceCard } from '../../components/UploadSource.js';
 import { EnvironmentTab } from './EnvironmentTab.js';
@@ -496,6 +497,8 @@ export function ServiceDetail() {
             <>
               <ActivityTab serviceId={id} name={svc.name} />
               <ShippedLogSearchCard serviceId={id} />
+              {/* G5.4: errors reported by Sentry SDKs. */}
+              <ErrorsCard serviceId={id} />
             </>
           )}
           {tab === 'danger' && (

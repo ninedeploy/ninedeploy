@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Sentry-compatible error ingest (G5.4). Under Service → Activity → Errors, a service gets a DSN (`https://<key>@<panel>/<serviceId>`) for any Sentry SDK.
+  - **Grouping:** events are grouped into issues by fingerprint: the exception type and its in-app frames, or the SDK's own `fingerprint`.
+  - **Deploy link:** each issue names the deploy it first appeared under. With `release` set to the commit SHA, that is the deploy of that commit; otherwise it is the live deploy.
+  - **Alerts:** new issues are audited as `alert.error_new`. A resolved issue that happens again reopens and is audited as `alert.error_regressed`.
+  - **Ingest:** `/api/<serviceId>/envelope/` and `/store/` accept plain, gzip, deflate and br bodies up to 1 MiB. Limits: 600 requests a minute per client and 300 events a minute per service; past them SDKs get 429 with `X-Sentry-Rate-Limits`.
+  - **Storage:** the key is stored hashed. Events are kept 30 days, and issues not seen for 90 days are removed.
+  - **Who sees what:** event payloads (request headers, user data) are for members and up; viewers see the issue list.
+  - **Migration:** `0105_error_ingest` adds the `error_issues` and `error_events` tables and changes nothing else.
+
+  See OBSERVABILITY.md → *Error tracking*.
 - Instance GitOps (G5.3). Under Settings → GitOps, an operator points the panel at a YAML file in a repository that describes the instance: projects, their services, domains and project grants.
   - **Drift:** the panel reads the file on an interval or on request and lists what is only in the file, only in the panel, or different.
   - **Alerts:** a new drift is audited as `alert.gitops_drift`, and an unreadable file as `alert.gitops_failed`.

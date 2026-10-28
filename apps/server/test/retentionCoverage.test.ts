@@ -48,6 +48,8 @@ const RETENTION: Record<string, Retention> = {
   service_files: { config: 'bounded by services: at most 20 files per service (MAX_SERVICE_FILES), cascading with the service' },
   // 0.16.8 (migration 0086)
   uptime_checks: { swept: 'uptime' },
+  error_events: { swept: 'error-events' },
+  error_issues: { swept: 'error-events' },
   uptime_daily: { swept: 'uptime' },
   uptime_monitors: { config: 'operator configuration: one row per monitor an operator created; checks and rollups cascade with it' },
   status_pages: { config: 'operator configuration: one row per status page an operator created (unique slug)' },

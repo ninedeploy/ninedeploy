@@ -51,6 +51,9 @@ import type {
   ErrorPagesInput,
   InlineDockerfileView,
   ServiceMoveView,
+  ErrorEventView,
+  ErrorIngestView,
+  ErrorIssueView,
   ErrorPagesView,
   MaintenanceInput,
   MaintenanceView,
@@ -227,6 +230,18 @@ export interface ServicesApi {
       set: (id: number, pages: ErrorPagesInput['pages']) => Promise<ErrorPagesView>;
     };
     /** G1.1: a Dockerfile pasted in the panel (null builds from the repository again). */
+    /** G5.4: errors reported by Sentry SDKs, grouped into issues. */
+    errors: {
+      list: (id: number, status?: 'unresolved' | 'resolved' | 'ignored') => Promise<ErrorIssueView[]>;
+      get: (id: number, issueId: number) => Promise<{ issue: ErrorIssueView; events: ErrorEventView[] }>;
+      setStatus: (id: number, issueId: number, status: 'unresolved' | 'resolved' | 'ignored') => Promise<ErrorIssueView>;
+      /** The DSN: `create` answers it once and replaces any earlier one. */
+      ingest: {
+        get: (id: number) => Promise<ErrorIngestView>;
+        create: (id: number) => Promise<ErrorIngestView>;
+        remove: (id: number) => Promise<ErrorIngestView>;
+      };
+    };
     /** G3.1: move a stopped docker service to another host with its data volume (operators). */
     move: {
       get: (id: number) => Promise<ServiceMoveView>;
@@ -415,6 +430,16 @@ export function servicesApi(t: Transport): ServicesApi {
       errorPages: {
         get: (id) => get<ErrorPagesView>(`/v1/services/${id}/error-pages`),
         set: (id, pages) => send<ErrorPagesView>('PUT', `/v1/services/${id}/error-pages`, { pages }),
+      },
+      errors: {
+        list: (id, status) => get<ErrorIssueView[]>(`/v1/services/${id}/errors${status ? `?status=${status}` : ''}`),
+        get: (id, issueId) => get<{ issue: ErrorIssueView; events: ErrorEventView[] }>(`/v1/services/${id}/errors/${issueId}`),
+        setStatus: (id, issueId, status) => send<ErrorIssueView>('PATCH', `/v1/services/${id}/errors/${issueId}`, { status }),
+        ingest: {
+          get: (id) => get<ErrorIngestView>(`/v1/services/${id}/error-ingest`),
+          create: (id) => send<ErrorIngestView>('POST', `/v1/services/${id}/error-ingest`),
+          remove: (id) => send<ErrorIngestView>('DELETE', `/v1/services/${id}/error-ingest`),
+        },
       },
       move: {
         get: (id) => get<ServiceMoveView>(`/v1/services/${id}/move`),

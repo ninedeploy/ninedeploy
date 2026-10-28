@@ -19,6 +19,7 @@ import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import githubRunnerSchedulerPlugin from './plugins/githubRunnerScheduler.js';
 import cloudNodeSchedulerPlugin from './plugins/cloudNodeScheduler.js';
 import imageScanSchedulerPlugin from './plugins/imageScanScheduler.js';
+import { errorIngestPublicRoutes } from './modules/errorIngest.js';
 import gitopsSchedulerPlugin from './plugins/gitopsScheduler.js';
 import sharedCertificateSyncPlugin from './plugins/sharedCertificateSync.js';
 import restartLimiterPlugin from './plugins/restartLimiter.js';
@@ -151,6 +152,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(maintenancePageRoutes);
   // G2.3: what Traefik's forwardAuth asks for a domain behind panel sign-in
   await app.register(forwardAuthVerifyRoutes);
+  // G5.4: Sentry SDKs post to /api/<project>/envelope/ of the DSN's host
+  await app.register(errorIngestPublicRoutes);
   // SCIM 2.0 lives OUTSIDE /v1: IdPs hardcode the RFC path `${base}/scim/v2`.
   await app.register(scimRoutes, { prefix: '/scim/v2' });
   // Background deploy worker

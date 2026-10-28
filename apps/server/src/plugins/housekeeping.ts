@@ -1,3 +1,4 @@
+import { pruneErrorEvents } from '../lib/errorIngest.js';
 import { tmpdir } from 'node:os';
 import { readdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
@@ -526,6 +527,8 @@ export default fp(
         await step('image-transfers', () => pruneImageTransfers(fastify.db, now));
         // 0.16.8 uptime checks (7 days) and their daily rollups (400 days).
         await step('uptime', () => pruneUptime(fastify.db, now));
+        // G5.4 error events (30 days) and issues not seen for 90 days.
+        await step('error-events', () => pruneErrorEvents(fastify.db, now));
         // 0.16.12 database copies whose preview was removed without its teardown.
         await step('preview-databases', () => sweepOrphanPreviewCopies(fastify.db, (line) => fastify.log.info({ component: 'housekeeping' }, line)));
         await step('dangling-images', () => pruneDanglingImages(fastify.db));

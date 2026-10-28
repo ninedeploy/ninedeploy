@@ -177,6 +177,44 @@ name could otherwise show a deleted service's lines. Without an enabled Loki
 drain the search answers that no drain exists; drains of other types cannot be
 searched.
 
+## Error tracking (G5.4)
+
+Any Sentry SDK can report a service's errors to the panel. Create the DSN under **Service → Activity → Errors**. It is shown once, as `https://<key>@<panel host>/<serviceId>`. Give it to the SDK as `SENTRY_DSN`. Set `SENTRY_RELEASE` to the commit SHA the service runs, for example from a build argument. The SDKs read both variables themselves:
+
+```js
+Sentry.init({ dsn: process.env.SENTRY_DSN, release: process.env.SENTRY_RELEASE });
+```
+
+Without a release, an issue is linked to the deploy that was live when it first happened.
+
+**Ingest**
+- `POST /api/<serviceId>/envelope/`, and the older `POST /api/<serviceId>/store/`.
+- The key is accepted from the `X-Sentry-Auth` header, from `?sentry_key=` (browser SDKs), or from the envelope's `dsn`.
+- Bodies may be plain, gzip, deflate or br, up to 1 MiB uncompressed.
+- Only `event` items are stored. Sessions, transactions and attachments are skipped.
+- Limits: 600 requests a minute per client and 300 events a minute per service. Past them the answer is 429 with `X-Sentry-Rate-Limits`, which the SDKs honour.
+
+**Issues**
+- Events are grouped by fingerprint: the SDK's `fingerprint` when given, otherwise the exception type and its last five in-app frames. Without frames, the normalised message is used, with digits, hex ids and quoted values masked.
+- Each issue keeps its count, first and last sighting, and the deploy it first appeared under. That is the deploy whose commit is the event's `release`, otherwise the live deploy.
+- An issue can be resolved, ignored or reopened. A resolved issue that happens again reopens by itself.
+
+**Alerts**
+- A new issue is audited as `alert.error_new`, and a reopened one as `alert.error_regressed`.
+- Both reach the notification channels that receive alerts.
+
+**Access**
+- Viewers see the issue list.
+- Event payloads may carry request headers and user data, so they are for members and up, as are creating, replacing and removing the DSN.
+
+**Retention**
+- Events are kept 30 days.
+- An issue not seen for 90 days is removed with its events, by the housekeeping step `error-events`.
+- The key is stored as a SHA-256 hash in the settings row `error_ingest:<serviceId>`.
+
+**Upgrade**
+- Migration `0105_error_ingest` only adds the two tables.
+
 ## API and SDK
 
 All monitoring settings/export and log-queue management routes require an

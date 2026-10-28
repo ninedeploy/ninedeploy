@@ -51,6 +51,7 @@ import { serviceMaintenanceRoutes } from './maintenance.js';
 import { inlineDockerfileRoutes } from './inlineDockerfile.js';
 import { serviceMoveRoutes } from './serviceMoveWithData.js';
 import { instanceGitopsRoutes } from './instanceGitops.js';
+import { serviceErrorRoutes } from './errorIngest.js';
 import { domainComposeRouteRoutes } from './composeRoutes.js';
 import { samlLoginRoutes } from './samlLogin.js';
 import { domainForwardAuthRoutes, forwardAuthGrantRoutes } from './forwardAuth.js';
@@ -320,6 +321,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(serviceMoveRoutes(), { prefix: '/services' });
   // G5.3: the instance as a file in a repository
   await app.register(instanceGitopsRoutes(), { prefix: '/gitops' });
+  // G5.4: error issues and the Sentry DSN of a service
+  await app.register(serviceErrorRoutes, { prefix: '/services' });
   // G2.1: a domain per compose service
   await app.register(domainComposeRouteRoutes, { prefix: '/domains' });
   // G2.3: panel sign-in in front of a domain

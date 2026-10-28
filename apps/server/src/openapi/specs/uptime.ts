@@ -141,6 +141,19 @@ export const uptimeSpecs: RouteSpecMap = {
     description: 'The same as `/_nd/maintenance/:serviceId`, for every path below it.',
     floor: 'public',
   },
+  'POST /api/:serviceId/envelope/': {
+    summary: 'Sentry envelope ingest (Sentry SDKs)',
+    tag: 'services',
+    description:
+      'Authenticated by the service DSN key (`X-Sentry-Auth` sentry_key, `?sentry_key=` or the envelope `dsn`). `event` items are grouped into issues by fingerprint and linked to the deploy of their release (else the live one); other item types are skipped. gzip, deflate and br bodies up to 1 MiB uncompressed. 600 requests a minute per client and 300 events a minute per service (then 429 with `X-Sentry-Rate-Limits`). New and reopened issues are audited as alert.error_new / alert.error_regressed. G5.4.',
+    floor: 'public',
+  },
+  'POST /api/:serviceId/store/': {
+    summary: 'Sentry legacy store ingest (one JSON event)',
+    tag: 'services',
+    description: 'The same as the envelope endpoint, for SDKs that still post single events. G5.4.',
+    floor: 'public',
+  },
   'ALL /_nd/fa/verify/:domainId': {
     summary: "Forward-auth check for a domain behind panel sign-in (Traefik only)",
     tag: 'domains',
