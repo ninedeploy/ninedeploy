@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { createNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
+import { createNodeLifecycle, runLegacyNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
 import { runRegisteredOp } from '../../src/agentOps/index.js';
 
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
@@ -29,6 +29,24 @@ afterEach(async () => {
 const effects = () => io.spawn.mock.calls.filter(call => call[1][0] !== 'inspect').map(call => call[1]);
 
 describe('durable node lifecycle ordering', () => {
+  it('does not turn mixed legacy inspection errors into a missing-container result', async () => {
+    io.spawn.mockImplementationOnce(async (_bin, _args, sink) => {
+      sink('Error: No such container: web-9');
+      sink('Cannot connect to Docker daemon');
+      return 1;
+    });
+    const lines: string[] = [];
+    await expect(runLegacyNodeLifecycle(root, 'stop', 'web-9', 5, line => lines.push(line))).rejects.toThrow('identity unavailable');
+    expect(lines).toEqual([]);
+    expect(effects()).toEqual([]);
+  });
+  it('keeps the exact missing-container response for legacy Stop', async () => {
+    io.spawn.mockImplementationOnce(async (_bin, _args, sink) => { sink('Error: No such container: web-9'); return 1; });
+    const lines: string[] = [];
+    expect(await runLegacyNodeLifecycle(root, 'stop', 'web-9', 5, line => lines.push(line))).toBe(1);
+    expect(lines).toEqual(['Error: No such container: web-9']);
+    expect(effects()).toEqual([]);
+  });
   it('accepts a durable Stop fence before identities are discovered without issuing Docker commands', async () => {
     expect(await createNodeLifecycle(root).apply(request(2, 'stop', { targets: [] }))).toMatchObject({ revision: 2, complete: true, items: [] });
     await expect(createNodeLifecycle(root).apply(request(1))).rejects.toThrow(/stale|superseded/);

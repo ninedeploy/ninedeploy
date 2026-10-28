@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { containerLifecycleReply, containerLifecycleRequest, type ContainerLifecycleReply, type ContainerLifecycleRequest } from '@ninedeploy/schemas';
 import { createKeyedOperationGuard } from './keyedOperationGuard.js';
 import { spawnValidated } from './spawnValidated.js';
+import { confirmsMissingContainer } from './dockerContainerAbsence.js';
 
 const queue = createKeyedOperationGuard<string>();
 let active = 0;
@@ -38,7 +39,7 @@ export async function runLegacyNodeLifecycle(root: string, action: 'start' | 'st
     current();
     if (bytes > 64 * 1024) throw new Error('Legacy lifecycle identity unavailable');
     if (code !== 0) {
-      if (lines.some(line => /No such (object|container)/i.test(line))) return null;
+      if (confirmsMissingContainer(lines, reference)) return null;
       throw new Error('Legacy lifecycle identity unavailable');
     }
     if (lines.length !== 1) throw new Error('Legacy lifecycle identity unavailable');
