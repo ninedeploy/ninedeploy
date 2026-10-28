@@ -134,6 +134,13 @@ function SsoLinkCard() {
     onSuccess: ({ authUrl }) => window.location.assign(authUrl),
     onError: (error) => toast(error instanceof Error ? error.message : t('Could not link SSO account'), 'error'),
   });
+  // G3.6: SAML identities link the same way.
+  const samlProviders = useQuery({ queryKey: ['public-saml-providers'], queryFn: () => api.auth.saml.publicProviders(), retry: false });
+  const linkSaml = useMutation({
+    mutationFn: (id: number) => api.auth.saml.link(id),
+    onSuccess: ({ authUrl }) => window.location.assign(authUrl),
+    onError: (error) => toast(error instanceof Error ? error.message : t('Could not link SSO account'), 'error'),
+  });
 
   return (
     <Card className="mb-5">
@@ -144,13 +151,18 @@ function SsoLinkCard() {
         </p>
         {providers.isLoading ? <Skeleton className="h-10 w-full" /> : providers.isError ? (
           <p role="alert" className="text-xs text-rose-400">{t('Could not load SSO providers.')}</p>
-        ) : !providers.data?.length ? (
+        ) : !providers.data?.length && !samlProviders.data?.length ? (
           <p className="text-xs text-slate-500">{t('No SSO providers are configured.')}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {providers.data.map((provider) => (
+            {(providers.data ?? []).map((provider) => (
               <Button key={provider.id} onClick={() => link.mutate(provider.slug)} disabled={link.isPending}>
                 {link.isPending && link.variables === provider.slug ? t('Connecting…') : t('Link {name}', { name: provider.name })}
+              </Button>
+            ))}
+            {(samlProviders.data ?? []).map((provider) => (
+              <Button key={`saml-${provider.id}`} onClick={() => linkSaml.mutate(provider.id)} disabled={linkSaml.isPending}>
+                {linkSaml.isPending && linkSaml.variables === provider.id ? t('Connecting…') : t('Link {name}', { name: provider.name })}
               </Button>
             ))}
           </div>

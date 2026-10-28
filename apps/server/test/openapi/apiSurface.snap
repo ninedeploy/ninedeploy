@@ -362,6 +362,7 @@ POST /v1/auth/refresh public -
 POST /v1/auth/register public -
 POST /v1/auth/reset-password token -
 POST /v1/auth/saml/:id/acs public -
+POST /v1/auth/saml/:id/link self -
 POST /v1/auth/tokens self -
 POST /v1/backup-destinations operator nd://scope/write/backups
 POST /v1/backup-destinations/:id/test operator nd://scope/write/backups

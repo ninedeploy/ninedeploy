@@ -121,6 +121,8 @@ export interface AuthApi {
     /** G3.6: SAML providers for the sign-in page; start each `authUrl` like an OIDC one. */
     saml: {
       publicProviders: () => Promise<Array<{ id: number; name: string; authUrl: string }>>;
+      /** Link a SAML identity to the signed-in account: open the answer's `authUrl`. */
+      link: (id: number) => Promise<{ authUrl: string }>;
     };
     oidc: {
       publicProviders: () => Promise<OidcPublicProvider[]>;
@@ -300,6 +302,7 @@ export function authApi(t: Transport): AuthApi {
       },
       saml: {
         publicProviders: () => get<Array<{ id: number; name: string; authUrl: string }>>('/v1/auth/saml/providers/public'),
+        link: (id) => send<{ authUrl: string }>('POST', `/v1/auth/saml/${id}/link`, {}),
       },
       oidc: {
         publicProviders: () => get<OidcPublicProvider[]>('/v1/auth/oidc/providers/public'),

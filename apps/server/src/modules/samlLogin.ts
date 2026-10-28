@@ -2,16 +2,26 @@ import { parse as parseQuery } from 'node:querystring';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { generateServiceProviderMetadata } from '@node-saml/node-saml';
-import { ssoProviders } from '@ninedeploy/db';
+import { ssoProviders, users } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { audit } from '../lib/audit.js';
-import { findUserByEmail, SSO_TOTP_REFUSAL } from '../lib/authHelpers.js';
+import { findUserByEmail, normalizeEmail, SSO_TOTP_REFUSAL } from '../lib/authHelpers.js';
 import { decrypt } from '../lib/crypto.js';
 import { HttpError, notFound } from '../lib/errors.js';
 import { generateOAuthState, verifyOAuthState } from '../lib/oauth.js';
 import { panelOrigin } from '../lib/panelOrigin.js';
-import { emailInDomains, resolveSamlConfig, samlEmail, samlFor, type ResolvedSamlProvider } from '../lib/samlLogin.js';
-import { issueSessionTokens } from '../lib/sessions.js';
+import {
+  emailInDomains,
+  linkSamlIdentity,
+  linkedSamlUser,
+  resolveSamlConfig,
+  samlEmail,
+  samlFor,
+  samlProviderFingerprint,
+  type ResolvedSamlProvider,
+} from '../lib/samlLogin.js';
+import { verifyJwt } from '../lib/jwt.js';
+import { findLiveSession, issueSessionTokens } from '../lib/sessions.js';
 
 /**
  * G3.6 SAML sign-in (see lib/samlLogin.ts), mounted under `/auth/saml`.
@@ -92,36 +102,79 @@ export const samlLoginRoutes: FastifyPluginAsync = async (app) => {
     return reply.redirect(url);
   });
 
+  // Link the IdP identity to the signed-in account (Settings → Account), as OIDC links do.
+  app.post('/:id/link', { onRequest: [app.authenticate, app.requireInteractive] }, async (req) => {
+    const { id, cfg } = await load((req.params as { id: string }).id);
+    const token = req.headers.authorization?.slice('Bearer '.length).trim() ?? '';
+    const payload = await verifyJwt(token).catch(() => null);
+    const session = payload?.jti ? await findLiveSession(app.db, payload.jti) : null;
+    if (!payload || payload.type !== 'access' || !session || session.userId !== req.user!.id || payload.ver === undefined) {
+      throw fail(401, 'unauthorized', 'A live interactive session is required to link this provider');
+    }
+    const relayState = generateOAuthState(`saml:${id}`, '/settings', { userId: req.user!.id, sessionJti: session.jti, tokenVersion: payload.ver, providerFingerprint: samlProviderFingerprint(cfg) });
+    return { authUrl: await samlFor(id, cfg, await sp(id)).getAuthorizeUrlAsync(relayState, undefined, {}) };
+  });
+
   app.post('/:id/acs', async (req: FastifyRequest, reply: FastifyReply) => {
     const { id, name, cfg } = await load((req.params as { id: string }).id);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const samlResponse = typeof body['SAMLResponse'] === 'string' ? body['SAMLResponse'] : '';
     const state = typeof body['RelayState'] === 'string' ? verifyOAuthState(body['RelayState']) : null;
-    if (!samlResponse || !state || state.slug !== `saml:${id}` || !state.clientNonce) {
+    if (!samlResponse || !state || state.slug !== `saml:${id}` || (!state.clientNonce && !state.link)) {
       throw fail(400, 'saml_state_invalid', 'This sign-in was not started here, or it expired. Sign in again.');
     }
     let email: string | null;
+    let subject: string;
     try {
       const { profile } = await samlFor(id, cfg, await sp(id)).validatePostResponseAsync({ SAMLResponse: samlResponse });
       email = profile ? samlEmail(profile, cfg.emailAttribute) : null;
+      subject = profile?.nameID?.trim() ?? '';
     } catch (err) {
       void audit(app.db, null, 'auth.saml_refused', `${name}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300));
       throw fail(401, 'saml_response_invalid', 'The identity provider’s answer could not be verified. Sign in again.');
     }
     if (!email) throw fail(401, 'saml_no_email', 'The identity provider did not send an email address');
+    if (!subject) throw fail(401, 'saml_no_subject', 'The identity provider did not send a NameID');
     if (!emailInDomains(email, cfg.emailDomains)) {
       void audit(app.db, null, 'auth.sso_domain_refused', `${name} (${email})`);
       throw fail(403, 'sso_domain_not_allowed', `This sign-in provider only accepts accounts from: ${cfg.emailDomains.join(', ')}`);
     }
-    const user = await findUserByEmail(app.db, email);
-    if (!user) throw fail(403, 'saml_no_account', `No account uses ${email}. Ask an administrator to invite you first.`);
+    const fingerprint = samlProviderFingerprint(cfg);
+
+    // Linking, from the account's own live session.
+    if (state.link) {
+      const link = state.link;
+      const session = await findLiveSession(app.db, link.sessionJti);
+      const local = await app.db.query.users.findFirst({ where: eq(users.id, link.userId) });
+      if (link.providerFingerprint !== fingerprint || !session || session.userId !== link.userId || !local || local.tokenVersion !== link.tokenVersion || local.deactivatedAt) {
+        throw fail(401, 'unauthorized', 'The account-linking session expired or was revoked; sign in and try again');
+      }
+      if (normalizeEmail(local.email) !== email) throw fail(403, 'forbidden', 'The SAML email must match the signed-in account');
+      try {
+        await linkSamlIdentity(app.db, id, subject, local.id, fingerprint);
+      } catch (err) {
+        throw fail(403, 'forbidden', err instanceof Error ? err.message : String(err));
+      }
+      void audit(app.db, local.id, 'auth.sso_link', name);
+      return reply.code(303).header('location', '/settings?samlLinked=1').send();
+    }
+
+    // Sign-in: only the account this identity was linked to.
+    const linked = await linkedSamlUser(app.db, id, subject, fingerprint);
+    if (!linked || 'stale' in linked) {
+      const existing = await findUserByEmail(app.db, email);
+      if (existing || linked) throw fail(403, 'account_link_required', 'Sign in to your existing account and link this provider in account settings');
+      throw fail(403, 'saml_no_account', `No account uses ${email}. Ask an administrator to invite you first.`);
+    }
+    const user = await app.db.query.users.findFirst({ where: eq(users.id, linked.userId) });
+    if (!user) throw fail(403, 'saml_no_account', 'The linked account no longer exists');
     if (user.totpEnabled) throw fail(403, 'saml_totp', SSO_TOTP_REFUSAL);
     const tokens = await issueSessionTokens(app.db, user, { ip: req.ip, userAgent: req.headers['user-agent'], method: { amr: 'sso', idp: `sso:${id}` } });
     void audit(app.db, user.id, 'auth.sso_login', `${name} (${email})`, undefined, { ip: req.ip, userAgent: req.headers['user-agent'] });
     const fragment = new URLSearchParams({
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
-      nonce: state.clientNonce,
+      nonce: state.clientNonce ?? '',
       return_to: safeReturnTo(state.returnTo),
     });
     return reply.code(303).header('cache-control', 'no-store').header('location', `/auth/callback#${fragment.toString()}`).send();

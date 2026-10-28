@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SAML sign-in that works with real identity providers (G3.6). It is SP-initiated, verified with `@node-saml/node-saml` 5.1.0 (exclusive c14n, enveloped signatures).
   - **Binding:** responses are bound to the panel's own AuthnRequest and accepted once.
-  - **Accounts:** only existing accounts of the provider's email domains are signed in.
+  - **Accounts:** like OIDC, an identity signs in only the account it was linked to from Settings → Account, within the provider's email domains.
   - **Where:** set up under Settings → SSO → SAML identity providers; the button appears on the sign-in page. The routes are `/v1/auth/saml/*`.
   - **Change:** `SAML_UNAVAILABLE` is lifted for new providers.
 

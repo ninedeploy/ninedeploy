@@ -95,11 +95,19 @@ export const authSpecs: RouteSpecMap = {
     queryType: '{ nonce: string; returnTo?: string }',
     validation: 'handler',
   },
+  'POST /v1/auth/saml/:id/link': {
+    summary: 'Link a SAML identity to the signed-in account',
+    tag: 'auth',
+    description:
+      'Interactive sessions only. Answers `{ authUrl }`, an AuthnRequest whose RelayState names this session; the IdP must answer with this account\'s email. Afterwards the identity (provider + NameID) signs this account in. A link is bound to the IdP configuration. Audited auth.sso_link. G3.6.',
+    floor: 'self',
+    responseType: '{ authUrl: string }',
+  },
   'POST /v1/auth/saml/:id/acs': {
     summary: 'SAML assertion consumer (the IdP posts the response here)',
     tag: 'auth',
     description:
-      "No session. The response must answer a request this panel issued in the last 10 minutes (each request id once), carry an assertion signed by the provider's certificate for this panel's audience, and name an email in the provider's `emailDomains` that an account already uses (accounts with 2FA sign in with their password and code instead). On success, `303` to `/auth/callback` with the session in the fragment, bound to the tab's nonce. Audited auth.sso_login. G3.6.",
+      "No session. The response must answer a request this panel issued in the last 10 minutes (each request id once), carry an assertion signed by the provider's certificate for this panel's audience, and name an email in the provider's `emailDomains`. It signs in only the account the identity (provider + NameID) was linked to from Settings → Account; an existing account without the link gets 403 `account_link_required`, and accounts with 2FA sign in with their password and code instead. On success, `303` to `/auth/callback` with the session in the fragment, bound to the tab's nonce. Audited auth.sso_login. G3.6.",
     floor: 'public',
     bodyType: '{ SAMLResponse: string; RelayState: string } (application/x-www-form-urlencoded)',
     validation: 'handler',

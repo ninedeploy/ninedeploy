@@ -17,6 +17,7 @@ const EXEMPT: Record<string, string> = {
   'auth.ts POST /logout': 'ends the caller\u2019s own session',
   'auth.ts POST /oidc/:slug/callback': 'SSO sign-in (session issuance), not a config change',
   'sso.ts POST /:name/saml-callback': 'SSO sign-in (session issuance), not a config change',
+  'samlLogin.ts POST /:id/link': 'starts an IdP round-trip only; the link itself is stored and audited (auth.sso_link) by the ACS',
   'backupDestinations.ts POST /:id/test': 'connectivity probe, no state change',
   'uptime.ts POST /:id/check':
     'runs one check like the scheduler; a down/up transition it causes is audited by recordCheck (alert.monitor_down / alert.monitor_up)',

@@ -52,7 +52,7 @@ export function createFakeApiModule() {
       // the provider would crash on `.then`.
       me: vi.fn(async () => null),
       tokens: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), remove: vi.fn() },
-      saml: { publicProviders: vi.fn().mockResolvedValue([]) },
+      saml: { publicProviders: vi.fn().mockResolvedValue([]), link: vi.fn() },
       oidc: {
         link: vi.fn(),
         list: vi.fn(),

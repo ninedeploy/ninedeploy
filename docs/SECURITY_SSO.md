@@ -35,12 +35,15 @@ SAML identity providers sign people in to the panel. Add one under **Settings �
 - **Signature and audience:** the assertion must be signed by the provider's certificate and addressed to this panel's entity id, with one minute of clock skew. Signature wrapping is refused.
 
 **Who gets a session**
-- Only an existing account whose email is in `emailDomains`. There is no auto-enrolment.
+- Like OIDC, a SAML identity (provider + NameID) signs in only the account it was linked to. The link is made from that account's own signed-in session: Settings → Account → *Link <provider>*, `POST /v1/auth/saml/:id/link`. The IdP must answer with that account's email, and that email must be in `emailDomains`.
+- An existing account without the link gets 403 `account_link_required`, and there is no auto-enrolment.
+- A link is bound to the IdP configuration (sign-in URL, certificate, issuer), so changing it asks everyone to link again.
+- With `emailAttribute` set, only that attribute is read as the email.
 - An account with two-factor authentication signs in with its password and code instead.
 - The session reaches the browser the same way as an OIDC sign-in: through `/auth/callback`, only in the tab whose nonce started it.
 - It carries `amr: "sso"` and `idp: "sso:<id>"`, so a workspace can exempt it from its 2FA requirement.
 
-**Testing:** the flow is checked end to end with a real AuthnRequest and RSA-SHA256 signed responses. The tests cover a success, replay, another key, another audience, wrapping, an unsolicited response, the domain and account checks, and a forged RelayState.
+**Testing:** the flow is checked end to end with a real AuthnRequest and RSA-SHA256 signed responses. The tests cover linking, a success, replay, another key, another audience, wrapping, an unsolicited response, the link, domain and account checks, and a forged RelayState.
 
 ## 🔑 3. Multi-Factor Authentication & Passkeys
 

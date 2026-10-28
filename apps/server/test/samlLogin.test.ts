@@ -21,7 +21,8 @@ vi.mock('../src/lib/panelOrigin.js', () => ({ panelOrigin: vi.fn(async () => 'ht
 const { samlLoginRoutes } = await import('../src/modules/samlLogin.js');
 const { resetSamlCaches } = await import('../src/lib/samlLogin.js');
 const { verifyJwt } = await import('../src/lib/jwt.js');
-const { buildTestApp } = await import('./helpers.js');
+const { issueSessionTokens } = await import('../src/lib/sessions.js');
+const { asUser, buildTestApp } = await import('./helpers.js');
 const { closeMigratedDb, migratedDb } = await import('./lib/githubAppKit.js');
 
 const fixture = (f: string) => readFileSync(path.join(__dirname, 'fixtures', 'saml', f), 'utf8');
@@ -56,16 +57,33 @@ async function app() {
   return a;
 }
 
-/** Start a sign-in and read the AuthnRequest id and RelayState the IdP would get. */
-async function start(a: Awaited<ReturnType<typeof app>>) {
-  const res = await a.inject({ method: 'GET', url: `/auth/saml/1/login?nonce=${NONCE}&returnTo=%2Fservices` });
-  expect(res.statusCode).toBe(302);
-  const to = new URL(String(res.headers.location));
+/** The AuthnRequest id and RelayState an IdP redirect URL carries. */
+function readRedirect(location: string) {
+  const to = new URL(location);
   expect(`${to.origin}${to.pathname}`).toBe(`${IDP}/sso`);
   const request = inflateRawSync(Buffer.from(to.searchParams.get('SAMLRequest')!, 'base64')).toString('utf8');
   const id = /ID="([^"]+)"/.exec(request)![1]!;
   expect(request).toContain(`AssertionConsumerServiceURL="${ACS}"`);
   return { id, relayState: to.searchParams.get('RelayState')! };
+}
+
+/** Start a sign-in and read the AuthnRequest id and RelayState the IdP would get. */
+async function start(a: Awaited<ReturnType<typeof app>>) {
+  const res = await a.inject({ method: 'GET', url: `/auth/saml/1/login?nonce=${NONCE}&returnTo=%2Fservices` });
+  expect(res.statusCode).toBe(302);
+  return readRedirect(String(res.headers.location));
+}
+
+/** Link the IdP identity to a user from that user's own session (Settings → Account). */
+async function link(a: Awaited<ReturnType<typeof app>>, userId: number, email: string) {
+  const user = (await db.query.users.findFirst({ where: (u, { eq }) => eq(u.id, userId) }))!;
+  const { accessToken } = await issueSessionTokens(db, user);
+  const res = await a.inject({ method: 'POST', url: '/auth/saml/1/link', headers: { ...asUser({ id: userId, isOperator: false }), authorization: `Bearer ${accessToken}` } });
+  expect(res.statusCode).toBe(200);
+  const s = readRedirect(res.json().authUrl);
+  const done = await post(a, response({ inResponseTo: s.id, email }), s.relayState);
+  expect(done.statusCode).toBe(303);
+  expect(done.headers.location).toBe('/settings?samlLinked=1');
 }
 
 function response(o: { inResponseTo: string; email?: string; audience?: string; key?: string; wrap?: string }): string {
@@ -104,8 +122,12 @@ const post = (a: Awaited<ReturnType<typeof app>>, SAMLResponse: string, RelaySta
   });
 
 describe('SAML sign-in', () => {
-  it('signs an existing user in from a signed response to its own request, once', async () => {
+  it('signs the linked user in from a signed response to its own request, once', async () => {
     const a = await app();
+    // Not linked yet: an existing account must link the identity first.
+    let s = await start(a);
+    expect((await post(a, response({ inResponseTo: s.id }), s.relayState)).json().error.code).toBe('account_link_required');
+    await link(a, 1, 'alice@corp.example');
     const { id, relayState } = await start(a);
     const body = response({ inResponseTo: id });
     const res = await post(a, body, relayState);
@@ -138,16 +160,30 @@ describe('SAML sign-in', () => {
 
   it('refuses an email outside the domains, an unknown account, a 2FA account and a foreign RelayState', async () => {
     const a = await app();
+    await link(a, 2, 'bob@corp.example');
     let s = await start(a);
     expect((await post(a, response({ inResponseTo: s.id, email: 'eve@evil.example' }), s.relayState)).statusCode).toBe(403);
     s = await start(a);
-    expect((await post(a, response({ inResponseTo: s.id, email: 'nobody@corp.example' }), s.relayState)).statusCode).toBe(403);
+    expect((await post(a, response({ inResponseTo: s.id, email: 'nobody@corp.example' }), s.relayState)).json().error.code).toBe('saml_no_account');
     s = await start(a);
     expect((await post(a, response({ inResponseTo: s.id, email: 'bob@corp.example' }), s.relayState)).json().error.code).toBe('saml_totp');
     s = await start(a);
     expect((await post(a, response({ inResponseTo: s.id }), 'forged.state')).statusCode).toBe(400);
     // A start without the tab's nonce is refused.
     expect((await a.inject({ method: 'GET', url: '/auth/saml/1/login' })).statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('links only from a live session, only to the account with the same email', async () => {
+    const a = await app();
+    const user = (await db.query.users.findFirst({ where: (u, { eq }) => eq(u.id, 1) }))!;
+    const { accessToken } = await issueSessionTokens(db, user);
+    const res = await a.inject({ method: 'POST', url: '/auth/saml/1/link', headers: { ...asUser({ id: 1, isOperator: false }), authorization: `Bearer ${accessToken}` } });
+    const s = readRedirect(res.json().authUrl);
+    // The IdP answers for someone else: no link.
+    expect((await post(a, response({ inResponseTo: s.id, email: 'bob@corp.example' }), s.relayState)).statusCode).toBe(403);
+    // Without a real session token the link does not start.
+    expect((await a.inject({ method: 'POST', url: '/auth/saml/1/link', headers: asUser({ id: 1, isOperator: false }) })).statusCode).toBe(401);
     await a.close();
   });
 
