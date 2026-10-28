@@ -198,6 +198,9 @@ const NETWORK_CREATE_ARGS = [
   // Runners cannot reach each other either.
   '-o',
   'com.docker.network.bridge.enable_icc=false',
+  // The firewall rules are IPv4 (iptables); a daemon that turns IPv6 on for
+  // new networks by default must not give runners an unfiltered IPv6 path.
+  '--ipv6=false',
   RUNNER_NETWORK,
 ];
 
@@ -208,6 +211,19 @@ async function ensureRunnerNetwork(): Promise<void> {
       // Two starts racing: the other one created it.
       if (!(await ls())) throw err;
     });
+  }
+  // Fail closed on a network someone (or an older panel) made with IPv6 or another bridge name.
+  const inspect = (
+    await capture(
+      'docker',
+      ['network', 'inspect', RUNNER_NETWORK, '--format', '{{.EnableIPv6}} {{index .Options "com.docker.network.bridge.name"}}'],
+      { timeoutMs: 30_000 },
+    )
+  ).trim();
+  if (inspect !== `false ${RUNNER_BRIDGE}`) {
+    throw new Error(
+      `The ${RUNNER_NETWORK} network is not the isolated runner network (IPv6 and bridge name: "${inspect}"). Remove it (docker network rm ${RUNNER_NETWORK}) and the panel recreates it.`,
+    );
   }
 }
 

@@ -260,7 +260,7 @@ GitHub, not only the panel, enforces the repository rules:
   Internet access stays open, which GitHub and package registries need. The rules are checked again on every start, so a firewall reload or a reboot does not leave runners unguarded.
 - **No rules, no runner:** if the panel cannot apply the rules, the runner does not start. That happens when iptables is missing, or when the panel runs in its own network namespace and cannot see `nd-gha0`. `NINEDEPLOY_GHA_RUNNERS_UNISOLATED=1` lets runners start without the rules. Set it only if you accept runners that can reach the host and the LAN.
 - **Resource limits:** a pid limit, plus the CPU and memory limits you set.
-- **IPv6:** the runner network has none.
+- **IPv6:** the runner network is created with IPv6 off, even on a daemon that enables it for new networks, because the firewall rules are IPv4. A runner does not start on an existing `nd-gha-runners` network that has IPv6 or another bridge name; remove that network and the panel recreates it.
 
 **Queue and upkeep**
 

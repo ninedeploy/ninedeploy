@@ -66,6 +66,7 @@ let envFiles: string[];
 /** iptables invocations. */
 let iptables: string[];
 let networkExists: boolean;
+let networkInspect: string;
 
 function queued(over: { id?: number; labels?: string[]; private?: boolean; repo?: string } = {}) {
   return {
@@ -89,6 +90,7 @@ beforeEach(async () => {
   envFiles = [];
   iptables = [];
   networkExists = true;
+  networkInspect = 'false nd-gha0\n';
   h.bridge = true;
   delete process.env['NINEDEPLOY_GHA_RUNNERS_UNISOLATED'];
   h.listInstallationRepositories.mockReset();
@@ -109,6 +111,7 @@ beforeEach(async () => {
       return '';
     }
     if (args[0] === 'network' && args[1] === 'ls') return networkExists ? 'net1\n' : '';
+    if (args[0] === 'network' && args[1] === 'inspect') return networkInspect;
     if (args[0] === 'run') {
       const file = args[args.indexOf('--env-file') + 1]!;
       envFiles.push(readFileSync(file, 'utf8'));
@@ -251,7 +254,7 @@ describe('handleWorkflowJob', () => {
     await setRunnerConfig(db, ghApp.id, enabled());
     h.capture.mockImplementation(async (_cmd, args) => {
       if (args[0] === 'ps') return '';
-      if (args[0] === 'network') return 'net1';
+      if (args[0] === 'network') return args[1] === 'inspect' ? 'false nd-gha0' : 'net1';
       if (args[0] === 'run') throw new Error('pull access denied');
       return '';
     });
@@ -275,6 +278,23 @@ describe('runner isolation and groups (security review)', () => {
     expect(inserted).toContain('-I DOCKER-USER 1 -i nd-gha0 -d 169.254.0.0/16 -j DROP');
     const network = h.capture.mock.calls.find(([, a]) => a[0] === 'network' && a[1] === 'create');
     expect(network?.[1]).toEqual(expect.arrayContaining(['com.docker.network.bridge.name=nd-gha0', 'com.docker.network.bridge.enable_icc=false']));
+  });
+
+  it('creates the network without IPv6, and refuses one that has it', async () => {
+    networkExists = false;
+    await setRunnerConfig(db, ghApp.id, enabled());
+    await handleWorkflowJob(db, log, ghApp, inst, queued());
+    await drainPending(db, log);
+    const create = h.capture.mock.calls.find(([, a]) => a[0] === 'network' && a[1] === 'create')!;
+    expect(create[1]).toContain('--ipv6=false');
+    expect(runCalls()).toHaveLength(1);
+
+    networkExists = true;
+    networkInspect = 'true nd-gha0\n';
+    await handleWorkflowJob(db, log, ghApp, inst, queued({ id: 91 }));
+    await drainPending(db, log);
+    expect(runCalls()).toHaveLength(1);
+    expect((await runnerStatus(db, ghApp)).problems.join('\n')).toContain('not the isolated runner network');
   });
 
   it('starts nothing when the panel cannot see the bridge, and says why', async () => {
