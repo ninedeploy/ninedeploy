@@ -78,4 +78,29 @@ describe('PendingChangesTray (G5.2)', () => {
     expect(screen.getByRole('button', { name: 'Apply only' })).toBeDisabled();
     expect(api.services.pending.apply).not.toHaveBeenCalled();
   });
+
+  it('keeps pending changes after a failed discard and clears them after a successful retry', async () => {
+    const view = { serviceId: 5, staging: true, changes: [change('port', 1, 'Me')], updatedAt: '2026-10-28T10:00:00.000Z', updatedBy: null };
+    mockOf(api.services.pending.get).mockResolvedValue(view as never);
+    mockOf(api.services.pending.discard).mockReset().mockRejectedValueOnce(new Error('discard denied')).mockResolvedValueOnce({ ...view, changes: [], updatedAt: null } as never);
+    renderWithProviders(<PendingChangesTray serviceId={5} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+    expect(await screen.findByText('discard denied')).toBeInTheDocument();
+    expect(screen.getByText('port')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await waitFor(() => expect(screen.queryByText('port')).not.toBeInTheDocument());
+    expect(screen.getByText('Pending changes discarded')).toBeInTheDocument();
+  });
+
+  it('shows the complete reviewed value and masks sensitive fields', async () => {
+    const longValue = `prefix-${'x'.repeat(500)}-suffix`;
+    mockOf(api.services.pending.get).mockResolvedValue({ serviceId: 5, staging: true, updatedAt: '2026-10-28T10:00:00.000Z', updatedBy: null,
+      changes: [{ ...change('command', 1, 'Me'), current: null, next: longValue },
+        { ...change('secret', 1, 'Me'), masked: true, current: 'old-secret', next: 'new-secret' }] } as never);
+    renderWithProviders(<PendingChangesTray serviceId={5} />);
+    expect(await screen.findByText(longValue)).toBeInTheDocument();
+    expect(screen.getAllByText('hidden')).toHaveLength(2);
+    expect(screen.queryByText('old-secret')).not.toBeInTheDocument();
+    expect(screen.queryByText('new-secret')).not.toBeInTheDocument();
+  });
 });
