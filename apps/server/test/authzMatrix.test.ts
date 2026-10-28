@@ -800,6 +800,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/inline-dockerfile': R('member'),
   'PUT /v1/services/:id/inline-dockerfile': R('member', { body: () => ({ content: null }) }),
   'GET /v1/domains/:id/forward-auth': R('viewer'),
+  'GET /v1/domains/:id/compose-route': R('viewer'),
+  'PUT /v1/domains/:id/compose-route': R('member', { body: () => ({ route: null }), note: 'the matrix service is not a compose stack, so the at-floor call is a 400; covered by test/composeRoutes.test.ts' }),
   'PUT /v1/domains/:id/forward-auth': R('member', { body: () => ({ forwardAuth: null }) }),
   'POST /v1/forward-auth/grant': R('self', { body: () => ({ domainId: 999999, returnTo: 'https://x.example.com/', state: 'abcdefghijklmnopqrstuv' }), allow404: 'no domain is protected in the shared seed; the grant is covered by test/forwardAuth.test.ts' }),
   'PUT /v1/services/:id/error-pages': R('member', { body: () => ({ pages: {} }) }),

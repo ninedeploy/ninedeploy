@@ -34,6 +34,7 @@ import {
 import { canaryRouteFor } from './canaryState.js';
 import { panelWakeUpstream } from '../lib/panelUpstream.js';
 import { routingOverrides } from '../lib/maintenance.js';
+import { composeServiceContainer } from '../lib/composeRoutes.js';
 import { FA_PREFIX, forwardAuthDomains } from '../lib/forwardAuth.js';
 import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
 
@@ -1063,7 +1064,12 @@ export async function renderDynamicConfig(
   );
   // G2.2: maintenance mode and custom error pages are served by the panel, so
   // only the panel host's proxy routes them (a node cannot reach the panel).
-  const overrides = forNode ? { maintenance: new Map(), errorPages: new Map() } : await routingOverrides(db);
+  const overrides = await routingOverrides(db);
+  // The panel-served pages are for the panel host's proxy only; compose routes apply everywhere.
+  if (forNode) {
+    overrides.maintenance.clear();
+    overrides.errorPages.clear();
+  }
   const servicesById = new Map(
     (await db.select().from(services))
       // G2.2: a stopped service in maintenance still answers its maintenance page.
@@ -1352,8 +1358,12 @@ export async function renderDynamicConfig(
       // which no DNS server inside the Traefik container can resolve (every
       // request would 502 forever). Route them through the host gateway,
       // same as the panel router below.
-      const upstreamHost =
-        svc.type === 'pm2' ? 'host.docker.internal' : (targetRuntimeByService.get(svc.id) ?? svc.runtimeId);
+      // G2.1: a compose domain may name another service of the stack, and its port.
+      const composeRoute = svc.type === 'compose' ? overrides.composeRoutes.get(d.id) : undefined;
+      const upstreamHost = composeRoute
+        ? composeServiceContainer(svc.slug, composeRoute.service)
+        : svc.type === 'pm2' ? 'host.docker.internal' : (targetRuntimeByService.get(svc.id) ?? svc.runtimeId);
+      const upstreamPort = composeRoute?.port ?? svc.port;
       // Replicas (docker services with `replicas > 1`): every generation
       // container — the primary plus its -r2..-rN clones — becomes one
       // loadBalancer server, and a healthCheck block makes Traefik drop a
@@ -1376,7 +1386,7 @@ export async function renderDynamicConfig(
         ? parsedHealthPath.data
         : String(svc.healthPath ?? '/').replace(PATH_RE, '') || '/';
       const servers = replicaNames(upstreamHost, replicaCount)
-        .map((n) => `          - url: "http://${n}:${svc.port}"`)
+        .map((n) => `          - url: "http://${n}:${upstreamPort}"`)
         .join('\n');
       // r638: `healthCheck` is a key of `loadBalancer` (8 spaces). It was
       // indented like a `servers` list item (10), which is not valid YAML —

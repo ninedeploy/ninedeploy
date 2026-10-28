@@ -1,4 +1,5 @@
 import {
+  composeRouteInput,
   errorPagesInput,
   inlineDockerfileInput,
   forwardAuthGrantInput,
@@ -220,6 +221,23 @@ export const servicesSpecs: RouteSpecMap = {
     body: errorPagesInput,
     validation: 'zod',
     responseType: 'ErrorPagesView',
+  },
+  'GET /v1/domains/:id/compose-route': {
+    summary: 'Which service of a compose stack a domain routes to (G2.1)',
+    tag: 'domains',
+    description: '`route: null` is the stack\'s main service. `services` lists what an inline compose file declares (null for a repository compose file).',
+    floor: 'viewer',
+    responseType: 'ComposeRouteView',
+  },
+  'PUT /v1/domains/:id/compose-route': {
+    summary: 'Route a compose domain to another service of the stack, on its port (null for the main service)',
+    tag: 'domains',
+    description:
+      "Compose stacks only. Traefik reaches the service as `ndcmp-<slug>-<service>-1` on the stack's network. The next deploy also sets `SERVICE_FQDN_<SERVICE>` and `SERVICE_URL_<SERVICE>` unless the service sets them. Re-renders the proxy config. Audited domain.compose_route.set.",
+    floor: 'member',
+    body: composeRouteInput,
+    validation: 'zod',
+    responseType: 'ComposeRouteView',
   },
   'GET /v1/domains/:id/forward-auth': {
     summary: 'Whether a domain is behind panel sign-in, and the role it needs (G2.3)',

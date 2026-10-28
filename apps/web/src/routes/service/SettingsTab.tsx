@@ -22,6 +22,7 @@ import { RestartLimitCard } from './RestartLimitCard.js';
 import { MaintenanceCard } from './MaintenanceCard.js';
 import { ForwardAuthCard } from './ForwardAuthCard.js';
 import { InlineDockerfileCard } from './InlineDockerfileCard.js';
+import { ComposeRoutesCard } from './ComposeRoutesCard.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
@@ -70,6 +71,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <MaintenanceCard svc={svc} />
       {/* G2.3: panel sign-in in front of the service's domains. */}
       <ForwardAuthCard svc={svc} />
+      {/* G2.1: a domain per compose service. */}
+      <ComposeRoutesCard svc={svc} />
     </div>
   );
 }

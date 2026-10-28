@@ -19,6 +19,7 @@ import { renderComposeRelease } from '../lib/composeRelease.js';
 import { assertReleaseTarget, readReleaseRecord, storeReleaseRecord } from '../lib/releaseRecords.js';
 import { extractSourceUpload, isUploadSourced, listSourceUploads, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
 import { getInlineDockerfile, inlineDockerfileSha, prepareEmptyContext, writeInlineDockerfile } from '../lib/inlineDockerfile.js';
+import { composeRouteEnv } from '../lib/composeRoutes.js';
 import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp } from '../lib/agentClient.js';
@@ -1321,6 +1322,19 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     const runtimeEnvironment: RuntimeEnvironment = restore
       ? { values: {}, attachmentCount: 0, readyAttachmentCount: 0, managedDatabaseKeys: [], secretKeys: [], withheldFromPreview: [], attachedDatabases: [] }
       : await loadRuntimeEnv(db, service, templateDatabaseId, log);
+    // G2.1: a compose domain routed to another service of the stack names it in the environment.
+    // Best-effort: the variables are a convenience, never a reason to fail the deploy.
+    if (service.type === 'compose' && !restore) {
+      try {
+        const routed = await composeRouteEnv(db, service.id, runtimeEnvironment.values);
+        if (Object.keys(routed).length > 0) {
+          Object.assign(runtimeEnvironment.values, routed);
+          log(`Per-service domain variables: ${Object.keys(routed).join(', ')}`);
+        }
+      } catch (err) {
+        log(`warning: per-service domain variables were not set: ${msg(err)}`);
+      }
+    }
     fanoutEnv = runtimeEnvironment.values;
     if (runtimeEnvironment.withheldFromPreview.length > 0) {
       log(

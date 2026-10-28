@@ -49,6 +49,7 @@ import { pendingChangeRoutes } from './pendingChanges.js';
 import { restartLimitRoutes } from './restartLimit.js';
 import { serviceMaintenanceRoutes } from './maintenance.js';
 import { inlineDockerfileRoutes } from './inlineDockerfile.js';
+import { domainComposeRouteRoutes } from './composeRoutes.js';
 import { domainForwardAuthRoutes, forwardAuthGrantRoutes } from './forwardAuth.js';
 import { twoFactorRequirementRoutes, workspaceTwoFactorRoutes } from './twoFactorPolicy.js';
 import { publicRegistryHookRoutes, serviceRegistryHookRoutes } from './registryHooks.js';
@@ -310,6 +311,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(serviceMaintenanceRoutes, { prefix: '/services' });
   // G1.1: a Dockerfile pasted in the panel
   await app.register(inlineDockerfileRoutes, { prefix: '/services' });
+  // G2.1: a domain per compose service
+  await app.register(domainComposeRouteRoutes, { prefix: '/domains' });
   // G2.3: panel sign-in in front of a domain
   await app.register(domainForwardAuthRoutes, { prefix: '/domains' });
   await app.register(forwardAuthGrantRoutes, { prefix: '/forward-auth' });

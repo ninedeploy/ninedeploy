@@ -140,6 +140,7 @@ GET /v1/doctor operator -
 GET /v1/domain-presets authed nd://scope/read/domains
 GET /v1/domain-transfers/:token token nd://scope/read/domains_transfer
 GET /v1/domains authed nd://scope/read/domains
+GET /v1/domains/:id/compose-route viewer nd://scope/read/domains
 GET /v1/domains/:id/forward-auth viewer nd://scope/read/domains
 GET /v1/egress operator nd://scope/read/egress
 GET /v1/env/search authed nd://scope/read/env
@@ -537,6 +538,7 @@ PUT /v1/databases/:id/backup-policy admin nd://scope/write/databases
 PUT /v1/databases/:id/backup-replicas operator nd://scope/write/databases
 PUT /v1/databases/:id/imports/:importId/chunks/:index admin nd://scope/write/databases
 PUT /v1/databases/:id/public-access operator nd://scope/write/databases
+PUT /v1/domains/:id/compose-route member nd://scope/write/domains
 PUT /v1/domains/:id/forward-auth member nd://scope/write/domains
 PUT /v1/github-apps/:id/private-key operator -
 PUT /v1/github-apps/:id/runners operator -

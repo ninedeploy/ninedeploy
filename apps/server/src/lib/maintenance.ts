@@ -8,7 +8,9 @@ import {
   type ErrorPagesView,
   type MaintenanceConfig,
   type MaintenanceView,
+  type ComposeRoute,
 } from '@ninedeploy/schemas';
+import { COMPOSE_ROUTE_PREFIX, parseComposeRoute } from './composeRoutes.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 
 /**
@@ -66,19 +68,27 @@ export async function setErrorPages(db: DB, serviceId: number, pages: Partial<Re
   else await setSettingJson(db, `${PAGES}${serviceId}`, { pages: kept });
 }
 
-/** For the proxy render: services in maintenance, and services with custom error pages (one read each). */
-export async function routingOverrides(db: DB): Promise<{ maintenance: Map<number, StoredMaintenance>; errorPages: Map<number, ErrorPageStatus[]> }> {
+/**
+ * For the proxy render, in one read: services in maintenance, services with
+ * custom error pages, and (G2.1) compose domains routed to another service.
+ */
+export async function routingOverrides(db: DB): Promise<{
+  maintenance: Map<number, StoredMaintenance>;
+  errorPages: Map<number, ErrorPageStatus[]>;
+  composeRoutes: Map<number, ComposeRoute>;
+}> {
   const maintenance = new Map<number, StoredMaintenance>();
   const errorPages = new Map<number, ErrorPageStatus[]>();
+  const composeRoutes = new Map<number, ComposeRoute>();
   let rows: Array<{ key: string; value: unknown }> = [];
   try {
     rows = await db
       .select({ key: settings.key, value: settings.value })
       .from(settings)
-      .where(or(like(settings.key, `${MAINT}%`), like(settings.key, `${PAGES}%`)));
+      .where(or(like(settings.key, `${MAINT}%`), like(settings.key, `${PAGES}%`), like(settings.key, `${COMPOSE_ROUTE_PREFIX}%`)));
   } catch {
     // A fake or partial db in a test: no overrides, the render is unchanged.
-    return { maintenance, errorPages };
+    return { maintenance, errorPages, composeRoutes };
   }
   for (const row of rows) {
     const value = typeof row.value === 'string' ? safeJson(row.value) : row.value;
@@ -91,9 +101,13 @@ export async function routingOverrides(db: DB): Promise<{ maintenance: Map<numbe
       const pages = (value as { pages?: Record<string, unknown> } | null)?.pages ?? {};
       const statuses = ERROR_PAGE_STATUSES.filter((s) => typeof pages[s] === 'string' && (pages[s] as string).trim() !== '');
       if (Number.isInteger(id) && statuses.length) errorPages.set(id, statuses);
+    } else if (row.key.startsWith(COMPOSE_ROUTE_PREFIX)) {
+      const id = Number(row.key.slice(COMPOSE_ROUTE_PREFIX.length));
+      const route = parseComposeRoute(value);
+      if (Number.isInteger(id) && route) composeRoutes.set(id, route);
     }
   }
-  return { maintenance, errorPages };
+  return { maintenance, errorPages, composeRoutes };
 }
 
 function safeJson(s: string): unknown {

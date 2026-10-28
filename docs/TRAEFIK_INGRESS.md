@@ -84,6 +84,17 @@ Apply security middlewares directly from the dashboard:
 
 ---
 
+### A domain per compose service (G2.1)
+
+Every domain of a compose stack routes to the stack's main service unless it names another one. Set it under **Service → Settings → Domains per compose service**, or with `PUT /v1/domains/:id/compose-route` and `{ "route": { "service": "admin-ui", "port": 8080 } }`. `{ "route": null }` routes to the main service again.
+
+**How it routes**
+- Traefik already joins the stack's default network, so it reaches the service as `ndcmp-<slug>-<service>-1` on the port you give. The service must be on that default network.
+- For an inline stack, the service must be one the compose file declares.
+- The next deploy sets `SERVICE_FQDN_<SERVICE>` (the host) and `SERVICE_URL_<SERVICE>` (scheme, host and path) for each routed service, unless the stack already sets them. `<SERVICE>` is the name in upper case with other characters as `_`.
+
+**Storage:** no migration is needed; it is a settings row, `compose_route:<domainId>`, read with the other routing overrides in one query.
+
 ### Maintenance mode and custom error pages (G2.2)
 
 Both live under **Service → Settings → Maintenance mode**, or in the API as `PUT /v1/services/:id/maintenance` and `PUT /v1/services/:id/error-pages`. They work for services on the panel host.

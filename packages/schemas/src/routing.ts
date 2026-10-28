@@ -1,3 +1,4 @@
+import { z } from 'zod';
 /**
  * `GET /v1/services/:id/routing`: where a service's traffic goes right now —
  * each domain through the router Traefik was actually given, each host port
@@ -45,4 +46,25 @@ export interface ServiceRoutingView {
   container: { name: string; state: string; health: string | null; ip: string | null } | null;
   http: ServiceHttpRoute[];
   ports: ServicePortRoute[];
+}
+
+// ── A domain per compose service (G2.1) ────────────────────────────────────
+/** Route a compose stack's domain to this service of the stack, on this port, instead of the main service. */
+export const composeRoute = z
+  .object({
+    service: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/, 'a compose service name'),
+    port: z.number().int().min(1).max(65535),
+  })
+  .strict();
+export type ComposeRoute = z.infer<typeof composeRoute>;
+
+/** `PUT /v1/domains/:id/compose-route`: a target, or null for the main service. */
+export const composeRouteInput = z.object({ route: composeRoute.nullable() }).strict();
+export type ComposeRouteInput = z.infer<typeof composeRouteInput>;
+
+export interface ComposeRouteView {
+  domainId: number;
+  route: ComposeRoute | null;
+  /** The services the inline compose file declares (null for a repository compose file). */
+  services: string[] | null;
 }

@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A domain per compose service (G2.1). Under Service → Settings → Domains per compose service, a domain of a compose stack routes to another service of the stack, on its port, instead of the main one.
+  - **Variables:** the next deploy sets `SERVICE_FQDN_<SERVICE>` and `SERVICE_URL_<SERVICE>` for it.
+  - **API:** `GET/PUT /v1/domains/:id/compose-route`. There is no migration.
+
+  See TRAEFIK_INGRESS.md → *A domain per compose service*.
 - Inline Dockerfile (G1.1). Under Service → Settings → Inline Dockerfile, a docker service builds from a Dockerfile pasted in the panel instead of the repository's.
   - **How:** it is written into the base directory as `.ninedeploy.Dockerfile` and built with the `dockerfile` pack.
   - **Dockerfile only:** a service with no repository and no image builds it from an empty context.

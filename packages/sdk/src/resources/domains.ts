@@ -2,6 +2,8 @@
 // Split out of the former single-file SDK entry (src/index.ts); the public
 // surface is re-exported unchanged from there.
 import type {
+  ComposeRoute,
+  ComposeRouteView,
   ForwardAuthConfig,
   ForwardAuthGrant,
   ForwardAuthGrantInput,
@@ -25,6 +27,11 @@ export interface DomainsApi {
       get: (domainId: number) => Promise<ForwardAuthView>;
       set: (domainId: number, forwardAuth: Partial<ForwardAuthConfig> | null) => Promise<ForwardAuthView>;
       grant: (input: ForwardAuthGrantInput) => Promise<ForwardAuthGrant>;
+    };
+    /** G2.1: route a compose stack's domain to another service of the stack (null for the main service). */
+    composeRoute: {
+      get: (domainId: number) => Promise<ComposeRouteView>;
+      set: (domainId: number, route: ComposeRoute | null) => Promise<ComposeRouteView>;
     };
     list: (serviceId: number) => Promise<Domain[]>;
     /** Add a domain. A non-operator's hostname outside the instance zone comes back `pending` with a TXT `verification` challenge. */
@@ -118,6 +125,10 @@ export function domainsApi(t: Transport): DomainsApi {
         get: (domainId) => get<ForwardAuthView>(`/v1/domains/${domainId}/forward-auth`),
         set: (domainId, forwardAuth) => send<ForwardAuthView>('PUT', `/v1/domains/${domainId}/forward-auth`, { forwardAuth }),
         grant: (input) => send<ForwardAuthGrant>('POST', '/v1/forward-auth/grant', input),
+      },
+      composeRoute: {
+        get: (domainId) => get<ComposeRouteView>(`/v1/domains/${domainId}/compose-route`),
+        set: (domainId, route) => send<ComposeRouteView>('PUT', `/v1/domains/${domainId}/compose-route`, { route }),
       },
       list: (serviceId) => get<Domain[]>(`/v1/services/${serviceId}/domains`),
       create: (serviceId, input) => send<CreatedDomain>('POST', `/v1/services/${serviceId}/domains`, input),
