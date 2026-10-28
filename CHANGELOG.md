@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Backup replica destinations (G3.3). Under Database → Backups → Backup replicas, an operator can name up to three more destinations for a database's scheduled dumps.
+  - **How:** each replica receives the same encrypted dump after the main upload and keeps its own number of copies. A failing replica is shown on the card and never fails the backup.
+  - **API:** `GET/PUT /v1/databases/:id/backup-replicas`. There is no migration.
+
+  See DATABASES_BACKUPS.md → *Replica destinations*.
 - Workspace-enforced 2FA (G1.4). A workspace admin can require every member to sign in with TOTP, a recovery code or a passkey.
   - **Effect:** any other session is held to an enrolment screen, and every other route answers 403 `two_factor_required`. Members set up a factor if they have none, then sign in again.
   - **SSO:** sign-ins through listed OIDC/SAML providers can be exempted. GitHub never is.

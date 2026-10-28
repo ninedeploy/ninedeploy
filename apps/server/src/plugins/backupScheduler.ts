@@ -8,6 +8,7 @@ import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { databaseRuntime } from '../lib/databaseRuntime.js';
 import { deleteRemoteBackupForRetention, uploadBackup } from '../lib/backupRemote.js';
+import { replicateBackup } from '../lib/backupReplicas.js';
 import { audit } from '../lib/audit.js';
 import { backupPolicyEvents, cronPeriodMs, loadBackupPolicies, planRetention } from '../lib/backupPolicy.js';
 
@@ -168,6 +169,10 @@ export default fp(
           } catch (err) {
             fastify.log.warn({ err }, `scheduled backup remote upload failed for ${d.name}`);
           }
+          // G3.3: replica destinations (best-effort per destination, never throws).
+          await replicateBackup(fastify.db, d.id, file, log).catch((err: unknown) => {
+            fastify.log.warn({ err }, `scheduled backup replica copies failed for ${d.name}`);
+          });
         }
         // Covered again — clear any outstanding missed-backup incident.
         missedNotified.delete(d.id);

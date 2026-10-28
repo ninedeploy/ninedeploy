@@ -16,6 +16,8 @@ import type {
   DatabaseImport,
   DatabaseImportCreate,
   BackupDestinationObject,
+  BackupReplica,
+  BackupReplicasView,
 } from '@ninedeploy/schemas';
 import type { ImportWaitOptions, ImportFileData, ImportFileOptions } from '../databaseImport.js';
 import type { BackupDrillResult, BackupDrillEntry, PgbouncerStatus, DatabaseCredentialsWithPublic } from '../types.js';
@@ -115,6 +117,11 @@ export interface DatabasesApi {
     getPolicy: (databaseId: number) => Promise<BackupPolicy>;
     /** 0.12: save (replace) the database's backup schedule, retention and destination. */
     setPolicy: (databaseId: number, input: BackupPolicyInput) => Promise<BackupPolicy>;
+    /** G3.3: more destinations for the scheduled dumps, each with its own retention (operators set them). */
+    replicas: {
+      get: (databaseId: number) => Promise<BackupReplicasView>;
+      set: (databaseId: number, replicas: BackupReplica[]) => Promise<BackupReplicasView>;
+    };
   };
   backupDestinations: {
     list: () => Promise<Array<{ id: number; name: string; endpoint: string; region: string; bucket: string; prefix: string; active: boolean; createdAt: string }>>;
@@ -201,6 +208,10 @@ export function databasesApi(t: Transport): DatabasesApi {
       downloadUrl: (backupId) => `/v1/backups/${backupId}/download`,
       getPolicy: (databaseId) => get<BackupPolicy>(`/v1/databases/${databaseId}/backup-policy`),
       setPolicy: (databaseId, input) => send<BackupPolicy>('PUT', `/v1/databases/${databaseId}/backup-policy`, input),
+      replicas: {
+        get: (databaseId) => get<BackupReplicasView>(`/v1/databases/${databaseId}/backup-replicas`),
+        set: (databaseId, replicas) => send<BackupReplicasView>('PUT', `/v1/databases/${databaseId}/backup-replicas`, { replicas }),
+      },
     },
     backupDestinations: {
       list: () => get('/v1/backup-destinations'),

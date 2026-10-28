@@ -948,6 +948,8 @@ export const MATRIX: Record<string, Rule> = {
   // 0.12 per-database backup policy: read follows the backups list, write the backup routes.
   'GET /v1/databases/:id/backup-policy': R('viewer'),
   'PUT /v1/databases/:id/backup-policy': R('admin', { body: () => ({ enabled: true, cron: '0 3 * * *', retainCount: 7 }) }),
+  'GET /v1/databases/:id/backup-replicas': R('viewer'),
+  'PUT /v1/databases/:id/backup-replicas': R('operator', { body: () => ({ replicas: [] }) }),
   'GET /v1/databases/:id/pgbouncer': R('member'),
   'POST /v1/databases/:id/pgbouncer/enable': OP,
   'POST /v1/databases/:id/pgbouncer/disable': OP,

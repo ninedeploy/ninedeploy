@@ -53,3 +53,39 @@ export const backupPolicy = z.object({
   updatedAt: z.string().nullable(),
 });
 export type BackupPolicy = z.infer<typeof backupPolicy>;
+
+// ── Backup replica destinations (G3.3) ────────────────────────────────────
+/** At most this many replica destinations per database. */
+export const BACKUP_REPLICAS_MAX = 3;
+
+export const backupReplica = z
+  .object({
+    destinationId: z.number().int().positive(),
+    /** Copies kept at this destination, newest first. */
+    retainCount: retain,
+  })
+  .strict();
+export type BackupReplica = z.infer<typeof backupReplica>;
+
+/** PUT /v1/databases/:id/backup-replicas — the whole list (PUT replaces; [] turns replicas off). */
+export const backupReplicasInput = z
+  .object({ replicas: z.array(backupReplica).max(BACKUP_REPLICAS_MAX) })
+  .strict()
+  .refine((v) => new Set(v.replicas.map((r) => r.destinationId)).size === v.replicas.length, {
+    message: 'Each destination may appear once',
+    path: ['replicas'],
+  });
+export type BackupReplicasInput = z.infer<typeof backupReplicasInput>;
+
+export interface BackupReplicaView extends BackupReplica {
+  /** Copies held there now, and the newest one. */
+  copies: number;
+  lastCopyAt: string | null;
+  /** The last upload or prune error, until the next success. */
+  lastError: string | null;
+}
+
+export interface BackupReplicasView {
+  databaseId: number;
+  replicas: BackupReplicaView[];
+}

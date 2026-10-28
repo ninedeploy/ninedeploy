@@ -1,9 +1,10 @@
 import { eq } from 'drizzle-orm';
 import { backupDestinations, databaseBackupPolicies } from '@ninedeploy/db';
-import { backupPolicyInput } from '@ninedeploy/schemas';
+import { backupPolicyInput, backupReplicasInput } from '@ninedeploy/schemas';
 import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { assertBackupCron, notifyBackupPolicyChanged, serializeBackupPolicy } from '../lib/backupPolicy.js';
+import { getBackupReplicas, setBackupReplicas } from '../lib/backupReplicas.js';
 import { badRequest, forbidden, parseId } from '../lib/errors.js';
 import { assertDatabaseRole, loadDatabaseForUser } from '../lib/resourceAccess.js';
 
@@ -81,5 +82,38 @@ export const databaseBackupPolicyRoutes: FastifyPluginAsync = async (app) => {
       { databaseId: d.id },
     );
     return serializeBackupPolicy(d.id, row ?? null);
+  });
+
+  // G3.3 replica destinations: more copies of the scheduled dumps, each with
+  // its own retention. Destinations are operator rows, so naming them is too.
+  app.get('/:id/backup-replicas', async (req) => {
+    const id = parseId((req.params as { id: string }).id);
+    const d = await loadDatabaseForUser(app.db, id, req.user!);
+    return getBackupReplicas(app.db, d.id);
+  });
+
+  app.put('/:id/backup-replicas', async (req) => {
+    const id = parseId((req.params as { id: string }).id);
+    const d = await loadDatabaseForUser(app.db, id, req.user!);
+    await assertDatabaseRole(app.db, d, req.user!, 'admin');
+    if (!req.user!.isOperator) throw forbidden('Choosing backup replica destinations requires instance operator access');
+    const parsed = backupReplicasInput.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw badRequest(issue ? `${issue.path.join('.') || 'body'}: ${issue.message}` : 'Invalid replica list');
+    }
+    for (const r of parsed.data.replicas) {
+      const dest = await app.db.query.backupDestinations.findFirst({ where: eq(backupDestinations.id, r.destinationId) });
+      if (!dest) throw badRequest(`Unknown backup destination #${r.destinationId}`);
+    }
+    await setBackupReplicas(app.db, d.id, parsed.data.replicas);
+    void audit(
+      app.db,
+      req.user!.id,
+      'backup.replicas.update',
+      `${d.name}: ${parsed.data.replicas.map((r) => `#${r.destinationId} keep ${r.retainCount}`).join(', ') || 'none'}`,
+      { databaseId: d.id },
+    );
+    return getBackupReplicas(app.db, d.id);
   });
 };

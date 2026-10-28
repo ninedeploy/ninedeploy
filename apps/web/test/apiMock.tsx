@@ -345,6 +345,7 @@ export function createFakeApiModule() {
         retainRemoteCount: null, destinationId: null, localOnly: false, nextRunAt: null, updatedAt: null,
       })),
       setPolicy: vi.fn(),
+      replicas: { get: vi.fn(async (databaseId: number) => ({ databaseId, replicas: [] })), set: vi.fn() },
     },
     limits: { setService: vi.fn(), setDatabase: vi.fn() },
     backupDestinations: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), test: vi.fn(), objects: vi.fn().mockResolvedValue([]) },

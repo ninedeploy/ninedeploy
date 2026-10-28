@@ -68,6 +68,22 @@ Each database can have its own **Backup schedule** (Database → Backups tab, `n
 
 ---
 
+### Replica destinations (G3.3)
+
+A database's scheduled dumps can also go to up to three more backup destinations, for a copy in a second region or provider. Set them under **Database → Backups → Backup replicas**, or with `PUT /v1/databases/:id/backup-replicas` and `{ "replicas": [{ "destinationId": 2, "retainCount": 14 }] }`. Like naming a specific destination in the policy, this is for operators.
+
+**How copies are made**
+- After the main upload, the same encrypted dump is copied to each replica at `<prefix>/<file>`.
+- Each replica keeps its own `retainCount` newest copies and deletes older ones there. A copy whose delete fails is tried again on the next run.
+- A failure at one replica is logged and shown on the card, and never fails the backup or the other replicas.
+
+**Limits**
+- Scheduled dumps only, and not for a local-only policy. Manual backups go to the active destination as before.
+- Restores read from the main copy. A replica is for getting a dump back by hand when that destination is lost.
+- Taking a destination off the list leaves its copies in the bucket.
+
+**Storage:** no migration is needed. The list and the log of copies are one settings row per database, `backup_replicas:<id>`.
+
 ## 💾 4. Volume Snapshots & Labels
 
 Each managed Docker volume can be snapshotted (`tar.gz`), restored or downloaded from the Volumes tab:

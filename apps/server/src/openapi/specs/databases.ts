@@ -3,6 +3,7 @@ import {
   backupDestinationObjectsQuery,
   backupDestinationPatch,
   backupPolicyInput,
+  backupReplicasInput,
   createDatabase,
   databaseImportCreate,
   publicAccessPut,
@@ -133,6 +134,23 @@ export const databasesSpecs: RouteSpecMap = {
     floor: 'admin',
     body: backupPolicyInput,
     responseType: 'BackupPolicy',
+    validation: 'zod',
+  },
+  'GET /v1/databases/:id/backup-replicas': {
+    summary: "A database's backup replica destinations",
+    tag: 'backups',
+    description: 'G3.3. Each replica with its retention, the copies held there, the newest one and the last error.',
+    floor: 'viewer',
+    responseType: 'BackupReplicasView',
+  },
+  'PUT /v1/databases/:id/backup-replicas': {
+    summary: "Set a database's backup replica destinations",
+    tag: 'backups',
+    description:
+      'G3.3. Up to three backup destinations that also receive each scheduled dump, after the primary upload, each keeping its own `retainCount` newest copies. `[]` turns replicas off; copies at a destination taken off the list stay in its bucket. Not for a local-only policy. Operators only (destinations are instance rows), with admin on the database. Audited backup.replicas.update.',
+    floor: 'operator',
+    body: backupReplicasInput,
+    responseType: 'BackupReplicasView',
     validation: 'zod',
   },
   'GET /v1/databases/:id/pgbouncer': {

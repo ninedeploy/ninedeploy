@@ -5619,4 +5619,17 @@ export const TR: Readonly<Record<string, string>> = {
     'Üyeler doğrulayıcı kodu ya da passkey ile giriş yapmalı. Hiç olmayan üye önce kurar; yalnızca parolayla giriş yapan üye yeniden giriş yapar. Ellerindeki API token\'ları çalışmaya devam eder. Bunu açmak için kendi oturumunuzun bu şartı karşılaması gerekir.',
   'Exempt sign-ins through these SSO providers (they enforce MFA themselves):':
     'Bu SSO sağlayıcılarıyla yapılan girişleri muaf tut (MFA\'yı kendileri uyguluyor):',
+
+  // ── Backup replicas (G3.3) ────────────────────────────────────────────
+  'Backup replicas': 'Yedek replikaları',
+  'Backup replicas saved': 'Yedek replikaları kaydedildi',
+  'Each scheduled dump is also copied to these destinations after the main upload, and each keeps its own number of copies. Not for a local-only schedule.':
+    'Her zamanlanmış yedek, ana yüklemeden sonra bu hedeflere de kopyalanır; her hedef kendi kopya sayısını tutar. Yalnızca yerel bir zamanlamada kullanılmaz.',
+  'Choose a destination': 'Bir hedef seçin',
+  'Copies kept': 'Tutulan kopya',
+  'copies kept': 'kopya tutulur',
+  'Remove replica': 'Replikayı kaldır',
+  '{n} copies there': 'orada {n} kopya',
+  'newest {time}': 'en yenisi {time}',
+  'Add replica': 'Replika ekle',
 };

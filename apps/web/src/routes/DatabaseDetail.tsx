@@ -48,6 +48,7 @@ import { downloadBlob, formatBytes, formatDateTime, useCopy } from '../lib/forma
 import { ContainerFileBrowser } from '../components/ContainerFileBrowser.js';
 import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
 import { BackupScheduleCard } from './database/BackupScheduleCard.js';
+import { BackupReplicasCard } from './database/BackupReplicasCard.js';
 import { ImportCard } from './database/ImportCard.js';
 import { PublicAccessCard } from './database/PublicAccessCard.js';
 import { TunnelHintCard } from './database/TunnelHintCard.js';
@@ -341,6 +342,7 @@ export function DatabaseDetail() {
       {activeTab === 'backups' && (
         <div className="space-y-4">
           <BackupScheduleCard dbId={db.id} />
+          <BackupReplicasCard dbId={db.id} />
           <ImportCard db={db} />
           <BackupsPanel dbId={db.id} dbName={db.name} />
         </div>
