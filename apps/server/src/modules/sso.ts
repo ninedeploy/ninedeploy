@@ -19,6 +19,7 @@ import {
   verifySignedInfo,
 } from '../lib/saml.js';
 import { issueSessionTokens } from '../lib/sessions.js';
+import { resolveSamlConfig } from '../lib/samlLogin.js';
 import { findUserByEmail, SSO_TOTP_REFUSAL } from '../lib/authHelpers.js';
 import { audit } from '../lib/audit.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
@@ -41,9 +42,10 @@ import {
  *                                              login (302 to IdP)
  *   - `GET /v1/sso/:name/callback`         — finalize the OIDC flow
  *
- * SAML: provider creation and login are refused (r354, see
- * `SAML_UNAVAILABLE` below); the older notes about the SAML wire path
- * describe code that exists but is not a login path.
+ * SAML: since G3.6 a SAML provider is created only with a configuration that
+ * can sign people in, and sign-in runs through `modules/samlLogin.ts`
+ * (`/v1/auth/saml/*`, node-saml). The `/:name/saml-callback` consumer below
+ * still answers `SAML_UNAVAILABLE`; it was never a login path.
  *
  * PR #23 ships the provider list / create / delete + the OIDC
  * login + callback. The SAML wire path lands in the same PR (via
@@ -156,9 +158,14 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       if (type !== 'oidc' && type !== 'saml') {
         return { ok: false, error: '`type` must be "oidc" or "saml"' };
       }
-      // r354: refuse a provider that can never sign anyone in (see SAML_UNAVAILABLE).
+      // G3.6: a SAML provider is created only with a configuration the
+      // sign-in can use (lib/samlLogin.ts), so a row never sits unusable.
       if (type === 'saml') {
-        return { ok: false, code: 'saml_unavailable', error: SAML_UNAVAILABLE };
+        try {
+          resolveSamlConfig(config);
+        } catch (err) {
+          return { ok: false, code: 'saml_config_invalid', error: err instanceof Error ? err.message : String(err) };
+        }
       }
       if (typeof name !== 'string' || name.length === 0) {
         return { ok: false, error: '`name` is required' };
@@ -198,9 +205,8 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       where: eq(ssoProviders.name, req.params.name),
     });
     if (!provider) return { ok: false, error: `SSO provider "${req.params.name}" not found` };
-    // r354: a SAML row created before this release gets the honest answer,
-    // not "not an OIDC provider".
-    if (provider.type === 'saml') return { ok: false, code: 'saml_unavailable', error: SAML_UNAVAILABLE };
+    // G3.6: SAML signs in through its own routes (modules/samlLogin.ts).
+    if (provider.type === 'saml') return reply.redirect(`/v1/auth/saml/${provider.id}/login${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`);
     if (provider.type !== 'oidc') {
       return { ok: false, error: `Provider "${req.params.name}" is not an OIDC provider` };
     }

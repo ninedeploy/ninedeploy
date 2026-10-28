@@ -41,7 +41,7 @@ Small items that close a visible gap against Coolify or Dokploy. Each one is a s
 | G3.3 | **Backup replica destinations.** | Coolify (S3 replicas) | A backup policy may list extra destinations, each with its own retention. | S | ✅ unreleased (scheduled dumps; up to three; settings row per database with a copy log for retention) |
 | G3.4 | **More log-drain targets.** CloudWatch, Elasticsearch/OpenSearch, Splunk HEC, Better Stack, New Relic, Axiom. | Dokploy (Vector, config checked by `vector validate`), Coolify (Fluent Bit, CloudWatch) | Generate a Vector sink config from the drain rows and validate it in a throwaway container before switching. | M | ✅ unreleased (native formatters on the existing HTTP shipper instead of Vector — same queue/retry/egress guard, no extra container; no CHECK on the type column, so no migration) |
 | G3.5 | **More DNS record providers.** Route53, OVH, Porkbun, Hetzner DNS. | Dokploy (5 providers) | New drivers behind the existing DNS driver interface. | S each | ✅ |
-| G3.6 | **SAML that actually works.** | Dokploy (enterprise) | Use a maintained XML-DSig and c14n library, add an SP-initiated AuthnRequest, and lift `SAML_UNAVAILABLE`. | M | ⬜ |
+| G3.6 | **SAML that actually works.** | Dokploy (enterprise) | Use a maintained XML-DSig and c14n library, add an SP-initiated AuthnRequest, and lift `SAML_UNAVAILABLE`. | M | ✅ unreleased (@node-saml/node-saml 5.1.0, release-age checked; InResponseTo bound and spent once; existing accounts of listed email domains only) |
 | G3.7 | **More notification channels.** Mattermost, Google Chat, Matrix, PagerDuty, Opsgenie. The last two are ROADMAP item 7. | Dokploy (Mattermost) | New channel types in `notifier.ts`. | S | ✅ |
 
 ## G4: Fleet operations (approved 2026-10-27)

@@ -118,6 +118,10 @@ export interface AuthApi {
       list: () => Promise<ActiveSession[]>;
       revoke: (id: number) => Promise<{ ok: boolean }>;
     };
+    /** G3.6: SAML providers for the sign-in page; start each `authUrl` like an OIDC one. */
+    saml: {
+      publicProviders: () => Promise<Array<{ id: number; name: string; authUrl: string }>>;
+    };
     oidc: {
       publicProviders: () => Promise<OidcPublicProvider[]>;
       link: (slug: string) => Promise<{ authUrl: string }>;
@@ -293,6 +297,9 @@ export function authApi(t: Transport): AuthApi {
       sessions: {
         list: () => get<ActiveSession[]>('/v1/auth/sessions'),
         revoke: (id) => send<{ ok: boolean }>('DELETE', `/v1/auth/sessions/${id}`),
+      },
+      saml: {
+        publicProviders: () => get<Array<{ id: number; name: string; authUrl: string }>>('/v1/auth/saml/providers/public'),
       },
       oidc: {
         publicProviders: () => get<OidcPublicProvider[]>('/v1/auth/oidc/providers/public'),

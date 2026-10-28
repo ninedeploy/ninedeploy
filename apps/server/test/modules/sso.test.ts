@@ -277,11 +277,10 @@ describe('POST /v1/sso/providers', () => {
         config: { idpMetadata: '<EntityDescriptor entityID="https://idp.example.com" />' },
       },
     });
+    // G3.6: a SAML provider is accepted only with a configuration sign-in can use.
     const body = res.json() as { ok: boolean; code?: string; error?: string; id?: number };
     expect(body.ok).toBe(false);
-    expect(body.code).toBe('saml_unavailable');
-    expect(body.error).toBe(SAML_UNAVAILABLE);
-    expect(body.error).toMatch(/OIDC/);
+    expect(body.code).toBe('saml_config_invalid');
     expect(body.id).toBeUndefined();
     expect(insert).not.toHaveBeenCalled();
     await app.close();
@@ -390,7 +389,7 @@ describe('GET /v1/sso/:name/login', () => {
     await app.close();
   });
 
-  it('r354: a SAML row created before the refusal answers "SAML unavailable", not a login redirect', async () => {
+  it('G3.6: a SAML row is sent on to the SAML sign-in routes', async () => {
     const db = statefulDb();
     // Seeded directly: the create route no longer accepts SAML (r354).
     await db.insert().values({
@@ -400,12 +399,10 @@ describe('GET /v1/sso/:name/login', () => {
     }).returning();
     const app = await buildTestApp({ db: db as never });
     await app.register(ssoRoutes);
-    const login = await app.inject({ method: 'GET', url: '/corp-saml/login', headers: asUser() });
-    const body = login.json() as { ok: boolean; code?: string; error?: string; redirectUrl?: string };
-    expect(body.ok).toBe(false);
-    expect(body.code).toBe('saml_unavailable');
-    expect(body.error).toBe(SAML_UNAVAILABLE);
-    expect(body.redirectUrl).toBeUndefined();
+    // G3.6: SAML signs in through /v1/auth/saml, which checks the configuration itself.
+    const login = await app.inject({ method: 'GET', url: '/corp-saml/login?nonce=abc', headers: asUser() });
+    expect(login.statusCode).toBe(302);
+    expect(login.headers.location).toMatch(/^\/v1\/auth\/saml\/\d+\/login\?nonce=abc$/);
     await app.close();
   });
 

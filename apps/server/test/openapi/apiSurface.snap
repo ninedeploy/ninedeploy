@@ -97,6 +97,9 @@ GET /v1/auth/oidc/:slug/login public -
 GET /v1/auth/oidc/providers operator -
 GET /v1/auth/oidc/providers/public public -
 GET /v1/auth/passkey self -
+GET /v1/auth/saml/:id/login public -
+GET /v1/auth/saml/:id/metadata public -
+GET /v1/auth/saml/providers/public public -
 GET /v1/auth/sessions self -
 GET /v1/auth/status public -
 GET /v1/auth/token self -
@@ -358,6 +361,7 @@ POST /v1/auth/password self -
 POST /v1/auth/refresh public -
 POST /v1/auth/register public -
 POST /v1/auth/reset-password token -
+POST /v1/auth/saml/:id/acs public -
 POST /v1/auth/tokens self -
 POST /v1/backup-destinations operator nd://scope/write/backups
 POST /v1/backup-destinations/:id/test operator nd://scope/write/backups

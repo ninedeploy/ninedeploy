@@ -50,6 +50,7 @@ import { restartLimitRoutes } from './restartLimit.js';
 import { serviceMaintenanceRoutes } from './maintenance.js';
 import { inlineDockerfileRoutes } from './inlineDockerfile.js';
 import { domainComposeRouteRoutes } from './composeRoutes.js';
+import { samlLoginRoutes } from './samlLogin.js';
 import { domainForwardAuthRoutes, forwardAuthGrantRoutes } from './forwardAuth.js';
 import { twoFactorRequirementRoutes, workspaceTwoFactorRoutes } from './twoFactorPolicy.js';
 import { publicRegistryHookRoutes, serviceRegistryHookRoutes } from './registryHooks.js';
@@ -122,6 +123,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(authRoutes, { prefix: '/auth' });
   // G1.4: what the workspace 2FA policies ask of this session.
   await app.register(twoFactorRequirementRoutes, { prefix: '/auth/2fa' });
+  // G3.6: SAML sign-in (SP-initiated, verified with node-saml)
+  await app.register(samlLoginRoutes, { prefix: '/auth/saml' });
   // Public invitation routes (token-only access) MUST be registered before the
   // authenticated workspace routes so that the unmatched :token path resolves
   // here, not as a /workspaces/:id sub-route.

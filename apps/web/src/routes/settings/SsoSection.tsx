@@ -18,6 +18,7 @@ import {
 } from '../../components/ui.js';
 import type { OidcProviderCreateInput, OidcProviderEntry } from '@ninedeploy/sdk';
 import { ScimTokensCard } from './ScimTokensCard.js';
+import { SamlProvidersCard } from './SamlProvidersCard.js';
 import { msg, useT } from '../../lib/i18n.js';
 
 /** r507: the comma/space-separated domain field → the list the API stores. */
@@ -452,6 +453,7 @@ export function SsoSection() {
         onClose={() => setPendingDelete(null)}
       />
       {deleteError && <p className="text-xs text-rose-400">{deleteError}</p>}
+      <SamlProvidersCard />
       <ScimTokensCard />
     </div>
   );

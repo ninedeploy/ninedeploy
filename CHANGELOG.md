@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SAML sign-in that works with real identity providers (G3.6). It is SP-initiated, verified with `@node-saml/node-saml` 5.1.0 (exclusive c14n, enveloped signatures).
+  - **Binding:** responses are bound to the panel's own AuthnRequest and accepted once.
+  - **Accounts:** only existing accounts of the provider's email domains are signed in.
+  - **Where:** set up under Settings → SSO → SAML identity providers; the button appears on the sign-in page. The routes are `/v1/auth/saml/*`.
+  - **Change:** `SAML_UNAVAILABLE` is lifted for new providers.
+
+  See SECURITY_SSO.md → *SAML sign-in*.
 - A domain per compose service (G2.1). Under Service → Settings → Domains per compose service, a domain of a compose stack routes to another service of the stack, on its port, instead of the main one.
   - **Variables:** the next deploy sets `SERVICE_FQDN_<SERVICE>` and `SERVICE_URL_<SERVICE>` for it.
   - **API:** `GET/PUT /v1/domains/:id/compose-route`. There is no migration.

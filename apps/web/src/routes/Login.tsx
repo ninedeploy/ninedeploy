@@ -63,11 +63,24 @@ export function Login() {
   const status = useQuery({ queryKey: ['auth-status'], queryFn: () => api.auth.status() });
   const initialized = status.data?.initialized ?? false;
   const setupTokenRequired = !initialized && status.data?.setupTokenRequired === true;
-  const publicProviders = useQuery({
+  const oidcProviders = useQuery({
     queryKey: ['public-oidc-providers'],
     queryFn: () => api.auth.oidc.publicProviders(),
     enabled: initialized,
   });
+  // G3.6: SAML providers sign in the same way (a panel without the route answers nothing).
+  const samlProviders = useQuery({
+    queryKey: ['public-saml-providers'],
+    queryFn: () => api.auth.saml.publicProviders(),
+    enabled: initialized,
+    retry: false,
+  });
+  const publicProviders = {
+    data: [
+      ...(oidcProviders.data ?? []).map((p) => ({ key: `oidc-${p.id}`, name: p.name, authUrl: p.authUrl })),
+      ...(samlProviders.data ?? []).map((p) => ({ key: `saml-${p.id}`, name: p.name, authUrl: p.authUrl })),
+    ],
+  };
 
   if (user) return <Navigate to="/" replace />;
 
@@ -238,7 +251,7 @@ export function Login() {
                 <div className="grid grid-cols-1 gap-2">
                   {publicProviders.data?.map((p) => (
                     <Button
-                      key={p.id}
+                      key={p.key}
                       type="button"
                       variant="secondary"
                       className="w-full justify-center"

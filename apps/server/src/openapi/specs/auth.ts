@@ -73,6 +73,37 @@ export const authSpecs: RouteSpecMap = {
     responseType: '{ ok: boolean }',
     validation: 'zod',
   },
+  'GET /v1/auth/saml/providers/public': {
+    summary: 'SAML providers for the sign-in page (G3.6)',
+    tag: 'auth',
+    description: 'No session. Only providers whose configuration can sign anyone in. Each `authUrl` is started with the tab’s `nonce` and a `returnTo`, like the OIDC buttons.',
+    floor: 'public',
+    responseType: 'Array<{ id: number; name: string; authUrl: string }>',
+  },
+  'GET /v1/auth/saml/:id/metadata': {
+    summary: 'This panel as a SAML service provider (metadata XML for the IdP)',
+    tag: 'auth',
+    description: 'No session. The entity id is this URL; the assertion consumer is `/v1/auth/saml/:id/acs`. G3.6.',
+    floor: 'public',
+    responseType: 'string (application/samlmetadata+xml)',
+  },
+  'GET /v1/auth/saml/:id/login': {
+    summary: 'Start a SAML sign-in (SP-initiated AuthnRequest)',
+    tag: 'auth',
+    description: 'No session. Needs the tab’s `nonce` (16–128 URL-safe characters); `returnTo` is a path on this panel. Redirects to the IdP with a signed RelayState. G3.6.',
+    floor: 'public',
+    queryType: '{ nonce: string; returnTo?: string }',
+    validation: 'handler',
+  },
+  'POST /v1/auth/saml/:id/acs': {
+    summary: 'SAML assertion consumer (the IdP posts the response here)',
+    tag: 'auth',
+    description:
+      "No session. The response must answer a request this panel issued in the last 10 minutes (each request id once), carry an assertion signed by the provider's certificate for this panel's audience, and name an email in the provider's `emailDomains` that an account already uses (accounts with 2FA sign in with their password and code instead). On success, `303` to `/auth/callback` with the session in the fragment, bound to the tab's nonce. Audited auth.sso_login. G3.6.",
+    floor: 'public',
+    bodyType: '{ SAMLResponse: string; RelayState: string } (application/x-www-form-urlencoded)',
+    validation: 'handler',
+  },
   'GET /v1/auth/oidc/providers/public': {
     summary: 'List the OIDC providers shown on the sign-in page',
     tag: 'auth',
@@ -294,7 +325,7 @@ export const authSpecs: RouteSpecMap = {
     validation: 'handler',
   },
   'POST /v1/sso/:name/saml-callback': {
-    summary: 'SAML assertion consumer (answers saml_unavailable)',
+    summary: 'Legacy SAML consumer for a signed-in session (answers saml_unavailable; sign in through /v1/auth/saml)',
     tag: 'sso',
     floor: 'authed',
     bodyType: '{ SAMLResponse?: string }',

@@ -25,6 +25,23 @@ Integrate enterprise identity providers for unified authentication — configure
 
 ---
 
+### SAML sign-in (G3.6)
+
+SAML identity providers sign people in to the panel. Add one under **Settings → SSO → SAML identity providers** with the IdP's metadata XML and the email domains whose accounts may use it. The API equivalent is `POST /v1/sso/providers` with `{ "type": "saml", "name": "corp", "config": { "idpMetadataXml": "…", "emailDomains": ["corp.example"] } }`; instead of the metadata you can give `entryPoint` and `idpCert`. Give the IdP the provider's metadata URL, `/v1/auth/saml/<id>/metadata`. That is the entity id, and its consumer URL is `/v1/auth/saml/<id>/acs`.
+
+**Verification**
+- Responses are verified with `@node-saml/node-saml` 5.1.0, which uses xml-crypto with exclusive canonicalization and the enveloped-signature transform. This replaces the hand-written verifier that could never match a real IdP.
+- **Request binding:** sign-in is SP-initiated only. A response must answer an AuthnRequest this panel sent in the last 10 minutes, and each request id is accepted once, so a captured response cannot be replayed.
+- **Signature and audience:** the assertion must be signed by the provider's certificate and addressed to this panel's entity id, with one minute of clock skew. Signature wrapping is refused.
+
+**Who gets a session**
+- Only an existing account whose email is in `emailDomains`. There is no auto-enrolment.
+- An account with two-factor authentication signs in with its password and code instead.
+- The session reaches the browser the same way as an OIDC sign-in: through `/auth/callback`, only in the tab whose nonce started it.
+- It carries `amr: "sso"` and `idp: "sso:<id>"`, so a workspace can exempt it from its 2FA requirement.
+
+**Testing:** the flow is checked end to end with a real AuthnRequest and RSA-SHA256 signed responses. The tests cover a success, replay, another key, another audience, wrapping, an unsolicited response, the domain and account checks, and a forged RelayState.
+
 ## 🔑 3. Multi-Factor Authentication & Passkeys
 
 - **Passkeys (WebAuthn / FIDO2)**: Passwordless biometric authentication (Touch ID, Face ID, YubiKey) with hardware-backed security.

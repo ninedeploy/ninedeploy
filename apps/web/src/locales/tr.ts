@@ -5697,4 +5697,15 @@ export const TR: Readonly<Record<string, string>> = {
   'Main service ({name})': 'Ana servis ({name})',
   'Main service': 'Ana servis',
   'Port for {host}': '{host} için port',
+
+  // ── SAML (G3.6) ───────────────────────────────────────────────────────
+  'Could not add the SAML provider': 'SAML sağlayıcısı eklenemedi',
+  'SAML provider added': 'SAML sağlayıcısı eklendi',
+  'SAML identity providers': 'SAML kimlik sağlayıcıları',
+  'Sign in through a SAML IdP. Give the IdP the metadata URL shown for the provider; accounts must already exist here, and only emails of the listed domains are accepted.':
+    'Bir SAML IdP üzerinden giriş yapın. IdP\'ye sağlayıcı için gösterilen metadata URL\'sini verin; hesapların burada zaten var olması gerekir ve yalnızca listelenen domain\'lerin e-postaları kabul edilir.',
+  'Email domains': 'E-posta domain\'leri',
+  'e.g. example.com, one or more': 'ör. example.com, bir ya da daha fazla',
+  'IdP metadata XML': 'IdP metadata XML\'i',
+  'Add SAML provider': 'SAML sağlayıcısı ekle',
 };
