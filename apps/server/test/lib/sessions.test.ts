@@ -27,7 +27,7 @@ describe('lib/sessions', () => {
     expect(tokens.accessToken).toBe(ACCESS);
     expect(tokens.refreshToken).toBe(REFRESH);
     expect(tokens.expiresIn).toBe(900);
-    expect(jwtMocks.signRefreshToken).toHaveBeenCalledWith(3, 0, expect.any(String), expect.any(Number));
+    expect(jwtMocks.signRefreshToken).toHaveBeenCalledWith(3, 0, expect.any(String), expect.any(Number), undefined);
   });
 
   it('binds the FIRST refresh token to the row expiry, so the login token is rotation-checked (r091)', async () => {
@@ -78,7 +78,7 @@ describe('lib/sessions', () => {
     // The 4th argument is the generation marker: the session row's NEW
     // expiresAt. A replayed refresh token from a previous generation carries
     // the old value and fails the match.
-    expect(jwtMocks.signRefreshToken).toHaveBeenCalledWith(2, 0, 'jti-x', expect.any(Number));
+    expect(jwtMocks.signRefreshToken).toHaveBeenCalledWith(2, 0, 'jti-x', expect.any(Number), undefined);
   });
 
   it('refuses a refresh token from a previous generation before touching the row', async () => {

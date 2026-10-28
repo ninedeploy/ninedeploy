@@ -4,6 +4,7 @@ import { apiTokens, sessions, users } from '@ninedeploy/db';
 import type { AuthUser } from '../plugins/auth.js';
 import { sha256 } from './crypto.js';
 import { verifyJwt, type AppJwtPayload } from './jwt.js';
+import { sessionAuthMethod } from './sessionMethod.js';
 import { bindAuthCredential } from './authCredential.js';
 import { twoFactorRequirement } from './twoFactorPolicy.js';
 
@@ -74,9 +75,18 @@ export async function resolveUser(db: DB, token: string): Promise<AuthUser | nul
     if (payload.ver === undefined || payload.ver !== baseUser.tokenVersion) return null;
     // Interactive sessions are never scope-restricted; scopes are an
     // API-token concept.
-    // G1.4: a workspace that requires 2FA holds a session without it to the enrolment routes.
-    const twoFactor = await twoFactorRequirement(db, baseUser.id, { sso: payload.amr === 'sso' });
-    return bindAuthCredential({ id: baseUser.id, isOperator: baseUser.isInstanceOperator, tokenScopes: null, viaApiToken: false, ...(twoFactor.required && !twoFactor.enrolled && { twoFactorPending: true }), ...(payload.amr === 'sso' && { ssoSession: true }) },
+    // G1.4: a workspace that requires 2FA holds a session that did not prove it to the enrolment routes.
+    const method = sessionAuthMethod(payload);
+    const twoFactor = await twoFactorRequirement(db, baseUser.id, method);
+    return bindAuthCredential({
+      id: baseUser.id,
+      isOperator: baseUser.isInstanceOperator,
+      tokenScopes: null,
+      viaApiToken: false,
+      ...(twoFactor.required && !twoFactor.verified && { twoFactorPending: true, twoFactorEnrolled: twoFactor.enrolled }),
+      ...(method.amr && { sessionAmr: method.amr }),
+      ...(method.idp && { sessionIdp: method.idp }),
+    },
       payload.jti ? { kind: 'session', jti: payload.jti } : { kind: 'legacy-access', expiresAt: payload.exp ?? Math.floor(Date.now() / 1000) });
   }
 

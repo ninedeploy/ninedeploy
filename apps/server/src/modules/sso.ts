@@ -320,7 +320,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       const issued = await issueSessionTokens(db, user, {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
-        amr: 'sso',
+        method: { amr: 'sso', idp: `sso:${provider.id}` },
       });
       // F544: a minted session is a sign-in — audit it like every other path.
       void audit(db, user.id, 'auth.sso_login', `${provider.name} (${claims.email})`, undefined, {
@@ -509,7 +509,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       const tokens = await issueSessionTokens(db, user, {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
-        amr: 'sso',
+        method: { amr: 'sso', idp: `sso:${provider.id}` },
       });
       // F544: a minted session is a sign-in — audit it like every other path.
       void audit(db, user.id, 'auth.sso_login', `${provider.name} (${lookupEmail})`, undefined, {

@@ -4,7 +4,7 @@ import { users, webauthnCredentials, workspaceMembers, workspaces } from '@nined
 import { workspaceTwoFactorInput, type TwoFactorRequirementView, type WorkspaceTwoFactorView } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { forbidden, HttpError, notFound, parseId } from '../lib/errors.js';
-import { getWorkspaceTwoFactor, setWorkspaceTwoFactor, twoFactorRequirement } from '../lib/twoFactorPolicy.js';
+import { getWorkspaceTwoFactor, hasSecondFactor, setWorkspaceTwoFactor, twoFactorRequirement } from '../lib/twoFactorPolicy.js';
 
 /**
  * G1.4 workspace-enforced 2FA: the workspace switch (admins and owners) and
@@ -54,31 +54,35 @@ export const workspaceTwoFactorRoutes: FastifyPluginAsync = async (app) => {
     const ws = await load(req, true);
     const input = workspaceTwoFactorInput.parse(req.body ?? {});
     if (input.required) {
-      // Whoever turns it on has it already, so the switch never locks its own author out mid-change.
-      const me = await hasSecondFactor(app, req.user!.id);
-      if (!me) throw new HttpError(409, 'enrol_first', 'Set up an authenticator app or a passkey for your own account first');
+      // Whoever turns it on passes it in this very session, so the switch never locks its own author out.
+      const me = req.user!;
+      const passes = me.sessionAmr === 'mfa' || (me.sessionAmr === 'sso' && !!me.sessionIdp && input.ssoExemptProviders.includes(me.sessionIdp));
+      if (!passes) {
+        throw new HttpError(
+          409,
+          'enrol_first',
+          (await hasSecondFactor(app.db, me.id))
+            ? 'Sign in again with your authenticator app or passkey first, so this session passes the requirement'
+            : 'Set up an authenticator app or a passkey for your own account first',
+        );
+      }
     }
-    await setWorkspaceTwoFactor(app.db, ws.id, { required: input.required, ssoExempt: input.ssoExempt });
-    void audit(app.db, req.user!.id, 'workspace.two_factor.set', `${ws.name}: ${input.required ? `required${input.ssoExempt ? ' (SSO exempt)' : ''}` : 'off'}`, {
+    await setWorkspaceTwoFactor(app.db, ws.id, { required: input.required, ssoExemptProviders: input.ssoExemptProviders });
+    const exempt = input.ssoExemptProviders.length ? ` (SSO exempt: ${input.ssoExemptProviders.join(', ')})` : '';
+    void audit(app.db, req.user!.id, 'workspace.two_factor.set', `${ws.name}: ${input.required ? `required${exempt}` : 'off'}`, {
       workspaceId: ws.id,
       required: input.required,
-      ssoExempt: input.ssoExempt,
+      ssoExemptProviders: input.ssoExemptProviders,
     });
     return { ...(await getWorkspaceTwoFactor(app.db, ws.id)), membersWithout: await membersWithout(app, ws.id) };
   });
 };
 
-async function hasSecondFactor(app: Parameters<FastifyPluginAsync>[0], userId: number): Promise<boolean> {
-  const user = await app.db.query.users.findFirst({ where: eq(users.id, userId), columns: { totpEnabled: true } });
-  if (user?.totpEnabled) return true;
-  return !!(await app.db.query.webauthnCredentials.findFirst({ where: eq(webauthnCredentials.userId, userId), columns: { id: true } }));
-}
-
 /** Mounted under `/auth/2fa`: always answers, enrolled or not. */
 export const twoFactorRequirementRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
   app.get('/requirement', async (req): Promise<TwoFactorRequirementView> => {
-    if (req.user!.viaApiToken) return { required: false, enrolled: await hasSecondFactor(app, req.user!.id), workspaces: [] };
-    return twoFactorRequirement(app.db, req.user!.id, { sso: req.user!.ssoSession === true });
+    if (req.user!.viaApiToken) return { required: false, enrolled: await hasSecondFactor(app.db, req.user!.id), verified: false, workspaces: [] };
+    return twoFactorRequirement(app.db, req.user!.id, { amr: req.user!.sessionAmr, idp: req.user!.sessionIdp });
   });
 };

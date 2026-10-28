@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { config } from '../config.js';
+import type { SessionAuthMethod } from './sessionMethod.js';
 
 const secret = new TextEncoder().encode(config.jwt.secret);
 
@@ -16,8 +17,14 @@ export interface AppJwtPayload extends JWTPayload {
    * or stolen old refresh token cannot mint new pairs.
    */
   gen?: number;
-  /** G1.4: `sso` when the session began with an SSO sign-in (OIDC, SAML, GitHub). Carried across refreshes. */
-  amr?: 'sso';
+  /**
+   * G1.4: how the session was signed in, carried across refreshes. `mfa` = a
+   * second factor was proved (TOTP, a recovery code or a passkey); `sso` = an
+   * OIDC or SAML sign-in, with the provider in `idp`. Absent = neither.
+   */
+  amr?: 'mfa' | 'sso';
+  /** G1.4: the SSO provider of an `amr: sso` session (`oidc:<id>` or `sso:<id>`). */
+  idp?: string;
 }
 
 function sign(
@@ -27,10 +34,11 @@ function sign(
   ver?: number,
   jti?: string,
   gen?: number,
-  amr?: 'sso',
+  method: SessionAuthMethod = {},
 ): Promise<string> {
   const claims: Record<string, unknown> = { type };
-  if (amr !== undefined) claims['amr'] = amr;
+  if (method.amr !== undefined) claims['amr'] = method.amr;
+  if (method.idp !== undefined) claims['idp'] = method.idp;
   if (ver !== undefined) claims['ver'] = ver;
   if (jti !== undefined) claims['jti'] = jti;
   if (gen !== undefined) claims['gen'] = gen;
@@ -42,10 +50,10 @@ function sign(
     .sign(secret);
 }
 
-export const signAccessToken = (userId: number, ver?: number, jti?: string, amr?: 'sso') =>
-  sign(userId, 'access', config.jwt.accessTtl, ver, jti, undefined, amr);
-export const signRefreshToken = (userId: number, ver?: number, jti?: string, gen?: number, amr?: 'sso') =>
-  sign(userId, 'refresh', config.jwt.refreshTtl, ver, jti, gen, amr);
+export const signAccessToken = (userId: number, ver?: number, jti?: string, method?: SessionAuthMethod) =>
+  sign(userId, 'access', config.jwt.accessTtl, ver, jti, undefined, method);
+export const signRefreshToken = (userId: number, ver?: number, jti?: string, gen?: number, method?: SessionAuthMethod) =>
+  sign(userId, 'refresh', config.jwt.refreshTtl, ver, jti, gen, method);
 
 export async function verifyJwt(token: string): Promise<AppJwtPayload> {
   // Pin the algorithm explicitly. jose already refuses a non-HMAC `alg` for a

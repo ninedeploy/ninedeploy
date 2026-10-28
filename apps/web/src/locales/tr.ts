@@ -5605,15 +5605,18 @@ export const TR: Readonly<Record<string, string>> = {
 
   // ── Workspace 2FA (G1.4) ──────────────────────────────────────────────
   'Two-factor authentication required': 'İki adımlı doğrulama zorunlu',
-  '{workspaces} requires two-factor authentication of every member. Set up an authenticator app or a passkey to continue.':
-    '{workspaces} her üyeden iki adımlı doğrulama istiyor. Devam etmek için bir doğrulayıcı uygulama ya da passkey kurun.',
-  'I have set it up': 'Kurdum',
   'Require two-factor authentication': 'İki adımlı doğrulamayı zorunlu kıl',
   'Two-factor authentication is now required in this workspace': 'Bu workspace\'te iki adımlı doğrulama artık zorunlu',
   'Two-factor authentication is no longer required': 'İki adımlı doğrulama artık zorunlu değil',
-  'Members without an authenticator app or a passkey must set one up before they can use the panel. API tokens they already have keep working. You need two-factor authentication on your own account to turn this on.':
-    'Doğrulayıcı uygulaması ya da passkey\'i olmayan üyeler paneli kullanmadan önce birini kurmalı. Ellerindeki API token\'ları çalışmaya devam eder. Bunu açmak için kendi hesabınızda iki adımlı doğrulama olmalı.',
-  'Exempt SSO sign-ins (your identity provider enforces MFA)':
-    'SSO girişlerini muaf tut (kimlik sağlayıcınız MFA uyguluyor)',
   '{n} members have no second factor yet': '{n} üyenin henüz ikinci doğrulama yöntemi yok',
+
+  // ── Workspace 2FA (G1.4) session proof ────────────────────────────────
+  '{workspaces} requires every member to sign in with an authenticator code or a passkey. Sign out, then sign in again with it.':
+    '{workspaces} her üyenin doğrulayıcı kodu ya da passkey ile giriş yapmasını istiyor. Çıkış yapın, ardından onunla yeniden giriş yapın.',
+  '{workspaces} requires two-factor authentication of every member. Set up an authenticator app or a passkey, then sign out and sign in again with it.':
+    '{workspaces} her üyeden iki adımlı doğrulama istiyor. Bir doğrulayıcı uygulama ya da passkey kurun, ardından çıkış yapıp onunla yeniden giriş yapın.',
+  'Members must sign in with an authenticator code or a passkey. A member without one sets it up first; a member who signed in with only a password signs in again. API tokens they already have keep working. Your own session must pass it to turn this on.':
+    'Üyeler doğrulayıcı kodu ya da passkey ile giriş yapmalı. Hiç olmayan üye önce kurar; yalnızca parolayla giriş yapan üye yeniden giriş yapar. Ellerindeki API token\'ları çalışmaya devam eder. Bunu açmak için kendi oturumunuzun bu şartı karşılaması gerekir.',
+  'Exempt sign-ins through these SSO providers (they enforce MFA themselves):':
+    'Bu SSO sağlayıcılarıyla yapılan girişleri muaf tut (MFA\'yı kendileri uyguluyor):',
 };

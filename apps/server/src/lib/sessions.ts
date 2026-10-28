@@ -5,6 +5,7 @@ import type { TokenPair } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { unauthorized } from './errors.js';
 import { signAccessToken, signRefreshToken, ttlSeconds } from './jwt.js';
+import type { SessionAuthMethod } from './sessionMethod.js';
 
 /**
  * Session-backed token issuance. Every refresh token carries a `jti` that must
@@ -18,7 +19,7 @@ import { signAccessToken, signRefreshToken, ttlSeconds } from './jwt.js';
 export async function issueSessionTokens(
   db: Pick<DB, 'insert' | 'update'>,
   user: Pick<User, 'id' | 'tokenVersion'> & { deactivatedAt?: Date | null },
-  ctx?: { ip?: string; userAgent?: string; amr?: 'sso' },
+  ctx?: { ip?: string; userAgent?: string; method?: SessionAuthMethod },
 ): Promise<TokenPair> {
   // r151: every sign-in path funnels through here (password, passkey, OIDC,
   // SAML, 2FA) — refuse a SCIM-deactivated account once, not per route.
@@ -33,8 +34,8 @@ export async function issueSessionTokens(
   // refresh token skipped the rotation check in refreshSessionTokens and could
   // be replayed for the whole session, sliding its expiry each time.
   const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(user.id, user.tokenVersion, jti, ctx?.amr),
-    signRefreshToken(user.id, user.tokenVersion, jti, expiresAt.getTime(), ctx?.amr),
+    signAccessToken(user.id, user.tokenVersion, jti, ctx?.method),
+    signRefreshToken(user.id, user.tokenVersion, jti, expiresAt.getTime(), ctx?.method),
   ]);
   // Best-effort row write. If it fails the pair is dead on arrival — the
   // refresh needs a live row, and since r503 so does every access-token
@@ -75,7 +76,7 @@ export async function refreshSessionTokens(
   user: Pick<User, 'id' | 'tokenVersion'> & { deactivatedAt?: Date | null },
   jti: string,
   tokenGen?: number,
-  amr?: 'sso',
+  method?: SessionAuthMethod,
 ): Promise<TokenPair> {
   if (user.deactivatedAt) throw unauthorized('This account has been deactivated', 'account_deactivated');
   // Also accept generations minted before issuance aligned to SQLite seconds.
@@ -110,8 +111,8 @@ export async function refreshSessionTokens(
   if (!rotated.length) throw new Error('session_revoked');
   const nextGen = expiresAt.getTime();
   const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(user.id, user.tokenVersion, jti, amr),
-    signRefreshToken(user.id, user.tokenVersion, jti, nextGen, amr),
+    signAccessToken(user.id, user.tokenVersion, jti, method),
+    signRefreshToken(user.id, user.tokenVersion, jti, nextGen, method),
   ]);
   return { accessToken, refreshToken, expiresIn: ttlSeconds(config.jwt.accessTtl) };
 }

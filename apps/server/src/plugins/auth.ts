@@ -30,12 +30,17 @@ export interface AuthUser {
    */
   viaApiToken?: boolean;
   /**
-   * G1.4: a workspace this user belongs to requires 2FA and they have none
-   * yet. Only the enrolment routes answer (`lib/twoFactorPolicy.ts`).
+   * G1.4: a workspace this user belongs to requires 2FA and this session did
+   * not prove a second factor. Only the enrolment routes answer
+   * (`lib/twoFactorPolicy.ts`).
    */
   twoFactorPending?: boolean;
-  /** G1.4: the session began with an SSO sign-in. */
-  ssoSession?: boolean;
+  /** G1.4: with `twoFactorPending`, whether the account already has TOTP or a passkey. */
+  twoFactorEnrolled?: boolean;
+  /** G1.4: how the session was signed in (`mfa`, `sso`; absent = password only). */
+  sessionAmr?: 'mfa' | 'sso';
+  /** G1.4: the SSO provider of an `sso` session. */
+  sessionIdp?: string;
 }
 
 /** Methods that cannot change server state. */
@@ -188,8 +193,8 @@ export default fp(
       const token = header.slice('Bearer '.length).trim();
       const user = await resolveUser(fastify.db, token);
       if (!user) throw unauthorized();
-      if (user.twoFactorPending && !isEnrolmentRoute(req.method, req.url)) {
-        throw new HttpError(403, 'two_factor_required', 'A workspace you belong to requires two-factor authentication. Set up an authenticator app or a passkey to continue.');
+      if (user.twoFactorPending && !isEnrolmentRoute(req.method, req.url, user.twoFactorEnrolled === true)) {
+        throw new HttpError(403, 'two_factor_required', user.twoFactorEnrolled ? 'A workspace you belong to requires two-factor authentication. Sign in again with your authenticator app or passkey.' : 'A workspace you belong to requires two-factor authentication. Set up an authenticator app or a passkey to continue.');
       }
 
       // Apply API-token scopes. This is the single enforcement point: doing it

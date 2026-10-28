@@ -122,7 +122,7 @@ export const authSpecs: RouteSpecMap = {
     summary: 'What the workspace two-factor policies ask of this session',
     tag: 'auth',
     description:
-      'G1.4. `required` is true when a workspace the caller belongs to requires 2FA of this session (SSO sessions are exempt where the workspace says so). While `required && !enrolled`, every route except this one, `GET /v1/auth/me`, `GET /v1/auth/status`, TOTP and passkey setup and logout answers 403 `two_factor_required`. Always `required: false` for an API token.',
+      'G1.4. `required` is true when a workspace the caller belongs to requires 2FA (a session from an SSO provider the workspace lists is exempt). `verified` says whether this session signed in with a second factor (TOTP, a recovery code or a passkey); `enrolled` whether the account has one. While `required && !verified`, every route except this one, `GET /v1/auth/me`, `GET /v1/auth/status` and logout answers 403 `two_factor_required`; an account with no second factor may also set up TOTP or a passkey. Always `required: false` for an API token.',
     floor: 'self',
     responseType: 'TwoFactorRequirementView',
   },

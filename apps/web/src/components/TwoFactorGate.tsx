@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
@@ -8,10 +8,11 @@ import { PasskeyCard, TwoFactorCard } from '../routes/settings/AccountSection.js
 import { Button, Card, CardBody } from './ui.js';
 
 /**
- * G1.4: a workspace the user belongs to requires 2FA and they have none. The
- * server answers only the enrolment routes until they set up TOTP or a
- * passkey, so the app shows the enrolment screen instead of the layout.
- * A panel without the route (404) or a failed read lets the app through.
+ * G1.4: a workspace the user belongs to requires 2FA and this session did not
+ * sign in with a second factor. The server answers only the enrolment routes,
+ * so the app shows this screen instead of the layout: the setup cards for an
+ * account with no second factor yet, otherwise a prompt to sign in again with
+ * it. A panel without the route (404) or a failed read lets the app through.
  */
 export function TwoFactorGate({ children }: { children: ReactNode }) {
   const t = useT();
@@ -22,8 +23,15 @@ export function TwoFactorGate({ children }: { children: ReactNode }) {
     retry: false,
     staleTime: 60_000,
   });
-  const held = !!q.data && q.data.required && !q.data.enrolled;
+  // Once the setup cards were shown they stay, so the recovery codes shown
+  // right after enabling 2FA are not unmounted by the refetch it triggers.
+  const [setupShown, setSetupShown] = useState(false);
+  useEffect(() => {
+    if (q.data?.required && !q.data.enrolled) setSetupShown(true);
+  }, [q.data]);
+  const held = !!q.data && q.data.required && !q.data.verified;
   if (!held) return <>{children}</>;
+  const { enrolled, workspaces } = q.data!;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -33,22 +41,27 @@ export function TwoFactorGate({ children }: { children: ReactNode }) {
             <ShieldAlert size={18} className="text-amber-400" /> {t('Two-factor authentication required')}
           </h1>
           <p className="text-sm text-slate-400">
-            {t('{workspaces} requires two-factor authentication of every member. Set up an authenticator app or a passkey to continue.', {
-              workspaces: q.data!.workspaces.map((w) => w.name).join(', '),
-            })}
+            {enrolled
+              ? t('{workspaces} requires every member to sign in with an authenticator code or a passkey. Sign out, then sign in again with it.', {
+                  workspaces: workspaces.map((w) => w.name).join(', '),
+                })
+              : t('{workspaces} requires two-factor authentication of every member. Set up an authenticator app or a passkey, then sign out and sign in again with it.', {
+                  workspaces: workspaces.map((w) => w.name).join(', '),
+                })}
           </p>
           <div className="flex gap-2 pt-1">
-            <Button size="sm" variant="secondary" onClick={() => void q.refetch()}>
-              {t('I have set it up')}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={logout}>
+            <Button size="sm" onClick={logout}>
               {t('Sign out')}
             </Button>
           </div>
         </CardBody>
       </Card>
-      <TwoFactorCard />
-      <PasskeyCard />
+      {(!enrolled || setupShown) && (
+        <>
+          <TwoFactorCard />
+          <PasskeyCard />
+        </>
+      )}
     </div>
   );
 }

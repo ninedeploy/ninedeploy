@@ -56,7 +56,7 @@ export const workspacesSpecs: RouteSpecMap = {
     summary: 'Require two-factor authentication of every member',
     tag: 'workspaces',
     description:
-      'G1.4. Members without TOTP or a passkey are held to the enrolment routes on their next request (403 `two_factor_required` elsewhere). `ssoExempt` exempts sessions from an SSO sign-in. Turning it on needs 2FA on the caller’s own account (409 `enrol_first`). API tokens are not held. Audited workspace.two_factor.set.',
+      'G1.4. A member session that did not sign in with a second factor is held to the enrolment routes on its next request (403 `two_factor_required` elsewhere). `ssoExemptProviders` (`oidc:<id>`, `sso:<id>`) exempts sessions from those SSO providers; GitHub sign-ins never are. Turning it on needs the caller’s own session to pass it (409 `enrol_first`). API tokens are not held. Audited workspace.two_factor.set.',
     floor: 'admin',
     body: workspaceTwoFactorInput,
     responseType: 'WorkspaceTwoFactorView',

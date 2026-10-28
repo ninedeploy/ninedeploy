@@ -23,6 +23,7 @@ import { assertStepUp } from '../lib/stepUp.js';
 import { assertSetupToken, clearSetupTokenFile, requiredSetupToken } from '../lib/setupToken.js';
 import { seedFreshInstallAutoUrl } from '../lib/autoUrl.js';
 import { getSetting } from '../lib/settings.js';
+import { sessionAuthMethod } from '../lib/sessionMethod.js';
 import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
 import { beginAuthentication, beginRegistration, finishAuthentication, finishRegistration, legacyCredentialId } from '../lib/webauthn.js';
 import { CLIENT_NONCE_PATTERN, exchangeGitHubCode, exchangeOidcCode, fetchOidcConfiguration, fetchOidcUserInfo, generateOAuthState, verifyOAuthState } from '../lib/oauth.js';
@@ -348,7 +349,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     }
     // 2FA: a missing code gets a distinct (but non-enumerating) error; a wrong
     // code counts as a failed login for lockout purposes.
-    if (user.totpEnabled && user.totpSecretEncrypted) {
+    const secondFactor = !!(user.totpEnabled && user.totpSecretEncrypted);
+    if (secondFactor) {
       if (!input.totpCode && input.recoveryCode) {
         // 0.16.3: a lost authenticator. A wrong recovery code counts toward
         // lockout like a wrong TOTP code; a right one is spent for good.
@@ -381,6 +383,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       tokens: await issueSessionTokens(app.db, user, {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
+        // G1.4: this session proved a second factor (TOTP or a recovery code).
+        ...(secondFactor && { method: { amr: 'mfa' as const } }),
       }),
     };
   });
@@ -508,6 +512,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       tokens: await issueSessionTokens(app.db, user, {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
+        // G1.4: a passkey is a second factor in itself.
+        method: { amr: 'mfa' },
       }),
     };
   });
@@ -705,7 +711,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // against — see refreshSessionTokens. Absent on pre-rotation tokens.
     return {
       user: toUser(user, await isOperator(app.db, user)),
-      tokens: await refreshSessionTokens(app.db, user, payload.jti, payload.gen, payload.amr === 'sso' ? 'sso' : undefined),
+      tokens: await refreshSessionTokens(app.db, user, payload.jti, payload.gen, sessionAuthMethod(payload)),
     };
   });
 
@@ -765,7 +771,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     });
     return {
       user: toUser(updated, await isOperator(app.db, updated)),
-      tokens: await issueSessionTokens(app.db, updated, { ip: req.ip, userAgent: req.headers['user-agent'] }),
+      // G1.4: the new session keeps how the current one was signed in.
+      tokens: await issueSessionTokens(app.db, updated, {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        method: sessionAuthMethod({ amr: req.user!.sessionAmr, idp: req.user!.sessionIdp }),
+      }),
       passkeysRemaining,
     };
   });
@@ -1083,7 +1094,13 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const joined = await acceptInvitationsForUser(app.db, { id: user.id, email: user.email, emailVerified: userInfo.emailVerified && normalizeEmail(user.email) === normalizeEmail(userInfo.email) });
     for (const w of joined) void audit(app.db, user.id, 'workspace.invitation.accept', `auto-accept ${w.email} → workspace #${w.workspaceId} as ${w.role}`);
 
-    const tokens = await issueSessionTokens(app.db, user, { ip: req.ip, userAgent: req.headers['user-agent'], amr: 'sso' });
+    // G1.4: an OIDC sign-in names its provider, which a workspace may trust for MFA; GitHub is a plain OAuth login.
+    const isGithub = slug === 'github' || (!provider.issuerUrl && slug.includes('github'));
+    const tokens = await issueSessionTokens(app.db, user, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      ...(!isGithub && { method: { amr: 'sso' as const, idp: `oidc:${provider.id}` } }),
+    });
     void audit(app.db, user.id, 'auth.sso_login', `${provider.name} (${userInfo.email})`, undefined, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
