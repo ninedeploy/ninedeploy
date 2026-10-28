@@ -17,6 +17,8 @@ import type {
   TriggerDeploy,
   Webhook,
   ImageTransfer,
+  DeployFreeze,
+  DeployFreezeCreate,
 } from '@ninedeploy/schemas';
 import type { JobKind, ScheduledJob, JobRun } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -144,11 +146,26 @@ export interface DeploysApi {
      */
     analyzeLogs: (serviceId: number, input?: { tail?: number }) => Promise<RuntimeLogAnalysis>;
   };
+  /**
+   * G5.5 deploy freezes (operator only). A freeze holds every deploy of the
+   * instance, a workspace, a project or an environment in the queue until it
+   * ends (`until`) or is lifted; held deploys then start.
+   */
+  deployFreezes: {
+    list: () => Promise<DeployFreeze[]>;
+    create: (input: DeployFreezeCreate) => Promise<DeployFreeze>;
+    lift: (id: string) => Promise<DeployFreeze>;
+  };
 }
 
 export function deploysApi(t: Transport): DeploysApi {
   const { get, send, request } = t;
   return {
+    deployFreezes: {
+      list: () => get<DeployFreeze[]>('/v1/deploy-freezes'),
+      create: (input) => send<DeployFreeze>('POST', '/v1/deploy-freezes', input),
+      lift: (id) => send<DeployFreeze>('DELETE', `/v1/deploy-freezes/${encodeURIComponent(id)}`),
+    },
     deploys: {
       trigger: (serviceId, input) =>
         send<{ deploymentId: number; alreadyInProgress?: boolean }>('POST', `/v1/services/${serviceId}/deploys`, input ?? {}),

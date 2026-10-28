@@ -1,5 +1,6 @@
 import {
   autoPruneConfigUpdate,
+  deployFreezeCreate,
   doctorFixRequest,
   hetznerServerCreate,
   hetznerTokenInput,
@@ -353,5 +354,21 @@ export const operationsSpecs: RouteSpecMap = {
     summary: 'Delete a Hetzner Cloud server and its node (refused while it hosts anything)',
     tag: 'cloud',
     floor: 'operator',
+  },
+  // G5.5 deploy freezes
+  'GET /v1/deploy-freezes': { summary: 'Deploy freezes in force', tag: 'deploy-freezes', floor: 'operator', responseType: 'DeployFreeze[]' },
+  'POST /v1/deploy-freezes': {
+    summary: 'Hold every deploy of the instance, a workspace, a project or an environment in the queue, with a reason and an optional end',
+    tag: 'deploy-freezes',
+    floor: 'operator',
+    body: deployFreezeCreate,
+    validation: 'zod',
+    responseType: 'DeployFreeze',
+  },
+  'DELETE /v1/deploy-freezes/:id': {
+    summary: 'Lift a deploy freeze; the deploys it held start',
+    tag: 'deploy-freezes',
+    floor: 'operator',
+    responseType: 'DeployFreeze',
   },
 };

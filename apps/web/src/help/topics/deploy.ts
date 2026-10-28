@@ -152,4 +152,23 @@ export const DEPLOY_TOPICS: Record<string, HelpTopic> = {
       { label: 'Templates (Hub)', helpId: 'hub' },
     ],
   },
+
+  'settings.deploy-freeze': {
+    title: 'Settings · Deploy freeze',
+    summary:
+      'Hold deploys during a release week, an incident or a holiday: the whole instance, a workspace, a project or an environment, with a reason and an optional end.',
+    sections: [
+      {
+        heading: 'What a freeze does',
+        bullets: [
+          'Every deploy it covers waits in the queue, whatever started it: the UI, the API, a git push, a deploy hook, a schedule, an image poll or a rollback.',
+          'The deploy log of a held deploy says which freeze holds it and why.',
+          'When the freeze ends or is lifted, the held deploys start. Nothing is dropped.',
+          'A workspace freeze also covers the services in its environments; a PR preview is covered through its parent service.',
+        ],
+        tip: 'To roll back during a freeze, lift it first: rollbacks are held too.',
+      },
+    ],
+    related: [{ label: 'Service · Deploys tab', helpId: 'service.deploys' }],
+  },
 };

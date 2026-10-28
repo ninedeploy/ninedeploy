@@ -16,6 +16,7 @@ import {
   Server,
   Settings as SettingsIcon,
   Shield,
+  Snowflake,
   Sliders,
   Terminal,
   User,
@@ -37,6 +38,7 @@ import { SsoSection } from './SsoSection.js';
 import { FirewallSection } from './FirewallSection.js';
 import { PanelBackupSection } from './PanelBackupSection.js';
 import { SwarmSection } from './SwarmSection.js';
+import { DeployFreezeSection } from './DeployFreezeSection.js';
 import { AutofillRejectingInput, PageHeader, Select, cn } from '../../components/ui.js';
 import { msg, useT } from '../../lib/i18n.js';
 
@@ -51,6 +53,7 @@ type SectionId =
   | 'storage'
   | 'firewall'
   | 'swarm'
+  | 'deploy-freeze'
   | 'config'
   | 'plugins'
   | 'system'
@@ -98,6 +101,7 @@ const SETTING_GROUPS: SectionCategory[] = [
       { id: 'firewall', label: msg('Firewall (UFW)'), desc: msg('Host ports & inbound packet filter'), icon: <Shield size={16} />, operatorOnly: true },
       { id: 'storage', label: msg('Storage & Prune'), desc: msg('Disks, Docker prune & logs'), icon: <HardDrive size={16} />, operatorOnly: true },
       { id: 'swarm', label: msg('Swarm'), desc: msg('Multi-node orchestration & cluster'), icon: <Network size={16} />, operatorOnly: true },
+      { id: 'deploy-freeze', label: msg('Deploy freeze'), desc: msg('Hold deploys during releases & incidents'), icon: <Snowflake size={16} />, operatorOnly: true },
       { id: 'config', label: msg('Config Center'), desc: msg('Global key-value configuration'), icon: <Sliders size={16} />, operatorOnly: true },
       { id: 'plugins', label: msg('Plugins'), desc: msg('Community plugins & extensions'), icon: <Puzzle size={16} /> },
     ],
@@ -282,6 +286,7 @@ export function Settings() {
             {section === 'firewall' && <FirewallSection />}
             {section === 'storage' && <StorageSection />}
             {section === 'swarm' && <SwarmSection />}
+            {section === 'deploy-freeze' && <DeployFreezeSection />}
             {section === 'config' && <ConfigCenterSection />}
             {section === 'plugins' && <PluginsSection />}
             {section === 'system' && <SystemSection />}

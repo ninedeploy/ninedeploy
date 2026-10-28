@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Deploy freezes (G5.5). An operator can hold deploys under Settings → Deploy freeze, or with `/v1/deploy-freezes`.
+  - **Scope:** the whole instance, a workspace (with its environments), a project or an environment. Each freeze has a reason and an optional end.
+  - **How it holds:** the queue checks freezes when it claims a deploy, so every trigger waits as `queued`: the UI, the API, git pushes, deploy hooks, schedules, image polls and rollbacks. The deploy log says why.
+  - **When it ends:** when the freeze ends or is lifted, the held deploys start. Nothing is dropped.
+  - **Audit and storage:** changes are audited as `deploy.freeze` and `deploy.unfreeze`. There is no migration; the freezes are stored in a settings row.
+
+  See DEPLOYMENTS.md → *Deploy freezes*.
 - Create nodes on Hetzner Cloud (G4.3). On the Servers page, an operator saves a Hetzner Cloud API token, then picks a location, server type, image and SSH keys.
   - **What the panel does:** it creates the VM and registers it as a node. The VM's cloud-init installs Docker for its distribution, using the same script as the SSH bootstrap, and starts the NineDeploy agent. The node turns online once the agent has been rekeyed (below).
   - **Rekey after first contact:** the first agent key's hash is in the VM's user data, which any container on the node can read from the metadata service. Right after the agent first answers, the panel replaces that key through the new `agent.rekey` op (agent 0.18.6). The new key is stored before the agent hears of it, and a sweep every 2 minutes finishes a rekey that a panel restart cut short. Until then the node shows as *rekeying*, **Test** and **Approve** are refused, and the agent itself (started with `NINEDEPLOY_AGENT_REKEY_REQUIRED=1`) runs nothing but `agent.ping` and `agent.rekey`. One rekey runs per node at a time, and a pending key is sent again rather than replaced. The agent ignores a rekeyed key that was made for a different `NINEDEPLOY_AGENT_TOKEN`.

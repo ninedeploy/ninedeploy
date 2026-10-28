@@ -490,6 +490,30 @@ Previews of pull requests from forks are refused unless the service builds them 
   - `ninedeploy approvals list`;
   - `ninedeploy approvals approve|reject <service> [--deployment <id>]`.
 
+### Deploy freezes (G5.5)
+
+An operator can freeze deploys during a release week, an incident or a holiday. A freeze covers one of:
+- the whole instance;
+- a workspace, including the services in its environments;
+- a project;
+- an environment (lane).
+
+Each freeze has a reason and an optional end. A PR preview is covered through its parent service.
+
+**What a freeze does**
+- The worker checks freezes when it claims a deploy, so every trigger is held: the UI, the API, a git push, a deploy hook, a schedule, an image poll and a rollback.
+- A held deploy stays `queued`. Its log says once which freeze holds it and why.
+- When the freeze ends or is lifted, the held deploys start. Nothing is dropped.
+- Deploys outside the freeze run as usual.
+- To roll back during a freeze, lift it first.
+
+**Where to manage it**
+- UI: Settings → Deploy freeze (operator only).
+- API: `GET /v1/deploy-freezes`, `POST /v1/deploy-freezes` with `{ scope, targetId, reason, until }`, and `DELETE /v1/deploy-freezes/:id`. Changes are audited as `deploy.freeze` and `deploy.unfreeze`.
+- SDK: `deployFreezes.list`, `deployFreezes.create` and `deployFreezes.lift`.
+
+No migration is needed: the freezes are stored in a single settings row.
+
 ## 🧩 6. Docker Compose Stacks
 
 A multi-container app deploys as `type: compose`. The stack runs as the compose

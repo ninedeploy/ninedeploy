@@ -5438,4 +5438,29 @@ export const TR: Readonly<Record<string, string>> = {
   'waiting for the agent to answer (a few minutes after creation)':
     'ajanın yanıt vermesi bekleniyor (oluşturmadan birkaç dakika sonra)',
   '{cores} vCPU, {memory} GB RAM, {disk} GB': '{cores} vCPU, {memory} GB RAM, {disk} GB',
+
+  // ── G5.5 deploy freeze ────────────────────────────────────────────────
+  'A freeze holds every deploy of its scope in the queue (UI, API, git pushes, deploy hooks, schedules, rollbacks) until it ends or you lift it. Held deploys then start; nothing is dropped.':
+    'Dondurma, kapsamındaki her deploy\'u (arayüz, API, git push, deploy hook, zamanlama, geri alma) bitene ya da siz kaldırana kadar kuyrukta bekletir. Bekleyen deploy\'lar sonra başlar; hiçbiri silinmez.',
+  'All deploys': 'Tüm deploy\'lar',
+  'Could not freeze deploys: {error}': 'Deploy\'lar dondurulamadı: {error}',
+  'Could not lift the freeze: {error}': 'Dondurma kaldırılamadı: {error}',
+  'Could not load deploy freezes': 'Deploy dondurmaları yüklenemedi',
+  'Deploy freeze': 'Deploy dondurma',
+  'Deploys frozen': 'Deploy\'lar donduruldu',
+  'Ends': 'Bitiş',
+  'Freeze deploys': 'Deploy\'ları dondur',
+  'Freeze lifted; held deploys start now': 'Dondurma kaldırıldı; bekleyen deploy\'lar şimdi başlıyor',
+  'Freezes in force': 'Yürürlükteki dondurmalar',
+  'Freezing…': 'Donduruluyor…',
+  'Hold deploys during releases & incidents': 'Sürüm ve olay dönemlerinde deploy\'ları beklet',
+  'Leave empty to keep it until lifted': 'Kaldırılana kadar sürmesi için boş bırakın',
+  'Lift': 'Kaldır',
+  'No freeze is in force; deploys run normally.': 'Yürürlükte dondurma yok; deploy\'lar normal çalışıyor.',
+  'Reason': 'Neden',
+  'Release week, incident, holidays…': 'Sürüm haftası, olay, tatil…',
+  'Whole instance': 'Tüm kurulum',
+  'by {who}, {time}': '{who}, {time}',
+  'until lifted': 'kaldırılana kadar',
+  'until {time}': '{time} tarihine kadar',
 };

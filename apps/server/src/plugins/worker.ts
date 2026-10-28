@@ -9,6 +9,7 @@ import { removeInterruptedCandidates, startStoppedGeneration } from '../engine/i
 import { audit } from '../lib/audit.js';
 import { dropStaleApprovals, holdForApprovalIfNeeded } from '../lib/protectedLanes.js';
 import { holdForCiIfNeeded, pollCiGates } from '../lib/ciGate.js';
+import { anyDeployFreeze, freezeHolding, freezeLogLine } from '../lib/deployFreeze.js';
 import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
 import { createBuildSlots } from '../engine/buildSlots.js';
 
@@ -394,6 +395,8 @@ export default fp(
      * partitioned by the service's target server (null = this host): each
      * partition independently gets `deployConcurrency` build slots, so a long
      * build on a remote server never starves local deployments. */
+    /** `<deploymentId>:<freezeId>` already told in the deploy log. */
+    const freezeNoted = new Set<string>();
     const nextClaimable = async (): Promise<{ id: number; serviceId: number } | undefined> => {
       const buildingServices = fastify.db
         .select({ serviceId: deployments.serviceId })
@@ -433,8 +436,23 @@ export default fp(
           SELECT 1 FROM primary_transitions AS recovery WHERE recovery.service_id = ${deployments.serviceId} UNION ALL SELECT 1 FROM swarm_transitions AS swarm_recovery WHERE swarm_recovery.service_id = ${deployments.serviceId}
         )`))
         .orderBy(asc(deployments.createdAt));
+      const frozen = queued.length > 0 && (await anyDeployFreeze(fastify.db));
       for (const row of queued) {
         if (inFlightServices.has(row.serviceId)) continue; // r272
+        // G5.5: a deploy under a freeze stays queued (every trigger path) and
+        // starts once the freeze ends; its log says why, once per freeze.
+        if (frozen) {
+          const freeze = await freezeHolding(fastify.db, row);
+          if (freeze) {
+            const noted = `${row.id}:${freeze.id}`;
+            if (!freezeNoted.has(noted)) {
+              if (freezeNoted.size > 10_000) freezeNoted.clear();
+              freezeNoted.add(noted);
+              logBus.publish(row.id, freezeLogLine(freeze));
+            }
+            continue;
+          }
+        }
         if (await holdForCiIfNeeded(fastify.db, row.id)) {
           const held = await fastify.db.query.deployments.findFirst({ where: eq(deployments.id, row.id) });
           if (held?.status !== 'awaiting_ci') {

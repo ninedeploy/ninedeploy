@@ -12,6 +12,10 @@ vi.mock('../../src/engine/pipeline.js', () => pipelineMock);
 vi.mock('../../src/lib/ciGate.js', () => ({
   holdForCiIfNeeded: vi.fn(async () => false), pollCiGates: vi.fn(async () => []),
 }));
+// Deploy freezes (G5.5) are covered with the real DB and worker in workerFreeze.test.ts.
+vi.mock('../../src/lib/deployFreeze.js', () => ({
+  anyDeployFreeze: vi.fn(async () => false), freezeHolding: vi.fn(async () => null), freezeLogLine: vi.fn(() => ''),
+}));
 
 const configMock = vi.hoisted(() => ({ config: { deployConcurrency: 1 } }));
 vi.mock('../../src/config.js', () => configMock);
