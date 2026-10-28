@@ -13,7 +13,13 @@ From 0.15.2 a node can do almost everything the panel host does: Nixpacks and Ra
 
 **Manual registration** (Servers → Add node, `POST /v1/servers {name, host, port}`, operator only). The panel generates the agent token, keeps it encrypted, and answers once with `token`, `tokenSha256` and `agentCommand`: the `docker run` line to paste on the node. That line starts `ghcr.io/ninedeploy/ninedeploy:v<panel version>` as `ninedeploy-agent`, as root, with the Docker socket, `/var/lib/ninedeploy-agent` mounted at the same path, and `NINEDEPLOY_AGENT_TOKEN=<sha256 of the token>`. The agent never holds the raw token. Then **Test** (`POST /v1/servers/:id/test`) marks the node online.
 
-**SSH bootstrap** (`POST /v1/servers/ssh-bootstrap`) installs Docker if asked, runs the same command over SSH with a fresh token, and registers the node.
+**SSH bootstrap** (`POST /v1/servers/ssh-bootstrap`) installs Docker if asked, runs the same command over SSH with a fresh token, and registers the node. How Docker is installed depends on the node (G4.1):
+
+- RHEL, CentOS, Rocky, Alma and Oracle Linux: Docker Inc.'s signed RPM repository. `get.docker.com` refuses Rocky and Alma.
+- Alpine: its own `docker` package, enabled with OpenRC.
+- Debian, Ubuntu, Fedora and anything else: `get.docker.com`, as before.
+
+A non-root SSH user needs passwordless `sudo`.
 
 **Self-enrolment:** start the agent with `NINEDEPLOY_MASTER_URL` and `NINEDEPLOY_ENROLMENT_TOKEN` instead of a token hash. It announces itself every 60 seconds and waits for an operator to approve it. See `.env.example` for the agent's variables.
 

@@ -52,6 +52,18 @@ ok()    { echo -e "${GREEN}✓${NC}  $*"; }
 warn()  { echo -e "${YELLOW}⚠${NC}  $*"; }
 fail()  { echo -e "${RED}✗${NC}  $*"; exit 1; }
 
+# G4.1: a root shell on a minimal image (Alpine, some RHEL cloud images) has
+# no sudo. Every privileged step below is written as `sudo …`; as root that
+# is just the command (`-E` keeps the environment, which root already has).
+if [ "$(id -u)" -eq 0 ] && ! command -v sudo >/dev/null 2>&1; then
+  sudo() {
+    while [ "$#" -gt 0 ]; do
+      case "$1" in -E) shift ;; --) shift; break ;; *) break ;; esac
+    done
+    "$@"
+  }
+fi
+
 # ── Remote code policy (L-15) ──────────────────────────────────────────────
 #
 # This script installs Nixpacks and Traefik by downloading a pinned artifact
@@ -236,6 +248,8 @@ ensure_node() {
   warn "Node.js is missing or below the security baseline. Installing a supported Node $major runtime: $required"
   if command -v apt-get &>/dev/null; then
     install_node "$major" || fail "Could not install a secure Node.js runtime. Install $required manually: https://nodejs.org/"
+  elif command -v dnf &>/dev/null; then
+    install_node_rpm "$major" || fail "Could not install a secure Node.js runtime from NodeSource's RPM repository. Install $required manually: https://nodejs.org/"
   elif command -v brew &>/dev/null; then
     brew upgrade "node@$major" 2>/dev/null || brew install "node@$major"
   else
@@ -260,6 +274,56 @@ install_docker_apt() {
     "https://download.docker.com/linux/${id}/gpg" \
     "https://download.docker.com/linux/${id} ${codename} stable" || return 1
   run_apt_step apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+# G4.1: this host's family (os_family, below) and its package manager.
+host_family() { os_family /etc/os-release; }
+
+# Install packages with the host's package manager.
+pkg_install() {
+  case "$(host_family)" in
+    debian) run_apt_step apt-get install -y "$@" ;;
+    rhel|fedora) run_quiet_step "dnf install $*" sudo dnf -y install "$@" ;;
+    alpine) run_quiet_step "apk add $*" sudo apk add --no-cache "$@" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Node.js from NodeSource's signed RPM repository (the stanza their setup
+# script writes; gpgcheck on, so dnf verifies every package).
+install_node_rpm() {
+  local major="$1" arch
+  arch="$(uname -m)"
+  case "$arch" in x86_64|aarch64) ;; *) return 1 ;; esac
+  printf '%s\n' \
+    '[nodesource-nodejs]' \
+    "name=Node.js Packages for Linux RPM based distros - ${arch}" \
+    "baseurl=https://rpm.nodesource.com/pub_${major}.x/nodistro/nodejs/${arch}" \
+    'priority=9' 'enabled=1' 'gpgcheck=1' \
+    'gpgkey=https://rpm.nodesource.com/gpgkey/ns-operations-public.key' \
+    'module_hotfixes=1' \
+    | sudo tee /etc/yum.repos.d/nodesource-nodejs.repo >/dev/null || return 1
+  run_quiet_step "dnf install nodejs" sudo dnf -y install nodejs
+}
+
+# Docker from Docker Inc.'s signed RPM repository (RHEL, CentOS, Rocky, Alma, Fedora).
+install_docker_rpm() {
+  local family id url
+  family="$(host_family)"
+  id=$( (. /etc/os-release && echo "$ID") 2>/dev/null ) || return 1
+  url="$(docker_rpm_repo_url "$family" "$id")" || return 1
+  curl -fsSL "$url" | sudo tee /etc/yum.repos.d/docker-ce.repo >/dev/null || return 1
+  # RHEL-family hosts ship podman/buildah/runc, which conflict with docker-ce.
+  sudo dnf -y remove podman-docker buildah runc >/dev/null 2>&1 || true
+  run_quiet_step "dnf install docker-ce" sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+# Docker from Alpine's own repository (community), started and enabled with OpenRC.
+install_docker_apk() {
+  # docker-openrc carries the init script; apk adds it on its own only when openrc is installed.
+  run_quiet_step "apk add docker" sudo apk add --no-cache docker docker-cli-compose docker-openrc || return 1
+  sudo rc-update add docker default >/dev/null 2>&1 || true
+  sudo rc-service docker start >/dev/null 2>&1 || true
 }
 
 if [ -z "${NINEDEPLOY_INSTALL_DIR:-}" ]; then
@@ -564,6 +628,36 @@ verify_checksums_signature() {
   return 1
 }
 
+# G4.1: the distribution family from an os-release file: debian (Debian,
+# Ubuntu, Raspbian), rhel (RHEL, CentOS, Rocky, Alma, Oracle), fedora, alpine,
+# or unknown. ID decides first, then ID_LIKE. Amazon Linux is not claimed:
+# Docker's RPM repository does not serve it.
+os_family() {
+  local file="${1:-/etc/os-release}" id="" like="" word
+  [ -r "$file" ] || { echo unknown; return 0; }
+  id=$( (. "$file" && printf '%s' "${ID:-}") 2>/dev/null ) || id=""
+  like=$( (. "$file" && printf '%s' "${ID_LIKE:-}") 2>/dev/null ) || like=""
+  case "$id" in amzn) echo unknown; return 0 ;; fedora) echo fedora; return 0 ;; esac
+  for word in $id $like; do
+    case "$word" in
+      debian|ubuntu|raspbian) echo debian; return 0 ;;
+      rhel|centos|rocky|almalinux|ol) echo rhel; return 0 ;;
+      alpine) echo alpine; return 0 ;;
+    esac
+  done
+  echo unknown
+}
+
+# G4.1: Docker Inc.'s RPM repository file for a family and os-release ID.
+# RHEL has its own; CentOS, Rocky, Alma and Oracle use the CentOS one.
+docker_rpm_repo_url() {
+  case "$1" in
+    fedora) echo "https://download.docker.com/linux/fedora/docker-ce.repo" ;;
+    rhel) if [ "$2" = "rhel" ]; then echo "https://download.docker.com/linux/rhel/docker-ce.repo"; else echo "https://download.docker.com/linux/centos/docker-ce.repo"; fi ;;
+    *) return 1 ;;
+  esac
+}
+
 # r576: `NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . ./install.sh` defines the helpers
 # above and returns before anything touches the host — CI exercises the real
 # functions under the script's own `set -euo pipefail` instead of re-typing
@@ -685,6 +779,17 @@ case "$INSTALL_MODE" in
   *) fail "Unsupported install mode '$INSTALL_MODE' (expected docker or bare-metal)" ;;
 esac
 
+# G4.1: the bare-metal panel is a systemd service. A Linux host without
+# systemd (Alpine's OpenRC) gets the Docker mode; asking for bare-metal there
+# explicitly is refused rather than leaving a panel nothing starts.
+if [ "$INSTALL_MODE" = "bare-metal" ] && [ "$(uname -s)" = "Linux" ] && ! command -v systemctl >/dev/null 2>&1 && ! bare_metal_present; then
+  if [ -n "$INSTALL_MODE_FLAG" ] || [ -n "${NINEDEPLOY_INSTALL_MODE:-}" ]; then
+    fail "The bare-metal mode needs systemd, which this host does not have. Install with --docker instead."
+  fi
+  warn "This host has no systemd: installing in Docker mode (the panel runs as a container)."
+  INSTALL_MODE="docker"
+fi
+
 if [ "$INSTALL_MODE" = "docker" ] && bare_metal_present; then
   fail "A bare-metal installation is already present. Upgrade it in place (re-run without --docker) or uninstall it first — running both would fight over the same ports and the Traefik ingress."
 fi
@@ -719,20 +824,34 @@ if command -v flock >/dev/null 2>&1; then
   esac
   _lock_key="$(printf '%s' "$_lock_key" | cksum | tr -d ' ')"
   exec 9>>"/tmp/ninedeploy-install-${_lock_key}.lock"
-  if ! flock -w 1800 9; then
-    fail "Another installer run has held the lock for over 30 minutes — investigate that run before starting a new one."
+  # G4.1: BusyBox's flock (Alpine before util-linux is installed) has no -w;
+  # it would refuse the option at once and read as a held lock.
+  if flock --help 2>&1 | grep -q -- '--wait'; then
+    if ! flock -w 1800 9; then
+      fail "Another installer run has held the lock for over 30 minutes — investigate that run before starting a new one."
+    fi
+  elif ! flock 9; then
+    fail "Could not take the installer lock."
   fi
 fi
 ok "Deployment mode: $INSTALL_MODE"
 
 # ── 1. Prerequisites ───────────────────────────────────────────────────────
 
-# Base system packages on Debian/Ubuntu
-if [ "$(uname -s)" = "Linux" ] && command -v apt-get &>/dev/null; then
+# Base system packages (G4.1: Debian/Ubuntu, RHEL/Rocky/Alma/Fedora, Alpine)
+if [ "$(uname -s)" = "Linux" ]; then
   if ! command -v curl &>/dev/null || ! command -v git &>/dev/null || ! command -v tar &>/dev/null || ! command -v sha256sum &>/dev/null; then
     info "Installing base system packages (curl, git, ca-certificates, tar, coreutils)…"
-    run_apt_step apt-get update -y || true
-    run_apt_step apt-get install -y curl git ca-certificates tar gzip coreutils || true
+    case "$(host_family)" in
+      debian)
+        run_apt_step apt-get update -y || true
+        pkg_install curl git ca-certificates tar gzip coreutils || true
+        ;;
+      # curl-minimal stays: swapping it for curl conflicts on RHEL 9.
+      rhel|fedora) pkg_install git ca-certificates tar gzip coreutils || true ;;
+      alpine) pkg_install curl git ca-certificates tar gzip coreutils util-linux || true ;;
+      *) warn "Unknown distribution: install curl, git, tar and coreutils yourself if a later step fails." ;;
+    esac
   fi
 fi
 
@@ -905,12 +1024,17 @@ if ! command -v docker &>/dev/null; then
     warn "Install Docker manually: https://docs.docker.com/engine/install/"
     fail "Docker is required."
   fi
-  info "Docker not found. Installing Docker Engine + containerd from the signed APT repository…"
-  info "This is the largest download of the install (~150 MB) and can take several minutes. Progress lines follow."
-  if command -v apt-get &>/dev/null && install_docker_apt; then
+  _family="$(host_family)"
+  info "Docker not found. Installing Docker Engine for this ${_family} host…"
+  info "This is the largest download of the install (~150 MB) and can take several minutes."
+  if [ "$_family" = "debian" ] && install_docker_apt; then
     ok "Installed Docker from Docker Inc.'s signed APT repository"
+  elif { [ "$_family" = "rhel" ] || [ "$_family" = "fedora" ]; } && install_docker_rpm; then
+    ok "Installed Docker from Docker Inc.'s signed RPM repository"
+  elif [ "$_family" = "alpine" ] && install_docker_apk; then
+    ok "Installed Docker from Alpine's repository"
   else
-    warn "Docker APT repository unavailable — falling back to get.docker.com."
+    warn "No signed Docker repository for this host — falling back to get.docker.com."
     run_vendor_script "https://get.docker.com" \
       || fail "Docker is required. Install it manually: https://docs.docker.com/engine/install/"
   fi
@@ -919,6 +1043,11 @@ if ! docker info &>/dev/null 2>&1; then
   if command -v systemctl &>/dev/null; then
     warn "Starting Docker service…"
     sudo systemctl start docker || true
+  elif command -v rc-service &>/dev/null; then
+    warn "Starting Docker service (OpenRC)…"
+    sudo rc-service docker start || true
+    # dockerd takes a moment to open its socket after the init script returns.
+    for _i in 1 2 3 4 5 6 7 8 9 10; do docker info &>/dev/null 2>&1 || sudo docker info &>/dev/null 2>&1 && break; sleep 1; done
   fi
 fi
 if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" -ne 0 ]; then
@@ -959,6 +1088,14 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
     # be boot-persistent without these exact unit names. Warn loudly instead.
     warn "Could not verify Docker boot enablement via systemd units."
     warn "If Docker is not managed by snap, run: sudo systemctl enable docker.service"
+  fi
+elif [ "$(uname -s)" = "Linux" ] && command -v rc-update &>/dev/null; then
+  # G4.1: OpenRC (Alpine).
+  sudo rc-update add docker default >/dev/null 2>&1 || true
+  if rc-update show default 2>/dev/null | grep -q '^ *docker '; then
+    ok "Docker is enabled at boot (OpenRC)"
+  else
+    warn "Could not verify Docker boot enablement. Run: rc-update add docker default"
   fi
 fi
 
@@ -1326,9 +1463,12 @@ install_docker_mode() {
   # Compose v2 ships with the signed Docker APT repo this installer uses,
   # but a pre-existing Docker install may lack the plugin.
   if ! docker_cmd compose version >/dev/null 2>&1; then
-    info "Docker Compose v2 plugin missing — installing docker-compose-plugin…"
-    run_apt_step apt-get install -y docker-compose-plugin \
-      || fail "Docker Compose v2 is required for the Docker install mode. Install 'docker-compose-plugin' and re-run."
+    info "Docker Compose v2 plugin missing — installing it…"
+    case "$(host_family)" in
+      alpine) pkg_install docker-cli-compose ;;
+      *) pkg_install docker-compose-plugin ;;
+    esac \
+      || fail "Docker Compose v2 is required for the Docker install mode. Install the Compose plugin (docker-compose-plugin, or docker-cli-compose on Alpine) and re-run."
   fi
 
   # Install dir owned by the invoking user, so .env and compose state stay

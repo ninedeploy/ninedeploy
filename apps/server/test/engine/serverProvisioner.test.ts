@@ -4,6 +4,8 @@ import {
   bootstrapServer,
   clearBootstrapLogs,
   getBootstrapLogs,
+  NODE_DOCKER_INSTALL_SCRIPT,
+  nodeDockerInstallCommand,
   normalizeNodeHost,
   runSshCommand,
   setBootstrapLogs,
@@ -236,6 +238,23 @@ describe('serverProvisioner engine', () => {
 
     expect(res.ok).toBe(true);
     expect(res.serverId).toBe(2);
+  });
+
+  it('G4.1: installs Docker per distribution family, the script sent base64 through sh', async () => {
+    const cmd = nodeDockerInstallCommand();
+    const m = /^printf %s ([A-Za-z0-9+/=]+) \| base64 -d \| sh$/.exec(cmd);
+    expect(m).not.toBeNull();
+    expect(Buffer.from(m![1]!, 'base64').toString('utf8')).toBe(NODE_DOCKER_INSTALL_SCRIPT);
+    // RHEL family: Docker's signed RPM repository (get.docker.com refuses Rocky and Alma).
+    expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('rhel|centos|rocky|almalinux|ol) FAMILY=rhel');
+    expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('https://download.docker.com/linux/centos/docker-ce.repo');
+    // Alpine: its own package under OpenRC.
+    expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('apk add --no-cache docker docker-cli-compose docker-openrc');
+    expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('rc-update add docker default');
+    // Everything else as before.
+    expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('curl -fsSL https://get.docker.com | $S sh');
+    // A non-root user never gets a password prompt.
+    expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('S="sudo -n"');
   });
 
   it('fails early if Docker is missing and installDocker is false', async () => {

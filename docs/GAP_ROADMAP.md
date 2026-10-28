@@ -50,7 +50,7 @@ Several of these were listed under "Not planned for now" in ROADMAP.md. Coolify 
 
 | ID | Item | Who has it | Our approach | Size | Status |
 |---|---|---|---|---|---|
-| G4.1 | **More Linux distributions.** RHEL, Alma, Rocky, Fedora, Alpine (and SLES/Arch later) for `install.sh` and SSH bootstrap. | Coolify, Dokploy | Distribution detection with package-manager branches; the systemd unit and the Alpine OpenRC variant; extend the installer test matrix. | M | ⬜ approved |
+| G4.1 | **More Linux distributions.** RHEL, Alma, Rocky, Fedora, Alpine (and SLES/Arch later) for `install.sh` and SSH bootstrap. | Coolify, Dokploy | Distribution detection with package-manager branches; the systemd unit and the Alpine OpenRC variant; extend the installer test matrix. | M | ✅ RHEL family, Fedora, Alpine (Docker mode); SLES/Arch later |
 | G4.2 | **OS security updates from the panel.** | Coolify 4.5 (unattended-upgrades or dnf-automatic, reboot detection) | A typed agent op group for listing updates, enabling automatic security updates and reporting a pending reboot. Never an automatic reboot. | M | ✅ apt + dnf, panel host and nodes (NODE_OPERATIONS.md) |
 | G4.3 | **Create servers through cloud APIs.** Hetzner first, then DigitalOcean and Vultr. | Coolify (Hetzner, DigitalOcean, Vultr, Hostinger) | Create the VM with cloud-init that runs the existing SSH bootstrap, then enrol the agent. API tokens in the vault. | L | ⬜ approved |
 | G4.4 | **Heroku and Paketo buildpacks.** | Dokploy, Dokku, Kamal | A `buildpacks` build pack wrapping `pack build`, checksum-pinned like Nixpacks. | S | ✅ |

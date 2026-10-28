@@ -83,6 +83,60 @@ const HOST_KEY_ALIAS = 'ninedeploy-node';
  */
 const REMOTE_SETUP_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * G4.1: Docker on a fresh node, by distribution family. RHEL, CentOS, Rocky,
+ * Alma and Oracle get Docker Inc.'s signed RPM repository (get.docker.com
+ * refuses Rocky and Alma), Alpine its own `docker` package under OpenRC, and
+ * everything else get.docker.com as before (Debian, Ubuntu, Fedora). A
+ * non-root SSH user runs it through `sudo -n` (no password prompt).
+ */
+export const NODE_DOCKER_INSTALL_SCRIPT = String.raw`
+set -e
+S=""
+if [ "$(id -u)" != 0 ]; then
+  command -v sudo >/dev/null 2>&1 || { echo "Installing Docker needs root or passwordless sudo." >&2; exit 1; }
+  S="sudo -n"
+fi
+ID=""; ID_LIKE=""
+[ -r /etc/os-release ] && . /etc/os-release
+FAMILY=other
+for w in $ID $ID_LIKE; do
+  case "$w" in
+    fedora) [ "$w" = "$ID" ] && { FAMILY=other; break; } ;;
+    rhel|centos|rocky|almalinux|ol) FAMILY=rhel; break ;;
+    alpine) FAMILY=alpine; break ;;
+    debian|ubuntu|raspbian) FAMILY=other; break ;;
+  esac
+done
+[ "$ID" = amzn ] && FAMILY=other
+case "$FAMILY" in
+  rhel)
+    if [ "$ID" = rhel ]; then REPO=https://download.docker.com/linux/rhel/docker-ce.repo; else REPO=https://download.docker.com/linux/centos/docker-ce.repo; fi
+    curl -fsSL "$REPO" | $S tee /etc/yum.repos.d/docker-ce.repo >/dev/null
+    $S dnf -y remove podman-docker buildah runc >/dev/null 2>&1 || true
+    $S dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    $S systemctl enable --now docker
+    ;;
+  alpine)
+    $S apk add --no-cache docker docker-cli-compose docker-openrc
+    $S rc-update add docker default
+    $S rc-service docker start
+    ;;
+  *)
+    curl -fsSL https://get.docker.com | $S sh
+    ($S systemctl enable --now docker 2>/dev/null || $S service docker start 2>/dev/null || true)
+    ;;
+esac
+`;
+
+/**
+ * The remote command for {@link NODE_DOCKER_INSTALL_SCRIPT}: base64 through
+ * `sh`, so the login shell (bash, ash, zsh…) never parses the script itself.
+ */
+export function nodeDockerInstallCommand(): string {
+  return `printf %s ${Buffer.from(NODE_DOCKER_INSTALL_SCRIPT, 'utf8').toString('base64')} | base64 -d | sh`;
+}
+
 /** r661: where the key a host presented on first contact is recorded. */
 const hostKeySettingKey = (host: string, port: number) => `ssh.hostKeys:${host}:${port}`;
 
@@ -441,12 +495,8 @@ export async function bootstrapServer(
         emitStep('docker_check', 'failed', 'Docker is not installed on the remote host and auto-install was disabled.');
         return { ok: false, steps, logs, error: 'Docker is missing on remote host.' };
       }
-      emitStep('docker_install', 'running', 'Installing Docker via get.docker.com automated bootstrap script...');
-      await runSshCommand(
-        { ...sshOpts, timeoutMs: REMOTE_SETUP_TIMEOUT_MS },
-        'curl -fsSL https://get.docker.com | sh && (systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true)',
-        emitLog,
-      );
+      emitStep('docker_install', 'running', `Installing Docker for ${connCheck.os}...`);
+      await runSshCommand({ ...sshOpts, timeoutMs: REMOTE_SETUP_TIMEOUT_MS }, nodeDockerInstallCommand(), emitLog);
       emitStep('docker_install', 'success', 'Docker successfully installed and started');
     }
 

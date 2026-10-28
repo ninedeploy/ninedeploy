@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- More Linux distributions (G4.1). `install.sh` now sets up a panel host on these distributions, not only Debian and Ubuntu:
+  - **RHEL, Rocky, Alma, CentOS Stream, Oracle Linux and Fedora:**
+    - Docker and Node come from Docker's and NodeSource's signed RPM repositories.
+    - The packages that conflict with Docker are removed first: podman-docker, buildah and runc.
+  - **Alpine:**
+    - Docker comes from Alpine's own package and is enabled with OpenRC.
+    - A host without systemd gets the Docker mode by default; asking for `--bare-metal` there is refused, because the bare-metal panel is a systemd service.
+    - The installer also works with BusyBox's `flock`, which has no `-w`, and in a root shell without `sudo`. Before this, both made it stop with a misleading "lock held" error.
+
+  The SSH bootstrap of a node installs Docker the same way, per distribution:
+  - Rocky and Alma, which `get.docker.com` refuses, are now covered.
+  - The script is sent base64-encoded through `sh`, so the node's login shell never parses it.
+
+  Testing:
+  - Detection was checked against Debian, Ubuntu, Rocky, Alma, CentOS Stream, Oracle Linux, Fedora, Alpine, Amazon Linux and openSUSE images. Amazon Linux and SUSE are reported as unknown.
+  - The installer's Docker and Node installs were run in Rocky 9, Fedora 41 and Alpine 3.20 containers.
+  - A full Docker-mode install was run on Alpine; it ended with a healthy panel.
+
+  See README → Requirements.
+
 - OS security updates from the panel (G4.2). For the panel host (Settings → System) and each node (Servers), operators can:
   - see the pending package updates, security ones first;
   - see whether the host is waiting for a reboot;
