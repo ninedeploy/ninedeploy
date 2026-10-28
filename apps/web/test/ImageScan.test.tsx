@@ -56,6 +56,26 @@ describe('ImageScanCard (G5.1)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Scan now' }));
     await waitFor(() => expect(api.imageScans.scan).toHaveBeenCalledWith(5));
   });
+
+  it('shows a scan failure and surfaces a rejected retry', async () => {
+    mockOf(api.imageScans.get).mockResolvedValue({ result: { ...RESULT, status: 'error', error: 'scanner offline' }, scanning: false } as never);
+    mockOf(api.imageScans.scan).mockRejectedValue(new Error('not allowed'));
+    renderWithProviders(<ImageScanCard serviceId={5} />);
+    expect(await screen.findByText('The scan could not run: scanner offline')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Scan now' }));
+    expect(await screen.findByText('Could not start a scan: not allowed')).toBeInTheDocument();
+  });
+
+  it('keeps scanning disabled during an active scan and can expand truncated findings', async () => {
+    const findings = Array.from({ length: 21 }, (_, index) => ({ ...RESULT.findings[0]!, id: `CVE-${index}`, url: null }));
+    mockOf(api.imageScans.get).mockResolvedValue({ result: { ...RESULT, findings, findingsTruncated: true }, scanning: true } as never);
+    renderWithProviders(<ImageScanCard serviceId={5} />);
+    expect(await screen.findByRole('button', { name: 'Scanning…' })).toBeDisabled();
+    expect(screen.queryByText('CVE-20')).not.toBeInTheDocument();
+    expect(screen.getByText('Only the 21 most severe findings are kept.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show all 21' }));
+    expect(screen.getByText('CVE-20')).toBeInTheDocument();
+  });
 });
 
 describe('ImageScanSection (G5.1)', () => {
@@ -73,5 +93,24 @@ describe('ImageScanSection (G5.1)', () => {
     await waitFor(() => expect(api.imageScans.setPolicy).toHaveBeenCalledWith({ enabled: true }));
     await userEvent.selectOptions(screen.getByLabelText('Deploy gate'), 'critical');
     await waitFor(() => expect(api.imageScans.setPolicy).toHaveBeenCalledWith({ gate: 'critical' }));
+  });
+
+  it('validates the rescan interval and saves fixable-only policy changes', async () => {
+    const view = { policy: { enabled: true, gate: 'critical', gateFixableOnly: true, rescanHours: 24 }, trivyImage: 'trivy:test' };
+    mockOf(api.imageScans.policy).mockResolvedValue(view as never);
+    mockOf(api.imageScans.setPolicy).mockImplementation(async (patch) => ({ ...view, policy: { ...view.policy, ...patch } }) as never);
+    renderWithProviders(<ImageScanSection />);
+    const hours = await screen.findByLabelText('Rescan running images every (hours)');
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    await userEvent.clear(hours);
+    await userEvent.type(hours, '721');
+    expect(save).toBeDisabled();
+    await userEvent.clear(hours);
+    await userEvent.type(hours, '0');
+    await userEvent.click(save);
+    await waitFor(() => expect(api.imageScans.setPolicy).toHaveBeenCalledWith({ rescanHours: 0 }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Gate counts only fixable findings' }));
+    await waitFor(() => expect(api.imageScans.setPolicy).toHaveBeenCalledWith({ gateFixableOnly: false }));
   });
 });

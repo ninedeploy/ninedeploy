@@ -62,7 +62,7 @@ export function ImageScanSection() {
           </Field>
           <Field label={t('Rescan running images every (hours)')} hint={t('0 turns the schedule off.')}>
             <div className="flex gap-2">
-              <Input inputMode="numeric" value={hours} onChange={(e) => setHours(e.target.value)} />
+              <Input aria-label={t('Rescan running images every (hours)')} inputMode="numeric" value={hours} onChange={(e) => setHours(e.target.value)} />
               <Button
                 variant="secondary"
                 disabled={!hoursValid || Number(hours) === policy.rescanHours || save.isPending}
