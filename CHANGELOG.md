@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Settings → Integrations → Create a DNS record (G1.5): the domain-presets route by hand. It creates the A, AAAA or CNAME record for a hostname through the configured DNS provider (admins).
 - Sentry-compatible error ingest (G5.4). Under Service → Activity → Errors, a service gets a DSN (`https://<key>@<panel>/<serviceId>`) for any Sentry SDK.
   - **Grouping:** events are grouped into issues by fingerprint: the exception type and its in-app frames, or the SDK's own `fingerprint`.
   - **Deploy link:** each issue names the deploy it first appeared under. With `release` set to the commit SHA, that is the deploy of that commit; otherwise it is the live deploy.

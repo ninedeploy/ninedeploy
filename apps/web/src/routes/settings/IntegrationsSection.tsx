@@ -7,6 +7,7 @@ import { fill, useT } from '../../lib/i18n.js';
 import { Button, Card, CardBody, ErrorCard } from '../../components/ui.js';
 import { SecretManagersCard } from './SecretManagersCard.js';
 import { DnsProviderCard } from './DnsProviderCard.js';
+import { DnsRecordCard } from './DnsRecordCard.js';
 
 // Vault reference examples (escaped so linters don't read them as template placeholders).
 const REF_INFISICAL = '\u0024\u007B\u007Binfisical:KEY\u007D\u007D';
@@ -21,6 +22,8 @@ export function IntegrationsSection() {
       <CloudflareCard />
       <NamecheapCard />
       <DnsProviderCard />
+      {/* G1.5: the domain-presets apply route, by hand. */}
+      <DnsRecordCard />
     </>
   );
 }

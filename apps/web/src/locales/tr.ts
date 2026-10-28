@@ -5764,4 +5764,14 @@ export const TR: Readonly<Record<string, string>> = {
   'last seen {when}': 'son görülme {when}',
   'since deploy #{id}': '#{id} dağıtımından beri',
   '{n} events': '{n} olay',
+
+  // ── G1.5 DNS record card ──────────────────────────────────────────────
+  'Content (optional)': 'İçerik (isteğe bağlı)',
+  'Create a DNS record': 'DNS kaydı oluştur',
+  'Create record': 'Kaydı oluştur',
+  'Creates an A, AAAA or CNAME record through the DNS provider set above, in the zone that holds the hostname. Leave the content empty to use the configured record content, else the public IP of the panel.':
+    'Yukarıda ayarlanan DNS sağlayıcısı üzerinden, ana makine adını içeren bölgede bir A, AAAA veya CNAME kaydı oluşturur. İçeriği boş bırakırsanız yapılandırılmış kayıt içeriği, yoksa panelin genel IP adresi kullanılır.',
+  'Hostname': 'Ana makine adı',
+  '{type} record for {host} created in {zone} ({content})':
+    '{host} için {type} kaydı {zone} bölgesinde oluşturuldu ({content})',
 };
