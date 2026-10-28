@@ -2619,8 +2619,10 @@ describe('runDeployment on a remote-server target', () => {
    * samples, a poll apart).
    */
   const agentAnswersRunning = () => {
-    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
-      op === 'docker.inspect'
+    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, params: Record<string, unknown>) =>
+      op === 'file.writeEnv'
+        ? { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] }
+        : op === 'docker.inspect'
         ? { exitCode: 0, lines: ['running|none|0|0'] }
         : { exitCode: 0, lines: [] },
     );
@@ -2787,7 +2789,9 @@ describe('runDeployment on a remote-server target', () => {
         ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.16.5', caps: [...NODE_CAPS_0164, 'docker.fileMounts'] })}`] }
         : op === 'file.writeMount'
           ? { exitCode: 0, lines: [`wrote .agent-files/${params['service']}/d${params['deploymentId']}/${params['id']}`] }
-          : op === 'docker.inspect'
+          : op === 'file.writeEnv'
+            ? { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] }
+            : op === 'docker.inspect'
             ? { exitCode: 0, lines: ['running|none|0|0'] }
             : { exitCode: 0, lines: [] },
     );
@@ -2865,8 +2869,10 @@ describe('runDeployment on a remote-server target', () => {
     baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4, dockerLabels: { 'com.example.team': 'payments' }, healthCheck: 'command', healthCommand: 'pg_isready -U app' });
     const lines = collectLogs(1);
     h.agentTransportSealed.mockResolvedValue(true);
-    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
-      op === 'agent.ping'
+    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, params: Record<string, unknown>) =>
+      op === 'file.writeEnv'
+        ? { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] }
+        : op === 'agent.ping'
         ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.16.4', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.ports', 'docker.userLabels', 'docker.healthCmd'] })}`] }
         : op === 'docker.inspect'
           ? { exitCode: 0, lines: ['running|healthy|0|0'] }
@@ -3319,7 +3325,9 @@ describe('r353: source fan-out and Git credentials', () => {
     h.writeDynamicConfig.mockImplementation(async () => undefined);
     // The node answers every op; the new container is reported running.
     h.agentOp.mockImplementation(async (...args: unknown[]) =>
-      args[2] === 'docker.inspect'
+      args[2] === 'file.writeEnv'
+        ? { exitCode: 0, lines: [`wrote .agent-env/${String((args[3] as Record<string, unknown>).name)}.env`] }
+        : args[2] === 'docker.inspect'
         ? { exitCode: 0, lines: ['running|none|0|0'] }
         : args[2] === 'agent.ping'
           ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] }
@@ -3389,7 +3397,9 @@ describe('r353: source fan-out and Git credentials', () => {
     db.query.sources.findFirst.mockResolvedValue({ id: 7, type: 'custom', tokenEncrypted: null, deployKeyEncrypted: null });
     withTarget(db);
     h.agentOp.mockImplementation(async (...args: unknown[]) =>
-      args[2] === 'agent.ping'
+      args[2] === 'file.writeEnv'
+        ? { exitCode: 0, lines: [`wrote .agent-env/${String((args[3] as Record<string, unknown>).name)}.env`] }
+        : args[2] === 'agent.ping'
         ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.17.2","caps":["build-path-guard","workspace.remove","docker.probe"]}'] }
         : args[2] === 'docker.inspect'
           ? { exitCode: 0, lines: ['running|none|0|0'] }
@@ -3921,7 +3931,7 @@ describe('0.13 (T5): GitHub App repositories on nodes — pipeline wiring', () =
         : args[2] === 'agent.ping'
           ? { exitCode: 0, lines: [CAPS] }
           : args[2] === 'file.writeEnv'
-            ? { exitCode: 0, lines: ['wrote .agent-env/x.env'] }
+            ? { exitCode: 0, lines: [`wrote .agent-env/${String((args[3] as Record<string, unknown>).name)}.env`] }
             : { exitCode: 0, lines: [] },
     );
     egressEnv = process.env['NINEDEPLOY_ALLOW_PRIVATE_EGRESS'];
@@ -4046,7 +4056,9 @@ describe('0.16 T4: fan-out targets get the primary’s rules and never a differe
     h.checkoutCommit.mockImplementation(async () => 'sha-1234567');
     h.writeDynamicConfig.mockImplementation(async () => undefined);
     h.agentOp.mockImplementation(async (...args: unknown[]) =>
-      args[2] === 'docker.inspect'
+      args[2] === 'file.writeEnv'
+        ? { exitCode: 0, lines: [`wrote .agent-env/${String((args[3] as Record<string, unknown>).name)}.env`] }
+        : args[2] === 'docker.inspect'
         ? { exitCode: 0, lines: ['running|none|0|0'] }
         : args[2] === 'agent.ping'
           ? { exitCode: 0, lines: [CAPS_015] }
