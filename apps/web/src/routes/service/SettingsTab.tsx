@@ -18,6 +18,7 @@ import { CanaryCard } from './CanaryCard.js';
 import { AutoscaleCard } from './AutoscaleCard.js';
 import { SizingCard } from './SizingCard.js';
 import { PendingChangesTray } from './PendingChangesTray.js';
+import { RestartLimitCard } from './RestartLimitCard.js';
 import { SleepCard } from './SleepCard.js';
 import { StatusBadgeCard } from './StatusBadgeCard.js';
 import { DeployHookCard } from './DeployHookCard.js';
@@ -55,6 +56,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <AutoscaleCard svc={svc} />
       {/* 0.16.11 scale to zero: docker services on a panel that reports the field. */}
       <SleepCard svc={svc} />
+      {/* G1.3: stop a crash-looping service (opt-in). */}
+      <RestartLimitCard svc={svc} />
     </div>
   );
 }

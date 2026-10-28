@@ -46,6 +46,7 @@ import { deployFreezeRoutes } from './deployFreezes.js';
 import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { databaseTunnelRoutes } from './databaseTunnel.js';
 import { pendingChangeRoutes } from './pendingChanges.js';
+import { restartLimitRoutes } from './restartLimit.js';
 import { projectRoutes } from './projects.js';
 import { notificationRoutes } from './notifications.js';
 import { networkRoutes } from './networks.js';
@@ -292,6 +293,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(serviceImageScanRoutes, { prefix: '/services' });
   // G5.2: the pending changes tray
   await app.register(pendingChangeRoutes, { prefix: '/services' });
+  // G1.3: the restart-loop limit
+  await app.register(restartLimitRoutes, { prefix: '/services' });
   await app.register(labelRoutes, { prefix: '/labels' });
   await app.register(traefikRoutes, { prefix: '' });
   // Custom dynamic config and custom certificates (0.14, DESIGN §2.5),

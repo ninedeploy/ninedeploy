@@ -5,6 +5,8 @@ import type {
   Attachment,
   AutoscaleStatusView,
   SizingReport,
+  RestartLimitConfig,
+  RestartLimitView,
   PendingChangesView,
   PendingApplyInput,
   PendingApplyResult,
@@ -200,6 +202,11 @@ export interface ServicesApi {
     autoscale: (id: number) => Promise<AutoscaleStatusView>;
     /** G5.6: memory and CPU limit suggestions from the metric history (viewer; advisory). */
     sizing: (id: number) => Promise<SizingReport>;
+    /** G1.3: stop the service when its containers keep restarting (opt-in; member to set). */
+    restartLimit: {
+      get: (id: number) => Promise<RestartLimitView>;
+      set: (id: number, limit: RestartLimitConfig | null) => Promise<RestartLimitView>;
+    };
     /**
      * G5.2 pending changes tray. With staging on, edits collect (`stage`, a
      * PATCH body) instead of applying; `apply` sends them through
@@ -356,6 +363,10 @@ export function servicesApi(t: Transport): ServicesApi {
       retrySwarmRecovery: id => request<SwarmRecoveryResult>(`/v1/services/${id}/swarm/recovery`, { method: 'POST' }, 600_000),
       autoscale: (id) => get<AutoscaleStatusView>(`/v1/services/${id}/autoscale`),
       sizing: (id) => get<SizingReport>(`/v1/services/${id}/sizing`),
+      restartLimit: {
+        get: (id) => get<RestartLimitView>(`/v1/services/${id}/restart-limit`),
+        set: (id, limit) => send<RestartLimitView>('PUT', `/v1/services/${id}/restart-limit`, { limit }),
+      },
       pending: {
         get: (id) => get<PendingChangesView>(`/v1/services/${id}/pending`),
         stage: (id, patch) => send<PendingChangesView>('PUT', `/v1/services/${id}/pending`, patch),

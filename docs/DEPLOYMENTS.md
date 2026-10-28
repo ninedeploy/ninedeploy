@@ -254,6 +254,21 @@ A service's settings normally apply as each card is saved. Turn on **Settings �
 - Audited as `service.changes.stage`, `service.changes.staging`, `service.changes.discard` and `service.changes.apply`.
 - No migration is needed: the tray is one settings row per service.
 
+### Restart-loop limit (G1.3)
+
+A docker service on the panel host can be stopped when its containers keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off.
+
+**How it works**
+- Once a minute the panel reads Docker's restart count for each of the service's containers.
+- When the containers restart `maxRestarts` times within `windowMinutes`, the service is stopped as the Stop button would: it is marked stopped, then every replica is stopped.
+- Stopping it is audited as `service.restart_limit`, which notifies the channels that receive audit events. The card shows the restarts in the window and when the limit last tripped.
+- A deploy in progress is left alone, since it restarts containers on purpose. A new container starts counting from scratch.
+- Checked against a real container in a crash loop: the limit tripped after 3 restarts and the container stayed stopped.
+
+**Limits and storage**
+- Off by default, and only for docker services on the panel host, not on nodes or Swarm for now.
+- No migration is needed: the limit is a settings row. The restart history is kept in memory, so a panel restart starts each window again.
+
 ### Healthcheck timeout (0.16.1)
 
 The ordinary panel-host Docker HTTP gate in step 3 accepts HTTP **200–499** on the health path and waits **300 seconds** by default. If direct container-IP access fails, the sibling container checks the same HTTP path from the runtime's bridge; it never downgrades HTTP readiness to an open TCP socket. Exposed-port recovery also requires an HTTP response. Redirects are checked without following them to another host. Set **Service → Settings → Healthcheck timeout** (`healthTimeoutSeconds`, 10–3600) for an app whose first boot runs long migrations or downloads a model; leave it blank for the default. A failed deploy names the limit it hit. The old container keeps serving until the new one passes.

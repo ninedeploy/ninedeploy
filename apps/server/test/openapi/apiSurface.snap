@@ -216,6 +216,7 @@ GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
 GET /v1/services/:id/pending viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
+GET /v1/services/:id/restart-limit viewer nd://scope/read/services
 GET /v1/services/:id/routing viewer nd://scope/read/services
 GET /v1/services/:id/runtime-recovery viewer nd://scope/read/services
 GET /v1/services/:id/sizing viewer nd://scope/read/services
@@ -531,6 +532,7 @@ PUT /v1/services/:id/github operator nd://scope/write/services
 PUT /v1/services/:id/pending member nd://scope/write/services
 PUT /v1/services/:id/pending/staging member nd://scope/write/services
 PUT /v1/services/:id/placement operator nd://scope/write/services
+PUT /v1/services/:id/restart-limit member nd://scope/write/services
 PUT /v1/services/:id/tags admin nd://scope/write/services
 PUT /v1/settings/acme-email operator nd://scope/write/settings
 PUT /v1/settings/allow-registration operator nd://scope/write/settings

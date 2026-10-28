@@ -1,4 +1,5 @@
 import {
+  restartLimitInput,
   pendingApplyInput,
   pendingStagingInput,
   composePreviewRequest,
@@ -168,6 +169,20 @@ export const servicesSpecs: RouteSpecMap = {
     body: setServiceTags,
     responseType: 'ServiceTags',
     validation: 'zod',
+  },
+  'GET /v1/services/:id/restart-limit': {
+    summary: "A service's restart-loop limit, its restarts in the window and when it last tripped (G1.3)",
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'RestartLimitView',
+  },
+  'PUT /v1/services/:id/restart-limit': {
+    summary: 'Stop the service when its containers restart this often (null turns it off)',
+    tag: 'services',
+    floor: 'member',
+    body: restartLimitInput,
+    validation: 'zod',
+    responseType: 'RestartLimitView',
   },
   'GET /v1/services/:id/pending': {
     summary: "A service's pending changes as a field-level diff, with who staged each, and whether staging is on (G5.2)",

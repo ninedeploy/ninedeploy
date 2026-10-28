@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Restart-loop limit (G1.3). Under Settings → Restart-loop limit, a docker service on the panel host is stopped when its containers restart N times within M minutes.
+  - **How it stops:** the same way as the Stop button. It is audited as `service.restart_limit`, which notifies. A deploy in progress is left alone.
+  - **Off by default:** set it with `PUT /v1/services/:id/restart-limit`. There is no migration.
+
+  See DEPLOYMENTS.md → *Restart-loop limit*.
 - Compose deploys skip the build when nothing that goes into it changed (G2.4).
   - **What counts as unchanged:** the same commit and the same resolved compose model (build contexts, Dockerfiles, args and environment) as the last build. The images are then reused; a missing image is still built.
   - **Building every time:** `NINEDEPLOY_COMPOSE_BUILD_SKIP=off` builds on every deploy, for stacks that need fresh base images.

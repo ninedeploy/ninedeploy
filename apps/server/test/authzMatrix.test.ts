@@ -69,6 +69,7 @@ vi.mock('../src/plugins/githubRunnerScheduler.js', () => noop('authz-github-runn
 vi.mock('../src/plugins/cloudNodeScheduler.js', () => noop('authz-cloud-nodes'));
 vi.mock('../src/plugins/imageScanScheduler.js', () => noop('authz-image-scans'));
 vi.mock('../src/plugins/sharedCertificateSync.js', () => noop('authz-shared-certificates'));
+vi.mock('../src/plugins/restartLimiter.js', () => noop('authz-restart-limit'));
 vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
 vi.mock('../src/plugins/logShipper.js', () => noop('authz-logshipper'));
 vi.mock('../src/plugins/jobScheduler.js', () => noop('authz-jobs'));
@@ -785,6 +786,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/tags': R('viewer'),
   'GET /v1/services/:id/image-scan': R('viewer'),
   'GET /v1/services/:id/pending': R('viewer'),
+  'GET /v1/services/:id/restart-limit': R('viewer'),
+  'PUT /v1/services/:id/restart-limit': R('member', { body: () => ({ limit: null }) }),
   'PUT /v1/services/:id/pending': R('member', { body: () => ({ healthPath: '/staged' }) }),
   'DELETE /v1/services/:id/pending': R('member'),
   'PUT /v1/services/:id/pending/staging': R('member', { body: () => ({ staging: false }) }),

@@ -87,6 +87,7 @@ export function createFakeApiModule() {
       revokeToken: vi.fn(),
     },
     services: {
+      restartLimit: { get: vi.fn().mockResolvedValue({ limit: null, recentRestarts: 0, trippedAt: null }), set: vi.fn() },
       pending: {
         get: vi.fn().mockResolvedValue({ serviceId: 1, staging: false, changes: [], updatedAt: null, updatedBy: null }),
         stage: vi.fn(),
