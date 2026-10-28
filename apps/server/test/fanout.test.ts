@@ -436,6 +436,7 @@ describe('0.16 T4: fan-out runs what the primary runs (D1) and ships what it bui
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
       if (op === 'agent.ping') return { exitCode: 0, lines: [caps] };
       if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      if (op === 'file.writeMount') return { exitCode: 0, lines: [`wrote .agent-files/${String(params.service)}/d${String(params.deploymentId)}/${String(params.id)}`] };
       if (op === 'docker.volumeInspect') throw new Error('agent docker.volumeInspect exited with 1');
       if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
       return { exitCode: 0, lines: [] };

@@ -19,7 +19,7 @@ vi.mock('../src/lib/audit.js', () => auditMock);
 vi.mock('../src/lib/hostPath.js', () => ({ hostPathFor: vi.fn(async (p: string) => p) }));
 
 const { serviceFileRoutes } = await import('../src/modules/serviceFiles.js');
-const { FILE_MOUNTS_UNSUPPORTED, fileMountRefusal, prepareFileMounts, removeServiceFilesDir, serviceFilesDir } = await import('../src/lib/serviceFiles.js');
+const { FILE_MOUNTS_UNSUPPORTED, fileMountRefusal, prepareFileMounts, removeServiceFilesDir, serviceFilesDir, writeNodeFileMounts } = await import('../src/lib/serviceFiles.js');
 const { renderRuntimeCompose } = await import('../src/engine/builders/docker.js');
 const { asUser, buildTestApp } = await import('./helpers.js');
 
@@ -202,5 +202,23 @@ describe('deploy-time file mounts', () => {
       portMappings: null,
     } as never);
     expect(yaml).toContain('/srv/nd/service-files/web/d3/5:/app/x.conf:ro');
+  });
+});
+
+describe('node file mount receipts', () => {
+  it.each([
+    { name: 'missing', lines: [] },
+    { name: 'other deployment', lines: ['wrote .agent-files/other/d7/5'] },
+    { name: 'duplicate', lines: ['wrote .agent-files/web/d7/5', 'wrote .agent-files/web/d7/5'] },
+    { name: 'failed operation', lines: ['wrote .agent-files/web/d7/5'], code: 1 },
+  ])('refuses an unconfirmed receipt: $name', async ({ lines, code = 0 }) => {
+    const agent = vi.fn(async () => ({ exitCode: code, lines }));
+    await expect(writeNodeFileMounts(agent, { slug: 'web' }, 7, [{ id: 5, containerPath: '/app/config', content: 'x' }], () => {}))
+      .rejects.toThrow(/file mount.*receipt/i);
+  });
+  it('accepts the requested deployment file', async () => {
+    const agent = vi.fn(async () => ({ exitCode: 0, lines: ['wrote .agent-files/web/d7/5'] }));
+    await expect(writeNodeFileMounts(agent, { slug: 'web' }, 7, [{ id: 5, containerPath: '/app/config', content: 'x' }], () => {}))
+      .resolves.toEqual([{ file: '.agent-files/web/d7/5', mount: '/app/config' }]);
   });
 });

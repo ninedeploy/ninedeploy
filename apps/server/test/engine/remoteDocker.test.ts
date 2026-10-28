@@ -139,8 +139,9 @@ describe('remote docker builder — image services', () => {
     { name: 'missing', lines: [] },
     { name: 'wrong path', lines: ['wrote .agent-env/other-7.env'] },
     { name: 'duplicate', lines: ['wrote .agent-env/web-7.env', 'wrote .agent-env/web-7.env'] },
-  ])('refuses an unconfirmed environment receipt: $name', async ({ lines }) => {
-    const { agent, ops } = fakeAgent({ 'file.writeEnv': { exitCode: 0, lines } });
+    { name: 'failed operation', lines: ['wrote .agent-env/web-7.env'], code: 1 },
+  ])('refuses an unconfirmed environment receipt: $name', async ({ lines, code = 0 }) => {
+    const { agent, ops } = fakeAgent({ 'file.writeEnv': { exitCode: code, lines } });
     await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1.27' }) })))
       .rejects.toThrow(/environment.*receipt/i);
     expect(ops()).not.toContain('docker.runEnv');

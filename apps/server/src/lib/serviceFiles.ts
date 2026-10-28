@@ -75,7 +75,7 @@ export interface NodeFileMount {
 }
 
 /** How the node is called (remoteDocker's `AgentCall` / an `AgentCaller`). */
-type FileAgent = (op: string, params: Record<string, unknown>, sink: (line: string) => void) => Promise<{ lines: string[] }>;
+type FileAgent = (op: string, params: Record<string, unknown>, sink: (line: string) => void) => Promise<{ exitCode: number; lines: string[] }>;
 
 /**
  * Write this deployment's files on the node, one `file.writeMount` each, and
@@ -92,7 +92,11 @@ export async function writeNodeFileMounts(
   const mounts: NodeFileMount[] = [];
   for (const f of files) {
     const wrote = await agent('file.writeMount', { service: service.slug, deploymentId, id: f.id, content: f.content }, () => undefined);
-    const file = wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? `.agent-files/${service.slug}/d${deploymentId}/${f.id}`;
+    const file = `.agent-files/${service.slug}/d${deploymentId}/${f.id}`;
+    const receipts = wrote.lines.filter(line => line.startsWith('wrote '));
+    if (wrote.exitCode !== 0 || receipts.length !== 1 || receipts[0] !== `wrote ${file}`) {
+      throw new Error('Node file mount receipt is unconfirmed; deployment was not started');
+    }
     mounts.push({ file, mount: f.containerPath });
   }
   if (mounts.length > 0) log(`File mounts: ${mounts.map((m) => m.mount).join(', ')} (read-only)`);

@@ -359,7 +359,7 @@ describe('ensureNodeVolumes and the compose pre-create (D9)', () => {
 describe('runRemoteContainer on docker.runSpec (design §4.2, §1.6)', () => {
   const service = (over: Record<string, unknown> = {}) =>
     ({ id: 11, name: 'minio', slug: 'minio', serverId: 1, port: 9000, cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0, volumeMount: null, publishedPort: null, cmd: null, dockerSocket: false, ownerUserId: 4, ...over }) as never;
-  function nodeAgent(opts: { ping?: string; runFails?: boolean } = {}) {
+  function nodeAgent(opts: { ping?: string; runFails?: boolean; badFileReceipt?: boolean } = {}) {
     const calls: Array<{ op: string; params: Record<string, unknown> }> = [];
     const agent = async (op: string, params: Record<string, unknown>) => {
       calls.push({ op, params });
@@ -369,6 +369,7 @@ describe('runRemoteContainer on docker.runSpec (design §4.2, §1.6)', () => {
         throw new Error('agent docker.volumeInspect exited with 1');
       }
       if (op === 'docker.volumeCreate') h.volumes.set(params['name'] as string, params['labels'] as Record<string, string>);
+      if (op === 'file.writeMount') return { exitCode: 0, lines: [opts.badFileReceipt ? 'wrote .agent-files/other/d7/5' : `wrote .agent-files/${params['service']}/d${params['deploymentId']}/${params['id']}`] };
       if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${params['name']}.env`] };
       if (op === 'docker.runSpec' && opts.runFails) throw new Error('agent docker.runSpec exited with 125');
       return { exitCode: 0, lines: [] };
@@ -449,6 +450,14 @@ describe('runRemoteContainer on docker.runSpec (design §4.2, §1.6)', () => {
     expect(n.ops().slice(-3)).toEqual(['docker.runSpec', 'docker.rm', 'file.deleteEnv']);
   });
 
+  it('does not start a node container with a different deployment file receipt', async () => {
+    const n = nodeAgent({ badFileReceipt: true });
+    await expect(runRemoteContainer(n.agent, input(service(), { files: [{ id: 5, containerPath: '/app/config', content: 'x' }] })))
+      .rejects.toThrow(/file mount.*receipt/i);
+    expect(n.ops()).not.toContain('file.writeEnv');
+    expect(n.ops()).not.toContain('docker.runSpec');
+  });
+
   it('0.16.5 file mounts: each file is written on the node before the env-file, then mounted by runSpec', async () => {
     const n = nodeAgent();
     const log: string[] = [];
@@ -460,7 +469,7 @@ describe('runRemoteContainer on docker.runSpec (design §4.2, §1.6)', () => {
     // Each capability check pings (as for labels and the healthcheck); nothing is written before them.
     expect(n.ops()).toEqual(['agent.ping', 'agent.ping', 'file.writeMount', 'file.writeMount', 'file.writeEnv', 'docker.runSpec', 'file.deleteEnv']);
     expect(n.calls.find((c) => c.op === 'file.writeMount')!.params).toEqual({ service: 'minio', deploymentId: 7, id: 5, content: 'events {}' });
-    // The agent answered no path: the panel uses the layout the agent writes.
+    // The agent confirms the exact per-deployment file paths.
     expect(n.calls.find((c) => c.op === 'docker.runSpec')!.params['fileMounts']).toEqual([
       { file: '.agent-files/minio/d7/5', mount: '/etc/nginx/nginx.conf' },
       { file: '.agent-files/minio/d7/6', mount: '/app/config.yaml' },
