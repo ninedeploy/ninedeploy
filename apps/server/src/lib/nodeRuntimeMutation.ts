@@ -7,6 +7,7 @@ import { parseRunSpec, runSpecArgv, type RunSpec } from '../agentOps/runSpec.js'
 import { assertFileMountsWritten } from '../agentOps/fileMounts.js';
 import { withNodeServiceJournal, type NodeServiceJournal } from './nodeLifecycle.js';
 import { spawnValidated } from './spawnValidated.js';
+import { confirmsMissingContainer } from './dockerContainerAbsence.js';
 
 const MODE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_protocol (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)';
 const PREPARE_SHAPE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL)';
@@ -78,7 +79,7 @@ function dockerIO(journal: NodeServiceJournal, onLine: (line: string) => void) {
     const code = await call(['inspect', '--type', 'container', '--format', INSPECT, reference], line => { bytes += Buffer.byteLength(line); if (bytes <= 65_536) lines.push(line); });
     if (bytes > 65_536) throw new Error('Runtime identity inspection exceeded its limit');
     if (code !== 0) {
-      if (lines.length > 0 && lines.every(line => /No such (object|container)/i.test(line))) return null;
+      if (confirmsMissingContainer(lines, reference)) return null;
       throw new Error('Runtime identity inspection unavailable');
     }
     if (lines.length !== 1) throw new Error('Runtime identity inspection unavailable');

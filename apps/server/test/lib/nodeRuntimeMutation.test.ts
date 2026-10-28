@@ -341,6 +341,20 @@ describe('fenced generation-independent inventory and Stop', () => {
     await expect(runtime().inventory(fence())).rejects.toThrow(/generation is unconfirmed/);
     expect(rows[0]!.running).toBe(true); expect(effects().filter(args => args[0] !== 'ps')).toEqual([]);
   });
+  it('does not confirm Stop when inspection reports a different missing ID', async () => {
+    const prepared = await runtime().prepare(prepare());
+    const input = { ...fence(), graceSeconds: 1, targets: prepared.items.map(({ running: _running, ...target }) => target) };
+    const original = io.spawn.getMockImplementation()!;
+    io.spawn.mockImplementation(async (...args: Parameters<typeof original>) => {
+      if (args[1][0] === 'inspect') { args[2](`Error: No such object: ${'b'.repeat(64)}`); return 1; }
+      return original(...args);
+    });
+    await expect(runtime().stop(input)).rejects.toThrow(/identity inspection unavailable/);
+    expect(rows[0]!.running).toBe(true);
+    io.spawn.mockImplementation(original);
+    expect((await runtime().stop(input)).items[0]!.running).toBe(false);
+    expect(rows[0]!.running).toBe(false);
+  });
   it.each(['failed-command', 'still-running'])('does not complete an unconfirmed physical Stop and retries its captured identity: %s', async failure => {
     const prepared = await runtime().prepare(prepare());
     const input = { ...fence(), graceSeconds: 1, targets: prepared.items.map(({ running: _running, ...target }) => target) };

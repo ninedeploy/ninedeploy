@@ -1,19 +1,11 @@
 import { z } from 'zod';
 import { assertLegacyNodeMutationAllowed, withNodeServiceJournal } from './nodeLifecycle.js';
 import { spawnValidated } from './spawnValidated.js';
+import { confirmsMissingContainer } from './dockerContainerAbsence.js';
 const identity = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), name: z.string().min(1).max(129).regex(/^\/?[A-Za-z0-9][A-Za-z0-9_.-]*$/),
   managed: z.string().nullable(), serviceId: z.string().nullable(), deploymentId: z.string().nullable(), composeProject: z.string().nullable().optional() });
 export type LegacyNodeTarget = z.infer<typeof identity>;
 const FORMAT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"composeProject":{{json (index .Config.Labels "com.docker.compose.project")}}}';
-
-/** A missing result must refer to exactly the object requested and contain no other diagnostics. */
-export function confirmsMissingContainer(lines: string[], reference: string): boolean {
-  if (lines.length !== 1) return false;
-  const line = lines[0]!.trim();
-  return line === `Error: No such object: ${reference}` ||
-    line === `Error: No such container: ${reference}` ||
-    line === `Error response from daemon: No such container: ${reference}`;
-}
 
 /** Inspect by name once, then mutate only the captured ID under its service authority. */
 export async function guardLegacyNodeTarget<T>(root: string, reference: string,

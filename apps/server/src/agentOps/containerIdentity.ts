@@ -1,5 +1,6 @@
 import { join } from 'node:path';
-import { confirmsMissingContainer, guardLegacyNodeTarget } from '../lib/nodeLegacyMutation.js';
+import { guardLegacyNodeTarget } from '../lib/nodeLegacyMutation.js';
+import { confirmsMissingContainer } from '../lib/dockerContainerAbsence.js';
 import { spawnValidated } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { RE_NAME, str } from './operands.js';
