@@ -193,14 +193,19 @@ export function runTrivy(imageId: string, opts: { timeoutMs?: number } = {}): Pr
     save.on('error', (e) => finish(e));
     scan.on('error', (e) => finish(e));
     let saveCode: number | null | undefined;
+    let scanCode: number | null | undefined;
+    const completeIfSuccessful = () => {
+      if (saveCode === 0 && scanCode === 0) finish(null, Buffer.concat(out).toString('utf8'));
+    };
     save.on('close', (code) => {
       saveCode = code;
-      if (code !== 0) finish(new Error(`docker save failed: ${saveErr.trim() || `exit ${code}`}`));
+      if (code !== 0) return finish(new Error(`docker save failed: ${saveErr.trim() || `exit ${code}`}`));
+      completeIfSuccessful();
     });
     scan.on('close', (code) => {
+      scanCode = code;
       if (code !== 0) return finish(new Error(`Trivy failed: ${scanErr.trim() || `exit ${code}`}`));
-      if (saveCode !== undefined && saveCode !== 0) return; // already rejected
-      finish(null, Buffer.concat(out).toString('utf8'));
+      completeIfSuccessful();
     });
   });
 }
