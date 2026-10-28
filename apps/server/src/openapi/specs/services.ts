@@ -167,6 +167,18 @@ export const servicesSpecs: RouteSpecMap = {
     responseType: 'ServiceTags',
     validation: 'zod',
   },
+  'GET /v1/services/:id/image-scan': {
+    summary: "The latest vulnerability scan of a service's image, and whether one is running",
+    tag: 'services',
+    floor: 'viewer',
+    responseType: '{ result: ImageScanResult | null; scanning: boolean }',
+  },
+  'POST /v1/services/:id/image-scan': {
+    summary: "Scan the image the service runs now (in the background; 409 when scanning is off or the service is not scannable)",
+    tag: 'services',
+    floor: 'admin',
+    responseType: '{ started: true; imageId: string }',
+  },
   'GET /v1/services/:id/targets': {
     summary: "A service's fan-out server targets",
     tag: 'services',

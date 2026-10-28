@@ -19,6 +19,9 @@ import type {
   ImageTransfer,
   DeployFreeze,
   DeployFreezeCreate,
+  ImageScanPolicy,
+  ImageScanPolicyPatch,
+  ImageScanResult,
 } from '@ninedeploy/schemas';
 import type { JobKind, ScheduledJob, JobRun } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -156,11 +159,28 @@ export interface DeploysApi {
     create: (input: DeployFreezeCreate) => Promise<DeployFreeze>;
     lift: (id: string) => Promise<DeployFreeze>;
   };
+  /**
+   * G5.1 image vulnerability scanning (Trivy on the panel host). The policy is
+   * operator only; a service's latest scan is readable by its viewers, and
+   * `scan` (service admin) starts a scan of what runs now in the background.
+   */
+  imageScans: {
+    policy: () => Promise<{ policy: ImageScanPolicy; trivyImage: string }>;
+    setPolicy: (patch: ImageScanPolicyPatch) => Promise<{ policy: ImageScanPolicy; trivyImage: string }>;
+    get: (serviceId: number) => Promise<{ result: ImageScanResult | null; scanning: boolean }>;
+    scan: (serviceId: number) => Promise<{ started: true; imageId: string }>;
+  };
 }
 
 export function deploysApi(t: Transport): DeploysApi {
   const { get, send, request } = t;
   return {
+    imageScans: {
+      policy: () => get<{ policy: ImageScanPolicy; trivyImage: string }>('/v1/image-scanning'),
+      setPolicy: (patch) => send<{ policy: ImageScanPolicy; trivyImage: string }>('PUT', '/v1/image-scanning', patch),
+      get: (serviceId) => get<{ result: ImageScanResult | null; scanning: boolean }>(`/v1/services/${serviceId}/image-scan`),
+      scan: (serviceId) => send<{ started: true; imageId: string }>('POST', `/v1/services/${serviceId}/image-scan`),
+    },
     deployFreezes: {
       list: () => get<DeployFreeze[]>('/v1/deploy-freezes'),
       create: (input) => send<DeployFreeze>('POST', '/v1/deploy-freezes', input),

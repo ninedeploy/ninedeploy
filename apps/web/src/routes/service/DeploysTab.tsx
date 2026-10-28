@@ -7,6 +7,7 @@ import { useToast } from '../../components/Toast.js';
 import { Card, CardBody, Button, ConfirmDialog, Skeleton, Spinner, StatusBadge, cn } from '../../components/ui.js';
 import { AiProposalCard } from './AiProposalCard.js';
 import { ApprovalCard } from './ApprovalCard.js';
+import { ImageScanCard } from './ImageScanCard.js';
 import { LogPanel } from './LogPanel.js';
 import { fill, useT } from '../../lib/i18n.js';
 
@@ -193,6 +194,8 @@ export function DeploysTab({
       </CardBody></Card>}
 
       <PromoteCard serviceId={serviceId} repoUrl={repoUrl} deploys={deploys} />
+
+      <ImageScanCard serviceId={serviceId} />
 
       <Card>
         <CardBody className="flex h-full flex-col">

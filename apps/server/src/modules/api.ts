@@ -43,6 +43,7 @@ import { serverRoutes } from './servers.js';
 import { nodeOsUpdateRoutes, osUpdateRoutes } from './osUpdates.js';
 import { cloudRoutes } from './cloud.js';
 import { deployFreezeRoutes } from './deployFreezes.js';
+import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { projectRoutes } from './projects.js';
 import { notificationRoutes } from './notifications.js';
 import { networkRoutes } from './networks.js';
@@ -187,6 +188,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // G4.3 cloud servers (Hetzner Cloud), operator only.
   await app.register(cloudRoutes, { prefix: '/cloud' });
   await app.register(deployFreezeRoutes, { prefix: '/deploy-freezes' });
+  await app.register(imageScanPolicyRoutes, { prefix: '/image-scanning' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
   // 0.16.1: the operator's Getting started checklist (Dashboard card).
   await app.register(onboardingRoutes, { prefix: '/onboarding' });
@@ -283,6 +285,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // ahead of any wildcard :id handler. The serviceTags module also registers
   // under /labels so the new endpoints share a router.
   await app.register(serviceTagRoutes, { prefix: '/services' });
+  await app.register(serviceImageScanRoutes, { prefix: '/services' });
   await app.register(labelRoutes, { prefix: '/labels' });
   await app.register(traefikRoutes, { prefix: '' });
   // Custom dynamic config and custom certificates (0.14, DESIGN §2.5),

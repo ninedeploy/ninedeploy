@@ -67,6 +67,7 @@ vi.mock('../src/plugins/fanoutRecovery.js', () => noop('authz-fanout-recovery'))
 vi.mock('../src/plugins/autoUpdateScheduler.js', () => noop('authz-autoupdate'));
 vi.mock('../src/plugins/githubRunnerScheduler.js', () => noop('authz-github-runners'));
 vi.mock('../src/plugins/cloudNodeScheduler.js', () => noop('authz-cloud-nodes'));
+vi.mock('../src/plugins/imageScanScheduler.js', () => noop('authz-image-scans'));
 vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
 vi.mock('../src/plugins/logShipper.js', () => noop('authz-logshipper'));
 vi.mock('../src/plugins/jobScheduler.js', () => noop('authz-jobs'));
@@ -780,6 +781,9 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/metrics': R('viewer'),
   'POST /v1/services/:id/sticky-session': R('admin', { body: () => ({ enabled: true }) }),
   'GET /v1/services/:id/tags': R('viewer'),
+  'GET /v1/services/:id/image-scan': R('viewer'),
+  // Scanning is off in the matrix: the at-floor call answers 409 image_scanning_off.
+  'POST /v1/services/:id/image-scan': R('admin'),
   'PUT /v1/services/:id/tags': R('admin', {
     body: (r) => ({ workspaceIds: [r.ws], projectIds: [r.project], labelIds: [r.label] }),
   }),
@@ -1104,6 +1108,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/deploy-freezes': OP,
   'POST /v1/deploy-freezes': OP,
   'DELETE /v1/deploy-freezes/:id': OP,
+  'GET /v1/image-scanning': OP,
+  'PUT /v1/image-scanning': R('operator', { body: () => ({ rescanHours: 24 }) }),
   'GET /v1/os-updates': OP,
   'POST /v1/os-updates/auto': OP,
   'GET /v1/servers/:serverId/os-updates': OP,

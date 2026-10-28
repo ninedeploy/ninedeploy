@@ -144,6 +144,7 @@ GET /v1/host-ips operator -
 GET /v1/host-ips/primary authed -
 GET /v1/housekeeping/images operator nd://scope/read/housekeeping
 GET /v1/housekeeping/prune/config operator nd://scope/read/housekeeping
+GET /v1/image-scanning operator -
 GET /v1/invitations/:token token -
 GET /v1/labels authed -
 GET /v1/log-drains operator -
@@ -203,6 +204,7 @@ GET /v1/services/:id/files viewer nd://scope/read/services
 GET /v1/services/:id/files/:fileId member nd://scope/read/services
 GET /v1/services/:id/github viewer nd://scope/read/services
 GET /v1/services/:id/host-addresses member nd://scope/read/services
+GET /v1/services/:id/image-scan viewer nd://scope/read/services
 GET /v1/services/:id/image-transfers viewer nd://scope/read/services
 GET /v1/services/:id/insights viewer nd://scope/read/manifests
 GET /v1/services/:id/jobs viewer nd://scope/read/services
@@ -436,6 +438,7 @@ POST /v1/services/:id/env/import member nd://scope/write/env
 POST /v1/services/:id/env/preview member nd://scope/write/env
 POST /v1/services/:id/github/finalize operator nd://scope/write/services
 POST /v1/services/:id/github/migrate operator nd://scope/write/services
+POST /v1/services/:id/image-scan admin nd://scope/write/services
 POST /v1/services/:id/insights/refresh member nd://scope/write/manifests
 POST /v1/services/:id/jobs member nd://scope/write/services
 POST /v1/services/:id/jobs/:jobId/run member nd://scope/write/services
@@ -513,6 +516,7 @@ PUT /v1/databases/:id/public-access operator nd://scope/write/databases
 PUT /v1/github-apps/:id/private-key operator -
 PUT /v1/github-apps/:id/runners operator -
 PUT /v1/host-ips/:ip operator -
+PUT /v1/image-scanning operator -
 PUT /v1/onboarding/dismissed operator -
 PUT /v1/servers/:serverId/containers/:container/files operator -
 PUT /v1/servers/:serverId/volumes/:name/files operator -

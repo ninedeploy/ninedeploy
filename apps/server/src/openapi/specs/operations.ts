@@ -1,6 +1,7 @@
 import {
   autoPruneConfigUpdate,
   deployFreezeCreate,
+  imageScanPolicyPatch,
   doctorFixRequest,
   hetznerServerCreate,
   hetznerTokenInput,
@@ -364,6 +365,21 @@ export const operationsSpecs: RouteSpecMap = {
     body: deployFreezeCreate,
     validation: 'zod',
     responseType: 'DeployFreeze',
+  },
+  // G5.1 image vulnerability scanning
+  'GET /v1/image-scanning': {
+    summary: 'The image scanning policy and the Trivy image it runs',
+    tag: 'image-scanning',
+    floor: 'operator',
+    responseType: '{ policy: ImageScanPolicy; trivyImage: string }',
+  },
+  'PUT /v1/image-scanning': {
+    summary: 'Change the image scanning policy: on or off, the deploy gate, the rescan interval',
+    tag: 'image-scanning',
+    floor: 'operator',
+    body: imageScanPolicyPatch,
+    validation: 'zod',
+    responseType: '{ policy: ImageScanPolicy; trivyImage: string }',
   },
   'DELETE /v1/deploy-freezes/:id': {
     summary: 'Lift a deploy freeze; the deploys it held start',

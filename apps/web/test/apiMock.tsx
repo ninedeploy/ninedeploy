@@ -353,6 +353,7 @@ export function createFakeApiModule() {
     osUpdates: { get: vi.fn(), setAuto: vi.fn() },
     cloud: { hetzner: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() } },
     deployFreezes: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), lift: vi.fn() },
+    imageScans: { policy: vi.fn(), setPolicy: vi.fn(), get: vi.fn().mockResolvedValue({ result: null, scanning: false }), scan: vi.fn() },
     traefik: {
       get: vi.fn(),
       status: vi.fn(),

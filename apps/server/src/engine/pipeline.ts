@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { assertCiGateForBuild } from '../lib/ciGate.js';
+import { scanBeforeTraffic, scannableOnPanel } from '../lib/imageScan.js';
 import { archiveDockerArtifact, artifactRuntimeService, assertArtifactAvailable, assertArtifactImage, assertArtifactTarget, cacheNodeDockerArtifact, parseDockerArtifact, prepareArtifactImage, supportsDockerArtifact } from '../lib/dockerArtifact.js';
 import { withReleaseImageLock } from '../lib/releaseImageRetention.js';
 import { GithubAppError } from '../lib/githubApp.js';
@@ -1556,6 +1557,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       }
     }
     // ── end 0.16 T6 ──
+    // G5.1: scan the new image before it gets traffic; the gate (if set)
+    // fails the deploy here and the previous release keeps serving.
+    if (runtime && scannableOnPanel(service, onSwarm)) {
+      // A scan can take minutes: a cancel during it lands here.
+      if (await scanBeforeTraffic(db, { serviceId: service.id, deploymentId, container: runtime.runtimeId }, log)) await candidateCheckpoint();
+    }
     log('##[stage:BUILD:success]');
     log('##[stage:BOOT:success] Container runtime launched in isolated sandbox');
 

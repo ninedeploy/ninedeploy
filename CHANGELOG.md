@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Image vulnerability scanning with Trivy (G5.1). It is off by default; an operator turns it on under Settings → Image scanning.
+  - **During a deploy:** each docker deploy on the panel host has its new image scanned before it gets traffic.
+  - **The gate:** it reports only, or blocks critical (or critical and high) findings. A blocked deploy fails before the switch, so the previous release keeps serving. By default the gate counts only findings that have a fix.
+  - **Rescans:** running images are rescanned every 24 hours, configurable. New fixable critical findings are audited as `image_scan.critical`.
+  - **Where results show:** each service shows its latest scan on its Deploys tab.
+  - **How Trivy runs:** in a throwaway container that reads the image from `docker save`, without the Docker socket. It is pinned to `aquasec/trivy:0.69.3` by digest, which predates the malicious 0.69.4 to 0.69.6 releases (CVE-2026-33634). `NINEDEPLOY_TRIVY_IMAGE` overrides it.
+  - **Failures:** a scan that cannot run never blocks a deploy.
+  - **Not scanned yet:** services on nodes, Swarm and Compose.
+  - **No migration.**
+
+  See DEPLOYMENTS.md → *Image vulnerability scanning*.
 - Deploy freezes (G5.5). An operator can hold deploys under Settings → Deploy freeze, or with `/v1/deploy-freezes`.
   - **Scope:** the whole instance, a workspace (with its environments), a project or an environment. Each freeze has a reason and an optional end.
   - **How it holds:** the queue checks freezes when it claims a deploy, so every trigger waits as `queued`: the UI, the API, git pushes, deploy hooks, schedules, image polls and rollbacks. The deploy log says why.

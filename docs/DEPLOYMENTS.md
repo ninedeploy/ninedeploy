@@ -514,6 +514,39 @@ Each freeze has a reason and an optional end. A PR preview is covered through it
 
 No migration is needed: the freezes are stored in a single settings row.
 
+### Image vulnerability scanning (G5.1)
+
+Trivy scans each docker deploy's image on the panel host, and rescans running images on a schedule. It is off by default; an operator turns it on under Settings → Image scanning.
+
+**How the scan runs**
+- Trivy runs in a throwaway container that reads the image from `docker save` on its stdin. It never gets the Docker socket and needs no host path.
+- Only its vulnerability database persists, in the `ninedeploy-trivy-cache` volume. The first scan downloads it, which takes about half a minute; later scans of a typical image take seconds.
+- The scanner is `aquasec/trivy:0.69.3`, pinned by digest. Trivy 0.69.4 to 0.69.6 were malicious releases (CVE-2026-33634); 0.69.3 predates them. `NINEDEPLOY_TRIVY_IMAGE` selects another image, such as a mirror or a newer release; pin it by digest too.
+- Scans run one at a time on the host.
+
+**During a deploy**
+- The new container's image is scanned after it starts and before it gets traffic. The deploy log shows the counts.
+- The gate is one of: report only, block critical findings, or block critical and high findings.
+- When the gate counts findings, the deploy fails there and the previous release keeps serving. The service's scan is marked *blocked*.
+- By default the gate counts only findings with a fixed version available. A base image often carries CVEs that cannot be fixed (debian:12 has one critical and 56 high CVEs, none fixable); counting those would block every deploy.
+- A scan that cannot run never blocks a deploy, for example when there is no network to update the database. It is recorded as `error`, and the deploy log says so.
+
+**Scheduled rescans**
+- Once an hour, running images whose latest scan is older than the interval (default 24 hours), or was of another image, are scanned again.
+- A rescan that finds new fixable critical findings is audited as `image_scan.critical`, which notifies the channels that receive audit events.
+
+**Where the results show**
+- Each service shows its latest scan on its Deploys tab: counts by severity (with how many are fixable) and up to 300 findings, most severe first.
+- A service admin can press *Scan now*.
+
+**What is not scanned yet**
+- Services on nodes, Swarm services and Compose stacks.
+
+**API, SDK and storage**
+- API: `GET`/`PUT /v1/image-scanning` (operator), `GET /v1/services/:id/image-scan` (viewer) and `POST /v1/services/:id/image-scan` (admin, runs in the background).
+- SDK: `imageScans.policy`, `setPolicy`, `get` and `scan`.
+- No migration is needed: the policy and each service's latest result are settings rows. A deleted service's result is pruned by the hourly sweep.
+
 ## 🧩 6. Docker Compose Stacks
 
 A multi-container app deploys as `type: compose`. The stack runs as the compose

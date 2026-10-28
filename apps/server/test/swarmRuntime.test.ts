@@ -246,6 +246,8 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'engine/logShipper.ts': { exempt: 'ships local container logs; Swarm service logs are read with `docker service logs` (shipping them is deferred)' },
   'engine/proxy.ts': { exempt: 'renders runtimeId:port — the Swarm VIP resolves on the overlay Traefik joined, so no change is needed (design §7.4 step 7)' },
   'engine/types.ts': { exempt: 'types only' },
+  'lib/imageScan.ts': { exempt: 'scans only docker services on the panel host that are not on Swarm (scannableOnPanel)' },
+  'modules/imageScans.ts': { exempt: 'refuses a Swarm service (scannableOnPanel) before it reads its runtime' },
   'lib/inventory.ts': { exempt: 'names the owner of a volume or network for display; Swarm services own neither' },
   'lib/composeRelease.ts': { exempt: 'recorded releases are only for panel-host Compose stacks; Swarm services cannot use the Compose builder' },
   'lib/releaseRecords.ts': { exempt: 'assertReleaseTarget requires type compose on the panel host; recorded restores never operate on Swarm services' },

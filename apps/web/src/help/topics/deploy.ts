@@ -171,4 +171,31 @@ export const DEPLOY_TOPICS: Record<string, HelpTopic> = {
     ],
     related: [{ label: 'Service · Deploys tab', helpId: 'service.deploys' }],
   },
+
+  'settings.image-scanning': {
+    title: 'Settings · Image scanning',
+    summary:
+      'Trivy scans the image of every docker deploy on the panel host before it gets traffic, and rescans running images on a schedule. Off by default.',
+    sections: [
+      {
+        heading: 'How it works',
+        bullets: [
+          'Trivy runs in a throwaway container and reads the image from docker save; it never gets the Docker socket. Its vulnerability database is kept in the ninedeploy-trivy-cache volume.',
+          'Each service shows its latest scan on its Deploys tab: counts by severity and the findings, most severe first.',
+          'Running images are rescanned on the interval you set (default every 24 hours). New fixable critical findings are audited as image_scan.critical, which notifies the channels that receive audit events.',
+          'Services on nodes, on Swarm and Compose stacks are not scanned yet.',
+        ],
+      },
+      {
+        heading: 'The deploy gate',
+        bullets: [
+          'Report only: scans never block.',
+          'Block critical (or critical and high): a deploy whose new image has such findings fails before it gets traffic, and the previous release keeps serving.',
+          'By default the gate counts only findings with a fixed version available, since a base image often carries CVEs that cannot be fixed.',
+          'A scan that cannot run, for example with no network to update the database, never blocks a deploy; the deploy log says so.',
+        ],
+      },
+    ],
+    related: [{ label: 'Service · Deploys tab', helpId: 'service.deploys' }],
+  },
 };

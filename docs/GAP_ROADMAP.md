@@ -64,7 +64,7 @@ None of the Docker-based rivals has these.
 
 | ID | Item | Inspiration | Size | Status |
 |---|---|---|---|---|
-| G5.1 | **Image vulnerability scanning.** Trivy in a throwaway container after each build and on a schedule, with a severity summary and an optional gate on critical findings. | Kubero | M | ⬜ |
+| G5.1 | **Image vulnerability scanning.** Trivy in a throwaway container after each build and on a schedule, with a severity summary and an optional gate on critical findings. | Kubero | M | ✅ unreleased (panel host docker services; nodes, Swarm and Compose not yet) |
 | G5.2 | **Pending changes tray.** Edits accumulate as field-level changes, are reviewed as a diff and applied atomically on deploy. This fits protected lanes and approvals. | ZaneOps, Coolify "changes pending" | M | ⬜ |
 | G5.3 | **Instance-wide GitOps.** The whole instance (projects, services, domains, grants) as files in a repository, with a drift diff, an alert and an optional write-back of UI edits. | Komodo Resource Sync | L | ⬜ |
 | G5.4 | **Sentry-compatible error ingest** per project, grouped by fingerprint and linked to the deploy that introduced it. | Canine | M | ⬜ |
