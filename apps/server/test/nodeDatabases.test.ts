@@ -37,6 +37,7 @@ const h = vi.hoisted(() => ({
   ping: '' as string,
   ops: [] as Array<{ op: string; params: Record<string, unknown> }>,
   unreachable: false,
+  envReceipt: null as string[] | null,
   /** Containers on the fake node → state. */
   containers: new Map<string, string>(),
   volumes: new Map<string, Record<string, string>>(),
@@ -85,7 +86,7 @@ vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
       case 'file.deleteEnv':
         return answer(0);
       case 'file.writeEnv':
-        return answer(0, [`wrote .agent-env/${name}.env`]);
+        return answer(0, h.envReceipt ?? [`wrote .agent-env/${name}.env`]);
       case 'docker.rm':
         h.containers.delete(name);
         return answer(0);
@@ -180,6 +181,7 @@ beforeEach(async () => {
   h.ping = CAPS_ALL;
   h.ops = [];
   h.unreachable = false;
+  h.envReceipt = null;
   h.containers.clear();
   h.volumes.clear();
   h.networks.clear();
@@ -215,6 +217,15 @@ async function createOnNode(app: Awaited<ReturnType<typeof buildTestApp>>, body:
 }
 
 describe('POST /v1/databases with serverId: the database runs on the node', () => {
+  it('does not start a database when the environment receipt names another file', async () => {
+    h.envReceipt = ['wrote .agent-env/other.env'];
+    const app = await appWith([databasesRoutes, '/databases']);
+    const response = await createOnNode(app);
+    expect(response.statusCode).not.toBe(200);
+    expect(ops()).not.toContain('docker.runSpec');
+    await app.close();
+  });
+
   it('creates the network, the volume and the container on the node; the row carries the rollback marker', async () => {
     const app = await appWith([databasesRoutes, '/databases']);
     const res = await createOnNode(app);

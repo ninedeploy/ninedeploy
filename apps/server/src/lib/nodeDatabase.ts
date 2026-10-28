@@ -16,6 +16,7 @@ import {
 } from '../engine/database.js';
 import { agentVersionAtLeast, assertNodeCapability } from './agentCapabilities.js';
 import { agentOp } from './agentClient.js';
+import { confirmedNodeEnvFile } from './nodeEnvReceipt.js';
 import { type AgentStreamHandle, openAgentStream } from './agentStream.js';
 import { createBackupCipher, decrypt } from './crypto.js';
 import {
@@ -243,7 +244,7 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
       let envFile: string | undefined;
       if (Object.keys(vars).length > 0) {
         const wrote = await agent('file.writeEnv', { name: container, env: vars });
-        envFile = wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? `.agent-env/${container}.env`;
+        envFile = confirmedNodeEnvFile(wrote, container);
       }
       const labels: Record<string, string> = { 'ninedeploy.database.slug': d.slug, 'ninedeploy.database.id': String(d.id) };
       for (const [k, v] of Object.entries(opts.labels ?? {})) if (/^ninedeploy\.[a-z0-9][a-z0-9._-]{0,127}$/.test(k)) labels[k] = v;

@@ -1,5 +1,6 @@
 import type { BuildContext, DeployRuntime } from '../types.js';
 import type { AgentCall } from './remoteDocker.js';
+import { confirmedNodeEnvFile } from '../../lib/nodeEnvReceipt.js';
 import { formatPortMapping } from '@ninedeploy/schemas';
 import { capabilityRefusal } from '../../lib/agentCapabilities.js';
 import {
@@ -166,9 +167,7 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
   // is visible in the node's process table.
   const envFileName = `${service.slug}-${deploymentId}`;
   const wrote = await agent('file.writeEnv', { name: envFileName, env: envForAgent(env) }, sink);
-  const envFile =
-    wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ??
-    `.agent-env/${envFileName}.env`;
+  const envFile = confirmedNodeEnvFile(wrote, envFileName);
 
   const resolvedPort = service.port ?? null;
   const runParams: Record<string, unknown> = { name, image: target, envFile, serviceId: service.id, deploymentId };

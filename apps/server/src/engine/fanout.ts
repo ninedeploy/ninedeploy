@@ -1,6 +1,7 @@
 import { and, eq, exists, isNull } from 'drizzle-orm';
 import { domains, services, serviceTargets, servers, type DB, type ServiceRuntimeOptions } from '@ninedeploy/db';
 import { agentOp } from '../lib/agentClient.js';
+import { confirmedNodeEnvFile } from '../lib/nodeEnvReceipt.js';
 import { assertAgentGuardsBuildPaths, capabilityRefusal, nodeLabel } from '../lib/agentCapabilities.js';
 import { agentTransportSealed } from '../lib/agentClient.js';
 import {
@@ -443,11 +444,17 @@ export async function deployToTargets(
       // agent run op cannot publish them.
       if (ctx.service.portMappings?.length) log(`⚠ Port mappings are not published on fan-out target ${target.serverId}; only the panel host publishes them.`);
       const sequential = Boolean(ctx.service.publishedPort && ctx.service.port);
-      if (target.runtimeId && sequential) await retire(target.runtimeId);
       const envName = `${ctx.service.slug}-t${target.serverId}-${ctx.deploymentId}`;
       // r267: multi-line values travel escaped, as for the primary.
       const wrote = await agent('file.writeEnv', { name: envName, env: envForAgent(ctx.env) }, log);
-      const envFile = wrote.lines.find((l) => l.startsWith('wrote '))?.slice('wrote '.length) ?? `.agent-env/${envName}.env`;
+      const envFile = confirmedNodeEnvFile(wrote, envName);
+      if (target.runtimeId && sequential) {
+        try { await retire(target.runtimeId); }
+        catch (error) {
+          await agent('file.deleteEnv', { name: envName }, log).catch(() => undefined);
+          throw error;
+        }
+      }
       const runParams: Record<string, unknown> = { name, image: release, envFile };
       if (recovery) Object.assign(runParams, { serviceId: ctx.service.id, deploymentId: ctx.deploymentId });
       if (ctx.service.cpuShares > 0) runParams['cpuShares'] = String(ctx.service.cpuShares);

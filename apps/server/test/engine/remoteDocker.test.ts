@@ -135,6 +135,18 @@ describe('remote docker builder — image services', () => {
     await expect(createRemoteDockerBuilder(agent, { prebuiltImage: { tag: imageId, imageId } }).buildAndRun(ctx())).rejects.toThrow('node disconnected');
     expect(node.calls.filter(call => call.op === 'docker.rm').map(call => call.params.name)).toEqual(['web-7']);
   });
+  it.each([
+    { name: 'missing', lines: [] },
+    { name: 'wrong path', lines: ['wrote .agent-env/other-7.env'] },
+    { name: 'duplicate', lines: ['wrote .agent-env/web-7.env', 'wrote .agent-env/web-7.env'] },
+  ])('refuses an unconfirmed environment receipt: $name', async ({ lines }) => {
+    const { agent, ops } = fakeAgent({ 'file.writeEnv': { exitCode: 0, lines } });
+    await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1.27' }) })))
+      .rejects.toThrow(/environment.*receipt/i);
+    expect(ops()).not.toContain('docker.runEnv');
+    expect(ops()).not.toContain('docker.runSpec');
+  });
+
   it('pulls and runs the image on the node, never locally', async () => {
     const { agent, calls, ops } = fakeAgent();
     const runtime = await createRemoteDockerBuilder(agent).buildAndRun(

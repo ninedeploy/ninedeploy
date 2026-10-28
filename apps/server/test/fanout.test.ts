@@ -53,6 +53,27 @@ describe('multi-server fan-out (phase 1)', () => {
     agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: [] });
   });
 
+  it('does not start a fan-out candidate when the environment receipt names another file', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) => {
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/other.env'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      return { exitCode: 0, lines: [] };
+    });
+    const results = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: null }]) as never,
+      { service: svc, deploymentId: 9, image: 'nginx:1.25', env: { KEY: 'v' }, primaryServerId: null }, vi.fn());
+    expect(results[0]).toMatchObject({ ok: false, error: expect.stringMatching(/environment.*receipt/i) });
+    expect(agentMocks.agentOp.mock.calls.some(call => call[2] === 'docker.runEnv' || call[2] === 'docker.runSpec')).toBe(false);
+  });
+
+  it('keeps a host-port target running when its replacement environment receipt is invalid', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) =>
+      op === 'file.writeEnv' ? { exitCode: 0, lines: ['wrote .agent-env/other.env'] } : { exitCode: 0, lines: [] });
+    const results = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never,
+      { service: { ...svc, publishedPort: 8080 }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(results[0]).toMatchObject({ ok: false, runtimeId: 'web-t5-8', error: expect.stringMatching(/environment.*receipt/i) });
+    expect(agentMocks.agentOp.mock.calls.some(call => call[2] === 'docker.stop' || call[2] === 'docker.rm')).toBe(false);
+  });
+
   it('pushes the release to each extra node: login, pull, run, health', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
       if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
@@ -104,7 +125,7 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('r226: retires the previous target generation only AFTER the new one runs', async () => {
-    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|none|0|0'] });
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => ({ exitCode: 0, lines: op === 'file.writeEnv' ? [`wrote .agent-env/${String(params.name)}.env`] : ['running|none|0|0'] }));
     const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
     await deployToTargets(db as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
     const ops = agentMocks.agentOp.mock.calls.map((c) => `${c[2]} ${(c[3] as { name?: string }).name ?? ''}`.trim());
@@ -113,7 +134,8 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('r226: keeps the proven container when the new generation fails its state check', async () => {
-    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
       if (op === 'docker.inspect') return { exitCode: 0, lines: ['exited|'] };
       return { exitCode: 0, lines: [] };
     });
@@ -125,7 +147,7 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('r226: a host-port publish still retires the old container first', async () => {
-    agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: ['running|none|0|0'] });
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => ({ exitCode: 0, lines: op === 'file.writeEnv' ? [`wrote .agent-env/${String(params.name)}.env`] : ['running|none|0|0'] }));
     const db = dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]);
     await deployToTargets(db as never, { service: { ...svc, publishedPort: 8080 }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
     const ops = agentMocks.agentOp.mock.calls.map((c) => `${c[2]} ${(c[3] as { name?: string }).name ?? ''}`.trim());
@@ -135,7 +157,8 @@ describe('multi-server fan-out (phase 1)', () => {
   // F116: `docker run -d` failing after create left a Created container that
   // no row tracked — the result keeps the OLD runtime, so nothing removed it.
   it('F116: removes the Created container of a failed target start, never the tracked one', async () => {
-    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
       if (op === 'docker.runEnv') throw new Error('agent docker.runEnv exited with 125: port is already allocated');
       return { exitCode: 0, lines: [] };
     });
@@ -156,6 +179,7 @@ describe('multi-server fan-out (phase 1)', () => {
   it('F117: a crash-looping target container is refused and the proven one keeps serving', async () => {
     const samples = ['running|none|0|0', 'restarting|none|0|1', 'running|none|0|1', 'restarting|none|0|2', 'running|none|0|3'];
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
       if (op === 'docker.inspect') {
         expect(params).toMatchObject({ name: 'web-t5-9', format: 'health' });
         return { exitCode: 0, lines: [samples.shift() ?? 'running|none|0|9'] };
@@ -169,7 +193,7 @@ describe('multi-server fan-out (phase 1)', () => {
 
     // A stable run: the proven container is retired only after the third good sample.
     agentMocks.agentOp.mockClear();
-    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => ({ exitCode: 0, lines: op === 'docker.inspect' ? ['running|none|0|0'] : [] }));
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => ({ exitCode: 0, lines: op === 'file.writeEnv' ? [`wrote .agent-env/${String(params.name)}.env`] : op === 'docker.inspect' ? ['running|none|0|0'] : [] }));
     const ok = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never, { service: svc, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
     expect(ok[0]).toMatchObject({ runtimeId: 'web-t5-9', ok: true });
     const ops = agentMocks.agentOp.mock.calls.map((c) => `${c[2]} ${(c[3] as { name?: string }).name ?? ''}`.trim());
@@ -263,7 +287,8 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('records a per-node failure when the container exits during the state poll', async () => {
-    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string) => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
       if (op === 'docker.inspect') return { exitCode: 0, lines: ['exited|'] };
       return { exitCode: 0, lines: [] };
     });
@@ -361,7 +386,8 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('r592: a rejected login on a SOURCE build warns and builds anonymously instead of failing the target', async () => {
-    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
       if (op === 'docker.login') throw new Error('agent docker.login exited with 1');
       if (op === 'agent.ping') return PING_CURRENT;
       return op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] };
@@ -386,7 +412,8 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('r592: a rejected login on an IMAGE release still fails that target (unchanged)', async () => {
-    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
       if (op === 'docker.login') throw new Error('agent docker.login exited with 1');
       return { exitCode: 0, lines: [] };
     });
