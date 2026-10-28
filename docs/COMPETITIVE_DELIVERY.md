@@ -60,6 +60,8 @@ Node deploy, fan-out and managed node database creation now require exactly one 
 
 A derivative test image containing the receipt-validation changes (before the later fan-out host-port ordering adjustment) passed a focused real sealed-agent, worker and Docker check: a node PostgreSQL database and two application replicas started, and both replicas passed SQL readiness. This did not exercise fan-out, public DNS/TLS or the unresolved Stop cleanup. Evidence: `.temp_files/r2-prepare-receipt-replay-20261027-6096c41a/node-env-receipt-fixed-image/`. This is not final release-image certification.
 
+Two existing fan-out success fixtures were also strengthened: after the receipt requirement, their old mock responses caused the target to fail before the behavior under test while the original assertions still passed. The unchanged success assertions failed against those old mock responses, then passed with the real agent receipt shape; all 33 fan-out and readiness tests passed.
+
 ## Node file mount receipt checkpoint — 2026-10-28
 
 Node file mounts previously accepted a missing, duplicate or different deployment file receipt and could continue with the fallback or reported path. Three before-tests failed while the exact-path control passed. The panel now requires a successful, single receipt for the requested service, deployment and file before passing the mount to the node runtime. Agent sources from v0.16.5, v0.17.1 and v0.18.4 were checked for the same receipt format.

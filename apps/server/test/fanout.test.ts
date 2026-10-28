@@ -97,15 +97,16 @@ describe('multi-server fan-out (phase 1)', () => {
   });
 
   it('r267: sends multi-line env values escaped, as the local builder writes them', async () => {
-    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) =>
-      op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] },
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) =>
+      op === 'file.writeEnv' ? { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] } : op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] },
     );
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
-    await deployToTargets(
+    const results = await deployToTargets(
       db as never,
       { service: svc, deploymentId: 9, image: 'nginx:1.25', env: { PEM: 'a\nb\r\nc' }, primaryServerId: null },
       vi.fn(),
     );
+    expect(results[0]).toMatchObject({ ok: true });
     const write = agentMocks.agentOp.mock.calls.find((c) => c[2] === 'file.writeEnv')![3] as { env: Record<string, string> };
     // The agent refuses a physical newline; the node used to fail the target.
     expect(write.env).toEqual({ PEM: 'a\\nb\\nc' });
@@ -361,11 +362,11 @@ describe('multi-server fan-out (phase 1)', () => {
   // r526: the login ran AFTER the source build, so `docker build` pulled a
   // private base image anonymously and every target failed.
   it('r526: logs into the registry BEFORE a target builds from source, and out after', async () => {
-    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) =>
-      op === 'agent.ping' ? PING_CURRENT : op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] },
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) =>
+      op === 'file.writeEnv' ? { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] } : op === 'agent.ping' ? PING_CURRENT : op === 'docker.inspect' ? { exitCode: 0, lines: ['running|none|0|0'] } : { exitCode: 0, lines: [] },
     );
     const db = dbWithTargets([{ serverId: 5, runtimeId: null }]);
-    await deployToTargets(
+    const results = await deployToTargets(
       db as never,
       {
         service: { ...svc, image: null },
@@ -377,6 +378,7 @@ describe('multi-server fan-out (phase 1)', () => {
       },
       vi.fn(),
     );
+    expect(results[0]).toMatchObject({ ok: true });
     const ops = agentMocks.agentOp.mock.calls.map((c) => c[2] as string);
     expect(ops.indexOf('docker.login')).toBeGreaterThanOrEqual(0);
     expect(ops.indexOf('docker.login')).toBeLessThan(ops.indexOf('docker.build'));
