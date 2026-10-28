@@ -149,6 +149,32 @@ A managed postgres, mysql, mariadb, redis, valkey, keydb, dragonfly or mongo dat
 
 Public access exposes the database's **root (superuser) account**: create a limited user inside the database before you hand out an endpoint. The mechanism, the allow-list and port rules, the TLS modes and the rollback cleanup are described in [TRAEFIK_INGRESS.md §9](./TRAEFIK_INGRESS.md).
 
+### Tunnels through the panel (G5.8)
+
+You can reach a database on the panel host from your machine without public access:
+
+```bash
+ninedeploy tunnel db <db-id>                     # listens on 127.0.0.1, on the engine's port when it is free
+ninedeploy tunnel db <db-id> --port 15432        # a port of your choice (0 picks a free one)
+```
+
+Then point `psql`, a GUI client or a local app at the address it prints, using the database's own credentials. The database port stays closed to the internet.
+
+**How it works**
+- Each local connection opens its own WebSocket to `GET /v1/databases/:id/tunnel`.
+- The panel carries that connection byte for byte to the database container.
+
+**Who may use it, and what is recorded**
+- It needs `admin` on the database, the same as revealing its credentials. A scope-restricted API token must also be allowed to write databases.
+- The database's own login still applies on top.
+- Access is re-checked every minute, so a revoked seat, grant or token closes open tunnels.
+- An idle tunnel closes after 30 minutes. One user can hold at most 32 open tunnels.
+- Each tunnel is audited as `database.tunnel.open` and `database.tunnel.close`, with its duration and byte counts.
+
+**Limits for now**
+- Databases on nodes are not reachable this way yet.
+- `--bind` listens on another local address. Anyone who can reach that address can then use the tunnel.
+
 ### PgBouncer connection pooling
 
 A PostgreSQL database on the panel host can get a PgBouncer sidecar that pools client connections, which helps apps that open many short connections. Turn it on under **Database → Settings → PgBouncer connection pooling** (web UI since G1.5), with `ninedeploy databases pgbouncer <id> enable|disable|status`, or with `GET /v1/databases/:id/pgbouncer` and `POST …/pgbouncer/enable|disable`. The listen port defaults to 6432 and can be set when enabling. The card shows the pooled connection URL to point apps at. Reading the status needs `member` on the database, and the full password in the URL needs `admin`; enabling and disabling start or remove a container on the host, so they are operator-only. Databases on nodes have no PgBouncer yet (`422 remote_database`).

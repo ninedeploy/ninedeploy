@@ -655,6 +655,7 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/events': R('authed', { skip: 'WebSocket — feed narrowing is covered by test/events.test.ts' }),
   'GET /v1/services/:id/deploys/:depId/logs': R('viewer', { skip: 'WebSocket — covered by the log-stream cases in test/deploys.test.ts' }),
   'GET /v1/services/:id/exec': R('operator', { skip: 'WebSocket — covered by the exec cases in test/deploys.test.ts' }),
+  'GET /v1/databases/:id/tunnel': R('admin', { skip: 'WebSocket — covered by test/databaseTunnel.test.ts' }),
 
   // ── own account ──
   'GET /v1/auth/me': R('self'),
@@ -1497,8 +1498,9 @@ describe('authorization matrix (r690)', () => {
 
   it('keeps the skip list short and justified', () => {
     const skipped = Object.values(MATRIX).filter((r) => r.skip);
-    // Three 0.14 sockets, plus the 0.15 terminal attach socket (block 0.15 T2a).
-    expect(skipped.length).toBeLessThanOrEqual(4);
+    // Three 0.14 sockets, the 0.15 terminal attach socket (block 0.15 T2a) and
+    // the G5.8 database tunnel socket, whose role floor its own test covers.
+    expect(skipped.length).toBeLessThanOrEqual(5);
     for (const r of skipped) expect(r.skip).toMatch(/covered by/);
   });
 

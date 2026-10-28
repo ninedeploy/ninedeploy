@@ -257,6 +257,15 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'viewer',
     sensitive: true,
   },
+  'GET /v1/databases/:id/tunnel': {
+    summary: 'A TCP tunnel to a panel-host database (WebSocket; `ninedeploy tunnel db`)',
+    tag: 'databases',
+    description:
+      'WebSocket. The bearer token travels in the `ninedeploy.bearer.<token>` subprotocol; offer `ninedeploy.tunnel.v1` too. Binary frames carry one TCP connection to the database in both directions. Needs the database admin role.',
+    floor: 'admin',
+    sensitive: true,
+    websocket: true,
+  },
   'GET /v1/services/:id/exec': {
     summary: 'Interactive container shell (WebSocket)',
     tag: 'terminals',

@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ninedeploy tunnel db <id>` (G5.8). It offers a panel-host database on a local port through the panel, so the database port stays closed to the internet.
+  - **How it works:** each local connection travels over its own WebSocket (`GET /v1/databases/:id/tunnel`) to the database container, byte for byte. Checked against a real PostgreSQL 15: SCRAM login, a 2 MiB row in and out, parallel connections.
+  - **Access:** it needs the database admin role, the same as its credentials. Scoped API tokens must be allowed to write databases. Access is re-checked every minute.
+  - **Limits and audit:** idle tunnels close after 30 minutes, and one user can hold at most 32. Tunnels are audited as `database.tunnel.open` and `database.tunnel.close`, with byte counts.
+  - **UI:** the database page shows the command.
+  - **Not yet:** databases on nodes.
+
+  See DATABASES_BACKUPS.md → *Tunnels through the panel*.
 - Image vulnerability scanning with Trivy (G5.1). It is off by default; an operator turns it on under Settings → Image scanning.
   - **During a deploy:** each docker deploy on the panel host has its new image scanned before it gets traffic.
   - **The gate:** it reports only, or blocks critical (or critical and high) findings. A blocked deploy fails before the switch, so the previous release keeps serving. By default the gate counts only findings that have a fix.

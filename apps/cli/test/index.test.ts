@@ -400,7 +400,7 @@ describe('program registration', () => {
       'reset-link <idOrEmail>', 'activity', 'plugins', 'config-center', 'workspaces',
       'images', 'demo', 'server',
       'logs', 'email-templates', 'certificates', 'proxy', 'secrets',
-      'terminals', 'terminal', 'traffic', 'access',
+      'terminals', 'terminal', 'tunnel', 'traffic', 'access',
       // 0.16 T8: remote nodes and Swarm.
       'servers', 'swarm',
       // 0.16.8: uptime monitors and status pages.
@@ -469,7 +469,8 @@ describe('program registration', () => {
     // 0.16.16: + `deploys diagnose`.
     // Resource monitoring: settings/configure plus log-drains and its three actions.
     // Node volume files: list, read, write, mkdir, delete-file.
-    expect(h.FakeCommand.instances).toHaveLength(326);
+    // G5.8: tunnel + tunnel db.
+    expect(h.FakeCommand.instances).toHaveLength(328);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);

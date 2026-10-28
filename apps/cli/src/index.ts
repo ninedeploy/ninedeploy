@@ -66,6 +66,7 @@ import {
   terminalOpen, terminalsKill, terminalsList, terminalsShow, trafficService, trafficSettings, trafficSummary,
   type TerminalOpenOptions, type TerminalsListOptions,
 } from './commands/operations.js';
+import { tunnelDb, type TunnelOptions } from './commands/tunnel.js';
 import {
   communityTemplatesImport,
   communityTemplatesList,
@@ -1129,6 +1130,14 @@ terminalCmd.command('container <name>')
 terminalCmd.command('host [serverId]')
   .description('Root shell on the panel host or a node (off by default; asks for your password)')
   .action((serverId: string | undefined) => terminalOpen(getClient(), 'host', serverId));
+/* v8 ignore stop */
+const tunnelCmd = program.command('tunnel').description('Reach a database through the panel on a local port (G5.8)');
+/* v8 ignore start -- exercised by test/tunnel.test.ts. */
+tunnelCmd.command('db <id>')
+  .description('Offer a panel-host database on a local port; its port stays closed to the internet (database admin)')
+  .option('--port <n>', 'Local port (default: the engine port when free, else any free one; 0 picks one)')
+  .option('--bind <address>', 'Local address to listen on (default 127.0.0.1)')
+  .action((id: string, opts: TunnelOptions) => tunnelDb(getClient(), id, opts));
 /* v8 ignore stop */
 const trafficCmd = program.command('traffic').description('Traffic analytics (opt-in)');
 /* v8 ignore start -- exercised by test/operations.test.ts. */

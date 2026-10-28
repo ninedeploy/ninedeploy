@@ -5507,4 +5507,9 @@ export const TR: Readonly<Record<string, string>> = {
   '{n} low': '{n} düşük',
   '{n} medium': '{n} orta',
   '{when} · {trigger}': '{when} · {trigger}',
+
+  // ── G5.8 database tunnel ──────────────────────────────────────────────
+  'The CLI offers this database on a local port through the panel, so its port stays closed to the internet. It needs the admin role on the database; the database login still applies.':
+    'CLI bu veritabanını panel üzerinden yerel bir portta sunar; böylece portu internete kapalı kalır. Veritabanında admin rolü gerekir; veritabanının kendi girişi yine geçerlidir.',
+  'Tunnel from your machine': 'Kendi makinenden tünel',
 };

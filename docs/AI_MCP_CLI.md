@@ -137,6 +137,9 @@ ninedeploy databases public-access <db-id> --enable --allow 203.0.113.0/24   # u
 ninedeploy databases public-access <db-id> --enable --tls terminate --tls-host db.example.com  # not mysql/mariadb
 ninedeploy databases public-access <db-id> --disable
 
+# Database tunnel (G5.8, database admin) — a panel-host database on a local port, no public access needed
+ninedeploy tunnel db <db-id> [--port 15432] [--bind 127.0.0.1]
+
 # Dump import (0.14) — chunked, resumable upload; a pre-import backup is taken first
 ninedeploy databases import <db-id> --file dump.sql.gz                       # waits for the result
 ninedeploy databases import <db-id> --file app.dump --clean --no-single-transaction

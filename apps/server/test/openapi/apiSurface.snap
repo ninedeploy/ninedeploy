@@ -125,6 +125,7 @@ GET /v1/databases/:id/logs viewer nd://scope/read/databases
 GET /v1/databases/:id/pgbouncer member nd://scope/read/databases
 GET /v1/databases/:id/public-access admin nd://scope/read/databases
 GET /v1/databases/:id/storage viewer nd://scope/read/databases
+GET /v1/databases/:id/tunnel admin nd://scope/read/databases
 GET /v1/deploy-freezes operator -
 GET /v1/deployments/:id/image-transfers viewer nd://scope/read/deploys
 GET /v1/doctor operator -
