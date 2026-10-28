@@ -48,6 +48,9 @@ describe('githubApps namespace', () => {
       [() => api.githubApps.remove(3), 'DELETE', '/v1/github-apps/3', undefined],
       [() => api.githubApps.syncInstallations(3), 'POST', '/v1/github-apps/3/installations/sync', undefined],
       [() => api.githubApps.installations(3), 'GET', '/v1/github-apps/3/installations', undefined],
+      [() => api.githubApps.runners(3), 'GET', '/v1/github-apps/3/runners', undefined],
+      [() => api.githubApps.setRunners(3, { enabled: false, labels: ['ci'], maxConcurrent: 2, cpus: null, memoryMb: null, allowPublicRepos: false, repositories: ['acme/app'] }), 'PUT', '/v1/github-apps/3/runners', { enabled: false, labels: ['ci'], maxConcurrent: 2, cpus: null, memoryMb: null, allowPublicRepos: false, repositories: ['acme/app'] }],
+      [() => api.githubApps.stopRunner(3, 'runner/name #1'), 'DELETE', '/v1/github-apps/3/runners/runner%2Fname%20%231', undefined],
     ];
     for (const [run, method, url, body] of cases) {
       await run();
