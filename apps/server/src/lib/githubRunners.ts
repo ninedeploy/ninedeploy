@@ -304,8 +304,14 @@ export function runnerRunArgs(
   ];
 }
 
-async function removeContainer(name: string): Promise<void> {
-  await capture('docker', ['rm', '-f', name], { timeoutMs: 60_000 }).catch(() => undefined);
+async function removeContainer(name: string, strict = false): Promise<boolean> {
+  try {
+    await capture('docker', ['rm', '-f', name], { timeoutMs: 60_000 });
+    return true;
+  } catch (err) {
+    if (strict) throw err;
+    return false;
+  }
 }
 
 // ── GitHub calls ───────────────────────────────────────────────────────────
@@ -652,8 +658,11 @@ async function runnerBusy(db: DB, c: RunnerContainer): Promise<boolean> {
   }
 }
 
-async function reapRunner(db: DB, log: FastifyBaseLogger, c: RunnerContainer, reason: string): Promise<void> {
-  await removeContainer(c.name);
+async function reapRunner(db: DB, log: FastifyBaseLogger, c: RunnerContainer, reason: string, strict = false): Promise<void> {
+  if (!(await removeContainer(c.name, strict))) {
+    log.warn({ component: 'github-runners', runner: c.name }, 'could not remove a runner');
+    return;
+  }
   try {
     const ctx = await appAndToken(db, c);
     if (ctx) await githubApi(ctx.ghApp, ctx.token, 'DELETE', ctx.path);
@@ -667,7 +676,7 @@ async function reapRunner(db: DB, log: FastifyBaseLogger, c: RunnerContainer, re
 export async function stopRunner(db: DB, log: FastifyBaseLogger, githubAppId: number, name: string): Promise<boolean> {
   const c = (await listRunnerContainers()).find((x) => x.name === name && x.githubAppId === githubAppId);
   if (!c) return false;
-  await reapRunner(db, log, c, 'stopped by an operator');
+  await reapRunner(db, log, c, 'stopped by an operator', true);
   return true;
 }
 

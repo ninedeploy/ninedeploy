@@ -428,6 +428,32 @@ describe('sweepGithubRunners', () => {
 });
 
 describe('runner operator and expiration', () => {
+  it('keeps the GitHub registration if periodic cleanup cannot remove the container', async () => {
+    await setRunnerConfig(db, ghApp.id, enabled());
+    const name = `nd-${ghApp.id}-1-aaaaaa`;
+    psRows = [`${name}\trunning\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t1\tacme/api\t31\torg:acme`];
+    const original = h.capture.getMockImplementation()!;
+    h.capture.mockImplementation(async (cmd, args, opts) => {
+      if (args[0] === 'rm') throw new Error('Docker unavailable');
+      return original(cmd, args, opts);
+    });
+    await sweepGithubRunners(db, log, new Date('2026-10-28T17:00:00Z').getTime());
+    expect(h.githubApi.mock.calls.some(([, , method]) => method === 'DELETE')).toBe(false);
+    expect(log.warn).toHaveBeenCalledWith(expect.objectContaining({ runner: name }), 'could not remove a runner');
+  });
+
+  it('reports a Docker removal failure without deregistering the running runner', async () => {
+    const name = `nd-${ghApp.id}-1-aaaaaa`;
+    psRows = [`${name}\trunning\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t1\tacme/api\t31\torg:acme`];
+    const original = h.capture.getMockImplementation()!;
+    h.capture.mockImplementation(async (cmd, args, opts) => {
+      if (args[0] === 'rm') throw new Error('Docker unavailable');
+      return original(cmd, args, opts);
+    });
+    await expect(stopRunner(db, log, ghApp.id, name)).rejects.toThrow('Docker unavailable');
+    expect(h.githubApi.mock.calls.some(([, , method]) => method === 'DELETE')).toBe(false);
+  });
+
   it('stops only the requested App runner and removes its GitHub registration', async () => {
     const name = `nd-${ghApp.id}-1-aaaaaa`;
     psRows = [`${name}\trunning\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t1\tacme/api\t31\torg:acme`];
