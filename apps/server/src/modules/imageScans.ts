@@ -58,13 +58,14 @@ export const serviceImageScanRoutes: FastifyPluginAsync = async (app) => {
     }
     if (!svc.runtimeId) throw new HttpError(409, 'image_scan_not_running', 'The service has no running container to scan; deploy it first');
     if (scanning.has(id)) throw new HttpError(409, 'image_scan_running', 'A scan of this service is already running');
+    scanning.add(id);
     let imageId: string;
     try {
       imageId = await containerImageId(svc.runtimeId);
     } catch (err) {
+      scanning.delete(id);
       throw new HttpError(409, 'image_scan_not_running', `Could not read the running image: ${err instanceof Error ? err.message : String(err)}`);
     }
-    scanning.add(id);
     void scanServiceImage(app.db, id, imageId, 'manual')
       .then((r) => {
         void audit(app.db, req.user!.id, 'image_scan.run', svc.name, {
