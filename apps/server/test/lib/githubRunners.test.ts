@@ -48,6 +48,7 @@ const {
   isolationRules,
   setRunnerConfig,
   sweepGithubRunners,
+  stopRunner,
 } = await import('../../src/lib/githubRunners.js');
 const { GithubAppError } = await import('../../src/lib/githubApp.js');
 const { migratedDb, rsaKeyPair, seedApp, seedInstallation } = await import('./githubAppKit.js');
@@ -307,6 +308,29 @@ describe('runner isolation and groups (security review)', () => {
     expect((await runnerStatus(db, ghApp)).problems.join('\n')).toContain('cannot see the runner network');
   });
 
+  it('starts nothing if firewall insertion fails', async () => {
+    const original = h.capture.getMockImplementation()!;
+    h.capture.mockImplementation(async (cmd, args, opts) => {
+      if (cmd === 'iptables' && args[0] === '-I') throw new Error('permission denied');
+      return original(cmd, args, opts);
+    });
+    await setRunnerConfig(db, ghApp.id, enabled());
+    await handleWorkflowJob(db, log, ghApp, inst, queued());
+    await drainPending(db, log);
+    expect(runCalls()).toHaveLength(0);
+    expect(h.githubApi.mock.calls.some(([, , method, path]) => method === 'POST' && String(path).endsWith('generate-jitconfig'))).toBe(false);
+    expect((await runnerStatus(db, ghApp)).problems.join('\n')).toContain('Could not add the runner firewall rule');
+  });
+
+  it('starts nothing when no permitted repositories are visible', async () => {
+    h.listInstallationRepositories.mockResolvedValue({ repositories: [], truncated: false });
+    await setRunnerConfig(db, ghApp.id, enabled());
+    await handleWorkflowJob(db, log, ghApp, inst, queued());
+    await drainPending(db, log);
+    expect(runCalls()).toHaveLength(0);
+    expect((await runnerStatus(db, ghApp)).problems.join('\n')).toContain('No allowed repository');
+  });
+
   it('runs without the firewall only when explicitly told to', async () => {
     h.bridge = false;
     process.env['NINEDEPLOY_GHA_RUNNERS_UNISOLATED'] = '1';
@@ -400,6 +424,37 @@ describe('sweepGithubRunners', () => {
     });
     await sweepGithubRunners(db, log, new Date('2026-10-28T10:30:00Z').getTime());
     expect(h.capture.mock.calls.some(([, a]) => a[0] === 'rm')).toBe(true);
+  });
+});
+
+describe('runner operator and expiration', () => {
+  it('stops only the requested App runner and removes its GitHub registration', async () => {
+    const name = `nd-${ghApp.id}-1-aaaaaa`;
+    psRows = [`${name}\trunning\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t1\tacme/api\t31\torg:acme`];
+    expect(await stopRunner(db, log, ghApp.id + 1, name)).toBe(false);
+    expect(h.capture.mock.calls.some(([, args]) => args[0] === 'rm')).toBe(false);
+    expect(await stopRunner(db, log, ghApp.id, name)).toBe(true);
+    expect(h.capture.mock.calls.some(([, args]) => args[0] === 'rm' && args[2] === name)).toBe(true);
+    expect(h.githubApi.mock.calls.some(([, , method, path]) => method === 'DELETE' && path === '/orgs/acme/actions/runners/31')).toBe(true);
+  });
+
+  it('removes exited runners and those exceeding the maximum age', async () => {
+    await setRunnerConfig(db, ghApp.id, enabled());
+    psRows = [
+      `nd-${ghApp.id}-1-aaaaaa\texited\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t1\tacme/api\t31\torg:acme`,
+      `nd-${ghApp.id}-2-bbbbbb\trunning\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t2\tacme/api\t32\torg:acme`,
+    ];
+    await sweepGithubRunners(db, log, new Date('2026-10-28T17:00:00Z').getTime());
+    expect(h.capture.mock.calls.filter(([, args]) => args[0] === 'rm').map(([, args]) => args[2])).toEqual([`nd-${ghApp.id}-1-aaaaaa`, `nd-${ghApp.id}-2-bbbbbb`]);
+    expect(h.githubApi.mock.calls.some(([, , method, path]) => method === 'DELETE' && path === '/orgs/acme/actions/runners/32')).toBe(true);
+  });
+
+  it('retains an idle runner when GitHub cannot confirm it is idle', async () => {
+    await setRunnerConfig(db, ghApp.id, enabled());
+    psRows = [`nd-${ghApp.id}-1-aaaaaa\trunning\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t1\tacme/api\t31\torg:acme`];
+    h.githubApi.mockRejectedValue(new Error('GitHub unavailable'));
+    await sweepGithubRunners(db, log, new Date('2026-10-28T10:30:00Z').getTime());
+    expect(h.capture.mock.calls.some(([, args]) => args[0] === 'rm')).toBe(false);
   });
 });
 
