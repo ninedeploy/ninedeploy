@@ -77,7 +77,7 @@ vi.mock('../src/lib/spawnValidated.js', () => ({ spawnValidated: async (_bin: st
   const name = args.at(-1)!;
   const item = primaryIo.containers.get(name) ?? [...primaryIo.containers.values()].find(c => c.name === name);
   if (args[0] === 'inspect') {
-    if (!item) { sink('No such container'); return 1; }
+    if (!item) { sink(`Error response from daemon: No such container: ${name}`); return 1; }
     sink(args.includes('{{.Name}}') ? `/${item.name}` : JSON.stringify({ ...item, name: `/${item.name}`, managed: 'service', serviceId: '5', deploymentId: '1' }));
   } else if (args[0] === 'rm') { primaryIo.containers.delete(name); primaryIo.retired(item?.name); }
   return 0;
@@ -3404,7 +3404,7 @@ describe('r353: source fan-out and Git credentials', () => {
         : args[2] === 'docker.inspect'
           ? { exitCode: 0, lines: ['running|none|0|0'] }
           : args[2] === 'docker.probe'
-            ? { exitCode: 0, lines: ['ND-PROBE {"ready":true}'] }
+            ? { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"http","status":200}'] }
             : { exitCode: 0, lines: [] },
     );
     await runDeployment(db as never, 1);

@@ -11,6 +11,7 @@ import { generateNixpacksToml } from '../../lib/ninedeployToNixpacks.js';
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
 import { runRemoteContainer } from './remoteRun.js';
 import { verifyNodeReadiness } from '../../lib/nodeReadiness.js';
+import { confirmedNodeProbe } from '../../lib/nodeProbeReceipt.js';
 import { discoverRemoteReplicas, retireRemoteReplicas } from './remoteReplicas.js';
 import { BUILDPACKS_NODE_REASON, isBuildpackPack } from '../../lib/buildPacks.js';
 
@@ -634,11 +635,7 @@ export function createRemoteDockerBuilder(
                 name: runtime.runtimeId, port: runtime.port,
                 protocol: runtime.healthCheck === 'tcp' ? 'tcp' : 'http', path: runtime.healthPath,
               });
-              let ready = false;
-              for (const line of result.lines) {
-                if (!line.startsWith('ND-PROBE ')) continue;
-                try { ready = (JSON.parse(line.slice(9)) as { ready?: unknown }).ready === true; } catch { /* malformed response is not readiness */ }
-              }
+              const ready = confirmedNodeProbe(result.lines, result.exitCode, runtime.healthCheck === 'tcp' ? 'tcp' : 'http');
               if (!ready) {
                 stable = 0;
                 await wait();

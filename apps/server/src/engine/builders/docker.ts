@@ -20,6 +20,7 @@ import { BUILDPACK_BUILDERS, isBuildpackPack, type BuildpackPack } from '../../l
 import { repoRelative, resolveInRepo } from '../../lib/repoPath.js';
 import { acquireRegistryLock, registryLockKey } from '../../lib/registryLock.js';
 import { deployAborted } from '../../lib/deployAbort.js';
+import { confirmedNodeProbe } from '../../lib/nodeProbeReceipt.js';
 import { startStoppedGeneration } from '../interruptedRuntime.js';
 
 /**
@@ -1653,21 +1654,27 @@ export const dockerBuilder: Builder = {
   },
 
   // 5-minute deadline: first boots (model downloads, DB migrations) are slow.
-  async isHealthy(runtime, timeoutMs = 300_000, directGraceMs = 10_000, log: (line: string) => void = () => undefined) {
+  async isHealthy(runtime, timeoutMs = 300_000, directGraceMs = 10_000, log: (line: string) => void = () => undefined, options = {}) {
     if (runtime.healthCheck === 'http-strict' || runtime.healthCheck === 'tcp') {
       if (!runtime.port) return false;
       const { probeContainer } = await import('../../lib/containerProbe.js');
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline && !deployAborted()) {
+        await options.checkpoint?.();
+        const remaining = deadline - Date.now();
+        if (remaining <= 0 || deployAborted()) break;
         let ready = false;
         try {
-          await probeContainer({ name: runtime.runtimeId, port: runtime.port,
-            protocol: runtime.healthCheck === 'tcp' ? 'tcp' : 'http', path: runtime.healthPath }, (line) => {
-            if (line.startsWith('ND-PROBE ')) ready = (JSON.parse(line.slice(9)) as { ready?: unknown }).ready === true;
-          });
+          const protocol = runtime.healthCheck === 'tcp' ? 'tcp' : 'http';
+          const lines: string[] = [];
+          const exitCode = await probeContainer({ name: runtime.runtimeId, port: runtime.port,
+            protocol, path: runtime.healthPath }, line => lines.push(line), { timeoutMs: remaining });
+          ready = confirmedNodeProbe(lines, exitCode, protocol);
         } catch { /* retry until the readiness deadline */ }
+        await options.checkpoint?.();
+        if (Date.now() >= deadline || deployAborted()) break;
         if (ready) return true;
-        await sleep(1000);
+        await sleep(Math.min(1000, deadline - Date.now()));
       }
       log(`${runtime.runtimeId} did not pass ${runtime.healthCheck} readiness`);
       return false;
@@ -1696,11 +1703,15 @@ export const dockerBuilder: Builder = {
     let restartDiagnosticWritten = false;
     let siblingTopologyLogged = false;
     while (Date.now() < deadline && !deployAborted()) {
+      await options.checkpoint?.();
+      if (Date.now() >= deadline || deployAborted()) break;
       // Resolve the container's network address fresh on every attempt: null
       // when it is not running (a process that exits right after `docker run -d`
       // must not pass), and always the CURRENT address — which is exactly what
       // makes blue-green and rollback probes correct without persisting ports.
       const ip = await containerIp(runtime.runtimeId);
+      await options.checkpoint?.();
+      if (Date.now() >= deadline || deployAborted()) break;
       if (!ip) {
         const elapsed = Date.now() - start;
         // A process that has exited cannot recover. A restart loop gets a
@@ -1730,9 +1741,10 @@ export const dockerBuilder: Builder = {
         if (Date.now() - start < directGraceMs) {
           // Probe the HTTP endpoint with a short per-attempt timeout so a server
           // that accepts TCP but never responds can't stall the whole deadline.
+          let ready = false;
           try {
             const res = await fetch(buildProbeUrl(ip, runtime.port, healthPath), {
-              signal: AbortSignal.timeout(3000),
+              signal: AbortSignal.timeout(Math.max(1, Math.min(3000, deadline - Date.now()))),
               redirect: 'manual',
             });
             // Always drain/cancel the body so the undici connection is released
@@ -1742,16 +1754,20 @@ export const dockerBuilder: Builder = {
             } catch {
               /* body already consumed */
             }
-            if (res.status >= 200 && res.status < 500) return true;
+            ready = res.status >= 200 && res.status < 500;
           } catch {
             /* not up yet — retry until the grace period ends */
           }
-          await sleep(1000);
+          await options.checkpoint?.();
+          if (Date.now() >= deadline || deployAborted()) break;
+          if (ready) return true;
+          await sleep(Math.min(1000, deadline - Date.now()));
           continue;
         }
         // Change the probe's vantage point, never its HTTP readiness contract.
         // Use the inspected IP (container names can wildcard-resolve) and a
         // raw HTTP request so redirects cannot move the probe to another host.
+        let siblingReady = false;
         try {
           await ensureProbeContainer(log);
           // Without this the prober cannot route into the runtime's per-slug
@@ -1760,7 +1776,7 @@ export const dockerBuilder: Builder = {
           // timeouts against a perfectly healthy container.
           await ensureProbeNetworks(runtime.runtimeId, log);
           await probeSiblingHttp(ip, runtime.port, healthPath);
-          return true;
+          siblingReady = true;
         } catch (probeErr) {
           probeContainerReady = false;
           // First failure: show where prober and container actually sit — a
@@ -1775,6 +1791,9 @@ export const dockerBuilder: Builder = {
           // otherwise degrades to a bare "did not become ready".
           log(`sibling probe failed: ${probeErr instanceof Error ? probeErr.message : String(probeErr)}`);
         }
+        await options.checkpoint?.();
+        if (Date.now() >= deadline || deployAborted()) break;
+        if (siblingReady) return true;
         // Image deploys commonly advertise their real internal port (for
         // example n8n exposes 5678/tcp). If the stored port is wrong, probe
         // those declared alternatives from the same Docker network. A
@@ -1783,16 +1802,23 @@ export const dockerBuilder: Builder = {
         fallbackPorts ??= (await containerExposedTcpPorts(runtime.runtimeId))
           .filter((port) => port !== runtime.port);
         for (const candidate of fallbackPorts) {
+          let candidateReady = false;
           try {
             await probeSiblingHttp(ip, candidate, healthPath);
-            log(`detected healthy image port ${candidate}/tcp; replacing incorrect configured port ${runtime.port}`);
-            runtime.port = candidate;
-            return true;
+            candidateReady = true;
           } catch {
             /* candidate is not accepting connections yet — retry next loop */
           }
+          await options.checkpoint?.();
+          if (Date.now() >= deadline || deployAborted()) break;
+          if (candidateReady) {
+            log(`detected healthy image port ${candidate}/tcp; replacing incorrect configured port ${runtime.port}`);
+            runtime.port = candidate;
+            return true;
+          }
         }
-        await sleep(3000);
+        if (Date.now() >= deadline || deployAborted()) break;
+        await sleep(Math.min(3000, deadline - Date.now()));
       } else {
         // No HTTP port to probe — a live container is the strongest signal available.
         return true;

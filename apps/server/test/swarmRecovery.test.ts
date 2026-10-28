@@ -23,7 +23,7 @@ beforeEach(async () => {
   h.docker = new Map(); h.run.mockReset().mockResolvedValue(undefined);
   h.spawn.mockReset().mockImplementation(async (_cmd, args, sink) => {
     const row = [...h.docker.values()].find(c => c.name === args.at(-1) || c.id === args.at(-1));
-    if (!row) { sink('Error: No such object'); return 1; }
+    if (!row) { sink(`Error: No such object: ${args.at(-1)}`); return 1; }
     if (args[0] === 'rm') { h.docker.delete(row.id); return 0; }
     if (args[0] === 'stop') return 0;
     if (args.includes('{{.Name}}')) sink('/'+row.name);

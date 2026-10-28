@@ -33,6 +33,7 @@
     "smoke:upgrade": "node scripts/smoke-upgrade.mjs",
     "smoke:multinode": "node scripts/smoke-multinode.mjs",
     "smoke:container-readiness": "node scripts/smoke-container-readiness.mjs",
+    "smoke:local-docker-readiness": "node scripts/smoke-local-docker-readiness.mjs",
     "smoke:container-metrics": "node scripts/smoke-container-metrics.mjs",
     "smoke:container-lifecycle": "node scripts/smoke-container-lifecycle.mjs",
     "smoke:container-generation-stop": "node scripts/smoke-container-generation-stop.mjs",

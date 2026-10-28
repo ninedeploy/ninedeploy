@@ -11,7 +11,7 @@ beforeEach(() => {
   h.agent.mockReset().mockImplementation(async (_db, _id, op, p) => {
     if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.17.2","caps":["docker.probe"]}'] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
-    if (op === 'docker.probe') return { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready })}`] };
+    if (op === 'docker.probe') return { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready, protocol: p.protocol, ...(p.protocol === 'http' ? { status: ready ? 200 : 503 } : {}) })}`] };
     if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${p.name}.env`] };
     return { exitCode: 0, lines: [] };
   });

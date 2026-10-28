@@ -1008,7 +1008,8 @@ describe('dockerBuilder.isHealthy', () => {
       dockerBuilder.isHealthy({ runtimeId: 'r', port: 3000, healthPath: '/' }, 20),
     ).resolves.toBe(false);
     expect(fetchMock).toHaveBeenCalled();
-    expect(h.sleep).toHaveBeenCalledWith(1000);
+    expect(h.sleep).toHaveBeenCalled();
+    expect(h.sleep.mock.calls.every(([ms]) => ms > 0 && ms <= 20)).toBe(true);
   });
 
   it('returns false when the fetch throws', async () => {

@@ -43,7 +43,7 @@ beforeEach(async () => {
       const isOld = p.name === old || p.name === 'a'.repeat(64);
       return { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id: (isOld ? 'a' : 'b').repeat(64), name: isOld ? old : candidate, managed: 'service', serviceId: '1', deploymentId: isOld ? '8' : '9' })}`] };
     }
-    if (op === 'docker.probe') return { exitCode: 0, lines: ['ND-PROBE {"ready":true}'] };
+    if (op === 'docker.probe') return { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: true, protocol: p.protocol, ...(p.protocol === 'http' ? { status: 200 } : {}) })}`] };
     if (op === 'docker.retire') return { exitCode: 0, lines: [`ND-RETIRED ${p.id}`] };
     if (op === 'proxy.writeConfig') { if (p.kind === 'dynamic') writes.push(p.content); return { exitCode: 0, lines: ['proxy-config x unchanged'] }; }
     if (op === 'proxy.confirmRouting') { await confirm(p.content); return { exitCode: 0, lines: [`ND-PROXY-ROUTING ${createHash('sha256').update(p.content).digest('hex')}`] }; }
@@ -156,7 +156,7 @@ describe('durable fan-out reconciliation', () => {
     await journal({ healthCheck: 'http-strict' }); await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'idle' });
     const original = h.agent.getMockImplementation()!;
     h.agent.mockImplementation(async (...args) => args[2] === 'docker.probe'
-      ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: args[3].name === 'a'.repeat(64) })}`] } : original(...args));
+      ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: args[3].name === 'a'.repeat(64), protocol: args[3].protocol, status: args[3].name === 'a'.repeat(64) ? 200 : 503 })}`] } : original(...args));
     expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
     expect((await target())?.runtimeId).toBe(old); expect(stops()).toEqual([candidate]);
     expect(writes.at(-1)).toContain(`http://${old}:8080`);
@@ -165,7 +165,7 @@ describe('durable fan-out reconciliation', () => {
     await journal({ healthCheck: 'http-strict' }); await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'idle' });
     const original = h.agent.getMockImplementation()!;
     h.agent.mockImplementation(async (...args) => args[2] === 'docker.probe'
-      ? { exitCode: 0, lines: ['ND-PROBE {"ready":false}'] } : original(...args));
+      ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: false, protocol: args[3].protocol })}`] } : original(...args));
     expect(await finish(recover())).toEqual({ recovered: 0, held: 1 });
     expect((await target())?.runtimeId).toBe(candidate); expect(stops()).toEqual([]); expect(writes).toEqual([]);
   });
@@ -238,7 +238,7 @@ describe('durable fan-out reconciliation', () => {
     await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'running' });
     const original = h.agent.getMockImplementation()!;
     h.agent.mockImplementation(async (...args) => args[2] === 'docker.probe'
-      ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: args[3].name !== 'b'.repeat(64) })}`] } : original(...args));
+      ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: args[3].name !== 'b'.repeat(64), protocol: args[3].protocol, status: args[3].name !== 'b'.repeat(64) ? 200 : 503 })}`] } : original(...args));
     expect((await finish(recover())).held).toBe(1);
     expect((await target())?.runtimeId).toBe(candidate); expect(stops()).toEqual([]);
   });

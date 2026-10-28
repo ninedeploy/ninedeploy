@@ -324,7 +324,7 @@ describe('remote docker builder — what it refuses', () => {
       let probes = 0;
       const { agent: base } = fakeAgent();
       const agent: AgentCall = async (op, params, sink) => op === 'docker.probe'
-        ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: ++probes >= 3, protocol: 'http' })}`] }
+        ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: ++probes >= 3, protocol: 'http', status: probes >= 3 ? 200 : 503 })}`] }
         : base(op, params, sink);
       const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/ready', healthCheck: 'http-strict' }, 5000, 0);
       await vi.advanceTimersByTimeAsync(200);
@@ -337,6 +337,21 @@ describe('remote docker builder — what it refuses', () => {
     vi.useFakeTimers();
     try {
       const { agent } = fakeAgent({ 'docker.probe': { exitCode: 0, lines: ['ND-PROBE {"ready":false,"protocol":"http","status":503}'] } });
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/ready', healthCheck: 'http-strict' }, 300, 0);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([
+    { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] },
+    { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"http","status":200}', 'ND-PROBE {"ready":true,"protocol":"http","status":200}'] },
+    { exitCode: 1, lines: ['ND-PROBE {"ready":true,"protocol":"http","status":200}'] },
+    { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"http"}'] },
+    { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"http","status":503}'] },
+  ])('does not route on contradictory or ambiguous HTTP probe evidence: %j', async response => {
+    vi.useFakeTimers();
+    try {
+      const { agent } = fakeAgent({ 'docker.probe': response });
       const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/ready', healthCheck: 'http-strict' }, 300, 0);
       await vi.advanceTimersByTimeAsync(300);
       expect(await pending).toBe(false);

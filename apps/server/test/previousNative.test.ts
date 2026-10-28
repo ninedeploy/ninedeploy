@@ -21,7 +21,7 @@ beforeEach(async () => {
   h.proxy.mockReset().mockResolvedValue(undefined);
   h.spawn.mockReset().mockImplementation(async (_exe, args, sink) => {
     if (args.at(-1) === 'web-9') { sink(JSON.stringify({ id: 'd'.repeat(64), name: '/web-9', managed: 'service', serviceId: '1', deploymentId: '9' })); return 0; }
-    sink('Error: No such object'); return 1;
+    sink(`Error: No such object: ${args.at(-1)}`); return 1;
   });
   h.native = { ID: nativeId, Version: { Index: 17 }, Spec: { Name: name, Labels: { 'ninedeploy.managed': 'service', 'ninedeploy.service': '1', 'ninedeploy.deployment': '7' }, Mode: { Replicated: { Replicas: 1 } }, TaskTemplate: { ContainerSpec: { Image: 'fixture:7', Env: ['SECRET=private-fixture-secret'] } } } };
   h.http.mockReset().mockImplementation(async (method, path, body) => {

@@ -43,7 +43,7 @@ beforeEach(async () => {
     if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.18.0', caps })}`] };
     if (op === 'docker.identity') return { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify(containers.get(p.name) ?? [...containers.values()].find(v => v.name === p.name) ?? null)}`] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: [p.format === 'health' ? 'running|none|0|0' : 'running|172.18.0.2'] };
-    if (op === 'docker.probe') return { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: !unready.has(p.name) })}`] };
+    if (op === 'docker.probe') return { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: !unready.has(p.name), protocol: p.protocol, ...(p.protocol === 'http' ? { status: unready.has(p.name) ? 503 : 200 } : {}) })}`] };
     if (op === 'docker.retire') { containers.delete(p.id); return { exitCode: 0, lines: [`ND-RETIRED ${p.id}`] }; }
     if (op === 'proxy.writeConfig') { if (p.kind === 'dynamic') writes.push(p.content); return { exitCode: 0, lines: ['proxy-config x unchanged'] }; }
     if (op === 'proxy.confirmRouting') { await confirm(); return { exitCode: 0, lines: [`ND-PROXY-ROUTING ${createHash('sha256').update(p.content).digest('hex')}`] }; }

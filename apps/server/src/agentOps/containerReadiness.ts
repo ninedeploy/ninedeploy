@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks';
 import { containerReadinessReply, containerReadinessRequest, type ContainerReadinessReply } from '@ninedeploy/schemas';
 import { probeContainer } from '../lib/containerProbe.js';
 import { spawnValidated } from '../lib/spawnValidated.js';
+import { confirmedNodeProbe } from '../lib/nodeProbeReceipt.js';
 import type { AgentOpModule } from './index.js';
 
 const FORMAT = '{"id":{{json .Id}},"name":{{json .Name}},"status":{{json .State.Status}},"health":{{with index .State "Health"}}{{json .Status}}{{else}}"none"{{end}},"failingStreak":{{with index .State "Health"}}{{.FailingStreak}}{{else}}0{{end}},"restarts":{{.RestartCount}}}';
@@ -45,12 +46,10 @@ export const containerReadinessOps: AgentOpModule = {
             if (ready && (input.mode === 'http-strict' || input.mode === 'tcp')) {
               if (!remaining()) ready = false;
               else {
-                let replies = 0;
-                await probeContainer({ name: target.id, port: input.port, protocol: input.mode === 'tcp' ? 'tcp' : 'http', path: input.path }, line => {
-                  if (!line.startsWith('ND-PROBE ')) return;
-                  replies++; ready = JSON.parse(line.slice(9)).ready === true;
-                }, { timeoutMs: remaining() });
-                ready = ready && replies === 1;
+                const protocol = input.mode === 'tcp' ? 'tcp' : 'http';
+                const lines: string[] = [];
+                const exitCode = await probeContainer({ name: target.id, port: input.port, protocol, path: input.path }, line => lines.push(line), { timeoutMs: remaining() });
+                ready = confirmedNodeProbe(lines, exitCode, protocol);
               }
             }
             readiness.set(target.id, ready);

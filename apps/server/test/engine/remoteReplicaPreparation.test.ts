@@ -27,7 +27,7 @@ function fixture({ failAt = '', invalidImage = false, foreign = '', disabled = f
       containers.set(target.name, target); return { exitCode: 0, lines: [target.id] };
     }
     if (op === 'docker.inspect') return { exitCode: 0, lines: [params.format === 'health' ? 'running|none|0|0' : invalidImage ? 'mutable:tag' : imageId] };
-    if (op === 'docker.probe') return { exitCode: 0, lines: ['ND-PROBE {"ready":true}'] };
+    if (op === 'docker.probe') return { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: true, protocol: params.protocol, ...(params.protocol === 'http' ? { status: 200 } : {}) })}`] };
     if (op === 'docker.retire') return { exitCode: 0, lines: ['ND-RETIRED ' + params.id] };
     if (op === 'docker.readiness') return { exitCode: 0, lines: ['ND-READINESS ' + JSON.stringify({ requestId: params.requestId, complete: true,
       items: (params.targets as Array<{ id: string; name: string }>).map(target => ({ ...target, status: 'running', health: 'none', ready: target.name !== 'web-7-r2', restarts: 0, failingStreak: 0 })) })] };

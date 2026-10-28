@@ -410,6 +410,11 @@ jobs:
         if: matrix.suite == 'agent-runtime'
         run: node scripts/smoke-container-readiness.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
+      - name: Verify local Docker readiness deadline and ownership
+        if: matrix.suite == 'agent-runtime'
+        timeout-minutes: 5
+        run: node scripts/smoke-local-docker-readiness.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+
       - name: Verify immutable node resource metrics on an isolated daemon
         if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10
