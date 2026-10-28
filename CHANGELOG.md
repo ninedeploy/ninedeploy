@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Self-hosted GitHub Actions runners (G4.5). A GitHub App can now run Actions jobs on the panel host.
+  - **How it works:** on a queued `workflow_job` whose `runs-on` names one of the App's runner labels, the panel registers a just-in-time runner and starts one `actions-runner` container for it. That container takes one job and is removed.
+  - **Setup:** Sources → GitHub App → *Self-hosted Actions runners*. The section shows what the App still lacks. New Apps can request the event and permission from the setup form:
+    - an organization App needs `organization_self_hosted_runners: write`;
+    - a personal App needs `administration: write`.
+  - **Isolation:**
+    - no Docker socket;
+    - its own network;
+    - CPU, memory and pid limits;
+    - public repositories refused unless allowed;
+    - an optional repository list.
+  - **Limits and queue:** jobs above the per-App limit wait and start as slots free up. Runners that never pick up a job are removed after 10 minutes.
+  - **Image:** pinned by digest (`actions-runner` 2.338.2).
+
+  No migration: the settings live in the settings table. See GITHUB_APP.md §7.1.
+
 - Turkish interface (G4.6). The web panel now has a translation layer and a Turkish locale.
   - **Choosing a language:** pick it under Settings → Appearance → Language, or with the switch under the sign-in form. The choice is kept in the browser. Without one, a Turkish browser opens in Turkish.
   - **Translated:** every page except the service Network tab and the Domains page, about 4,580 strings. Server error messages, API values, product names and help topics stay English.

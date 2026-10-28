@@ -16,6 +16,7 @@ import { audit } from '../lib/audit.js';
 import { decrypt } from '../lib/crypto.js';
 import { HttpError, notFound, unauthorized } from '../lib/errors.js';
 import { clearGithubAppCaches } from '../lib/githubApp.js';
+import { handleWorkflowJob } from '../lib/githubRunners.js';
 import { githubRepoFromUrl } from '../lib/sourceCreds.js';
 import { handlePullRequest, handlePush, repositoryIdentity, type DispatchResult } from '../lib/webhookDispatch.js';
 import { isPing, isReplayedDelivery, parsePullRequest, parsePush, verifyWebhook } from '../lib/webhooks.js';
@@ -327,6 +328,8 @@ export const githubAppHookRoutes: FastifyPluginAsync = async (app) => {
     if (event === 'push' || event === 'pull_request') {
       return routeRepositoryEvent(app.db, req.log, ghApp, inst, event, body, req.headers);
     }
+    // G4.5: a queued Actions job may get a just-in-time runner on this host.
+    if (event === 'workflow_job') return handleWorkflowJob(app.db, req.log, ghApp, inst, body);
     return { ok: 'ignored', reason: 'event_not_handled', event: event.slice(0, 64) };
   });
 };

@@ -328,6 +328,27 @@ describe('installation events', () => {
   });
 });
 
+describe('workflow_job (G4.5)', () => {
+  const job = (action: string) => ({
+    action,
+    workflow_job: { id: 501, name: 'build', labels: ['self-hosted', 'ninedeploy'] },
+    repository: { id: REPO_ID, full_name: 'acme/app', private: true },
+    installation: { id: inst.installationId },
+  });
+
+  it('reaches the runner handler, which takes nothing while runners are off', async () => {
+    const app = await server();
+    expect((await appHook(app, 'workflow_job', job('queued'))).body).toEqual({ ok: 'ignored', reason: 'runners_disabled', jobId: 501 });
+    expect((await appHook(app, 'workflow_job', job('completed'))).body).toEqual({ ok: true, action: 'runner_job_updated', jobId: 501 });
+  });
+
+  it('is ignored for an inactive installation', async () => {
+    const app = await server();
+    await appHook(app, 'installation', { action: 'suspend', installation: { id: inst.installationId } });
+    expect((await appHook(app, 'workflow_job', job('queued'))).body).toEqual({ ok: 'ignored', reason: 'installation_inactive' });
+  });
+});
+
 describe('push routing by repository id', () => {
   it('deploys the linked service only — not an unlinked service with the same URL, not another repo id', async () => {
     const [unlinked] = await db

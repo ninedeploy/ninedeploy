@@ -10,6 +10,8 @@ import type {
   GithubAppManifestRequest,
   GithubAppManifestResponse,
   GithubAppPatch,
+  GithubRunnerConfig,
+  GithubRunnerStatus,
 } from '@ninedeploy/schemas';
 import type { GithubAppInstallationSync, SourceRepo, SourceUpdateInput } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -88,6 +90,11 @@ export interface SourcesApi {
     remove: (id: number) => Promise<void>;
     syncInstallations: (id: number) => Promise<GithubAppInstallationSync>;
     installations: (id: number) => Promise<GithubAppInstallation[]>;
+    /** Self-hosted Actions runners (G4.5): settings, waiting jobs, running runners and what is missing. */
+    runners: (id: number) => Promise<GithubRunnerStatus>;
+    setRunners: (id: number, config: GithubRunnerConfig) => Promise<GithubRunnerStatus>;
+    /** Stop one runner container (and remove its registration on GitHub). */
+    stopRunner: (id: number, name: string) => Promise<void>;
   };
 }
 
@@ -126,6 +133,11 @@ export function sourcesApi(t: Transport): SourcesApi {
       },
       syncInstallations: (id) => send<GithubAppInstallationSync>('POST', `/v1/github-apps/${id}/installations/sync`),
       installations: (id) => get<GithubAppInstallation[]>(`/v1/github-apps/${id}/installations`),
+      runners: (id) => get<GithubRunnerStatus>(`/v1/github-apps/${id}/runners`),
+      setRunners: (id, config) => send<GithubRunnerStatus>('PUT', `/v1/github-apps/${id}/runners`, config),
+      stopRunner: async (id, name) => {
+        await request(`/v1/github-apps/${id}/runners/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      },
     },
   };
 }

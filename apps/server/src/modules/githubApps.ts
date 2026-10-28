@@ -9,6 +9,7 @@ import {
   githubAppManifestRequest,
   githubAppPatch,
   githubAppPrivateKey,
+  githubRunnerConfig,
 } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { audit } from '../lib/audit.js';
@@ -16,6 +17,7 @@ import { decrypt, encrypt } from '../lib/crypto.js';
 import { guardedFetch, privateEgressAllowed } from '../lib/egressGuard.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId } from '../lib/errors.js';
 import { apiBase, appJwt, clearGithubAppCaches, GithubAppError, githubApi, githubApiPages, type GithubAppRef } from '../lib/githubApp.js';
+import { forgetPending, runnerStatus, setRunnerConfig, stopRunner } from '../lib/githubRunners.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { panelOrigin } from '../lib/panelOrigin.js';
 import { redactSecrets } from '../lib/redactSecret.js';
@@ -511,8 +513,15 @@ export const githubAppsRoutes: FastifyPluginAsync = async (app) => {
         pull_requests: 'write',
         statuses: 'write',
         ...(input.checks ? { checks: 'write' } : {}),
+        // G4.5: registering just-in-time runners. An organization App can use
+        // the narrow runner permission; a personal App only has administration.
+        ...(input.runners
+          ? input.target === 'org'
+            ? { organization_self_hosted_runners: 'write' }
+            : { administration: 'write' }
+          : {}),
       },
-      default_events: ['push', 'pull_request'],
+      default_events: ['push', 'pull_request', ...(input.runners ? ['workflow_job'] : [])],
     };
     const qs = `?state=${encodeURIComponent(state)}`;
     const postUrl =
@@ -727,6 +736,7 @@ export const githubAppsRoutes: FastifyPluginAsync = async (app) => {
     const row = await loadApp(app.db, parseId((req.params as { id: string }).id));
     await app.db.delete(githubApps).where(eq(githubApps.id, row.id));
     clearGithubAppCaches();
+    forgetPending(row.id);
     void audit(app.db, req.user!.id, 'github_app.delete', row.name, { githubAppId: row.id, appId: row.appId });
     return { ok: true };
   });
@@ -741,6 +751,40 @@ export const githubAppsRoutes: FastifyPluginAsync = async (app) => {
       orderBy: (t, { asc }) => [asc(t.id)],
     });
     return { ...result, installations: installations.map((i) => serializeInstallation(row, i)) };
+  });
+
+  // ── self-hosted Actions runners (G4.5) ─────────────────────────────────
+  app.get('/:id/runners', async (req) => {
+    const row = await loadApp(app.db, parseId((req.params as { id: string }).id));
+    return runnerStatus(app.db, row);
+  });
+
+  app.put('/:id/runners', async (req) => {
+    const row = await loadApp(app.db, parseId((req.params as { id: string }).id));
+    const config = githubRunnerConfig.parse(req.body ?? {});
+    await setRunnerConfig(app.db, row.id, config);
+    if (!config.enabled) forgetPending(row.id);
+    void audit(app.db, req.user!.id, 'github_app.runners_update', row.name, {
+      githubAppId: row.id,
+      appId: row.appId,
+      enabled: config.enabled,
+      labels: config.labels,
+      maxConcurrent: config.maxConcurrent,
+      allowPublicRepos: config.allowPublicRepos,
+      repositories: config.repositories.length,
+    });
+    return runnerStatus(app.db, row);
+  });
+
+  app.delete('/:id/runners/:name', async (req) => {
+    const params = req.params as { id: string; name: string };
+    const row = await loadApp(app.db, parseId(params.id));
+    const name = String(params.name ?? '');
+    if (!/^nd-\d+-\d+-[0-9a-f]{6}$/.test(name)) throw badRequest('Not a runner name');
+    const stopped = await stopRunner(app.db, req.log, row.id, name);
+    if (!stopped) throw notFound('Runner not found');
+    void audit(app.db, req.user!.id, 'github_app.runner_stop', row.name, { githubAppId: row.id, runner: name });
+    return { ok: true };
   });
 
   app.get('/:id/installations', async (req) => {

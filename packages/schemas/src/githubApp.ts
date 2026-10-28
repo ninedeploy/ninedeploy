@@ -77,6 +77,12 @@ export const githubAppManifestRequest = z
     apiBaseUrl: providerBaseUrl.optional(),
     /** Also request `checks: write` (the Checks API itself is not used in 0.13). */
     checks: z.boolean().default(false),
+    /**
+     * G4.5: also request what self-hosted Actions runners need — the
+     * `workflow_job` event plus `organization_self_hosted_runners: write` (an
+     * organization App) or `administration: write` (a personal App).
+     */
+    runners: z.boolean().default(false),
   })
   .refine((v) => v.target !== 'org' || v.org !== undefined, {
     message: 'org is required when target is "org"',
@@ -273,3 +279,94 @@ export type ServiceGithubLink = z.infer<typeof serviceGithubLink>;
 
 export const serviceGithubStatus = z.object({ link: serviceGithubLink.nullable() });
 export type ServiceGithubStatus = z.infer<typeof serviceGithubStatus>;
+
+// ── Self-hosted Actions runners (G4.5) ─────────────────────────────────────
+
+/**
+ * The runner image, pinned by digest. A just-in-time runner updates itself
+ * when GitHub requires a newer version, so an older pin still runs jobs.
+ */
+export const GITHUB_RUNNER_IMAGE =
+  'ghcr.io/actions/actions-runner:2.338.2@sha256:759a1d94a15b05941aba5196974ff43fe15b4cbba29b694b35cbc32a1166b232';
+
+/** A runner label as GitHub accepts it in `runs-on`. */
+export const githubRunnerLabel = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9._-]+$/, 'letters, digits, dot, dash and underscore only');
+
+/** Labels every runner gets from GitHub itself; a configured label must add something. */
+export const GITHUB_RUNNER_DEFAULT_LABELS = ['self-hosted', 'linux', 'x64', 'arm64'] as const;
+
+/**
+ * Per-App runner settings (PUT /v1/github-apps/:id/runners). A queued job is
+ * taken only when its `runs-on` names at least one of `labels` and nothing
+ * outside `labels` + the defaults, so jobs meant for other runners are left alone.
+ */
+export const githubRunnerConfig = z.object({
+  enabled: z.boolean(),
+  labels: z
+    .array(githubRunnerLabel)
+    .min(1)
+    .max(10)
+    .refine((l) => new Set(l.map((x) => x.toLowerCase())).size === l.length, { message: 'Labels must be unique' })
+    .refine((l) => l.every((x) => !(GITHUB_RUNNER_DEFAULT_LABELS as readonly string[]).includes(x.toLowerCase())), {
+      message: 'self-hosted, linux, x64 and arm64 are added by GitHub; add a label of your own',
+    }),
+  /** Runner containers this App may run at once; further jobs wait. */
+  maxConcurrent: z.number().int().min(1).max(20),
+  /** CPU and memory limit of each runner container; null = no limit. */
+  cpus: z.number().min(0.25).max(64).nullable(),
+  memoryMb: z.number().int().min(256).max(262144).nullable(),
+  /**
+   * Run jobs of public repositories. Off by default: anyone can open a pull
+   * request against a public repository, and its workflow would run here.
+   */
+  allowPublicRepos: z.boolean(),
+  /** Only these repositories (`owner/repo`); empty = every repository the App is installed on. */
+  repositories: z
+    .array(githubRepoFullName)
+    .max(100)
+    .refine((r) => new Set(r.map((x) => x.toLowerCase())).size === r.length, { message: 'Repositories must be unique' }),
+});
+export type GithubRunnerConfig = z.infer<typeof githubRunnerConfig>;
+
+export const GITHUB_RUNNER_DEFAULTS: GithubRunnerConfig = {
+  enabled: false,
+  labels: ['ninedeploy'],
+  maxConcurrent: 2,
+  cpus: 2,
+  memoryMb: 4096,
+  allowPublicRepos: false,
+  repositories: [],
+};
+
+/** A job waiting for a free runner slot. */
+export const githubRunnerPendingJob = z.object({
+  jobId: z.number().int(),
+  repo: z.string(),
+  jobName: z.string().nullable(),
+  queuedAt: z.string(),
+});
+
+/** A runner container on the panel host. */
+export const githubRunnerActive = z.object({
+  name: z.string(),
+  jobId: z.number().int().nullable(),
+  repo: z.string().nullable(),
+  state: z.string(),
+  startedAt: z.string().nullable(),
+});
+
+/** GET /v1/github-apps/:id/runners. */
+export const githubRunnerStatus = z.object({
+  config: githubRunnerConfig,
+  image: z.string(),
+  /** What still stops runners from working (missing permission or event); empty when ready. */
+  problems: z.array(z.string()),
+  pending: z.array(githubRunnerPendingJob),
+  active: z.array(githubRunnerActive),
+});
+export type GithubRunnerStatus = z.infer<typeof githubRunnerStatus>;

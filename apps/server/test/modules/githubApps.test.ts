@@ -574,3 +574,49 @@ describe('installations', () => {
     expect(await db.query.githubApps.findFirst({ where: eq(githubApps.id, row.id) })).toBeTruthy();
   });
 });
+
+describe('self-hosted runners (G4.5)', () => {
+  it('requests the runner permission and the workflow_job event when asked', async () => {
+    const app = await server();
+    const org = (
+      await app.inject({ method: 'POST', url: '/manifest', headers: asUser(1), payload: { target: 'org', org: 'acme', runners: true } })
+    ).json();
+    expect(org.manifest.default_permissions.organization_self_hosted_runners).toBe('write');
+    expect(org.manifest.default_permissions.administration).toBeUndefined();
+    expect(org.manifest.default_events).toEqual(['push', 'pull_request', 'workflow_job']);
+    const user = (await app.inject({ method: 'POST', url: '/manifest', headers: asUser(1), payload: { target: 'user', runners: true } })).json();
+    expect(user.manifest.default_permissions.administration).toBe('write');
+    const plain = (await app.inject({ method: 'POST', url: '/manifest', headers: asUser(1), payload: { target: 'user' } })).json();
+    expect(plain.manifest.default_permissions.administration).toBeUndefined();
+    expect(plain.manifest.default_events).toEqual(['push', 'pull_request']);
+  });
+
+  it('stores the settings, audits them and reports what is still missing', async () => {
+    const row = await seedApp(db, key.privateKey, { events: ['push'] });
+    await seedInstallation(db, row, { accountType: 'Organization', permissions: { contents: 'read' } });
+    const app = await server();
+    const off = (await app.inject({ method: 'GET', url: `/${row.id}/runners`, headers: asUser(1) })).json();
+    expect(off.config.enabled).toBe(false);
+    expect(off.problems).toEqual([]);
+
+    const config = { enabled: true, labels: ['ninedeploy', 'big'], maxConcurrent: 3, cpus: null, memoryMb: 8192, allowPublicRepos: false, repositories: ['acme/api'] };
+    const res = await app.inject({ method: 'PUT', url: `/${row.id}/runners`, headers: asUser(1), payload: config });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().config).toEqual(config);
+    expect(res.json().problems.join('\n')).toContain('Workflow job');
+    expect(res.json().problems.join('\n')).toContain('organization_self_hosted_runners: write');
+    const audits = await db.select().from(auditLog).where(eq(auditLog.action, 'github_app.runners_update'));
+    expect(audits).toHaveLength(1);
+
+    const bad = await app.inject({ method: 'PUT', url: `/${row.id}/runners`, headers: asUser(1), payload: { ...config, labels: ['self-hosted'] } });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it('refuses to stop anything but a runner name, and members entirely', async () => {
+    const row = await seedApp(db, key.privateKey);
+    const app = await server();
+    expect((await app.inject({ method: 'DELETE', url: `/${row.id}/runners/ninedeploy-traefik`, headers: asUser(1) })).statusCode).toBe(400);
+    const member = await app.inject({ method: 'GET', url: `/${row.id}/runners`, headers: asUser({ id: 3, isOperator: false }) });
+    expect(member.statusCode).toBe(403);
+  });
+});

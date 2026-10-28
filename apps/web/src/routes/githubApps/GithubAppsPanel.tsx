@@ -5,7 +5,8 @@ import type { GithubApp, GithubAppInstallation, Source } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { fill, msg, useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
-import { Badge, Button, Card, ConfirmDialog, Field, Input, Textarea, cn } from '../../components/ui.js';
+import { Badge, Button, Card, ConfirmDialog, Field, Input, Switch, Textarea, cn } from '../../components/ui.js';
+import { RunnersSection } from './RunnersSection.js';
 
 /**
  * 0.13: GitHub App registration on the Sources page (operator-only, like the
@@ -109,8 +110,9 @@ function CreateAppForm({ onCancel }: { onCancel: () => void }) {
   const { toast } = useToast();
   const [target, setTarget] = useState<Target>('user');
   const [org, setOrg] = useState('');
+  const [runners, setRunners] = useState(false);
   const start = useMutation({
-    mutationFn: () => api.githubApps.manifest(target === 'org' ? { target, org: org.trim() } : { target }),
+    mutationFn: () => api.githubApps.manifest({ ...(target === 'org' ? { target, org: org.trim() } : { target }), ...(runners ? { runners: true } : {}) }),
     onSuccess: (res) => manifestNavigation.submit(res.postUrl, res.manifest),
     onError: (err) => toast(t('Could not start the GitHub App setup: {error}', { error: errorText(err) }), 'error'),
   });
@@ -141,6 +143,17 @@ function CreateAppForm({ onCancel }: { onCancel: () => void }) {
             <Input value={org} onChange={(e) => setOrg(e.target.value)} placeholder="acme" required />
           </Field>
         )}
+        <div className="flex items-start gap-3">
+          <Switch checked={runners} onChange={setRunners} label={t('Also allow self-hosted Actions runners')} />
+          <div className="text-xs">
+            <div className="text-slate-300">{t('Also allow self-hosted Actions runners')}</div>
+            <div className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
+              {target === 'org'
+                ? t('Adds the workflow job event and the organization runner permission, so jobs can run on this panel.')
+                : t('Adds the workflow job event and repository administration (write), which GitHub requires to register a runner for a personal repository.')}
+            </div>
+          </div>
+        </div>
         <p className="text-[11px] leading-relaxed text-slate-500">
           {t(
             'GitHub opens with the App pre-filled (contents and metadata read, pull requests and commit statuses write, push and pull request events). After you confirm, it returns here and the App is saved. The panel needs a public domain: GitHub must reach its webhook URL.',
@@ -352,6 +365,8 @@ function AppCard({ app, sources }: { app: GithubApp; sources: Source[] }) {
           <div className="text-[11px] text-slate-500">{t('None yet. Install the App on GitHub, then press Sync.')}</div>
         ) : null}
       </div>
+
+      <RunnersSection app={app} />
 
       <ConfirmDialog
         open={confirmDelete}

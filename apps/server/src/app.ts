@@ -16,6 +16,7 @@ import { websocketServerOptions } from './lib/websocketOptions.js';
 import authPlugin from './plugins/auth.js';
 import backupSchedulerPlugin from './plugins/backupScheduler.js';
 import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
+import githubRunnerSchedulerPlugin from './plugins/githubRunnerScheduler.js';
 import collectorPlugin from './plugins/collector.js';
 import observabilityPlugin from './plugins/observability.js';
 import uptimePlugin from './plugins/uptime.js';
@@ -174,6 +175,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(backupSchedulerPlugin);
   // Image auto-update (watchtower-style digest watch, opt-in per service)
   await app.register(autoUpdateSchedulerPlugin);
+  // Self-hosted GitHub Actions runners (G4.5): idle until an App turns them on
+  await app.register(githubRunnerSchedulerPlugin);
   // Periodic log/audit/notification-log retention (disk-fill prevention)
   await app.register(housekeepingPlugin);
   // Container output → configured log drains (r231: drains had no sender)

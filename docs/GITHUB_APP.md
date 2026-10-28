@@ -211,8 +211,63 @@ An older agent, or an unsealed transport, gets today's refusal with an instructi
 | `service.github_finalize` | operator | previous source detached, webhooks switched off |
 | `service.github_unlink` | operator | reverted to the previous source |
 | `service.repo_renamed` | system | clone URL corrected after a rename or transfer |
+| `github_app.runners_update` | operator | self-hosted runner settings changed (§7.1) |
+| `github_app.runner_stop` | operator | a runner container stopped from the panel |
+| `github_runner.failed` | system | a queued job's runner could not be started (error in meta) |
 
 System entries have no actor, so only operators see them.
+
+### 7.1 Self-hosted Actions runners (G4.5)
+
+An App can run GitHub Actions jobs on the panel host. Each job gets a just-in-time runner: a single-use registration bound to one runner, which takes one job and exits. Its container is then removed.
+
+**Set up**
+
+1. Give the App what it needs:
+   - Subscribe it to the **Workflow job** event.
+   - Grant the runner permission:
+     - an organization installation needs **Self-hosted runners: write** (organization permission);
+     - a personal installation needs **Administration: write** (repository permission), because GitHub offers no narrower one for repository runners.
+   - A new App gets all of this when **Also allow self-hosted Actions runners** is on in the setup form. For an existing App, add the event and permission on GitHub and accept them on each installation.
+2. On Sources, open the App's **Self-hosted Actions runners** section, turn **Run jobs on this panel** on, and save. The section lists anything still missing.
+3. Ask for the runner in a workflow: `runs-on: [self-hosted, ninedeploy]`, using one of your configured labels.
+
+**Which jobs are taken**
+
+A queued job is taken only when all of these hold:
+
+- its `runs-on` names at least one configured label;
+- every other label in it is one of GitHub's defaults (`self-hosted`, `linux`, and the host's architecture);
+- its repository is private, unless **Allow public repositories** is on;
+- its repository is on the repository list, if a list is set.
+
+Other jobs are left for other runners. Organization runners go into the default runner group, which GitHub does not open to public repositories by default.
+
+**Isolation and limits**
+
+- The runner container never gets the Docker socket.
+- It runs on its own bridge network, `nd-gha-runners`, not on any service network.
+- It has a pid limit, plus the CPU and memory limits you set.
+- Because it has no Docker, workflows that use `container:`, `services:` or `docker build` do not run on it. Use GitHub-hosted runners for those.
+- The runner process itself is not further sandboxed: a job can use the host's network like any container. Only allow repositories whose workflows you trust.
+
+**Queue and upkeep**
+
+- **Runners at once** limits how many runner containers an App has. Further jobs wait in memory; every minute the panel starts those that are still queued on GitHub.
+- The waiting list does not survive a panel restart. GitHub keeps such a job queued until some runner takes it, or for 24 hours.
+- A runner that has not picked up a job after 10 minutes is removed, along with its registration. So is any runner older than GitHub's 6-hour job limit.
+
+**Image**
+
+`ghcr.io/actions/actions-runner`, pinned by digest (`GITHUB_RUNNER_IMAGE` in `@ninedeploy/schemas`). When GitHub requires a newer runner version, the runner updates itself at start.
+
+**Troubleshooting**
+
+- **A job stays queued:**
+  - Check the section's problem list, then the App's **Recent deliveries** for `workflow_job`. An `ignored` answer names the reason: `labels_not_ours`, `labels_unmatched`, `public_repository`, `repository_not_allowed` or `runners_disabled`.
+  - A start that failed is audited as `github_runner.failed`.
+- **`403` when the runner registers:** the installation has not accepted the runner permission.
+
 
 ---
 

@@ -5341,4 +5341,36 @@ export const TR: Readonly<Record<string, string>> = {
   'Nothing uploaded yet — upload an archive to deploy this service.':
     'Henüz bir şey yüklenmedi — bu servisi dağıtmak için bir arşiv yükleyin.',
   'latest': 'en son',
+
+  // ── GitHub Actions runners (G4.5) ─────────────────────────────────────
+  'A workflow job whose {runsOn} names one of these labels gets a one-off runner container on the panel host. The runner has no Docker access, so jobs that use {container}, {services} or build images do not run here. Jobs from public repositories are refused unless you allow them: anyone can open a pull request there.':
+    '{runsOn} alanında bu etiketlerden birini isteyen bir iş akışı görevi, panel sunucusunda tek kullanımlık bir runner konteyneri alır. Runner\'ın Docker erişimi yoktur; bu yüzden {container}, {services} kullanan ya da imaj derleyen görevler burada çalışmaz. Siz izin vermedikçe herkese açık depoların görevleri reddedilir: oraya herkes pull request açabilir.',
+  'Adds the workflow job event and repository administration (write), which GitHub requires to register a runner for a personal repository.':
+    'Workflow job olayını ve depo yönetimi (yazma) iznini ekler; GitHub kişisel bir depoya runner kaydetmek için bunu ister.',
+  'Adds the workflow job event and the organization runner permission, so jobs can run on this panel.':
+    'Workflow job olayını ve organizasyon runner iznini ekler; böylece görevler bu panelde çalışabilir.',
+  'Allow public repositories': 'Herkese açık depolara izin ver',
+  'Also allow self-hosted Actions runners': 'Kendi sunucumda Actions runner\'larına da izin ver',
+  'CPUs per runner': 'Runner başına CPU',
+  'Could not load the runners: {error}': 'Runner\'lar yüklenemedi: {error}',
+  'Could not save the runner settings: {error}': 'Runner ayarları kaydedilemedi: {error}',
+  'Could not stop the runner: {error}': 'Runner durdurulamadı: {error}',
+  'Memory per runner (MB)': 'Runner başına bellek (MB)',
+  'No runner is running and no job is waiting.': 'Çalışan runner ve bekleyen görev yok.',
+  'Repositories': 'Depolar',
+  'Run jobs on this panel': 'Görevleri bu panelde çalıştır',
+  'Runner image': 'Runner imajı',
+  'Runner settings': 'Runner ayarları',
+  'Runner settings saved': 'Runner ayarları kaydedildi',
+  'Runner setup problems': 'Runner kurulum sorunları',
+  'Runners': 'Runner\'lar',
+  'Runners at once': 'Aynı anda runner',
+  'Self-hosted Actions runners': 'Kendi sunucunuzda Actions runner\'ları',
+  'Stop {name}': '{name} durdur',
+  'comma-separated; jobs ask for them with runs-on: [self-hosted, {label}]':
+    'virgülle ayrılmış; görevler bunları runs-on: [self-hosted, {label}] ile ister',
+  'empty = no limit': 'boş = sınır yok',
+  'job #{id}': 'görev #{id}',
+  'owner/repo, one per line; empty = every repository the App is installed on':
+    'owner/repo, her satıra bir tane; boş = App\'in kurulu olduğu tüm depolar',
 };

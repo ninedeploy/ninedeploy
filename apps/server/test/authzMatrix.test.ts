@@ -65,6 +65,7 @@ vi.mock('../src/plugins/nodeLifecycle.js', () => noop('authz-node-lifecycle'));
 vi.mock('../src/plugins/swarmRecovery.js', () => noop('authz-swarm-recovery'));
 vi.mock('../src/plugins/fanoutRecovery.js', () => noop('authz-fanout-recovery'));
 vi.mock('../src/plugins/autoUpdateScheduler.js', () => noop('authz-autoupdate'));
+vi.mock('../src/plugins/githubRunnerScheduler.js', () => noop('authz-github-runners'));
 vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
 vi.mock('../src/plugins/logShipper.js', () => noop('authz-logshipper'));
 vi.mock('../src/plugins/jobScheduler.js', () => noop('authz-jobs'));
@@ -1092,6 +1093,9 @@ export const MATRIX: Record<string, Rule> = {
   'DELETE /v1/github-apps/:id': OP,
   'POST /v1/github-apps/:id/installations/sync': OP,
   'GET /v1/github-apps/:id/installations': OP,
+  'GET /v1/github-apps/:id/runners': OP,
+  'PUT /v1/github-apps/:id/runners': OP,
+  'DELETE /v1/github-apps/:id/runners/:name': OP,
   'GET /v1/sso/providers': OP,
   'POST /v1/sso/providers': OP,
   'DELETE /v1/sso/providers/:id': OP,

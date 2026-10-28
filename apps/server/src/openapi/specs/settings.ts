@@ -6,6 +6,7 @@ import {
   githubAppManifestRequest,
   githubAppPatch,
   githubAppPrivateKey,
+  githubRunnerConfig,
   secretProviderTestRequest,
   setConfigSchema,
   sourcePatch,
@@ -502,5 +503,24 @@ export const settingsSpecs: RouteSpecMap = {
     tag: 'github-apps',
     floor: 'operator',
     responseType: 'GithubAppInstallation[]',
+  },
+  'GET /v1/github-apps/:id/runners': {
+    summary: "Get a GitHub App's self-hosted runner settings and runners",
+    tag: 'github-apps',
+    floor: 'operator',
+    responseType: 'GithubRunnerStatus',
+  },
+  'PUT /v1/github-apps/:id/runners': {
+    summary: "Set a GitHub App's self-hosted runner settings",
+    tag: 'github-apps',
+    floor: 'operator',
+    body: githubRunnerConfig,
+    responseType: 'GithubRunnerStatus',
+    validation: 'zod',
+  },
+  'DELETE /v1/github-apps/:id/runners/:name': {
+    summary: 'Stop a self-hosted runner',
+    tag: 'github-apps',
+    floor: 'operator',
   },
 };
