@@ -111,6 +111,7 @@ describe('agent bootstrap', () => {
     expect(app.register).toHaveBeenCalledWith(expect.anything(), {
       tokenHash: 'a'.repeat(64),
       nonceFile: expect.stringMatching(/\.agent-nonces$/),
+      awaitingRekey: false,
     });
     expect(mod.agentMode.OPS).toBeDefined();
 

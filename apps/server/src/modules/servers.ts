@@ -19,6 +19,14 @@ import { agentDockerRunCommand } from '@ninedeploy/schemas';
 import { VERSION } from '../version.js';
 import { serverDeleteBlockers } from '../lib/serverDependents.js';
 import { databasesPerServer } from '../lib/nodeDatabase.js';
+import { cloudNodeAwaitingRekey } from '../lib/hetznerCloud.js';
+
+/** G4.3: a cloud node still on its first (metadata-readable) key turns online only through its rekey. */
+async function refuseUntilRekeyed(db: DB, id: number, name: string): Promise<void> {
+  if (await cloudNodeAwaitingRekey(db, id)) {
+    throw conflict(`Node "${name}" is still replacing its first agent key; it turns online on its own`);
+  }
+}
 
 /** r421: an endpoint's identity is (host, port) — but the announce/create
  *  schema accepts `host:port` spellings and DNS-vs-IP aliases. Strip a
@@ -265,6 +273,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       const id = parseId((req.params as { id: string }).id);
       const row = await authed.db.query.servers.findFirst({ where: eq(servers.id, id) });
       if (!row) throw notFound('Server not found');
+      await refuseUntilRekeyed(authed.db, id, row.name);
       let ping: Awaited<ReturnType<typeof agentPingLines>>;
       try {
         ping = await agentPingLines(row.host, row.port, decrypt(row.tokenEncrypted));
@@ -352,6 +361,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       const id = parseId((req.params as { id: string }).id);
       const row = await authed.db.query.servers.findFirst({ where: eq(servers.id, id) });
       if (!row) throw notFound('Server not found');
+      await refuseUntilRekeyed(authed.db, id, row.name);
       try {
         await agentPing(row.host, row.port, decrypt(row.tokenEncrypted));
       } catch (err) {

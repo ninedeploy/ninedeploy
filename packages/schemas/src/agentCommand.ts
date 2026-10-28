@@ -32,6 +32,9 @@ export interface AgentCommandOptions {
   masterUrl?: string;
   /** Auto-join: the admin-issued enrolment secret (or a placeholder to fill in). */
   enrolmentToken?: string;
+  /** G4.3: the key is readable by others (cloud user data); the agent runs
+   *  nothing but `agent.ping` and `agent.rekey` until the panel replaces it. */
+  requireRekey?: boolean;
 }
 
 /** Render a value for the copy-paste shell line (r473): bare when it is
@@ -50,6 +53,7 @@ export function agentDockerRunCommand(opts: AgentCommandOptions): string {
   if (opts.tokenSha256) env.push(`NINEDEPLOY_AGENT_TOKEN=${opts.tokenSha256}`);
   if (opts.masterUrl) env.push(`NINEDEPLOY_MASTER_URL=${opts.masterUrl}`);
   if (opts.enrolmentToken) env.push(`NINEDEPLOY_ENROLMENT_TOKEN=${opts.enrolmentToken}`);
+  if (opts.requireRekey) env.push('NINEDEPLOY_AGENT_REKEY_REQUIRED=1');
   return [
     'docker run -d --name ninedeploy-agent --restart unless-stopped',
     '--user 0:0',

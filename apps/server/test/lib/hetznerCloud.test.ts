@@ -139,6 +139,8 @@ describe('create', () => {
     const token = decrypt(node!.tokenEncrypted);
     expect(userData).toContain(`NINEDEPLOY_AGENT_TOKEN=${createHash('sha256').update(token).digest('hex')}`);
     expect(userData).not.toContain(token);
+    // That key is readable from the metadata service: the agent runs nothing else until rekeyed.
+    expect(userData).toContain('NINEDEPLOY_AGENT_REKEY_REQUIRED=1');
     expect(wait).toHaveBeenCalledWith(res.serverId, '203.0.113.9', 4600, token);
 
     on('GET', /^\/servers$/, (c) => {
@@ -200,8 +202,10 @@ describe('rekey (security review: the first key is readable from the metadata se
       expect(createHash('sha256').update(decrypt(String(pending))).digest('hex')).toBe(sentHash);
       return { exitCode: 0, lines: ['ND-REKEY ok'] };
     });
+    // First key until the rekey, then only the new one.
     const ping = vi.fn(async (_h: string, _p: number, token: string) => {
-      if (createHash('sha256').update(token).digest('hex') !== sentHash) throw new Error('401');
+      const ok = sentHash ? createHash('sha256').update(token).digest('hex') === sentHash : token === firstToken;
+      if (!ok) throw new Error('401');
     });
     expect(await lib.rekeyCloudNode(db, serverId, { op: op as never, ping, settleMs: 1000, stepMs: 1 })).toBe(true);
     const now = await tokenOf(serverId);
@@ -216,13 +220,15 @@ describe('rekey (security review: the first key is readable from the metadata se
     const { serverId, firstToken } = await cloudNode();
     let agentKey = firstToken;
     let sentHash = '';
+    let restarting = false;
     const op = vi.fn(async (_db: unknown, _id: number, _n: string, params: Record<string, unknown>) => {
       sentHash = String(params['tokenSha256']);
+      restarting = true;
       return { exitCode: 0, lines: [] };
     });
-    // The agent is still restarting: nothing answers.
-    const down = vi.fn(async () => {
-      throw new Error('ECONNREFUSED');
+    // Answers with its first key, then restarts and nothing answers.
+    const down = vi.fn(async (_h: string, _p: number, token: string) => {
+      if (restarting || token !== firstToken) throw new Error('ECONNREFUSED');
     });
     expect(await lib.rekeyCloudNode(db, serverId, { op: op as never, ping: down, settleMs: 5, stepMs: 1 })).toBe(false);
     expect(await tokenOf(serverId)).toBe(firstToken);
@@ -254,6 +260,66 @@ describe('rekey (security review: the first key is readable from the metadata se
     await lib.sweepCloudNodes(db, log, { op: op as never, ping: async () => { throw new Error('down'); } });
     expect(op).not.toHaveBeenCalled();
     expect(await pendingOf(serverId)).toBeUndefined();
+  });
+
+  it('never replaces a pending key: an agent still on its first key gets the same hash again', async () => {
+    const { serverId, firstToken } = await cloudNode();
+    const hashes: string[] = [];
+    const op = vi.fn(async (_db: unknown, _id: number, _n: string, params: Record<string, unknown>) => {
+      hashes.push(String(params['tokenSha256']));
+      return { exitCode: 0, lines: [] };
+    });
+    // The agent never applies it (it may have written the file and be about to restart).
+    const firstOnly = vi.fn(async (_h: string, _p: number, token: string) => {
+      if (token !== firstToken) throw new Error('401');
+    });
+    const deps = { op: op as never, ping: firstOnly, settleMs: 5, stepMs: 1 };
+    expect(await lib.rekeyCloudNode(db, serverId, deps)).toBe(false);
+    const pending = await pendingOf(serverId);
+    expect(await lib.rekeyCloudNode(db, serverId, deps)).toBe(false);
+    expect(await pendingOf(serverId)).toBe(pending);
+    expect(hashes).toHaveLength(2);
+    expect(hashes[1]).toBe(hashes[0]);
+  });
+
+  it('runs one rekey per node at a time', async () => {
+    const { serverId, firstToken } = await cloudNode();
+    let sentHash = '';
+    const op = vi.fn(async (_db: unknown, _id: number, _n: string, params: Record<string, unknown>) => {
+      sentHash = String(params['tokenSha256']);
+      return { exitCode: 0, lines: [] };
+    });
+    const ping = vi.fn(async (_h: string, _p: number, token: string) => {
+      const hash = createHash('sha256').update(token).digest('hex');
+      if (token !== firstToken && hash !== sentHash) throw new Error('401');
+    });
+    const deps = { op: op as never, ping, settleMs: 1000, stepMs: 1 };
+    const [a, b] = await Promise.all([lib.rekeyCloudNode(db, serverId, deps), lib.sweepCloudNodes(db, log, deps)]);
+    expect(a).toBe(true);
+    void b;
+    expect(op).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops, keeping the pending key, when it cannot be decrypted', async () => {
+    const { serverId } = await cloudNode();
+    await db.insert(settings).values({ key: `cloud_rekey:${serverId}`, value: 'v1:not-decryptable' });
+    const op = vi.fn();
+    await expect(lib.rekeyCloudNode(db, serverId, { op: op as never, ping: async () => undefined })).rejects.toThrow(/cannot be decrypted/);
+    expect(op).not.toHaveBeenCalled();
+    expect(await pendingOf(serverId)).toBe('v1:not-decryptable');
+  });
+
+  it('refuses a manual Test or Approve until the node is rekeyed', async () => {
+    const { serverId } = await cloudNode();
+    expect(await lib.cloudNodeAwaitingRekey(db, serverId)).toBe(true);
+    const { serverRoutes } = await import('../../src/modules/servers.js');
+    const app = await buildTestApp({ db });
+    await app.register(serverRoutes, { prefix: '/servers' });
+    for (const action of ['test', 'approve']) {
+      const res = await app.inject({ method: 'POST', url: `/servers/${serverId}/${action}`, headers: asUser(1) });
+      expect(res.statusCode).toBe(409);
+    }
+    expect((await db.query.servers.findFirst({ where: eq(servers.id, serverId) }))?.status).toBe('offline');
   });
 });
 

@@ -193,7 +193,7 @@ export function hetznerUserData(agentPort: number, tokenSha256: string, imageTag
     '# NineDeploy node bootstrap (cloud-init user data).',
     NODE_DOCKER_INSTALL_SCRIPT.trim(),
     'docker rm -f ninedeploy-agent 2>/dev/null || true',
-    agentDockerRunCommand({ hostPort: agentPort, imageTag, tokenSha256 }),
+    agentDockerRunCommand({ hostPort: agentPort, imageTag, tokenSha256, requireRekey: true }),
     '',
   ].join('\n');
 }
@@ -265,6 +265,12 @@ export async function createHetznerServer(
 
 // ── rekey ────────────────────────────────────────────────────────────────
 
+/** A cloud node still on its first key: it must not be marked online or used yet. */
+export async function cloudNodeAwaitingRekey(db: DB, serverId: number): Promise<boolean> {
+  const link = await getSettingJson<StoredLink>(db, linkKey(serverId));
+  return link?.rekeyed === false;
+}
+
 const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
 
 export interface RekeyDeps {
@@ -292,34 +298,55 @@ async function finishRekey(db: DB, serverId: number, token: string): Promise<voi
  * {@link sweepCloudNodes} finishes it from the stored token. Resolves true
  * when the node answers with the new key.
  */
-export async function rekeyCloudNode(db: DB, serverId: number, deps: RekeyDeps = {}): Promise<boolean> {
+export function rekeyCloudNode(db: DB, serverId: number, deps: RekeyDeps = {}): Promise<boolean> {
+  // One rekey per node at a time (the waiter and the sweep can meet here).
+  const running = rekeysInFlight.get(serverId);
+  if (running) return running;
+  const run = rekeyCloudNodeOnce(db, serverId, deps).finally(() => rekeysInFlight.delete(serverId));
+  rekeysInFlight.set(serverId, run);
+  return run;
+}
+
+const rekeysInFlight = new Map<number, Promise<boolean>>();
+
+async function rekeyCloudNodeOnce(db: DB, serverId: number, deps: RekeyDeps): Promise<boolean> {
   const ping = deps.ping ?? agentPing;
   const op = deps.op ?? agentOp;
   const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
   if (!node) return false;
+  const answers = async (token: string) => {
+    try {
+      await ping(node.host, node.port, token);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
-  // A rekey already under way: does the agent answer with the new key yet?
+  // A pending token is never replaced: the agent may have written its hash
+  // and be about to restart with it. It is finished, or sent again.
   const pendingRaw = await getSettingString(db, rekeyKey(serverId), null);
+  let fresh: string;
   if (pendingRaw) {
-    let pending: string | null = null;
+    let pending: string;
     try {
       pending = decrypt(pendingRaw);
     } catch {
-      pending = null;
+      throw new Error(`cloud node ${serverId}: the pending agent key cannot be decrypted; not starting another rekey`);
     }
-    if (pending) {
-      try {
-        await ping(node.host, node.port, pending);
-        await finishRekey(db, serverId, pending);
-        return true;
-      } catch {
-        /* still on the old key, or not up: start over below */
-      }
+    if (await answers(pending)) {
+      await finishRekey(db, serverId, pending);
+      return true;
     }
+    // Neither key answers: the agent is down or restarting; try again later.
+    if (!(await answers(decrypt(node.tokenEncrypted)))) return false;
+    fresh = pending;
+  } else {
+    // Only an agent that answers with its first key can be rekeyed.
+    if (!(await answers(decrypt(node.tokenEncrypted)))) return false;
+    fresh = generateAgentToken();
+    await setSettingString(db, rekeyKey(serverId), encrypt(fresh));
   }
-
-  const fresh = generateAgentToken();
-  await setSettingString(db, rekeyKey(serverId), encrypt(fresh));
   await op(db, serverId, 'agent.rekey', { tokenSha256: sha256(fresh) }, () => undefined);
   const settle = deps.settleMs ?? 60_000;
   const step = deps.stepMs ?? 2_000;
@@ -376,20 +403,8 @@ export function waitForAgentInBackground(
 
 /** Finish the rekey of every cloud node still on its first key (after a restart, or a rekey cut short). */
 export async function sweepCloudNodes(db: DB, log: FastifyBaseLogger, deps: RekeyDeps = {}): Promise<void> {
-  const ping = deps.ping ?? agentPing;
   for (const { serverId, link } of await readLinks(db)) {
     if (link.rekeyed) continue;
-    const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
-    if (!node) continue;
-    const pending = await getSettingString(db, rekeyKey(serverId), null);
-    if (!pending) {
-      // Only an agent that answers with its first key can be rekeyed.
-      try {
-        await ping(node.host, node.port, decrypt(node.tokenEncrypted));
-      } catch {
-        continue;
-      }
-    }
     try {
       if (await rekeyCloudNode(db, serverId, deps)) log.info({ component: 'hetzner', serverId }, 'cloud node rekeyed by the sweep');
     } catch (err) {

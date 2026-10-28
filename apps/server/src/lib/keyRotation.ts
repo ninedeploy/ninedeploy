@@ -262,12 +262,21 @@ export const SETTINGS_ENCRYPTED_KEYS = [
   'traefik_custom_config_last_good_encrypted', // 0.14 lib/traefikCustomConfig.ts (last good version)
 ] as const;
 
+/** Encrypted settings keyed per row (`<prefix><id>`). */
+export const SETTINGS_ENCRYPTED_PREFIXES = [
+  'cloud_rekey:', // G4.3 lib/hetznerCloud.ts (a cloud node's pending agent key)
+] as const;
+
 async function rotateKeyedStoreSecrets(db: DB): Promise<number> {
   let count = 0;
 
   const settingRows = await db.select({ key: settings.key, v: settings.value }).from(settings);
   for (const row of settingRows) {
-    if (!(SETTINGS_ENCRYPTED_KEYS as readonly string[]).includes(row.key)) continue;
+    if (
+      !(SETTINGS_ENCRYPTED_KEYS as readonly string[]).includes(row.key) &&
+      !SETTINGS_ENCRYPTED_PREFIXES.some((p) => row.key.startsWith(p))
+    )
+      continue;
     if (typeof row.v !== 'string' || row.v === '') continue;
     await db
       .update(settings)

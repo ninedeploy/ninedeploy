@@ -8,7 +8,7 @@ import { closeAllStudioChannels } from './agentOps/studios.js';
 import { nodeProxyTraffic } from './lib/nodeProxyTraffic.js';
 import { advertisedCapabilities, AGENT_OPS, registeredCapabilities, runRegisteredOp } from './agentOps/index.js';
 import { gitCredentialEnv } from './agentOps/gitCredential.js';
-import { loadRekeyedTokenHash } from './agentOps/agentRekey.js';
+import { AGENT_TOKEN_HASH_FILE, loadRekeyedTokenHash, REKEY_BOOTSTRAP_OPS } from './agentOps/agentRekey.js';
 import {
   GIT_EGRESS_FLAGS,
   intOperand,
@@ -1516,7 +1516,13 @@ async function main(): Promise<void> {
   // G4.3: a key the panel rotated with `agent.rekey` replaces the one in the
   // environment (a cloud node's first key is readable from its metadata).
   const rekeyed = loadRekeyedTokenHash();
-  if (rekeyed) tokenHash = rekeyed;
+  if (rekeyed.hash) tokenHash = rekeyed.hash;
+  if (rekeyed.stale) {
+    // eslint-disable-next-line no-console
+    console.warn(`${AGENT_TOKEN_HASH_FILE} was written for another NINEDEPLOY_AGENT_TOKEN; using the environment key`);
+  }
+  // Until the panel has replaced a metadata-readable first key, run nothing else.
+  const awaitingRekey = process.env['NINEDEPLOY_AGENT_REKEY_REQUIRED'] === '1' && !rekeyed.hash;
 
   if (!tokenHash) {
     // eslint-disable-next-line no-console
@@ -1526,7 +1532,7 @@ async function main(): Promise<void> {
   const port = Number(process.env['NINEDEPLOY_AGENT_PORT'] ?? 4600);
 
   const app = await buildAgentApp();
-  await app.register(agentRoutes, { tokenHash, nonceFile: joinPath(process.cwd(), AGENT_NONCE_FILE) });
+  await app.register(agentRoutes, { tokenHash, nonceFile: joinPath(process.cwd(), AGENT_NONCE_FILE), awaitingRekey });
 
   await app.listen({ host: '0.0.0.0', port });
   // eslint-disable-next-line no-console
@@ -1630,7 +1636,10 @@ function recordSeenNonce(file: string, nonce: string, expiry: number): void {
  * The agent's HTTP surface, as a registerable plugin (used by main() and by
  * route tests). `tokenHash` is the sha256 of the shared agent token.
  */
-export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: { tokenHash?: string; nonceFile?: string }) => {
+export const agentRoutes = async (
+  app: import('fastify').FastifyInstance,
+  opts: { tokenHash?: string; nonceFile?: string; awaitingRekey?: boolean },
+) => {
   /** Sealed-request nonces seen within the replay window → expiry (r174). */
   const seenNonces = new Map<string, number>();
   const tokenHash = opts.tokenHash ?? process.env['NINEDEPLOY_AGENT_TOKEN'] ?? '';
@@ -1717,6 +1726,12 @@ export const agentRoutes = async (app: import('fastify').FastifyInstance, opts: 
     const params: Params = typeof input.params === 'object' && input.params ? (input.params as Params) : {};
     if (!OPS[op] && !HANDLED_OPS.has(op)) {
       return reply.code(400).send({ error: { code: 'unknown_op', message: `Unknown operation: ${op}` } });
+    }
+    // G4.3: terminal, stream and studio channels are opened by ops, so this covers them too.
+    if (opts.awaitingRekey && !REKEY_BOOTSTRAP_OPS.has(op)) {
+      return reply
+        .code(403)
+        .send({ error: { code: 'rekey_required', message: 'This node waits for the panel to replace its first agent key' } });
     }
     const lines: string[] = [];
     // r667: the answer carries every output line, and 300 log LINES (or a
