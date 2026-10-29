@@ -11,6 +11,7 @@ const queue = createKeyedOperationGuard<string>();
 let active = 0;
 const INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"composeProject":{{json (index .Config.Labels "com.docker.compose.project")}},"status":{{json .State.Status}},"running":{{json .State.Running}}}';
 const JOURNAL_SCHEMA = 'PRAGMA busy_timeout=100; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS lifecycle_head (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, intent TEXT NOT NULL, receipt TEXT)';
+const CREATE_FENCE_SCHEMA = 'CREATE TABLE IF NOT EXISTS legacy_create_fence (id INTEGER PRIMARY KEY CHECK(id=1), deployment_id INTEGER NOT NULL)';
 
 export function assertLegacyNodeMutationAllowed(database: DatabaseSync): void {
   const table = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_protocol'").get();
@@ -162,9 +163,17 @@ export async function withNodeServiceJournal<T>(root: string, serviceId: number,
 
 /** Drain the complete admitted create/network/Start sequence before acknowledging a lifecycle effect. */
 export function runNodeCreation<T>(root: string, serviceId: number,
-  operation: (remaining: () => number, current: () => void) => Promise<T>): Promise<T> {
+  operation: (remaining: () => number, current: () => void) => Promise<T>, deploymentId?: number): Promise<T> {
   return withNodeServiceJournal(root, serviceId, 595_000, ({ database, write, remaining, current }) => write(async () => {
     assertLegacyNodeMutationAllowed(database);
+    database.exec(CREATE_FENCE_SCHEMA);
+    const fence = database.prepare('SELECT deployment_id FROM legacy_create_fence WHERE id=1').get();
+    if (fence) {
+      const high = Number(fence.deployment_id);
+      if (!Number.isSafeInteger(high) || high < 1 || !Number.isSafeInteger(deploymentId) || deploymentId! <= high) {
+        throw new Error('Node creation is stale or its deployment identity is fenced by Stop');
+      }
+    }
     return operation(remaining, current);
   }));
 }
@@ -186,6 +195,11 @@ export function createNodeLifecycle(root: string) {
           if (!existing || Number(existing.revision) < input.revision) database.prepare(
             'INSERT INTO lifecycle_head (id, revision, request_hash, intent, receipt) VALUES (1, ?, ?, ?, NULL) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, request_hash=excluded.request_hash, intent=excluded.intent, receipt=NULL',
           ).run(input.revision, hash, payload);
+          if (input.action === 'stop') {
+            database.exec(CREATE_FENCE_SCHEMA);
+            const high = Math.max(input.deploymentId, ...input.targets.map(target => target.deploymentId ?? input.deploymentId));
+            database.prepare('INSERT INTO legacy_create_fence(id,deployment_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET deployment_id=MAX(deployment_id,excluded.deployment_id)').run(high);
+          }
         });
         return write(async () => {
           const latest = head(); current();

@@ -1427,7 +1427,7 @@ export async function runOp(
   if (op === 'docker.runEnv' && params['serviceId'] !== undefined) {
     return runNodeCreation(joinPath(process.cwd(), WORK_DIR, '.lifecycle'), Number(params['serviceId']), (remaining, current) => {
       current(); return spawnValidated(def.exe, argv, onLine, { ...(cwd === undefined ? {} : { cwd }), timeoutMs: remaining() });
-    });
+    }, Number(params['deploymentId']));
   }
   if (op === 'docker.start' || op === 'docker.stop') {
     return runLegacyNodeLifecycle(joinPath(process.cwd(), WORK_DIR, '.lifecycle'), op === 'docker.start' ? 'start' : 'stop',

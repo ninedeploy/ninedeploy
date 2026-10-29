@@ -299,8 +299,9 @@ async function runSpecOp(params: Params, onLine: (line: string) => void): Promis
     return started;
   };
   const serviceId = spec.labels.find(([key]) => key === 'ninedeploy.service')?.[1];
+  const deploymentId = spec.labels.find(([key]) => key === 'ninedeploy.deployment')?.[1];
   return serviceId !== undefined && spec.labels.some(([key, value]) => key === 'ninedeploy.managed' && value === 'service')
-    ? runNodeCreation(join(process.cwd(), '.agent-work', '.lifecycle'), Number(serviceId), execute)
+    ? runNodeCreation(join(process.cwd(), '.agent-work', '.lifecycle'), Number(serviceId), execute, deploymentId === undefined ? undefined : Number(deploymentId))
     : execute();
 }
 

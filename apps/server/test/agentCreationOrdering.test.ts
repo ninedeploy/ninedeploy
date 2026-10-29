@@ -80,6 +80,28 @@ it.each(modes)('preserves a legitimate newer deployment through %s after an earl
   expect(rows.find(row => row.name === 'web-11')!.running).toBe(true);
 });
 
+it.each(modes)('rejects a delayed old %s after Stop while accepting a later deployment', async mode => {
+  expect(await runOp('docker.lifecycle', { requestId: 'b'.repeat(32), serviceId: 7, deploymentId: 10, revision: 8,
+    action: 'stop', targets: [], timeoutMs: 5000 }, () => {}, { sealed: true })).toBe(0);
+  await expect(create(mode, 10)).rejects.toThrow(/stale|fenced|superseded/i);
+  expect(rows).toEqual([]);
+  await expect(runOp('docker.lifecycle', { requestId: 'c'.repeat(32), serviceId: 7, deploymentId: 100, revision: 7,
+    action: 'stop', targets: [], timeoutMs: 5000 }, () => {}, { sealed: true })).rejects.toThrow(/stale|superseded/i);
+  expect(await create(mode, 11)).toBe(0);
+  expect(await runOp('docker.lifecycle', { requestId: 'd'.repeat(32), serviceId: 7, deploymentId: 11, revision: 9,
+    action: 'start', targets: [{ id: rows[0]!.id, name: rows[0]!.name }], timeoutMs: 5000 }, () => {}, { sealed: true })).toBe(0);
+  await expect(create(mode, 10)).rejects.toThrow(/stale|fenced|superseded/i);
+  expect(rows.map(row => row.name)).toEqual(['web-11']);
+});
+
+it('refuses an unversioned managed spec after a Stop fence', async () => {
+  expect(await runOp('docker.lifecycle', { requestId: 'e'.repeat(32), serviceId: 7, deploymentId: 10, revision: 8,
+    action: 'stop', targets: [], timeoutMs: 5000 }, () => {}, { sealed: true })).toBe(0);
+  await expect(runOp('docker.runSpec', { name: 'web-unknown', image: 'busybox:1.36', serviceId: 7 }, () => {}, { sealed: true }))
+    .rejects.toThrow(/stale|fenced|superseded/i);
+  expect(rows).toEqual([]);
+});
+
 it('keeps another service independent of a paused managed creation', async () => {
   block = true; const creating = create('multi-network spec'); await started;
   try {

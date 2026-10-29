@@ -1,5 +1,5 @@
 // Real Docker and native SQLite ordering for already-admitted managed creation.
-// Delayed request admission epochs and public handoff cancellation remain separate gates.
+// Panel-issued generation bounds and public handoff cancellation remain separate gates.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -19,7 +19,7 @@ const checked = args => { const result = cli(args); assert.equal(result.status, 
 const inner = args => checked(['exec', daemon, 'docker', ...args]);
 const until = async (fn, description, budget = 30_000) => { const end = Date.now() + budget; while (!fn()) { assert.ok(Date.now() < end, description); await pause(100); } };
 const report = row => { cases.push(row); writeFileSync(proof + '/runtime-cases.json', JSON.stringify({ image, realDocker: true, realSqlite: true, independentAgentProcesses: true,
-  sealedHttp: false, publicPanelController: false, delayedRequestAdmission: 'NOT ACCEPTED by this drain fixture', cases }, null, 2)); console.log(JSON.stringify(row)); };
+  sealedHttp: false, publicPanelController: false, delayedRequestAdmission: 'Agent lifecycle generation fence only; panel bound not verified', cases }, null, 2)); console.log(JSON.stringify(row)); };
 const baseArgs = name => ['run', '--rm', '--name', name, '--label', 'ninedeploy.proof=' + owner, '--network', 'container:' + daemon, '--user', '0', '--no-healthcheck',
   '-v', volume + ':' + home, '-w', home, '-e', 'NODE_ENV=test', '-e', 'DOCKER_HOST=tcp://127.0.0.1:2375'];
 function start(name, source, program, env = []) {
@@ -60,24 +60,29 @@ try {
   checked(['save', '-o', proof + '/app.tar', appImage]); checked(['cp', proof + '/app.tar', daemon + ':/root/app.tar']); inner(['load', '-i', '/root/app.tar']);
   inner(['network', 'create', 'ninedeploy']); inner(['network', 'create', 'nd-extra']);
   for (const [index, mode] of ['multi-network-spec', 'single-network-spec', 'run-env'].entries()) {
-    const revision = 8 + index * 16, barrier = home + '/' + mode;
-    const builder = start(daemon + '-builder-' + index, builderImage, prepare(mode, 10), ['-e', 'PATH=/proof/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    const revision = 8 + index * 16, barrier = home + '/' + mode, generation = 10 + index * 2;
+    const builder = start(daemon + '-builder-' + index, builderImage, prepare(mode, generation), ['-e', 'PATH=/proof/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
       '-e', 'NINEDEPLOY_PROOF_VERB=' + (mode === 'multi-network-spec' ? 'start' : 'run'), '-e', 'NINEDEPLOY_PROOF_BARRIER=' + barrier]);
     await until(() => { assert.ok(!builder.settled, builder.stderr || 'Builder exited before its barrier'); return cli(['exec', builder.name, 'test', '-f', barrier + '-entered']).status === 0; }, 'Builder reached its real Docker barrier');
-    const request = { requestId: String(revision).padStart(32, '0'), serviceId: 7, deploymentId: 9, revision, action: 'stop', targets: [], timeoutMs: 30_000 };
+    const request = { requestId: String(revision).padStart(32, '0'), serviceId: 7, deploymentId: generation - 1, revision, action: 'stop', targets: [], timeoutMs: 30_000 };
     const fence = start(daemon + '-fence-' + index, image, execute('docker.lifecycle', request));
     await until(() => cli(['exec', builder.name, 'test', '-f', home + '/lifecycle-' + revision + '-entered']).status === 0, 'Independent fence process opened the shared journal');
     await pause(750);
     assert.equal(fence.settled, false, 'A fence must drain the already-admitted creator before discovery');
     checked(['exec', builder.name, 'touch', barrier + '-release']); assert.equal(await builder.finished, 0, builder.stderr); await fence.finished; receipt(fence, []);
-    const before = inspect('drain-web-10'); assert.equal(before.running, true); assert.equal(before.serviceId, '7'); assert.equal(before.deploymentId, '10');
-    const target = { id: before.id, name: 'drain-web-10', deploymentId: 10 };
+    const before = inspect('drain-web-' + generation); assert.equal(before.running, true); assert.equal(before.serviceId, '7'); assert.equal(before.deploymentId, String(generation));
+    const target = { id: before.id, name: 'drain-web-' + generation, deploymentId: generation };
     const stopping = start(daemon + '-stop-' + index, image, execute('docker.lifecycle', { ...request, requestId: String(revision + 1).padStart(32, '0'), revision: revision + 1, targets: [target] }));
     await stopping.finished; receipt(stopping, [target]); assert.equal(inspect(target.id).running, false);
-    const newer = start(daemon + '-newer-' + index, image, prepare(mode, 11)); assert.equal(await newer.finished, 0, newer.stderr);
-    const fresh = inspect('drain-web-11'); assert.equal(fresh.running, true); assert.equal(fresh.deploymentId, '11'); assert.equal(inspect(target.id).running, false);
-    report({ name: mode, passed: true, fenceDrainedAdmittedCreator: true, completeStop: true, noLateResurrection: true, newerDeploymentStillWorks: true, target });
-    inner(['rm', '-f', target.id, fresh.id]);
+    inner(['rm', '-f', target.id]);
+    const delayed = start(daemon + '-delayed-' + index, image, prepare(mode, generation));
+    assert.notEqual(await delayed.finished, 0, 'A delayed stopped generation must be refused');
+    assert.match(delayed.stderr, /stale|fenced|superseded/i);
+    assert.notEqual(cli(['exec', daemon, 'docker', 'inspect', target.name]).status, 0, 'A refused create must not leave a candidate');
+    const newer = start(daemon + '-newer-' + index, image, prepare(mode, generation + 1)); assert.equal(await newer.finished, 0, newer.stderr);
+    const fresh = inspect('drain-web-' + (generation + 1)); assert.equal(fresh.running, true); assert.equal(fresh.deploymentId, String(generation + 1));
+    report({ name: mode, passed: true, fenceDrainedAdmittedCreator: true, completeStop: true, delayedStoppedGenerationRefused: true, newerDeploymentStillWorks: true, target });
+    inner(['rm', '-f', fresh.id]);
   }
   const timeoutFixture = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/agent-timeout-drain.mjs').split(sep).join('/');
   const timeout = cli(['run', '--rm', '--network', 'none', '--entrypoint', 'node', '--mount', 'type=bind,source=' + timeoutFixture + ',target=/proof.mjs,readonly', image, '/proof.mjs']);
