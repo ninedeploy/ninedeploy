@@ -4,6 +4,8 @@ import { template as templateSchema } from '@ninedeploy/schemas';
 import bundledRegistry from '../../src/templates/registry.json' with { type: 'json' };
 import { parseBundle } from '../../src/templates/registry.js';
 import { scanRequiredPlaceholders } from '../../src/engine/magicVars.js';
+import yaml from 'js-yaml';
+import { hostBindRefusal } from '../../src/templates/dokployMirror.js';
 
 describe('bundled Hub template contract', () => {
   const templates = parseBundle(bundledRegistry);
@@ -93,6 +95,13 @@ describe('bundled Hub template contract', () => {
         // biome-ignore lint/suspicious/noTemplateCurlyInString: compose interpolation is the literal under test
         expect(content).toContain('@postgresql:5432/${POSTGRES_DB:-umami}');
       }
+    }
+  });
+
+  it('no Dokploy entry mounts a host path or a path outside its stack (security review)', () => {
+    for (const t of templates.filter((x) => x.id.startsWith('dokploy-') && x.composeContent)) {
+      const doc = yaml.load(t.composeContent!) as { services?: Record<string, never> };
+      expect(hostBindRefusal(doc.services ?? {}), t.id).toBeNull();
     }
   });
 

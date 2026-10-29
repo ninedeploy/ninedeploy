@@ -222,4 +222,17 @@ PUID = "${v('PUID:-1000')}"
     expect(reason(bp({ compose: `services:\n  web:\n    image: x\n` }))).toBe("routed service 'n8n' is not in the compose file");
     expect(reason(bp({ compose: `services:\n  n8n:\n    image: x\n    env_file: .env\n` }))).toMatch(/^env_file is not supported/);
   });
+
+  it('refuses a bind mount of the host or outside the stack (security review)', () => {
+    const withVolume = (v: string) => reason(bp({ compose: `services:\n  n8n:\n    image: x\n    volumes:\n      - ${v}\n` }));
+    expect(withVolume('/root:/home/node/data')).toBe("service 'n8n' mounts the host path /root");
+    expect(withVolume('/etc/timezone:/etc/timezone')).toBe("service 'n8n' mounts the host path /etc/timezone");
+    expect(withVolume('../files/db:/database')).toBe("service 'n8n' mounts a path outside the stack (../files/db)");
+    expect(withVolume('~/x:/x')).toBe("service 'n8n' mounts a path outside the stack (~/x)");
+    expect(withVolume('"$${HOME}:/x"')).toBe("service 'n8n' interpolates a bind mount source");
+    const long = reason(bp({ compose: `services:\n  n8n:\n    image: x\n    volumes:\n      - type: bind\n        source: /var/run/docker.sock\n        target: /s\n` }));
+    expect(long).toBe("service 'n8n' mounts the host path /var/run/docker.sock");
+    // Named volumes, paths inside the stack and the read-only clock files stay.
+    for (const ok of ['data:/home/node/data', './config:/config', '/etc/localtime:/etc/localtime:ro']) expect(withVolume(ok) ?? '').not.toMatch(/mounts|interpolates/);
+  });
 });

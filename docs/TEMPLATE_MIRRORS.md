@@ -66,7 +66,8 @@ A blueprint is **skipped with its reason** whenever there is no faithful equival
 - it uses `${uuid}`, `${jwt}`, timestamps or `${randomPort}`;
 - it asks for a base64 or hash length other than 32, 64 or 128;
 - it uses a variable only Dokploy provides (`DOKPLOY_*`);
-- its compose file has a shape the Coolify mirror also refuses: host ports, host networking, build contexts or `env_file`.
+- its compose file has a shape the Coolify mirror also refuses: host ports, host networking, build contexts or `env_file`;
+- it bind-mounts a host path (`/root:…`, the Docker socket), a path outside the stack (`../files/…`, `~/…`) or an interpolated source. Named volumes, `./` paths and the read-only `/etc/localtime` and `/etc/timezone` stay.
 
 On the catalog of 2026-10-27, **383 of 586 blueprints convert**. The largest skip groups were file mounts (91) and more than one routed service (38).
 
@@ -82,6 +83,6 @@ node scripts/smoke-template-runtime.mjs --registry=./templates-dokploy.json --id
 
 The script runs `compose up` with generated `SERVICE_*` values, probes the routed port and then runs `compose down -v`. `scripts/promote-templates.mjs` then moves the passing entries in.
 
-On 2026-10-29, 30 Dokploy entries were smoke-run and the 26 that passed were promoted. The evidence is `apps/server/test/fixtures/runtime-verify-2026-10-29-dokploy.json`. Etherpad, Wiki.js and Kutt exited before they were ready, and Cloud Commander listens on 8000 where its blueprint routes 80.
+On 2026-10-29, 30 Dokploy entries were smoke-run and 26 passed. A security review then withdrew six of them, leaving 20 in the Hub. Trilium Next bound the host's `/root`. iHateMoney, Kener and Statping-ng bound `../files` outside the stack, which the converter now refuses. FileGator starts with a publicly known admin login, and ByteStash with open sign-up and debug mode. A started stack is not enough: a promoted entry must also be safe to expose by default. Each withdrawal is recorded as a failure, with its reason, in the evidence file. The evidence is `apps/server/test/fixtures/runtime-verify-2026-10-29-dokploy.json`. Etherpad, Wiki.js and Kutt exited before they were ready, and Cloud Commander listens on 8000 where its blueprint routes 80.
 
 A stack that fails is left out; often its upstream file is to blame. The Dokploy Ghost blueprint is an example: it has no `depends_on` or healthcheck, so Ghost restarts until MySQL is ready, and the smoke run reports "exited before readiness".

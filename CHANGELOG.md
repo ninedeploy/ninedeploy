@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- 26 Dokploy blueprints in the bundled Hub, each smoke-run in isolation first (G4.7). Among them: AList, Healthchecks, HedgeDoc, Opengist, Otter Wiki, Flatnotes, Linkstack, Unleash, Joplin Server, Statping-ng, UpSnap, Gitea (SQLite), CouchDB, SurrealDB, Trilium Next and Seq. The registry holds 331 templates.
+- 20 Dokploy blueprints in the bundled Hub, each smoke-run in isolation and reviewed first (G4.7). Among them: AList, Healthchecks, HedgeDoc, Opengist, Otter Wiki, Flatnotes, Linkstack, Unleash, Joplin Server, UpSnap, Gitea (SQLite), CouchDB, SurrealDB and Seq. The registry holds 325 templates. The converter now refuses host and `../` bind mounts (TEMPLATE_MIRRORS.md).
 - Backups and restores of ClickHouse, Meilisearch and RabbitMQ databases on nodes (G1.8). The agent runs the panel host's routines against its local Docker and streams the result through the sealed channel.
   - **Agent:** needs the new capability `db.dump.extra` (0.18.7); an older agent gets 422 `node_agent_outdated`.
   - **Meilisearch:** the restore reads the image and data volume from the container, never from the request.

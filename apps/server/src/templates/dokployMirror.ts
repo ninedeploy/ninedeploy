@@ -40,6 +40,40 @@ import type { Template } from './registry.js';
  * `preflightCompose`).
  */
 
+/** Host files a stack may read: the clock settings, read-only. */
+const READ_ONLY_HOST_BINDS = new Set(['/etc/localtime', '/etc/timezone']);
+
+/**
+ * A Hub template must not reach the host's files: an absolute or home bind
+ * source (`/root:/data`), one that climbs out of the stack's directory
+ * (`../files/x`, shared between stacks) or an interpolated source refuses the
+ * blueprint. Named volumes and `./` paths inside the stack stay.
+ */
+export function hostBindRefusal(services: Record<string, ServiceEntry>): string | null {
+  for (const [name, entry] of Object.entries(services)) {
+    const volumes = (entry as { volumes?: unknown }).volumes;
+    if (!Array.isArray(volumes)) continue;
+    for (const v of volumes) {
+      let source: string | null = null;
+      let readOnly = false;
+      if (typeof v === 'string') {
+        const parts = v.split(':');
+        if (parts.length < 2) continue; // an anonymous volume
+        source = parts[0] ?? '';
+        readOnly = parts.slice(2).some((o) => o.split(',').includes('ro'));
+      } else if (v && typeof v === 'object' && (v as { type?: unknown }).type === 'bind') {
+        source = String((v as { source?: unknown }).source ?? '');
+        readOnly = (v as { read_only?: unknown }).read_only === true;
+      }
+      if (source === null) continue;
+      if (source.includes('$')) return `service '${name}' interpolates a bind mount source`;
+      if (source.startsWith('..') || source.startsWith('~')) return `service '${name}' mounts a path outside the stack (${source})`;
+      if (source.startsWith('/') && !(READ_ONLY_HOST_BINDS.has(source) && readOnly)) return `service '${name}' mounts the host path ${source}`;
+    }
+  }
+  return null;
+}
+
 export interface DokployBlueprint {
   /** The blueprint directory name. */
   id: string;
@@ -270,7 +304,7 @@ function convert(bp: DokployBlueprint): Template {
   const services = original?.services ?? {};
   if (Object.keys(services).length === 0) throw new Refusal('no services');
   if (!(mainService in services)) throw new Refusal(`routed service '${mainService}' is not in the compose file`);
-  const refusal = composeServiceRefusal(services);
+  const refusal = composeServiceRefusal(services) ?? hostBindRefusal(services);
   if (refusal) throw new Refusal(refusal);
   const dokployVar = /\bDOKPLOY_[A-Z0-9_]+\b/.exec(bp.compose);
   if (dokployVar) throw new Refusal(`uses ${dokployVar[0]}, a variable only Dokploy provides`);

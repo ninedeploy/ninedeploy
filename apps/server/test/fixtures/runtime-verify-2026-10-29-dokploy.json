@@ -68,8 +68,9 @@
     {
       "id": "dokploy-ihatemoney",
       "profile": "compose",
-      "ok": true,
-      "seconds": 10
+      "ok": false,
+      "seconds": 10,
+      "error": "withdrawn after review: binds ../files outside the stack (the stack itself started)"
     },
     {
       "id": "dokploy-linkstack",
@@ -92,8 +93,9 @@
     {
       "id": "dokploy-filegator",
       "profile": "compose",
-      "ok": true,
-      "seconds": 60
+      "ok": false,
+      "seconds": 60,
+      "error": "withdrawn after review: starts with a publicly known default admin login (the stack itself started)"
     },
     {
       "id": "dokploy-directory-lister",
@@ -104,8 +106,9 @@
     {
       "id": "dokploy-statping-ng",
       "profile": "compose",
-      "ok": true,
-      "seconds": 23
+      "ok": false,
+      "seconds": 23,
+      "error": "withdrawn after review: binds ../files outside the stack (the stack itself started)"
     },
     {
       "id": "dokploy-upsnap",
@@ -122,8 +125,9 @@
     {
       "id": "dokploy-bytestash",
       "profile": "compose",
-      "ok": true,
-      "seconds": 16
+      "ok": false,
+      "seconds": 16,
+      "error": "withdrawn after review: open sign-up and debug mode by default (the stack itself started)"
     },
     {
       "id": "dokploy-ontime",
@@ -147,8 +151,9 @@
     {
       "id": "dokploy-kener",
       "profile": "compose",
-      "ok": true,
-      "seconds": 44
+      "ok": false,
+      "seconds": 44,
+      "error": "withdrawn after review: binds ../files outside the stack (the stack itself started)"
     },
     {
       "id": "dokploy-gitea-sqlite",
@@ -177,8 +182,9 @@
     {
       "id": "dokploy-trilium-next",
       "profile": "compose",
-      "ok": true,
-      "seconds": 16
+      "ok": false,
+      "seconds": 16,
+      "error": "withdrawn after review: binds the host /root (the stack itself started)"
     },
     {
       "id": "dokploy-seq",
