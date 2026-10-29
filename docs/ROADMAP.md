@@ -141,8 +141,8 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
    - runtime-log analysis (done, 0.16.15; see [AI.md](AI.md));
    - Claude as a first-class provider next to OpenAI-compatible endpoints (done, 0.16.15).
 7. **Observability:**
-   - a Prometheus `/metrics` endpoint and OTLP export;
-   - per-container utilisation history (Coolify, 139 votes);
+   - a Prometheus `/metrics` endpoint and OTLP export (done, 0.18.2; see [OBSERVABILITY.md](OBSERVABILITY.md#prometheus));
+   - per-container utilisation history (Coolify, 139 votes) (done, 0.18.2, 1–90 days; see [OBSERVABILITY.md](OBSERVABILITY.md#configure-resource-history));
    - error-rate and latency alerts (done; see [OBSERVABILITY.md](OBSERVABILITY.md#error-rate-and-latency-alerts), also as the `.ninedeploy` triggers `highErrorRate` and `slowResponses`);
    - PagerDuty and Opsgenie channels (done, G3.7; see [GAP_ROADMAP.md](GAP_ROADMAP.md)).
 8. **Git:** commit statuses for GitLab, Gitea and Bitbucket Cloud (done; see [PRIVATE_REPO_GUIDE.md §11](PRIVATE_REPO_GUIDE.md#11-commit-statuses-on-gitlab-gitea-and-bitbucket)), and "wait for CI", which skips an auto-deploy whose checks failed (done for GitHub App links in 0.17.1).

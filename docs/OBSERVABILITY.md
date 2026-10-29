@@ -1,8 +1,8 @@
 # Resource history, metrics export and durable logs
 
-Status: implemented on the working branch after 0.17.1; validation is tracked in
-[competitive delivery](COMPETITIVE_DELIVERY.md). These changes are not part of the
-published 0.17.1 release.
+Status: resource history, Prometheus and OTLP export shipped in 0.18.2;
+error-rate and latency alerts are on main for the next release. Validation is
+tracked in [competitive delivery](COMPETITIVE_DELIVERY.md).
 
 ## Configure resource history
 
