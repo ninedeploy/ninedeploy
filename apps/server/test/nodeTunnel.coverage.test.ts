@@ -53,7 +53,8 @@ function panelSocket() {
       s.readyState = 3;
     },
     addEventListener(type: string, cb: Listener) {
-      (listeners[type] ??= []).push(cb);
+      listeners[type] ??= [];
+      listeners[type].push(cb);
     },
     emit(type: string, ev?: unknown) {
       for (const cb of listeners[type] ?? []) cb(ev);
@@ -190,7 +191,7 @@ describe('NodeTunnelStream', () => {
     await new Promise((r) => setImmediate(r));
     stream.destroy();
     await vi.waitFor(() => expect(cb).toHaveBeenCalled());
-    expect((cb.mock.calls[0]?.[0] as Error).message).toBe('the node tunnel is closed');
+    expect((cb.mock.calls[0]![0] as Error).message).toBe('the node tunnel is closed');
   });
 
   it('holds writes while the agent is paused and releases them on resume', async () => {
@@ -247,7 +248,7 @@ describe('NodeTunnelStream', () => {
     const cb = vi.fn();
     (s2 as unknown as { _write: (c: Buffer, e: string, cb: (e?: Error | null) => void) => void })._write(Buffer.from('x'), 'buffer', cb);
     expect(cb.mock.calls[0]?.[0]).toBeInstanceOf(Error);
-    expect((cb.mock.calls[0]?.[0] as Error).message).toBe('the node tunnel is closed');
+    expect((cb.mock.calls[0]![0] as Error).message).toBe('the node tunnel is closed');
   });
 
   it('sends a close frame on destroy, swallowing a throwing close', () => {
@@ -438,7 +439,8 @@ describe('attachTunnelChannel', () => {
         s.readyState = 3;
       },
       on(type: string, cb: (...a: unknown[]) => void) {
-        (handlers[type] ??= []).push(cb);
+        handlers[type] ??= [];
+        handlers[type].push(cb);
       },
       emit(type: string, ...a: unknown[]) {
         for (const cb of handlers[type] ?? []) cb(...a);
