@@ -217,6 +217,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'modules/dashboard.ts': { branch: true },
   'modules/deploys.ts': { branch: true },
   'modules/services.ts': { branch: true },
+  'modules/serviceTunnel.ts': { branch: true },
   'modules/stats.ts': { branch: true },
   'modules/terminals.ts': { branch: true },
   'plugins/collector.ts': { branch: true },

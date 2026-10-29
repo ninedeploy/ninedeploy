@@ -5,6 +5,7 @@ import { resolveUser } from '../lib/auth.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
 import { MAX_TUNNELS_PER_USER, bridgeTunnel, reserveTunnel, tokenMayWrite } from '../lib/tunnelBridge.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
+import { swarmRuntimeOf } from '../lib/swarm.js';
 import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { containerIp } from '../engine/builders/docker.js';
 import { replicaNames } from '../engine/dockerNames.js';
@@ -46,7 +47,7 @@ export const serviceTunnelRoutes: FastifyPluginAsync = async (app) => {
       return refuse('not found or not allowed');
     }
     if (svc.serverId != null) return refuse('the service runs on a node; tunnels reach panel-host services only for now');
-    if (svc.type !== 'docker' || svc.orchestrator === 'swarm') return refuse('tunnels reach docker services (not Swarm, compose or PM2)');
+    if (svc.type !== 'docker' || svc.orchestrator === 'swarm' || swarmRuntimeOf(svc)) return refuse('tunnels reach docker services (not Swarm, compose or PM2)');
     const port = q.port === undefined ? (svc.port ?? null) : Number(q.port);
     if (port === null || !Number.isInteger(port) || port < 1 || port > 65535) return refuse('name the container port with ?port=');
     const replica = q.replica === undefined ? 1 : Number(q.replica);

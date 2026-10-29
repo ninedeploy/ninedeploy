@@ -4,6 +4,7 @@
  */
 import net from 'node:net';
 import { once } from 'node:events';
+import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { serviceProjects, serviceWorkspaces, projects, services, users, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
 
@@ -88,6 +89,18 @@ const closed = (ws: WebSocket) =>
 const opened = (ws: WebSocket) => new Promise<void>((r) => (ws.readyState === WebSocket.OPEN ? r() : ws.addEventListener('open', () => r())));
 
 describe('service tunnels', () => {
+  it('refuses the active Swarm runtime after switching the configured orchestrator back to Docker', async () => {
+    await db.update(services).set({ runtimeId: 'nd-api_web', orchestrator: null }).where(eq(services.id, 5));
+    const ws = open('/v1/services/5/tunnel', 'op');
+    const outcome = await Promise.race([
+      closed(ws),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 1000)),
+    ]);
+    if (outcome === 'timeout') ws.close();
+    expect(outcome).toEqual({ code: 1008, reason: 'tunnels reach docker services (not Swarm, compose or PM2)' });
+    expect(resolved).toEqual([]);
+  });
+
   it('carries bytes to the service port of the chosen replica and audits open and close', async () => {
     const ws = open('/v1/services/5/tunnel?replica=2', 'seatAdmin');
     await opened(ws);
