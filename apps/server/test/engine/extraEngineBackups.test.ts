@@ -3,7 +3,7 @@
  * (engine/extraEngineBackups.ts). The docker calls are faked here; each flow
  * was also run end to end against the real images before it was written.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,33 +40,57 @@ beforeEach(() => {
   h.run.mockReset();
   h.capture.mockReset();
   h.sleep.mockReset();
-  h.run.mockResolvedValue(undefined);
+  // `docker cp <container>:<path> <file>` leaves a plain file on the host, as the real one does.
+  h.run.mockImplementation(async (_cmd, args) => {
+    if (args[0] === 'cp' && /^nd-db-[^:/]+:/.test(String(args[1]))) writeFileSync(String(args[2]), 'copied');
+  });
   h.capture.mockResolvedValue('');
+});
+
+describe('copying out of a container', () => {
+  it('refuses a symlink or a directory the container produced, and removes it', async () => {
+    const outside = path.join(tmp, 'host-secret');
+    writeFileSync(outside, 'host only');
+    const file = path.join(tmp, 'link.dump');
+    let linked = true;
+    h.run.mockImplementation(async (_cmd, args) => {
+      if (args[0] === 'cp' && String(args[1]).includes(':')) {
+        try {
+          symlinkSync(outside, String(args[2]));
+        } catch {
+          linked = false;
+        }
+      }
+    });
+    if (!linked) return;
+    await expect(backupRabbitmq({ cn: 'nd-db-rmq' }, file, log)).rejects.toThrow(/plain file/);
+    expect(existsSync(file)).toBe(false);
+  });
 });
 
 describe('ClickHouse', () => {
   const liveOnly = (_cmd: string, args: string[]) => Promise.resolve(/__nd_(restore|old)'/.test(String(args.at(-1))) ? '0\n' : '1\n');
   it('backs up the user databases only, copies the archive out and removes it from the container', async () => {
     h.capture.mockResolvedValueOnce('app\ndefault\nsecond\n');
-    await backupClickhouse(ch, '/host/b.zip', log);
+    await backupClickhouse(ch, path.join(tmp, 'b.zip'), log);
     const listQuery = h.capture.mock.calls[0]![1];
     expect(listQuery).toEqual(expect.arrayContaining(['exec', 'nd-db-ch', 'clickhouse-client', '-u', 'nine', '--password=pw']));
     expect(listQuery.at(-1)).toContain("NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')");
     const backup = chQueries()[0]!;
     expect(backup).toMatch(/^BACKUP DATABASE `app`, DATABASE `default`, DATABASE `second` TO File\('nd-backup-[0-9a-f-]+\.zip'\)$/);
     const name = /File\('([^']+)'\)/.exec(backup)![1];
-    expect(h.run).toHaveBeenCalledWith('docker', ['cp', `nd-db-ch:/var/lib/clickhouse/backups/${name}`, '/host/b.zip'], {}, log);
+    expect(h.run).toHaveBeenCalledWith('docker', ['cp', `nd-db-ch:/var/lib/clickhouse/backups/${name}`, path.join(tmp, 'b.zip')], {}, log);
     expect(h.run.mock.calls.at(-1)![1]).toEqual(['exec', '-u', '0', 'nd-db-ch', 'rm', '-f', `/var/lib/clickhouse/backups/${name}`]);
   });
 
   it('refuses database names it cannot quote, and cleans up after a failed backup', async () => {
     h.capture.mockResolvedValueOnce('app\nweird-name\n');
-    await expect(backupClickhouse(ch, '/host/b.zip', log)).rejects.toThrow(/weird-name/);
+    await expect(backupClickhouse(ch, path.join(tmp, 'b.zip'), log)).rejects.toThrow(/weird-name/);
     expect(h.run).not.toHaveBeenCalled();
 
     h.capture.mockResolvedValueOnce('app\n');
     h.run.mockRejectedValueOnce(new Error('BACKUP failed')).mockRejectedValueOnce(new Error('rm failed'));
-    await expect(backupClickhouse(ch, '/host/b.zip', log)).rejects.toThrow('BACKUP failed');
+    await expect(backupClickhouse(ch, path.join(tmp, 'b.zip'), log)).rejects.toThrow('BACKUP failed');
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/could not remove the temporary backup/));
   });
 
@@ -86,7 +110,7 @@ describe('ClickHouse', () => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n  metadata/second.sql\n');
     // Both databases exist live.
     h.capture.mockImplementation(liveOnly);
-    await restoreClickhouse(ch, '/host/r.zip', log);
+    await restoreClickhouse(ch, path.join(tmp, 'r.zip'), log);
     const archiveCopy = h.run.mock.calls[0]![1];
     expect(archiveCopy[0]).toBe('cp');
     const archive = (archiveCopy[2] as string).split(':')[1]!;
@@ -112,7 +136,7 @@ describe('ClickHouse', () => {
     h.run.mockImplementation(async (_c, args) => {
       if (String(args.at(-1)) === 'RENAME DATABASE `second__nd_restore` TO `second`') throw new Error('promotion failed');
     });
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('promotion failed');
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow('promotion failed');
     const queries = chQueries();
     const failedAt = queries.indexOf('RENAME DATABASE `second__nd_restore` TO `second`');
     expect(queries.slice(failedAt + 1)).toEqual([
@@ -130,7 +154,7 @@ describe('ClickHouse', () => {
       const q = String(args.at(-1));
       if (q === 'RENAME DATABASE `app__nd_restore` TO `app`' || q === 'RENAME DATABASE `app__nd_old` TO `app`') throw new Error('rename refused');
     });
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('rename refused');
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow('rename refused');
     expect(log).toHaveBeenCalledWith('⚠ the original of app is kept as app__nd_old; rename it back by hand');
   });
 
@@ -141,7 +165,7 @@ describe('ClickHouse', () => {
     h.run.mockImplementation(async (_c, args) => {
       if (String(args.at(-1)) === 'DROP DATABASE IF EXISTS `app__nd_old` SYNC' && ++drops === 1) throw new Error('busy');
     });
-    await restoreClickhouse(ch, '/host/r.zip', log);
+    await restoreClickhouse(ch, path.join(tmp, 'r.zip'), log);
     expect(log).toHaveBeenCalledWith('⚠ could not drop the previous copy app__nd_old; drop it by hand');
   });
 
@@ -151,7 +175,7 @@ describe('ClickHouse', () => {
     h.run.mockImplementation(async (_c, args) => {
       if (String(args.at(-1)).startsWith('RESTORE DATABASE `second`')) throw new Error('RESTORE failed');
     });
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('RESTORE failed');
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow('RESTORE failed');
     const queries = chQueries();
     expect(queries.some((q) => q === 'DROP DATABASE IF EXISTS `app` SYNC')).toBe(false);
     expect(queries.some(q => q?.startsWith('DROP DATABASE'))).toBe(false);
@@ -173,24 +197,24 @@ describe('ClickHouse', () => {
         if (databases.delete(rename[1]!)) databases.add(rename[2]!);
       }
     });
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('promotion failed');
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow('promotion failed');
     expect([...databases].some(name => name.startsWith('app'))).toBe(true);
   });
 
   it.each(['app__nd_old', 'app__nd_restore'])('refuses an existing recovery database %s without deleting it', async name => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n');
     h.capture.mockImplementation(async (_cmd, args) => String(args.at(-1)).includes(`'${name}'`) ? '1\n' : '0\n');
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow(/already exists/);
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow(/already exists/);
     expect(chQueries()).toEqual([]);
   });
 
   it('refuses unconfirmed recovery names and overlapping names in an archive before changing databases', async () => {
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n').mockResolvedValueOnce('unexpected');
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow(/existence is unconfirmed/);
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow(/existence is unconfirmed/);
     expect(chQueries()).toEqual([]);
     h.capture.mockReset();
     h.capture.mockResolvedValueOnce('  metadata/app.sql\n  metadata/app__nd_old.sql\n');
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow(/conflict with recovery names/);
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow(/conflict with recovery names/);
     expect(chQueries()).toEqual([]);
   });
 
@@ -209,7 +233,7 @@ describe('ClickHouse', () => {
         if (rename[1] === 'app__nd_restore') throw new Error('reply lost');
       }
     });
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('reply lost');
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow('reply lost');
     expect(databases.has('app')).toBe(true);
     expect(databases.has('app__nd_old')).toBe(true);
     expect(chQueries()).not.toContain('DROP DATABASE IF EXISTS `app__nd_old` SYNC');
@@ -217,9 +241,9 @@ describe('ClickHouse', () => {
 
   it('refuses an archive with no database or with names it cannot quote', async () => {
     h.capture.mockResolvedValueOnce('Archive: x\n');
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow('holds no ClickHouse database');
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow('holds no ClickHouse database');
     h.capture.mockResolvedValueOnce('  metadata/bad%2Dname.sql\n');
-    await expect(restoreClickhouse(ch, '/host/r.zip', log)).rejects.toThrow(/cannot quote safely: bad%2Dname/);
+    await expect(restoreClickhouse(ch, path.join(tmp, 'r.zip'), log)).rejects.toThrow(/cannot quote safely: bad%2Dname/);
     expect(chQueries()).toEqual([]);
   });
 });
@@ -234,10 +258,10 @@ describe('RabbitMQ', () => {
   };
 
   it('exports the definitions through a temp file in the container', async () => {
-    await backupRabbitmq({ cn: 'nd-db-mq' }, '/host/d.json', log);
+    await backupRabbitmq({ cn: 'nd-db-mq' }, path.join(tmp, 'd.json'), log);
     const tmpFile = h.run.mock.calls[0]![1][6] as string;
     expect(h.run.mock.calls[0]![1]).toEqual(['exec', '-u', 'rabbitmq', 'nd-db-mq', 'rabbitmqctl', 'export_definitions', tmpFile]);
-    expect(h.run.mock.calls[1]![1]).toEqual(['cp', `nd-db-mq:${tmpFile}`, '/host/d.json']);
+    expect(h.run.mock.calls[1]![1]).toEqual(['cp', `nd-db-mq:${tmpFile}`, path.join(tmp, 'd.json')]);
     expect(h.run.mock.calls[2]![1]).toEqual(['exec', '-u', 'rabbitmq', 'nd-db-mq', 'rm', '-f', tmpFile]);
   });
 
@@ -312,39 +336,39 @@ describe('Meilisearch', () => {
       .mockResolvedValueOnce('{"taskUid":7,"status":"enqueued"}')
       .mockResolvedValueOnce('{"status":"processing"}')
       .mockResolvedValueOnce('{"status":"succeeded","details":{"dumpUid":"20261027-073410181"}}');
-    await backupMeilisearch(meili, '/host/m.dump', log);
+    await backupMeilisearch(meili, path.join(tmp, 'm.dump'), log);
     // The master key goes over stdin, never on argv.
     expect(h.capture.mock.calls[0]![1]).toEqual(['exec', '-i', 'nd-db-meili', 'curl', '-sS', '--fail-with-body', '-H', '@-', '-X', 'POST', 'http://localhost:7700/dumps']);
     expect(String(h.capture.mock.calls[0]![3])).toBe('Authorization: Bearer master\n');
     expect(h.capture.mock.calls.flatMap(([, a]) => a).join(' ')).not.toContain('master');
     expect(h.capture.mock.calls[1]![1].at(-1)).toBe('http://localhost:7700/tasks/7');
     expect(h.sleep).toHaveBeenCalledTimes(1);
-    expect(h.run.mock.calls[0]![1]).toEqual(['cp', 'nd-db-meili:/meili_data/dumps/20261027-073410181.dump', '/host/m.dump']);
+    expect(h.run.mock.calls[0]![1]).toEqual(['cp', 'nd-db-meili:/meili_data/dumps/20261027-073410181.dump', path.join(tmp, 'm.dump')]);
     expect(h.run.mock.calls[1]![1]).toEqual(['exec', 'nd-db-meili', 'rm', '-f', '/meili_data/dumps/20261027-073410181.dump']);
   });
 
   it('fails on a refused request, a failed task, a missing dump name or a timeout', async () => {
     h.capture.mockResolvedValueOnce('{"message":"invalid key"}');
-    await expect(backupMeilisearch(meili, '/host/m.dump', log)).rejects.toThrow('did not accept the dump request');
+    await expect(backupMeilisearch(meili, path.join(tmp, 'm.dump'), log)).rejects.toThrow('did not accept the dump request');
 
     h.capture.mockResolvedValueOnce('{"taskUid":1}').mockResolvedValueOnce('{"status":"failed","error":{"message":"no space left"}}');
-    await expect(backupMeilisearch(meili, '/host/m.dump', log)).rejects.toThrow('The Meilisearch dump failed: no space left');
+    await expect(backupMeilisearch(meili, path.join(tmp, 'm.dump'), log)).rejects.toThrow('The Meilisearch dump failed: no space left');
 
     h.capture.mockResolvedValueOnce('{"taskUid":1}').mockResolvedValueOnce('{"status":"succeeded","details":{"dumpUid":"../../etc"}}');
-    await expect(backupMeilisearch(meili, '/host/m.dump', log)).rejects.toThrow('named no dump file');
+    await expect(backupMeilisearch(meili, path.join(tmp, 'm.dump'), log)).rejects.toThrow('named no dump file');
 
     h.capture.mockResolvedValueOnce('{"taskUid":1}').mockResolvedValue('{"status":"enqueued"}');
-    await expect(backupMeilisearch(meili, '/host/m.dump', log, { timeoutMs: -1 })).rejects.toThrow('did not finish in time');
+    await expect(backupMeilisearch(meili, path.join(tmp, 'm.dump'), log, { timeoutMs: -1 })).rejects.toThrow('did not finish in time');
   });
 
   const target = { ...meili, volumeName: 'nd-db-meili-data', image: 'getmeili/meilisearch:v1.53' };
 
   it('imports the dump into a new path with a one-off container, swaps it in and starts the database', async () => {
     h.capture.mockImplementation(async (_c, args) => (args.includes('http://localhost:7700/health') ? '{"status":"available"}' : 'true'));
-    await restoreMeilisearch(target, '/host/m.dump', log);
+    await restoreMeilisearch(target, path.join(tmp, 'm.dump'), log);
     const calls = h.run.mock.calls.map(([, a]) => a);
     const dump = (calls[0]![2] as string).split(':')[1]!;
-    expect(calls[0]).toEqual(['cp', '/host/m.dump', `nd-db-meili:${dump}`]);
+    expect(calls[0]).toEqual(['cp', path.join(tmp, 'm.dump'), `nd-db-meili:${dump}`]);
     expect(calls[1]).toEqual(['stop', 'nd-db-meili']);
     const importer = calls.find((a) => a[0] === 'run' && a.includes('--import-dump'))!;
     expect(importer).toEqual(expect.arrayContaining(['--name', 'nd-db-meili-nd-restore', '--network', 'none', '-v', 'nd-db-meili-data:/meili_data', '--env-file', '/tmp/secret.env']));
@@ -364,7 +388,7 @@ describe('Meilisearch', () => {
       if (args[0] === 'logs') return 'line1\nError: the dump is corrupted\n';
       return '';
     });
-    await expect(restoreMeilisearch(target, '/host/m.dump', log)).rejects.toThrow('The Meilisearch dump import failed: line1 | Error: the dump is corrupted');
+    await expect(restoreMeilisearch(target, path.join(tmp, 'm.dump'), log)).rejects.toThrow('The Meilisearch dump import failed: line1 | Error: the dump is corrupted');
     const calls = h.run.mock.calls.map(([, a]) => a);
     const scripts = calls.filter((a) => a.includes('--entrypoint')).map((a) => a.at(-1) as string);
     expect(scripts).toHaveLength(1);
@@ -377,7 +401,7 @@ describe('Meilisearch', () => {
     h.run.mockImplementation(async (_c, args) => {
       if (args.includes('--entrypoint')) throw new Error('volume busy');
     });
-    await expect(restoreMeilisearch(target, '/host/m.dump', log, { timeoutMs: -1 })).rejects.toThrow('did not finish in time');
+    await expect(restoreMeilisearch(target, path.join(tmp, 'm.dump'), log, { timeoutMs: -1 })).rejects.toThrow('did not finish in time');
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/could not clean up nd-restore-\S+\.ms in volume nd-db-meili-data/));
   });
 });

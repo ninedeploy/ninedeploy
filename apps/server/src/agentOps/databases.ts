@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createReadStream, mkdtempSync, rmSync } from 'node:fs';
+import { constants as fsc, createReadStream, fstatSync, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -195,7 +195,16 @@ export const dbDumpKind: StreamKindHandler = {
             tmp.remove();
             throw err;
           }
-          const stream = createReadStream(tmp.file);
+          // Never follow a link: the file came out of the database container.
+          let fd: number;
+          try {
+            fd = openSync(tmp.file, fsc.O_RDONLY | (fsc.O_NOFOLLOW ?? 0));
+            if (!fstatSync(fd).isFile()) throw new Error('not a plain file');
+          } catch {
+            tmp.remove();
+            throw new Error('The database container produced something other than a plain file; refusing to read it');
+          }
+          const stream = createReadStream('', { fd });
           return {
             stream,
             done: new Promise<{ engine: string }>((resolve, reject) => {

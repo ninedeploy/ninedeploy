@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, rmSync } from 'node:fs';
 import { capture, run, sleep } from '../lib/exec.js';
 import { writeSecretFile } from '../lib/secretFile.js';
 
@@ -18,6 +18,24 @@ import { writeSecretFile } from '../lib/secretFile.js';
  */
 
 const swallow = () => {};
+
+/**
+ * `docker cp` copies a symlink inside the container as a symlink, so a
+ * database container could make its "backup" point at a file of the host.
+ * Whatever was copied out must be a plain file; anything else is removed.
+ */
+export function assertCopiedFile(file: string): void {
+  let ok = false;
+  try {
+    ok = lstatSync(file).isFile();
+  } catch {
+    ok = false;
+  }
+  if (!ok) {
+    rmSync(file, { recursive: true, force: true });
+    throw new Error('The database container produced something other than a plain file; refusing to read it');
+  }
+}
 
 type Log = (line: string) => void;
 
@@ -74,6 +92,7 @@ export async function backupClickhouse(t: EngineBackupTarget, file: string, log:
   try {
     await run('docker', clickhouseClient(t, `BACKUP ${dbs.map((d) => `DATABASE \`${d}\``).join(', ')} TO File('${name}')`), { timeoutMs: LONG_OPERATION_MS }, log);
     await run('docker', ['cp', `${t.cn}:${CLICKHOUSE_BACKUPS_DIR}/${name}`, file], {}, log);
+    assertCopiedFile(file);
   } finally {
     await run('docker', ['exec', '-u', '0', t.cn, 'rm', '-f', `${CLICKHOUSE_BACKUPS_DIR}/${name}`], {}, swallow).catch(() => {
       log(`⚠ could not remove the temporary backup ${CLICKHOUSE_BACKUPS_DIR}/${name} from ${t.cn} — delete it by hand`);
@@ -184,6 +203,7 @@ export async function backupRabbitmq(t: Pick<EngineBackupTarget, 'cn'>, file: st
   try {
     await run('docker', ['exec', '-u', RABBITMQ_USER, t.cn, 'rabbitmqctl', 'export_definitions', tmp], {}, log);
     await run('docker', ['cp', `${t.cn}:${tmp}`, file], {}, log);
+    assertCopiedFile(file);
   } finally {
     await run('docker', ['exec', '-u', RABBITMQ_USER, t.cn, 'rm', '-f', tmp], {}, swallow).catch(() => undefined);
   }
@@ -329,6 +349,7 @@ export async function backupMeilisearch(
   const inContainer = `${MEILI_DATA}/dumps/${uid}.dump`;
   try {
     await run('docker', ['cp', `${t.cn}:${inContainer}`, file], {}, log);
+    assertCopiedFile(file);
   } finally {
     await run('docker', ['exec', t.cn, 'rm', '-f', inContainer], {}, swallow).catch(() => undefined);
   }
