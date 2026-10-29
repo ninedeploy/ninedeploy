@@ -115,6 +115,16 @@ describe('a database on a node', () => {
     expect(await row()).toBeUndefined();
   });
 
+  it('an unconfirmed removal is recorded on a row that was already off', async () => {
+    await lib.applyPublicAccess(db, pg, input(), opts);
+    await lib.disablePublicAccess(db, pg, log);
+    expect(await row()).toMatchObject({ enabled: false, containerName: null });
+    h.applyError = [new HttpError(502, 'node_public_access_unconfirmed', 'The node did not confirm')];
+    h.removeError = new HttpError(502, 'node_unreachable', 'The node could not be reached');
+    await expect(lib.applyPublicAccess(db, pg, input({ port: 15440 }), opts)).rejects.toMatchObject({ code: 'node_public_access_unconfirmed' });
+    expect(await row()).toMatchObject({ enabled: false, containerName: 'nd-dbpub-shop', lastError: expect.stringContaining('did not confirm removing the proxy') });
+  });
+
   it('a failed first apply whose proxy removal is unconfirmed keeps a record, so off and delete still remove it', async () => {
     h.applyError = [new HttpError(502, 'node_public_access_unconfirmed', 'The node did not confirm')];
     h.removeError = new HttpError(502, 'node_unreachable', 'The node could not be reached');

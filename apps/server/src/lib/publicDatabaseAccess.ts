@@ -651,6 +651,7 @@ async function applyNodePublicAccess(
       );
       return { row, previous, mode };
     } catch (err) {
+      let unconfirmed: string | null = null;
       if (previous?.enabled) {
         await nodeApplySidecar(db, serverId, nodeSidecarInput(d, desiredOf(previous))).then(
           () => opts.log(`public access for ${d.name}: restored the previous proxy on port ${previous.publicPort}`),
@@ -660,24 +661,21 @@ async function applyNodePublicAccess(
         // Keep a record while the node has not confirmed the proxy is gone, so
         // turning it off and deleting the database still know to remove it.
         await nodeRemoveSidecar(db, serverId, d.slug).catch(async (removeErr: unknown) => {
-          opts.log(`public access for ${d.name}: the node did not confirm removing the proxy: ${message(removeErr)}`);
+          const lastError = `the node did not confirm removing the proxy: ${message(removeErr)}`;
+          unconfirmed = lastError;
+          opts.log(`public access for ${d.name}: ${lastError}`);
+          // An existing (turned-off) row is updated too, so it records the proxy.
           await db
             .insert(databasePublicAccess)
-            .values({
-              databaseId: d.id,
-              createdByUserId: opts.userId,
-              ...values,
-              enabled: false,
-              lastError: `the node did not confirm removing the proxy: ${message(removeErr)}`,
-            })
-            .onConflictDoNothing()
+            .values({ databaseId: d.id, createdByUserId: opts.userId, ...values, enabled: false, lastError })
+            .onConflictDoUpdate({ target: databasePublicAccess.databaseId, set: { enabled: false, containerName: name, lastError, updatedAt: new Date() } })
             .catch(swallow);
         });
       }
       if (previous) {
         await db
           .update(databasePublicAccess)
-          .set({ lastError: message(err), updatedAt: new Date() })
+          .set({ lastError: unconfirmed ? `${message(err)}; ${unconfirmed}` : message(err), updatedAt: new Date() })
           .where(eq(databasePublicAccess.databaseId, d.id))
           .catch(swallow);
       }
@@ -718,16 +716,16 @@ export async function disablePublicAccess(
 
 /**
  * Node database delete: remove the node's proxy, or throw while the node
- * cannot confirm it (the caller keeps the database unless forced). A row that
- * is off with no container recorded needs no node call. Returns what was
- * there, or null.
+ * cannot confirm it (the caller keeps the database unless forced). Any row
+ * means the node is asked, even one that is off: a proxy whose removal was
+ * never confirmed must not outlive the record. Returns what was there, or null.
  */
 export async function removeNodePublicAccess(db: DB, d: Database): Promise<DatabasePublicAccess | null> {
   if (d.serverId == null) return null;
   const serverId = d.serverId;
   return guard(d.id, async () => {
     const row = await getPublicAccessRow(db, d.id);
-    if (!row || (!row.enabled && !row.containerName)) return null;
+    if (!row) return null;
     await nodeRemoveSidecar(db, serverId, d.slug);
     return row;
   });
@@ -747,7 +745,7 @@ export async function removePublicAccessSidecar(
   await guard(d.id, async () => {
     const row = await getPublicAccessRow(db, d.id);
     if (d.serverId != null) {
-      if (!row || (!row.enabled && !row.containerName)) return;
+      if (!row) return;
       await nodeRemoveSidecar(db, d.serverId, d.slug);
       log(`public access sidecar for ${d.name} removed from node #${d.serverId}`);
       return;

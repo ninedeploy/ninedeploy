@@ -461,11 +461,15 @@ describe('lifecycle routes on a node database: every action reaches the node, no
     expect(res.json().note).toMatch(/nd-dbpub-orders may still publish a port on node #\d+: remove it there with docker rm -f nd-dbpub-orders/);
     h.unreachable = false;
 
-    // Turned off earlier (no proxy recorded): nothing is asked of the node.
+    // Turned off earlier: the node is still asked (removal is idempotent); without a row it is not.
     const off = await nodeRow();
     await db.insert(databasePublicAccess).values({ databaseId: off.id, enabled: false, publicPort: 25433, tlsMode: 'none', ipAllowlist: ['203.0.113.0/24'], containerName: null });
     h.ops = [];
     expect((await app.inject({ method: 'DELETE', url: `/databases/${off.id}`, headers: asUser() })).statusCode).toBe(200);
+    expect(h.ops.some((o) => o.op === 'db.publicAccess.remove')).toBe(true);
+    const none = await nodeRow();
+    h.ops = [];
+    expect((await app.inject({ method: 'DELETE', url: `/databases/${none.id}`, headers: asUser() })).statusCode).toBe(200);
     expect(h.ops.some((o) => o.op === 'db.publicAccess.remove')).toBe(false);
   });
 });
