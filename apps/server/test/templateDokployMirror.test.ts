@@ -220,7 +220,7 @@ PUID = "${v('PUID:-1000')}"
       'uses DOKPLOY_URL, a variable only Dokploy provides',
     );
     expect(reason(bp({ compose: `services:\n  web:\n    image: x\n` }))).toBe("routed service 'n8n' is not in the compose file");
-    expect(reason(bp({ compose: `services:\n  n8n:\n    image: x\n    env_file: .env\n` }))).toMatch(/^env_file is not supported/);
+    expect(reason(bp({ compose: `services:\n  n8n:\n    image: x\n    env_file: .env\n` }))).toBe("service 'n8n' uses env_file");
   });
 
   it('refuses a bind mount of the host or outside the stack (security review)', () => {
@@ -253,6 +253,14 @@ PUID = "${v('PUID:-1000')}"
       expect(top('    labels: {}\n', svc)).toBe(`service 'n8n' ${why}`);
     }
     expect(top('    name: shared-data\n')).toBe("volume 'data' sets a fixed name");
+    // Fourth review: builds and env files read host files; networks are scoped like volumes.
+    expect(top('    labels: {}\n', '    build: { context: /etc }\n')).toBe("service 'n8n' uses build");
+    expect(top('    labels: {}\n', '    env_file: [/etc/shadow]\n')).toBe("service 'n8n' uses env_file");
+    expect(top('    labels: {}\n', '    pull_policy: build\n')).toBe("service 'n8n' uses pull_policy build");
+    const net = (spec: string) => reason(bp({ compose: `services:\n  n8n:\n    image: x\nnetworks:\n  shared:\n${spec}` }));
+    expect(net('    external: true\n')).toBe("network 'shared' is external");
+    expect(net('    name: other_default\n')).toBe("network 'shared' sets a fixed name");
+    expect(net('    driver: macvlan\n')).toBe("network 'shared' uses the macvlan driver");
     expect(reason(bp({ compose: `services:\n  n8n:\n    image: x\nsecrets:\n  key:\n    file: /etc/shadow\n` }))).toBe('declares top-level secrets (they can read host files)');
     expect(reason(bp({ compose: `services:\n  n8n:\n    image: x\nconfigs:\n  c:\n    file: ./c\n` }))).toBe('declares top-level configs (they can read host files)');
     // Named volumes, paths inside the stack and the read-only clock files stay.

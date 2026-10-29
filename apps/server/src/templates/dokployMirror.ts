@@ -66,10 +66,10 @@ const SAFE_SERVICE_KEYS = new Set([
   'expose', 'ports', 'networks', 'working_dir', 'user', 'hostname', 'logging', 'deploy', 'ulimits', 'shm_size',
   'tmpfs', 'stop_grace_period', 'stop_signal', 'init', 'tty', 'stdin_open', 'read_only', 'mem_limit',
   'mem_reservation', 'cpus', 'platform', 'extra_hosts', 'dns', 'links', 'container_name', 'domainname',
-  'pull_policy', 'scale', 'network_mode', 'build', 'env_file', 'profiles',
+  'pull_policy', 'scale', 'network_mode', 'profiles',
 ]);
 
-export function hostBindRefusal(doc: { services?: unknown; volumes?: unknown; secrets?: unknown; configs?: unknown } | null | undefined): string | null {
+export function hostBindRefusal(doc: { services?: unknown; volumes?: unknown; networks?: unknown; secrets?: unknown; configs?: unknown } | null | undefined): string | null {
   const services = (doc?.services && typeof doc.services === 'object' ? doc.services : {}) as Record<string, ServiceEntry>;
   for (const [key] of Object.entries(doc ?? {})) {
     if (key === 'secrets' || key === 'configs') return `declares top-level ${key} (they can read host files)`;
@@ -79,6 +79,9 @@ export function hostBindRefusal(doc: { services?: unknown; volumes?: unknown; se
     for (const key of Object.keys(entry)) {
       if (!SAFE_SERVICE_KEYS.has(key) && !key.startsWith('x-')) return `service '${name}' uses ${key}`;
     }
+    // A build reads files from the host; Hub stacks run published images only.
+    const pp = (entry as { pull_policy?: unknown }).pull_policy;
+    if (typeof pp === 'string' && pp.trim() === 'build') return `service '${name}' uses pull_policy build`;
     const nm = (entry as { network_mode?: unknown }).network_mode;
     if (typeof nm === 'string' && nm.trim() !== '' && !['bridge', 'none'].includes(nm.trim())) return `service '${name}' joins network mode ${nm}`;
   }
@@ -116,6 +119,18 @@ export function hostBindRefusal(doc: { services?: unknown; volumes?: unknown; se
       if (looksAbsolute && !(READ_ONLY_HOST_BINDS.has(normalised) && readOnly)) return `service '${name}' mounts the host path ${source}`;
       // A source that is neither ./relative, absolute nor a plain volume name is not something we can reason about.
       if (!looksAbsolute && !source.startsWith('.') && !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(source)) return `service '${name}' mounts an unusual source (${source})`;
+    }
+  }
+  const topNetworks = (doc as { networks?: unknown } | null | undefined)?.networks;
+  if (topNetworks && typeof topNetworks === 'object') {
+    for (const [net, spec] of Object.entries(topNetworks as Record<string, unknown>)) {
+      if (!spec || typeof spec !== 'object') continue;
+      const s = spec as { driver?: unknown; driver_opts?: unknown; external?: unknown; name?: unknown };
+      // A fixed name or an external network joins another stack's (or the host's) network.
+      if (s.name !== undefined) return `network '${net}' sets a fixed name`;
+      if (s.external !== undefined && s.external !== false) return `network '${net}' is external`;
+      if (s.driver_opts !== undefined) return `network '${net}' sets driver options`;
+      if (s.driver !== undefined && s.driver !== 'bridge') return `network '${net}' uses the ${String(s.driver)} driver`;
     }
   }
   const topVolumes = doc?.volumes;
