@@ -25,4 +25,38 @@ describe('RestartLimitCard (G1.3)', () => {
     const { container } = renderWithProviders(<RestartLimitCard svc={{ id: 6, type: 'compose' } as never} />);
     expect(container.textContent).toBe('');
   });
+
+  it('rejects invalid restart thresholds and saves a valid window', async () => {
+    mockOf(api.services.restartLimit.get).mockResolvedValue({ limit: null, recentRestarts: 0, trippedAt: null } as never);
+    mockOf(api.services.restartLimit.set).mockResolvedValue({ limit: { maxRestarts: 3, windowMinutes: 30 }, recentRestarts: 0, trippedAt: null } as never);
+    renderWithProviders(<RestartLimitCard svc={{ id: 5, type: 'docker' } as never} />);
+    await userEvent.click(await screen.findByRole('switch', { name: 'Restart-loop limit' }));
+    const restarts = screen.getByLabelText('Restarts');
+    const minutes = screen.getByLabelText('Within (minutes)');
+    await userEvent.clear(restarts);
+    await userEvent.type(restarts, '1');
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await userEvent.clear(restarts);
+    await userEvent.type(restarts, '3');
+    await userEvent.clear(minutes);
+    await userEvent.type(minutes, '1441');
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await userEvent.clear(minutes);
+    await userEvent.type(minutes, '30');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.services.restartLimit.set).toHaveBeenCalledWith(5, { maxRestarts: 3, windowMinutes: 30 }));
+  });
+
+  it('surfaces a rejected attempt to disable a previously active limit', async () => {
+    mockOf(api.services.restartLimit.get).mockResolvedValue({ limit: { maxRestarts: 5, windowMinutes: 10 }, recentRestarts: 2, trippedAt: null } as never);
+    mockOf(api.services.restartLimit.set).mockRejectedValue(new Error('permission denied'));
+    renderWithProviders(<RestartLimitCard svc={{ id: 5, type: 'docker' } as never} />);
+    const toggle = await screen.findByRole('switch', { name: 'Restart-loop limit' });
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    await userEvent.click(toggle);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('permission denied')).toBeInTheDocument();
+    expect(api.services.restartLimit.set).toHaveBeenCalledWith(5, null);
+    expect(screen.getByText('2 restarts in the window now')).toBeInTheDocument();
+  });
 });
