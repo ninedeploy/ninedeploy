@@ -389,6 +389,11 @@ function bridgeStreamChannel(socket: AgentStreamSocket, ch: StreamChannel, token
     const file = path.join(dir, `${ch.id}.part`);
     ch.file = file;
     const out = createWriteStream(file, { flags: 'wx', mode: 0o600 });
+    // createWriteStream opens the file asynchronously: a channel closed before that already
+    // removed a file that did not exist yet, so the late one would wait for the 6 h sweep.
+    out.once('open', () => {
+      if (ch.state === 'closed') rmSync(file, { force: true });
+    });
     const head = prepared.gunzip ? createGunzip() : new PassThrough();
     let unpacked = 0;
     const limiter = new Transform({
