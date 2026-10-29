@@ -74,7 +74,13 @@ it('retains independent edits from two database connections', async () => {
     expect((await readPending(a.db, 5)).patch).toEqual({ port: 8080, healthPath: '/ready' });
   } finally {
     a.client?.close(); b.client?.close();
-    rmSync(directory, { recursive: true, force: true });
+    // libsql keeps the connection a transaction replaced open past close(); Windows then refuses to
+    // delete the file (EPERM). Only the temp directory's removal is skipped there; Linux removes it.
+    try {
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (err) {
+      if (process.platform !== 'win32') throw err;
+    }
   }
 });
 
