@@ -7,7 +7,7 @@ const auth = vi.hoisted(() => ({ operator: true }));
 vi.mock('../src/lib/api.js', async () => (await import('./apiMock.js')).createFakeApiModule());
 vi.mock('../src/lib/auth.js', async original => ({ ...await original<typeof import('../src/lib/auth.js')>(), useAuth: () => ({ user: { id: 1, isOperator: auth.operator }, loading: false }) }));
 const entry = { id: 1, serverId: 5, deploymentId: 9, phase: 'retained', previousRuntimeId: 'web-t5-8', candidateRuntimeId: 'web-t5-9', reason: 'Node routing could not be confirmed', busy: false, attempts: 2, nextAttemptAt: '2026-10-23T00:00:00Z', updatedAt: '2026-10-22T23:00:00Z' };
-beforeEach(() => { vi.clearAllMocks(); auth.operator = true; mockOf(api.fanout.recovery).mockResolvedValue([entry] as never); });
+beforeEach(() => { vi.clearAllMocks(); auth.operator = true; mockOf(api.fanout.retryRecovery).mockReset(); mockOf(api.fanout.recovery).mockReset().mockResolvedValue([entry] as never); });
 it('renders a readable pending reason and lets an operator retry the actual recovery API', async () => {
   mockOf(api.fanout.retryRecovery).mockResolvedValue({ recovered: 1, held: 0, entries: [] });
   renderWithProviders(<FanoutRecoveryCard serviceId={1} />);
@@ -30,4 +30,27 @@ it('shows a retryable fetch error instead of claiming there is no pending recove
   renderWithProviders(<FanoutRecoveryCard serviceId={1} />);
   expect(await screen.findByText('Could not load fan-out recovery')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+});
+
+it('keeps retained generations visible if the recovery request fails', async () => {
+  mockOf(api.fanout.retryRecovery).mockRejectedValue(new Error('node offline'));
+  renderWithProviders(<FanoutRecoveryCard serviceId={1} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry recovery' }));
+  expect(await screen.findByText('Recovery could not be checked; retained runtimes remain protected')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Retained runtimes'));
+  expect(screen.getByText('web-t5-8')).toBeInTheDocument();
+  expect(screen.getByText('web-t5-9')).toBeInTheDocument();
+});
+
+it('allows retrying idle nodes while another node is busy and keeps held results visible', async () => {
+  const busy = { ...entry, id: 2, serverId: 6, busy: true, reason: 'Deployment in progress' };
+  mockOf(api.fanout.recovery).mockResolvedValue([entry, busy] as never);
+  mockOf(api.fanout.retryRecovery).mockResolvedValue({ recovered: 0, held: 1, entries: [{ ...entry, reason: 'Waiting for readiness' }] } as never);
+  renderWithProviders(<FanoutRecoveryCard serviceId={1} />);
+  expect(await screen.findByText('Node #6')).toBeInTheDocument();
+  const retry = screen.getByRole('button', { name: 'Retry recovery' });
+  expect(retry).toBeEnabled();
+  fireEvent.click(retry);
+  expect(await screen.findByText('Waiting for readiness')).toBeInTheDocument();
+  expect(screen.getByText('Recovery is still pending — see the reason below')).toBeInTheDocument();
 });

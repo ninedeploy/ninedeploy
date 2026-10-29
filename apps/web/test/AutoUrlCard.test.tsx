@@ -19,7 +19,7 @@ const settings = (over: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  for (const fn of Object.values(api.settings.autoUrl)) mockOf(fn as never).mockReset();
   mockOf(api.settings.autoUrl.get).mockResolvedValue(settings());
   mockOf(api.settings.autoUrl.set).mockResolvedValue({ ok: true, effective: { mode: 'sslip' } });
 });
@@ -75,5 +75,47 @@ describe('AutoUrlCard', () => {
     renderWithProviders(<AutoUrlCard />);
     expect(await screen.findByText('my-app.apps.corp.test')).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+  });
+
+  it('warns when IP detection yields a private address and lets the user correct it', async () => {
+    mockOf(api.settings.autoUrl.detectIp).mockResolvedValue({ ip: '192.168.1.2', public: false });
+    renderWithProviders(<AutoUrlCard />);
+    const sslip = await screen.findByRole('radio', { name: /Free test URLs/ });
+    await waitFor(() => expect(sslip).toBeEnabled());
+    fireEvent.click(sslip);
+    fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+    expect(await screen.findByText('Detected 192.168.1.2, which is not a public address')).toBeInTheDocument();
+    const input = screen.getByLabelText('Server IP address');
+    fireEvent.change(input, { target: { value: '999.1.1.1' } });
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    fireEvent.change(input, { target: { value: '198.51.100.7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.settings.autoUrl.set).toHaveBeenCalledWith({ mode: 'sslip', ip: '198.51.100.7' }));
+  });
+
+  it('preserves the entered domain after a failed save and allows retry', async () => {
+    mockOf(api.settings.autoUrl.set).mockRejectedValueOnce(new Error('permission denied')).mockResolvedValueOnce({ ok: true } as never);
+    renderWithProviders(<AutoUrlCard />);
+    const mode = await screen.findByRole('radio', { name: /Your wildcard domain/ });
+    await waitFor(() => expect(mode).toBeEnabled());
+    fireEvent.click(mode);
+    const domain = screen.getByLabelText('Base domain');
+    fireEvent.change(domain, { target: { value: 'apps.example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Could not save: permission denied')).toBeInTheDocument();
+    expect(domain).toHaveValue('apps.example.com');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.settings.autoUrl.set).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows an IP detection failure without replacing the configured value', async () => {
+    mockOf(api.settings.autoUrl.detectIp).mockRejectedValue(new Error('detection failed'));
+    renderWithProviders(<AutoUrlCard />);
+    const sslip = await screen.findByRole('radio', { name: /Free test URLs/ });
+    await waitFor(() => expect(sslip).toBeEnabled());
+    fireEvent.click(sslip);
+    fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+    expect(await screen.findByText('detection failed')).toBeInTheDocument();
+    expect(screen.getByLabelText('Server IP address')).toHaveValue('203.0.113.10');
   });
 });
