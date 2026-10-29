@@ -22,3 +22,20 @@ it.each(['web-9', null])('records in-flight deployment identities for Stop with 
     expect((await c.db.select().from(deployments)).filter(row => row.id >= 10).map(row => row.status)).toEqual(['cancelled', 'cancelled', 'cancelled']);
   } finally { c.client?.close(); }
 });
+
+it('preserves an unfinished Stop handoff through repeated Stop and refuses Start until resolved', async () => {
+  const c = createDb({ url: 'file::memory:' });
+  try {
+    await c.ready; await runMigrations(c.db);
+    await c.db.insert(users).values({ id: 1, email: 'node-stop-retry@example.test', passwordHash: 'fixture', isInstanceOperator: true });
+    await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+    await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', ownerUserId: 1, serverId: 4, runtimeId: 'web-9', status: 'running' });
+    await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'deploying' });
+    const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
+    await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    const retry = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(retry.snapshot.interruptedDeployments).toEqual([{ id: 10 }]);
+    await expect(acceptNodeLifecycleIntent(c.db, await service(), 'start')).rejects.toThrow(/candidate|handoff/i);
+    expect((await service()).status).toBe('stopped');
+  } finally { c.client?.close(); }
+});

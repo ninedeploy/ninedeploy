@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, services, servers, users, nodeLifecycleIntents, serviceTargets, fanoutTransitions, eq } from '@ninedeploy/db';
+import { createDb, runMigrations, services, servers, users, deployments, nodeLifecycleIntents, serviceTargets, fanoutTransitions, eq } from '@ninedeploy/db';
 import { containerLifecycleRequest, type ContainerLifecycleReply } from '@ninedeploy/schemas';
 import { acceptNodeLifecycleIntent, claimNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { executeNodeLifecycleIntent, type NodeLifecycleControllerDeps } from '../../src/lib/nodeLifecycleController.js';
@@ -68,6 +68,16 @@ describe('durable panel node lifecycle execution', () => {
     expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toMatchObject({ state: 'completed' });
     expect(trace).toEqual(['fence', 'route:stopped', 'drain', 'effect:stop']);
     expect(running).toBe(false); expect((await service()).status).toBe('stopped');
+  });
+  it('holds Stop after removing routing when an interrupted candidate has not been accounted for', async () => {
+    running = true; await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
+    await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'deploying' });
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect(trace).toEqual(['fence', 'route:stopped', 'drain', 'effect:stop']);
+    expect(running).toBe(false);
+    expect(await stored()).toMatchObject({ phase: 'applying', reason: expect.stringContaining('candidate') });
+    expect((await service()).status).toBe('stopped');
   });
   it('holds a missing receipt without restoring running or losing the Stop phase', async () => {
     const original = deps.agent;

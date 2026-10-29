@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { deploymentRuntimeOwners, deployments, services, type DB, type DeploymentRuntimeOwner, type Service } from '@ninedeploy/db';
+import { deploymentRuntimeOwners, deployments, nodeLifecycleIntents, services, type DB, type DeploymentRuntimeOwner, type Service } from '@ninedeploy/db';
 import { MAX_RUNTIME_EPOCH, readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction } from './serviceRuntimeOwner.js';
 
 export class NodeDeploymentOwnershipLost extends Error {
@@ -48,6 +48,11 @@ export async function claimNodeDeploymentAttempt(db: DB, deploymentId: number, s
   return db.transaction<NodeDeploymentAdmission>(async tx => {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, service.id) });
     if (!fresh || fresh.type !== 'docker' || fresh.orchestrator === 'swarm' || fresh.serverId !== service.serverId) return { claimed: false, reason: 'placement_changed' };
+    const pendingStop = await tx.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id),
+      eq(nodeLifecycleIntents.action, 'stop'), inArray(nodeLifecycleIntents.phase, ['fencing', 'preparing', 'routing', 'applying'])) });
+    if (pendingStop?.runtimeId !== null && (pendingStop?.snapshot.interruptedDeployments?.length ?? 0) > 0) {
+      return { claimed: false, reason: 'not_claimable' };
+    }
     const [stamp] = await tx.select().from(deploymentRuntimeOwners).where(eq(deploymentRuntimeOwners.deploymentId, deploymentId)).limit(1);
     const current = await readServiceRuntimeOwner(tx, service.id);
     if (stamp && (stamp.serviceId !== service.id || stamp.serverId !== service.serverId || current?.kind !== 'deploy' ||

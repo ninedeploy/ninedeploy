@@ -193,6 +193,12 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       } else if (intent.phase === 'applying') {
         if (intent.action !== 'start' && !routingRemovedThisRun) await removeRouting();
         for (const participant of participants()) await apply(participant, false);
+        // A selected Stop currently stops only the serving generation. Its
+        // interrupted deployment candidates still need an ordered handoff;
+        // never report completion while that generation is unaccounted for.
+        if (intent.action === 'stop' && !intent.snapshot.unselected && (intent.snapshot.interruptedDeployments?.length ?? 0) > 0) {
+          throw new Error('Interrupted deployment candidate cleanup is unconfirmed; Stop is retained for recovery');
+        }
         intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'restart' ? 'starting' : intent.action === 'start' ? 'readiness' : 'completed');
       } else if (intent.phase === 'starting') {
         for (const participant of participants()) await apply(participant, false, true);

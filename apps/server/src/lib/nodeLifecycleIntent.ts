@@ -43,6 +43,12 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, service.id) });
     if (!fresh || fresh.type !== 'docker' || fresh.orchestrator === 'swarm' || fresh.runtimeId !== service.runtimeId || fresh.serverId !== service.serverId ||
       action !== 'stop' && (configuration(fresh) !== configuration(service) || fresh.status !== service.status)) throw changed();
+    const pendingStop = await tx.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id),
+      eq(nodeLifecycleIntents.action, 'stop'), notInArray(nodeLifecycleIntents.phase, [...terminal])), orderBy: desc(nodeLifecycleIntents.id) });
+    const interrupted = pendingStop?.snapshot.interruptedDeployments ?? [];
+    if (interrupted.length && (action !== 'stop' || pendingStop?.serverId !== fresh.serverId || pendingStop.runtimeId !== fresh.runtimeId)) {
+      throw new HttpError(409, 'node_lifecycle_candidate_pending', 'Interrupted deployment candidate handoff must settle before this operation');
+    }
     const activeWork = action === 'stop' ? await tx.select({ id: deployments.id, status: deployments.status }).from(deployments)
       .where(and(eq(deployments.serviceId, service.id), inArray(deployments.status, [...cancellable]))).orderBy(deployments.id) : [];
     if (fresh.runtimeId === null && activeWork.length === 0) {
@@ -75,7 +81,8 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
       snapshot: { status: fresh.status, port: fresh.port, healthCheck: fresh.healthCheck, healthPath: fresh.healthPath, healthCommand: fresh.healthCommand,
         healthTimeoutS: fresh.healthTimeoutSeconds, serving: shape.serving, capacity: shape.capacity, configuration: configuration(fresh), fanout,
         mutationEpoch: authority.epoch, revisionEpoch: authority.epoch,
-        ...(action === 'stop' ? { interruptedDeployments: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').map(({ id }) => ({ id })) } : {}),
+        ...(action === 'stop' ? { interruptedDeployments: [...new Set([...interrupted.map(row => row.id),
+          ...activeWork.filter(row => row.status === 'building' || row.status === 'deploying').map(row => row.id)])].sort((a, b) => a - b).map(id => ({ id })) } : {}),
         ...(fresh.runtimeId === null ? { unselected: { participants: [
           { serverId: fresh.serverId!, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-' + row.id, MAX_REPLICAS)) },
           ...fanout.map(target => ({ serverId: target.serverId, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-t' + target.serverId + '-' + row.id, MAX_REPLICAS)) })),

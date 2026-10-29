@@ -15,6 +15,18 @@ beforeEach(async () => {
 afterEach(() => c.client!.close());
 
 describe('durable node deployment admission', () => {
+  it('does not grant a later deployment authority over an unfinished Stop candidate handoff', async () => {
+    await c.db.update(services).set({ runtimeId: 'web-8', status: 'running' }).where(eq(services.id, 1));
+    const first = await claimNodeDeploymentAttempt(c.db, 9, await service(), '{}');
+    expect(first.claimed).toBe(true);
+    const stop = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(stop.snapshot.interruptedDeployments).toEqual([{ id: 9 }]);
+    await c.db.insert(deployments).values({ id: 11, serviceId: 1, status: 'queued' });
+    const stoppedOwner = await readServiceRuntimeOwner(c.db, 1);
+    expect((await claimNodeDeploymentAttempt(c.db, 11, await service(), '{}')).claimed).toBe(false);
+    expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(stoppedOwner);
+    expect((await c.db.query.deployments.findFirst({ where: eq(deployments.id, 11) }))?.status).toBe('queued');
+  });
   it('does not grant queued successors authority and preserves the active predecessor', async () => {
     expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
     expect(await c.db.select().from(deploymentRuntimeOwners)).toEqual([]);

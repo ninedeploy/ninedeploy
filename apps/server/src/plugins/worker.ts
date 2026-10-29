@@ -43,6 +43,14 @@ async function resolveBuildCache(
 }
 
 const POLL_MS = 2000;
+// Keep a successor queued while an unfinished selected Stop has not yet
+// accounted for the candidate generations it interrupted.
+const noPendingNodeStopHandoff = sql`NOT EXISTS (
+  SELECT 1 FROM node_lifecycle_intents AS node_stop
+  WHERE node_stop.service_id = ${deployments.serviceId} AND node_stop.action = 'stop'
+    AND node_stop.runtime_id IS NOT NULL AND node_stop.phase NOT IN ('completed', 'superseded')
+    AND json_array_length(node_stop.snapshot, '$.interruptedDeployments') > 0
+)`;
 /** How often the stale-`building` sweep re-runs after boot (r169). */
 export const STALE_SWEEP_EVERY_MS = 5 * 60 * 1000;
 /** Bounded grace period for an in-flight deploy during graceful shutdown. The
@@ -432,7 +440,7 @@ export default fp(
         })
         .from(deployments)
         .innerJoin(services, eq(services.id, deployments.serviceId))
-        .where(and(eq(deployments.status, 'queued'), notInArray(deployments.serviceId, buildingServices), sql`NOT EXISTS (
+        .where(and(eq(deployments.status, 'queued'), notInArray(deployments.serviceId, buildingServices), noPendingNodeStopHandoff, sql`NOT EXISTS (
           SELECT 1 FROM primary_transitions AS recovery WHERE recovery.service_id = ${deployments.serviceId} UNION ALL SELECT 1 FROM swarm_transitions AS swarm_recovery WHERE swarm_recovery.service_id = ${deployments.serviceId}
         )`))
         .orderBy(asc(deployments.createdAt));
@@ -530,6 +538,7 @@ export default fp(
             .where(and(
               eq(deployments.id, queued.id),
               eq(deployments.status, 'queued'),
+              noPendingNodeStopHandoff,
               sql`NOT EXISTS (SELECT 1 FROM primary_transitions AS recovery WHERE recovery.service_id = ${deployments.serviceId} UNION ALL SELECT 1 FROM swarm_transitions AS swarm_recovery WHERE swarm_recovery.service_id = ${deployments.serviceId})`,
               // Selection and update are separate statements. Re-check the
               // service invariant inside the atomic write so two slots that
