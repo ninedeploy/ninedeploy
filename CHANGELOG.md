@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Compose stacks on nodes also skip the build when the commit and the resolved compose model are unchanged (G2.4). The resolved model is hashed on the panel and never logged. Older agents build as before.
 - Image scanning covers docker services on nodes (G5.1).
   - **How:** the node agent runs the same `docker save | trivy` with its own cache volume and answers the parsed summary, which the panel validates before storing.
   - **When:** on the schedule and on request; an unchanged image is not scanned again until the result is stale.

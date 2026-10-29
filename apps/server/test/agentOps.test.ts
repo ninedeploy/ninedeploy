@@ -185,6 +185,14 @@ describe('agent typed-op argv templates', () => {
       ['compose', '-p', 'p', '-f', 'docker-compose.yml', 'up', '-d', '--build', '--remove-orphans'],
     );
     expect(await argvOf('docker.composeDown', { project: 'p' })).toEqual(['compose', '-p', 'p', 'down', '--remove-orphans']);
+    // G2.4: unchanged build inputs reuse the images; the model is printed only on request.
+    expect(await argvOf('docker.composeUp', { project: 'p', file: 'docker-compose.yml', build: false })).toEqual(
+      ['compose', '-p', 'p', '-f', 'docker-compose.yml', 'up', '-d', '--remove-orphans'],
+    );
+    expect(await argvOf('docker.composeConfig', { project: 'p', file: 'docker-compose.yml' })).toEqual(['compose', '-p', 'p', '-f', 'docker-compose.yml', 'config', '--quiet']);
+    expect(await argvOf('docker.composeConfig', { project: 'p', file: 'docker-compose.yml', print: true })).toEqual(['compose', '-p', 'p', '-f', 'docker-compose.yml', 'config']);
+    // Only a real boolean changes the argv.
+    expect(await argvOf('docker.composeUp', { project: 'p', file: 'docker-compose.yml', build: 'false' })).toContain('--build');
   });
 
   it('git ops', async () => {

@@ -669,7 +669,8 @@ deploying one is **operator-only**.
 - When the fingerprint matches the last build, the deploy logs *Build inputs are unchanged* and reuses the built images. An image that has gone missing is still built by `up`.
 - A deploy without an exact commit always builds.
 - A base image that changed upstream is not picked up while the inputs stay the same. Set `NINEDEPLOY_COMPOSE_BUILD_SKIP=off` to build on every deploy.
-- The fingerprint lives in the panel's data directory (`compose-build/<slug>.sha256`). Panel host only.
+- The fingerprint lives in the panel's data directory (`compose-build/<slug>.sha256`, and `node-<serverId>-<slug>.sha256` for a stack on a node).
+- **On a node:** the agent prints the resolved model (`docker.composeConfig` with `print`). The panel reads it through a silent sink, since it carries the interpolated environment, and keeps only the hash. A match brings the stack up without `--build`. An agent too old to print the model, or one that ignores the request, simply builds as before.
 
 Three ways to get a stack in:
 

@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { Builder, BuildContext, DeployRuntime } from '../types.js';
 import type { AgentCall, PrebuiltImage } from './remoteDocker.js';
 import { ensureNodeNetwork, RemoteDeployUnsupportedError } from './remoteDocker.js';
-import { composeScalar, parseComposePs } from './compose.js';
+import { createHash } from 'node:crypto';
+import { composeBuildSkipDisabled, composeScalar, parseComposePs, readComposeFingerprint, writeComposeFingerprint } from './compose.js';
 import { INLINE_COMPOSE_FILE } from '../../lib/composeWorkspace.js';
 import { assertCloneTargetAllowed } from '../../lib/gitEgress.js';
 import { assertAgentGuardsBuildPaths } from '../../lib/agentCapabilities.js';
@@ -291,8 +292,23 @@ export function createRemoteComposeBuilder(
           );
         });
 
+        // G2.4: the same commit and the same resolved compose model as the
+        // last build on this node reuse its images. The model carries the
+        // interpolated environment: it is read through a silent sink and only
+        // its hash is kept. An agent that cannot print it simply builds.
+        let fingerprint: string | null = null;
+        if (!composeBuildSkipDisabled() && /^[0-9a-f]{40}$/i.test(ctx.commitSha ?? '')) {
+          const printed = await agent('docker.composeConfig', { ...stack, print: true }, () => undefined).catch(() => null);
+          const model = printed?.exitCode === 0 ? printed.lines.join('\n') : '';
+          if (model.trim()) fingerprint = createHash('sha256').update(`${ctx.commitSha}\n${model}`).digest('hex');
+        }
+        const fingerprintKey = `node-${service.serverId ?? 0}-${service.slug}`;
+        const reuse = fingerprint !== null && readComposeFingerprint(fingerprintKey) === fingerprint;
+        if (reuse) log('Build inputs are unchanged since the last build on this node (same commit and resolved compose model): reusing the built images');
+
         log(`Bringing up compose project ${project} …`);
-        await agent('docker.composeUp', stack, sink);
+        await agent('docker.composeUp', reuse ? { ...stack, build: false } : stack, sink);
+        if (fingerprint) writeComposeFingerprint(fingerprintKey, fingerprint);
 
         // The node's Traefik lives on the shared `ninedeploy` network, but a
         // compose project creates its OWN default network — so without this

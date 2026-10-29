@@ -611,3 +611,38 @@ describe('0.16: the shared ninedeploy network on the node', () => {
     expect(await run('permission denied')).toMatch(/Error response from daemon: permission denied[\s\S]*Could not create the "ninedeploy" network on the node/);
   });
 });
+
+describe('remote compose builder — G2.4 build skip on a node', () => {
+  it('reuses the built images when the commit and resolved model are unchanged, and never logs the model', async () => {
+    const sha = 'c'.repeat(40);
+    const slug = `skip${Date.now()}`;
+    const run = async (model: string) => {
+      const logged: string[] = [];
+      const { agent, calls } = fakeAgent();
+      const printing: typeof agent = async (op, params, sink) => {
+        if (op === 'docker.composeConfig' && params['print'] === true) {
+          calls.push({ op, params });
+          return { exitCode: 0, lines: model.split('\n') };
+        }
+        return agent(op, params, sink);
+      };
+      await createRemoteComposeBuilder(printing).buildAndRun(ctx({ commitSha: sha, service: svc({ slug, composeService: slug }), log: (l) => logged.push(l) }));
+      return { up: calls.find((c) => c.op === 'docker.composeUp')!.params, logged };
+    };
+    const first = await run('services:\n  app:\n    environment:\n      SECRET: s3cret');
+    expect(first.up['build']).toBeUndefined();
+    const second = await run('services:\n  app:\n    environment:\n      SECRET: s3cret');
+    expect(second.up['build']).toBe(false);
+    expect(second.logged.join('\n')).toMatch(/reusing the built images/);
+    expect([...first.logged, ...second.logged].join('\n')).not.toContain('s3cret');
+    // A changed model builds again.
+    expect((await run('services:\n  app:\n    environment:\n      SECRET: other')).up['build']).toBeUndefined();
+  });
+
+  it('builds when the agent cannot print the model or there is no exact commit', async () => {
+    const { agent, calls } = fakeAgent();
+    await createRemoteComposeBuilder(agent).buildAndRun(ctx({ commitSha: 'd'.repeat(40) }));
+    await createRemoteComposeBuilder(agent).buildAndRun(ctx({ commitSha: 'd'.repeat(40) }));
+    expect(calls.filter((c) => c.op === 'docker.composeUp').every((c) => c.params['build'] === undefined)).toBe(true);
+  });
+});

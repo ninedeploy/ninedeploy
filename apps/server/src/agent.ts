@@ -406,16 +406,20 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
     exe: 'docker',
     build: (p) => ['volume', 'rm', validated(str(p, 'name'), RE_NAME, 'volume name')],
   },
+  // G2.4: `build: false` reuses the built images (the panel saw the build inputs unchanged);
+  // an image that is gone is still built by `up`. Older agents ignore it and build.
   'docker.composeUp': {
     exe: 'docker',
-    build: (p) => [...composeStackArgs(p), 'up', '-d', '--build', '--remove-orphans'],
+    build: (p) => [...composeStackArgs(p), 'up', '-d', ...(p['build'] === false ? [] : ['--build']), '--remove-orphans'],
   },
   // Preflight gates. Both run while the PREVIOUS revision is still serving, so
   // a bad tag or a broken `${VAR}` reference fails the deployment without ever
   // having torn the live stack down — the same ordering the local builder uses.
+  // G2.4: `print: true` answers the resolved model, which the panel only hashes
+  // (it carries the interpolated environment, so it is never logged).
   'docker.composeConfig': {
     exe: 'docker',
-    build: (p) => [...composeStackArgs(p), 'config', '--quiet'],
+    build: (p) => [...composeStackArgs(p), 'config', ...(p['print'] === true ? [] : ['--quiet'])],
   },
   'docker.composePull': {
     exe: 'docker',

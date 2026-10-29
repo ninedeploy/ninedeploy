@@ -112,7 +112,10 @@ vi.mock('../src/lib/imageTransfer.js', async (importOriginal) => ({
   panelImageInfo: h.panelImageInfo,
 }));
 vi.mock('../src/engine/builders/pm2.js', () => ({ pm2Builder: h.builder }));
-vi.mock('../src/engine/builders/compose.js', () => ({ composeBuilder: h.builder }));
+vi.mock('../src/engine/builders/compose.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/engine/builders/compose.js')>()),
+  composeBuilder: h.builder,
+}));
 vi.mock('../src/engine/proxy.js', () => ({
   writeDynamicConfig: h.writeDynamicConfig,
   getAcmeEmail: h.getAcmeEmail,
