@@ -20,7 +20,7 @@ const AGENT_IMAGE_REPO='ghcr.io/ninedeploy/ninedeploy';
 const suffix=randomBytes(4).toString('hex'),label=`node-canary-${suffix}`;
 const net=`nd-node-canary-net-${suffix}`,daemon=`nd-node-canary-docker-${suffix}`,panel=`nd-node-canary-panel-${suffix}`,volume=`nd-node-canary-data-${suffix}`;
 const panelDaemon=`nd-node-canary-paneldocker-${suffix}`,agentVolume=`nd-node-canary-agentdata-${suffix}`,agentHome="/var/lib/ninedeploy-agent";
-const containers=[];let token,baseUrl,networkCreated=false,volumeCreated=false,agentVolumeCreated=false;
+const containers=[];let token,baseUrl,serviceId,networkCreated=false,volumeCreated=false,agentVolumeCreated=false;
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 function docker(args,{allowFailure=false,...opts}={}){const r=spawnSync('docker',args,{encoding:'utf8',windowsHide:true,timeout:120000,maxBuffer:16<<20,...opts});if(!allowFailure)assert.equal(r.status,0,`${args.slice(0,3)}: ${r.stderr}`);return{...r,out:(r.stdout??'').trim()};}
 const inner=(args,opts)=>docker(['exec',daemon,'docker',...args],opts);
@@ -75,6 +75,7 @@ try{
  const results=[];
  const created=await api('/v1/services',{method:'POST',body:{name:'R1 node canary',type:'docker',image:fixtureImage,port:8080,serverId:registration.id}});
  const id=created.id??created.service?.id;
+ serviceId=id;
  await api('/v1/services/'+id,{method:'PATCH',body:{healthCheck:'http-strict',healthPath:'/ready',healthTimeoutSeconds:60}});
  if(lifecycleOnly||replicaDatabasesOnly)await api('/v1/services/'+id,{method:'PATCH',body:{replicas:2}});
  let replicaDatabase;
@@ -261,6 +262,16 @@ try{
  const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
  writeFileSync(proof+'/runtime-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }catch(e){
+ try{
+   if(serviceId&&baseUrl&&token){
+     const service=await api(`/v1/services/${serviceId}`),deployments=await api(`/v1/services/${serviceId}/deploys`),lifecycle=await api(`/v1/services/${serviceId}/lifecycle`);
+     writeFileSync(proof+'/failure-state.json',JSON.stringify({
+       serviceStatus:(service.service??service).status,
+       deployments:deployments.map(({id,status})=>({id,status})),
+       lifecycle:lifecycle.command?{id:lifecycle.command.id,action:lifecycle.command.action,phase:lifecycle.command.phase}:null,
+     },null,2));
+   }
+ }catch{/* Diagnostics must never hide the original failure. */}
  try{
    if(docker(['inspect',daemon,'--format','{{index .Config.Labels "ninedeploy.proof"}}'],{allowFailure:true}).out===label){
      const clients=inner(['ps','-a','--filter','name=nd-r1-traffic-','--format','{{.Names}}'],{allowFailure:true}).out.split('\n').filter(name=>/^[a-z0-9-]+$/.test(name)&&name.endsWith('-'+suffix)).slice(0,16);

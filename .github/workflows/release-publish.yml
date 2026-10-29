@@ -469,6 +469,7 @@ jobs:
           name: node-smoke-failure-${{ matrix.suite }}
           path: |
             .temp_files/release-node-smoke/cases.json
+            .temp_files/release-node-smoke/failure-state.json
             .temp_files/release-node-smoke/inner-containers.log
             .temp_files/release-node-smoke/runtime-cleanup.json
           include-hidden-files: true
