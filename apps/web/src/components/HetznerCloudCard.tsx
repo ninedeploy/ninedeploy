@@ -177,7 +177,10 @@ function CreateServerForm({ onDone }: { onDone: () => void }) {
     },
     onError: (err) => toast(t('Could not create the server: {error}', { error: errorText(err) }), 'error'),
   });
-  const valid = !!name.trim() && !!location && !!serverType && !!image;
+  const valid = !!name.trim() && !!location && !!serverType && !!image
+    && !!options.data?.locations.some((item) => item.name === location)
+    && types.some((item) => item.name === serverType)
+    && images.some((item) => item.name === image);
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (valid) create.mutate();
@@ -193,7 +196,15 @@ function CreateServerForm({ onDone }: { onDone: () => void }) {
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="edge-1" />
         </Field>
         <Field label={t('Location')}>
-          <Select value={location} onChange={(e) => setLocation(e.target.value)}>
+          <Select value={location} onChange={(e) => {
+            const next = e.target.value;
+            setLocation(next);
+            const selected = options.data?.serverTypes.find((st) => st.name === serverType);
+            if (selected && next && selected.locations.length > 0 && !selected.locations.includes(next)) {
+              setServerType('');
+              setImage('');
+            }
+          }}>
             <option value="">{t('Choose…')}</option>
             {options.data.locations.map((l) => (
               <option key={l.name} value={l.name}>
@@ -203,7 +214,12 @@ function CreateServerForm({ onDone }: { onDone: () => void }) {
           </Select>
         </Field>
         <Field label={t('Server type')}>
-          <Select value={serverType} onChange={(e) => setServerType(e.target.value)}>
+          <Select value={serverType} onChange={(e) => {
+            const next = e.target.value;
+            setServerType(next);
+            const nextArch = types.find((st) => st.name === next)?.architecture;
+            if (image && nextArch && !options.data?.images.some((item) => item.name === image && item.architecture === nextArch)) setImage('');
+          }}>
             <option value="">{t('Choose…')}</option>
             {types.map((st) => (
               <option key={st.name} value={st.name}>

@@ -98,4 +98,39 @@ describe('HetznerCloudCard (G4.3)', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete server' }));
     await waitFor(() => expect(h().deleteServer).toHaveBeenCalledWith(5));
   });
+
+  it('clears an incompatible server type when changing location before creating a VM', async () => {
+    mockOf(h().status).mockResolvedValue({ configured: true, tokenHint: '…wxyz' } as never);
+    mockOf(h().options).mockResolvedValue(OPTIONS as never);
+    renderWithProviders(<HetznerCloudCard />);
+    await userEvent.click(await screen.findByRole('button', { name: /Create server/ }));
+    const form = await screen.findByRole('form', { name: 'Create server' });
+    await userEvent.type(within(form).getByPlaceholderText('edge-1'), 'edge-1');
+    const [location, type, image] = within(form).getAllByRole('combobox');
+    await userEvent.selectOptions(location!, 'fsn1');
+    await userEvent.selectOptions(type!, 'cx22');
+    await userEvent.selectOptions(image!, 'rocky-9');
+    expect(within(form).getByRole('button', { name: 'Create server' })).toBeEnabled();
+    await userEvent.selectOptions(location!, 'ash');
+    expect(type).toHaveValue('');
+    expect(within(form).getByRole('button', { name: 'Create server' })).toBeDisabled();
+    expect(h().createServer).not.toHaveBeenCalled();
+  });
+
+  it('clears an incompatible image when switching server architecture', async () => {
+    mockOf(h().status).mockResolvedValue({ configured: true, tokenHint: '…wxyz' } as never);
+    mockOf(h().options).mockResolvedValue(OPTIONS as never);
+    renderWithProviders(<HetznerCloudCard />);
+    await userEvent.click(await screen.findByRole('button', { name: /Create server/ }));
+    const form = await screen.findByRole('form', { name: 'Create server' });
+    await userEvent.type(within(form).getByPlaceholderText('edge-1'), 'edge-1');
+    const [location, type, image] = within(form).getAllByRole('combobox');
+    await userEvent.selectOptions(location!, 'fsn1');
+    await userEvent.selectOptions(type!, 'cx22');
+    await userEvent.selectOptions(image!, 'rocky-9');
+    await userEvent.selectOptions(type!, 'cax11');
+    expect(image).toHaveValue('');
+    expect(within(form).getByRole('button', { name: 'Create server' })).toBeDisabled();
+    expect(h().createServer).not.toHaveBeenCalled();
+  });
 });
