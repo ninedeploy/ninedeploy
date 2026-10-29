@@ -254,6 +254,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'lib/composeRelease.ts': { exempt: 'recorded releases are only for panel-host Compose stacks; Swarm services cannot use the Compose builder' },
   'lib/releaseRecords.ts': { exempt: 'assertReleaseTarget requires type compose on the panel host; recorded restores never operate on Swarm services' },
   'lib/nodeMetrics.ts': { exempt: 'node-only telemetry explicitly skips Swarm; Swarm services cannot be pinned to a node' },
+  'lib/nodeDeploymentOwner.ts': { exempt: 'node deployment admission requires plain Docker placement; runtimeId only identifies an unfinished node Stop and is never used as a Swarm container' },
   'lib/nodeLifecycleIntent.ts': { exempt: 'acceptance and every ownership checkpoint require plain Docker on the captured node; lifecycle intent behavior tests refuse changed Swarm or Compose placement' },
   'lib/nodeLifecycleController.ts': { exempt: 'consumes durable plain-Docker intents and checks their current placement before and after every asynchronous boundary; Swarm cannot reach its container effects' },
   'lib/nodeLifecycleRuntime.ts': { exempt: 'dispatches captured plain-Docker intents; runtimeId is compared only for public status and retry eligibility, never used as a Swarm container name' },

@@ -347,7 +347,7 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     const nodeCanary = steps.findIndex((s) => s.run?.includes('scripts/smoke-node-canary.mjs'));
     expect(nodeCanary).toBeGreaterThan(nodeOps);
     // biome-ignore lint/suspicious/noTemplateCurlyInString: Match the workflow's literal shell variable.
-    expect(steps[nodeCanary]!.run).toBe('node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"');
+    expect(steps[nodeCanary]!.run).toBe('node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-node-smoke');
     expect(steps[nodeCanary]!.if).toBe("matrix.suite == 'public-canary'");
     expect(steps[nodeCanary]!['timeout-minutes']).toBeGreaterThan(0);
     expect((steps[nodeCanary] as Record<string, unknown>)['continue-on-error']).not.toBe(true);
