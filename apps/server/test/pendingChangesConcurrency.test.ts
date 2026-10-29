@@ -44,6 +44,14 @@ async function concurrent(first: () => Promise<unknown>, second: () => Promise<u
 }
 const view = { fields: { port: 3000, healthPath: '/' }, build: null };
 
+function removeTemporaryDirectory(directory: string) {
+  try {
+    rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } catch (err) {
+    if (process.platform !== 'win32' || !['EPERM', 'EBUSY'].includes((err as NodeJS.ErrnoException).code ?? '')) throw err;
+  }
+}
+
 it('retains two independent edits staged concurrently against the same tray', async () => {
   await concurrent(() => stageChanges(db, service, { port: 8080 }, 1, view), () => stageChanges(db, service, { healthPath: '/ready' }, 1, view));
   expect((await readPending(db, 5)).patch).toEqual({ port: 8080, healthPath: '/ready' });
@@ -66,22 +74,26 @@ it('retains independent edits from two database connections', async () => {
   const url = `file:${path.join(directory, 'panel.db').split(path.sep).join('/')}`;
   const a = createDb({ url });
   const b = createDb({ url });
+  let failure: { error: unknown } | null = null;
   try {
     await runMigrations(a.db, fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url)));
     await a.db.insert(users).values({ id: 1, email: 'owner@example.test', passwordHash: 'x' });
     const [row] = await a.db.insert(services).values({ id: 5, name: 'web', slug: 'web', type: 'docker', branch: 'main', ownerUserId: 1, port: 3000, healthPath: '/' } as never).returning();
     await concurrent(() => stageChanges(a.db, row!, { port: 8080 }, 1, view), () => stageChanges(b.db, row!, { healthPath: '/ready' }, 1, view));
     expect((await readPending(a.db, 5)).patch).toEqual({ port: 8080, healthPath: '/ready' });
+  } catch (err) {
+    failure = { error: err };
   } finally {
     a.client?.close(); b.client?.close();
     // libsql keeps the connection a transaction replaced open past close(); Windows then refuses to
     // delete the file (EPERM). Only the temp directory's removal is skipped there; Linux removes it.
     try {
-      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      removeTemporaryDirectory(directory);
     } catch (err) {
-      if (process.platform !== 'win32') throw err;
+      failure = { error: failure ? new AggregateError([failure.error, err], 'test and cleanup failed') : err };
     }
   }
+  if (failure) throw failure.error;
 });
 
 it('returns a conflict after bounded contention without replacing the latest tray', async () => {
