@@ -51,7 +51,7 @@ export class NodeTunnelStream extends Duplex {
   private agentPaused = false;
   private askedPause = false;
   private finished = false;
-  private pendingWrite: (() => void) | null = null;
+  private pendingWrite: ((error?: Error) => void) | null = null;
   private pressure: NodeJS.Timeout | undefined;
 
   constructor(
@@ -127,7 +127,7 @@ export class NodeTunnelStream extends Duplex {
     for (const frame of this.tx.sealData(chunk)) this.sendFrame(frame);
     if (!this.agentPaused && (this.socket.bufferedAmount ?? 0) <= WRITE_HIGH_WATER) return cb();
     // Hold the callback (and with it the writer) until the agent can take more.
-    this.pendingWrite = () => cb();
+    this.pendingWrite = cb;
     this.pressure ??= setInterval(() => this.flushWrite(), 50);
     this.pressure.unref?.();
   }
@@ -143,6 +143,9 @@ export class NodeTunnelStream extends Duplex {
       }
     }
     clearInterval(this.pressure);
+    const pending = this.pendingWrite;
+    this.pendingWrite = null;
+    pending?.(err ?? new Error('the node tunnel is closed'));
     cb(err);
   }
 
@@ -150,8 +153,9 @@ export class NodeTunnelStream extends Duplex {
     if (this.finished) return;
     this.finished = true;
     clearInterval(this.pressure);
-    this.pendingWrite?.();
+    const pending = this.pendingWrite;
     this.pendingWrite = null;
+    pending?.(err ?? new Error('the node tunnel is closed'));
     try {
       this.socket.close(1000);
     } catch {

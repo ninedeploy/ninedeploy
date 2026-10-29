@@ -161,4 +161,26 @@ describe('the tunnel channel', () => {
     await vi.waitFor(() => expect(helper.kill).toHaveBeenCalled());
     expect(spawnMock.mock.calls.some((c) => (c[1] as string[])[0] === 'rm')).toBe(true);
   });
+  it('settles a backpressured write when the tunnel is destroyed', async () => {
+    const pair = socketPair();
+    pair.panel.bufferedAmount = 5 * 1024 * 1024;
+    const stream = new NodeTunnelStream(pair.panel as never, Buffer.alloc(32, 7));
+    stream.on('error', () => undefined);
+    const result = new Promise<Error | null | undefined>((resolve) => stream.write(Buffer.from('hello'), (error) => resolve(error)));
+    stream.destroy(new Error('tunnel stopped'));
+    const outcome = await Promise.race([result, new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 500))]);
+    expect(outcome).toBeInstanceOf(Error);
+  });
+
+  it('fails a pending write when the remote channel closes', async () => {
+    const pair = socketPair();
+    pair.panel.bufferedAmount = 5 * 1024 * 1024;
+    const stream = new NodeTunnelStream(pair.panel as never, Buffer.alloc(32, 7));
+    stream.on('error', () => undefined);
+    const callback = vi.fn();
+    stream.write(Buffer.from('hello'), callback);
+    pair.agent.close();
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledTimes(1));
+    expect(callback.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  });
 });
