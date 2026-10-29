@@ -34,3 +34,9 @@ it('surfaces a rejected scan instead of reporting it started', async () => {
   await expect(scan).rejects.toBeInstanceOf(NineDeployError);
   await expect(scan).rejects.toMatchObject({ status: 403, code: 'forbidden', message: 'Admin access required' });
 });
+
+it('returns a pending node scan before its image id is known', async () => {
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ started: true, imageId: null }), { status: 202 }));
+  const client = createClient({ baseUrl: 'https://panel.test', fetch });
+  expect(await client.imageScans.scan(7)).toEqual({ started: true, imageId: null });
+});

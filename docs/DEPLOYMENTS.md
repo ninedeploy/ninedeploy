@@ -622,13 +622,14 @@ No migration is needed: the freezes are stored in a single settings row.
 
 ### Image vulnerability scanning (G5.1)
 
-Trivy scans each Docker deploy's image on the panel host and rescans running images on a schedule. Panel-host Compose stacks are scanned on request and on the schedule, after they start; their scans are report-only. It is off by default; an operator turns it on under Settings → Image scanning.
+Trivy scans each Docker deploy's image on the panel host and rescans running images on a schedule. Panel-host Compose stacks and Docker services on nodes are scanned on request and on the schedule, after they start; their scans are report-only. It is off by default; an operator turns it on under Settings → Image scanning.
 
 **How the scan runs**
 - Trivy runs in a throwaway container that reads the image from `docker save` on its stdin. It never gets the Docker socket and needs no host path.
 - Only its vulnerability database persists, in the `ninedeploy-trivy-cache` volume. The first scan downloads it, which takes about half a minute; later scans of a typical image take seconds.
 - The scanner is `aquasec/trivy:0.69.3`, pinned by digest. Trivy 0.69.4 to 0.69.6 were malicious releases (CVE-2026-33634); 0.69.3 predates them. `NINEDEPLOY_TRIVY_IMAGE` selects another image, such as a mirror or a newer release; pin it by digest too.
 - Scans run one at a time on the host.
+- A node scan runs through the agent's sealed `image.scan` capability; older agents must be updated. A node owner can disable it with `NINEDEPLOY_AGENT_IMAGE_SCAN=off`.
 
 **During a deploy**
 - The new container's image is scanned after it starts and before it gets traffic. The deploy log shows the counts.
@@ -648,7 +649,7 @@ Trivy scans each Docker deploy's image on the panel host and rescans running ima
 - A service admin can press *Scan now*.
 
 **What is not scanned yet**
-- Services on nodes and Swarm services. Compose stacks do not have a pre-traffic deploy gate.
+- Swarm services. Compose stacks and node services do not have a pre-traffic deploy gate.
 
 **API, SDK and storage**
 - API: `GET`/`PUT /v1/image-scanning` (operator), `GET /v1/services/:id/image-scan` (viewer) and `POST /v1/services/:id/image-scan` (admin, runs in the background).

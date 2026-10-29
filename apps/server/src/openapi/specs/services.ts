@@ -390,7 +390,7 @@ export const servicesSpecs: RouteSpecMap = {
     summary: "Scan the image the service runs now (in the background; 409 when scanning is off or the service is not scannable)",
     tag: 'services',
     floor: 'admin',
-    responseType: '{ started: true; imageId: string }',
+    responseType: '{ started: true; imageId: string | null }',
   },
   'GET /v1/services/:id/targets': {
     summary: "A service's fan-out server targets",

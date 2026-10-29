@@ -168,7 +168,7 @@ export interface DeploysApi {
     policy: () => Promise<{ policy: ImageScanPolicy; trivyImage: string }>;
     setPolicy: (patch: ImageScanPolicyPatch) => Promise<{ policy: ImageScanPolicy; trivyImage: string }>;
     get: (serviceId: number) => Promise<{ result: ImageScanResult | null; scanning: boolean }>;
-    scan: (serviceId: number) => Promise<{ started: true; imageId: string }>;
+    scan: (serviceId: number) => Promise<{ started: true; imageId: string | null }>;
   };
 }
 
@@ -179,7 +179,7 @@ export function deploysApi(t: Transport): DeploysApi {
       policy: () => get<{ policy: ImageScanPolicy; trivyImage: string }>('/v1/image-scanning'),
       setPolicy: (patch) => send<{ policy: ImageScanPolicy; trivyImage: string }>('PUT', '/v1/image-scanning', patch),
       get: (serviceId) => get<{ result: ImageScanResult | null; scanning: boolean }>(`/v1/services/${serviceId}/image-scan`),
-      scan: (serviceId) => send<{ started: true; imageId: string }>('POST', `/v1/services/${serviceId}/image-scan`),
+      scan: (serviceId) => send<{ started: true; imageId: string | null }>('POST', `/v1/services/${serviceId}/image-scan`),
     },
     deployFreezes: {
       list: () => get<DeployFreeze[]>('/v1/deploy-freezes'),

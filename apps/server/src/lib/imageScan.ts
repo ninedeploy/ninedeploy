@@ -274,9 +274,9 @@ async function defaultNodeScan(db: DB, serverId: number, params: Record<string, 
   await assertNodeCapability(db, serverId, { cap: 'image.scan', feature: 'scan images for vulnerabilities', sealedRequired: true });
   const { agentOp } = await import('./agentClient.js');
   const res = await agentOp(db, serverId, 'image.scan', params, () => undefined);
-  const line = res.lines.find((l) => l.startsWith('ND-IMAGE-SCAN '));
-  if (!line) throw new Error('The node answered no scan result');
-  return line.slice('ND-IMAGE-SCAN '.length);
+  const frames = res.lines.filter((l) => l.startsWith('ND-IMAGE-SCAN '));
+  if (res.exitCode !== 0 || frames.length !== 1 || Buffer.byteLength(frames[0]!) > 1_048_576) throw new Error('The node scan receipt is unavailable or ambiguous');
+  return frames[0]!.slice('ND-IMAGE-SCAN '.length);
 }
 
 /**
@@ -294,11 +294,14 @@ export async function scanNodeServiceImage(
   const base = { serviceId: svc.id, trigger, deploymentId: null, blocked: false };
   let result: ImageScanResult;
   try {
-    const answer = JSON.parse(
-      await oneAtATime(() => nodeScan(db, svc.serverId, { container: svc.runtimeId, ...(opts.knownImageId ? { knownImageId: opts.knownImageId } : {}) })),
-    ) as Partial<ParsedTrivyReport> & { imageId?: unknown; unchanged?: unknown };
+    const raw = await oneAtATime(() => nodeScan(db, svc.serverId, { container: svc.runtimeId, ...(opts.knownImageId ? { knownImageId: opts.knownImageId } : {}) }));
+    if (Buffer.byteLength(raw) > 1_048_576) throw new Error('The node scan receipt exceeds its limit');
+    const answer = JSON.parse(raw) as Partial<ParsedTrivyReport> & { imageId?: unknown; unchanged?: unknown };
     if (typeof answer.imageId !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(answer.imageId)) throw new Error('The node answered no image id');
-    if (answer.unchanged === true) return null;
+    if (answer.unchanged === true) {
+      if (!opts.knownImageId || answer.imageId !== opts.knownImageId) throw new Error('The node returned an unconfirmed unchanged image');
+      return null;
+    }
     if (!answer.counts || !answer.fixable || !Array.isArray(answer.findings)) throw new Error('The node answered an incomplete report');
     result = {
       ...base,
