@@ -117,15 +117,13 @@ describe('ninedeploy tunnel db', () => {
     c2.destroy();
   });
 
-  it('refuses a bad id or port, and a database on a node', async () => {
+  it('refuses a bad id or port', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await tunnelDb(client({}), 'x');
     await tunnelDb(client({}), '7', { port: '70000' });
-    await tunnelDb(client({ serverId: 3 }), '7', {}, { credentials: async () => ({ url: (p) => p, token: '' }) });
     const text = errors.mock.calls.map((c) => String(c[0])).join('\n');
     expect(text).toContain('Usage: ninedeploy tunnel db <id>');
     expect(text).toContain('--port must be 0-65535');
-    expect(text).toContain('runs on a node');
   });
 });
 

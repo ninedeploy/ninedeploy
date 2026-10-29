@@ -100,6 +100,12 @@ describe('tunnel.open', () => {
     await expect(open({ container: '--privileged', port: 1 })).rejects.toThrow(/invalid container/);
     await expect(open({ container: 'nd-svc-api', port: 0 })).rejects.toThrow(/invalid port/);
     await expect(open({ container: 'nd-svc-api', port: '80' })).rejects.toThrow(/invalid port/);
+    // A database tunnel names its kind; the label must match it exactly.
+    capture.mockResolvedValueOnce('database\ttrue\n');
+    expect(parseTunnelChannel(await open({ container: 'nd-db-pg', port: 5432, kind: 'database' }))).not.toBeNull();
+    capture.mockResolvedValueOnce('service\ttrue\n');
+    await expect(open({ container: 'nd-svc-api', port: 5432, kind: 'database' })).rejects.toThrow(/not a database container/);
+    await expect(open({ container: 'nd-svc-api', port: 80, kind: 'host' })).rejects.toThrow(/invalid kind/);
   });
 
   it('runs the helper inside the container namespace only, without capabilities', () => {
@@ -161,6 +167,7 @@ describe('the tunnel channel', () => {
     await vi.waitFor(() => expect(helper.kill).toHaveBeenCalled());
     expect(spawnMock.mock.calls.some((c) => (c[1] as string[])[0] === 'rm')).toBe(true);
   });
+
   it('settles a backpressured write when the tunnel is destroyed', async () => {
     const pair = socketPair();
     pair.panel.bufferedAmount = 5 * 1024 * 1024;

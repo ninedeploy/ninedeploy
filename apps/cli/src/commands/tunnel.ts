@@ -6,7 +6,7 @@ import { plain } from './sources.js';
 
 /**
  * G5.8 `ninedeploy tunnel db <id> [--port <n>] [--bind <address>]`: offer a
- * panel-host database on a local port. Each local connection opens its own
+ * database (on the panel host, or on a node with agent 0.18.7) on a local port. Each local connection opens its own
  * WebSocket to `/v1/databases/:id/tunnel`, which carries it byte for byte to
  * the database container, so the database port stays closed to the internet.
  * Needs the database's admin role; the database's own login applies on top.
@@ -166,7 +166,6 @@ export async function tunnelDb(client: NineDeployClient, idRaw: string, opts: Tu
   } catch (err) {
     return error(plain(err instanceof Error ? err.message : String(err)));
   }
-  if (detail.serverId != null) return error('This database runs on a node; tunnels reach panel-host databases only for now.');
   const port = await serveTunnel(`/v1/databases/${id}/tunnel`, host, requested, detail.port ?? 0, deps);
   if (port === null) return;
 

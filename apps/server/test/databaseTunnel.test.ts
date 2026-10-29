@@ -108,7 +108,7 @@ describe('database tunnels', () => {
     await vi.waitFor(() =>
       expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), 1, 'database.tunnel.close', 'pg', expect.objectContaining({ bytesIn: big.length, bytesOut: big.length })),
     );
-    expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), 1, 'database.tunnel.open', 'pg', { databaseId: 1, engine: 'postgres' }, expect.anything());
+    expect(auditMock.audit).toHaveBeenCalledWith(expect.anything(), 1, 'database.tunnel.open', 'pg', { databaseId: 1, engine: 'postgres', serverId: null }, expect.anything());
   });
 
   it('closes when the database closes the connection', async () => {
@@ -167,13 +167,35 @@ describe('database tunnels', () => {
     await Promise.all(refusals);
   });
 
-  it('refuses a database on a node', async () => {
+  it('reaches a database on a node through its agent, and shows why when the node cannot', async () => {
     const { servers } = await import('@ninedeploy/db');
     await db.insert(servers).values({ id: 3, name: 'n', host: '203.0.113.1', port: 4600, tokenEncrypted: 'x', status: 'online' });
     const { eq } = await import('drizzle-orm');
     await db.update(databases).set({ serverId: 3 }).where(eq(databases.id, 1));
-    const r = await closed(open(1, 'op'));
-    expect(r.code).toBe(1008);
-    expect(r.reason).toContain('runs on a node');
+    const openNode = tunnelDeps.openNode;
+    const calls: unknown[] = [];
+    tunnelDeps.openNode = async (_db, serverId, target) => {
+      calls.push({ serverId, ...target });
+      return net.connect({ host: '127.0.0.1', port: echoPort });
+    };
+    const resolve = vi.fn(async () => '127.0.0.1');
+    tunnelDeps.resolveAddress = resolve;
+    try {
+      const ws = open(1, 'op');
+      await new Promise<void>((r) => ws.addEventListener('open', () => r()));
+      const reply = new Promise<Buffer>((r) => ws.addEventListener('message', (e) => r(Buffer.from(e.data as ArrayBuffer))));
+      ws.send(Buffer.from('SELECT 1'));
+      expect((await reply).toString()).toBe('SELECT 1');
+      expect(calls).toEqual([{ serverId: 3, container: 'nd-db-pg', port: echoPort, kind: 'database' }]);
+      expect(resolve).not.toHaveBeenCalled();
+      const end = closed(ws);
+      ws.close(1000);
+      await end;
+
+      tunnelDeps.openNode = async () => Promise.reject(new Error('update the node agent to v0.18.7'));
+      expect(await closed(open(1, 'op'))).toEqual({ code: 1008, reason: 'update the node agent to v0.18.7' });
+    } finally {
+      tunnelDeps.openNode = openNode;
+    }
   });
 });

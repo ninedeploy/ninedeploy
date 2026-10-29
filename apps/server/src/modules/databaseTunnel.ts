@@ -1,4 +1,5 @@
 import net from 'node:net';
+import type { Duplex } from 'node:stream';
 import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { resolveUser } from '../lib/auth.js';
@@ -7,12 +8,13 @@ import { MAX_TUNNELS_PER_USER, bridgeTunnel, reserveTunnel, tokenMayWrite } from
 import { websocketBearerToken } from '../lib/websocketAuth.js';
 import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { containerIp } from '../engine/builders/docker.js';
+import { openNodeTunnel } from '../lib/nodeTunnel.js';
 
 export { MAX_TUNNELS_PER_USER, TUNNEL_IDLE_MS } from '../lib/tunnelBridge.js';
 
 /**
  * G5.8 database tunnels: `GET /v1/databases/:id/tunnel` (WebSocket) carries
- * one TCP connection to a panel-host database, byte for byte, so
+ * one TCP connection to a database, byte for byte, so
  * `ninedeploy tunnel db <id>` can offer it on a local port while the database
  * port stays closed to the internet.
  *
@@ -21,12 +23,20 @@ export { MAX_TUNNELS_PER_USER, TUNNEL_IDLE_MS } from '../lib/tunnelBridge.js';
  * The database's own login still applies on top. Access is re-checked every
  * minute: a revoked grant or token closes the tunnel. Each tunnel is audited.
  * The bridge itself is lib/tunnelBridge.ts, shared with service tunnels.
+ * A database on a node is reached through its agent (0.18.7, `tunnel.tcp`)
+ * over the encrypted channel of lib/nodeTunnel.ts; the agent connects only
+ * to a container it confirms the panel started as a database.
  */
 
 /** Test seam: how the panel reaches a database container. */
 export const tunnelDeps = {
   resolveAddress: containerIp,
   connect: (host: string, port: number): net.Socket => net.connect({ host, port }),
+  openNode: openNodeTunnel as (
+    db: Parameters<typeof openNodeTunnel>[0],
+    serverId: number,
+    target: { container: string; port: number; kind: 'database' },
+  ) => Promise<Duplex>,
 };
 
 export const databaseTunnelRoutes: FastifyPluginAsync = async (app) => {
@@ -46,21 +56,34 @@ export const databaseTunnelRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       return refuse('not found or not allowed');
     }
-    if (d.serverId != null) return refuse('the database runs on a node; tunnels reach panel-host databases only for now');
     if (d.status !== 'running' || !d.containerName || !d.internalPort) return refuse('the database is not running');
     const release = reserveTunnel(user.id);
     if (!release) return refuse(`at most ${MAX_TUNNELS_PER_USER} tunnels at once`);
-    const host = await tunnelDeps.resolveAddress(d.containerName);
-    if (!host) {
-      release();
-      return refuse('the database container has no address');
+    let target: net.Socket | Duplex;
+    if (d.serverId != null) {
+      try {
+        target = await tunnelDeps.openNode(app.db, d.serverId, { container: d.containerName, port: d.internalPort, kind: 'database' });
+      } catch (err) {
+        release();
+        return refuse((err instanceof Error ? err.message : String(err)).slice(0, 120));
+      }
+    } else {
+      const host = await tunnelDeps.resolveAddress(d.containerName);
+      if (!host) {
+        release();
+        return refuse('the database container has no address');
+      }
+      target = tunnelDeps.connect(host, d.internalPort);
     }
-    // The client may have left while the address was resolved: open nothing for it.
-    if (socket.readyState !== socket.OPEN) return release();
-    void audit(app.db, user.id, 'database.tunnel.open', d.name, { databaseId: d.id, engine: d.engine }, { ip: req.ip, userAgent: req.headers['user-agent'] });
+    // The client may have left while the target was opened: keep nothing for it.
+    if (socket.readyState !== socket.OPEN) {
+      target.destroy();
+      return release();
+    }
+    void audit(app.db, user.id, 'database.tunnel.open', d.name, { databaseId: d.id, engine: d.engine, serverId: d.serverId ?? null }, { ip: req.ip, userAgent: req.headers['user-agent'] });
     bridgeTunnel({
       socket,
-      tcp: tunnelDeps.connect(host, d.internalPort),
+      tcp: target,
       release,
       label: 'database',
       stillAllowed: async () => {

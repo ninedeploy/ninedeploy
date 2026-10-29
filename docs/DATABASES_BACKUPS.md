@@ -167,7 +167,7 @@ Public access exposes the database's **root (superuser) account**: create a limi
 
 ### Tunnels through the panel (G5.8)
 
-You can reach a database on the panel host from your machine without public access:
+You can reach a database, on the panel host or on a node, from your machine without public access:
 
 ```bash
 ninedeploy tunnel db <db-id>                     # listens on 127.0.0.1, on the engine's port when it is free
@@ -179,6 +179,7 @@ Then point `psql`, a GUI client or a local app at the address it prints, using t
 **How it works**
 - Each local connection opens its own WebSocket to `GET /v1/databases/:id/tunnel`.
 - The panel carries that connection byte for byte to the database container.
+- For a database on a node, the node's agent (0.18.7 or newer, capability `tunnel.tcp`) opens the connection from inside the database container's network namespace. The panel and the agent talk over a single-use channel encrypted per tunnel. The agent connects only to a running container the panel started as a database. The node owner can turn tunnels off with `NINEDEPLOY_AGENT_TUNNELS=off`.
 
 **Who may use it, and what is recorded**
 - It needs `admin` on the database, the same as revealing its credentials. A scope-restricted API token must also be allowed to write databases.
@@ -188,7 +189,6 @@ Then point `psql`, a GUI client or a local app at the address it prints, using t
 - Each tunnel is audited as `database.tunnel.open` and `database.tunnel.close`, with its duration and byte counts.
 
 **Limits for now**
-- Databases on nodes are not reachable this way yet.
 - `--bind` listens on another local address. Anyone who can reach that address can then use the tunnel.
 
 ### PgBouncer connection pooling

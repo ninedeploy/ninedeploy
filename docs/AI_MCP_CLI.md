@@ -137,7 +137,7 @@ ninedeploy databases public-access <db-id> --enable --allow 203.0.113.0/24   # u
 ninedeploy databases public-access <db-id> --enable --tls terminate --tls-host db.example.com  # not mysql/mariadb
 ninedeploy databases public-access <db-id> --disable
 
-# Database tunnel (G5.8, database admin) — a panel-host database on a local port, no public access needed
+# Database tunnel (G5.8, database admin) — a database (panel host or node) on a local port, no public access needed
 ninedeploy tunnel db <db-id> [--port 15432] [--bind 127.0.0.1]
 # Service tunnel (G5.8, service admin) — a container port of a docker service (panel host or node), past its domains
 ninedeploy tunnel service <svc-id> [--target 9229] [--replica 2] [--port 9229] [--bind 127.0.0.1]

@@ -11,9 +11,10 @@ import { RE_NAME, str } from './operands.js';
  * G5.8 node tunnels, agent side: one TCP connection to a port of a service
  * container on this node, carried over an encrypted channel.
  *
- *  1. `tunnel.open {container, port}` (sealed only) checks that the container
- *     is a running service container the panel started (`ninedeploy.managed=
- *     service`) and parks a single-use channel for 30 s. The answer, inside
+ *  1. `tunnel.open {container, port, kind?}` (sealed only) checks that the
+ *     container is a running container the panel started as that kind
+ *     (`ninedeploy.managed=service`, the default, or `=database`) and parks
+ *     a single-use channel for 30 s. The answer, inside
  *     the sealed reply, is `ND-TUNNEL {"channel","salt"}`.
  *  2. The panel connects `GET /agent/tunnel` offering
  *     `ninedeploy.agent-tunnel.<channel>`. Every frame both ways is
@@ -79,16 +80,18 @@ export function closeAllTunnelChannels(): void {
   for (const ch of [...channels.values()]) closeChannel(ch);
 }
 
-/** `tunnel.open {container, port}` → `ND-TUNNEL {"channel","salt"}`. */
+/** `tunnel.open {container, port, kind?}` → `ND-TUNNEL {"channel","salt"}`. */
 async function tunnelOpenOp(params: Record<string, unknown>, onLine: (line: string) => void, ctx: AgentOpContext): Promise<number> {
   if (!ctx.sealed) throw new Error('Refusing to open a tunnel over the unencrypted transport: tunnel.open is accepted only inside a sealed request');
   const container = str(params, 'container');
   if (!container || container.length > 128 || !RE_NAME.test(container)) throw new Error('tunnel.open: invalid container');
   const port = params['port'];
   if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('tunnel.open: invalid port');
+  const kind = params['kind'] ?? 'service';
+  if (kind !== 'service' && kind !== 'database') throw new Error('tunnel.open: invalid kind');
   if (channels.size >= TUNNEL_MAX_CHANNELS) throw new Error(`Too many open tunnels on this node (at most ${TUNNEL_MAX_CHANNELS})`);
   const [label = '', running = ''] = (await capture('docker', ['inspect', '--format', TUNNEL_INSPECT_FORMAT, container], { timeoutMs: 30_000 })).trim().split('\t');
-  if (label !== 'service') throw new Error(`tunnel.open: ${container} is not a service container the panel started`);
+  if (label !== kind) throw new Error(`tunnel.open: ${container} is not a ${kind} container the panel started`);
   if (running !== 'true') throw new Error(`tunnel.open: ${container} is not running`);
   const id = randomBytes(16).toString('hex');
   const ch: TunnelChannel = {

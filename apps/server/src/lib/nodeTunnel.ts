@@ -176,7 +176,7 @@ const defaultSocketFactory: ChannelSocketFactory = (url, protocols) => new WebSo
 
 /** Refuses (422) a node whose agent cannot carry tunnels, or reaches it only unsealed. */
 export async function assertNodeTunnels(db: DB, serverId: number): Promise<void> {
-  await assertNodeCapability(db, serverId, { cap: 'tunnel.tcp', feature: 'open tunnels to node services', sealedRequired: true });
+  await assertNodeCapability(db, serverId, { cap: 'tunnel.tcp', feature: 'open tunnels to node services and databases', sealedRequired: true });
 }
 
 /**
@@ -186,14 +186,14 @@ export async function assertNodeTunnels(db: DB, serverId: number): Promise<void>
 export async function openNodeTunnel(
   db: DB,
   serverId: number,
-  target: { container: string; port: number },
+  target: { container: string; port: number; kind?: 'service' | 'database' },
   opts: { socketFactory?: ChannelSocketFactory } = {},
 ): Promise<NodeTunnelStream> {
   const row = await db.query.servers.findFirst({ where: eq(servers.id, serverId) });
   if (!row) throw new Error(`node #${serverId} no longer exists`);
   await assertNodeTunnels(db, serverId);
   if (!(await agentTransportSealed(db, serverId))) throw new Error(`the panel reaches node "${row.name}" only over the unencrypted transport`);
-  const res = await agentOp(db, serverId, 'tunnel.open', { container: target.container, port: target.port }, () => undefined);
+  const res = await agentOp(db, serverId, 'tunnel.open', { container: target.container, port: target.port, ...(target.kind === 'database' ? { kind: 'database' } : {}) }, () => undefined);
   const channel = parseTunnelChannel(res.lines);
   if (!channel) throw new Error(`the agent on node "${row.name}" answered tunnel.open without a channel`);
   const key = deriveFrameKey(sha256(decrypt(row.tokenEncrypted)), channel.salt, TUNNEL_HKDF_INFO);

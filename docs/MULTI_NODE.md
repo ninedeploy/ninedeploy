@@ -68,7 +68,7 @@ The panel keeps the last answer in memory for up to 5 minutes, so after an agent
 | ClickHouse, Meilisearch and RabbitMQ backups and restores of node databases | `db.manage` + `db.dump.extra` | 0.18.7 | `NINEDEPLOY_AGENT_DATABASES=off` |
 | Trivy image scans of node services (scheduled and on request) | `image.scan` | 0.18.7 | `NINEDEPLOY_AGENT_IMAGE_SCAN=off` |
 | Moving a compose stack with its volumes (list, create and transfer `ndcmp-<slug>_<key>`) | `volume.compose` | 0.18.7 | `NINEDEPLOY_AGENT_VOLUME_COMPOSE=off` |
-| `ninedeploy tunnel service` to a service on the node (sealed `tunnel.open`, encrypted `/agent/tunnel`) | `tunnel.tcp` | 0.18.7 | `NINEDEPLOY_AGENT_TUNNELS=off` |
+| `ninedeploy tunnel service` / `tunnel db` to a service or database on the node (sealed `tunnel.open`, encrypted `/agent/tunnel`) | `tunnel.tcp` | 0.18.7 | `NINEDEPLOY_AGENT_TUNNELS=off` |
 
 A switch counts as off when it is `off`, `false`, `0`, `no` or `disabled`. Switching a feature off removes its capability from the ping, and the agent refuses the operation too.
 
