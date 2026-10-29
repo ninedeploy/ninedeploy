@@ -43,6 +43,7 @@ import { serverRoutes } from './servers.js';
 import { nodeOsUpdateRoutes, osUpdateRoutes } from './osUpdates.js';
 import { cloudRoutes } from './cloud.js';
 import { deployFreezeRoutes } from './deployFreezes.js';
+import { usageRoutes } from './usage.js';
 import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { databaseTunnelRoutes } from './databaseTunnel.js';
 import { serviceTunnelRoutes } from './serviceTunnel.js';
@@ -212,6 +213,7 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // G4.3 cloud servers (Hetzner Cloud), operator only.
   await app.register(cloudRoutes, { prefix: '/cloud' });
   await app.register(deployFreezeRoutes, { prefix: '/deploy-freezes' });
+  await app.register(usageRoutes, { prefix: '/usage' });
   await app.register(imageScanPolicyRoutes, { prefix: '/image-scanning' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
   // 0.16.1: the operator's Getting started checklist (Dashboard card).

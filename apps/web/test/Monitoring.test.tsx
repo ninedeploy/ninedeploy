@@ -11,6 +11,12 @@ const apiMock = vi.hoisted(() => ({
     services: { list: vi.fn() },
     servers: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), test: vi.fn(), sshTest: vi.fn(), bootstrapLogs: vi.fn(), stats: vi.fn() },
     limits: { setService: vi.fn(), setDatabase: vi.fn() },
+    usage: {
+      report: vi.fn().mockResolvedValue({
+        from: '', to: '', days: 30, currency: 'USD', historyDays: 30, trafficAnalytics: true, services: [], projects: [], workspaces: [], servers: [],
+        totals: { cpuCoreHours: 0, memoryGbHours: 0, egressGb: 0, requests: 0, cost: null },
+      }),
+    },
   },
 }));
 

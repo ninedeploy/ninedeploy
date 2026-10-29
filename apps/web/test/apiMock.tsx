@@ -333,6 +333,15 @@ export function createFakeApiModule() {
     attachments: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     env: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     projectEnv: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
+    // Usage and cost (Monitoring, operators): an empty report by default.
+    usage: {
+      report: vi.fn().mockResolvedValue({
+        from: '2026-10-01T00:00:00.000Z', to: '2026-10-31T00:00:00.000Z', days: 30, currency: 'USD', historyDays: 30, trafficAnalytics: true,
+        services: [], projects: [], workspaces: [], servers: [],
+        totals: { cpuCoreHours: 0, memoryGbHours: 0, egressGb: 0, requests: 0, cost: null },
+      }),
+      costs: vi.fn(), setCosts: vi.fn(),
+    },
     stats: {
       observability: {
         get: vi.fn().mockResolvedValue({ settings: { retentionDays: 1, prometheusEnabled: false, otlpEndpoint: '', logQueueMaxMb: 16, hasOtlpAuthorization: false }, exportStatus: { lastAttemptAt: null, lastSuccessAt: null, result: null } }),

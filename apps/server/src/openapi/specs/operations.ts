@@ -17,6 +17,8 @@ import {
   panelBackupSettingsPatch,
   selfUpdateStart,
   statsSnapshotQuery,
+  usageCostsInput,
+  usageQuery,
   vultrServerCreate,
   vultrTokenInput,
 } from '@ninedeploy/schemas';
@@ -469,6 +471,24 @@ export const operationsSpecs: RouteSpecMap = {
     summary: 'Delete a Vultr instance and its node (refused while it hosts anything)',
     tag: 'cloud',
     floor: 'operator',
+  },
+  // ROADMAP item 9: usage and cost
+  'GET /v1/usage': {
+    summary: 'CPU-hours, memory, bandwidth and cost per service, project and workspace over a window',
+    tag: 'usage',
+    floor: 'operator',
+    query: usageQuery,
+    validation: 'zod',
+    responseType: 'UsageReport',
+  },
+  'GET /v1/usage/costs': { summary: 'The monthly cost of each server and the currency', tag: 'usage', floor: 'operator', responseType: 'UsageCosts' },
+  'PUT /v1/usage/costs': {
+    summary: 'Set the monthly cost of each server and the currency',
+    tag: 'usage',
+    floor: 'operator',
+    body: usageCostsInput,
+    validation: 'zod',
+    responseType: 'UsageCosts',
   },
   // G5.5 deploy freezes
   'GET /v1/deploy-freezes': { summary: 'Deploy freezes in force', tag: 'deploy-freezes', floor: 'operator', responseType: 'DeployFreeze[]' },

@@ -314,6 +314,8 @@ GET /v1/traefik/logs operator -
 GET /v1/traefik/status operator -
 GET /v1/traefik/version operator -
 GET /v1/tunnels operator -
+GET /v1/usage operator -
+GET /v1/usage/costs operator -
 GET /v1/users operator nd://scope/read/users
 GET /v1/volumes operator nd://scope/read/volumes
 GET /v1/volumes/:name/backups viewer nd://scope/read/volumes
@@ -619,6 +621,7 @@ PUT /v1/traefik/certificates/custom/:id operator -
 PUT /v1/traefik/certificates/shared operator -
 PUT /v1/traefik/custom-config operator -
 PUT /v1/traefik/http3 operator -
+PUT /v1/usage/costs operator -
 PUT /v1/volumes/:name/files operator nd://scope/write/volumes
 PUT /v1/workspaces/:id/two-factor admin -
 PUT /v1/workspaces/:wid/email-templates/:name admin -

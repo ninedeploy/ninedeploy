@@ -5969,4 +5969,32 @@ export const TR: Readonly<Record<string, string>> = {
   'Plan': 'Plan',
   'Vultr bills the instance from the moment it is created. Its user data installs Docker and starts the NineDeploy agent on port 4600; the panel replaces the agent key as soon as the agent answers.':
     'Vultr instance\'ı oluşturulduğu andan itibaren ücretlendirir. User data\'sı Docker\'ı kurar ve NineDeploy agent\'ını 4600 portunda başlatır; agent yanıt verir vermez panel agent anahtarını değiştirir.',
+
+  // ── Usage and cost ────────────────────────────────────────────────────
+  'Usage and cost': 'Kullanım ve maliyet',
+  'Window': 'Zaman aralığı',
+  'Last {days} days': 'Son {days} gün',
+  'Group by': 'Gruplama',
+  'Server costs': 'Sunucu maliyetleri',
+  'Usage could not be read': 'Kullanım okunamadı',
+  'Reading usage…': 'Kullanım okunuyor…',
+  'Resource history is kept for {kept} days, so CPU and memory older than that are not counted. Raise it under Resource history to cover the whole window.':
+    'Kaynak geçmişi {kept} gün tutuluyor; bundan eski CPU ve bellek sayılmaz. Tüm aralığı kapsamak için Kaynak geçmişi altında süreyi artırın.',
+  'Traffic analytics is off: bandwidth and requests are not counted.':
+    'Trafik analitiği kapalı: bant genişliği ve istekler sayılmaz.',
+  'A service in several groups counts in each, so groups do not add up to the total.':
+    'Birden fazla gruptaki bir servis her birinde sayılır; bu yüzden grupların toplamı genel toplamı vermez.',
+  'Nothing to show yet.': 'Henüz gösterilecek bir şey yok.',
+  'CPU (core-hours)': 'CPU (çekirdek-saat)',
+  'Memory (GiB-hours)': 'Bellek (GiB-saat)',
+  'Egress (GB)': 'Çıkış trafiği (GB)',
+  'Cost': 'Maliyet',
+  'Total': 'Toplam',
+  'Not carried by any service: {list}': 'Hiçbir servise yansımayan: {list}',
+  'Server costs saved': 'Sunucu maliyetleri kaydedildi',
+  'Server costs could not be saved: {error}': 'Sunucu maliyetleri kaydedilemedi: {error}',
+  'What each server costs a month. It is split among the services on it, half by their share of its CPU time and half by their share of its memory. Leave a server empty to leave it unpriced.':
+    'Her sunucunun aylık maliyeti. Üzerindeki servisler arasında, yarısı CPU süresindeki paylarına, yarısı bellekteki paylarına göre bölünür. Fiyatlandırmak istemediğiniz sunucuyu boş bırakın.',
+  'Currency': 'Para birimi',
+  'Monthly cost of {name}': '{name} aylık maliyeti',
 };

@@ -238,6 +238,38 @@ Two alert metrics read the traffic analytics of one service: `error_rate`, the s
 - Only traffic that passes the panel host's Traefik is counted, as in the traffic view.
 - Fired and recovered alerts go to the same channels and subscriptions as the other alert metrics. No migration: `alert_rules.metric` is free text.
 
+## Usage and cost
+
+**Monitoring → Usage and cost** (operators) shows what each service used over the last 24 hours or 7, 30 or 90 days, and what that cost. Group it by service, project or workspace.
+
+What is counted:
+- **CPU in core-hours.** One fully busy core for an hour is 1. It comes from the 30-second samples and their summaries described under [resource history](#configure-resource-history). The window uses the same tier boundaries as the charts, so no sample is counted twice.
+- **Memory in GiB-hours**, from the same samples.
+- **Egress in GB and requests**, from the hourly rows of traffic analytics. Both stay at zero while traffic analytics is off.
+
+Each sample stands for one 30-second interval. A collection cycle the panel skipped, for example while it was restarting, is not counted.
+
+CPU and memory reach back only as far as resource history is kept. With the default of one day, a 30-day window counts one day, and the card says so. Raise the retention to cover longer windows; data already deleted does not come back.
+
+**Cost.** Under *Server costs*, enter what each server costs a month and the currency. The panel host is one of the servers. For a window, the panel:
+1. prorates each server's monthly cost at 730 hours a month;
+2. splits it among the services on that server: half by their share of its CPU time, half by their share of its memory.
+
+A server that measured nothing keeps its whole cost as *not carried by any service*. A server with no cost entered leaves its services unpriced.
+
+Limits:
+- A service is priced on its primary server. Extra placements and Swarm tasks on other nodes are not split out.
+- A service tagged into two projects or workspaces counts in both, so group rows do not add up to the total.
+- Disk is not counted yet.
+
+Routes (operator only):
+- `GET /v1/usage?days=30` returns the report, 1–90 days.
+- `GET` and `PUT /v1/usage/costs` read and set the costs, for example `{ "currency": "EUR", "servers": [{ "serverId": null, "monthlyCost": 40 }] }`, where `serverId: null` is the panel host. A change is audited as `usage.costs_update`.
+
+SDK: `usage.report({ days })`, `usage.costs()` and `usage.setCosts(input)`.
+
+No migration: the costs are one settings row (`usage_costs`). Nothing new is collected.
+
 ## API and SDK
 
 All monitoring settings/export and log-queue management routes require an

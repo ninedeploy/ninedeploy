@@ -1,4 +1,4 @@
-// Client surface: system, health, about, dashboard, stats, topology, activity, alerts, metricHistory, buildCache, housekeeping, doctor, demo.
+// Client surface: system, health, about, dashboard, stats, usage, topology, activity, alerts, metricHistory, buildCache, housekeeping, doctor, demo.
 // Split out of the former single-file SDK entry (src/index.ts); the public
 // surface is re-exported unchanged from there.
 import type {
@@ -29,6 +29,9 @@ import type {
   GitopsCheck,
   GitopsConfigInput,
   GitopsView,
+  UsageCosts,
+  UsageCostsInput,
+  UsageReport,
 } from '@ninedeploy/schemas';
 import type { HealthStatus, ImageInfo, PruneImagesInput, PruneImagesResult } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -107,6 +110,14 @@ export interface SystemApi {
     /** Omit the filter for local-host monitoring; databaseId returns only that authorized database on its recorded host. */
     snapshot: (opts?: { databaseId?: number }) => Promise<StatsSnapshot>;
     metrics: (serviceId: number, opts?: { kind?: 'cpu' | 'memory'; minutes?: number }) => Promise<MetricSeries>;
+  };
+  /** Usage and cost (operator only): CPU-hours, memory, bandwidth and cost per service, project and workspace. */
+  usage: {
+    /** The last `days` days (1–90, default 30). */
+    report: (opts?: { days?: number }) => Promise<UsageReport>;
+    costs: () => Promise<UsageCosts>;
+    /** The monthly cost of each server (`serverId: null` is the panel host). */
+    setCosts: (input: UsageCostsInput) => Promise<UsageCosts>;
   };
   topology: {
     get: () => Promise<TopologyGraph>;
@@ -247,6 +258,11 @@ export function systemApi(t: Transport): SystemApi {
         get<MetricSeries>(
           `/v1/services/${serviceId}/metrics?kind=${opts?.kind ?? 'cpu'}&minutes=${opts?.minutes ?? 60}`,
         ),
+    },
+    usage: {
+      report: (opts) => get<UsageReport>(`/v1/usage?days=${opts?.days ?? 30}`),
+      costs: () => get<UsageCosts>('/v1/usage/costs'),
+      setCosts: (input) => send<UsageCosts>('PUT', '/v1/usage/costs', input),
     },
     topology: {
       get: () => get<TopologyGraph>('/v1/topology'),

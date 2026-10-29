@@ -43,6 +43,7 @@ export * from './autoscale.js';
 export * from './containerMutation.js';
 export * from './osUpdates.js';
 export * from './cloud.js';
+export * from './usage.js';
 export * from './deployFreeze.js';
 export * from './imageScan.js';
 export * from './sizing.js';
