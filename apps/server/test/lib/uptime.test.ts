@@ -82,6 +82,14 @@ const http0 = (over: Partial<Parameters<typeof u.probeMonitor>[0]> = {}) => ({
   ...over,
 });
 
+async function closedLoopbackPort(): Promise<number> {
+  const listener = net.createServer();
+  await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve));
+  const port = (listener.address() as AddressInfo).port;
+  await new Promise<void>((resolve, reject) => listener.close((err) => err ? reject(err) : resolve()));
+  return port;
+}
+
 describe('probeMonitor', () => {
   it('http: a matching status is up, with a response time', async () => {
     const r = await u.probeMonitor(http0());
@@ -114,7 +122,7 @@ describe('probeMonitor', () => {
 
   it('http: a slow target times out; a closed port is refused', async () => {
     expect(await u.probeMonitor(http0({ target: `${base}/slow`, timeoutSeconds: 1 }))).toMatchObject({ ok: false, responseMs: null, error: 'timed out after 1 s' });
-    const closed = await u.probeMonitor(http0({ target: 'http://127.0.0.1:1/' }));
+    const closed = await u.probeMonitor(http0({ target: `http://127.0.0.1:${await closedLoopbackPort()}/` }));
     expect(closed.ok).toBe(false);
     expect(closed.error).toMatch(/ECONNREFUSED/);
   });
@@ -148,7 +156,7 @@ describe('probeMonitor', () => {
 
   it('tcp: a listening port is up, a closed one down, a bad target refused', async () => {
     expect(await u.probeMonitor({ ...http0(), kind: 'tcp', target: `127.0.0.1:${tcpPort}` })).toMatchObject({ ok: true, statusCode: null });
-    const closed = await u.probeMonitor({ ...http0(), kind: 'tcp', target: '127.0.0.1:1' });
+    const closed = await u.probeMonitor({ ...http0(), kind: 'tcp', target: `127.0.0.1:${await closedLoopbackPort()}` });
     expect(closed).toMatchObject({ ok: false });
     expect(closed.error).toMatch(/ECONNREFUSED/);
     expect(await u.probeMonitor({ ...http0(), kind: 'tcp', target: 'nope' })).toMatchObject({ ok: false, error: 'invalid host:port' });
