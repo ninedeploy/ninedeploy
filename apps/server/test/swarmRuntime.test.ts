@@ -263,6 +263,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'lib/nodeProxyTrafficClient.ts': { exempt: 'node-only observation refuses Swarm and changed placement before agent operations; runtimeId is an ownership comparison, never a local container command' },
   'lib/webhookDispatch.ts': { exempt: 'PR previews never run on Swarm (a preview row has no orchestrator)' },
   'modules/ai.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
+  'lib/alertInvestigation.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
   'modules/containers.ts': { exempt: 'node container access; Swarm services are never node-pinned' },
   'modules/databases.ts': { exempt: 'node database networks; Swarm services cannot attach databases' },
   'modules/demo.ts': { exempt: 'the legacy demo rows' },
