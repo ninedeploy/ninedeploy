@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { alertRules, createDb, environments, services, settings, users, workspaces, type DB } from '@ninedeploy/db';
+import { alertRules, createDb, environments, services, serviceWorkspaces, settings, users, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
 
 const logs = vi.hoisted(() => ({ readRuntimeLogs: vi.fn(async (..._a: unknown[]) => '') }));
 vi.mock('../../src/lib/runtimeLogs.js', () => logs);
@@ -22,6 +22,8 @@ vi.mock('../../src/lib/audit.js', () => auditMock);
 const I = await import('../../src/lib/alertInvestigation.js');
 const { encrypt } = await import('../../src/lib/crypto.js');
 const { getSettingJson, setSettingJson, setSettingString } = await import('../../src/lib/settings.js');
+const { alertRoutes } = await import('../../src/modules/alerts.js');
+const { asUser, buildTestApp } = await import('../helpers.js');
 
 const MIGRATIONS = fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url));
 const NOW = Date.parse('2026-10-29T12:00:00Z');
@@ -120,6 +122,33 @@ describe('investigateFiredAlert', () => {
     expect(await I.investigateFiredAlert(db, rule(), 99, undefined, NOW + 60_000)).toBe('capped');
     // An hour after the first one, a slot is free again.
     expect(await I.investigateFiredAlert(db, rule(), 100, undefined, NOW + 60 * 60 * 1000)).toBe('done');
+  });
+
+  it('GET /alerts hides an answer from a member once the service sits in a protected lane', async () => {
+    await db.insert(users).values({ id: 2, email: 'member@x.test', passwordHash: 'h' });
+    await db.insert(workspaceMembers).values([
+      { workspaceId: 1, userId: 1, role: 'owner' },
+      { workspaceId: 1, userId: 2, role: 'member' },
+    ]);
+    await db.insert(serviceWorkspaces).values([
+      { serviceId: 5, workspaceId: 1 },
+      { serviceId: 7, workspaceId: 1 },
+    ]);
+    const answer = { at: 'x', model: 'm', value: 1, analysis: 'quoted log lines' };
+    await setSettingJson(db, 'alert_investigation:1', answer);
+    await setSettingJson(db, 'alert_investigation:2', answer); // investigated before the lane was protected
+    const app = await buildTestApp({ db });
+    await app.register(alertRoutes, { prefix: '/alerts' });
+    const read = async (headers: Record<string, string>) =>
+      new Map(((await app.inject({ url: '/alerts', headers })).json() as Array<{ id: number; investigation?: unknown }>).map((r) => [r.id, r.investigation]));
+
+    const asMember = await read(asUser({ id: 2, isOperator: false }));
+    expect(asMember.get(1)).toEqual(answer);
+    expect(asMember.has(2)).toBe(true);
+    expect(asMember.get(2)).toBeUndefined();
+    const asOperator = await read(asUser({ id: 1, isOperator: true }));
+    expect(asOperator.get(2)).toEqual(answer);
+    await app.close();
   });
 
   it('drops answers whose rule is gone, and ignores unreadable rows', async () => {

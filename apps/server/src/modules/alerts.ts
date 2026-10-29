@@ -1,5 +1,5 @@
-import { desc, eq } from 'drizzle-orm';
-import { alertRules, settings, type alertState } from '@ninedeploy/db';
+import { desc, eq, inArray } from 'drizzle-orm';
+import { alertRules, services, settings, type alertState } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import {
   HOST_ONLY_ALERT_METRICS,
@@ -14,6 +14,7 @@ import { ALERT_INVESTIGATION_PREFIX, loadAlertInvestigations } from '../lib/aler
 import { badRequest, notFound, parseId } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { visibleServiceIdSet } from '../lib/resourceAccess.js';
+import { maySeeLaneSecrets } from '../lib/protectedLanes.js';
 
 /**
  * `alert_rules.metric` is a free-text SQLite column; the drizzle `enum` on it is
@@ -60,7 +61,17 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
     const states = await app.db.query.alertState.findMany();
     const byRule = new Map(states.map((s) => [s.ruleId, s]));
     const investigations = await loadAlertInvestigations(app.db);
-    return rules.map((r) => serialize(r, byRule.get(r.id), investigations.get(r.id)));
+    // An investigation quotes the service's logs: shown only to a caller who
+    // may read them now. A service moved into a protected lane after its
+    // alert was investigated keeps the answer from its members.
+    const withAnswer = [...new Set(rules.filter((r) => investigations.has(r.id) && r.serviceId != null).map((r) => r.serviceId!))];
+    const readable = new Set<number>();
+    if (withAnswer.length > 0) {
+      for (const svc of await app.db.select().from(services).where(inArray(services.id, withAnswer))) {
+        if (await maySeeLaneSecrets(app.db, svc, req.user!)) readable.add(svc.id);
+      }
+    }
+    return rules.map((r) => serialize(r, byRule.get(r.id), r.serviceId != null && readable.has(r.serviceId) ? investigations.get(r.id) : undefined));
   });
 
   // Everything below mutates system-wide config — admin-only per the RBAC model.
