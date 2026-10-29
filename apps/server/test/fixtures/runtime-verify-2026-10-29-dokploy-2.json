@@ -19,8 +19,9 @@
     {
       "id": "dokploy-paperless-ngx",
       "profile": "compose",
-      "ok": true,
-      "seconds": 103
+      "ok": false,
+      "seconds": 103,
+      "error": "passed the smoke run; withdrawn after review: no superuser is provisioned before the service is routed"
     },
     {
       "id": "dokploy-gitea-postgres",
@@ -39,14 +40,16 @@
     {
       "id": "dokploy-tandoor-recipes",
       "profile": "compose",
-      "ok": true,
-      "seconds": 48
+      "ok": false,
+      "seconds": 48,
+      "error": "passed the smoke run; withdrawn after review: no admin is provisioned, so the first visitor becomes admin"
     },
     {
       "id": "dokploy-kitchenowl",
       "profile": "compose",
-      "ok": true,
-      "seconds": 60
+      "ok": false,
+      "seconds": 60,
+      "error": "passed the smoke run; withdrawn after review: no admin is provisioned, so the first visitor becomes admin"
     },
     {
       "id": "dokploy-flarum",
@@ -79,20 +82,23 @@
     {
       "id": "dokploy-roundcube",
       "profile": "compose",
-      "ok": true,
-      "seconds": 61
+      "ok": false,
+      "seconds": 61,
+      "error": "passed the smoke run; withdrawn after review: without a fixed IMAP host the login form connects to any server (internal network reach)"
     },
     {
       "id": "dokploy-rsshub",
       "profile": "compose",
-      "ok": true,
-      "seconds": 116
+      "ok": false,
+      "seconds": 116,
+      "error": "passed the smoke run; withdrawn after review: images pinned to mutable tags and no access key"
     },
     {
       "id": "dokploy-ryot",
       "profile": "compose",
-      "ok": true,
-      "seconds": 52
+      "ok": false,
+      "seconds": 52,
+      "error": "passed the smoke run; withdrawn after review: open registration and pull_policy always"
     },
     {
       "id": "dokploy-sftpgo",

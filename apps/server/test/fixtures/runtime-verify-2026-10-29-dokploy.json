@@ -17,8 +17,9 @@
     {
       "id": "dokploy-hedgedoc",
       "profile": "compose",
-      "ok": true,
-      "seconds": 51
+      "ok": false,
+      "seconds": 51,
+      "error": "withdrawn after review: anonymous editing is on by default (the stack itself started)"
     },
     {
       "id": "dokploy-etherpad",
@@ -44,26 +45,30 @@
     {
       "id": "dokploy-opengist",
       "profile": "compose",
-      "ok": true,
-      "seconds": 8
+      "ok": false,
+      "seconds": 8,
+      "error": "withdrawn after review: open registration; the first visitor becomes admin (the stack itself started)"
     },
     {
       "id": "dokploy-otterwiki",
       "profile": "compose",
-      "ok": true,
-      "seconds": 21
+      "ok": false,
+      "seconds": 21,
+      "error": "withdrawn after review: open registration; the first visitor becomes admin (the stack itself started)"
     },
     {
       "id": "dokploy-flatnotes",
       "profile": "compose",
-      "ok": true,
-      "seconds": 10
+      "ok": false,
+      "seconds": 10,
+      "error": "withdrawn after review: image pinned to the mutable :latest tag (the stack itself started)"
     },
     {
       "id": "dokploy-dumbpad",
       "profile": "compose",
-      "ok": true,
-      "seconds": 12
+      "ok": false,
+      "seconds": 12,
+      "error": "withdrawn after review: image pinned to the mutable :latest tag; no authentication by default (the stack itself started)"
     },
     {
       "id": "dokploy-ihatemoney",
@@ -75,20 +80,23 @@
     {
       "id": "dokploy-linkstack",
       "profile": "compose",
-      "ok": true,
-      "seconds": 46
+      "ok": false,
+      "seconds": 46,
+      "error": "withdrawn after review: image pinned to :latest; references variables the blueprint never defines (the stack itself started)"
     },
     {
       "id": "dokploy-unleash",
       "profile": "compose",
-      "ok": true,
-      "seconds": 43
+      "ok": false,
+      "seconds": 43,
+      "error": "withdrawn after review: starts with the publicly known admin login (admin / unleash4all) (the stack itself started)"
     },
     {
       "id": "dokploy-joplin-server",
       "profile": "compose",
-      "ok": true,
-      "seconds": 184
+      "ok": false,
+      "seconds": 184,
+      "error": "withdrawn after review: starts with the publicly known admin login (admin@localhost / admin) (the stack itself started)"
     },
     {
       "id": "dokploy-filegator",
@@ -100,8 +108,9 @@
     {
       "id": "dokploy-directory-lister",
       "profile": "compose",
-      "ok": true,
-      "seconds": 33
+      "ok": false,
+      "seconds": 33,
+      "error": "withdrawn after review: image pinned to the mutable :latest tag (the stack itself started)"
     },
     {
       "id": "dokploy-statping-ng",
@@ -113,14 +122,16 @@
     {
       "id": "dokploy-upsnap",
       "profile": "compose",
-      "ok": true,
-      "seconds": 11
+      "ok": false,
+      "seconds": 11,
+      "error": "withdrawn after review: the first visitor becomes admin of an app that can run shutdown commands (the stack itself started)"
     },
     {
       "id": "dokploy-rss-bridge",
       "profile": "compose",
-      "ok": true,
-      "seconds": 15
+      "ok": false,
+      "seconds": 15,
+      "error": "withdrawn after review: image pinned to the mutable :latest tag (the stack itself started)"
     },
     {
       "id": "dokploy-bytestash",
@@ -132,14 +143,16 @@
     {
       "id": "dokploy-ontime",
       "profile": "compose",
-      "ok": true,
-      "seconds": 14
+      "ok": false,
+      "seconds": 14,
+      "error": "withdrawn after review: no authentication by default (the stack itself started)"
     },
     {
       "id": "dokploy-openspeedtest",
       "profile": "compose",
-      "ok": true,
-      "seconds": 28
+      "ok": false,
+      "seconds": 28,
+      "error": "withdrawn after review: image pinned to the mutable :latest tag (the stack itself started)"
     },
     {
       "id": "dokploy-cloudcommander",
@@ -158,26 +171,30 @@
     {
       "id": "dokploy-gitea-sqlite",
       "profile": "compose",
-      "ok": true,
-      "seconds": 14
+      "ok": false,
+      "seconds": 14,
+      "error": "withdrawn after review: open install wizard and registration on a public URL (the stack itself started)"
     },
     {
       "id": "dokploy-nginx",
       "profile": "compose",
-      "ok": true,
-      "seconds": 12
+      "ok": false,
+      "seconds": 12,
+      "error": "withdrawn after review: image pinned to the mutable :latest tag (the stack itself started)"
     },
     {
       "id": "dokploy-couchdb",
       "profile": "compose",
-      "ok": true,
-      "seconds": 21
+      "ok": false,
+      "seconds": 21,
+      "error": "withdrawn after review: image pinned to :latest; without a user CouchDB runs with no authentication (the stack itself started)"
     },
     {
       "id": "dokploy-surrealdb",
       "profile": "compose",
-      "ok": true,
-      "seconds": 12
+      "ok": false,
+      "seconds": 12,
+      "error": "withdrawn after review: its data volume is not where the database writes (data is not persisted) (the stack itself started)"
     },
     {
       "id": "dokploy-trilium-next",
@@ -189,8 +206,9 @@
     {
       "id": "dokploy-seq",
       "profile": "compose",
-      "ok": true,
-      "seconds": 34
+      "ok": false,
+      "seconds": 34,
+      "error": "withdrawn after review: no authentication unless a first-run admin password is set (the stack itself started)"
     }
   ],
   "source": "Dokploy blueprints (Dokploy/templates, MIT), converted by scripts/buildDokployMirror.ts; smoke-template-runtime.mjs --registry"
