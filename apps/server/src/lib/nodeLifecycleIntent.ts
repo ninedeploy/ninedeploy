@@ -43,8 +43,8 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, service.id) });
     if (!fresh || fresh.type !== 'docker' || fresh.orchestrator === 'swarm' || fresh.runtimeId !== service.runtimeId || fresh.serverId !== service.serverId ||
       action !== 'stop' && (configuration(fresh) !== configuration(service) || fresh.status !== service.status)) throw changed();
-    const activeWork = fresh.runtimeId === null ? await tx.select({ id: deployments.id, status: deployments.status }).from(deployments)
-      .where(and(eq(deployments.serviceId, service.id), inArray(deployments.status, [...cancellable]))) : [];
+    const activeWork = action === 'stop' ? await tx.select({ id: deployments.id, status: deployments.status }).from(deployments)
+      .where(and(eq(deployments.serviceId, service.id), inArray(deployments.status, [...cancellable]))).orderBy(deployments.id) : [];
     if (fresh.runtimeId === null && activeWork.length === 0) {
       const pending = await tx.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id), notInArray(nodeLifecycleIntents.phase, [...terminal])) });
       if (pending?.action === 'stop' && pending.runtimeId === null && await nodeLifecycleHasRuntimeAuthority(tx, pending)) return pending;
@@ -75,6 +75,7 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
       snapshot: { status: fresh.status, port: fresh.port, healthCheck: fresh.healthCheck, healthPath: fresh.healthPath, healthCommand: fresh.healthCommand,
         healthTimeoutS: fresh.healthTimeoutSeconds, serving: shape.serving, capacity: shape.capacity, configuration: configuration(fresh), fanout,
         mutationEpoch: authority.epoch, revisionEpoch: authority.epoch,
+        ...(action === 'stop' ? { interruptedDeployments: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').map(({ id }) => ({ id })) } : {}),
         ...(fresh.runtimeId === null ? { unselected: { participants: [
           { serverId: fresh.serverId!, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-' + row.id, MAX_REPLICAS)) },
           ...fanout.map(target => ({ serverId: target.serverId, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-t' + target.serverId + '-' + row.id, MAX_REPLICAS)) })),

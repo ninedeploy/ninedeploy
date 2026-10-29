@@ -1886,6 +1886,8 @@ export interface NodeLifecycleSnapshot {
   fanout?: Array<{ targetId: number; serverId: number; runtimeId: string | null }>;
   /** Initial Stop discovers all physical generations after fencing each accepted node. */
   unselected?: { participants: Array<{ serverId: number; expectedNames: string[] }> };
+  /** Deployments that might have created unselected generations before Stop took authority. */
+  interruptedDeployments?: Array<{ id: number }>;
 }
 
 /** Accepted panel intent. ID-derived agent revisions survive retries and panel restarts. */
