@@ -115,6 +115,22 @@ describe('a database on a node', () => {
     expect(await row()).toBeUndefined();
   });
 
+  it('a failed first apply whose proxy removal is unconfirmed keeps a record, so off and delete still remove it', async () => {
+    h.applyError = [new HttpError(502, 'node_public_access_unconfirmed', 'The node did not confirm')];
+    h.removeError = new HttpError(502, 'node_unreachable', 'The node could not be reached');
+    await expect(lib.applyPublicAccess(db, pg, input(), opts)).rejects.toMatchObject({ code: 'node_public_access_unconfirmed' });
+    expect(await row()).toMatchObject({ enabled: false, containerName: 'nd-dbpub-shop', lastError: expect.stringContaining('did not confirm removing the proxy') });
+    await expect(lib.removeNodePublicAccess(db, pg)).rejects.toMatchObject({ code: 'node_unreachable' });
+    h.removeError = null;
+    expect(await lib.removeNodePublicAccess(db, pg)).toMatchObject({ enabled: false });
+    expect(h.removes).toEqual(['shop']);
+    // A panel-host database, or no record: nothing to do on a node.
+    expect(await lib.removeNodePublicAccess(db, { ...pg, serverId: null })).toBeNull();
+    await db.delete(databasePublicAccess);
+    expect(await lib.removeNodePublicAccess(db, pg)).toBeNull();
+    expect(h.removes).toEqual(['shop']);
+  });
+
   it('a failed first apply removes what it started; a failed change restores the previous configuration', async () => {
     h.applyError = [new HttpError(409, 'conflict', 'Host port 15432 is not available')];
     await expect(lib.applyPublicAccess(db, pg, input(), opts)).rejects.toMatchObject({ statusCode: 409 });

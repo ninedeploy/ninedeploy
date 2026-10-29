@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { backups, createDb, databaseAttachments, databases, type DB, runMigrations, servers, serviceTargets, services, users } from '@ninedeploy/db';
+import { backups, createDb, databaseAttachments, databasePublicAccess, databases, type DB, runMigrations, servers, serviceTargets, services, users } from '@ninedeploy/db';
 import { MULTI_NODE_CAPABILITIES } from '@ninedeploy/schemas';
 
 /**
@@ -104,6 +104,8 @@ vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
       case 'docker.networkConnect':
       case 'docker.networkDisconnect':
         return answer(0);
+      case 'db.publicAccess.remove':
+        return answer(0, ['ND-PUBLIC-DB {"removed":true}']);
       default:
         throw new Error(`agent ${op} failed (400): {"error":{"code":"unknown_op"}}`);
     }
@@ -433,6 +435,38 @@ describe('lifecycle routes on a node database: every action reaches the node, no
     expect(res.statusCode).toBe(200);
     expect(res.json().note).toMatch(/nd-db-orders .*may still run on node/);
     expect(h.local).toEqual([]);
+  });
+
+  it('delete: the public access proxy goes from the node first; an unconfirmed removal keeps the database unless forced', async () => {
+    const app = await appWith([databasesRoutes, '/databases']);
+    const proxied = async () => {
+      const d = await nodeRow();
+      await db.insert(databasePublicAccess).values({ databaseId: d.id, enabled: true, publicPort: 25432, tlsMode: 'none', ipAllowlist: ['203.0.113.0/24'], containerName: 'nd-dbpub-orders' });
+      return d;
+    };
+    const d = await proxied();
+    h.unreachable = true;
+    const down = await app.inject({ method: 'DELETE', url: `/databases/${d.id}`, headers: asUser() });
+    expect([down.statusCode, down.json().error.code]).toEqual([502, 'node_public_access_cleanup_unconfirmed']);
+    expect(await db.select().from(databases)).toHaveLength(1);
+    h.unreachable = false;
+    h.ops = [];
+    expect((await app.inject({ method: 'DELETE', url: `/databases/${d.id}`, headers: asUser() })).statusCode).toBe(200);
+    expect(h.ops.find((o) => o.op === 'db.publicAccess.remove')?.params).toEqual({ slug: 'orders' });
+
+    const forced = await proxied();
+    h.unreachable = true;
+    const res = await app.inject({ method: 'DELETE', url: `/databases/${forced.id}?force=true`, headers: asUser() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().note).toMatch(/nd-dbpub-orders may still publish a port on node #\d+: remove it there with docker rm -f nd-dbpub-orders/);
+    h.unreachable = false;
+
+    // Turned off earlier (no proxy recorded): nothing is asked of the node.
+    const off = await nodeRow();
+    await db.insert(databasePublicAccess).values({ databaseId: off.id, enabled: false, publicPort: 25433, tlsMode: 'none', ipAllowlist: ['203.0.113.0/24'], containerName: null });
+    h.ops = [];
+    expect((await app.inject({ method: 'DELETE', url: `/databases/${off.id}`, headers: asUser() })).statusCode).toBe(200);
+    expect(h.ops.some((o) => o.op === 'db.publicAccess.remove')).toBe(false);
   });
 });
 

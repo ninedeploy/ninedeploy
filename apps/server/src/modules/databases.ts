@@ -23,6 +23,7 @@ import {
   publicAccessSummaries,
   removePublicAccessSidecar,
   publicHostFor,
+  removeNodePublicAccess,
 } from '../lib/publicDatabaseAccess.js';
 import { capture } from '../lib/exec.js';
 import { serviceBridgeName } from '../lib/serviceBridge.js';
@@ -590,6 +591,14 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
         catch {
           if (!force) throw new HttpError(502, 'node_studio_cleanup_unconfirmed', 'The node Studio could not be removed; the database record and data were retained. Retry, or pass ?force=true to delete the record and leave the Studio on the node.');
           orphanedOnNode = 'Studio nd-node-studio-' + d.id + ' may still run on node #' + d.serverId + '; confirm and remove that managed helper on the node.';
+        }
+        // ROADMAP item 10: the public-access proxy publishes a port of the node;
+        // left behind, it would serve a later database that reuses the slug.
+        try { await removeNodePublicAccess(app.db, d); }
+        catch {
+          if (!force) throw new HttpError(502, 'node_public_access_cleanup_unconfirmed', 'The node could not confirm removing the public access proxy; the database record and data were retained. Retry when the node is back, or pass ?force=true to delete the record and leave the proxy on the node.');
+          const proxy = `nd-dbpub-${d.slug}`;
+          orphanedOnNode = (orphanedOnNode ? orphanedOnNode + ' ' : '') + `The public access proxy ${proxy} may still publish a port on node #${d.serverId}: remove it there with docker rm -f ${proxy}.`;
         }
         try {
           await runtime.remove({ purgeVolume: (req.query as { purgeVolume?: string }).purgeVolume === 'true' }, dbLog);

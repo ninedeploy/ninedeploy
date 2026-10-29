@@ -657,7 +657,22 @@ async function applyNodePublicAccess(
           (restoreErr: unknown) => opts.log(`public access for ${d.name}: restoring the previous proxy failed: ${message(restoreErr)}`),
         );
       } else {
-        await nodeRemoveSidecar(db, serverId, d.slug).catch(swallow);
+        // Keep a record while the node has not confirmed the proxy is gone, so
+        // turning it off and deleting the database still know to remove it.
+        await nodeRemoveSidecar(db, serverId, d.slug).catch(async (removeErr: unknown) => {
+          opts.log(`public access for ${d.name}: the node did not confirm removing the proxy: ${message(removeErr)}`);
+          await db
+            .insert(databasePublicAccess)
+            .values({
+              databaseId: d.id,
+              createdByUserId: opts.userId,
+              ...values,
+              enabled: false,
+              lastError: `the node did not confirm removing the proxy: ${message(removeErr)}`,
+            })
+            .onConflictDoNothing()
+            .catch(swallow);
+        });
       }
       if (previous) {
         await db
@@ -702,6 +717,23 @@ export async function disablePublicAccess(
 }
 
 /**
+ * Node database delete: remove the node's proxy, or throw while the node
+ * cannot confirm it (the caller keeps the database unless forced). A row that
+ * is off with no container recorded needs no node call. Returns what was
+ * there, or null.
+ */
+export async function removeNodePublicAccess(db: DB, d: Database): Promise<DatabasePublicAccess | null> {
+  if (d.serverId == null) return null;
+  const serverId = d.serverId;
+  return guard(d.id, async () => {
+    const row = await getPublicAccessRow(db, d.id);
+    if (!row || (!row.enabled && !row.containerName)) return null;
+    await nodeRemoveSidecar(db, serverId, d.slug);
+    return row;
+  });
+}
+
+/**
  * Database delete hook (M6): remove the sidecar and its configs BEFORE the row
  * transaction; the FK cascade then removes the access row. Never throws — a
  * leftover container is an orphan the watchdog removes. A database that never
@@ -715,7 +747,7 @@ export async function removePublicAccessSidecar(
   await guard(d.id, async () => {
     const row = await getPublicAccessRow(db, d.id);
     if (d.serverId != null) {
-      if (!row) return;
+      if (!row || (!row.enabled && !row.containerName)) return;
       await nodeRemoveSidecar(db, d.serverId, d.slug);
       log(`public access sidecar for ${d.name} removed from node #${d.serverId}`);
       return;
