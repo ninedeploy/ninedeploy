@@ -24,6 +24,7 @@ import { containerToolOps } from './containerTools.js';
 import { volumeFileOps } from './volumeFiles.js';
 import { osUpdateOps } from './osUpdates.js';
 import { agentRekeyOps } from './agentRekey.js';
+import { imageScanOps } from './imageScan.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -105,6 +106,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   osUpdateOps,
   // G4.3 rekey after a cloud bootstrap (agentOps/agentRekey.ts)
   agentRekeyOps,
+  // G5.1 Trivy image scans (agentOps/imageScan.ts)
+  imageScanOps,
 ];
 
 /**
@@ -129,6 +132,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'git.sshkey': ['NINEDEPLOY_AGENT_STATIC_CREDENTIALS'],
   'db.manage': ['NINEDEPLOY_AGENT_DATABASES'],
   'db.dump.extra': ['NINEDEPLOY_AGENT_DATABASES'],
+  // G5.1: Trivy on the node is the node owner's call.
+  'image.scan': ['NINEDEPLOY_AGENT_IMAGE_SCAN'],
   // 0.16.6: GPUs and added Linux capabilities are the node owner's call.
   'docker.runtimeOptions': ['NINEDEPLOY_AGENT_RUNTIME_OPTIONS'],
   // G4.2: the host's package configuration is the node owner's call too.

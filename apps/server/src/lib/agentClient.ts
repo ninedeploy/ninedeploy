@@ -69,6 +69,8 @@ export function agentRequestTimeoutMs(op: string, params: Record<string, unknown
   if (op === 'docker.containerTool') return 45_000;
   // G4.2: two helper runs, one of which may install a package.
   if (op === 'host.packages') return 2 * 8 * 60_000 + 30_000;
+  // G5.1: the node's own 15-minute scan limit, plus the answer.
+  if (op === 'image.scan') return 15 * 60_000 + 60_000;
   if (op === 'docker.identity') return 15_000;
   if (op === 'docker.retire') {
     const raw = params['graceSeconds'];

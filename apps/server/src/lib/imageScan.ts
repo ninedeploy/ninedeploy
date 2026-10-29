@@ -7,6 +7,7 @@ import {
   IMAGE_SCAN_FINDINGS_MAX,
   imageScanPolicy,
   imageScanPolicyPatch,
+  imageScanResult,
   type ImageScanCounts,
   type ImageScanFinding,
   type ImageScanPolicy,
@@ -220,6 +221,8 @@ export async function containerImageId(container: string): Promise<string> {
 
 export interface ScanDeps {
   trivy?: typeof runTrivy;
+  /** G5.1: runs `image.scan` on a node and answers its result line (default: the sealed agent op). */
+  nodeScan?: (db: DB, serverId: number, params: Record<string, unknown>) => Promise<string>;
 }
 
 /** One scan at a time on the host: Trivy is heavy, and deploy scans wait behind scheduled ones. */
@@ -258,6 +261,74 @@ export async function scanServiceImage(
     };
   }
   await setSettingJson(db, resultKey(serviceId), result);
+  return result;
+}
+
+/** G5.1: docker services on a node (not Swarm) are scanned by the node's agent, on schedule and on request. */
+export function scannableOnNode(service: { type: string; serverId: number | null }, onSwarm: boolean): boolean {
+  return service.type === 'docker' && service.serverId != null && !onSwarm;
+}
+
+async function defaultNodeScan(db: DB, serverId: number, params: Record<string, unknown>): Promise<string> {
+  const { assertNodeCapability } = await import('./agentCapabilities.js');
+  await assertNodeCapability(db, serverId, { cap: 'image.scan', feature: 'scan images for vulnerabilities', sealedRequired: true });
+  const { agentOp } = await import('./agentClient.js');
+  const res = await agentOp(db, serverId, 'image.scan', params, () => undefined);
+  const line = res.lines.find((l) => l.startsWith('ND-IMAGE-SCAN '));
+  if (!line) throw new Error('The node answered no scan result');
+  return line.slice('ND-IMAGE-SCAN '.length);
+}
+
+/**
+ * Scan a node service's running image on its node and store the result.
+ * `knownImageId`: when the container still runs that image the node answers
+ * "unchanged" and null is returned (nothing stored). Never throws for a failed scan.
+ */
+export async function scanNodeServiceImage(
+  db: DB,
+  svc: { id: number; serverId: number; runtimeId: string },
+  trigger: ImageScanResult['trigger'],
+  opts: { knownImageId?: string; deps?: ScanDeps } = {},
+): Promise<ImageScanResult | null> {
+  const nodeScan = opts.deps?.nodeScan ?? defaultNodeScan;
+  const base = { serviceId: svc.id, trigger, deploymentId: null, blocked: false };
+  let result: ImageScanResult;
+  try {
+    const answer = JSON.parse(
+      await oneAtATime(() => nodeScan(db, svc.serverId, { container: svc.runtimeId, ...(opts.knownImageId ? { knownImageId: opts.knownImageId } : {}) })),
+    ) as Partial<ParsedTrivyReport> & { imageId?: unknown; unchanged?: unknown };
+    if (typeof answer.imageId !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(answer.imageId)) throw new Error('The node answered no image id');
+    if (answer.unchanged === true) return null;
+    if (!answer.counts || !answer.fixable || !Array.isArray(answer.findings)) throw new Error('The node answered an incomplete report');
+    result = {
+      ...base,
+      imageId: answer.imageId,
+      scannedAt: new Date().toISOString(),
+      status: 'ok',
+      error: null,
+      os: typeof answer.os === 'string' ? answer.os : null,
+      counts: answer.counts,
+      fixable: answer.fixable,
+      findings: answer.findings.slice(0, IMAGE_SCAN_FINDINGS_MAX),
+      findingsTruncated: answer.findingsTruncated === true || answer.findings.length > IMAGE_SCAN_FINDINGS_MAX,
+    };
+    // The node's answer is data from another machine: hold it to the stored shape.
+    imageScanResult.parse(result);
+  } catch (err) {
+    result = {
+      ...base,
+      imageId: opts.knownImageId ?? 'node:unknown',
+      scannedAt: new Date().toISOString(),
+      status: 'error',
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 1000),
+      os: null,
+      counts: zero(),
+      fixable: zero(),
+      findings: [],
+      findingsTruncated: false,
+    };
+  }
+  await setSettingJson(db, resultKey(svc.id), result);
   return result;
 }
 
@@ -446,6 +517,20 @@ export async function rescanRunningImages(db: DB, deps: RescanDeps = {}): Promis
       const result = await scanComposeStack(db, svc.id, images, 'schedule', { deps });
       scanned++;
       const before = last && last.imageId === setId && last.status === 'ok' ? last.fixable.critical : 0;
+      if (result.status === 'ok' && result.fixable.critical > before) deps.onNewCritical?.(svc, result);
+      continue;
+    }
+    if (svc.runtimeId && svc.serverId != null && scannableOnNode(svc, isSwarmService(svc))) {
+      const last = await getImageScanResult(db, svc.id);
+      const fresh = last && last.status === 'ok' && Date.parse(last.scannedAt) > staleBefore;
+      // A fresh result of the same image is kept: the node answers "unchanged" without scanning.
+      const result = await scanNodeServiceImage(db, { id: svc.id, serverId: svc.serverId, runtimeId: svc.runtimeId }, 'schedule', {
+        ...(fresh ? { knownImageId: last.imageId } : {}),
+        deps,
+      });
+      if (!result) continue;
+      scanned++;
+      const before = last && last.imageId === result.imageId && last.status === 'ok' ? last.fixable.critical : 0;
       if (result.status === 'ok' && result.fixable.critical > before) deps.onNewCritical?.(svc, result);
       continue;
     }

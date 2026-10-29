@@ -5496,8 +5496,8 @@ export const TR: Readonly<Record<string, string>> = {
     'Kapı yalnızca düzeltilmiş sürümü olan bulguları sayar. Kapalıyken taban imajdaki düzeltilemeyen bir CVE her deploy\'u engeller.',
   'The scan could not run: {error}': 'Tarama çalışamadı: {error}',
   'Scan incomplete: {error}': 'Tarama tamamlanamadı: {error}',
-  'Trivy scans the image of every docker deploy on the panel host before it gets traffic, and rescans running images on a schedule. Compose stacks on the panel host are scanned on the schedule and on request, every image of the stack, without a deploy gate. It reads the image from docker save; it never gets the Docker socket. Services on nodes and Swarm are not scanned yet.':
-    'Trivy, panel sunucusundaki her docker dağıtımının imajını trafik almadan önce tarar ve çalışan imajları düzenli olarak yeniden tarar. Panel sunucusundaki Compose yığınları zamanlamayla ve istek üzerine taranır; yığının her imajı taranır, dağıtım kapısı uygulanmaz. İmajı docker save ile okur; Docker soketine hiç erişmez. Node\'lardaki ve Swarm\'daki servisler henüz taranmaz.',
+  'Trivy scans the image of every docker deploy on the panel host before it gets traffic, and rescans running images on a schedule. Compose stacks on the panel host, and docker services on nodes (by the node agent, 0.18.7 or newer), are scanned on the schedule and on request, without a deploy gate. It reads the image from docker save; it never gets the Docker socket. Swarm services are not scanned yet.':
+    'Trivy, panel sunucusundaki her docker dağıtımının imajını trafik almadan önce tarar ve çalışan imajları düzenli olarak yeniden tarar. Panel sunucusundaki Compose yığınları ve node\'lardaki docker servisleri (node ajanı 0.18.7 veya daha yeni) zamanlamayla ve istek üzerine taranır; dağıtım kapısı uygulanmaz. İmajı docker save ile okur; Docker soketine hiç erişmez. Swarm servisleri henüz taranmaz.',
   'Trivy vulnerability scans & deploy gate': 'Trivy zafiyet taraması ve deploy kapısı',
   'Vulnerability': 'Zafiyet',
   'manual scan': 'elle tarama',

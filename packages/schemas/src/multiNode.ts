@@ -60,6 +60,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'agent.rekey',
   // G1.8 ClickHouse / Meilisearch / RabbitMQ backups of node databases
   'db.dump.extra',
+  // G5.1 Trivy image scans of node services
+  'image.scan',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

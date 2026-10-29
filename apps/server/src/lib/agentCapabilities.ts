@@ -392,6 +392,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'agent.rekey': '0.18.6',
   // G1.8 backups of node ClickHouse / Meilisearch / RabbitMQ
   'db.dump.extra': '0.18.7',
+  // G5.1 image scans of node services
+  'image.scan': '0.18.7',
 };
 
 /**
@@ -415,6 +417,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'git.sshkey': 'NINEDEPLOY_AGENT_STATIC_CREDENTIALS',
   'db.manage': 'NINEDEPLOY_AGENT_DATABASES',
   'db.dump.extra': 'NINEDEPLOY_AGENT_DATABASES',
+  'image.scan': 'NINEDEPLOY_AGENT_IMAGE_SCAN',
   'docker.runtimeOptions': 'NINEDEPLOY_AGENT_RUNTIME_OPTIONS',
   'host.packages': 'NINEDEPLOY_AGENT_HOST_PACKAGES',
   // ── 0.16 T7 swarm ── opt-in (security review M2): unset means off.

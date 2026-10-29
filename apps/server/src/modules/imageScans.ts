@@ -8,6 +8,8 @@ import {
   composeStackImages,
   containerImageId,
   scanComposeStack,
+  scanNodeServiceImage,
+  scannableOnNode,
   getImageScanPolicy,
   getImageScanResult,
   scannableOnPanel,
@@ -58,6 +60,21 @@ export const serviceImageScanRoutes: FastifyPluginAsync = async (app) => {
       throw new HttpError(409, 'image_scanning_off', 'Image scanning is off; an operator turns it on under Settings → Image scanning');
     }
     const compose = composeScannableOnPanel(svc);
+    // G5.1: a docker service on a node is scanned by the node's agent.
+    if (svc.serverId != null && scannableOnNode(svc, isSwarmService(svc))) {
+      if (!svc.runtimeId) throw new HttpError(409, 'image_scan_not_running', 'The service has no running container to scan; deploy it first');
+      if (scanning.has(id)) throw new HttpError(409, 'image_scan_running', 'A scan of this service is already running');
+      const { assertNodeCapability } = await import('../lib/agentCapabilities.js');
+      await assertNodeCapability(app.db, svc.serverId, { cap: 'image.scan', feature: 'scan images for vulnerabilities', sealedRequired: true });
+      scanning.add(id);
+      void scanNodeServiceImage(app.db, { id, serverId: svc.serverId, runtimeId: svc.runtimeId }, 'manual')
+        .then((r) => {
+          if (r) void audit(app.db, req.user!.id, 'image_scan.run', svc.name, { serviceId: id, imageId: r.imageId, status: r.status, critical: r.counts.critical, high: r.counts.high });
+        })
+        .catch((err) => req.log.warn({ err, serviceId: id }, 'image scan failed'))
+        .finally(() => scanning.delete(id));
+      return reply.code(202).send({ started: true, imageId: null });
+    }
     if (!compose && !scannableOnPanel(svc, isSwarmService(svc))) {
       throw new HttpError(409, 'image_scan_unsupported', 'Only docker services and compose stacks that run on the panel host (not on Swarm) are scanned for now');
     }

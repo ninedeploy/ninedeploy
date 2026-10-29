@@ -64,7 +64,7 @@ None of the Docker-based rivals has these.
 
 | ID | Item | Inspiration | Size | Status |
 |---|---|---|---|---|
-| G5.1 | **Image vulnerability scanning.** Trivy in a throwaway container after each build and on a schedule, with a severity summary and an optional gate on critical findings. | Kubero | M | ✅ unreleased (panel host docker services with the deploy gate; panel host Compose stacks on schedule and on request, report only; nodes and Swarm not yet) |
+| G5.1 | **Image vulnerability scanning.** Trivy in a throwaway container after each build and on a schedule, with a severity summary and an optional gate on critical findings. | Kubero | M | ✅ unreleased (panel host docker services with the deploy gate; panel host Compose stacks and node docker services on schedule and on request, report only; Swarm not yet) |
 | G5.2 | **Pending changes tray.** Edits accumulate as field-level changes, are reviewed as a diff and applied atomically on deploy. This fits protected lanes and approvals. | ZaneOps, Coolify "changes pending" | M | ✅ unreleased (service settings; tags and variables apply directly) |
 | G5.3 | **Instance-wide GitOps.** The whole instance (projects, services, domains, grants) as files in a repository, with a drift diff, an alert and an optional write-back of UI edits. | Komodo Resource Sync | L | ✅ unreleased (projects, services, domains, project grants; drift + alerts + apply without deletes; write-back is an export to commit, the panel does not push) |
 | G5.4 | **Sentry-compatible error ingest** per project, grouped by fingerprint and linked to the deploy that introduced it. | Canine | M | ✅ unreleased (per service DSN; migration 0105; envelope + store, gzip/deflate/br; release → deploy, else the live one; new/regressed issues alert) |

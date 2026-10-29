@@ -86,6 +86,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'host.packages': 'read and change OS updates',
   'agent.rekey': 'rotate its agent key',
   'db.dump.extra': 'back up and restore clickhouse on a node',
+  'image.scan': 'scan images for vulnerabilities',
 };
 
 let db: DB;

@@ -66,6 +66,7 @@ The panel keeps the last answer in memory for up to 5 minutes, so after an agent
 | Container options (GPUs, shared memory, init, ulimit, capabilities) | `docker.runSpec` + `docker.runtimeOptions` | 0.16.6 | `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off`. Not a refusal: without it the container starts without them, as before, and the log says why |
 | OS security updates (read pending updates, automatic security updates on/off) | `host.packages` | 0.18.6 | `NINEDEPLOY_AGENT_HOST_PACKAGES=off` |
 | ClickHouse, Meilisearch and RabbitMQ backups and restores of node databases | `db.manage` + `db.dump.extra` | 0.18.7 | `NINEDEPLOY_AGENT_DATABASES=off` |
+| Trivy image scans of node services (scheduled and on request) | `image.scan` | 0.18.7 | `NINEDEPLOY_AGENT_IMAGE_SCAN=off` |
 
 A switch counts as off when it is `off`, `false`, `0`, `no` or `disabled`. Switching a feature off removes its capability from the ping, and the agent refuses the operation too.
 
