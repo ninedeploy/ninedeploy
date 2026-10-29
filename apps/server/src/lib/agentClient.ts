@@ -43,6 +43,7 @@ export const LONG_AGENT_OPS: ReadonlySet<string> = new Set([
   'docker.composePull',
   'build.nixpacks',
   'build.railpack',
+  'docker.buildWith',
   'docker.push',
 ]);
 /** Node-side child timeout for {@link LONG_AGENT_OPS} — the panel host's exec default. */

@@ -418,10 +418,21 @@ export function dockerBuildArgs(
   log: (line: string) => void,
   secretKeys: readonly string[] = [],
 ): string[] {
-  if (!names || names.length === 0) return [];
+  return Object.entries(dockerBuildArgValues(names, env, log, secretKeys)).flatMap(([name, value]) => ['--build-arg', `${name}=${value}`]);
+}
+
+/** The build arguments a Dockerfile build gets, by name (a node build sends them to `docker.buildWith`). */
+export function dockerBuildArgValues(
+  names: readonly string[] | null | undefined,
+  env: Record<string, string>,
+  log: (line: string) => void,
+  secretKeys: readonly string[] = [],
+): Record<string, string> {
+  if (!names || names.length === 0) return {};
   const passed: string[] = [];
   const missing: string[] = [];
-  const args: string[] = [];
+  // No prototype: a build argument called `__proto__` is a key like any other.
+  const args: Record<string, string> = Object.create(null);
   for (const name of new Set(names)) {
     const value = env[name];
     if (value === undefined) {
@@ -429,7 +440,7 @@ export function dockerBuildArgs(
       continue;
     }
     passed.push(name);
-    args.push('--build-arg', `${name}=${value}`);
+    args[name] = value;
   }
   if (passed.length > 0) log(`Build arguments: ${passed.join(', ')}`);
   if (missing.length > 0) {

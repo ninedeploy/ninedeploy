@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { agentChildTimeoutMs } from '../lib/agentClient.js';
 import { spawnValidated } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
-import { type Params, RE_NAME, RE_PATH, RE_SERVICE_IMAGE_TAG, str, validated } from './operands.js';
+import { type Params, RE_IMAGE, RE_NAME, RE_PATH, RE_SERVICE_IMAGE_TAG, str, validated } from './operands.js';
 
 /**
  * Source builds on a node (multi-node, design §2): `build.nixpacks` and
@@ -351,11 +351,50 @@ export async function railpackBuildOp(params: Params, onLine: (line: string) => 
   }
 }
 
+/** A Dockerfile stage name, as `FROM … AS <name>` accepts it. */
+const RE_BUILD_TARGET = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+
+/** Sealed only when the request carries build-argument values. */
+export function buildCarriesArgs(params: Params): boolean {
+  return buildCarriesEnv({ env: params['buildArgs'] });
+}
+
+/**
+ * `docker.buildWith {workspace, tag, dockerfile, context, target?, buildArgs?}`
+ * (capability `docker.buildOptions`): the legacy `docker.build` plus what the
+ * panel host passes, `docker build -t <tag> -f <dockerfile> [--target <stage>]
+ * [--build-arg K=V …] <context>` in the service workspace. Build-argument
+ * values travel on argv, exactly the panel host's exposure (engine/builders/
+ * docker.ts `dockerBuildArgs`), only inside a sealed request, and are
+ * redacted from the lines returned.
+ */
+export async function dockerBuildWithOp(params: Params, onLine: (line: string) => void): Promise<number> {
+  // agent.ts imports this module through the registry: load it at call time.
+  const { resolveWorkspace, nodeDockerfile } = await import('../agent.js');
+  const dir = await resolveWorkspace(validated(str(params, 'workspace'), RE_NAME, 'workspace name'));
+  const tag = validated(str(params, 'tag'), RE_IMAGE, 'tag');
+  if (tag.length > MAX_TAG) throw new Error('Invalid image tag');
+  const context = validated(str(params, 'context'), RE_PATH, 'context');
+  const dockerfile = nodeDockerfile(dir, validated(str(params, 'dockerfile'), RE_PATH, 'dockerfile'), context);
+  const target = params['target'] === undefined ? undefined : validated(str(params, 'target'), RE_BUILD_TARGET, 'build target');
+  const args = buildEnvOperand(params['buildArgs']);
+  const redact = envRedactor(args);
+  const out = (line: string) => onLine(redact(line));
+  const argArgs = Object.entries(args).flatMap(([k, v]) => ['--build-arg', `${k}=${v}`]);
+  if (argArgs.length > 0) out(`Passing ${argArgs.length / 2} build argument(s) to the Dockerfile build (values are never logged)`);
+  if (target !== undefined) out(`Building the Dockerfile stage "${target}"`);
+  return spawnValidated('docker', ['build', '-t', tag, '-f', dockerfile, ...(target === undefined ? [] : ['--target', target]), ...argArgs, context], out, {
+    cwd: dir,
+    timeoutMs: agentChildTimeoutMs('docker.buildWith') as number,
+  });
+}
+
 export const buildOps: AgentOpModule = {
   name: 'agentOps/builds.ts',
-  caps: ['build.nixpacks', 'build.railpack'],
+  caps: ['build.nixpacks', 'build.railpack', 'docker.buildOptions'],
   ops: {
     'build.nixpacks': { cap: 'build.nixpacks', sealedOnly: buildCarriesEnv, run: (p, onLine) => nixpacksBuildOp(p, onLine) },
     'build.railpack': { cap: 'build.railpack', sealedOnly: buildCarriesEnv, run: (p, onLine) => railpackBuildOp(p, onLine) },
+    'docker.buildWith': { cap: 'docker.buildOptions', sealedOnly: buildCarriesArgs, run: (p, onLine) => dockerBuildWithOp(p, onLine) },
   },
 };

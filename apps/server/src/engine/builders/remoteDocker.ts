@@ -292,14 +292,24 @@ export async function buildSourceOnNode(
       plan = legacyDockerfilePlan(buildConfig);
     }
   }
-  // 0.16.2: the agent's `docker.build` takes no stage. Building the last
-  // stage instead would ship a different image (often the dev or test one),
-  // so it is refused before anything is cloned.
-  if (plan.pack === 'dockerfile' && buildConfig?.buildTarget) {
-    throw new RemoteDeployUnsupportedError(
-      `A Dockerfile build stage ("${buildConfig.buildTarget}") cannot be built on a node yet. ` +
-        'Build on the panel host (Service → Settings → Build on: panel), or clear the build stage.',
-    );
+  // 0.16.2: the legacy `docker.build` takes no stage and no build arguments.
+  // An agent with `docker.buildOptions` takes both (`docker.buildWith`);
+  // without it, building the last stage instead would ship a different image
+  // (often the dev or test one), so that is refused before anything is cloned.
+  const wantsOptions = plan.pack === 'dockerfile' && (!!buildConfig?.buildTarget || (buildConfig?.buildArgs ?? []).length > 0);
+  let buildOptions = false;
+  if (wantsOptions) {
+    const { lines } = await agent('agent.ping', {}, () => undefined);
+    const refusal = capabilityRefusalFor(parseAgentCapabilities(lines), label, {
+      cap: 'docker.buildOptions',
+      feature: 'build a Dockerfile stage or with build arguments',
+    });
+    buildOptions = refusal === null;
+    if (refusal && buildConfig?.buildTarget) {
+      throw new RemoteDeployUnsupportedError(
+        `${refusal.message} Until then, build on the panel host (Service → Settings → Build on: panel), or clear the build stage ("${buildConfig.buildTarget}").`,
+      );
+    }
   }
   // ── end 0.16 T3 ──
   // 0.13 (T5): a GitHub App repository gets a repository-scoped token for
@@ -341,13 +351,21 @@ export async function buildSourceOnNode(
     if (Object.keys(buildEnv).length > 0) params['env'] = buildEnv;
     log(`Building ${target} with Railpack on the node …`);
     await agent('build.railpack', params, sink);
+  } else if (buildOptions) {
+    const { dockerBuildArgValues } = await import('./docker.js');
+    const buildArgs = dockerBuildArgValues(buildConfig?.buildArgs, env, log, ctx.buildSecretKeys);
+    const params: Record<string, unknown> = { workspace, tag: target, dockerfile: plan.dockerfile, context: plan.context };
+    if (buildConfig?.buildTarget) params['target'] = buildConfig.buildTarget;
+    if (Object.keys(buildArgs).length > 0) params['buildArgs'] = buildArgs;
+    log(`Building ${target} from ${plan.dockerfile} on the node …`);
+    await agent('docker.buildWith', params, sink);
   } else {
-    // 0.16.1: the agent's `docker.build` op takes no build arguments yet —
-    // say so instead of building as if they had been passed.
+    // 0.16.1: an agent without `docker.buildOptions` takes no build
+    // arguments — say so instead of building as if they had been passed.
     if ((buildConfig?.buildArgs ?? []).length > 0) {
       log(
-        `⚠ Build arguments (${(buildConfig?.buildArgs ?? []).join(', ')}) are not passed to a Dockerfile build on a node yet. ` +
-          'Build on the panel host (Service → Settings → Build on: panel) to use them.',
+        `⚠ Build arguments (${(buildConfig?.buildArgs ?? []).join(', ')}) are not passed: this node's agent cannot take them ` +
+          `(update it to v${AGENT_CAPABILITY_VERSION['docker.buildOptions']} or newer, or build on the panel host).`,
       );
     }
     log(`Building ${target} from ${plan.dockerfile} on the node …`);

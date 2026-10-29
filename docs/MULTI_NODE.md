@@ -55,6 +55,7 @@ The panel keeps the last answer in memory for up to 5 minutes, so after an agent
 | Image transfer (build placement, fan-out) | `stream`, `image.manage` | 0.15.2 | — |
 | Nixpacks builds | `build.nixpacks` | 0.15.2 | `NINEDEPLOY_AGENT_BUILDS=off` |
 | Railpack builds | `build.railpack` | 0.15.2 | `NINEDEPLOY_AGENT_BUILDS=off` |
+| A Dockerfile build stage and build arguments (`docker.buildWith`; values only inside a sealed request) | `docker.buildOptions` | 0.18.10 | `NINEDEPLOY_AGENT_BUILDS=off`. Without it a stage is refused and build arguments are left out, as before |
 | PAT and deploy-key clones | `git.sshkey` | 0.15.2 | `NINEDEPLOY_AGENT_STATIC_CREDENTIALS=off` |
 | Managed databases | `db.manage`, `stream`, `docker.runSpec`, `volume.manage` | 0.15.3 | `NINEDEPLOY_AGENT_DATABASES=off` |
 | Database client terminals | `db.manage`, `db.client`, sealed terminal transport | 0.18.2 | `NINEDEPLOY_AGENT_DATABASES=off` or `NINEDEPLOY_AGENT_DATABASE_CLIENTS=off` |

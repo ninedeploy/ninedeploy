@@ -90,6 +90,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'volume.compose': 'move a compose stack with its volumes',
   'tunnel.tcp': 'open tunnels to node services',
   'gha.runner': 'run GitHub Actions runners',
+  'docker.buildOptions': 'build a Dockerfile stage or with build arguments',
 };
 
 let db: DB;

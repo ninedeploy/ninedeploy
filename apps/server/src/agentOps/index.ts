@@ -137,6 +137,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'docker.containerTools': ['NINEDEPLOY_AGENT_CONTAINER_TOOLS'],
   'build.nixpacks': ['NINEDEPLOY_AGENT_BUILDS'],
   'build.railpack': ['NINEDEPLOY_AGENT_BUILDS'],
+  'docker.buildOptions': ['NINEDEPLOY_AGENT_BUILDS'],
   'git.sshkey': ['NINEDEPLOY_AGENT_STATIC_CREDENTIALS'],
   'db.manage': ['NINEDEPLOY_AGENT_DATABASES'],
   'db.dump.extra': ['NINEDEPLOY_AGENT_DATABASES'],

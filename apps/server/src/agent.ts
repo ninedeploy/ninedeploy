@@ -180,7 +180,7 @@ export function assertPathInWorkspace(base: string, value: string, what: string)
  * worked keeps building the same file); otherwise one under the context is
  * used. Both candidates pass the symlink walk.
  */
-function nodeDockerfile(base: string, dockerfile: string, context: string): string {
+export function nodeDockerfile(base: string, dockerfile: string, context: string): string {
   assertPathInWorkspace(base, dockerfile, 'dockerfile');
   assertPathInWorkspace(base, context, 'context');
   if (context === '.' || existsSync(joinPath(base, dockerfile))) return dockerfile;

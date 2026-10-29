@@ -172,6 +172,46 @@ describe('the node build', () => {
     expect(a.ops().filter((op) => op.startsWith('git.') || op === 'docker.build')).toEqual([]);
   });
 
+  it('a current agent builds the stage with the build arguments through docker.buildWith', async () => {
+    const CAPS_OPTIONS = ping('0.18.10', ['build-path-guard', 'workspace.remove', 'git.credential', 'docker.buildOptions']);
+    const a = fakeAgent(CAPS_OPTIONS);
+    const lines: string[] = [];
+    await createRemoteDockerBuilder(a.agent).buildAndRun(
+      ctx(repo(['Dockerfile']), { buildPack: 'dockerfile', buildTarget: 'runtime', buildArgs: ['API_URL', 'MISSING'] }, { log: (l: string) => lines.push(l) }),
+    );
+    expect(a.find('docker.buildWith')!.params).toEqual({
+      workspace: 'web',
+      tag: 'ninedeploy/web:deadbee',
+      dockerfile: 'Dockerfile',
+      context: '.',
+      target: 'runtime',
+      buildArgs: { API_URL: 'https://api' },
+    });
+    expect(a.ops()).not.toContain('docker.build');
+    // Asked before anything is cloned.
+    expect(a.ops().lastIndexOf('agent.ping')).toBeLessThan(a.ops().indexOf('git.ensure'));
+    expect(lines.join('\n')).toMatch(/not passed: MISSING/);
+
+    // Build arguments alone take the same op, without a stage.
+    const b = fakeAgent(CAPS_OPTIONS);
+    await createRemoteDockerBuilder(b.agent).buildAndRun(ctx(repo(['Dockerfile']), { buildPack: 'dockerfile', buildArgs: ['API_URL'] }));
+    expect(b.find('docker.buildWith')!.params).not.toHaveProperty('target');
+  });
+
+  it('an agent without docker.buildOptions: a stage is refused with the update message, build arguments are named as not passed', async () => {
+    const a = fakeAgent(CAPS_NOW);
+    const err = await createRemoteDockerBuilder(a.agent, { nodeLabel: '"edge-1" (#4)' })
+      .buildAndRun(ctx(repo(['Dockerfile']), { buildPack: 'dockerfile', buildTarget: 'runtime' }))
+      .catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(/cannot build a Dockerfile stage or with build arguments\. Update the node agent to v0\.18\.10 or newer.*clear the build stage \("runtime"\)/);
+
+    const b = fakeAgent(CAPS_NOW);
+    const lines: string[] = [];
+    await createRemoteDockerBuilder(b.agent).buildAndRun(ctx(repo(['Dockerfile']), { buildPack: 'dockerfile', buildArgs: ['API_URL'] }, { log: (l: string) => lines.push(l) }));
+    expect(b.find('docker.build')!.params).toEqual({ workspace: 'web', tag: 'ninedeploy/web:deadbee', dockerfile: 'Dockerfile', context: '.' });
+    expect(lines.join('\n')).toMatch(/Build arguments \(API_URL\) are not passed: this node's agent cannot take them \(update it to v0\.18\.10/);
+  });
+
   it('nodeBuildEnv keeps what the agent takes and names what it leaves out', () => {
     const lines: string[] = [];
     expect(nodeBuildEnv({ OK: '1', 'a.b': '2', BIG: 'x'.repeat(40_000), NUL: 'a\0b' }, (l) => lines.push(l))).toEqual({ OK: '1' });

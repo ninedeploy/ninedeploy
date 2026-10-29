@@ -68,6 +68,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'tunnel.tcp',
   // G4.5 GitHub Actions just-in-time runners on a node (opt-in on the node)
   'gha.runner',
+  // `docker.buildWith`: a Dockerfile build with a stage (`--target`) and build arguments
+  'docker.buildOptions',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

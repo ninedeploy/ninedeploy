@@ -400,6 +400,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'tunnel.tcp': '0.18.7',
   // G4.5 GitHub Actions runners on nodes (opt-in)
   'gha.runner': '0.18.7',
+  // Dockerfile build stage and build arguments on a node
+  'docker.buildOptions': '0.18.10',
 };
 
 /**
@@ -420,6 +422,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'db.studio': 'NINEDEPLOY_AGENT_DATABASE_STUDIOS',
   'build.nixpacks': 'NINEDEPLOY_AGENT_BUILDS',
   'build.railpack': 'NINEDEPLOY_AGENT_BUILDS',
+  'docker.buildOptions': 'NINEDEPLOY_AGENT_BUILDS',
   'git.sshkey': 'NINEDEPLOY_AGENT_STATIC_CREDENTIALS',
   'db.manage': 'NINEDEPLOY_AGENT_DATABASES',
   'db.dump.extra': 'NINEDEPLOY_AGENT_DATABASES',

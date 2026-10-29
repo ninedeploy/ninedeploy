@@ -35,6 +35,7 @@ export const CANCELLABLE_AGENT_OPS: ReadonlySet<string> = new Set([
   'docker.build',
   'build.nixpacks',
   'build.railpack',
+  'docker.buildWith',
   'docker.pull',
   'docker.composePull',
   'docker.push',

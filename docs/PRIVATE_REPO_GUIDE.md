@@ -346,7 +346,7 @@ RUN npm run build
 
 - A listed name that has no value in the service's environment is skipped and named in the deploy log.
 - Build arguments stay readable in the image's history (`docker history`). Do not list credentials; use a [BuildKit secret mount](https://docs.docker.com/build/building/secrets/) for those. A secret listed anyway is flagged in the log, and a build that pushes its image to a registry refuses it.
-- A Dockerfile build on a remote node does not pass build arguments yet; the deploy log says so. Build on the panel host to use them.
+- A Dockerfile build on a remote node passes them too when its agent has `docker.buildOptions` (agent 0.18.10 or newer). The values travel inside the sealed request and are masked in the build output. An older agent builds without them, and the deploy log says so.
 - A service that fans out to more nodes ships the image built here to them (0.16.2), instead of having each node rebuild without the arguments.
 
 ### Build stage of a multi-stage Dockerfile (0.16.2)
@@ -366,7 +366,7 @@ RUN npm i -g nodemon
 
 - A stage name starts with a letter and holds letters, digits, `_`, `.` or `-`, as Docker requires.
 - The setting applies to Dockerfile builds only; Nixpacks and Railpack ignore it.
-- A node agent cannot build a stage yet, so a node build with a stage set is refused before anything is cloned. Build on the panel host instead. Fan-out nodes get the image built on the panel.
+- A node builds the stage when its agent has `docker.buildOptions` (agent 0.18.10 or newer). On an older agent a node build with a stage set is refused before anything is cloned, with the version to install: building the last stage instead would ship a different image. Fan-out nodes get the image built on the panel.
 
 ### When to choose what
 

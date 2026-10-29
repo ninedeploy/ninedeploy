@@ -240,6 +240,67 @@ describe('build.railpack', () => {
   });
 });
 
+describe('docker.buildWith (docker.buildOptions)', () => {
+  const build = (extra: Record<string, unknown> = {}) => ({ workspace: 'web', tag: 'ninedeploy/web:abc1234', dockerfile: 'Dockerfile', context: '.', ...extra });
+  const seed = () => {
+    mkdirSync(ws(), { recursive: true });
+    writeFileSync(join(ws(), 'Dockerfile'), 'FROM scratch AS runtime\n');
+  };
+
+  it('builds the stage with the build arguments, sealed only when it carries values, and redacts them', async () => {
+    seed();
+    expect(await runOp('docker.buildWith', build({ target: 'runtime' }), () => undefined)).toBe(0);
+    const [exe, argv, , opts] = calls()[0]!;
+    expect(exe).toBe('docker');
+    expect(argv).toEqual(['build', '-t', 'ninedeploy/web:abc1234', '-f', 'Dockerfile', '--target', 'runtime', '.']);
+    expect(opts).toMatchObject({ cwd: ws(), timeoutMs: THIRTY_MIN });
+
+    const buildArgs = { NPM_TOKEN: 'npm_secret_value', API_URL: 'https://api' };
+    await expect(runOp('docker.buildWith', build({ buildArgs }), () => undefined)).rejects.toThrow(/over the unencrypted transport/);
+    spawnMock.mockImplementationOnce(async (...args: unknown[]) => {
+      (args[2] as (l: string) => void)('#5 RUN echo npm_secret_value');
+      return 0;
+    });
+    const lines: string[] = [];
+    await runOp('docker.buildWith', build({ buildArgs }), (l) => lines.push(l), SEALED);
+    expect(calls()[1]![1]).toEqual([
+      'build', '-t', 'ninedeploy/web:abc1234', '-f', 'Dockerfile',
+      '--build-arg', 'NPM_TOKEN=npm_secret_value', '--build-arg', 'API_URL=https://api', '.',
+    ]);
+    expect(lines.join('\n')).not.toContain('npm_secret_value');
+    expect(lines).toContain('#5 RUN echo [redacted]');
+    expect(lines[0]).toBe('Passing 2 build argument(s) to the Dockerfile build (values are never logged)');
+  });
+
+  it('refuses bad operands, a symlinked Dockerfile included, before anything runs', async () => {
+    seed();
+    symlinkSync('/etc/hostname', join(ws(), 'Linked'));
+    const bad: Array<[Record<string, unknown>, RegExp]> = [
+      [{ target: '--output=/' }, /Invalid build target/],
+      [{ target: '' }, /Invalid build target/],
+      [{ target: 'a'.repeat(129) }, /Invalid build target/],
+      [{ buildArgs: { 'BAD-KEY': 'x' } }, /Invalid build env name/],
+      [{ buildArgs: ['A=1'] }, /Invalid build env/],
+      [{ tag: '-x' }, /Invalid tag/],
+      [{ context: '../other' }, /Invalid context/],
+      [{ dockerfile: 'Linked' }, /symlink/],
+      [{ workspace: '.hidden' }, /Invalid workspace name/],
+    ];
+    for (const [extra, re] of bad) await expect(runOp('docker.buildWith', build(extra), () => undefined, SEALED), JSON.stringify(extra)).rejects.toThrow(re);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('is advertised as docker.buildOptions unless the owner switched builds off', async () => {
+    expect(registry.AGENT_OPS.get('docker.buildWith')?.cap).toBe('docker.buildOptions');
+    expect(agentMode.HANDLED_OPS.has('docker.buildWith')).toBe(true);
+    expect(agentCapabilities({})).toContain('docker.buildOptions');
+    expect(agentCapabilities({ NINEDEPLOY_AGENT_BUILDS: 'off' })).not.toContain('docker.buildOptions');
+    expect(builds.buildCarriesArgs({ buildArgs: {} })).toBe(false);
+    expect(builds.buildCarriesArgs({})).toBe(false);
+    expect(builds.buildCarriesArgs({ buildArgs: 'x' })).toBe(true);
+  });
+});
+
 describe('wiring and pins (M11)', () => {
   it('both ops are registered, handled, and advertised after the 0.15 list unless the owner switched builds off', async () => {
     for (const op of ['build.nixpacks', 'build.railpack']) {

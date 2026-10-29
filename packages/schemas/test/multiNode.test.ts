@@ -73,6 +73,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'volume.compose',
       'tunnel.tcp',
       'gha.runner',
+      'docker.buildOptions',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     // A 0.15 capability is not one of them.
