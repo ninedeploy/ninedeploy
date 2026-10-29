@@ -5937,4 +5937,20 @@ export const TR: Readonly<Record<string, string>> = {
   '{model} read the newest logs when the rule fired. It can be wrong: check the logs before acting.':
     '{model}, kural tetiklendiğinde en yeni logları okudu. Yanılıyor olabilir: harekete geçmeden önce logları kontrol edin.',
   'AI alert investigation': 'AI alarm incelemesi',
+
+  // ── DigitalOcean droplets ─────────────────────────────────────────────
+  'DigitalOcean token saved': 'DigitalOcean token\'ı kaydedildi',
+  'Droplet deleted on DigitalOcean': 'Droplet DigitalOcean\'da silindi',
+  'Create droplet': 'Droplet oluştur',
+  'DigitalOcean token': 'DigitalOcean token\'ı',
+  'Create droplets on DigitalOcean that join this panel by themselves. Paste a personal access token with droplet read and write access; it is stored encrypted and never shown again.':
+    'Bu panele kendiliğinden katılan droplet\'ları DigitalOcean\'da oluşturun. Droplet okuma ve yazma yetkisi olan bir kişisel erişim token\'ı yapıştırın; şifreli saklanır ve bir daha gösterilmez.',
+  'Delete droplet': 'Droplet\'ı sil',
+  'Delete the droplet "{name}" on DigitalOcean and remove its node? The droplet and everything on its disk are destroyed. This is refused while the node hosts services or databases.':
+    'DigitalOcean\'daki "{name}" droplet\'ı silinsin ve node\'u kaldırılsın mı? Droplet ve diskindeki her şey yok edilir. Node servis veya veritabanı barındırırken bu reddedilir.',
+  'Could not read the DigitalOcean account: {error}': 'DigitalOcean hesabı okunamadı: {error}',
+  'Reading the DigitalOcean account…': 'DigitalOcean hesabı okunuyor…',
+  '{cpus} vCPU, {memory} GB RAM, {disk} GB, USD {price}/month': '{cpus} vCPU, {memory} GB RAM, {disk} GB, ayda {price} USD',
+  'DigitalOcean bills the droplet from the moment it is created. Its user data installs Docker and starts the NineDeploy agent on port 4600; the panel replaces the agent key as soon as the agent answers.':
+    'DigitalOcean droplet\'ı oluşturulduğu andan itibaren ücretlendirir. User data\'sı Docker\'ı kurar ve NineDeploy agent\'ını 4600 portunda başlatır; agent yanıt verir vermez panel agent anahtarını değiştirir.',
 };

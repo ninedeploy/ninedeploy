@@ -64,7 +64,7 @@ export type HetznerOptions = z.infer<typeof hetznerOptions>;
 export const cloudServer = z.object({
   serverId: z.number().int(),
   name: z.string(),
-  provider: z.literal('hetzner'),
+  provider: z.enum(['hetzner', 'digitalocean']),
   providerServerId: z.number().int(),
   location: z.string(),
   serverType: z.string(),
@@ -77,3 +77,51 @@ export const cloudServer = z.object({
   createdAt: z.string(),
 });
 export type CloudServer = z.infer<typeof cloudServer>;
+
+// ── DigitalOcean (G4.3, second provider) ───────────────────────────────────
+// `/v1/cloud/digitalocean/*`, operator only, the same flow as Hetzner: a
+// droplet whose user data installs Docker and starts the agent.
+
+/** PUT /v1/cloud/digitalocean/token. A personal access token with droplet read and write (`dop_v1_…`). */
+export const digitalOceanTokenInput = z.object({
+  token: z.string().trim().min(32).max(128).regex(/^[A-Za-z0-9_]+$/, 'not a DigitalOcean API token'),
+});
+export type DigitalOceanTokenInput = z.infer<typeof digitalOceanTokenInput>;
+
+/** GET /v1/cloud/digitalocean (same shape as Hetzner's). */
+export const digitalOceanStatus = hetznerStatus;
+export type DigitalOceanStatus = HetznerStatus;
+
+/** POST /v1/cloud/digitalocean/servers. Droplet names are hostnames too. */
+export const digitalOceanServerCreate = z.object({
+  name: hetznerServerName,
+  region: slug(20),
+  size: slug(40),
+  image: slug(60),
+  /** DigitalOcean SSH key ids added to root's authorized_keys. */
+  sshKeyIds: z.array(z.number().int().positive()).max(10).default([]),
+  agentPort: z.number().int().min(1024).max(65535).default(4600),
+});
+export type DigitalOceanServerCreate = z.input<typeof digitalOceanServerCreate>;
+
+/** GET /v1/cloud/digitalocean/options. */
+export const digitalOceanOptions = z.object({
+  regions: z.array(z.object({ slug: z.string(), name: z.string() })),
+  sizes: z.array(
+    z.object({
+      slug: z.string(),
+      description: z.string(),
+      vcpus: z.number(),
+      memoryGb: z.number(),
+      diskGb: z.number(),
+      /** Monthly price in USD. */
+      priceMonthly: z.number(),
+      /** Regions that offer it. */
+      regions: z.array(z.string()),
+    }),
+  ),
+  /** Distribution images the agent bootstrap supports. */
+  images: z.array(z.object({ slug: z.string(), description: z.string(), regions: z.array(z.string()) })),
+  sshKeys: z.array(z.object({ id: z.number(), name: z.string(), fingerprint: z.string() })),
+});
+export type DigitalOceanOptions = z.infer<typeof digitalOceanOptions>;

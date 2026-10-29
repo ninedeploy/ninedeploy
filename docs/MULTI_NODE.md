@@ -240,4 +240,30 @@ The panel pings the new agent every 15 seconds for up to 20 minutes, and marks t
 - `GET` and `POST /v1/cloud/hetzner/servers`
 - `DELETE /v1/cloud/hetzner/servers/:serverId`
 
-DigitalOcean and Vultr would follow the same shape.
+## Creating nodes on DigitalOcean (G4.3)
+
+Servers → *DigitalOcean* creates a droplet that joins the panel by itself, the same way as a Hetzner VM. Operators only.
+
+1. In the DigitalOcean control panel, create a personal access token with read and write on droplets (and read on regions, sizes, images and SSH keys).
+2. Paste it into the card. The panel checks it with a read call, stores it encrypted, and shows back only its last four characters.
+3. Choose a name, a region, a size and an image, and optionally SSH keys for root. Sizes and images are filtered to the region. Only the distributions the bootstrap supports are offered: Ubuntu, Debian, Fedora, Rocky, AlmaLinux and CentOS.
+
+What happens then:
+- The droplet is created with the tag `ninedeploy` and the same user data as a Hetzner VM: Docker for its distribution, then the agent on the chosen port (default 4600).
+- A droplet has no address when DigitalOcean answers the create call. The panel reads it back for up to two minutes; a droplet that gets no public IPv4 in that time is deleted again.
+- The node is registered `offline`, rekeyed as soon as its agent first answers, and turns online after that. DigitalOcean also serves the user data on the droplet's metadata endpoint, so the rekey matters here for the same reason.
+
+**DigitalOcean bills the droplet from the moment it is created.** Deleting it from the card works like Hetzner's: refused while the node hosts anything, and a droplet already gone only cleans up the panel side.
+
+- No migration: the token is the encrypted setting `digitalocean_token_encrypted`, and the link is the same `cloud_server:<serverId>` row with `provider: "digitalocean"`.
+- Tested against a fake DigitalOcean API; not yet against a real account.
+
+**Routes** (operator only), all audited (`cloud.*`):
+
+- `GET /v1/cloud/digitalocean`
+- `PUT` and `DELETE /v1/cloud/digitalocean/token`
+- `GET /v1/cloud/digitalocean/options`
+- `GET` and `POST /v1/cloud/digitalocean/servers`
+- `DELETE /v1/cloud/digitalocean/servers/:serverId`
+
+SDK: `cloud.digitalocean.*`, the same methods as `cloud.hetzner`. Vultr would follow the same shape.

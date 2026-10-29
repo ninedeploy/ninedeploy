@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { hetznerServerCreate, hetznerTokenInput } from '@ninedeploy/schemas';
+import { digitalOceanServerCreate, digitalOceanTokenInput, hetznerServerCreate, hetznerTokenInput } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { parseId } from '../lib/errors.js';
 import {
@@ -12,6 +12,15 @@ import {
   saveHetznerToken,
   waitForAgentInBackground,
 } from '../lib/hetznerCloud.js';
+import {
+  createDigitalOceanServer,
+  deleteDigitalOceanServer,
+  deleteDigitalOceanToken,
+  digitalOceanOptions,
+  digitalOceanStatus,
+  listDigitalOceanServers,
+  saveDigitalOceanToken,
+} from '../lib/digitaloceanCloud.js';
 
 /**
  * G4.3 cloud servers, operator only: `/v1/cloud/hetzner/*`. The token is
@@ -62,6 +71,52 @@ export const cloudRoutes: FastifyPluginAsync = async (app) => {
     const removed = await deleteHetznerServer(app.db, serverId);
     void audit(app.db, req.user!.id, 'cloud.server_delete', removed.name, {
       provider: 'hetzner',
+      serverId,
+      providerServerId: removed.providerServerId,
+    });
+    return { ok: true };
+  });
+
+  // ── DigitalOcean: the same flow, `/v1/cloud/digitalocean/*` ──
+  app.get('/digitalocean', async () => digitalOceanStatus(app.db));
+
+  app.put('/digitalocean/token', async (req) => {
+    const { token } = digitalOceanTokenInput.parse(req.body ?? {});
+    const status = await saveDigitalOceanToken(app.db, token);
+    void audit(app.db, req.user!.id, 'cloud.digitalocean_token_set', 'digitalocean', { tokenHint: status.tokenHint });
+    return status;
+  });
+
+  app.delete('/digitalocean/token', async (req) => {
+    await deleteDigitalOceanToken(app.db);
+    void audit(app.db, req.user!.id, 'cloud.digitalocean_token_delete', 'digitalocean');
+    return digitalOceanStatus(app.db);
+  });
+
+  app.get('/digitalocean/options', async () => digitalOceanOptions(app.db));
+
+  app.get('/digitalocean/servers', async () => listDigitalOceanServers(app.db));
+
+  app.post('/digitalocean/servers', async (req) => {
+    const input = digitalOceanServerCreate.parse(req.body ?? {});
+    const created = await createDigitalOceanServer(app.db, input, { waitForAgent: waitForAgentInBackground(app.db, req.log) });
+    void audit(app.db, req.user!.id, 'cloud.server_create', input.name, {
+      provider: 'digitalocean',
+      serverId: created.serverId,
+      providerServerId: created.providerServerId,
+      ipv4: created.ipv4,
+      location: input.region,
+      serverType: input.size,
+      image: input.image,
+    });
+    return created;
+  });
+
+  app.delete('/digitalocean/servers/:serverId', async (req) => {
+    const serverId = parseId((req.params as { serverId: string }).serverId, 'Invalid node id');
+    const removed = await deleteDigitalOceanServer(app.db, serverId);
+    void audit(app.db, req.user!.id, 'cloud.server_delete', removed.name, {
+      provider: 'digitalocean',
       serverId,
       providerServerId: removed.providerServerId,
     });

@@ -173,8 +173,12 @@ export async function hetznerOptions(db: DB): Promise<HetznerOptions> {
 
 // ── create ─────────────────────────────────────────────────────────────────
 
-interface StoredLink {
-  provider: 'hetzner';
+/** The provider behind a cloud node (G4.3: Hetzner first, then DigitalOcean). */
+export type CloudProvider = 'hetzner' | 'digitalocean';
+
+/** The settings row that links a node to its VM; shared by every provider. */
+export interface StoredLink {
+  provider: CloudProvider;
   providerServerId: number;
   name: string;
   location: string;
@@ -232,35 +236,49 @@ export async function createHetznerServer(
     await undo();
     throw new HttpError(502, 'hetzner_no_ipv4', 'Hetzner created the server without a public IPv4 address; it was deleted again.');
   }
+  return recordCloudNode(db, {
+    link: { provider: 'hetzner', providerServerId, name: input.name, location: input.location, serverType: input.serverType, image: input.image, ipv4 },
+    agentPort: input.agentPort,
+    agentToken,
+    undo,
+    ...(opts.waitForAgent ? { waitForAgent: opts.waitForAgent } : {}),
+  });
+}
 
+/**
+ * Register a VM the provider just created as an `offline` node and link it
+ * (shared by every provider). `undo` deletes the VM when the node cannot be
+ * recorded, so a failed create never leaves a paid VM behind.
+ */
+export async function recordCloudNode(
+  db: DB,
+  args: {
+    link: Omit<StoredLink, 'createdAt' | 'rekeyed'>;
+    agentPort: number;
+    agentToken: string;
+    undo: () => Promise<unknown>;
+    waitForAgent?: (serverId: number, host: string, port: number, token: string) => void;
+  },
+): Promise<CreatedCloudServer> {
+  const { link, agentPort, agentToken, undo } = args;
   // (host, port) is unique: a recycled IP still registered as another node.
-  const existing = await db.query.servers.findFirst({ where: and(eq(servers.host, ipv4), eq(servers.port, input.agentPort)) });
+  const existing = await db.query.servers.findFirst({ where: and(eq(servers.host, link.ipv4), eq(servers.port, agentPort)) });
   if (existing) {
     await undo();
-    throw conflict(`Node "${existing.name}" is still registered at ${ipv4}:${input.agentPort}; delete it, then create the server again.`);
+    throw conflict(`Node "${existing.name}" is still registered at ${link.ipv4}:${agentPort}; delete it, then create the server again.`);
   }
   const [row] = await db
     .insert(servers)
-    .values({ name: input.name, host: ipv4, port: input.agentPort, tokenEncrypted: encrypt(agentToken), status: 'offline' })
+    .values({ name: link.name, host: link.ipv4, port: agentPort, tokenEncrypted: encrypt(agentToken), status: 'offline' })
     .returning();
   if (!row) {
     await undo();
     throw new HttpError(500, 'node_not_recorded', 'Could not record the node');
   }
-  const link: StoredLink = {
-    provider: 'hetzner',
-    providerServerId,
-    name: input.name,
-    location: input.location,
-    serverType: input.serverType,
-    image: input.image,
-    ipv4,
-    createdAt: new Date().toISOString(),
-    rekeyed: false,
-  };
-  await setSettingJson(db, linkKey(row.id), link);
-  opts.waitForAgent?.(row.id, ipv4, input.agentPort, agentToken);
-  return { serverId: row.id, providerServerId, ipv4 };
+  const stored: StoredLink = { ...link, createdAt: new Date().toISOString(), rekeyed: false };
+  await setSettingJson(db, linkKey(row.id), stored);
+  args.waitForAgent?.(row.id, link.ipv4, agentPort, agentToken);
+  return { serverId: row.id, providerServerId: link.providerServerId, ipv4: link.ipv4 };
 }
 
 // ── rekey ────────────────────────────────────────────────────────────────
@@ -403,7 +421,7 @@ export function waitForAgentInBackground(
 
 /** Finish the rekey of every cloud node still on its first key (after a restart, or a rekey cut short). */
 export async function sweepCloudNodes(db: DB, log: FastifyBaseLogger, deps: RekeyDeps = {}): Promise<void> {
-  for (const { serverId, link } of await readLinks(db)) {
+  for (const { serverId, link } of await readCloudLinks(db)) {
     if (link.rekeyed) continue;
     try {
       if (await rekeyCloudNode(db, serverId, deps)) log.info({ component: 'hetzner', serverId }, 'cloud node rekeyed by the sweep');
@@ -415,21 +433,43 @@ export async function sweepCloudNodes(db: DB, log: FastifyBaseLogger, deps: Reke
 
 // ── list and delete ────────────────────────────────────────────────────────
 
-async function readLinks(db: DB): Promise<Array<{ serverId: number; link: StoredLink }>> {
+/** Every linked cloud node, of every provider (or of one). */
+export async function readCloudLinks(db: DB, provider?: CloudProvider): Promise<Array<{ serverId: number; link: StoredLink }>> {
   const rows = await db.query.settings.findMany();
   const out: Array<{ serverId: number; link: StoredLink }> = [];
   for (const r of rows) {
     if (!r.key.startsWith(LINK_PREFIX)) continue;
     const serverId = Number(r.key.slice(LINK_PREFIX.length));
     const link = (typeof r.value === 'string' ? JSON.parse(r.value) : r.value) as StoredLink | null;
-    if (Number.isSafeInteger(serverId) && link?.provider === 'hetzner') out.push({ serverId, link });
+    if (Number.isSafeInteger(serverId) && link && (provider === undefined || link.provider === provider)) out.push({ serverId, link });
   }
   return out.sort((a, b) => a.serverId - b.serverId);
 }
 
+/** The list rows of one provider's nodes; `remote` is the provider's status per VM id, null when it could not be read. */
+export async function cloudServerRows(db: DB, provider: CloudProvider, remote: Map<number, string> | null): Promise<CloudServer[]> {
+  const out: CloudServer[] = [];
+  for (const { serverId, link } of await readCloudLinks(db, provider)) {
+    const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId), columns: { status: true } });
+    out.push({
+      serverId,
+      name: link.name,
+      provider,
+      providerServerId: link.providerServerId,
+      location: link.location,
+      serverType: link.serverType,
+      image: link.image,
+      ipv4: link.ipv4,
+      providerStatus: remote ? (remote.get(link.providerServerId) ?? 'deleted') : null,
+      nodeStatus: node ? (link.rekeyed === false && node.status === 'online' ? 'rekeying' : node.status) : 'removed',
+      createdAt: link.createdAt,
+    });
+  }
+  return out;
+}
+
 export async function listHetznerServers(db: DB): Promise<CloudServer[]> {
-  const links = await readLinks(db);
-  if (links.length === 0) return [];
+  if ((await readCloudLinks(db, 'hetzner')).length === 0) return [];
   const token = await readToken(db);
   let remote: Map<number, string> | null = null;
   if (token) {
@@ -444,32 +484,18 @@ export async function listHetznerServers(db: DB): Promise<CloudServer[]> {
       remote = null;
     }
   }
-  const out: CloudServer[] = [];
-  for (const { serverId, link } of links) {
-    const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId), columns: { status: true } });
-    out.push({
-      serverId,
-      name: link.name,
-      provider: 'hetzner',
-      providerServerId: link.providerServerId,
-      location: link.location,
-      serverType: link.serverType,
-      image: link.image,
-      ipv4: link.ipv4,
-      providerStatus: remote ? (remote.get(link.providerServerId) ?? 'deleted') : null,
-      nodeStatus: node ? (link.rekeyed === false && node.status === 'online' ? 'rekeying' : node.status) : 'removed',
-      createdAt: link.createdAt,
-    });
-  }
-  return out;
+  return cloudServerRows(db, 'hetzner', remote);
 }
 
-/** Delete the VM and its node row. Refused while the node hosts services, databases or Swarm work. */
-export async function deleteHetznerServer(db: DB, serverId: number): Promise<{ providerServerId: number; name: string }> {
+/** The link of a cloud node of this provider, or 404. */
+export async function cloudLink(db: DB, serverId: number, provider: CloudProvider, label: string): Promise<StoredLink> {
   const link = await getSettingJson<StoredLink>(db, linkKey(serverId));
-  if (!link || link.provider !== 'hetzner') throw notFound('No Hetzner server is linked to this node');
-  const token = await requireToken(db);
+  if (!link || link.provider !== provider) throw notFound(`No ${label} server is linked to this node`);
+  return link;
+}
 
+/** Refuse deleting a cloud node's VM while the node hosts services, databases or Swarm work. Answers whether the node row exists. */
+export async function assertCloudNodeRemovable(db: DB, serverId: number): Promise<boolean> {
   const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId), columns: { id: true } });
   if (node) {
     const blockers = await serverDeleteBlockers(db, serverId);
@@ -484,15 +510,27 @@ export async function deleteHetznerServer(db: DB, serverId: number): Promise<{ p
       );
     }
   }
+  return node !== undefined;
+}
 
+/** After the VM is gone: the node row, its link and any pending rekey. */
+export async function forgetCloudNode(db: DB, serverId: number, nodeExists: boolean): Promise<void> {
+  if (nodeExists) await db.delete(servers).where(eq(servers.id, serverId));
+  await db.delete(settings).where(eq(settings.key, linkKey(serverId)));
+  await db.delete(settings).where(eq(settings.key, rekeyKey(serverId)));
+}
+
+/** Delete the VM and its node row. Refused while the node hosts services, databases or Swarm work. */
+export async function deleteHetznerServer(db: DB, serverId: number): Promise<{ providerServerId: number; name: string }> {
+  const link = await cloudLink(db, serverId, 'hetzner', 'Hetzner');
+  const token = await requireToken(db);
+  const nodeExists = await assertCloudNodeRemovable(db, serverId);
   try {
     await hetzner(token, 'DELETE', `/servers/${link.providerServerId}`);
   } catch (err) {
     // Already gone on Hetzner: finish the cleanup here.
     if (!(err instanceof HetznerApiError && err.upstreamStatus === 404)) throw err;
   }
-  if (node) await db.delete(servers).where(eq(servers.id, serverId));
-  await db.delete(settings).where(eq(settings.key, linkKey(serverId)));
-  await db.delete(settings).where(eq(settings.key, rekeyKey(serverId)));
+  await forgetCloudNode(db, serverId, nodeExists);
   return { providerServerId: link.providerServerId, name: link.name };
 }

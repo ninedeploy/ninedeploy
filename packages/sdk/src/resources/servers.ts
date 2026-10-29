@@ -12,6 +12,9 @@ import type {
   SwarmStatus,
   OsUpdateStatus,
   CloudServer,
+  DigitalOceanOptions,
+  DigitalOceanServerCreate,
+  DigitalOceanStatus,
   HetznerOptions,
   HetznerServerCreate,
   HetznerStatus,
@@ -90,6 +93,15 @@ export interface ServersApi {
    * a created server bootstraps the agent itself and turns online when it answers.
    */
   cloud: {
+    digitalocean: {
+      status: () => Promise<DigitalOceanStatus>;
+      setToken: (token: string) => Promise<DigitalOceanStatus>;
+      deleteToken: () => Promise<DigitalOceanStatus>;
+      options: () => Promise<DigitalOceanOptions>;
+      servers: () => Promise<CloudServer[]>;
+      createServer: (input: DigitalOceanServerCreate) => Promise<{ serverId: number; providerServerId: number; ipv4: string }>;
+      deleteServer: (serverId: number) => Promise<{ ok: boolean }>;
+    };
     hetzner: {
       status: () => Promise<HetznerStatus>;
       setToken: (token: string) => Promise<HetznerStatus>;
@@ -169,6 +181,16 @@ export function serversApi(t: Transport): ServersApi {
         ),
     },
     cloud: {
+      digitalocean: {
+        status: () => get<DigitalOceanStatus>('/v1/cloud/digitalocean'),
+        setToken: (token) => send<DigitalOceanStatus>('PUT', '/v1/cloud/digitalocean/token', { token }),
+        deleteToken: () => send<DigitalOceanStatus>('DELETE', '/v1/cloud/digitalocean/token'),
+        options: () => get<DigitalOceanOptions>('/v1/cloud/digitalocean/options'),
+        servers: () => get<CloudServer[]>('/v1/cloud/digitalocean/servers'),
+        createServer: (input) =>
+          send<{ serverId: number; providerServerId: number; ipv4: string }>('POST', '/v1/cloud/digitalocean/servers', input),
+        deleteServer: (serverId) => send<{ ok: boolean }>('DELETE', `/v1/cloud/digitalocean/servers/${serverId}`),
+      },
       hetzner: {
         status: () => get<HetznerStatus>('/v1/cloud/hetzner'),
         setToken: (token) => send<HetznerStatus>('PUT', '/v1/cloud/hetzner/token', { token }),

@@ -14,6 +14,8 @@ DELETE /v1/auth/sessions/:id self -
 DELETE /v1/auth/tokens/:id self -
 DELETE /v1/backup-destinations/:id operator nd://scope/write/backups
 DELETE /v1/backups/:bid admin nd://scope/write/backups
+DELETE /v1/cloud/digitalocean/servers/:serverId operator -
+DELETE /v1/cloud/digitalocean/token operator -
 DELETE /v1/cloud/hetzner/servers/:serverId operator -
 DELETE /v1/cloud/hetzner/token operator -
 DELETE /v1/config-presets/:id operator nd://scope/write/config
@@ -113,6 +115,9 @@ GET /v1/backups/:bid/download admin nd://scope/read/backups
 GET /v1/badges/:badge token -
 GET /v1/branding authed -
 GET /v1/build-cache/stats authed -
+GET /v1/cloud/digitalocean operator -
+GET /v1/cloud/digitalocean/options operator -
+GET /v1/cloud/digitalocean/servers operator -
 GET /v1/cloud/hetzner operator -
 GET /v1/cloud/hetzner/options operator -
 GET /v1/cloud/hetzner/servers operator -
@@ -380,6 +385,7 @@ POST /v1/auth/tokens self -
 POST /v1/backup-destinations operator nd://scope/write/backups
 POST /v1/backup-destinations/:id/test operator nd://scope/write/backups
 POST /v1/build-cache/store operator -
+POST /v1/cloud/digitalocean/servers operator -
 POST /v1/cloud/hetzner/servers operator -
 POST /v1/config-presets operator nd://scope/write/config
 POST /v1/config/:key operator nd://scope/write/config
@@ -553,6 +559,7 @@ POST /v1/workspaces/:id/members admin -
 POST /v1/workspaces/:wid/email-templates/preview member -
 PUT /scim/v2/Users/:id scim -
 PUT /v1/ai/config operator -
+PUT /v1/cloud/digitalocean/token operator -
 PUT /v1/cloud/hetzner/token operator -
 PUT /v1/config-presets/:id/apply operator nd://scope/write/config
 PUT /v1/containers/:container/files operator -
