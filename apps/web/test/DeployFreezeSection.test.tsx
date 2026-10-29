@@ -55,4 +55,32 @@ describe('DeployFreezeSection (G5.5)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lift' }));
     await waitFor(() => expect(api.deployFreezes.lift).toHaveBeenCalledWith('f1'));
   });
+
+  it('requires a new target after changing scope and preserves the reason after a failed freeze', async () => {
+    mockOf(api.deployFreezes.list).mockResolvedValue([] as never);
+    mockOf(api.workspaces.list).mockResolvedValue([{ id: 2, name: 'team' }] as never);
+    mockOf(api.projects.list).mockResolvedValue([{ id: 3, name: 'shop' }] as never);
+    mockOf(api.deployFreezes.create).mockRejectedValue(new Error('permission denied'));
+    renderWithProviders(<DeployFreezeSection />);
+    await userEvent.type(await screen.findByLabelText('Reason'), 'incident');
+    await userEvent.selectOptions(screen.getByLabelText('Scope'), 'workspace');
+    await userEvent.selectOptions(await screen.findByLabelText('Workspace'), await screen.findByRole('option', { name: 'team' }));
+    expect(screen.getByRole('button', { name: 'Freeze deploys' })).toBeEnabled();
+    await userEvent.selectOptions(screen.getByLabelText('Scope'), 'project');
+    expect(screen.getByRole('button', { name: 'Freeze deploys' })).toBeDisabled();
+    await userEvent.selectOptions(await screen.findByLabelText('Project'), await screen.findByRole('option', { name: 'shop' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Freeze deploys' }));
+    expect(await screen.findByText('Could not freeze deploys: permission denied')).toBeInTheDocument();
+    expect(screen.getByLabelText('Reason')).toHaveValue('incident');
+    expect(api.deployFreezes.create).toHaveBeenCalledWith({ scope: 'project', targetId: 3, reason: 'incident', until: null });
+  });
+
+  it('keeps a freeze visible if lifting it fails', async () => {
+    mockOf(api.deployFreezes.list).mockResolvedValue([FREEZE] as never);
+    mockOf(api.deployFreezes.lift).mockRejectedValue(new Error('not permitted'));
+    renderWithProviders(<DeployFreezeSection />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Lift' }));
+    expect(await screen.findByText('Could not lift the freeze: not permitted')).toBeInTheDocument();
+    expect(screen.getByText('release week')).toBeInTheDocument();
+  });
 });
