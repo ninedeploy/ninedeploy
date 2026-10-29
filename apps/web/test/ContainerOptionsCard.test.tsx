@@ -174,6 +174,19 @@ describe('Healthcheck mode field (0.16.1)', () => {
     apiMock.api.env.list.mockResolvedValue([]);
   });
 
+  it('explains that the legacy node check does not probe HTTP and clears the warning for strict readiness', async () => {
+    renderTab(serviceWith({ serverId: 7, healthCheck: 'http' }));
+    expect(await screen.findByText('On a node, the default check verifies container and Docker health only; it does not test HTTP. Select HTTP readiness to wait for the application response.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Healthcheck'), { target: { value: 'http-strict' } });
+    expect(screen.queryByText(/On a node, the default check verifies/)).not.toBeInTheDocument();
+  }, TIMEOUT);
+
+  it('does not show the node-specific warning for a panel-host service', async () => {
+    renderTab(serviceWith({ serverId: null, healthCheck: 'http' }));
+    await screen.findByLabelText('Healthcheck');
+    expect(screen.queryByText(/On a node, the default check verifies/)).not.toBeInTheDocument();
+  }, TIMEOUT);
+
   it('switches a docker service to "container running" and back, sending only a change', async () => {
     renderTab(serviceWith({ healthCheck: 'http' }));
     const select = await screen.findByLabelText('Healthcheck');

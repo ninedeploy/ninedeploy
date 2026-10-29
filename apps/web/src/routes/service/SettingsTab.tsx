@@ -426,6 +426,11 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
               </Select>
             </Field>
           )}
+          {svc.type === 'docker' && svc.orchestrator !== 'swarm' && svc.healthCheck !== undefined && svc.serverId != null && form.healthCheck === 'http' && (
+            <p className="col-span-full text-xs text-amber-300" role="status">
+              {t('On a node, the default check verifies container and Docker health only; it does not test HTTP. Select HTTP readiness to wait for the application response.')}
+            </p>
+          )}
           {svc.type === 'docker' && svc.dockerLabels !== undefined && (
             <Field
               label={t('Docker labels')}
