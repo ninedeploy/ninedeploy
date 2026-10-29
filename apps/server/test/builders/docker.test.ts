@@ -1012,6 +1012,19 @@ describe('dockerBuilder.isHealthy', () => {
     expect(h.sleep.mock.calls.every(([ms]) => ms > 0 && ms <= 20)).toBe(true);
   });
 
+  it('does not sleep with a negative duration if the deadline expires between checks', async () => {
+    let afterProbe = false;
+    let reads = 0;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => afterProbe ? (++reads === 1 ? 119 : 121) : 100);
+    fetchMock.mockImplementation(async () => { afterProbe = true; return { status: 503 }; });
+    try {
+      await expect(dockerBuilder.isHealthy({ runtimeId: 'r', port: 3000, healthPath: '/' }, 20)).resolves.toBe(false);
+      expect(h.sleep).not.toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('returns false when the fetch throws', async () => {
     fetchMock.mockRejectedValue(new Error('connection refused'));
 

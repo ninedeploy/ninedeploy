@@ -1674,7 +1674,8 @@ export const dockerBuilder: Builder = {
         await options.checkpoint?.();
         if (Date.now() >= deadline || deployAborted()) break;
         if (ready) return true;
-        await sleep(Math.min(1000, deadline - Date.now()));
+        const waitMs = Math.min(1000, deadline - Date.now());
+        if (waitMs > 0) await sleep(waitMs);
       }
       log(`${runtime.runtimeId} did not pass ${runtime.healthCheck} readiness`);
       return false;
@@ -1734,7 +1735,8 @@ export const dockerBuilder: Builder = {
         } catch {
           /* container can still be transitioning into the running state */
         }
-        await sleep(1000);
+        const waitMs = Math.min(1000, deadline - Date.now());
+        if (waitMs > 0 && !deployAborted()) await sleep(waitMs);
         continue;
       }
       if (runtime.port) {
@@ -1761,7 +1763,8 @@ export const dockerBuilder: Builder = {
           await options.checkpoint?.();
           if (Date.now() >= deadline || deployAborted()) break;
           if (ready) return true;
-          await sleep(Math.min(1000, deadline - Date.now()));
+          const waitMs = Math.min(1000, deadline - Date.now());
+          if (waitMs > 0) await sleep(waitMs);
           continue;
         }
         // Change the probe's vantage point, never its HTTP readiness contract.
@@ -1818,7 +1821,8 @@ export const dockerBuilder: Builder = {
           }
         }
         if (Date.now() >= deadline || deployAborted()) break;
-        await sleep(Math.min(3000, deadline - Date.now()));
+        const waitMs = Math.min(3000, deadline - Date.now());
+        if (waitMs > 0) await sleep(waitMs);
       } else {
         // No HTTP port to probe — a live container is the strongest signal available.
         return true;
