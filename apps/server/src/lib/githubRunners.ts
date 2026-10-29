@@ -38,6 +38,11 @@ import { getSettingJson, setSettingJson } from './settings.js';
  * `docker build`) therefore do not run here. Public repositories are refused
  * unless the operator allows them: anyone can open a pull request there.
  *
+ * On a node (config `serverId`, agent 0.18.7 with the opt-in `gha.runner`)
+ * the node's agent creates the same network, puts the same firewall rules on
+ * its host and starts the same container; the JIT configuration reaches it
+ * only inside a sealed request (agentOps/githubRunners.ts).
+ *
  * Jobs beyond `maxConcurrent` wait in memory and start as slots free up (the
  * scheduler plugin calls {@link sweepGithubRunners}). The queue does not
  * survive a panel restart; GitHub keeps such a job queued until some runner
@@ -149,6 +154,8 @@ export interface RunnerContainer {
   scope: string | null;
   state: string;
   createdAt: Date | null;
+  /** The node it runs on; null = the panel host. */
+  serverId: number | null;
 }
 
 /** Every runner container on the panel host (running or not). */
@@ -184,6 +191,7 @@ export async function listRunnerContainers(): Promise<RunnerContainer[]> {
         repo: repo || null,
         runnerId: num(runner),
         scope: scope || null,
+        serverId: null,
       };
     });
 }
@@ -204,7 +212,7 @@ const NETWORK_CREATE_ARGS = [
   RUNNER_NETWORK,
 ];
 
-async function ensureRunnerNetwork(): Promise<void> {
+export async function ensureRunnerNetwork(): Promise<void> {
   const ls = async () => (await capture('docker', ['network', 'ls', '-q', '--filter', `name=^${RUNNER_NETWORK}$`], { timeoutMs: 30_000 })).trim();
   if (!(await ls())) {
     await capture('docker', NETWORK_CREATE_ARGS, { timeoutMs: 30_000 }).catch(async (err) => {
@@ -236,6 +244,26 @@ export function isolationRules(): Array<{ chain: string; rule: string[] }> {
     ...BLOCKED_RANGES.map((cidr) => ({ chain: 'DOCKER-USER', rule: ['-i', RUNNER_BRIDGE, '-d', cidr, '-j', 'DROP'] })),
   ];
 }
+
+/**
+ * G4.5 on a node: the same rules, as the fixed script the node agent runs on
+ * its host (through the `nsenter` helper `host.packages` uses, since the agent
+ * itself lives in a container whose iptables would not guard the host).
+ * Every word is a constant of this module. Exit 3: no runner bridge; 4: no
+ * iptables on the host.
+ */
+export function nodeIsolationScript(): string {
+  const lines = [
+    'set -e',
+    `[ -e /sys/class/net/${RUNNER_BRIDGE} ] || { echo "the runner bridge ${RUNNER_BRIDGE} is missing on the host" >&2; exit 3; }`,
+    'command -v iptables >/dev/null 2>&1 || { echo "iptables is not installed on the host" >&2; exit 4; }',
+    ...isolationRules().map(({ chain, rule }) => `iptables -C ${chain} ${rule.join(' ')} 2>/dev/null || iptables -I ${chain} 1 ${rule.join(' ')}`),
+  ];
+  return lines.join('\n');
+}
+
+/** Names this module gives runners: `nd-<app>-<job>-<6 hex>`. */
+export const RUNNER_NAME_RE = /^nd-\d+-\d+-[0-9a-f]{6}$/;
 
 const isolationSkipped = () => process.env['NINEDEPLOY_GHA_RUNNERS_UNISOLATED'] === '1';
 
@@ -304,9 +332,79 @@ export function runnerRunArgs(
   ];
 }
 
-async function removeContainer(name: string, strict = false): Promise<boolean> {
+// ── nodes ──────────────────────────────────────────────────────────────────
+
+const NODE_RUNNER_FEATURE = 'run GitHub Actions runners';
+const NODE_OP_TIMEOUT_MS = DOCKER_RUN_TIMEOUT_MS + 60_000;
+
+async function nodeRunnerOp(db: DB, serverId: number, op: string, params: Record<string, unknown>): Promise<string[]> {
+  const { assertNodeCapability } = await import('./agentCapabilities.js');
+  await assertNodeCapability(db, serverId, { cap: 'gha.runner', feature: NODE_RUNNER_FEATURE, sealedRequired: true });
+  const { agentOp } = await import('./agentClient.js');
+  return (await agentOp(db, serverId, op, params, () => undefined, { timeoutMs: NODE_OP_TIMEOUT_MS })).lines;
+}
+
+/** The runner containers on a node, from its agent. Rows that do not look like ours are dropped. */
+export async function listNodeRunnerContainers(db: DB, serverId: number): Promise<RunnerContainer[]> {
+  const line = (await nodeRunnerOp(db, serverId, 'gha.runner.list', {})).find((l) => l.startsWith('ND-GHA-RUNNERS '));
+  if (!line) throw new Error(`Node #${serverId} answered no runner list`);
+  const rows = JSON.parse(line.slice('ND-GHA-RUNNERS '.length)) as unknown;
+  if (!Array.isArray(rows)) throw new Error(`Node #${serverId} answered a malformed runner list`);
+  const num = (v: unknown) => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : null);
+  const text = (v: unknown) => (typeof v === 'string' && v.length <= 200 ? v : null);
+  return rows.flatMap((r: Record<string, unknown>): RunnerContainer[] => {
+    if (!r || typeof r !== 'object' || typeof r['name'] !== 'string' || !RUNNER_NAME_RE.test(r['name'])) return [];
+    const at = typeof r['createdAt'] === 'string' ? new Date(r['createdAt']) : null;
+    return [
+      {
+        name: r['name'],
+        state: text(r['state']) ?? 'unknown',
+        createdAt: at && !Number.isNaN(at.getTime()) ? at : null,
+        githubAppId: num(r['githubAppId']),
+        jobId: num(r['jobId']),
+        repo: text(r['repo']),
+        runnerId: num(r['runnerId']),
+        scope: text(r['scope']),
+        serverId,
+      },
+    ];
+  });
+}
+
+/**
+ * Runner containers on every host runners may use: the panel host and each
+ * node a configuration points at. A host that cannot answer is reported in
+ * `unreachable` (null = the panel host) instead of failing the rest.
+ */
+export async function listAllRunnerContainers(db: DB): Promise<{ containers: RunnerContainer[]; unreachable: Map<number | null, string> }> {
+  const apps = await db.query.githubApps.findMany({ columns: { id: true } });
+  const nodes = new Set<number>();
+  for (const a of apps) {
+    const serverId = (await getRunnerConfig(db, a.id)).serverId;
+    if (serverId != null) nodes.add(serverId);
+  }
+  const containers: RunnerContainer[] = [];
+  const unreachable = new Map<number | null, string>();
+  const message = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 300);
   try {
-    await capture('docker', ['rm', '-f', name], { timeoutMs: 60_000 });
+    containers.push(...(await listRunnerContainers()));
+  } catch (err) {
+    unreachable.set(null, message(err));
+  }
+  for (const serverId of nodes) {
+    try {
+      containers.push(...(await listNodeRunnerContainers(db, serverId)));
+    } catch (err) {
+      unreachable.set(serverId, message(err));
+    }
+  }
+  return { containers, unreachable };
+}
+
+async function removeRunnerContainer(db: DB, c: Pick<RunnerContainer, 'name' | 'serverId'>, strict = false): Promise<boolean> {
+  try {
+    if (c.serverId != null) await nodeRunnerOp(db, c.serverId, 'gha.runner.stop', { name: c.name });
+    else await capture('docker', ['rm', '-f', c.name], { timeoutMs: 60_000 });
     return true;
   } catch (err) {
     if (strict) throw err;
@@ -427,9 +525,12 @@ async function startRunner(db: DB, log: FastifyBaseLogger, ghApp: GithubApp, job
   if (!inst) return;
   const scope = runnerScope(inst, job.repo, job.repoId);
   const token = await scopeToken(db, ghApp, inst, scope);
+  const serverId = config.serverId ?? null;
   // Isolation first: nothing is registered on GitHub for a runner that cannot start safely.
-  await ensureRunnerNetwork();
-  await ensureRunnerIsolation();
+  if (serverId === null) {
+    await ensureRunnerNetwork();
+    await ensureRunnerIsolation();
+  } else await nodeRunnerOp(db, serverId, 'gha.runner.prepare', {});
   // A repository runner serves only its repository; an organization runner, only its group's.
   const runnerGroupId = scope.kind === 'org' ? await ensureRunnerGroup(db, ghApp, inst, scope.org, token, config) : 1;
   const runnerName = `nd-${ghApp.id}-${job.jobId}-${randomBytes(3).toString('hex')}`;
@@ -444,21 +545,34 @@ async function startRunner(db: DB, log: FastifyBaseLogger, ghApp: GithubApp, job
   const runnerId = res.data?.runner?.id;
   if (typeof jit !== 'string' || !jit || !Number.isSafeInteger(runnerId)) throw new Error('GitHub answered without a runner configuration');
 
-  const envFile = writeSecretFile('nd-gha', 'runner.env', `ND_JITCONFIG=${jit}\n`);
+  const meta = { name: runnerName, githubAppId: ghApp.id, jobId: job.jobId, repo: job.repo, runnerId: runnerId as number, scope: scopeLabel(scope) };
   try {
-    await capture(
-      'docker',
-      runnerRunArgs(config, { name: runnerName, githubAppId: ghApp.id, jobId: job.jobId, repo: job.repo, runnerId: runnerId as number, scope: scopeLabel(scope) }, envFile.path),
-      { timeoutMs: DOCKER_RUN_TIMEOUT_MS },
-    );
+    if (serverId === null) {
+      const envFile = writeSecretFile('nd-gha', 'runner.env', `ND_JITCONFIG=${jit}\n`);
+      try {
+        await capture('docker', runnerRunArgs(config, meta, envFile.path), { timeoutMs: DOCKER_RUN_TIMEOUT_MS });
+      } finally {
+        envFile.cleanup();
+      }
+    } else {
+      await nodeRunnerOp(db, serverId, 'gha.runner.start', {
+        name: meta.name,
+        app: meta.githubAppId,
+        job: meta.jobId,
+        repo: meta.repo,
+        runner: meta.runnerId,
+        scope: meta.scope,
+        cpus: config.cpus,
+        memoryMb: config.memoryMb,
+        jitConfig: jit,
+      });
+    }
   } catch (err) {
     // The registration would otherwise linger as an offline runner.
     await githubApi(ghApp, token, 'DELETE', `${runnersPath(scope)}/${runnerId}`).catch(() => undefined);
     throw err;
-  } finally {
-    envFile.cleanup();
   }
-  log.info({ component: 'github-runners', githubAppId: ghApp.id, jobId: job.jobId, repo: job.repo, runner: runnerName }, 'started a just-in-time runner');
+  log.info({ component: 'github-runners', githubAppId: ghApp.id, jobId: job.jobId, repo: job.repo, runner: runnerName, serverId }, 'started a just-in-time runner');
 }
 
 let drainChain: Promise<void> = Promise.resolve();
@@ -478,7 +592,7 @@ export function drainPending(db: DB, log: FastifyBaseLogger, opts: { recheck?: b
 async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boolean }): Promise<void> {
   if (pending.size === 0) return;
   const now = Date.now();
-  const containers = await listRunnerContainers();
+  const { containers, unreachable } = await listAllRunnerContainers(db);
   const byApp = new Map<number, PendingJob[]>();
   for (const job of [...pending.values()].sort((a, b) => a.queuedAt - b.queuedAt)) {
     if (now - job.queuedAt > PENDING_TTL_MS) {
@@ -498,6 +612,8 @@ async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boole
       for (const job of jobs) pending.delete(pendingKey(githubAppId, job.jobId));
       continue;
     }
+    // The host this App's runners start on cannot be counted: its jobs wait for the next sweep.
+    if (unreachable.has(config.serverId ?? null)) continue;
     let running = containers.filter((c) => c.githubAppId === githubAppId).length;
     for (const job of jobs) {
       if (running >= config.maxConcurrent) break;
@@ -608,16 +724,12 @@ export async function sweepGithubRunners(db: DB, log: FastifyBaseLogger, now: nu
   const anyEnabled = (await Promise.all(apps.map((a) => getRunnerConfig(db, a.id)))).some((c) => c.enabled);
   if (!anyEnabled && pending.size === 0) return;
   await drainPending(db, log, { recheck: true });
-  let containers: RunnerContainer[];
-  try {
-    containers = await listRunnerContainers();
-  } catch {
-    return; // no Docker: nothing to reap
-  }
+  // A host that cannot answer has nothing to reap this time.
+  const { containers } = await listAllRunnerContainers(db);
   for (const c of containers) {
     const age = c.createdAt ? now - c.createdAt.getTime() : 0;
     if (c.state !== 'running') {
-      await removeContainer(c.name);
+      await removeRunnerContainer(db, c);
       continue;
     }
     if (age > MAX_RUNNER_AGE_MS) {
@@ -659,7 +771,7 @@ async function runnerBusy(db: DB, c: RunnerContainer): Promise<boolean> {
 }
 
 async function reapRunner(db: DB, log: FastifyBaseLogger, c: RunnerContainer, reason: string, strict = false): Promise<void> {
-  if (!(await removeContainer(c.name, strict))) {
+  if (!(await removeRunnerContainer(db, c, strict))) {
     log.warn({ component: 'github-runners', runner: c.name }, 'could not remove a runner');
     return;
   }
@@ -674,7 +786,7 @@ async function reapRunner(db: DB, log: FastifyBaseLogger, c: RunnerContainer, re
 
 /** Stop one runner by name (operator action). Only names this module created. */
 export async function stopRunner(db: DB, log: FastifyBaseLogger, githubAppId: number, name: string): Promise<boolean> {
-  const c = (await listRunnerContainers()).find((x) => x.name === name && x.githubAppId === githubAppId);
+  const c = (await listAllRunnerContainers(db)).containers.find((x) => x.name === name && x.githubAppId === githubAppId);
   if (!c) return false;
   await reapRunner(db, log, c, 'stopped by an operator', true);
   return true;
@@ -693,6 +805,14 @@ export async function runnerProblems(db: DB, ghApp: GithubApp, config: GithubRun
     where: and(eq(githubAppInstallations.githubAppId, ghApp.id), isNull(githubAppInstallations.removedAt)),
   });
   if (installations.length === 0) problems.push('The GitHub App is not installed on any account yet.');
+  if (config.serverId != null) {
+    try {
+      const { assertNodeCapability } = await import('./agentCapabilities.js');
+      await assertNodeCapability(db, config.serverId, { cap: 'gha.runner', feature: NODE_RUNNER_FEATURE, sealedRequired: true });
+    } catch (err) {
+      problems.push(`Runners cannot start on node #${config.serverId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   for (const inst of installations) {
     const permission = inst.accountType === 'Organization' ? 'organization_self_hosted_runners' : 'administration';
     if (inst.permissions?.[permission] !== 'write') {
@@ -710,10 +830,11 @@ export async function runnerStatus(db: DB, ghApp: GithubApp): Promise<GithubRunn
   const problems = await runnerProblems(db, ghApp, config);
   const failure = lastFailure.get(ghApp.id);
   if (failure) problems.push(`The last runner could not start: ${failure}`);
-  try {
-    containers = await listRunnerContainers();
-  } catch {
-    if (config.enabled) problems.push('Docker is not reachable on the panel host.');
+  const listed = await listAllRunnerContainers(db);
+  containers = listed.containers;
+  const where = config.serverId ?? null;
+  if (config.enabled && listed.unreachable.has(where)) {
+    problems.push(where === null ? 'Docker is not reachable on the panel host.' : `Node #${where} did not list its runners: ${listed.unreachable.get(where)}`);
   }
   return {
     config,
@@ -725,7 +846,7 @@ export async function runnerStatus(db: DB, ghApp: GithubApp): Promise<GithubRunn
       .map((p) => ({ jobId: p.jobId, repo: p.repo, jobName: p.jobName, queuedAt: new Date(p.queuedAt).toISOString() })),
     active: containers
       .filter((c) => c.githubAppId === ghApp.id)
-      .map((c) => ({ name: c.name, jobId: c.jobId, repo: c.repo, state: c.state, startedAt: c.createdAt?.toISOString() ?? null })),
+      .map((c) => ({ name: c.name, serverId: c.serverId, jobId: c.jobId, repo: c.repo, state: c.state, startedAt: c.createdAt?.toISOString() ?? null })),
   };
 }
 

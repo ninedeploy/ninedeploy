@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
-import { githubAppInstallations, githubApps, sources, type DB, type GithubApp, type GithubAppInstallation } from '@ninedeploy/db';
+import { githubAppInstallations, githubApps, servers, sources, type DB, type GithubApp, type GithubAppInstallation } from '@ninedeploy/db';
 import {
   GITHUB_API_BASE_URL,
   githubAppCreate,
@@ -17,7 +17,7 @@ import { decrypt, encrypt } from '../lib/crypto.js';
 import { guardedFetch, privateEgressAllowed } from '../lib/egressGuard.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId } from '../lib/errors.js';
 import { apiBase, appJwt, clearGithubAppCaches, GithubAppError, githubApi, githubApiPages, type GithubAppRef } from '../lib/githubApp.js';
-import { forgetPending, runnerStatus, setRunnerConfig, stopRunner } from '../lib/githubRunners.js';
+import { forgetPending, getRunnerConfig, listAllRunnerContainers, runnerStatus, setRunnerConfig, stopRunner } from '../lib/githubRunners.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { panelOrigin } from '../lib/panelOrigin.js';
 import { redactSecrets } from '../lib/redactSecret.js';
@@ -761,7 +761,20 @@ export const githubAppsRoutes: FastifyPluginAsync = async (app) => {
 
   app.put('/:id/runners', async (req) => {
     const row = await loadApp(app.db, parseId((req.params as { id: string }).id));
-    const config = githubRunnerConfig.parse(req.body ?? {});
+    const parsed = githubRunnerConfig.parse(req.body ?? {});
+    // G4.5 nodes: an older client sends no serverId; it keeps where runners start.
+    const before = await getRunnerConfig(app.db, row.id);
+    const config = { ...parsed, serverId: parsed.serverId === undefined ? (before.serverId ?? null) : parsed.serverId };
+    if (config.serverId != null && !(await app.db.query.servers.findFirst({ where: eq(servers.id, config.serverId) }))) {
+      throw badRequest('That node does not exist', 'runner_node_missing');
+    }
+    if ((config.serverId ?? null) !== (before.serverId ?? null)) {
+      // Runners still running on the old host would be left unwatched.
+      const { containers } = await listAllRunnerContainers(app.db);
+      if (containers.some((c) => c.githubAppId === row.id && c.serverId === (before.serverId ?? null))) {
+        throw new HttpError(409, 'runners_active', 'Stop this App\'s runners (or wait for their jobs) before moving runners to another host');
+      }
+    }
     await setRunnerConfig(app.db, row.id, config);
     if (!config.enabled) forgetPending(row.id);
     void audit(app.db, req.user!.id, 'github_app.runners_update', row.name, {
@@ -772,6 +785,7 @@ export const githubAppsRoutes: FastifyPluginAsync = async (app) => {
       maxConcurrent: config.maxConcurrent,
       allowPublicRepos: config.allowPublicRepos,
       repositories: config.repositories.length,
+      serverId: config.serverId ?? null,
     });
     return runnerStatus(app.db, row);
   });

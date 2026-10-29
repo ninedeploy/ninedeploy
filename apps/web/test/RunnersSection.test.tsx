@@ -61,6 +61,7 @@ describe('RunnersSection (G4.5)', () => {
         memoryMb: 4096,
         allowPublicRepos: false,
         repositories: ['acme/api'],
+        serverId: null,
       }),
     );
   });

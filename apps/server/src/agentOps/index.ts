@@ -26,6 +26,7 @@ import { osUpdateOps } from './osUpdates.js';
 import { agentRekeyOps } from './agentRekey.js';
 import { imageScanOps } from './imageScan.js';
 import { tunnelOps } from './tunnels.js';
+import { githubRunnerOps } from './githubRunners.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -113,6 +114,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   composeVolumeOps,
   // G5.8 tunnels to node services (agentOps/tunnels.ts; the channel is GET /agent/tunnel)
   tunnelOps,
+  // G4.5 GitHub Actions runners on a node (agentOps/githubRunners.ts; opt-in)
+  githubRunnerOps,
 ];
 
 /**
@@ -143,6 +146,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'volume.compose': ['NINEDEPLOY_AGENT_VOLUME_COMPOSE'],
   // G5.8: tunnels into service containers are the node owner's call.
   'tunnel.tcp': ['NINEDEPLOY_AGENT_TUNNELS'],
+  // G4.5: opt-in below; `off` turns it off again.
+  'gha.runner': ['NINEDEPLOY_AGENT_GHA_RUNNERS'],
   // 0.16.6: GPUs and added Linux capabilities are the node owner's call.
   'docker.runtimeOptions': ['NINEDEPLOY_AGENT_RUNTIME_OPTIONS'],
   // G4.2: the host's package configuration is the node owner's call too.
@@ -157,6 +162,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
 export const AGENT_OPT_IN: Readonly<Partial<Record<MultiNodeCapability, string>>> = {
   'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
+  // G4.5: a node runs other people's CI jobs only when its owner says so.
+  'gha.runner': 'NINEDEPLOY_AGENT_GHA_RUNNERS',
 };
 
 /** The switch that turned `cap` off on this node (or the opt-in variable left unset), or null. */

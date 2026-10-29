@@ -89,6 +89,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'image.scan': 'scan images for vulnerabilities',
   'volume.compose': 'move a compose stack with its volumes',
   'tunnel.tcp': 'open tunnels to node services',
+  'gha.runner': 'run GitHub Actions runners',
 };
 
 let db: DB;

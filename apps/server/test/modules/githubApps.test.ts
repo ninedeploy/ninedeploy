@@ -602,7 +602,8 @@ describe('self-hosted runners (G4.5)', () => {
     const config = { enabled: true, labels: ['ninedeploy', 'big'], maxConcurrent: 3, cpus: null, memoryMb: 8192, allowPublicRepos: false, repositories: ['acme/api'] };
     const res = await app.inject({ method: 'PUT', url: `/${row.id}/runners`, headers: asUser(1), payload: config });
     expect(res.statusCode).toBe(200);
-    expect(res.json().config).toEqual(config);
+    // An older client sends no serverId: runners stay on the panel host.
+    expect(res.json().config).toEqual({ ...config, serverId: null });
     expect(res.json().problems.join('\n')).toContain('Workflow job');
     expect(res.json().problems.join('\n')).toContain('organization_self_hosted_runners: write');
     const audits = await db.select().from(auditLog).where(eq(auditLog.action, 'github_app.runners_update'));
@@ -610,6 +611,23 @@ describe('self-hosted runners (G4.5)', () => {
 
     const bad = await app.inject({ method: 'PUT', url: `/${row.id}/runners`, headers: asUser(1), payload: { ...config, labels: ['self-hosted'] } });
     expect(bad.statusCode).toBe(400);
+  });
+
+  it('moves runners to a node that exists, keeps it when a PUT omits it, and says when the node cannot run them', async () => {
+    const row = await seedApp(db, key.privateKey);
+    const app = await server();
+    const config = { enabled: true, labels: ['ninedeploy'], maxConcurrent: 1, cpus: 1, memoryMb: 1024, allowPublicRepos: false, repositories: [] };
+    const missing = await app.inject({ method: 'PUT', url: `/${row.id}/runners`, headers: asUser(1), payload: { ...config, serverId: 9 } });
+    expect(missing.json().error.code).toBe('runner_node_missing');
+    const { servers } = await import('@ninedeploy/db');
+    await db.insert(servers).values({ id: 9, name: 'ci-1', host: '203.0.113.9', port: 4600, tokenEncrypted: 'x', status: 'online' });
+    const moved = await app.inject({ method: 'PUT', url: `/${row.id}/runners`, headers: asUser(1), payload: { ...config, serverId: 9 } });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json().config.serverId).toBe(9);
+    // The node never reported gha.runner: the status says why runners cannot start there.
+    expect(moved.json().problems.join('\n')).toContain('Runners cannot start on node #9');
+    const kept = await app.inject({ method: 'PUT', url: `/${row.id}/runners`, headers: asUser(1), payload: config });
+    expect(kept.json().config.serverId).toBe(9);
   });
 
   it('refuses to stop anything but a runner name, and members entirely', async () => {

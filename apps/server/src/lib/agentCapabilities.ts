@@ -398,6 +398,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'volume.compose': '0.18.7',
   // G5.8 tunnels to node services
   'tunnel.tcp': '0.18.7',
+  // G4.5 GitHub Actions runners on nodes (opt-in)
+  'gha.runner': '0.18.7',
 };
 
 /**
@@ -424,6 +426,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'image.scan': 'NINEDEPLOY_AGENT_IMAGE_SCAN',
   'volume.compose': 'NINEDEPLOY_AGENT_VOLUME_COMPOSE',
   'tunnel.tcp': 'NINEDEPLOY_AGENT_TUNNELS',
+  'gha.runner': 'NINEDEPLOY_AGENT_GHA_RUNNERS',
   'docker.runtimeOptions': 'NINEDEPLOY_AGENT_RUNTIME_OPTIONS',
   'host.packages': 'NINEDEPLOY_AGENT_HOST_PACKAGES',
   // ── 0.16 T7 swarm ── opt-in (security review M2): unset means off.
@@ -432,7 +435,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
 };
 
 /** Switches that are opt-in variables (off while unset), mirrored from agentOps/index.ts `AGENT_OPT_IN`. */
-export const CAPABILITY_OPT_IN: ReadonlySet<string> = new Set(['NINEDEPLOY_AGENT_SWARM_MANAGER', 'NINEDEPLOY_AGENT_PROXY_TRAFFIC']);
+export const CAPABILITY_OPT_IN: ReadonlySet<string> = new Set(['NINEDEPLOY_AGENT_SWARM_MANAGER', 'NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_GHA_RUNNERS']);
 
 /** Why a multi-node feature cannot run on a node: the status and code the route answers. */
 export interface CapabilityRefusal {

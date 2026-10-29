@@ -330,6 +330,12 @@ export const githubRunnerConfig = z.object({
     .array(githubRepoFullName)
     .max(100)
     .refine((r) => new Set(r.map((x) => x.toLowerCase())).size === r.length, { message: 'Repositories must be unique' }),
+  /**
+   * Where runners start: null = the panel host; a node id = that node (agent
+   * 0.18.7 with `gha.runner`, which the node owner turns on). Absent in a PUT
+   * keeps the stored value.
+   */
+  serverId: z.number().int().positive().nullable().optional(),
 });
 export type GithubRunnerConfig = z.infer<typeof githubRunnerConfig>;
 
@@ -341,6 +347,7 @@ export const GITHUB_RUNNER_DEFAULTS: GithubRunnerConfig = {
   memoryMb: 4096,
   allowPublicRepos: false,
   repositories: [],
+  serverId: null,
 };
 
 /** A job waiting for a free runner slot. */
@@ -351,9 +358,11 @@ export const githubRunnerPendingJob = z.object({
   queuedAt: z.string(),
 });
 
-/** A runner container on the panel host. */
+/** A runner container on the panel host or a node. */
 export const githubRunnerActive = z.object({
   name: z.string(),
+  /** The node it runs on; null = the panel host. Absent from older panels. */
+  serverId: z.number().int().nullable().optional(),
   jobId: z.number().int().nullable(),
   repo: z.string().nullable(),
   state: z.string(),

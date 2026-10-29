@@ -66,6 +66,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'volume.compose',
   // G5.8 TCP tunnels to node service containers (sealed tunnel.open + /agent/tunnel)
   'tunnel.tcp',
+  // G4.5 GitHub Actions just-in-time runners on a node (opt-in on the node)
+  'gha.runner',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

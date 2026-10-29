@@ -3,7 +3,7 @@ import type { AgentOpModule } from './index.js';
 import { NODE_PROXY_IMAGE, RE_IMAGE, str } from './operands.js';
 
 /** The helper that enters the host: `NINEDEPLOY_HOST_SHELL_IMAGE`, else the node proxy's image (already present, has nsenter). */
-function helperImage(env: NodeJS.ProcessEnv = process.env): string {
+export function helperImage(env: NodeJS.ProcessEnv = process.env): string {
   const configured = (env['NINEDEPLOY_HOST_SHELL_IMAGE'] ?? '').trim();
   return configured && configured.length <= 255 && RE_IMAGE.test(configured) ? configured : NODE_PROXY_IMAGE;
 }

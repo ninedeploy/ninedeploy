@@ -6,7 +6,7 @@ import { api } from '../../lib/api.js';
 import { formatDateTime } from '../../lib/format.js';
 import { fill, useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
-import { Badge, Button, Field, Input, Switch } from '../../components/ui.js';
+import { Badge, Button, Field, Input, Select, Switch } from '../../components/ui.js';
 
 /**
  * G4.5: self-hosted GitHub Actions runners for one App. Collapsed by default,
@@ -29,6 +29,8 @@ interface Form {
   memoryMb: string;
   allowPublicRepos: boolean;
   repositories: string;
+  /** '' = the panel host, else a node id. */
+  serverId: string;
 }
 
 const toForm = (c: GithubRunnerConfig): Form => ({
@@ -39,6 +41,7 @@ const toForm = (c: GithubRunnerConfig): Form => ({
   memoryMb: c.memoryMb == null ? '' : String(c.memoryMb),
   allowPublicRepos: c.allowPublicRepos,
   repositories: c.repositories.join('\n'),
+  serverId: c.serverId == null ? '' : String(c.serverId),
 });
 
 const fromForm = (f: Form): GithubRunnerConfig => ({
@@ -49,6 +52,7 @@ const fromForm = (f: Form): GithubRunnerConfig => ({
   memoryMb: f.memoryMb.trim() ? Number(f.memoryMb) : null,
   allowPublicRepos: f.allowPublicRepos,
   repositories: splitList(f.repositories),
+  serverId: f.serverId ? Number(f.serverId) : null,
 });
 
 export function RunnersSection({ app }: { app: GithubApp }) {
@@ -76,6 +80,7 @@ function RunnersBody({ app }: { app: GithubApp }) {
   const { toast } = useToast();
   const key = ['github-app-runners', app.id];
   const status = useQuery({ queryKey: key, queryFn: () => api.githubApps.runners(app.id), refetchInterval: 10_000 });
+  const servers = useQuery({ queryKey: ['servers'], queryFn: () => api.servers.list() });
   const [form, setForm] = useState<Form | null>(null);
   useEffect(() => {
     if (status.data && form === null) setForm(toForm(status.data.config));
@@ -135,6 +140,19 @@ function RunnersBody({ app }: { app: GithubApp }) {
           <Switch checked={form.enabled} onChange={(v) => set('enabled', v)} label={t('Run jobs on this panel')} />
           <span className="text-xs text-slate-300">{t('Run jobs on this panel')}</span>
         </div>
+        <Field
+          label={t('Run on')}
+          hint={t('A node runs jobs only after its owner sets NINEDEPLOY_AGENT_GHA_RUNNERS=on for its agent (0.18.7 or newer).')}
+        >
+          <Select value={form.serverId} onChange={(e) => set('serverId', e.target.value)} aria-label={t('Run on')}>
+            <option value="">{t('this panel host')}</option>
+            {(servers.data ?? []).map((s) => (
+              <option key={s.id} value={String(s.id)}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={t('Labels')} hint={t('comma-separated; jobs ask for them with runs-on: [self-hosted, {label}]', { label: splitList(form.labels)[0] ?? 'ninedeploy' })}>
             <Input value={form.labels} onChange={(e) => set('labels', e.target.value)} placeholder="ninedeploy" />
@@ -179,6 +197,7 @@ function RunnersBody({ app }: { app: GithubApp }) {
               <li key={r.name} className="flex flex-wrap items-center gap-2">
                 <Badge tone={r.state === 'running' ? 'emerald' : 'neutral'}>{r.state}</Badge>
                 <span className="font-mono text-slate-300">{r.name}</span>
+                {r.serverId != null && <span className="text-slate-500">{servers.data?.find((s) => s.id === r.serverId)?.name ?? t('node #{id}', { id: r.serverId })}</span>}
                 {r.repo && <span className="text-slate-500">{r.repo}</span>}
                 {r.startedAt && <span className="text-slate-600">{formatDateTime(r.startedAt)}</span>}
                 <Button size="sm" variant="ghost" onClick={() => stop.mutate(r.name)} disabled={stop.isPending} aria-label={t('Stop {name}', { name: r.name })}>

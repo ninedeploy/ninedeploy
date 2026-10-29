@@ -5903,4 +5903,9 @@ export const TR: Readonly<Record<string, string>> = {
   'Moves the stack to another host and copies every named volume compose made for it, then deploys it. Stop the stack first; the volumes on the old host are kept until you remove them. Bind mounts and external volumes are not moved.':
     'Yığını başka bir sunucuya taşır, compose\'un onun için oluşturduğu tüm adlandırılmış volume\'ları oraya kopyalar ve ardından dağıtır. Önce yığını durdurun; eski sunucudaki volume\'lar siz silene kadar saklanır. Bind mount\'lar ve harici volume\'lar taşınmaz.',
   'copying the data ({copied} of {total} volumes)': 'veri kopyalanıyor ({total} volume\'dan {copied} tanesi)',
+
+  // ── G4.5 runners on nodes ─────────────────────────────────────────────
+  'Run on': 'Çalışacağı yer',
+  'A node runs jobs only after its owner sets NINEDEPLOY_AGENT_GHA_RUNNERS=on for its agent (0.18.7 or newer).':
+    'Bir düğüm, sahibi ajanı (0.18.7 veya daha yeni) için NINEDEPLOY_AGENT_GHA_RUNNERS=on ayarlayana kadar iş çalıştırmaz.',
 };

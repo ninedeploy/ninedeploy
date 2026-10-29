@@ -219,7 +219,7 @@ System entries have no actor, so only operators see them.
 
 ### 7.1 Self-hosted Actions runners (G4.5)
 
-An App can run GitHub Actions jobs on the panel host. Each job gets a just-in-time runner: a single-use registration bound to one runner, which takes one job and exits. Its container is then removed.
+An App can run GitHub Actions jobs on the panel host or on one node. Each job gets a just-in-time runner: a single-use registration bound to one runner, which takes one job and exits. Its container is then removed.
 
 **Set up**
 
@@ -261,6 +261,17 @@ GitHub, not only the panel, enforces the repository rules:
 - **No rules, no runner:** if the panel cannot apply the rules, the runner does not start. That happens when iptables is missing, or when the panel runs in its own network namespace and cannot see `nd-gha0`. `NINEDEPLOY_GHA_RUNNERS_UNISOLATED=1` lets runners start without the rules. Set it only if you accept runners that can reach the host and the LAN.
 - **Resource limits:** a pid limit, plus the CPU and memory limits you set.
 - **IPv6:** the runner network is created with IPv6 off, even on a daemon that enables it for new networks, because the firewall rules are IPv4. A runner does not start on an existing `nd-gha-runners` network that has IPv6 or another bridge name; remove that network and the panel recreates it.
+
+**On a node**
+
+**Run on** in the section picks where this App's runners start: the panel host, or one node. A node runs jobs only after its owner opts in. They set `NINEDEPLOY_AGENT_GHA_RUNNERS=on` for the node's agent, which must be 0.18.7 or newer (capability `gha.runner`). Until then, the section names the reason, and no job is registered on GitHub.
+
+- Isolation is the same as on the panel host. The agent creates the same `nd-gha-runners` network and starts the same container: no Docker socket, the same limits.
+- The agent itself lives in a container, so its own iptables would not guard the host. It puts the same firewall rules on the node's host instead, through the privileged `nsenter` helper that OS updates use. The rules are checked before every start, and no runner starts when they cannot be put in place. A node has no equivalent of `NINEDEPLOY_GHA_RUNNERS_UNISOLATED`.
+- The just-in-time configuration travels to the agent only inside a sealed request. It is written to a 0600 env file for `docker run`, and never appears in argv.
+- **Runners at once** counts the App's runners on every host. While the node does not answer, its jobs wait for the next minute's sweep.
+- Changing **Run on** is refused (`409 runners_active`) while the App still has runners on the old host. Stop them, or let their jobs finish, first.
+- `NINEDEPLOY_AGENT_GHA_RUNNERS=off`, or unsetting it, takes the capability away again.
 
 **Queue and upkeep**
 
