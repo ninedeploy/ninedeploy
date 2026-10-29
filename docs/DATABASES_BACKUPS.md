@@ -245,7 +245,7 @@ Two more Redis-protocol engines. Create them like Redis (`POST /v1/databases {na
 
 ## 📦 10. ClickHouse, Meilisearch and RabbitMQ backups (G1.8)
 
-These three engines used to answer "backup not supported". Manual backups, scheduled backups and policies, off-site copies, download, restore and the **Check** drill now work for them on the **panel host**. A database of these engines on a node still refuses backups, with a message that says so: the node agent has no dump format for them yet.
+These three engines used to answer "backup not supported". Manual backups, scheduled backups and policies, off-site copies, download, restore and the **Check** drill now work for them on the **panel host** and **on nodes**. On a node the agent runs the same routines against its local Docker, with a temporary file on the node, and streams the result to the panel through the sealed channel, where it is stored encrypted like any backup. This needs an agent that advertises `db.dump.extra` (0.18.7 or newer); an older one gets 422 `node_agent_outdated` before anything runs. For a Meilisearch restore the agent reads the image and the data volume from the database container itself. Imports (section 8) remain refused for these engines.
 
 | | ClickHouse | Meilisearch | RabbitMQ |
 | --- | --- | --- | --- |

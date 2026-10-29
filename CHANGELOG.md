@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Backups and restores of ClickHouse, Meilisearch and RabbitMQ databases on nodes (G1.8). The agent runs the panel host's routines against its local Docker and streams the result through the sealed channel.
+  - **Agent:** needs the new capability `db.dump.extra` (0.18.7); an older agent gets 422 `node_agent_outdated`.
+  - **Meilisearch:** the restore reads the image and data volume from the container, never from the request.
+  - **Proof:** a dump, index deletion and restore against a real Meilisearch v1.53.
 - Image scanning covers Compose stacks on the panel host (G5.1). Every distinct image of a running stack is scanned on the schedule and on request (`POST /v1/services/:id/image-scan`; Scan now on the Deploys tab once the stack has a result). The result is merged into one, and each finding names the compose services whose image has it. A stack has no deploy gate: `compose up` starts it at once.
 - `ninedeploy tunnel service <id> [--target <port>] [--replica <n>]` (G5.8): a container port of a panel-host docker service on a local port, over the same WebSocket bridge as the database tunnel.
   - **Access:** the service admin role (it reaches the container past its domain protections), re-checked every minute.

@@ -23,7 +23,6 @@ import {
   AGENT_REDIS_FAMILY_VERSION,
   DUMPABLE_ENGINES,
   PANEL_ONLY_DUMPABLE_ENGINES,
-  panelOnlyBackupRefusal,
   NODE_ENGINES_NEEDING_NEWER_AGENT,
   mysqlHelpCommand,
   parseSizeOutput,
@@ -183,9 +182,15 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
   const network = nodeDatabaseNetwork(d.slug);
   const password = () => decrypt(d.passwordEncrypted);
 
+  // G1.8: these engines need the agent's `db.dump.extra` (0.18.7); an older one is told to update.
+  const assertExtra = async (): Promise<void> => {
+    if (PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) {
+      await (deps.assertCapable ?? defaultAssert)(db, serverId, ['db.manage', 'db.dump.extra'], `back up and restore ${d.engine} on a node`);
+    }
+  };
   const dumpUnlocked = async (file: string, log: (line: string) => void): Promise<void> => {
-    if (PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) throw new Error(panelOnlyBackupRefusal(d.engine, 'backup'));
-    if (!DUMPABLE_ENGINES.has(d.engine)) throw new Error(`backup not supported for ${d.engine}`);
+    await assertExtra();
+    if (!DUMPABLE_ENGINES.has(d.engine) && !PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) throw new Error(`backup not supported for ${d.engine}`);
     log(`Dumping ${d.name} on node #${serverId} …`);
     const handle = await openStream(db, serverId, 'db.dump', { container, engine: d.engine, password: password() });
     if (handle.direction !== 'agent-to-panel') throw new Error('db.dump answered the wrong stream direction');
@@ -340,9 +345,9 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
 
     /** Restore an encrypted (or legacy plaintext) backup file from the panel into the node database. */
     restore(file: string, log: (line: string) => void): Promise<void> {
-      if (PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) return Promise.reject(new Error(panelOnlyBackupRefusal(d.engine, 'restore')));
-      if (!DUMPABLE_ENGINES.has(d.engine)) return Promise.reject(new Error(`restore not supported for ${d.engine}`));
+      if (!DUMPABLE_ENGINES.has(d.engine) && !PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) return Promise.reject(new Error(`restore not supported for ${d.engine}`));
       return withDatabaseOperationLock(d.id, log, async () => {
+        await assertExtra();
         log(`Restoring ${d.name} on node #${serverId} …`);
         await streamInto(await createBackupReadStream(file), { mode: 'restore' });
       });

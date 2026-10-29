@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
+import { createReadStream, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
   dumpCommands,
   dumpTmpPath,
   importTmpPath,
   isDatabaseEngine,
   isRedisFamily,
+  PANEL_ONLY_DUMPABLE_ENGINES,
   saveReplyProblem,
   mysqlHelpCommand,
   probeCommand,
@@ -128,7 +132,7 @@ async function execOp(params: Params, onLine: (line: string) => void): Promise<n
 
 export const databaseOps: AgentOpModule = {
   name: 'agentOps/databases.ts',
-  caps: ['db.manage'],
+  caps: ['db.manage', 'db.dump.extra'],
   ops: {
     'docker.restart': { cap: 'db.manage', sealedOnly: true, run: (p, onLine) => restartOp(p, onLine) },
     'db.exec': { cap: 'db.manage', sealedOnly: true, run: (p, onLine) => execOp(p, onLine) },
@@ -137,6 +141,41 @@ export const databaseOps: AgentOpModule = {
 
 // ── stream kinds ─────────────────────────────────────────────────────────────
 
+/**
+ * G1.8 (`db.dump.extra`): ClickHouse, Meilisearch and RabbitMQ have no dump
+ * command; their backup and restore are the panel host's own multi-step
+ * routines (engine/extraEngineBackups.ts), run here against the local Docker
+ * with a temporary file on the node. The Meilisearch restore reads its image
+ * and data volume from the container itself, never from the request.
+ */
+const EXTRA_USERNAMES: Readonly<Record<string, string>> = { clickhouse: 'nine' };
+
+function extraTempFile(): { file: string; remove: () => void } {
+  const dir = mkdtempSync(path.join(tmpdir(), 'nd-db-extra-'));
+  return { file: path.join(dir, 'dump'), remove: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+async function extraBackup(engine: string, cn: string, password: string, file: string): Promise<void> {
+  const x = await import('../engine/extraEngineBackups.js');
+  const log = () => undefined;
+  if (engine === 'clickhouse') await x.backupClickhouse({ cn, password, username: EXTRA_USERNAMES['clickhouse']! }, file, log);
+  else if (engine === 'meilisearch') await x.backupMeilisearch({ cn, password }, file, log);
+  else await x.backupRabbitmq({ cn }, file, log);
+}
+
+async function extraRestore(engine: string, cn: string, password: string, file: string): Promise<void> {
+  const x = await import('../engine/extraEngineBackups.js');
+  const log = () => undefined;
+  if (engine === 'clickhouse') return x.restoreClickhouse({ cn, password, username: EXTRA_USERNAMES['clickhouse']! }, file, log);
+  if (engine === 'rabbitmq') return x.restoreRabbitmq({ cn }, file, log);
+  const [image = ''] = await mustDocker(['inspect', '--format', '{{.Config.Image}}', cn], 'docker inspect');
+  const mounts = await mustDocker(['inspect', '--format', '{{range .Mounts}}{{.Destination}}={{.Name}}{{println}}{{end}}', cn], 'docker inspect');
+  const volumeName = mounts.map((l) => l.trim()).find((l) => l.startsWith('/meili_data='))?.slice('/meili_data='.length) ?? '';
+  if (!/^getmeili\/meilisearch:[A-Za-z0-9._-]+$/.test(image.trim())) throw new Error('The Meilisearch container does not run a getmeili/meilisearch image');
+  if (!/^nd-db-[a-z0-9][a-z0-9_.-]*$/.test(volumeName)) throw new Error('The Meilisearch container has no managed data volume');
+  return x.restoreMeilisearch({ cn, password, volumeName, image: image.trim() }, file, log);
+}
+
 /** `db.dump {container, engine, password}` (agent→panel). */
 export const dbDumpKind: StreamKindHandler = {
   keys: ['container', 'engine', 'password'],
@@ -144,6 +183,39 @@ export const dbDumpKind: StreamKindHandler = {
     const cn = containerOperand(params['container']);
     const engine = engineOperand(params['engine']);
     const password = passwordOperand(params['password']);
+    if (PANEL_ONLY_DUMPABLE_ENGINES.has(engine)) {
+      await assertManagedDatabase(cn);
+      return {
+        direction: 'agent-to-panel',
+        async start() {
+          const tmp = extraTempFile();
+          try {
+            await extraBackup(engine, cn, password, tmp.file);
+          } catch (err) {
+            tmp.remove();
+            throw err;
+          }
+          const stream = createReadStream(tmp.file);
+          return {
+            stream,
+            done: new Promise<{ engine: string }>((resolve, reject) => {
+              stream.once('close', () => {
+                tmp.remove();
+                resolve({ engine });
+              });
+              stream.once('error', (err) => {
+                tmp.remove();
+                reject(err);
+              });
+            }),
+            abort: () => {
+              stream.destroy();
+              tmp.remove();
+            },
+          };
+        },
+      } satisfies PreparedStream;
+    }
     // The panel host's own refusal, before the channel exists.
     const plan = dumpCommands(engine, cn, dumpTmpPath(randomUUID()), password);
     await assertManagedDatabase(cn);
@@ -240,7 +312,8 @@ export const dbRestoreKind: StreamKindHandler = {
     if (mode !== 'restore' && mode !== 'import') throw new Error('Invalid restore mode');
     let apply: (file: string) => Promise<void>;
     if (mode === 'restore') {
-      if (isRedisFamily(engine)) apply = (file) => replaceRedisData(cn, file);
+      if (PANEL_ONLY_DUMPABLE_ENGINES.has(engine)) apply = (file) => extraRestore(engine, cn, password, file);
+      else if (isRedisFamily(engine)) apply = (file) => replaceRedisData(cn, file);
       else {
         const tmp = restoreTmpPath(randomUUID());
         const argv = restoreCommand(engine, cn, tmp, password);

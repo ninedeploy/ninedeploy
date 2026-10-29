@@ -130,8 +130,10 @@ describe('the db.dump stream kind', () => {
   });
 
   it('refuses before any channel: an unsupported engine, a foreign container, unknown params', async () => {
-    await expect(dbDumpKind.prepare({ container: 'nd-db-pg', engine: 'clickhouse', password: 'pw' }, { maxBytes: 1 })).rejects.toThrow('backup not supported for clickhouse');
     await expect(dbDumpKind.prepare({ container: 'nd-db-rogue', engine: 'postgres', password: 'pw' }, { maxBytes: 1 })).rejects.toThrow(/does not exist/);
+    // G1.8: a ClickHouse dump is the panel host's routine, still only for a managed container.
+    await expect(dbDumpKind.prepare({ container: 'nd-db-rogue', engine: 'clickhouse', password: 'pw' }, { maxBytes: 1 })).rejects.toThrow(/does not exist/);
+    expect((await dbDumpKind.prepare({ container: 'nd-db-pg', engine: 'clickhouse', password: 'pw' }, { maxBytes: 1 })).direction).toBe('agent-to-panel');
     await expect(dbDumpKind.prepare({ container: '../x', engine: 'postgres', password: 'pw' }, { maxBytes: 1 })).rejects.toThrow(/nd-db-/);
     expect(dbDumpKind.keys).toEqual(['container', 'engine', 'password']);
   });

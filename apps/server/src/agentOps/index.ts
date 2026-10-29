@@ -128,6 +128,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'build.railpack': ['NINEDEPLOY_AGENT_BUILDS'],
   'git.sshkey': ['NINEDEPLOY_AGENT_STATIC_CREDENTIALS'],
   'db.manage': ['NINEDEPLOY_AGENT_DATABASES'],
+  'db.dump.extra': ['NINEDEPLOY_AGENT_DATABASES'],
   // 0.16.6: GPUs and added Linux capabilities are the node owner's call.
   'docker.runtimeOptions': ['NINEDEPLOY_AGENT_RUNTIME_OPTIONS'],
   // G4.2: the host's package configuration is the node owner's call too.

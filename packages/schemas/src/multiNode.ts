@@ -58,6 +58,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'host.packages',
   // G4.3 security review: `agent.rekey` replaces the agent's shared-key hash (sealed).
   'agent.rekey',
+  // G1.8 ClickHouse / Meilisearch / RabbitMQ backups of node databases
+  'db.dump.extra',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

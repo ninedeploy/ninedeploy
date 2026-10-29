@@ -497,15 +497,25 @@ describe('backups, restores and imports over the stream channel', () => {
     expect(h.local).toEqual([]);
   });
 
-  it('a panel-host dump file restores into a node database (the reverse direction), and an unsupported engine refuses as on the panel', async () => {
+  it('a panel-host dump file restores into a node database (the reverse direction); ClickHouse needs an agent with db.dump.extra', async () => {
     const d = await nodeRow();
     const plain = path.join(tmp, 'legacy.dump');
     writeFileSync(plain, 'SELECT 1;\n');
     await databaseRuntime(db, d).restore(plain, () => undefined);
     expect(Buffer.concat(h.restored).toString()).toBe('SELECT 1;\n');
     const ch = await nodeRow({ name: 'ch', slug: 'ch', engine: 'clickhouse', nodeContainerName: 'nd-db-ch', nodeVolumeName: 'nd-db-ch-data' });
-    await expect(databaseRuntime(db, ch).backup(path.join(tmp, 'ch.dump'), () => undefined)).rejects.toThrow('backup of a clickhouse database runs on the panel host only; a database on a node cannot be backed up yet'); // G1.8
-    await expect(databaseRuntime(db, ch).restore(plain, () => undefined)).rejects.toThrow('restore of a clickhouse database runs on the panel host only; a database on a node cannot be restored yet');
+    // G1.8: an agent with db.dump.extra dumps and restores it over the same stream kinds.
+    await databaseRuntime(db, ch).backup(path.join(tmp, 'ch.dump'), () => undefined);
+    expect(h.streams.at(-1)).toEqual({ kind: 'db.dump', params: { container: 'nd-db-ch', engine: 'clickhouse', password: expect.any(String) } });
+    await databaseRuntime(db, ch).restore(plain, () => undefined);
+    expect(h.streams.at(-1)).toEqual({ kind: 'db.restore', params: { container: 'nd-db-ch', engine: 'clickhouse', password: expect.any(String), mode: 'restore' } });
+    // An older agent is told to update before anything is streamed.
+    caps.resetNodeCapabilityCache();
+    h.ping = 'ND-AGENT ' + JSON.stringify({ version: '0.18.6', caps: MULTI_NODE_CAPABILITIES.filter((cap) => cap !== 'db.dump.extra') });
+    const streamsBefore = h.streams.length;
+    await expect(databaseRuntime(db, ch).backup(path.join(tmp, 'ch2.dump'), () => undefined)).rejects.toMatchObject({ statusCode: 422 });
+    await expect(databaseRuntime(db, ch).restore(plain, () => undefined)).rejects.toMatchObject({ statusCode: 422 });
+    expect(h.streams.length).toBe(streamsBefore);
   });
 
   it('0.14 import: the safety backup and the import under one lock, plan fields on the stream, the probe on the node', async () => {
