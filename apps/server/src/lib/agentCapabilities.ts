@@ -378,6 +378,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.metrics': '0.18.3',
   'docker.lifecycle': '0.18.3',
   'docker.lifecycle.generations': '0.18.3',
+  'docker.lifecycle.creationFence': '0.18.10',
   'docker.mutations': '0.19.0',
   'docker.logsSince': '0.17.0',
   'proxy.routingAck': '0.18.0',
@@ -413,6 +414,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
 export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, string>>> = {
   'docker.lifecycle': 'NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE',
   'docker.lifecycle.generations': 'NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE',
+  'docker.lifecycle.creationFence': 'NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE',
   'docker.mutations': 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS',
   'docker.metrics': 'NINEDEPLOY_AGENT_CONTAINER_METRICS',
   'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',

@@ -72,6 +72,12 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
     const shape = runtimeReplicaCounts(fresh);
     const fanout = await fanoutPlacement(tx, fresh.id);
     if (fanout.some(target => target.serverId === fresh.serverId)) throw new HttpError(422, 'node_lifecycle_placement_invalid', 'A fan-out target duplicates the primary node');
+    const [sequence] = action === 'stop' ? await tx.select({ id: sql<number>`COALESCE((SELECT seq FROM sqlite_sequence WHERE name='deployments'), 0)` })
+      .from(services).where(eq(services.id, fresh.id)).limit(1) : [];
+    const creationFenceDeploymentId = [...interrupted.map(row => row.id), ...activeWork.map(row => row.id),
+      ...fanout.map(target => Number(/-([1-9]\d*)$/.exec(target.runtimeId ?? '')?.[1] ?? 0))]
+      .reduce((highest, id) => Math.max(highest, id), Math.max(Number(sequence?.id ?? 0), deploymentId ?? 0, pendingStop?.snapshot.creationFenceDeploymentId ?? 0));
+    if (action === 'stop' && (!Number.isSafeInteger(creationFenceDeploymentId) || creationFenceDeploymentId < 1)) throw new Error('Stop creation fence identity is invalid');
     const requestId = randomBytes(16).toString('hex');
     const authority = await reserveServiceRuntimeOwnerInTransaction(tx, fresh.id, action, requestId, 'supersede');
     const acceptedAt = new Date();
@@ -82,7 +88,8 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
         healthTimeoutS: fresh.healthTimeoutSeconds, serving: shape.serving, capacity: shape.capacity, configuration: configuration(fresh), fanout,
         mutationEpoch: authority.epoch, revisionEpoch: authority.epoch,
         ...(action === 'stop' ? { interruptedDeployments: [...new Set([...interrupted.map(row => row.id),
-          ...activeWork.filter(row => row.status === 'building' || row.status === 'deploying').map(row => row.id)])].sort((a, b) => a - b).map(id => ({ id })) } : {}),
+          ...activeWork.filter(row => row.status === 'building' || row.status === 'deploying').map(row => row.id)])].sort((a, b) => a - b).map(id => ({ id })),
+          creationFenceDeploymentId } : {}),
         ...(fresh.runtimeId === null ? { unselected: { participants: [
           { serverId: fresh.serverId!, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-' + row.id, MAX_REPLICAS)) },
           ...fanout.map(target => ({ serverId: target.serverId, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-t' + target.serverId + '-' + row.id, MAX_REPLICAS)) })),

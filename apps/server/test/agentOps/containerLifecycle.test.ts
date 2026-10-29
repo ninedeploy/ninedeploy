@@ -30,6 +30,7 @@ describe('registered node lifecycle capability', () => {
   it('advertises and executes the sealed operation with one typed receipt', async () => {
     expect(advertisedCapabilities({})).toContain('docker.lifecycle');
     expect(advertisedCapabilities({})).toContain('docker.lifecycle.generations');
+    expect(advertisedCapabilities({})).toContain('docker.lifecycle.creationFence');
     const lines: string[] = [];
     expect(await runRegisteredOp('docker.lifecycle', input, line => lines.push(line), { sealed: true }, {})).toBe(0);
     expect(lines).toHaveLength(1);
@@ -44,6 +45,7 @@ describe('registered node lifecycle capability', () => {
     const env = { NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE: 'off' };
     expect(advertisedCapabilities(env)).not.toContain('docker.lifecycle');
     expect(advertisedCapabilities(env)).not.toContain('docker.lifecycle.generations');
+    expect(advertisedCapabilities(env)).not.toContain('docker.lifecycle.creationFence');
     await expect(runRegisteredOp('docker.lifecycle', input, () => undefined, { sealed: true }, env)).rejects.toThrow(/disabled.*owner/);
     expect(readdirSync(root)).toEqual([]); expect(io.spawn).not.toHaveBeenCalled();
   });

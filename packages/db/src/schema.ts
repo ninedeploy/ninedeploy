@@ -1888,6 +1888,8 @@ export interface NodeLifecycleSnapshot {
   unselected?: { participants: Array<{ serverId: number; expectedNames: string[] }> };
   /** Deployments that might have created unselected generations before Stop took authority. */
   interruptedDeployments?: Array<{ id: number }>;
+  /** Highest pre-Stop deployment ID, including cancelled work that had not started. */
+  creationFenceDeploymentId?: number;
 }
 
 /** Accepted panel intent. ID-derived agent revisions survive retries and panel restarts. */

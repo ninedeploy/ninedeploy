@@ -65,6 +65,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'docker.metrics',
       'docker.lifecycle',
       'docker.lifecycle.generations',
+      'docker.lifecycle.creationFence',
       'docker.mutations',
       'host.packages',
       'agent.rekey',

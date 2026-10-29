@@ -35,6 +35,8 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     return { state: !row ? 'missing' : row.phase === 'completed' || row.phase === 'superseded' ? row.phase : 'busy' };
   }
   let intent = claimed;
+  const requiresCreationFence = intent.action === 'stop' && !intent.snapshot.unselected &&
+    (intent.snapshot.interruptedDeployments?.length ?? 0) > 0;
   const checkpoint = async () => {
     deps.signal?.throwIfAborted();
     const current = await checkpointNodeLifecycleIntent(db, intent);
@@ -129,7 +131,8 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
 
     const request = containerLifecycleRequest.parse({ requestId: fence
       ? createHash('sha256').update(`${intent.requestId}:fence${participant.serverId === intent.serverId ? '' : `:${participant.serverId}`}`).digest('hex').slice(0, 32) : intent.requestId,
-    serviceId: intent.serviceId, deploymentId: participant.deploymentId, revision: nodeLifecycleWireRevision(intent, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
+    serviceId: intent.serviceId, deploymentId: fence && requiresCreationFence ? intent.snapshot.creationFenceDeploymentId : participant.deploymentId,
+    revision: nodeLifecycleWireRevision(intent, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
     action: !fence && (intent.action === 'start' || restarting) ? 'start' : 'stop',
     targets: fence ? [] : restarting ? servingTargets(participant) : capturedTargets(participant), timeoutMs: 30_000 });
     const result = await call(participant.serverId, 'docker.lifecycle', request, 35_000);
@@ -171,11 +174,16 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
   };
   try {
     await checkpoint();
+    if (requiresCreationFence && (!Number.isSafeInteger(intent.snapshot.creationFenceDeploymentId) ||
+      intent.snapshot.creationFenceDeploymentId! < (intent.snapshot.interruptedDeployments ?? []).reduce((max, row) => Math.max(max, row.id), intent.deploymentId ?? 0))) {
+      throw new Error('Interrupted deployment creation fence is unavailable');
+    }
     for (const participant of participants()) {
       const sealed = await deps.sealed(participant.serverId);
       await checkpoint();
       const refusal = await capabilityRefusal((op, params) => call(participant.serverId, op, params, 5000), `#${participant.serverId}`, sealed, {
-        cap: intent.snapshot.unselected ? ['docker.mutations', 'proxy.routingAck'] : ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
+        cap: intent.snapshot.unselected ? ['docker.mutations', 'proxy.routingAck'] : ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck',
+          ...(requiresCreationFence ? ['docker.lifecycle.creationFence' as const] : [])], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
       });
       await checkpoint();
       if (refusal) throw new Error(refusal.message);

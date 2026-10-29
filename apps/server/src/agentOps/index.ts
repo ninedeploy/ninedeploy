@@ -129,6 +129,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'docker.mutations': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'docker.lifecycle': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
   'docker.lifecycle.generations': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
+  'docker.lifecycle.creationFence': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
   'docker.metrics': ['NINEDEPLOY_AGENT_CONTAINER_METRICS'],
   'proxy.traffic': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
   'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],

@@ -82,6 +82,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.metrics': 'measure immutable container resources',
   'docker.lifecycle': 'control immutable container state',
   'docker.lifecycle.generations': 'stop retained container generations',
+  'docker.lifecycle.creationFence': 'fence delayed node container creation',
   'docker.mutations': 'prepare, fence and retire owned container sets',
   'host.packages': 'read and change OS updates',
   'agent.rekey': 'rotate its agent key',
