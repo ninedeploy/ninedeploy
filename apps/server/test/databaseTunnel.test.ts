@@ -171,7 +171,8 @@ describe('database tunnels', () => {
     const { servers } = await import('@ninedeploy/db');
     await db.insert(servers).values({ id: 3, name: 'n', host: '203.0.113.1', port: 4600, tokenEncrypted: 'x', status: 'online' });
     const { eq } = await import('drizzle-orm');
-    await db.update(databases).set({ serverId: 3 }).where(eq(databases.id, 1));
+    // As the create route stores a node database: containerName null, the name in nodeContainerName.
+    await db.update(databases).set({ serverId: 3, containerName: null, nodeContainerName: 'nd-db-pg' } as never).where(eq(databases.id, 1));
     const openNode = tunnelDeps.openNode;
     const calls: unknown[] = [];
     tunnelDeps.openNode = async (_db, serverId, target) => {

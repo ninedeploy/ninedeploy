@@ -4,7 +4,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { resolveUser } from '../lib/auth.js';
 import { assertDatabaseRole, loadDatabaseForUser } from '../lib/resourceAccess.js';
-import { MAX_TUNNELS_PER_USER, bridgeTunnel, reserveTunnel, tokenMayWrite } from '../lib/tunnelBridge.js';
+import { MAX_TUNNELS_PER_USER, bridgeTunnel, holdEarlyMessages, reserveTunnel, tokenMayWrite } from '../lib/tunnelBridge.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
 import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { containerIp } from '../engine/builders/docker.js';
@@ -42,6 +42,8 @@ export const tunnelDeps = {
 export const databaseTunnelRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:id/tunnel', { websocket: true }, async (socket, req) => {
     const refuse = (reason: string) => socket.close(1008, reason);
+    // Before any await: what the client sends meanwhile must reach the target.
+    const takeEarly = holdEarlyMessages(socket);
     const token = websocketBearerToken(req.headers);
     const user = token ? await resolveUser(app.db, token) : null;
     if (!user || !authorizeWebsocketUser(user, req.url) || !tokenMayWrite(user.tokenScopes, 'databases')) return refuse('unauthorized');
@@ -56,19 +58,21 @@ export const databaseTunnelRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       return refuse('not found or not allowed');
     }
-    if (d.status !== 'running' || !d.containerName || !d.internalPort) return refuse('the database is not running');
+    // A node database's container is `nodeContainerName`; `containerName` stays null for it.
+    const container = d.serverId != null ? d.nodeContainerName : d.containerName;
+    if (d.status !== 'running' || !container || !d.internalPort) return refuse('the database is not running');
     const release = reserveTunnel(user.id);
     if (!release) return refuse(`at most ${MAX_TUNNELS_PER_USER} tunnels at once`);
     let target: net.Socket | Duplex;
     if (d.serverId != null) {
       try {
-        target = await tunnelDeps.openNode(app.db, d.serverId, { container: d.containerName, port: d.internalPort, kind: 'database' });
+        target = await tunnelDeps.openNode(app.db, d.serverId, { container, port: d.internalPort, kind: 'database' });
       } catch (err) {
         release();
         return refuse((err instanceof Error ? err.message : String(err)).slice(0, 120));
       }
     } else {
-      const host = await tunnelDeps.resolveAddress(d.containerName);
+      const host = await tunnelDeps.resolveAddress(container);
       if (!host) {
         release();
         return refuse('the database container has no address');
@@ -76,14 +80,17 @@ export const databaseTunnelRoutes: FastifyPluginAsync = async (app) => {
       target = tunnelDeps.connect(host, d.internalPort);
     }
     // The client may have left while the target was opened: keep nothing for it.
-    if (socket.readyState !== socket.OPEN) {
+    const early = takeEarly();
+    if (socket.readyState !== socket.OPEN || early.refused) {
       target.destroy();
-      return release();
+      release();
+      return early.refused ? refuse(early.refused) : undefined;
     }
     void audit(app.db, user.id, 'database.tunnel.open', d.name, { databaseId: d.id, engine: d.engine, serverId: d.serverId ?? null }, { ip: req.ip, userAgent: req.headers['user-agent'] });
     bridgeTunnel({
       socket,
       tcp: target,
+      early: early.chunks,
       release,
       label: 'database',
       stillAllowed: async () => {

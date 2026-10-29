@@ -36,6 +36,38 @@ export function reserveTunnel(userId: number): (() => void) | null {
   };
 }
 
+/** What a client may send before its target is connected (a database startup packet, a request line). */
+export const EARLY_BYTES_MAX = 1024 * 1024;
+
+/**
+ * Hold the messages a client sends while the route is still awaiting (the
+ * access checks, the address, or a node's tunnel channel). @fastify/websocket
+ * drops a message nobody listens to, and a client that speaks first (psql, an
+ * HTTP request) then waited forever. Call it before the handler's first await;
+ * the returned function stops holding and hands over what arrived.
+ */
+export function holdEarlyMessages(socket: WebSocket): () => { chunks: Buffer[]; refused: string | null } {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let refused: string | null = null;
+  const onMessage = (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
+    if (refused) return;
+    if (!isBinary) {
+      refused = 'binary frames only';
+      return;
+    }
+    const chunk = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer);
+    size += chunk.length;
+    if (size > EARLY_BYTES_MAX) refused = 'too much data before the tunnel opened';
+    else chunks.push(chunk);
+  };
+  socket.on('message', onMessage);
+  return () => {
+    socket.off('message', onMessage);
+    return { chunks, refused };
+  };
+}
+
 export interface BridgeOptions {
   socket: WebSocket;
   /** The target side: a TCP socket, or (G5.8 nodes) a tunnel stream through the node's agent. */
@@ -46,6 +78,8 @@ export interface BridgeOptions {
   /** Called once, with the totals, when the tunnel ends. */
   onClose: (summary: { seconds: number; bytesIn: number; bytesOut: number; reason: string }) => void;
   label: string;
+  /** Bytes the client sent before the bridge existed ({@link holdEarlyMessages}), written to the target first. */
+  early?: Buffer[];
 }
 
 export function bridgeTunnel(o: BridgeOptions): void {
@@ -90,6 +124,10 @@ export function bridgeTunnel(o: BridgeOptions): void {
       tcp.once('drain', () => socket.resume());
     }
   });
+  for (const chunk of o.early ?? []) {
+    bytesIn += chunk.length;
+    tcp.write(chunk);
+  }
   socket.on('close', () => finish(1000, 'client closed the tunnel'));
   socket.on('error', () => finish(1011, 'tunnel error'));
 

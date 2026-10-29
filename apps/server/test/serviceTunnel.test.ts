@@ -160,4 +160,29 @@ describe('service tunnels', () => {
       serviceTunnelDeps.openNode = openNode;
     }
   });
+
+  it('keeps the bytes a client sends before a slow target is connected', async () => {
+    const { sql } = await import('drizzle-orm');
+    await db.run(sql`PRAGMA foreign_keys = OFF`);
+    await db.update(services).set({ serverId: 9, runtimeReplicas: 1 } as never).where(eq(services.id, 5));
+    const openNode = serviceTunnelDeps.openNode;
+    serviceTunnelDeps.openNode = async () => {
+      // A node channel takes a moment to open; the client has already spoken by then.
+      await new Promise((r) => setTimeout(r, 400));
+      return net.connect({ host: '127.0.0.1', port: echoPort });
+    };
+    try {
+      const ws = open('/v1/services/5/tunnel', 'op');
+      const reply = new Promise<Buffer>((r) => ws.addEventListener('message', (e) => r(Buffer.from(e.data as ArrayBuffer))));
+      await opened(ws);
+      ws.send(Buffer.from('early'));
+      const got = await Promise.race([reply, new Promise<null>((r) => setTimeout(() => r(null), 3000))]);
+      expect(got?.toString()).toBe('early');
+      const end = closed(ws);
+      ws.close(1000);
+      await end;
+    } finally {
+      serviceTunnelDeps.openNode = openNode;
+    }
+  });
 });

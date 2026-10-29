@@ -4,7 +4,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { resolveUser } from '../lib/auth.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
-import { MAX_TUNNELS_PER_USER, bridgeTunnel, reserveTunnel, tokenMayWrite } from '../lib/tunnelBridge.js';
+import { MAX_TUNNELS_PER_USER, bridgeTunnel, holdEarlyMessages, reserveTunnel, tokenMayWrite } from '../lib/tunnelBridge.js';
 import { websocketBearerToken } from '../lib/websocketAuth.js';
 import { swarmRuntimeOf } from '../lib/swarm.js';
 import { authorizeWebsocketUser } from '../plugins/auth.js';
@@ -38,6 +38,8 @@ export const serviceTunnelDeps = {
 export const serviceTunnelRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:id/tunnel', { websocket: true }, async (socket, req) => {
     const refuse = (reason: string) => socket.close(1008, reason);
+    // Before any await: what the client sends meanwhile must reach the target.
+    const takeEarly = holdEarlyMessages(socket);
     const token = websocketBearerToken(req.headers);
     const user = token ? await resolveUser(app.db, token) : null;
     if (!user || !authorizeWebsocketUser(user, req.url) || !tokenMayWrite(user.tokenScopes, 'services')) return refuse('unauthorized');
@@ -77,14 +79,17 @@ export const serviceTunnelRoutes: FastifyPluginAsync = async (app) => {
       }
       target = serviceTunnelDeps.connect(host, port);
     }
-    if (socket.readyState !== socket.OPEN) {
+    const early = takeEarly();
+    if (socket.readyState !== socket.OPEN || early.refused) {
       target.destroy();
-      return release();
+      release();
+      return early.refused ? refuse(early.refused) : undefined;
     }
     void audit(app.db, user.id, 'service.tunnel.open', `${svc.name}:${port}`, { serviceId: svc.id, port, replica, serverId: svc.serverId ?? null }, { ip: req.ip, userAgent: req.headers['user-agent'] });
     bridgeTunnel({
       socket,
       tcp: target,
+      early: early.chunks,
       release,
       label: 'service',
       stillAllowed: async () => {
