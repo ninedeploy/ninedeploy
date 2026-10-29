@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { buildConfigs, settings, users, type DB, type Service } from '@ninedeploy/db';
 import { updateService, type PendingChange, type PendingChangesView } from '@ninedeploy/schemas';
-import { badRequest } from './errors.js';
-import { getSettingJson, setSettingJson } from './settings.js';
+import { badRequest, HttpError } from './errors.js';
+import { getSettingJson } from './settings.js';
 
 /**
  * G5.2 pending changes tray. With staging on, a service's edits are stored as
@@ -51,9 +51,36 @@ export interface VisibleView {
 const EMPTY: Stored = { staging: false, patch: {}, stagedBy: {}, updatedAt: null, updatedByUserId: null };
 const TAG_FIELDS = ['tagProjectIds', 'tagWorkspaceIds', 'tagLabelIds'];
 
+async function readSnapshot(db: DB, serviceId: number): Promise<{ raw: Stored | null; value: Stored }> {
+  const raw = await getSettingJson<Stored>(db, key(serviceId), null);
+  const value = raw && typeof raw === 'object' && raw.patch && typeof raw.patch === 'object' ? { ...EMPTY, ...raw, stagedBy: { ...(raw.stagedBy ?? {}) } } : { ...EMPTY };
+  return { raw, value };
+}
+
 export async function readPending(db: DB, serviceId: number): Promise<Stored> {
-  const s = await getSettingJson<Stored>(db, key(serviceId), null);
-  return s && typeof s === 'object' && s.patch && typeof s.patch === 'object' ? { ...EMPTY, ...s, stagedBy: { ...(s.stagedBy ?? {}) } } : { ...EMPTY };
+  return (await readSnapshot(db, serviceId)).value;
+}
+
+/** Compare the complete stored JSON so concurrent writers cannot erase each other. */
+async function mutatePending(db: DB, serviceId: number, update: (current: Stored) => Promise<Stored | null>): Promise<void> {
+  const settingKey = key(serviceId);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const { raw, value } = await readSnapshot(db, serviceId);
+    const next = await update(value);
+    if (raw === null) {
+      if (next === null) return;
+      const inserted = await db.insert(settings).values({ key: settingKey, value: next as unknown as boolean, updatedAt: new Date() })
+        .onConflictDoNothing().returning({ key: settings.key });
+      if (inserted.length) return;
+    } else {
+      const predicate = and(eq(settings.key, settingKey), sql`${settings.value} = ${JSON.stringify(raw)}`);
+      const changed = next === null
+        ? await db.delete(settings).where(predicate).returning({ key: settings.key })
+        : await db.update(settings).set({ value: next as unknown as boolean, updatedAt: new Date() }).where(predicate).returning({ key: settings.key });
+      if (changed.length) return;
+    }
+  }
+  throw new HttpError(409, 'pending_busy', 'Pending changes were modified repeatedly; retry the operation');
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -141,51 +168,46 @@ export async function stageChanges(db: DB, svc: Service, body: unknown, userId: 
   const parsed = updateService.parse(raw) as Record<string, unknown>;
   // Keep exactly what the caller sent (validated), not the schema's defaults.
   const edit = Object.fromEntries(Object.keys(raw).filter((k) => k in parsed).map((k) => [k, parsed[k]]));
-  const s = await readPending(db, svc.id);
-  const patch: Record<string, unknown> = { ...s.patch };
-  const stagedBy = { ...s.stagedBy };
-  for (const [field, value] of Object.entries(edit)) {
-    if (field === 'build' && value && typeof value === 'object') {
-      patch['build'] = { ...((patch['build'] as object | undefined) ?? {}), ...(value as object) };
-      for (const k of Object.keys(value)) stagedBy[`build.${k}`] = userId;
-    } else {
-      patch[field] = value;
-      stagedBy[field] = userId;
+  await mutatePending(db, svc.id, async (s) => {
+    const patch: Record<string, unknown> = { ...s.patch };
+    const stagedBy = { ...s.stagedBy };
+    for (const [field, value] of Object.entries(edit)) {
+      if (field === 'build' && value && typeof value === 'object') {
+        patch['build'] = { ...((patch['build'] as object | undefined) ?? {}), ...(value as object) };
+        for (const k of Object.keys(value)) stagedBy[`build.${k}`] = userId;
+      } else {
+        patch[field] = value;
+        stagedBy[field] = userId;
+      }
     }
-  }
-  // Drop fields that would change nothing, and their stagers.
-  const current = await currentValues(db, svc, patch);
-  for (const field of Object.keys(patch)) {
-    if (field === 'build') {
-      const b = Object.fromEntries(
-        Object.entries(patch['build'] as Record<string, unknown>).filter(([k, v]) => !same((current['build'] as Record<string, unknown>)[k], v)),
-      );
-      if (Object.keys(b).length === 0) delete patch['build'];
-      else patch['build'] = b;
-    } else if (same(current[field], patch[field])) {
-      delete patch[field];
+    // Drop fields that would change nothing, and their stagers.
+    const current = await currentValues(db, svc, patch);
+    for (const field of Object.keys(patch)) {
+      if (field === 'build') {
+        const b = Object.fromEntries(
+          Object.entries(patch['build'] as Record<string, unknown>).filter(([k, v]) => !same((current['build'] as Record<string, unknown>)[k], v)),
+        );
+        if (Object.keys(b).length === 0) delete patch['build'];
+        else patch['build'] = b;
+      } else if (same(current[field], patch[field])) {
+        delete patch[field];
+      }
     }
-  }
-  const live = new Set((await rawChanges(db, svc, patch)).map((c) => c.field));
-  for (const f of Object.keys(stagedBy)) if (!live.has(f)) delete stagedBy[f];
-  await setSettingJson(db, key(svc.id), { ...s, patch, stagedBy, version: randomUUID(), updatedAt: new Date().toISOString(), updatedByUserId: userId } satisfies Stored);
+    const live = new Set((await rawChanges(db, svc, patch)).map((c) => c.field));
+    for (const f of Object.keys(stagedBy)) if (!live.has(f)) delete stagedBy[f];
+    return { ...s, patch, stagedBy, version: randomUUID(), updatedAt: new Date().toISOString(), updatedByUserId: userId } satisfies Stored;
+  });
   return pendingChanges(db, svc, view);
 }
 
 export async function setStaging(db: DB, svc: Service, staging: boolean, view: VisibleView): Promise<PendingChangesView> {
-  const s = await readPending(db, svc.id);
-  await setSettingJson(db, key(svc.id), { ...s, staging } satisfies Stored);
+  await mutatePending(db, svc.id, async s => ({ ...s, staging }));
   return pendingChanges(db, svc, view);
 }
 
 /** Empty the tray (discard). Staging stays as it was. */
 export async function clearPending(db: DB, serviceId: number): Promise<void> {
-  const s = await readPending(db, serviceId);
-  if (!s.staging) {
-    await db.delete(settings).where(eq(settings.key, key(serviceId)));
-    return;
-  }
-  await setSettingJson(db, key(serviceId), { ...s, patch: {}, stagedBy: {}, version: null, updatedAt: null, updatedByUserId: null } satisfies Stored);
+  await mutatePending(db, serviceId, async s => !s.staging ? null : { ...s, patch: {}, stagedBy: {}, version: null, updatedAt: null, updatedByUserId: null });
 }
 
 /**
@@ -194,35 +216,35 @@ export async function clearPending(db: DB, serviceId: number): Promise<void> {
  * in the meantime stays for the next review.
  */
 export async function clearApplied(db: DB, serviceId: number, applied: Stored): Promise<void> {
-  const s = await readPending(db, serviceId);
-  const patch: Record<string, unknown> = { ...s.patch };
-  const stagedBy = { ...s.stagedBy };
-  for (const [field, value] of Object.entries(applied.patch)) {
-    if (field === 'build' && value && typeof value === 'object' && patch['build'] && typeof patch['build'] === 'object') {
-      const b = { ...(patch['build'] as Record<string, unknown>) };
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        if (same(b[k], v)) {
-          delete b[k];
-          delete stagedBy[`build.${k}`];
+  await mutatePending(db, serviceId, async s => {
+    const patch: Record<string, unknown> = { ...s.patch };
+    const stagedBy = { ...s.stagedBy };
+    for (const [field, value] of Object.entries(applied.patch)) {
+      if (field === 'build' && value && typeof value === 'object' && patch['build'] && typeof patch['build'] === 'object') {
+        const b = { ...(patch['build'] as Record<string, unknown>) };
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+          if (same(b[k], v)) {
+            delete b[k];
+            delete stagedBy[`build.${k}`];
+          }
         }
+        if (Object.keys(b).length === 0) delete patch['build'];
+        else patch['build'] = b;
+      } else if (same(patch[field], value)) {
+        delete patch[field];
+        delete stagedBy[field];
       }
-      if (Object.keys(b).length === 0) delete patch['build'];
-      else patch['build'] = b;
-    } else if (same(patch[field], value)) {
-      delete patch[field];
-      delete stagedBy[field];
     }
-  }
-  const empty = Object.keys(patch).length === 0;
-  if (empty && !s.staging) {
-    await db.delete(settings).where(eq(settings.key, key(serviceId)));
-    return;
-  }
-  await setSettingJson(db, key(serviceId), {
-    ...s,
-    patch,
-    stagedBy,
-    version: empty ? null : randomUUID(),
-    ...(empty ? { updatedAt: null, updatedByUserId: null } : {}),
-  } satisfies Stored);
+    const empty = Object.keys(patch).length === 0;
+    if (empty && !s.staging) {
+      return null;
+    }
+    return {
+      ...s,
+      patch,
+      stagedBy,
+      version: empty ? null : randomUUID(),
+      ...(empty ? { updatedAt: null, updatedByUserId: null } : {}),
+    } satisfies Stored;
+  });
 }

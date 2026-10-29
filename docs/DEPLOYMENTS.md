@@ -247,6 +247,7 @@ A service's settings normally apply as each card is saved. Turn on **Settings �
 - Apply names the version of the tray you reviewed. If someone staged more in the meantime, apply is refused (`409 pending_changed`) until you review again. Afterwards only the applied changes leave the tray.
 - The tray shows you only what the service page shows you. A field you cannot see there, such as a stack's YAML for a non-operator, is shown as hidden.
 - Staging is per service and shared by everyone who edits it. Tags and environment variables keep their own routes and apply directly.
+- Concurrent tray writes compare the stored state and retry instead of silently overwriting another edit. If contention persists, the operation returns `409 pending_busy`; refresh and retry.
 
 **API, SDK and storage**
 - API: `GET`/`PUT`/`DELETE /v1/services/:id/pending`, `PUT …/pending/staging` with `{ staging }`, and `POST …/pending/apply` with `{ deploy, includeOthers, version }`. Read `version` from the reviewed tray and send it back unchanged; `updatedAt` is a display timestamp, not the review token. Older stored trays without a token expose their timestamp as `version`. Clients that send only `updatedAt` for a newly staged tray receive `409 pending_changed` and must refresh and use `version`.
