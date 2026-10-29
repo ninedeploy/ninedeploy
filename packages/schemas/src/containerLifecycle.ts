@@ -26,3 +26,15 @@ export const containerLifecycleReply = z.object({
 }).strict().refine(reply => reply.action === 'stop' || reply.items.length > 0 && reply.items.every(item => item.deploymentId === undefined),
   { message: 'Start requires one implicit generation receipt', path: ['items'] });
 export type ContainerLifecycleReply = z.infer<typeof containerLifecycleReply>;
+
+const retireTarget = target.extend({ deploymentId: z.number().int().positive() });
+export const containerLifecycleRetireRequest = z.object({
+  requestId: z.string().regex(/^[a-f0-9]{32}$/), serviceId: z.number().int().positive(), revision: z.number().int().positive(),
+  targets: z.array(retireTarget).max(30).refine(items => new Set(items.map(item => item.id)).size === items.length &&
+    new Set(items.map(item => item.name)).size === items.length, 'Duplicate retirement target'),
+  timeoutMs: z.number().int().min(1).max(30_000),
+}).strict();
+export const containerLifecycleRetireReply = containerLifecycleRetireRequest.omit({ timeoutMs: true, targets: true }).extend({
+  complete: z.literal(true), items: z.array(retireTarget.extend({ removed: z.literal(true) })).max(30)
+    .refine(items => new Set(items.map(item => item.id)).size === items.length && new Set(items.map(item => item.name)).size === items.length, 'Duplicate retirement receipt'),
+}).strict();

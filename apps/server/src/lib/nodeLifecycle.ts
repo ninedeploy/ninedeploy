@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, lstatSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { containerLifecycleReply, containerLifecycleRequest, type ContainerLifecycleReply, type ContainerLifecycleRequest } from '@ninedeploy/schemas';
+import { containerLifecycleReply, containerLifecycleRequest, containerLifecycleRetireRequest, containerLifecycleRetireReply, type ContainerLifecycleReply, type ContainerLifecycleRequest } from '@ninedeploy/schemas';
 import { createKeyedOperationGuard } from './keyedOperationGuard.js';
 import { spawnValidated } from './spawnValidated.js';
 import { confirmsMissingContainer } from './dockerContainerAbsence.js';
@@ -208,6 +208,70 @@ export function createNodeLifecycle(root: string) {
           const receipt = await applyDocker(input, remaining, current); current();
           database.prepare('UPDATE lifecycle_head SET receipt=? WHERE id=1 AND revision=? AND request_hash=?').run(JSON.stringify(receipt), input.revision, hash);
           return receipt;
+        });
+      });
+    },
+    async retire(params: unknown) {
+      const input = containerLifecycleRetireRequest.parse(params);
+      return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, async journal => {
+        const { timeoutMs: _timeout, ...intent } = input;
+        const hash = createHash('sha256').update(JSON.stringify(intent)).digest('hex');
+        const verify = () => {
+          const head = journal.database.prepare('SELECT revision,request_hash,intent,receipt FROM lifecycle_head WHERE id=1').get();
+          if (!head || Number(head.revision) !== input.revision || typeof head.intent !== 'string' ||
+            createHash('sha256').update(head.intent).digest('hex') !== head.request_hash || head.receipt === null) throw new Error('Stop retirement ownership is stale or unconfirmed');
+          const recorded = containerLifecycleRequest.parse({ ...JSON.parse(head.intent), timeoutMs: 1 });
+          const receipt = containerLifecycleReply.parse(JSON.parse(String(head.receipt)));
+          if (recorded.action !== 'stop' || recorded.requestId !== input.requestId || recorded.serviceId !== input.serviceId || recorded.revision !== input.revision ||
+            receipt.requestId !== recorded.requestId || receipt.serviceId !== recorded.serviceId || receipt.deploymentId !== recorded.deploymentId ||
+            receipt.revision !== recorded.revision || receipt.action !== 'stop' || receipt.items.length !== recorded.targets.length ||
+            recorded.targets.some(target => !receipt.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId && !item.running)) ||
+            input.targets.some(target => !recorded.targets.some(item => item.id === target.id && item.name === target.name && (item.deploymentId ?? recorded.deploymentId) === target.deploymentId) ||
+              !receipt.items.some(item => item.id === target.id && item.name === target.name && (item.deploymentId ?? recorded.deploymentId) === target.deploymentId && !item.running))) {
+            throw new Error('Stop retirement ownership or target coverage changed');
+          }
+        };
+        const table = 'CREATE TABLE IF NOT EXISTS lifecycle_retirement (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL)';
+        await journal.write(async () => {
+          verify(); journal.database.exec(table);
+          const old = journal.database.prepare('SELECT revision,request_hash FROM lifecycle_retirement WHERE id=1').get();
+          if (old && Number(old.revision) > input.revision) throw new Error('Stop retirement request is stale');
+          if (old && Number(old.revision) === input.revision && old.request_hash !== hash) throw new Error('Stop retirement request conflicts with the recorded intent');
+          journal.database.prepare('INSERT INTO lifecycle_retirement(id,revision,request_hash) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,request_hash=excluded.request_hash').run(input.revision, hash);
+        });
+        return journal.write(async () => {
+          verify();
+          const saved = journal.database.prepare('SELECT revision,request_hash FROM lifecycle_retirement WHERE id=1').get();
+          if (!saved || Number(saved.revision) !== input.revision || saved.request_hash !== hash) throw new Error('Stop retirement request is stale');
+          const inspect = async (target: typeof input.targets[number]) => {
+            const lines: string[] = []; let bytes = 0;
+            const code = await spawnValidated('docker', ['inspect', '--type', 'container', '--format', INSPECT, target.id], line => {
+              bytes += Buffer.byteLength(line); if (bytes <= 16_384) lines.push(line);
+            }, { timeoutMs: journal.remaining() });
+            journal.current();
+            if (bytes > 16_384) throw new Error('Stop retirement identity unavailable');
+            if (code !== 0) {
+              if (confirmsMissingContainer(lines, target.id)) return false;
+              throw new Error('Stop retirement identity unavailable');
+            }
+            if (lines.length !== 1) throw new Error('Stop retirement identity unavailable');
+            const row = JSON.parse(lines[0]!) as Record<string, unknown>;
+            if (row.id !== target.id || row.name !== target.name && row.name !== `/${target.name}` || row.managed !== 'service' ||
+              row.serviceId !== String(input.serviceId) || row.deploymentId !== String(target.deploymentId) || row.running !== false ||
+              !['created', 'exited', 'dead'].includes(String(row.status))) throw new Error('Stop retirement identity or state changed');
+            return true;
+          };
+          const present: boolean[] = [];
+          for (const target of input.targets) present.push(await inspect(target));
+          for (const [index, target] of input.targets.entries()) {
+            if (!present[index]) continue;
+            journal.current();
+            if (await spawnValidated('docker', ['rm', target.id], () => {}, { timeoutMs: journal.remaining() }) !== 0) throw new Error('Stop retirement removal unconfirmed');
+            journal.current();
+            if (await inspect(target)) throw new Error('Stop retirement removal unconfirmed');
+          }
+          return containerLifecycleRetireReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision,
+            complete: true, items: input.targets.map(target => ({ ...target, removed: true })) });
         });
       });
     },

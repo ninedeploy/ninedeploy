@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { containerLifecycleReply, containerLifecycleRequest } from '../src/index.js';
+import { containerLifecycleReply, containerLifecycleRequest, containerLifecycleRetireReply, containerLifecycleRetireRequest } from '../src/index.js';
 const target = { id: 'a'.repeat(64), name: 'web-9' };
 const input = { requestId: 'b'.repeat(32), serviceId: 7, deploymentId: 9, revision: 12, action: 'start', targets: [target], timeoutMs: 5000 };
 describe('fenced container lifecycle protocol', () => {
@@ -23,6 +23,24 @@ describe('fenced container lifecycle protocol', () => {
     { targets: [{ ...target, id: 'abc' }] }, { targets: [{ ...target, name: '--all' }] }, { rawCommand: 'docker start anything' },
   ])('refuses ambiguous or unbounded lifecycle requests: %j', changed => {
     expect(containerLifecycleRequest.safeParse({ ...input, ...changed }).success).toBe(false);
+  });
+});
+
+describe('retirement bound to a stopped generation', () => {
+  const candidate = { ...target, deploymentId: 9 };
+  const request = { requestId: input.requestId, serviceId: 7, revision: 12, targets: [candidate], timeoutMs: 5000 };
+  const receipt = { requestId: input.requestId, serviceId: 7, revision: 12, complete: true, items: [{ ...candidate, removed: true }] };
+  it('accepts immutable identity requests and receipts', () => {
+    expect(containerLifecycleRetireRequest.parse(request)).toEqual(request);
+    expect(containerLifecycleRetireReply.parse(receipt)).toEqual(receipt);
+  });
+  it.each([{ targets: [candidate, candidate] }, { targets: [{ ...candidate, deploymentId: undefined }] },
+    { targets: [{ ...candidate, id: 'short' }] }, { timeoutMs: 30_001 }, { action: 'start' }])('refuses invalid requests: %j', changed => {
+    expect(containerLifecycleRetireRequest.safeParse({ ...request, ...changed }).success).toBe(false);
+  });
+  it('rejects duplicate or unconfirmed retirement receipts', () => {
+    expect(containerLifecycleRetireReply.safeParse({ ...receipt, items: [receipt.items[0], receipt.items[0]] }).success).toBe(false);
+    expect(containerLifecycleRetireReply.safeParse({ ...receipt, items: [{ ...candidate, removed: false }] }).success).toBe(false);
   });
 });
 

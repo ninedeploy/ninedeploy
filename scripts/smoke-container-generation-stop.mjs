@@ -19,7 +19,7 @@ const input = (revision, targets, action = 'stop') => ({ requestId: String(revis
 function run(params, options = {}) {
   const runner = daemon + '-runner-' + runners.length; runners.push(runner);
   const code = options.legacy ? "import{runOp}from'/app/apps/server/dist/agent.js';try{process.exitCode=await runOp('docker.stop'," + JSON.stringify({ name: options.legacy.id }) + ",console.log,{sealed:true});}catch(e){console.error(e.message);process.exitCode=1;}"
-    : "import{runRegisteredOp}from'/app/apps/server/dist/agentOps/index.js';try{await runRegisteredOp('docker.lifecycle'," + JSON.stringify(params) + ",console.log,{sealed:true}," + JSON.stringify(options.env ?? {}) + ");}catch(e){console.error(e.message);process.exitCode=1;}";
+    : "import{runRegisteredOp}from'/app/apps/server/dist/agentOps/index.js';try{const result=await runRegisteredOp(" + JSON.stringify(options.op ?? 'docker.lifecycle') + "," + JSON.stringify(params) + ",console.log,{sealed:true}," + JSON.stringify(options.env ?? {}) + ");if(result===null)throw Error('Operation unavailable');}catch(e){console.error(e.message);process.exitCode=1;}";
   const result = cli(['run', '--rm', '--name', runner, '--label', 'ninedeploy.proof=' + owner, '--network', 'container:' + daemon, '--user', '0', '--no-healthcheck',
     '-v', volume + ':' + home, '-w', home, '-e', 'NODE_ENV=test', '-e', 'DOCKER_HOST=tcp://127.0.0.1:2375', '--entrypoint', 'node', image, '--input-type=module', '-e', code]);
   writeFileSync(proof + '/request-' + runners.length + '.log', (result.stdout ?? '') + '\n' + (result.stderr ?? ''));
@@ -56,11 +56,20 @@ try {
   // This is the original behavior reproduction: both generations must stop under one durable revision.
   reply(run(stop), stop); assert.equal(running(previous), false); assert.equal(running(candidate), false); assert.equal(running(decoy), true);
   record('one-revision-stops-both-real-generations-and-preserves-foreign-service');
-  const cached = reply(run(stop), stop); inner(['rm', candidate.id]);
+  const cached = reply(run(stop), stop);
+  const retirement = { requestId: stop.requestId, serviceId: 7, revision: stop.revision, targets: [candidate], timeoutMs: 30_000 };
+  const retired = run(retirement, { op: 'docker.lifecycleRetire' });
+  assert.equal(retired.status, 0, retired.stderr); const frames = retired.stdout.split('\n').filter(line => line.startsWith('ND-LIFECYCLE-RETIRED '));
+  assert.equal(frames.length, 1); assert.deepEqual(JSON.parse(frames[0].slice('ND-LIFECYCLE-RETIRED '.length)).items, [{ ...candidate, removed: true }]);
+  assert.equal(cli(['exec', daemon, 'docker', 'inspect', candidate.id]).status, 1); assert.equal(running(previous), false); assert.equal(running(decoy), true);
+  assert.equal(run(retirement, { op: 'docker.lifecycleRetire' }).status, 0);
+  record('acknowledged-stop-retires-only-candidate-and-replays-after-removal');
   assert.deepEqual(reply(run(stop), stop), cached);
   record('fresh-agent-process-replays-durable-receipt-after-an-obsolete-target-is-removed');
   const replacement = create(candidate.name, 7, 10);
+  assert.equal(run(retirement, { op: 'docker.lifecycleRetire' }).status, 0); assert.equal(running(replacement), true);
   refused(run(input(4, [previous, candidate])), /identity|inspection/); assert.equal(running(replacement), true);
+  refused(run(retirement, { op: 'docker.lifecycleRetire' }), /stale|ownership/i);
   record('missing-old-id-cannot-stop-same-name-generation-replacement');
   refused(run(input(5, [previous, { ...replacement, deploymentId: 11 }])), /identity|generation/);
   assert.equal(running(replacement), true); assert.equal(running(previous), false);

@@ -31,6 +31,7 @@ describe('registered node lifecycle capability', () => {
     expect(advertisedCapabilities({})).toContain('docker.lifecycle');
     expect(advertisedCapabilities({})).toContain('docker.lifecycle.generations');
     expect(advertisedCapabilities({})).toContain('docker.lifecycle.creationFence');
+    expect(advertisedCapabilities({})).toContain('docker.lifecycle.retire');
     const lines: string[] = [];
     expect(await runRegisteredOp('docker.lifecycle', input, line => lines.push(line), { sealed: true }, {})).toBe(0);
     expect(lines).toHaveLength(1);
@@ -46,6 +47,7 @@ describe('registered node lifecycle capability', () => {
     expect(advertisedCapabilities(env)).not.toContain('docker.lifecycle');
     expect(advertisedCapabilities(env)).not.toContain('docker.lifecycle.generations');
     expect(advertisedCapabilities(env)).not.toContain('docker.lifecycle.creationFence');
+    expect(advertisedCapabilities(env)).not.toContain('docker.lifecycle.retire');
     await expect(runRegisteredOp('docker.lifecycle', input, () => undefined, { sealed: true }, env)).rejects.toThrow(/disabled.*owner/);
     expect(readdirSync(root)).toEqual([]); expect(io.spawn).not.toHaveBeenCalled();
   });
