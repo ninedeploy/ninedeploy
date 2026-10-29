@@ -143,7 +143,7 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
 7. **Observability:**
    - a Prometheus `/metrics` endpoint and OTLP export;
    - per-container utilisation history (Coolify, 139 votes);
-   - error-rate and latency alerts (done; see [OBSERVABILITY.md](OBSERVABILITY.md#error-rate-and-latency-alerts); not yet as `.ninedeploy` manifest triggers);
+   - error-rate and latency alerts (done; see [OBSERVABILITY.md](OBSERVABILITY.md#error-rate-and-latency-alerts), also as the `.ninedeploy` triggers `highErrorRate` and `slowResponses`);
    - PagerDuty and Opsgenie channels (done, G3.7; see [GAP_ROADMAP.md](GAP_ROADMAP.md)).
 8. **Git:** commit statuses for GitLab, Gitea and Bitbucket Cloud (done; see [PRIVATE_REPO_GUIDE.md §11](PRIVATE_REPO_GUIDE.md#11-commit-statuses-on-gitlab-gitea-and-bitbucket)), and "wait for CI", which skips an auto-deploy whose checks failed (done for GitHub App links in 0.17.1).
 9. **Usage and cost:** CPU-hours, memory, disk and bandwidth per workspace, project and service, priced from a per-server cost. No self-hosted tool has this.

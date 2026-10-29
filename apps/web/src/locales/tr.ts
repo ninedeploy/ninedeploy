@@ -5923,4 +5923,9 @@ export const TR: Readonly<Record<string, string>> = {
   'pick a service': 'bir servis seçin',
   'Error-rate and latency rules watch one service: pick it. They need traffic analytics on, and skip a service with fewer than 20 requests in 5 minutes.':
     'Hata oranı ve gecikme kuralları tek bir servisi izler: servisi seçin. Trafik analitiğinin açık olması gerekir; 5 dakikada 20\'den az isteği olan servis atlanır.',
+
+  // ── Manifest traffic alert triggers ───────────────────────────────────
+  'High error rate (5xx, needs traffic analytics)': 'Yüksek hata oranı (5xx, trafik analitiği gerekir)',
+  'Slow responses (p95, needs traffic analytics)': 'Yavaş yanıtlar (p95, trafik analitiği gerekir)',
+  'Threshold (ms, p95)': 'Eşik (ms, p95)',
 };

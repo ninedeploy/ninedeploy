@@ -475,6 +475,28 @@ describe('applyManifestToService — alerts', () => {
     expect(rule!.threshold).toBe(384); // 75% of 512 MiB
   });
 
+  it('item 7: maps highErrorRate and slowResponses to per-service traffic rules', async () => {
+    const result = await applyManifestToService(
+      db,
+      serviceId,
+      m({
+        alerts: [
+          { when: 'highErrorRate', channel: 'oncall', thresholdPct: 3 },
+          { when: 'slowResponses', channel: 'oncall', thresholdMs: 750 },
+        ],
+      }),
+    );
+    expect(result.alertsUpserted).toBe(2);
+    const rules = await db.select().from(alertRules).where(eq(alertRules.serviceId, serviceId));
+    expect(rules.map((r) => [r.name, r.metric, r.operator, r.threshold, r.durationWindows]).sort()).toEqual([
+      [`svc-${serviceId}-highErrorRate-oncall`, 'error_rate', '>', 3, 2],
+      [`svc-${serviceId}-slowResponses-oncall`, 'latency_p95', '>', 750, 2],
+    ]);
+    // Removing them from the section deletes the manifest-owned rules.
+    await applyManifestToService(db, serviceId, m({ alerts: [] }));
+    expect(await db.select().from(alertRules).where(eq(alertRules.serviceId, serviceId))).toHaveLength(0);
+  });
+
   it('encodes the channel in the rule name so two alerts with the same when can coexist', async () => {
     await applyManifestToService(
       db,

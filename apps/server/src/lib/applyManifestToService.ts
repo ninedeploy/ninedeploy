@@ -673,7 +673,9 @@ async function syncAlertRules(
       result.warnings.push(`alerts: when="${alert.when}" ${rule}; rule skipped.`);
       continue;
     }
-    const { metric, operator, threshold, durationWindows } = rule;
+    const { operator, threshold, durationWindows } = rule;
+    // `alert_rules.metric` is free text; its column enum predates the traffic metrics.
+    const metric = rule.metric as typeof alertRules.$inferInsert.metric;
     const name = `svc-${serviceId}-${alert.when}-${alert.channel}`;
     declared.add(name);
 
@@ -724,7 +726,7 @@ async function syncAlertRules(
 }
 
 /** Every manifest `alerts[].when` — the middle segment of a manifest-owned rule name. */
-const MANIFEST_ALERT_WHENS = ['deployFailed', 'restartLoop', 'highMemory', 'highCpu', 'certExpiry'] as const;
+const MANIFEST_ALERT_WHENS = ['deployFailed', 'restartLoop', 'highMemory', 'highCpu', 'certExpiry', 'highErrorRate', 'slowResponses'] as const;
 
 /**
  * Translate one manifest alert into an `alert_rules` row, or the reason the
@@ -736,7 +738,7 @@ function alertToRule(
   memLimitMb: number,
 ):
   | {
-      metric: 'cpu' | 'memory' | 'cert-expiry';
+      metric: 'cpu' | 'memory' | 'cert-expiry' | 'error_rate' | 'latency_p95';
       operator: '>' | '<';
       threshold: number;
       durationWindows: number;
@@ -763,6 +765,12 @@ function alertToRule(
         threshold: alert.thresholdPct ?? 90,
         durationWindows: 3,
       };
+    case 'highErrorRate':
+      // Item 7: share of 5xx answers over the last 5 minutes of traffic
+      // analytics; silent while analytics is off or traffic is thin.
+      return { metric: 'error_rate', operator: '>', threshold: alert.thresholdPct ?? 5, durationWindows: 2 };
+    case 'slowResponses':
+      return { metric: 'latency_p95', operator: '>', threshold: alert.thresholdMs ?? 1000, durationWindows: 2 };
     case 'certExpiry':
       // F129: certificate expiry is sampled host-wide (serviceId null) by the
       // collector, so a service-scoped rule never evaluates — the panel API

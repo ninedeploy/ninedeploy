@@ -418,18 +418,27 @@ describe('ninedeployManifest', () => {
       ok(alert, { when: 'deployFailed', channel: 'oncall' });
     });
     it('accepts all when values', () => {
-      for (const w of ['deployFailed', 'restartLoop', 'highMemory', 'highCpu', 'certExpiry']) {
+      for (const w of ['deployFailed', 'restartLoop', 'highMemory', 'highCpu', 'certExpiry', 'highErrorRate', 'slowResponses']) {
         ok(alertWhen, w);
-        if (w === 'highMemory' || w === 'highCpu') {
+        if (w === 'highMemory' || w === 'highCpu' || w === 'highErrorRate') {
           ok(alert, { when: w, channel: 'oncall', thresholdPct: 90 });
+        } else if (w === 'slowResponses') {
+          ok(alert, { when: w, channel: 'oncall', thresholdMs: 800 });
         } else {
           ok(alert, { when: w, channel: 'oncall' });
         }
       }
     });
-    it('requires thresholdPct for highMemory/highCpu', () => {
+    it('requires thresholdPct for highMemory/highCpu/highErrorRate', () => {
       bad(alert, { when: 'highMemory', channel: 'oncall' });
       bad(alert, { when: 'highCpu', channel: 'oncall' });
+      bad(alert, { when: 'highErrorRate', channel: 'oncall' });
+    });
+    it('requires an in-range thresholdMs for slowResponses', () => {
+      bad(alert, { when: 'slowResponses', channel: 'oncall' });
+      bad(alert, { when: 'slowResponses', channel: 'oncall', thresholdPct: 90 });
+      bad(alert, { when: 'slowResponses', channel: 'oncall', thresholdMs: 0 });
+      bad(alert, { when: 'slowResponses', channel: 'oncall', thresholdMs: 600_001 });
     });
     it('rejects out-of-range thresholdPct', () => {
       bad(alert, { when: 'highMemory', channel: 'oncall', thresholdPct: 0 });

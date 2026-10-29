@@ -355,17 +355,33 @@ alerts:
     channel: oncall
   - when: certExpiry
     channel: oncall
+  - when: highErrorRate               # % of requests answered 5xx
+    channel: oncall
+    thresholdPct: 5
+  - when: slowResponses               # p95 response time
+    channel: oncall
+    thresholdMs: 1000
 ```
 
-`thresholdPct` (1–100) is required for `highMemory` and `highCpu`; the other
-`when` values do not accept a threshold.
+`thresholdPct` (1–100) is required for `highMemory`, `highCpu` and
+`highErrorRate`. `thresholdMs` (1–600000) is required for `slowResponses`.
 
-Only the three **metric** triggers become `alert_rules` rows: `highMemory`,
-`highCpu` and `certExpiry`. `deployFailed` and `restartLoop` are events, not
-thresholds the alert engine can sample, so they are reported as skipped in the
-deploy log rather than written out. (They used to be stored as a `cert-expiry`
-rule with a threshold of 0 — a rule that renders in Monitoring like a
-configured alert and can never fire.)
+The **metric** triggers become `alert_rules` rows on the service:
+- `highMemory`: memory above `thresholdPct` of the memory limit; skipped when the service has no limit.
+- `highCpu`: CPU above `thresholdPct`.
+- `highErrorRate` and `slowResponses`: the share of 5xx answers, or the p95
+  response time, over the last 5 minutes of traffic analytics
+  ([OBSERVABILITY.md](OBSERVABILITY.md#error-rate-and-latency-alerts)). They
+  only sample while traffic analytics is on and the service had at least 20
+  requests in the window.
+
+`certExpiry` is tracked host-wide, so a service rule could never fire; it is
+reported as skipped (an operator adds a host-wide cert-expiry rule under
+Monitoring). `deployFailed` and `restartLoop` are events, not thresholds the
+alert engine can sample, so they are reported as skipped in the deploy log
+rather than written out. (They used to be stored as a `cert-expiry` rule with a
+threshold of 0 — a rule that renders in Monitoring like a configured alert and
+can never fire.)
 
 `channel` is recorded in the generated rule *name*, which is what lets two
 alerts with the same `when` coexist. It does not route the alert: delivery
@@ -419,7 +435,7 @@ Two things happen, in this order.
 | Manifest field | Pipeline action |
 | :--- | :--- |
 | `routes[]` | upsert into `domains` (one row per host, with path/SSL/headers/CIDR/rate-limit) |
-| `alerts[]` | upsert into `alert_rules`, one row per **metric** alert (`highMemory`, `highCpu`, `certExpiry`); the event-shaped `deployFailed` / `restartLoop` are reported as skipped |
+| `alerts[]` | upsert into `alert_rules`, one row per **metric** alert (`highMemory`, `highCpu`, `highErrorRate`, `slowResponses`); the host-wide `certExpiry` and the event-shaped `deployFailed` / `restartLoop` are reported as skipped |
 | `database` | look the DB up by `ref` and attach it, injecting the connection URL into the service env |
 
 **BUILD** — `apps/server/src/lib/ninedeployApply.ts` folds the build-shaping

@@ -833,6 +833,24 @@ describe('AlertsSection', () => {
     ]);
   });
 
+  it('switches to slowResponses with a default thresholdMs, edits it, and back to a percent trigger', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <AlertsSection value={[{ when: 'highMemory', channel: 'oncall', thresholdPct: 80 }]} onChange={onChange} />,
+    );
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'slowResponses' } });
+    expect(onChange).toHaveBeenLastCalledWith([{ when: 'slowResponses', channel: 'oncall', thresholdMs: 1000 }]);
+
+    rerender(<AlertsSection value={[{ when: 'slowResponses', channel: 'oncall', thresholdMs: 1000 }]} onChange={onChange} />);
+    fireEvent.change(screen.getByDisplayValue('1000'), { target: { value: '650' } });
+    expect(onChange).toHaveBeenLastCalledWith([{ when: 'slowResponses', channel: 'oncall', thresholdMs: 650 }]);
+    fireEvent.change(screen.getByDisplayValue('1000'), { target: { value: '' } });
+    expect(onChange).toHaveBeenLastCalledWith([{ when: 'slowResponses', channel: 'oncall', thresholdMs: 1000 }]);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'highErrorRate' } });
+    expect(onChange).toHaveBeenLastCalledWith([{ when: 'highErrorRate', channel: 'oncall', thresholdPct: 90 }]);
+  });
+
   it('updates the thresholdPct on input', () => {
     const onChange = vi.fn();
     render(

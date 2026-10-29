@@ -301,6 +301,9 @@ export const alertWhen = z.enum([
   'highMemory',
   'highCpu',
   'certExpiry',
+  // Per-service traffic analytics, last 5 minutes (ROADMAP item 7).
+  'highErrorRate',
+  'slowResponses',
 ]);
 /** Inferred type for the `alerts[].when` field, exported for consumers. */
 export type AlertWhen = z.infer<typeof alertWhen>;
@@ -310,16 +313,22 @@ export const alert = z
     when: alertWhen,
     channel: z.string().min(1).max(100),
     thresholdPct: z.number().int().min(1).max(100).optional(),
+    /** p95 response time in ms, for `slowResponses`. */
+    thresholdMs: z.number().int().min(1).max(600_000).optional(),
   })
   .strict()
   .refine(
     (a) =>
-      a.when !== 'highMemory' && a.when !== 'highCpu' ? true : a.thresholdPct != null,
+      a.when !== 'highMemory' && a.when !== 'highCpu' && a.when !== 'highErrorRate' ? true : a.thresholdPct != null,
     {
-      message: 'thresholdPct is required for highMemory/highCpu alerts',
+      message: 'thresholdPct is required for highMemory/highCpu/highErrorRate alerts',
       path: ['thresholdPct'],
     },
-  );
+  )
+  .refine((a) => a.when !== 'slowResponses' || a.thresholdMs != null, {
+    message: 'thresholdMs is required for slowResponses alerts',
+    path: ['thresholdMs'],
+  });
 export type Alert = z.infer<typeof alert>;
 
 // ── Top-level manifest ────────────────────────────────────────────────────
