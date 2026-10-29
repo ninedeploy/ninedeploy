@@ -78,6 +78,26 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
       ...fanout.map(target => Number(/-([1-9]\d*)$/.exec(target.runtimeId ?? '')?.[1] ?? 0))]
       .reduce((highest, id) => Math.max(highest, id), Math.max(Number(sequence?.id ?? 0), deploymentId ?? 0, pendingStop?.snapshot.creationFenceDeploymentId ?? 0));
     if (action === 'stop' && (!Number.isSafeInteger(creationFenceDeploymentId) || creationFenceDeploymentId < 1)) throw new Error('Stop creation fence identity is invalid');
+    const interruptedIds = [...new Set([...interrupted.map(row => row.id),
+      ...activeWork.filter(row => row.status === 'building' || row.status === 'deploying').map(row => row.id)])].sort((a, b) => a - b);
+    const candidateParticipants = action === 'stop' && fresh.runtimeId !== null && interruptedIds.length ? [
+      { serverId: fresh.serverId!, targets: interruptedIds.flatMap(id => replicaNames(`${fresh.slug}-${id}`, MAX_REPLICAS).map(name => ({ name, deploymentId: id }))) },
+      ...fanout.map(target => ({ serverId: target.serverId, targets: interruptedIds.flatMap(id => replicaNames(`${fresh.slug}-t${target.serverId}-${id}`, MAX_REPLICAS).map(name => ({ name, deploymentId: id }))) })),
+    ] : undefined;
+    if (candidateParticipants && fresh.runtimeId !== `${fresh.slug}-${deploymentId}`) throw new Error('Stop candidate naming is unconfirmed');
+    if (candidateParticipants && fanout.some(target => {
+      if (target.runtimeId === null) return false;
+      const generation = /-([1-9]\d*)$/.exec(target.runtimeId)?.[1];
+      return !generation || target.runtimeId !== `${fresh.slug}-t${target.serverId}-${generation}`;
+    })) throw new Error('Stop fan-out candidate naming is unconfirmed');
+    if (candidateParticipants && pendingStop?.snapshot.candidateParticipants) {
+      for (const previous of pendingStop.snapshot.candidateParticipants) {
+        const current = candidateParticipants.find(item => item.serverId === previous.serverId);
+        if (!current || previous.targets.some(target => !current.targets.some(item => item.name === target.name && item.deploymentId === target.deploymentId))) {
+          throw new Error('Stop candidate placement or names changed');
+        }
+      }
+    }
     const requestId = randomBytes(16).toString('hex');
     const authority = await reserveServiceRuntimeOwnerInTransaction(tx, fresh.id, action, requestId, 'supersede');
     const acceptedAt = new Date();
@@ -87,9 +107,8 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
       snapshot: { status: fresh.status, port: fresh.port, healthCheck: fresh.healthCheck, healthPath: fresh.healthPath, healthCommand: fresh.healthCommand,
         healthTimeoutS: fresh.healthTimeoutSeconds, serving: shape.serving, capacity: shape.capacity, configuration: configuration(fresh), fanout,
         mutationEpoch: authority.epoch, revisionEpoch: authority.epoch,
-        ...(action === 'stop' ? { interruptedDeployments: [...new Set([...interrupted.map(row => row.id),
-          ...activeWork.filter(row => row.status === 'building' || row.status === 'deploying').map(row => row.id)])].sort((a, b) => a - b).map(id => ({ id })),
-          creationFenceDeploymentId } : {}),
+        ...(action === 'stop' ? { interruptedDeployments: interruptedIds.map(id => ({ id })), creationFenceDeploymentId,
+          ...(candidateParticipants ? { candidateParticipants, candidateSlug: fresh.slug } : {}) } : {}),
         ...(fresh.runtimeId === null ? { unselected: { participants: [
           { serverId: fresh.serverId!, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-' + row.id, MAX_REPLICAS)) },
           ...fanout.map(target => ({ serverId: target.serverId, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-t' + target.serverId + '-' + row.id, MAX_REPLICAS)) })),
@@ -179,7 +198,7 @@ export async function advanceNodeLifecycleIntent(db: DB, intent: NodeLifecycleIn
     const done = phase === 'completed';
     if (done) {
       for (const target of fresh.snapshot.fanout ?? []) {
-        if (target.runtimeId || (fresh.action === 'stop' && fresh.snapshot.unselected)) await tx.update(serviceTargets).set({ status: fresh.action === 'stop' ? 'idle' : 'running', updatedAt: new Date(now) })
+        if (target.runtimeId || fresh.action === 'stop') await tx.update(serviceTargets).set({ status: fresh.action === 'stop' ? 'idle' : 'running', updatedAt: new Date(now) })
           .where(eq(serviceTargets.id, target.targetId));
       }
     }

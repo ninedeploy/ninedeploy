@@ -68,4 +68,18 @@ export async function smokeNodeReplicaDatabases({ api, inner, id, first, fixture
     report({ case: 'replica-database-stop-during-readiness', explicitStopRetained: true, confirmedRouteRemoval: true,
       noAutomaticResurrection: true, cancelledImmutableCandidatesRetired: true, requests: records.length, unexpected502: 0 });
   }
+  {
+    await env('DB_QUERY_FAIL', '0');
+    const deploymentId = (await api(`/v1/services/${id}/deploys`, { method: 'POST', body: {} })).deploymentId;
+    await until(async () => {
+      const job = (await api(`/v1/services/${id}/deploys`)).find(row => row.id === deploymentId);
+      if (job?.status === 'failed' || job?.status === 'cancelled') throw new Error(`Post-Stop deployment ${job.status}`);
+      return job?.status === 'running' && (await service(id)).status === 'running' && route() === 200;
+    }, 'new deployment after completed Stop', 180_000);
+    const runtime = await service(id);
+    assert.equal(runtime.runtimeId, `${old.slug}-${deploymentId}`);
+    assert.equal([runtime.runtimeId, `${runtime.runtimeId}-r2`].every(running), true);
+    for (let n = 0; n < 30; n++) assert.equal(route(), 200);
+    report({ case: 'replica-database-deploy-after-stop', newerDeploymentId: deploymentId, readyReplicas: 2, successfulRequests: 30 });
+  }
 }

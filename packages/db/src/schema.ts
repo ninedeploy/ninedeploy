@@ -1890,6 +1890,9 @@ export interface NodeLifecycleSnapshot {
   interruptedDeployments?: Array<{ id: number }>;
   /** Highest pre-Stop deployment ID, including cancelled work that had not started. */
   creationFenceDeploymentId?: number;
+  /** Frozen candidate names for each accepted node, before active work is cancelled. */
+  candidateParticipants?: Array<{ serverId: number; targets: Array<{ name: string; deploymentId: number }> }>;
+  candidateSlug?: string;
 }
 
 /** Accepted panel intent. ID-derived agent revisions survive retries and panel restarts. */

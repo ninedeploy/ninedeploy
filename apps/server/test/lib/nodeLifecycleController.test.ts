@@ -6,7 +6,7 @@ import { executeNodeLifecycleIntent, type NodeLifecycleControllerDeps } from '..
 
 let c: ReturnType<typeof createDb>, deps: NodeLifecycleControllerDeps, trace: string[], running: boolean;
 const target = { id: 'a'.repeat(64), name: 'web-9' };
-const caps = ['docker.lifecycle', 'docker.lifecycle.creationFence', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'];
+const caps = ['docker.lifecycle', 'docker.lifecycle.generations', 'docker.lifecycle.creationFence', 'docker.lifecycle.retire', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'];
 const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
 const stored = async () => (await c.db.query.nodeLifecycleIntents.findFirst())!;
 beforeEach(async () => {
@@ -72,11 +72,17 @@ describe('durable panel node lifecycle execution', () => {
   it('holds Stop after removing routing when an interrupted candidate has not been accounted for', async () => {
     running = true; await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
     await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'deploying' });
+    const original = deps.agent;
+    deps.agent = async (...args) => {
+      if (args[1] === 'docker.identity' && args[2].name === 'web-10') return { exitCode: 0, lines: ['ND-CONTAINER ' + JSON.stringify({ id: 'b'.repeat(64), name: 'web-10', managed: 'service', serviceId: '1', deploymentId: '10' })] };
+      if (args[1] === 'docker.lifecycleRetire') return { exitCode: 1, lines: [] };
+      return original(...args);
+    };
     const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
     expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
     expect(trace).toEqual(['fence', 'route:stopped', 'drain', 'effect:stop']);
     expect(running).toBe(false);
-    expect(await stored()).toMatchObject({ phase: 'applying', reason: expect.stringContaining('candidate') });
+    expect(await stored()).toMatchObject({ phase: 'applying', reason: expect.stringContaining('lifecycleRetire') });
     expect((await service()).status).toBe('stopped');
   });
   it('fences every pre-Stop deployment before discovering the selected runtime', async () => {
@@ -88,20 +94,42 @@ describe('durable panel node lifecycle execution', () => {
       return original(...args);
     };
     const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
-    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'completed' });
     expect(fences).toEqual([12]);
   });
-  it('does not attempt a candidate handoff with an agent lacking the creation fence capability', async () => {
+  it.each(['docker.lifecycle.creationFence', 'docker.lifecycle.generations', 'docker.lifecycle.retire'])('does not attempt a candidate handoff without %s', async missing => {
     running = true; await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
     await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'deploying' });
     const original = deps.agent;
     deps.agent = async (...args) => args[1] === 'agent.ping'
-      ? { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.18.9', caps: caps.filter(cap => cap !== 'docker.lifecycle.creationFence') })] }
+      ? { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.18.9', caps: caps.filter(cap => cap !== missing) })] }
       : original(...args);
     const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
     expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
     expect(trace).toEqual([]);
-    expect((await stored()).reason).toMatch(/agent|update/i);
+    expect((await stored()).reason).toMatch(/agent|update|owner/i);
+  });
+  it('holds an incomplete persisted candidate inventory before any node effects', async () => {
+    running = true; await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
+    await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'deploying' });
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    await c.db.update(nodeLifecycleIntents).set({ snapshot: { ...intent.snapshot, candidateParticipants: [{ serverId: 4, targets: [] }] } })
+      .where(eq(nodeLifecycleIntents.id, intent.id));
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).reason).toMatch(/placement.*unconfirmed/i);
+    expect(trace).toEqual([]); expect(running).toBe(true);
+  });
+  it('retains a candidate name owned by a different service instead of stopping it', async () => {
+    running = true; await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));
+    await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'deploying' });
+    const original = deps.agent;
+    deps.agent = async (...args) => args[1] === 'docker.identity' && args[2].name === 'web-10'
+      ? { exitCode: 0, lines: ['ND-CONTAINER ' + JSON.stringify({ id: 'b'.repeat(64), name: 'web-10', managed: 'service', serviceId: '2', deploymentId: '10' })] }
+      : original(...args);
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(await finish(executeNodeLifecycleIntent(c.db, intent.id, deps))).toEqual({ state: 'held' });
+    expect((await stored()).reason).toMatch(/ownership.*unconfirmed/i);
+    expect(trace).toEqual(['fence']); expect(running).toBe(true);
   });
   it('keeps ordinary Stop compatible with an older agent when no deployment was in flight', async () => {
     running = true; await c.db.update(services).set({ status: 'running' }).where(eq(services.id, 1));

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { eq, nodeLifecycleIntents, type DB, type Service } from '@ninedeploy/db';
-import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, runtimeFenceRequest, runtimeFenceReply, containerLifecycleReply, containerLifecycleRequest, type ContainerReadinessRequest } from '@ninedeploy/schemas';
+import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, runtimeFenceRequest, runtimeFenceReply, containerLifecycleReply, containerLifecycleRequest, containerLifecycleRetireRequest, containerLifecycleRetireReply, type ContainerReadinessRequest } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import type { AgentOpResult } from './agentClient.js';
@@ -63,7 +63,8 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     }
     if (intent.runtimeId === null || intent.deploymentId === null) throw new Error('Missing selected runtime identity');
     return [{ serverId: intent.serverId, runtimeId: intent.runtimeId, deploymentId: intent.deploymentId, serving: intent.snapshot.serving },
-    ...(intent.snapshot.fanout ?? []).filter(target => target.runtimeId !== null).map(target => {
+    ...(intent.snapshot.fanout ?? []).filter(target => target.runtimeId !== null || requiresCreationFence).map(target => {
+      if (target.runtimeId === null) return { serverId: target.serverId, runtimeId: null, deploymentId: null, serving: 0 };
       const deploymentId = Number(/-([1-9]\d*)$/.exec(target.runtimeId!)?.[1]);
       if (!Number.isSafeInteger(deploymentId) || deploymentId < 1) throw new Error('Fan-out runtime has no managed deployment identity; redeploy this target');
       return { serverId: target.serverId, runtimeId: target.runtimeId!, deploymentId, serving: 1 };
@@ -87,21 +88,26 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       const reply = machine(await call(participant.serverId, 'docker.runtimeInventory', request, 35_000), 'ND-RUNTIME-INVENTORY ', value => containerInventoryReply.parse(value), request);
       return reply.items.map(({ running: _running, ...item }) => ({ ...item, ...(participant.serverId === intent.serverId ? {} : { serverId: participant.serverId }) }));
     }
-    if (participant.runtimeId === null || participant.deploymentId === null) throw new Error('Missing selected generation');
-    const names = replicaNames(participant.runtimeId, intent.action === 'start' ? participant.serving : MAX_REPLICAS);
-    for (const name of names) {
+    if ((participant.runtimeId === null || participant.deploymentId === null) && !requiresCreationFence) throw new Error('Missing selected generation');
+    const selected = participant.runtimeId === null ? [] : replicaNames(participant.runtimeId, intent.action === 'start' ? participant.serving : MAX_REPLICAS)
+      .map(name => ({ name, deploymentId: participant.deploymentId! }));
+    const candidates = requiresCreationFence ? intent.snapshot.candidateParticipants?.find(item => item.serverId === participant.serverId)?.targets : [];
+    if (requiresCreationFence && !candidates) throw new Error('Stop candidate identities are unavailable');
+    const names = [...selected, ...(candidates ?? [])];
+    if (new Set(names.map(item => item.name)).size !== names.length || names.some(item => !Number.isSafeInteger(item.deploymentId) || item.deploymentId < 1)) throw new Error('Stop candidate identities are invalid');
+    for (const { name, deploymentId } of names) {
       const result = await call(participant.serverId, 'docker.identity', { name });
       const frames = result.lines.filter(line => line.startsWith('ND-CONTAINER '));
       if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 16 * 1024) throw new Error('Node lifecycle identity unavailable');
       const found = identity.nullable().parse(JSON.parse(frames[0]!.slice(13)));
       if (!found) {
-        if (intent.action !== 'stop' && replicaNames(participant.runtimeId, participant.serving).includes(name)) throw new Error(`Node lifecycle serving replica ${name} is missing`);
+        if (intent.action !== 'stop' && participant.runtimeId && replicaNames(participant.runtimeId, participant.serving).includes(name)) throw new Error(`Node lifecycle serving replica ${name} is missing`);
         continue;
       }
-      if (found.name !== name || found.managed !== 'service' || found.serviceId !== String(intent.serviceId) || found.deploymentId !== String(participant.deploymentId)) {
+      if (found.name !== name || found.managed !== 'service' || found.serviceId !== String(intent.serviceId) || found.deploymentId !== String(deploymentId)) {
         throw new Error(`Node lifecycle ownership of ${name} is unconfirmed; container retained`);
       }
-      targets.push({ id: found.id, name, ...(participant.serverId !== intent.serverId ? { serverId: participant.serverId } : {}) });
+      targets.push({ id: found.id, name, ...(requiresCreationFence ? { deploymentId } : {}), ...(participant.serverId !== intent.serverId ? { serverId: participant.serverId } : {}) });
     }
     if (new Set(targets.map(target => target.id)).size !== targets.length) throw new Error('Duplicate node lifecycle identity');
     return targets;
@@ -112,6 +118,22 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     const selected = names.map(name => capturedTargets(participant).find(t => t.name === name));
     if (selected.some(target => !target)) throw new Error('Node lifecycle serving targets are unavailable');
     return selected.map(target => target!);
+  };
+  const retireCandidates = async (participant: Participant) => {
+    const candidateNames = intent.snapshot.candidateParticipants?.find(item => item.serverId === participant.serverId)?.targets;
+    if (!candidateNames) throw new Error('Stop candidate identities are unavailable');
+    const targets = (intent.targets ?? []).filter(target => (target.serverId ?? intent.serverId) === participant.serverId &&
+      candidateNames.some(candidate => candidate.name === target.name && candidate.deploymentId === target.deploymentId))
+      .map(({ serverId: _server, ...target }) => target);
+    if (!targets.length) return;
+    const request = containerLifecycleRetireRequest.parse({ requestId: intent.requestId, serviceId: intent.serviceId,
+      revision: nodeLifecycleWireRevision(intent, 'effect'), targets, timeoutMs: 30_000 });
+    const reply = machine(await call(participant.serverId, 'docker.lifecycleRetire', request, 35_000), 'ND-LIFECYCLE-RETIRED ',
+      value => containerLifecycleRetireReply.parse(value), request);
+    if (reply.items.length !== request.targets.length || request.targets.some(target => !reply.items.some(item =>
+      item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId && item.removed))) {
+      throw new Error('Stop candidate retirement coverage changed');
+    }
   };
   const apply = async (participant: Participant, fence: boolean, restarting = false) => {
     if (!fence && intent.targets === null) throw new Error('Node lifecycle immutable targets are unavailable');
@@ -127,14 +149,16 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       }
       return;
     }
-    if (participant.deploymentId === null) throw new Error('Missing selected deployment');
+    if (participant.deploymentId === null && !requiresCreationFence) throw new Error('Missing selected deployment');
 
     const request = containerLifecycleRequest.parse({ requestId: fence
       ? createHash('sha256').update(`${intent.requestId}:fence${participant.serverId === intent.serverId ? '' : `:${participant.serverId}`}`).digest('hex').slice(0, 32) : intent.requestId,
-    serviceId: intent.serviceId, deploymentId: fence && requiresCreationFence ? intent.snapshot.creationFenceDeploymentId : participant.deploymentId,
+    serviceId: intent.serviceId, deploymentId: requiresCreationFence && (fence || participant.deploymentId === null) ? intent.snapshot.creationFenceDeploymentId : participant.deploymentId,
     revision: nodeLifecycleWireRevision(intent, fence ? 'fence' : restarting ? 'restart-start' : 'effect'),
     action: !fence && (intent.action === 'start' || restarting) ? 'start' : 'stop',
-    targets: fence ? [] : restarting ? servingTargets(participant) : capturedTargets(participant), timeoutMs: 30_000 });
+    targets: fence ? [] : restarting ? servingTargets(participant) : requiresCreationFence
+      ? (intent.targets ?? []).filter(target => (target.serverId ?? intent.serverId) === participant.serverId).map(({ serverId: _server, ...target }) => target)
+      : capturedTargets(participant), timeoutMs: 30_000 });
     const result = await call(participant.serverId, 'docker.lifecycle', request, 35_000);
     const frames = result.lines.filter(line => line.startsWith('ND-LIFECYCLE '));
     if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 64 * 1024) throw new Error('Node lifecycle receipt unavailable');
@@ -178,12 +202,25 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       intent.snapshot.creationFenceDeploymentId! < (intent.snapshot.interruptedDeployments ?? []).reduce((max, row) => Math.max(max, row.id), intent.deploymentId ?? 0))) {
       throw new Error('Interrupted deployment creation fence is unavailable');
     }
+    if (requiresCreationFence) {
+      const accepted = [intent.serverId, ...(intent.snapshot.fanout ?? []).map(target => target.serverId)];
+      const saved = intent.snapshot.candidateParticipants, slug = intent.snapshot.candidateSlug;
+      if (!Array.isArray(saved) || saved.length !== accepted.length || new Set(saved.map(item => item.serverId)).size !== accepted.length ||
+        typeof slug !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(slug) ||
+        saved.some(item => {
+          if (!accepted.includes(item.serverId) || !Array.isArray(item.targets)) return true;
+          const expected = (intent.snapshot.interruptedDeployments ?? []).flatMap(row =>
+            replicaNames(item.serverId === intent.serverId ? `${slug}-${row.id}` : `${slug}-t${item.serverId}-${row.id}`, MAX_REPLICAS)
+              .map(name => ({ name, deploymentId: row.id })));
+          return JSON.stringify(item.targets) !== JSON.stringify(expected);
+        })) throw new Error('Stop candidate placement is unconfirmed');
+    }
     for (const participant of participants()) {
       const sealed = await deps.sealed(participant.serverId);
       await checkpoint();
       const refusal = await capabilityRefusal((op, params) => call(participant.serverId, op, params, 5000), `#${participant.serverId}`, sealed, {
         cap: intent.snapshot.unselected ? ['docker.mutations', 'proxy.routingAck'] : ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck',
-          ...(requiresCreationFence ? ['docker.lifecycle.creationFence' as const] : [])], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
+          ...(requiresCreationFence ? ['docker.lifecycle.creationFence' as const, 'docker.lifecycle.generations' as const, 'docker.lifecycle.retire' as const] : [])], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
       });
       await checkpoint();
       if (refusal) throw new Error(refusal.message);
@@ -200,12 +237,9 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
         intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'start' ? 'applying' : 'routing', { targets });
       } else if (intent.phase === 'applying') {
         if (intent.action !== 'start' && !routingRemovedThisRun) await removeRouting();
-        for (const participant of participants()) await apply(participant, false);
-        // A selected Stop currently stops only the serving generation. Its
-        // interrupted deployment candidates still need an ordered handoff;
-        // never report completion while that generation is unaccounted for.
-        if (intent.action === 'stop' && !intent.snapshot.unselected && (intent.snapshot.interruptedDeployments?.length ?? 0) > 0) {
-          throw new Error('Interrupted deployment candidate cleanup is unconfirmed; Stop is retained for recovery');
+        for (const participant of participants()) {
+          await apply(participant, false);
+          if (requiresCreationFence) await retireCandidates(participant);
         }
         intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'restart' ? 'starting' : intent.action === 'start' ? 'readiness' : 'completed');
       } else if (intent.phase === 'starting') {
