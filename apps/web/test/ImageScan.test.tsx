@@ -131,4 +131,26 @@ describe('ImageScanSection (G5.1)', () => {
     await userEvent.click(screen.getByRole('switch', { name: 'Gate counts only fixable findings' }));
     await waitFor(() => expect(api.imageScans.setPolicy).toHaveBeenCalledWith({ gateFixableOnly: false }));
   });
+
+  it('reports a rejected gate change without presenting it as enabled', async () => {
+    const view = { policy: { enabled: true, gate: 'off', gateFixableOnly: true, rescanHours: 24 }, trivyImage: 'trivy:test' };
+    mockOf(api.imageScans.policy).mockResolvedValue(view as never);
+    mockOf(api.imageScans.setPolicy).mockRejectedValue(new Error('policy update denied'));
+    renderWithProviders(<ImageScanSection />);
+    const gate = await screen.findByLabelText('Deploy gate');
+    await userEvent.selectOptions(gate, 'critical');
+    expect(await screen.findByText('Could not save: policy update denied')).toBeInTheDocument();
+    expect(gate).toHaveValue('off');
+    expect(screen.getByText(/A scan that cannot run .* never blocks a deploy/)).toBeInTheDocument();
+  });
+
+  it('offers retry after a policy load fails and restores the server policy', async () => {
+    const view = { policy: { enabled: true, gate: 'critical', gateFixableOnly: true, rescanHours: 24 }, trivyImage: 'trivy:test' };
+    mockOf(api.imageScans.policy).mockRejectedValueOnce(new Error('scanner unavailable')).mockResolvedValue(view as never);
+    renderWithProviders(<ImageScanSection />);
+    expect(await screen.findByText('Could not load image scanning')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByLabelText('Deploy gate')).toHaveValue('critical');
+    expect(api.imageScans.setPolicy).not.toHaveBeenCalled();
+  });
 });
