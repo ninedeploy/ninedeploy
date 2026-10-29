@@ -205,4 +205,11 @@ describe('the tunnel channel', () => {
     expect(error).toBeInstanceOf(Error);
     expect(pair.state.open).toBe(false);
   });
+
+  it('refuses a tunnel when the initial authentication frame cannot be sent', () => {
+    const pair = socketPair();
+    pair.panel.send = () => { throw new Error('socket send failed'); };
+    expect(() => new NodeTunnelStream(pair.panel as never, Buffer.alloc(32, 7))).toThrow(/node tunnel/);
+    expect(pair.state.open).toBe(false);
+  });
 });

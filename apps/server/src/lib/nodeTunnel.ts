@@ -65,7 +65,15 @@ export class NodeTunnelStream extends Duplex {
     socket.addEventListener('close', () => this.end_(null));
     socket.addEventListener('error', () => this.end_(new Error('the node tunnel failed')));
     // The first frame authenticates the channel; the agent connects only then.
-    this.sendFrame(this.tx.seal(TUNNEL_FRAME.resume));
+    if (!this.sendFrame(this.tx.seal(TUNNEL_FRAME.resume))) {
+      this.finished = true;
+      try {
+        socket.close();
+      } catch {
+        /* already closed */
+      }
+      throw new Error('could not authenticate the node tunnel');
+    }
   }
 
   private sendFrame(frame: Buffer): boolean {
