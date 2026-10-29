@@ -82,4 +82,6 @@ node scripts/smoke-template-runtime.mjs --registry=./templates-dokploy.json --id
 
 The script runs `compose up` with generated `SERVICE_*` values, probes the routed port and then runs `compose down -v`. `scripts/promote-templates.mjs` then moves the passing entries in.
 
+On 2026-10-29, 30 Dokploy entries were smoke-run and the 26 that passed were promoted. The evidence is `apps/server/test/fixtures/runtime-verify-2026-10-29-dokploy.json`. Etherpad, Wiki.js and Kutt exited before they were ready, and Cloud Commander listens on 8000 where its blueprint routes 80.
+
 A stack that fails is left out; often its upstream file is to blame. The Dokploy Ghost blueprint is an example: it has no `depends_on` or healthcheck, so Ghost restarts until MySQL is ready, and the smoke run reports "exited before readiness".

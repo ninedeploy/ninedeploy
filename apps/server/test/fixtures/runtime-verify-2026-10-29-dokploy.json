@@ -1,0 +1,191 @@
+{
+  "generatedAt": "2026-10-29T00:32:03.629Z",
+  "registryVersion": 2,
+  "results": [
+    {
+      "id": "dokploy-alist",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 10
+    },
+    {
+      "id": "dokploy-healthchecks",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 38
+    },
+    {
+      "id": "dokploy-hedgedoc",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 51
+    },
+    {
+      "id": "dokploy-etherpad",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 42,
+      "error": "exited before readiness (restarting):\n[2026-10-29T00:13:41.565] [INFO] settings - settings loaded from: /opt/etherpad-lite/settings.json\r\n[2026-10-29T00:13:41.587] [INFO] settings - No credentials file found in /opt/etherpad-lite/credentials.json. Ignoring.\r\n[2026-10-29T00:13:41.587] [WARN] settings - loglevel: INFO\r\n[2026-10-29T00:13:41.588] [WARN] settings - logLayoutType: colored\r\n[2026-10-29T00:13:41.589] [INFO] settings - Using skin \"colibris\" in dir: /opt/etherpad-lite/src/static/skins/colibris\r\n[2026-10-29T00:13:41.589] [ERROR] settings - SSO client(s) using a default/placeholder client_secret: admin_client, user_client. Set a strong secret (e.g. via the ADMIN_SECRET / USER_SECRET env vars) before enabling SSO in production.\r\n[2026-10-29T00:13:41.590] [INFO] settings - String used for versioning assets: 6437db51\r\n[2026-10-29T00:13:42.094] [INFO] server - Starting Etherpad...\r\n[2026-10-29T00:13:42.221] [INFO] plugins - pnpm --version: 12.4.2\r\n[2026-10-29T00:13:42.222] [ERROR] server - Error occurred while starting Etherpad\r\n[2026-10-29T00:13:42.223] [ERROR] server - Metrics at time of fatal error:\r\n{\r\n  \"httpStartTime\": 0,\r\n  \"memoryUsage\": 127696896,\r\n  \"memoryUsageHeap\": 27683736\r\n}\r\n[2026-10-29T00:13:42.223] [ERROR] server - Error: connect ECONNREFUSED 192.168.224.2:5432\r\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16)\r\n[2026-10-29T00:13:42.223] [INFO] server - Exiting...\r\n[2026-10-29T00:13:42.223] [INFO] server - Waiting for Node.js to exit...\r\n[2026-10-29T00:13:47.224] [ERROR] server - Something that should have been cleaned up during the shutdown hook (such as a timer, worker thread, or open connection) is preventing Node.js from exiting\r\n[2026-10-29T00:13:47.224] [ERROR] server - Enable `dumpOnUncleanExit` setting to get a dump of objects preventing a clean exit\r\n[2026-10-29T00:13:47.224] [ERROR] server - Forcing an unclean exit...\r\n[2026-10-29T00:13:47.730] [INFO] settings - settings loaded from: /opt/etherpad-lite/settings.json\r"
+    },
+    {
+      "id": "dokploy-wikijs",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 46,
+      "error": "exited before readiness (restarting):\nLoading configuration from /wiki/config.yml... OK\n2026-10-29T00:14:47.762Z [MASTER] info: =======================================\n2026-10-29T00:14:47.764Z [MASTER] info: = Wiki.js 2.5.317 =====================\n2026-10-29T00:14:47.764Z [MASTER] info: =======================================\n2026-10-29T00:14:47.764Z [MASTER] info: Initializing...\n2026-10-29T00:14:47.943Z [MASTER] error: Invalid DB Type\nLoading configuration from /wiki/config.yml... OK\n2026-10-29T00:14:48.516Z [MASTER] info: =======================================\n2026-10-29T00:14:48.517Z [MASTER] info: = Wiki.js 2.5.317 =====================\n2026-10-29T00:14:48.518Z [MASTER] info: =======================================\n2026-10-29T00:14:48.518Z [MASTER] info: Initializing...\n2026-10-29T00:14:48.802Z [MASTER] error: Invalid DB Type\nLoading configuration from /wiki/config.yml... OK\n2026-10-29T00:14:49.458Z [MASTER] info: =======================================\n2026-10-29T00:14:49.460Z [MASTER] info: = Wiki.js 2.5.317 =====================\n2026-10-29T00:14:49.460Z [MASTER] info: =======================================\n2026-10-29T00:14:49.460Z [MASTER] info: Initializing...\n2026-10-29T00:14:49.626Z [MASTER] error: Invalid DB Type\nLoading configuration from /wiki/config.yml... OK\n2026-10-29T00:14:50.426Z [MASTER] info: =======================================\n2026-10-29T00:14:50.427Z [MASTER] info: = Wiki.js 2.5.317 =====================\n2026-10-29T00:14:50.427Z [MASTER] info: =======================================\n2026-10-29T00:14:50.427Z [MASTER] info: Initializing...\n2026-10-29T00:14:50.584Z [MASTER] error: Invalid DB Type"
+    },
+    {
+      "id": "dokploy-kutt",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 16,
+      "error": "exited before readiness (exited):\n\n> kutt@3.2.6 migrate\n> knex migrate:latest\n\n"
+    },
+    {
+      "id": "dokploy-opengist",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 8
+    },
+    {
+      "id": "dokploy-otterwiki",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 21
+    },
+    {
+      "id": "dokploy-flatnotes",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 10
+    },
+    {
+      "id": "dokploy-dumbpad",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 12
+    },
+    {
+      "id": "dokploy-ihatemoney",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 10
+    },
+    {
+      "id": "dokploy-linkstack",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 46
+    },
+    {
+      "id": "dokploy-unleash",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 43
+    },
+    {
+      "id": "dokploy-joplin-server",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 184
+    },
+    {
+      "id": "dokploy-filegator",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 60
+    },
+    {
+      "id": "dokploy-directory-lister",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 33
+    },
+    {
+      "id": "dokploy-statping-ng",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 23
+    },
+    {
+      "id": "dokploy-upsnap",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 11
+    },
+    {
+      "id": "dokploy-rss-bridge",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 15
+    },
+    {
+      "id": "dokploy-bytestash",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 16
+    },
+    {
+      "id": "dokploy-ontime",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 14
+    },
+    {
+      "id": "dokploy-openspeedtest",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 28
+    },
+    {
+      "id": "dokploy-cloudcommander",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 311,
+      "error": "did not listen on port 80 within 240s:\nroot: /mnt/fs\nurl: http://localhost:8000/\n"
+    },
+    {
+      "id": "dokploy-kener",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 44
+    },
+    {
+      "id": "dokploy-gitea-sqlite",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 14
+    },
+    {
+      "id": "dokploy-nginx",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 12
+    },
+    {
+      "id": "dokploy-couchdb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 21
+    },
+    {
+      "id": "dokploy-surrealdb",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 12
+    },
+    {
+      "id": "dokploy-trilium-next",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 16
+    },
+    {
+      "id": "dokploy-seq",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 34
+    }
+  ],
+  "source": "Dokploy blueprints (Dokploy/templates, MIT), converted by scripts/buildDokployMirror.ts; smoke-template-runtime.mjs --registry"
+}
