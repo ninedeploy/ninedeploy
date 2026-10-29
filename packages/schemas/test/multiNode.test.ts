@@ -70,6 +70,9 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'agent.rekey',
       'db.dump.extra',
       'image.scan',
+      'volume.compose',
+      'tunnel.tcp',
+      'gha.runner',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     // A 0.15 capability is not one of them.
