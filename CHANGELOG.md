@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.10] - 2026-10-29
+
+Includes the previously unpublished 0.18.5–0.18.9 changes. Existing tags are preserved.
+
 ### Added
 
 - Commit statuses on GitLab, Gitea and Bitbucket Cloud (ROADMAP item 8). A service that clones through a token source of one of those types can mark each deploy on its commit (`ninedeploy/<slug>`: running, then success, failure or cancelled). Turn it on under Service → Settings, or with `PUT /v1/services/:id/commit-status` (service admin). The token goes only to the repository's own host, fork previews never report, and a failed status never fails a deploy. No migration.
@@ -19,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop during a node deployment now fences delayed container creation, stops the selected and candidate generations, and retires only the interrupted candidates. A later deployment can start normally. Updated node agents advertise the required capabilities; older agents keep the handoff pending until upgraded.
 - `ninedeploy tunnel` kept nothing a client sent before the target was connected, so a client that speaks first (psql, an HTTP request) waited forever. This was certain on nodes and possible on the panel host. Node database tunnels were also refused as not running.
 
 ## [0.18.9] - 2026-10-29

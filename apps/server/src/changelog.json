@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.18.10",
+    "date": "2026-10-29",
+    "title": "Safer node deployments and fleet improvements",
+    "changes": [
+      "Keep Stop authoritative during node deployments: fence delayed creation, retire interrupted candidates, and allow a later deploy after verified cleanup.",
+      "Fix service and database tunnels when a client sends data before the target is connected.",
+      "Add DigitalOcean node creation, node Dockerfile stages and build arguments, and deployment status updates for GitLab, Gitea and Bitbucket Cloud.",
+      "Add opt-in AI alert investigations and service error-rate and latency alerts.",
+      "Include the previously unpublished 0.18.5–0.18.9 improvements; node features require an agent advertising the corresponding capabilities."
+    ]
+  },
+  {
     "version": "0.18.9",
     "date": "2026-10-29",
     "title": "Deployment, fleet and security improvements",
