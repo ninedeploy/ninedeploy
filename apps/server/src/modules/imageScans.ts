@@ -3,7 +3,11 @@ import { imageScanPolicyPatch } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { HttpError, parseId } from '../lib/errors.js';
 import {
+  composeImageSetId,
+  composeScannableOnPanel,
+  composeStackImages,
   containerImageId,
+  scanComposeStack,
   getImageScanPolicy,
   getImageScanResult,
   scannableOnPanel,
@@ -53,11 +57,33 @@ export const serviceImageScanRoutes: FastifyPluginAsync = async (app) => {
     if (!(await getImageScanPolicy(app.db)).enabled) {
       throw new HttpError(409, 'image_scanning_off', 'Image scanning is off; an operator turns it on under Settings → Image scanning');
     }
-    if (!scannableOnPanel(svc, isSwarmService(svc))) {
-      throw new HttpError(409, 'image_scan_unsupported', 'Only docker services that run on the panel host (not on Swarm) are scanned for now');
+    const compose = composeScannableOnPanel(svc);
+    if (!compose && !scannableOnPanel(svc, isSwarmService(svc))) {
+      throw new HttpError(409, 'image_scan_unsupported', 'Only docker services and compose stacks that run on the panel host (not on Swarm) are scanned for now');
     }
     if (!svc.runtimeId) throw new HttpError(409, 'image_scan_not_running', 'The service has no running container to scan; deploy it first');
     if (scanning.has(id)) throw new HttpError(409, 'image_scan_running', 'A scan of this service is already running');
+    if (compose) {
+      scanning.add(id);
+      let images: Array<{ imageId: string; services: string[] }>;
+      try {
+        images = await composeStackImages(svc.slug);
+      } catch (err) {
+        scanning.delete(id);
+        throw new HttpError(409, 'image_scan_not_running', `Could not list the stack's images: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      if (!images.length) {
+        scanning.delete(id);
+        throw new HttpError(409, 'image_scan_not_running', 'The stack has no running container to scan; deploy it first');
+      }
+      void scanComposeStack(app.db, id, images, 'manual')
+        .then((r) => {
+          void audit(app.db, req.user!.id, 'image_scan.run', svc.name, { serviceId: id, imageId: r.imageId, status: r.status, critical: r.counts.critical, high: r.counts.high });
+        })
+        .catch((err) => req.log.warn({ err, serviceId: id }, 'image scan failed'))
+        .finally(() => scanning.delete(id));
+      return reply.code(202).send({ started: true, imageId: composeImageSetId(images) });
+    }
     scanning.add(id);
     let imageId: string;
     try {

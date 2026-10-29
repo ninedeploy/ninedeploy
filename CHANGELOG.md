@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Image scanning covers Compose stacks on the panel host (G5.1). Every distinct image of a running stack is scanned on the schedule and on request (`POST /v1/services/:id/image-scan`; Scan now on the Deploys tab once the stack has a result). The result is merged into one, and each finding names the compose services whose image has it. A stack has no deploy gate: `compose up` starts it at once.
 - `ninedeploy tunnel service <id> [--target <port>] [--replica <n>]` (G5.8): a container port of a panel-host docker service on a local port, over the same WebSocket bridge as the database tunnel.
   - **Access:** the service admin role (it reaches the container past its domain protections), re-checked every minute.
   - **Limits:** 32 tunnels per user together with database tunnels; audited with byte counts.

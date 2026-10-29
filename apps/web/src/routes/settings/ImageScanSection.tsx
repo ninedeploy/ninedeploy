@@ -49,7 +49,7 @@ export function ImageScanSection() {
         </div>
         <p className="text-xs text-slate-400">
           {t(
-            'Trivy scans the image of every docker deploy on the panel host before it gets traffic, and rescans running images on a schedule. It reads the image from docker save; it never gets the Docker socket. Services on nodes, Swarm and Compose are not scanned yet.',
+            'Trivy scans the image of every docker deploy on the panel host before it gets traffic, and rescans running images on a schedule. Compose stacks on the panel host are scanned on the schedule and on request, every image of the stack, without a deploy gate. It reads the image from docker save; it never gets the Docker socket. Services on nodes and Swarm are not scanned yet.',
           )}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">

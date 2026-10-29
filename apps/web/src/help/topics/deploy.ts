@@ -207,7 +207,8 @@ export const DEPLOY_TOPICS: Record<string, HelpTopic> = {
           'Trivy runs in a throwaway container and reads the image from docker save; it never gets the Docker socket. Its vulnerability database is kept in the ninedeploy-trivy-cache volume.',
           'Each service shows its latest scan on its Deploys tab: counts by severity and the findings, most severe first.',
           'Running images are rescanned on the interval you set (default every 24 hours). New fixable critical findings are audited as image_scan.critical, which notifies the channels that receive audit events.',
-          'Services on nodes, on Swarm and Compose stacks are not scanned yet.',
+          'Compose stacks on the panel host are scanned on the schedule and on request: every distinct image of the stack, merged into one result whose findings name the compose services. There is no deploy gate for a stack, because compose up starts it at once.',
+          'Services on nodes and on Swarm are not scanned yet.',
         ],
       },
       {

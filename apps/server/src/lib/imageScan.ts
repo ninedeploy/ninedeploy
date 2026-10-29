@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { eq, like } from 'drizzle-orm';
 import { services, settings, type DB } from '@ninedeploy/db';
 import {
@@ -271,6 +272,89 @@ export function scannableOnPanel(service: { type: string; serverId: number | nul
   return service.type === 'docker' && service.serverId == null && !onSwarm;
 }
 
+/** Compose stacks on the panel host are scanned on schedule and on request (report only: `up` starts the whole stack at once, so there is no point before traffic to gate). */
+export function composeScannableOnPanel(service: { type: string; serverId: number | null }): boolean {
+  return service.type === 'compose' && service.serverId == null;
+}
+
+/** The distinct images a compose stack runs, with the compose services of each. */
+export async function composeStackImages(slug: string): Promise<Array<{ imageId: string; services: string[] }>> {
+  const ids = (await capture('docker', ['ps', '-q', '--filter', `label=com.docker.compose.project=ndcmp-${slug}`], { timeoutMs: 30_000 }))
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^[a-f0-9]{12,64}$/.test(l));
+  if (!ids.length) return [];
+  const lines = (await capture('docker', ['inspect', '--format', '{{.Image}}\t{{ index .Config.Labels "com.docker.compose.service" }}', ...ids], { timeoutMs: 30_000 })).split('\n');
+  const byImage = new Map<string, Set<string>>();
+  for (const line of lines) {
+    const [imageId, service] = line.trim().split('\t');
+    if (!imageId || !/^sha256:[a-f0-9]{64}$/.test(imageId)) continue;
+    const set = byImage.get(imageId) ?? new Set<string>();
+    if (service) set.add(service);
+    byImage.set(imageId, set);
+  }
+  return [...byImage.entries()].map(([imageId, services]) => ({ imageId, services: [...services].sort() })).sort((a, b) => a.imageId.localeCompare(b.imageId));
+}
+
+/** The stable id of a stack's image set, so a rescan of unchanged images is skipped. */
+export const composeImageSetId = (images: Array<{ imageId: string }>) =>
+  `compose:${createHash('sha256').update(images.map((i) => i.imageId).join(',')).digest('hex').slice(0, 32)}`;
+
+const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'unknown'] as const;
+
+/** Scan every image of a compose stack, one after the other, and store one merged result. Never throws for a failed scan. */
+export async function scanComposeStack(
+  db: DB,
+  serviceId: number,
+  images: Array<{ imageId: string; services: string[] }>,
+  trigger: ImageScanResult['trigger'],
+  opts: { deps?: ScanDeps } = {},
+): Promise<ImageScanResult> {
+  const trivy = opts.deps?.trivy ?? runTrivy;
+  const counts = zero();
+  const fixable = zero();
+  const findings: ImageScanResult['findings'] = [];
+  const scanned: NonNullable<ImageScanResult['images']> = [];
+  const errors: string[] = [];
+  let truncated = false;
+  for (const img of images) {
+    try {
+      const parsed = parseTrivyReport(await oneAtATime(() => trivy(img.imageId)));
+      for (const k of SEVERITY_ORDER) {
+        counts[k] += parsed.counts[k];
+        fixable[k] += parsed.fixable[k];
+      }
+      const label = img.services.join(', ') || img.imageId.slice(7, 19);
+      for (const f of parsed.findings) findings.push({ ...f, target: `${label}: ${f.target}` });
+      truncated ||= parsed.findingsTruncated;
+      scanned.push({ services: img.services, imageId: img.imageId, os: parsed.os });
+    } catch (err) {
+      errors.push(`${img.services.join(', ') || img.imageId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  const rank = (s: string) => SEVERITY_ORDER.indexOf(s.toLowerCase() as (typeof SEVERITY_ORDER)[number]);
+  findings.sort((a, b) => rank(a.severity) - rank(b.severity));
+  const ok = scanned.length > 0;
+  const result: ImageScanResult = {
+    serviceId,
+    imageId: composeImageSetId(images),
+    trigger,
+    deploymentId: null,
+    blocked: false,
+    scannedAt: new Date().toISOString(),
+    status: ok ? 'ok' : 'error',
+    error: errors.length ? errors.join('; ').slice(0, 1000) : null,
+    os: ok ? `${scanned.length} image${scanned.length === 1 ? '' : 's'}` : null,
+    counts,
+    fixable,
+    findings: findings.slice(0, IMAGE_SCAN_FINDINGS_MAX),
+    findingsTruncated: truncated || findings.length > IMAGE_SCAN_FINDINGS_MAX,
+    images: scanned,
+  };
+  await setSettingJson(db, resultKey(serviceId), result);
+  return result;
+}
+
 /**
  * Pipeline hook: scan the new container's image before it gets traffic. Throws
  * (failing the deploy; the previous release keeps serving) only when the gate
@@ -314,6 +398,7 @@ export async function scanBeforeTraffic(
 
 export interface RescanDeps extends ScanDeps {
   imageIdOf?: typeof containerImageId;
+  stackImagesOf?: typeof composeStackImages;
   /** Called when a rescan finds fixable critical findings that the previous scan did not have. */
   onNewCritical?: (service: { id: number; name: string }, result: ImageScanResult) => void;
 }
@@ -330,11 +415,28 @@ export async function rescanRunningImages(db: DB, deps: RescanDeps = {}): Promis
   if (!policy.enabled || policy.rescanHours === 0) return 0;
   const { isSwarmService } = await import('../engine/swarmDeploy.js');
   const rows = await db.query.services.findMany({
-    columns: { id: true, name: true, type: true, serverId: true, runtimeId: true, orchestrator: true, isEphemeralPreview: true },
+    columns: { id: true, name: true, slug: true, type: true, serverId: true, runtimeId: true, orchestrator: true, isEphemeralPreview: true },
   });
   const staleBefore = Date.now() - policy.rescanHours * 3_600_000;
   let scanned = 0;
   for (const svc of rows) {
+    if (svc.runtimeId && composeScannableOnPanel(svc)) {
+      let images: Array<{ imageId: string; services: string[] }>;
+      try {
+        images = await (deps.stackImagesOf ?? composeStackImages)(svc.slug);
+      } catch {
+        continue;
+      }
+      if (!images.length) continue; // not running right now
+      const last = await getImageScanResult(db, svc.id);
+      const setId = composeImageSetId(images);
+      if (last && last.imageId === setId && Date.parse(last.scannedAt) > staleBefore) continue;
+      const result = await scanComposeStack(db, svc.id, images, 'schedule', { deps });
+      scanned++;
+      const before = last && last.imageId === setId && last.status === 'ok' ? last.fixable.critical : 0;
+      if (result.status === 'ok' && result.fixable.critical > before) deps.onNewCritical?.(svc, result);
+      continue;
+    }
     if (!svc.runtimeId || !scannableOnPanel(svc, isSwarmService(svc))) continue;
     let imageId: string;
     try {

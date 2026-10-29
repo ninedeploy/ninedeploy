@@ -135,11 +135,12 @@ describe('scheduled rescans', () => {
     let next = report([]);
     const trivy = vi.fn(async () => next);
     const onNewCritical = vi.fn();
-    const deps = { trivy, imageIdOf, onNewCritical };
+    // The compose stack is not running here.
+    const deps = { trivy, imageIdOf, onNewCritical, stackImagesOf: async () => [] };
 
     expect(await lib.rescanRunningImages(db, deps)).toBe(0); // off
     await lib.setImageScanPolicy(db, { enabled: true, rescanHours: 24 });
-    expect(await lib.rescanRunningImages(db, deps)).toBe(1); // web only: compose and Swarm are skipped
+    expect(await lib.rescanRunningImages(db, deps)).toBe(1); // web only: Swarm is skipped, the stack runs nothing
     expect(await lib.rescanRunningImages(db, deps)).toBe(0); // fresh
     expect(onNewCritical).not.toHaveBeenCalled();
 
@@ -167,6 +168,39 @@ describe('scheduled rescans', () => {
   });
 });
 
+describe('compose stacks', () => {
+  it('scans each image of the stack once, merges the findings by compose service, and skips an unchanged set', async () => {
+    await lib.setImageScanPolicy(db, { enabled: true, rescanHours: 24 });
+    let stack = [
+      { imageId: IMG, services: ['api', 'worker'] },
+      { imageId: IMG2, services: ['db'] },
+    ];
+    const trivy = vi.fn(async (image: string) =>
+      image === IMG ? report([vuln('CVE-1', 'HIGH', '1.1'), vuln('CVE-2', 'LOW', null)]) : report([vuln('CVE-3', 'CRITICAL', '2.0', 'libpq')]),
+    );
+    const onNewCritical = vi.fn();
+    const deps = { trivy, imageIdOf: async () => Promise.reject(new Error('none')), stackImagesOf: async () => stack, onNewCritical };
+    expect(await lib.rescanRunningImages(db, deps)).toBe(1);
+    const r = (await lib.getImageScanResult(db, 6))!;
+    expect(trivy).toHaveBeenCalledTimes(2);
+    expect(r).toMatchObject({ status: 'ok', os: '2 images', imageId: lib.composeImageSetId(stack) });
+    expect(r.counts).toMatchObject({ critical: 1, high: 1, low: 1 });
+    expect(r.findings.map((f) => `${f.id} ${f.target.split(':')[0]}`)).toEqual(['CVE-3 db', 'CVE-1 api, worker', 'CVE-2 api, worker']);
+    expect(r.images).toEqual([
+      { imageId: IMG, services: ['api', 'worker'], os: 'debian 12.15' },
+      { imageId: IMG2, services: ['db'], os: 'debian 12.15' },
+    ]);
+    expect(onNewCritical).toHaveBeenCalledTimes(1);
+    // Unchanged images: not scanned again until stale.
+    expect(await lib.rescanRunningImages(db, deps)).toBe(0);
+    // One image fails to scan: the other still counts, and the error names it.
+    stack = [{ imageId: IMG, services: ['api'] }, { imageId: `sha256:${'c'.repeat(64)}`, services: ['cache'] }];
+    trivy.mockImplementation(async (image: string) => (image === IMG ? report([]) : Promise.reject(new Error('no space left'))));
+    expect(await lib.rescanRunningImages(db, deps)).toBe(1);
+    expect(await lib.getImageScanResult(db, 6)).toMatchObject({ status: 'ok', os: '1 image', error: 'cache: no space left' });
+  });
+});
+
 describe('routes', () => {
   it('policy for operators; a service scan is readable by viewers and refused while scanning is off', async () => {
     const app = await buildTestApp({ db });
@@ -184,7 +218,8 @@ describe('routes', () => {
     expect(post.statusCode).toBe(409);
     expect(post.json().error.code).toBe('image_scanning_off');
     await app.inject({ method: 'PUT', url: '/image-scanning', headers: asUser(1), payload: { enabled: true } });
+    // A compose stack is scanned too; this one has never run.
     const compose = await app.inject({ method: 'POST', url: '/services/6/image-scan', headers: asUser(1) });
-    expect(compose.json().error.code).toBe('image_scan_unsupported');
+    expect(compose.json().error.code).toBe('image_scan_not_running');
   });
 });

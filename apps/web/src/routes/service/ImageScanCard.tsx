@@ -106,7 +106,11 @@ export function ImageScanCard({ serviceId }: { serviceId: number }) {
                                 <span title={f.title ?? undefined}>{f.id}</span>
                               )}
                             </td>
-                            <td className="break-all py-1 pr-3 font-mono">{f.pkg}</td>
+                            <td className="break-all py-1 pr-3 font-mono">
+                              {f.pkg}
+                              {/* G5.1: a compose stack's finding names the services whose image has it. */}
+                              {r.images && <div className="font-sans text-[11px] text-slate-500">{f.target.split(': ')[0]}</div>}
+                            </td>
                             <td className="break-all py-1 pr-3 font-mono">{f.installed}</td>
                             <td className="break-all py-1 font-mono">{f.fixed ?? <span className="text-slate-500">{t('no fix')}</span>}</td>
                           </tr>

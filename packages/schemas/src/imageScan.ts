@@ -71,5 +71,7 @@ export const imageScanResult = z.object({
   findingsTruncated: z.boolean(),
   /** The deploy gate refused this image (deploy scans only). */
   blocked: z.boolean(),
+  /** A compose stack: each distinct image scanned, with the compose services that run it. Counts and findings cover them all. */
+  images: z.array(z.object({ services: z.array(z.string()), imageId: z.string(), os: z.string().nullable() })).optional(),
 });
 export type ImageScanResult = z.infer<typeof imageScanResult>;
