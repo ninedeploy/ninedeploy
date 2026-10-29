@@ -68,12 +68,13 @@ export class NodeTunnelStream extends Duplex {
     this.sendFrame(this.tx.seal(TUNNEL_FRAME.resume));
   }
 
-  private sendFrame(frame: Buffer): void {
-    if (this.finished || this.socket.readyState !== OPEN) return;
+  private sendFrame(frame: Buffer): boolean {
+    if (this.finished || this.socket.readyState !== OPEN) return false;
     try {
       this.socket.send(frame);
+      return true;
     } catch {
-      /* closing: the close event ends the stream */
+      return false;
     }
   }
 
@@ -129,7 +130,12 @@ export class NodeTunnelStream extends Duplex {
       cb(new Error('the node tunnel is closed'));
       return;
     }
-    for (const frame of this.tx.sealData(chunk)) this.sendFrame(frame);
+    for (const frame of this.tx.sealData(chunk)) {
+      if (!this.sendFrame(frame)) {
+        cb(new Error('could not send data through the node tunnel'));
+        return;
+      }
+    }
     if (!this.agentPaused && (this.socket.bufferedAmount ?? 0) <= WRITE_HIGH_WATER) {
       cb();
       return;

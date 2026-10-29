@@ -190,4 +190,19 @@ describe('the tunnel channel', () => {
     await vi.waitFor(() => expect(callback).toHaveBeenCalledTimes(1));
     expect(callback.mock.calls[0]?.[0]).toBeInstanceOf(Error);
   });
+
+  it('fails a write when the agent socket throws while sending data', async () => {
+    const pair = socketPair();
+    const send = pair.panel.send;
+    let calls = 0;
+    pair.panel.send = (data) => {
+      if (++calls > 1) throw new Error('socket send failed');
+      send(data);
+    };
+    const stream = new NodeTunnelStream(pair.panel as never, Buffer.alloc(32, 7));
+    stream.on('error', () => undefined);
+    const error = await new Promise<Error | null | undefined>((resolve) => stream.write(Buffer.from('hello'), (err) => resolve(err)));
+    expect(error).toBeInstanceOf(Error);
+    expect(pair.state.open).toBe(false);
+  });
 });
