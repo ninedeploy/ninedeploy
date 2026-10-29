@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.9] - 2026-10-29
+
+Includes the previously unpublished 0.18.6–0.18.8 changes below. Existing Git tags remain unchanged.
+
+### Fixed
+
+- Bound Docker readiness retry waits to the remaining deadline, including when a container has not yet acquired an address.
+
 ## [0.18.8] - 2026-10-29
 
 This release includes the previously unpublished 0.18.6 and 0.18.7 changes described below, along with subsequent verification and fixes. The v0.18.7 Git tag remains unchanged.
