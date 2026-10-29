@@ -232,6 +232,15 @@ PUID = "${v('PUID:-1000')}"
     expect(withVolume('"$${HOME}:/x"')).toBe("service 'n8n' interpolates a bind mount source");
     const long = reason(bp({ compose: `services:\n  n8n:\n    image: x\n    volumes:\n      - type: bind\n        source: /var/run/docker.sock\n        target: /s\n` }));
     expect(long).toBe("service 'n8n' mounts the host path /var/run/docker.sock");
+    // Climbing out through a normalised path, a driver bind and host namespaces (second review).
+    expect(withVolume('./a/../../etc:/x')).toBe("service 'n8n' mounts a path outside the stack (./a/../../etc)");
+    const top = (extra: string, svc = '') => reason(bp({ compose: `services:\n  n8n:\n    image: x\n${svc}volumes:\n  data:\n${extra}` }));
+    expect(top('    driver_opts:\n      type: none\n      o: bind\n      device: /root\n')).toBe("volume 'data' sets driver options (it can bind a host path)");
+    expect(top('    driver: nfs\n')).toBe("volume 'data' uses the nfs driver");
+    expect(top('    external: true\n')).toBe("volume 'data' is external");
+    expect(top('    labels: {}\n', '    privileged: true\n')).toBe("service 'n8n' runs privileged");
+    expect(top('    labels: {}\n', '    pid: host\n')).toBe("service 'n8n' shares the host's pid namespace");
+    expect(top('    labels: {}\n', '    devices:\n      - /dev/kvm:/dev/kvm\n')).toBe("service 'n8n' maps host devices");
     // Named volumes, paths inside the stack and the read-only clock files stay.
     for (const ok of ['data:/home/node/data', './config:/config', '/etc/localtime:/etc/localtime:ro']) expect(withVolume(ok) ?? '').not.toMatch(/mounts|interpolates/);
   });

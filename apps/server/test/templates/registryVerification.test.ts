@@ -100,8 +100,8 @@ describe('bundled Hub template contract', () => {
 
   it('no Dokploy entry mounts a host path or a path outside its stack (security review)', () => {
     for (const t of templates.filter((x) => x.id.startsWith('dokploy-') && x.composeContent)) {
-      const doc = yaml.load(t.composeContent!) as { services?: Record<string, never> };
-      expect(hostBindRefusal(doc.services ?? {}), t.id).toBeNull();
+      const doc = yaml.load(t.composeContent!) as { services?: Record<string, never>; volumes?: unknown };
+      expect(hostBindRefusal(doc.services ?? {}, doc.volumes), t.id).toBeNull();
     }
   });
 

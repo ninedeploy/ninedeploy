@@ -1,3 +1,4 @@
+import path from 'node:path';
 import yaml from 'js-yaml';
 import { preflightCompose } from '../engine/magicVars.js';
 import {
@@ -44,16 +45,25 @@ import type { Template } from './registry.js';
 const READ_ONLY_HOST_BINDS = new Set(['/etc/localtime', '/etc/timezone']);
 
 /**
- * A Hub template must not reach the host's files: an absolute or home bind
- * source (`/root:/data`), one that climbs out of the stack's directory
- * (`../files/x`, shared between stacks) or an interpolated source refuses the
- * blueprint. Named volumes and `./` paths inside the stack stay.
+ * A Hub template must not reach the host: a bind source that is absolute or
+ * in a home directory (`/root:/data`), that climbs out of the stack's
+ * directory anywhere in its path (`../files/x`, `./a/../../x`), or that is
+ * interpolated refuses the blueprint; so does a top-level volume that binds
+ * through its driver (`driver_opts`, another driver, `external`), and a
+ * service that is privileged, shares the host's pid or ipc namespace, or
+ * maps host devices. Named volumes, `./` paths inside the stack and the
+ * read-only clock files stay. Checked on the blueprint and again on the
+ * converted file, so folding values in cannot bring one back.
  */
-export function hostBindRefusal(services: Record<string, ServiceEntry>): string | null {
+export function hostBindRefusal(services: Record<string, ServiceEntry>, topVolumes?: unknown): string | null {
   for (const [name, entry] of Object.entries(services)) {
-    const volumes = (entry as { volumes?: unknown }).volumes;
-    if (!Array.isArray(volumes)) continue;
-    for (const v of volumes) {
+    const e = entry as { volumes?: unknown; privileged?: unknown; pid?: unknown; ipc?: unknown; devices?: unknown };
+    if (e.privileged === true || e.privileged === 'true') return `service '${name}' runs privileged`;
+    if (typeof e.pid === 'string' && e.pid.trim() === 'host') return `service '${name}' shares the host's pid namespace`;
+    if (typeof e.ipc === 'string' && e.ipc.trim() === 'host') return `service '${name}' shares the host's ipc namespace`;
+    if (Array.isArray(e.devices) && e.devices.length > 0) return `service '${name}' maps host devices`;
+    if (!Array.isArray(e.volumes)) continue;
+    for (const v of e.volumes) {
       let source: string | null = null;
       let readOnly = false;
       if (typeof v === 'string') {
@@ -61,14 +71,34 @@ export function hostBindRefusal(services: Record<string, ServiceEntry>): string 
         if (parts.length < 2) continue; // an anonymous volume
         source = parts[0] ?? '';
         readOnly = parts.slice(2).some((o) => o.split(',').includes('ro'));
-      } else if (v && typeof v === 'object' && (v as { type?: unknown }).type === 'bind') {
-        source = String((v as { source?: unknown }).source ?? '');
-        readOnly = (v as { read_only?: unknown }).read_only === true;
+      } else if (v && typeof v === 'object') {
+        const t = (v as { type?: unknown }).type;
+        if (t !== undefined && t !== 'volume' && t !== 'bind' && t !== 'tmpfs') return `service '${name}' uses a ${String(t)} mount`;
+        if (t === 'bind') {
+          source = String((v as { source?: unknown }).source ?? '');
+          readOnly = (v as { read_only?: unknown }).read_only === true;
+        }
       }
       if (source === null) continue;
       if (source.includes('$')) return `service '${name}' interpolates a bind mount source`;
-      if (source.startsWith('..') || source.startsWith('~')) return `service '${name}' mounts a path outside the stack (${source})`;
-      if (source.startsWith('/') && !(READ_ONLY_HOST_BINDS.has(source) && readOnly)) return `service '${name}' mounts the host path ${source}`;
+      if (source.startsWith('~')) return `service '${name}' mounts a path outside the stack (${source})`;
+      // Any `..` segment, before or after normalising (`./a/../../x`, `a\..\x`).
+      const segments = source.split(/[\\/]+/);
+      const normalised = path.posix.normalize(source.replace(/\\/g, '/'));
+      if (segments.includes('..') || normalised === '..' || normalised.startsWith('../')) return `service '${name}' mounts a path outside the stack (${source})`;
+      const looksAbsolute = source.startsWith('/') || source.startsWith('\\') || /^[A-Za-z]:/.test(source);
+      if (looksAbsolute && !(READ_ONLY_HOST_BINDS.has(normalised) && readOnly)) return `service '${name}' mounts the host path ${source}`;
+      // A source that is neither ./relative, absolute nor a plain volume name is not something we can reason about.
+      if (!looksAbsolute && !source.startsWith('.') && !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(source)) return `service '${name}' mounts an unusual source (${source})`;
+    }
+  }
+  if (topVolumes && typeof topVolumes === 'object') {
+    for (const [vol, spec] of Object.entries(topVolumes as Record<string, unknown>)) {
+      if (!spec || typeof spec !== 'object') continue;
+      const s = spec as { driver?: unknown; driver_opts?: unknown; external?: unknown };
+      if (s.driver_opts !== undefined) return `volume '${vol}' sets driver options (it can bind a host path)`;
+      if (s.driver !== undefined && s.driver !== 'local') return `volume '${vol}' uses the ${String(s.driver)} driver`;
+      if (s.external !== undefined && s.external !== false) return `volume '${vol}' is external`;
     }
   }
   return null;
@@ -304,7 +334,7 @@ function convert(bp: DokployBlueprint): Template {
   const services = original?.services ?? {};
   if (Object.keys(services).length === 0) throw new Refusal('no services');
   if (!(mainService in services)) throw new Refusal(`routed service '${mainService}' is not in the compose file`);
-  const refusal = composeServiceRefusal(services) ?? hostBindRefusal(services);
+  const refusal = composeServiceRefusal(services) ?? hostBindRefusal(services, (original as { volumes?: unknown } | null)?.volumes);
   if (refusal) throw new Refusal(refusal);
   const dokployVar = /\bDOKPLOY_[A-Z0-9_]+\b/.exec(bp.compose);
   if (dokployVar) throw new Refusal(`uses ${dokployVar[0]}, a variable only Dokploy provides`);
@@ -337,6 +367,9 @@ function convert(bp: DokployBlueprint): Template {
 
   const pre = preflightCompose(rewritten);
   if (!pre.ok) throw new Refusal(pre.reasons[0]!);
+  const final = yaml.load(rewritten) as { services?: Record<string, ServiceEntry>; volumes?: unknown };
+  const finalRefusal = hostBindRefusal(final.services ?? {}, final.volumes);
+  if (finalRefusal) throw new Refusal(finalRefusal);
 
   // ── metadata ─────────────────────────────────────────────────────────────
   const meta = bp.meta;
