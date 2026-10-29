@@ -52,6 +52,9 @@
 // --node-operations-only is a focused fresh-install check for readiness,
 // retained routing after a failed probe, persisted node metrics and log drains.
 // It does not exercise the remaining multi-node/build/Swarm feature suite.
+// --new-node-features is the same kind of focused check for the 0.18.7 node
+// features: tunnels to a node service and database, a compose stack moved
+// to the node with its volume, and a node deploy scanned by the node's Trivy.
 // images and the Railpack frontend): Nixpacks on the node; Railpack refused
 // with the fix on the node, whose DinD uses Docker's classic image store
 // (Railpack's frontend needs the containerd image store); then a second node
@@ -125,7 +128,7 @@ const USAGE =
   'usage: node scripts/smoke-multinode.mjs --image=<candidate> [--version=X.Y.Z]\n' +
   '   or: --from=v0.15.1 --to=<candidate tag> --to-image=<local image>          (upgrade)\n' +
   '   or: --from=<candidate tag> --from-image=<local image> --to=v0.15.1        (rollback rehearsal)\n' +
-  '   plus: [--with-builds] [--no-swarm] [--panel-port=4643] [--node-operations-only]';
+  '   plus: [--with-builds] [--no-swarm] [--panel-port=4643] [--node-operations-only] [--new-node-features]';
 
 let MODE;
 if (IMAGE && !FROM && !TO) MODE = 'fresh';
@@ -657,6 +660,100 @@ async function nodeOperationsChecks(ctx) {
   }, { ms: 75_000, every: 2000 });
   if (!delivered) fail('node access-log marker never reached the HTTP drain');
   step('an actual access-log line travelled from the node daemon over the sealed agent and reached the configured HTTP log drain');
+}
+
+/**
+ * --new-node-features: the 0.18.7 node features on a real panel and a real
+ * agent: tunnels to a node service and a node database (G5.8), a compose
+ * stack moved from the panel host to the node with its volume (G3.1), and a
+ * deploy on the node scanned by the node's Trivy before traffic (G5.1).
+ */
+async function tunnelExchange(path, payload, label, { ms = 60_000 } = {}) {
+  const ws = new WebSocket(`ws://127.0.0.1:${PANEL_PORT}${path}`, ['ninedeploy.tunnel.v1', `ninedeploy.bearer.${session.token}`]);
+  ws.binaryType = 'arraybuffer';
+  const chunks = [];
+  const result = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ timeout: true }), ms);
+    ws.addEventListener('open', () => ws.send(Buffer.from(payload)));
+    ws.addEventListener('message', (e) => chunks.push(Buffer.from(e.data)));
+    ws.addEventListener('close', (e) => {
+      clearTimeout(timer);
+      resolve({ code: e.code, reason: e.reason });
+    });
+    ws.addEventListener('error', () => undefined);
+    // The service answers and closes (HTTP/1.0); a database keeps the connection: stop once bytes arrived.
+    const poll = setInterval(() => {
+      if (chunks.length) {
+        clearInterval(poll);
+        setTimeout(() => ws.close(1000), 300);
+      }
+    }, 100);
+  });
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (!text) fail(`${label}: no bytes came back through the tunnel (${JSON.stringify(result)})\n--- agent log ---\n${docker(['logs', '--tail', '30', AGENT], { allowFail: true })}`);
+  return text;
+}
+
+async function newNodeFeatureChecks(ctx) {
+  section('G5.8 tunnels to the node');
+  const nodes = await api('/v1/servers');
+  const node = nodes.json?.find((s) => s.id === ctx.serverId);
+  for (const cap of ['tunnel.tcp', 'volume.compose', 'image.scan']) {
+    if (!(node?.agent?.capabilities ?? []).includes(cap)) fail(`the candidate agent does not advertise ${cap}: ${JSON.stringify(node?.agent ?? null)}`);
+  }
+  const page = await tunnelExchange(`/v1/services/${ctx.imgId}/tunnel?port=80`, 'GET / HTTP/1.0\r\nHost: x\r\n\r\n', 'service tunnel');
+  if (!/^HTTP\/1\.[01] 200/.test(page) || !/nginx/i.test(page)) fail(`service tunnel: nginx did not answer through the node agent: ${page.slice(0, 200)}`);
+  if (nodeDaemon(['ps', '-a', '--filter', 'label=ninedeploy.tunnel', '--format', '{{.Names}}']).stdout) {
+    await sleep(3000);
+    if (nodeDaemon(['ps', '-a', '--filter', 'label=ninedeploy.tunnel', '--format', '{{.Names}}']).stdout) fail('service tunnel: the helper container stayed on the node after the tunnel closed');
+  }
+  step(`service tunnel: GET / through panel → sealed agent channel → helper in the container's namespace answered ${page.split('\r\n')[0]}; the helper is gone`);
+
+  const created = await api('/v1/databases', { method: 'POST', body: { name: `mn-redis-${suffix}`, engine: 'redis', serverId: ctx.serverId } });
+  if ((created.status !== 200 && created.status !== 201) || created.json?.status !== 'running') fail(`node redis: ${short(created)}`);
+  const reply = await tunnelExchange(`/v1/databases/${created.json.id}/tunnel`, 'PING\r\n', 'database tunnel');
+  if (!/^(\+PONG|-NOAUTH)/.test(reply)) fail(`database tunnel: redis did not answer PING through the node agent: ${reply.slice(0, 200)}`);
+  step(`database tunnel: PING to redis #${created.json.id} on the node answered ${reply.trim().split('\r\n')[0]}`);
+
+  section('G3.1 a compose stack moves to the node with its volume');
+  const stack = await api('/v1/services', { method: 'POST', body: {
+    name: `mn-stack-${suffix}`, type: 'compose', composeService: 'web',
+    composeContent: 'services:\n  web:\n    image: nginx:1.27-alpine\n    volumes:\n      - data:/data\nvolumes:\n  data: {}\n',
+  } });
+  if (stack.status !== 200 && stack.status !== 201) fail(`compose create: ${short(stack)}`);
+  const stackId = stack.json?.id ?? stack.json?.service?.id;
+  await deploy(stackId, 'compose stack on the panel host');
+  const row = await serviceRow(stackId);
+  const volume = `ndcmp-${row.slug}_data`;
+  const marker = `moved-${suffix}`;
+  if (panelDaemon(['run', '--rm', '-v', `${volume}:/v`, 'nginx:1.27-alpine', 'sh', '-c', `echo ${marker} > /v/marker`]).status !== 0) fail(`compose move: could not write the marker into ${volume}`);
+  const stopped = await api(`/v1/services/${stackId}/stop`, { method: 'POST' });
+  if (stopped.status >= 300) fail(`compose move: stop answered ${short(stopped)}`);
+  await until(async () => (await serviceRow(stackId)).status === 'stopped', { ms: 60_000 });
+  const move = await api(`/v1/services/${stackId}/move`, { method: 'POST', body: { serverId: ctx.serverId } });
+  if (move.status !== 202 || !(move.json?.volumes ?? []).includes(volume)) fail(`compose move: POST move answered ${short(move)}`);
+  let view = null;
+  await until(async () => {
+    view = (await api(`/v1/services/${stackId}/move`)).json;
+    return view?.state === 'done' || view?.state === 'failed';
+  }, { ms: 10 * 60_000, every: 2000 });
+  if (view?.state !== 'done') fail(`compose move ended as ${JSON.stringify(view)}\n--- agent log ---\n${docker(['logs', '--tail', '40', AGENT], { allowFail: true })}`);
+  if (view.deploymentId) await waitDeployment(stackId, view.deploymentId, 'compose stack on the node');
+  const onNode = nodeDaemon(['run', '--rm', '-v', `${volume}:/v`, 'nginx:1.27-alpine', 'cat', '/v/marker']).stdout.trim();
+  if (onNode !== marker) fail(`compose move: the node's ${volume} holds "${onNode}", not the marker`);
+  const labels = nodeDaemon(['volume', 'inspect', '--format', '{{index .Labels "com.docker.compose.project"}}', volume]).stdout.trim();
+  if (labels !== `ndcmp-${row.slug}`) fail(`compose move: the node's ${volume} is labelled for "${labels}"`);
+  step(`compose stack #${stackId}: ${volume} copied panel host → node (marker intact, compose labels kept), deployed there (#${view.deploymentId})`);
+
+  section('G5.1 a node deploy is scanned on the node before traffic');
+  const policy = await api('/v1/image-scanning', { method: 'PUT', body: { enabled: true, gate: 'off' } });
+  if (policy.status !== 200) fail(`scan policy: ${short(policy)}`);
+  const dep = await deploy(ctx.imgId, 'node deploy with scanning on', { ms: 20 * 60_000 });
+  const scan = (await api(`/v1/services/${ctx.imgId}/image-scan`)).json?.result;
+  if (scan?.trigger !== 'deploy' || scan.deploymentId !== dep.id) fail(`node deploy scan: ${JSON.stringify(scan).slice(0, 400)}`);
+  if (scan.status !== 'ok') step(`  note: the node's Trivy recorded "${scan.error}" (no network for the vulnerability database?), and did not block`);
+  else step(`node deploy #${dep.id} scanned on the node by Trivy: ${scan.counts.critical} critical, ${scan.counts.high} high (${scan.os ?? 'os unknown'})`);
+  await api('/v1/image-scanning', { method: 'PUT', body: { enabled: false } });
 }
 
 /** The PAT source (type custom: any host) the private repositories need. */
@@ -1351,6 +1448,11 @@ async function main() {
     await currentAgentView(ctx.serverId, { swarm: false });
     const img = await nodeImageService(ctx, 'fresh');
     ctx.imgId = img.id;
+    if (flag('new-node-features')) {
+      await newNodeFeatureChecks(ctx);
+      console.log('\nPASS: 0.18.7 node features on a real panel and agent (service and database tunnels, compose move with data, node deploy scan).');
+      return;
+    }
     if (flag('node-operations-only')) {
       await nodeOperationsChecks(ctx);
       console.log('\nPASS: focused node operations on separate panel/node Docker daemons (readiness, preserved release, history and log delivery).');
