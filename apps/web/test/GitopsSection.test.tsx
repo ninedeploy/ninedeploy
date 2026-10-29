@@ -80,6 +80,34 @@ describe('GitopsSection (G5.3)', () => {
     expect(screen.getByRole('button', { name: 'Apply the file' })).toBeEnabled();
   });
 
+  it('clears results from an earlier apply when a new check completes', async () => {
+    const check = { at: '2026-10-28T10:00:00Z', commit: 'abcdef123', error: null,
+      drift: [{ kind: 'service', key: 'shop/api', change: 'missing' }] };
+    mockOf(api.gitops.get).mockResolvedValue({ config: CONFIG, lastCheck: check } as never);
+    mockOf(api.gitops.apply).mockResolvedValue({ check, steps: [{ item: 'create shop/api', ok: false, error: 'access denied' }] } as never);
+    mockOf(api.gitops.check).mockResolvedValue({ ...check, drift: [] } as never);
+    renderWithProviders(<GitopsSection />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Apply the file' }));
+    expect(await screen.findByText(/create shop\/api — access denied/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    expect(await screen.findByText('In sync')).toBeInTheDocument();
+    expect(screen.queryByText(/create shop\/api — access denied/)).not.toBeInTheDocument();
+  });
+
+  it('clears earlier apply results when updated GitOps settings are saved', async () => {
+    const check = { at: '2026-10-28T10:00:00Z', commit: 'abcdef123', error: null,
+      drift: [{ kind: 'service', key: 'shop/api', change: 'missing' }] };
+    mockOf(api.gitops.get).mockResolvedValue({ config: CONFIG, lastCheck: check } as never);
+    mockOf(api.gitops.apply).mockResolvedValue({ check, steps: [{ item: 'create shop/api', ok: false, error: 'access denied' }] } as never);
+    mockOf(api.gitops.configure).mockResolvedValue({ config: CONFIG, lastCheck: check } as never);
+    renderWithProviders(<GitopsSection />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Apply the file' }));
+    expect(await screen.findByText(/create shop\/api — access denied/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('GitOps settings saved')).toBeInTheDocument();
+    expect(screen.queryByText(/create shop\/api — access denied/)).not.toBeInTheDocument();
+  });
+
   it('surfaces a save failure and retains the entered repository', async () => {
     mockOf(api.gitops.get).mockResolvedValue({ config: null, lastCheck: null } as never);
     mockOf(api.gitops.configure).mockRejectedValue(new Error('repository denied'));

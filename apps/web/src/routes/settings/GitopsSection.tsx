@@ -48,13 +48,17 @@ export function GitopsSection() {
       }),
     onSuccess: (v) => {
       qc.setQueryData(['gitops'], v);
+      setSteps(null);
       toast(t('GitOps settings saved'), 'success');
     },
     onError: (err) => toast(errorText(err), 'error'),
   });
   const check = useMutation({
     mutationFn: () => api.gitops.check(),
-    onSuccess: setCheck,
+    onSuccess: (result) => {
+      setCheck(result);
+      setSteps(null);
+    },
     onError: (err) => toast(errorText(err), 'error'),
   });
   const apply = useMutation({
