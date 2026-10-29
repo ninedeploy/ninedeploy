@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deploymentReleaseRecords, deploymentRuntimeOwners, deployments, domains, servers, serviceFiles, serviceRuntimeOwners, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { auditLog, deploymentReleaseRecords, deploymentRuntimeOwners, deployments, domains, nodeLifecycleIntents, servers, serviceFiles, serviceRuntimeOwners, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { createComposeRelease } from '../src/lib/composeRelease.js';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
@@ -194,6 +194,7 @@ interface FakeDb {
     deploymentReleaseRecords: { findFirst: ReturnType<typeof vi.fn> };
     deployments: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
     deploymentRuntimeOwners: { findFirst: ReturnType<typeof vi.fn> };
+    nodeLifecycleIntents: { findFirst: ReturnType<typeof vi.fn> };
     services: { findFirst: ReturnType<typeof vi.fn> };
     buildConfigs: { findFirst: ReturnType<typeof vi.fn> };
     sources: { findFirst: ReturnType<typeof vi.fn> };
@@ -231,6 +232,7 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
       deploymentReleaseRecords: { findFirst: vi.fn().mockResolvedValue(undefined) },
       deployments: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
       deploymentRuntimeOwners: { findFirst: vi.fn(async () => stamp) },
+      nodeLifecycleIntents: { findFirst: vi.fn().mockResolvedValue(undefined) },
       services: { findFirst: vi.fn() },
       buildConfigs: { findFirst: vi.fn() },
       sources: { findFirst: vi.fn() },
@@ -388,7 +390,9 @@ describe('explicit Stop during primary readiness', () => {
     h.agentOp.mockImplementation(async () => {
       if (++replies > 1) throw Error('Unexpected extra node request');
       if (successor === 'new deployment') {
-        await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
+        const stop = await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
+        // Model the successor after Stop settled while the old reply is still suspended.
+        await f.db.update(nodeLifecycleIntents).set({ phase: 'completed', completedAt: new Date() }).where(eq(nodeLifecycleIntents.id, stop.id));
         await f.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
         const admitted = await claimNodeDeploymentAttempt(f.db, 10, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, '{}');
         expect(admitted.claimed).toBe(true);
