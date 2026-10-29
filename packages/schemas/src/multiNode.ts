@@ -72,6 +72,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'gha.runner',
   // `docker.buildWith`: a Dockerfile build with a stage (`--target`) and build arguments
   'docker.buildOptions',
+  // ROADMAP item 10: public access to a node database (a TCP sidecar behind an IP allow-list)
+  'db.publicAccess',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

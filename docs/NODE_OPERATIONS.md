@@ -370,6 +370,26 @@ Sealed agent calls honor a canonical positive Retry-After of 1–60 seconds on H
 
 Remote readiness RPCs and diagnostic log retrieval share the remaining readiness deadline. Replies arriving after it cannot admit a candidate. HTTP/TCP readiness still requires explicit configuration; container-state readiness alone does not establish HTTP application readiness. Packaged Docker health uses the configured `NINEDEPLOY_AGENT_PORT` and `/agent/ping` for agent role, or `NINEDEPLOY_PORT` and `/health` for panel role.
 
+## Public access to a node database
+
+A database on a node can be reached from outside on a port of that node, the same way as one on the panel host: **Database → Settings → Public access**, or `PUT /v1/databases/:id/public-access`. Operators only, behind a required IP allow-list.
+
+How it works:
+- The node's agent runs the same sidecar as the panel host: a Traefik container `nd-dbpub-<slug>` that publishes one port of the node and proxies TCP to the database.
+- The sidecar joins only the database's own bridge `nd-dbnet-<slug>`, never the node's shared network, so it reaches that database and nothing else.
+- Before it proxies anything, the agent checks that `nd-db-<slug>` is the managed database with that id.
+- Its configuration lives under the agent's home (`dbproxy/<slug>`). It restarts with the node's Docker.
+
+Clients connect to the node's address. The credentials' `publicConnectionString` uses it.
+
+Limits on a node:
+- **TLS end to end only (`tlsMode: none`).** The certificates are on the panel, so `terminate` is refused (`422 unsupported_tls_mode`). The client and the database still negotiate TLS between themselves.
+- **Ports.** The port may not be the agent's port, 80, 443 or 22. It may not be a port a service on that node publishes. As on the panel host, it must differ from every other database's public port.
+- **No panel reconcile.** The panel's reconcile does not restart a node's sidecar; the node's Docker restarts it.
+- **Turning off needs the node.** Turning access off is refused while the node cannot confirm it (`502 node_unreachable`), because the port would stay open. Deleting the database removes the sidecar on a best-effort basis.
+
+Requires agent 0.18.11 or newer (`db.publicAccess`) and a sealed transport. The node owner turns it off with `NINEDEPLOY_AGENT_PUBLIC_DATABASES=off`; `NINEDEPLOY_AGENT_DATABASES=off` turns it off together with every other node database feature.
+
 ## OS security updates (G4.2)
 
 Operators can see each host's pending package updates and turn automatic **security** updates on or off:

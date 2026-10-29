@@ -8,6 +8,7 @@ import {
   type DatabasePublicAccess,
   databasePublicAccess,
   databases,
+  servers,
   services,
 } from '@ninedeploy/db';
 import {
@@ -28,6 +29,8 @@ import {
 } from '../engine/dockerNames.js';
 import { certificatesCovering, refreshCustomCertificates, renderCertificatesBlock } from './customCertificates.js';
 import { ensureDockerImage } from './dockerPull.js';
+import { nodeContainerOf } from './nodeDatabase.js';
+import { assertNodePublicAccessSupport, nodeApplySidecar, nodeRemoveSidecar, nodeSidecarRunning } from './nodePublicDatabaseAccess.js';
 import { badRequest, conflict, isUniqueViolation, unprocessable } from './errors.js';
 import { capture, run, sleep } from './exec.js';
 import { hostPathFor } from './hostPath.js';
@@ -145,6 +148,34 @@ export async function assertPublicPortAvailable(db: DB, port: number, databaseId
   }
 }
 
+/**
+ * The same rules on a node: not the agent's port, the node's Traefik or SSH,
+ * not another database's public port (those are unique panel-wide) and not a
+ * port a service on that node publishes.
+ */
+export async function assertNodePublicPortAvailable(db: DB, serverId: number, port: number, databaseId: number): Promise<void> {
+  if (!Number.isInteger(port) || port < PUBLIC_ACCESS_PORT_MIN || port > PUBLIC_ACCESS_PORT_MAX) {
+    throw badRequest(`port: must be an integer from ${PUBLIC_ACCESS_PORT_MIN} to ${PUBLIC_ACCESS_PORT_MAX}`, 'invalid_port');
+  }
+  const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId), columns: { port: true } });
+  if (!node) throw unprocessable('The node of this database no longer exists', 'remote_database');
+  if ([node.port, 80, 443, 22].includes(port)) {
+    throw badRequest(`port: ${port} is reserved on the node (agent, Traefik or SSH)`, 'invalid_port');
+  }
+  const other = await db.query.databasePublicAccess.findFirst({
+    where: and(eq(databasePublicAccess.publicPort, port), ne(databasePublicAccess.databaseId, databaseId)),
+  });
+  if (other) throw conflict(`Host port ${port} is already used by another database's public access`);
+  const onNode = await db
+    .select({ publishedPort: services.publishedPort, portMappings: services.portMappings })
+    .from(services)
+    .where(eq(services.serverId, serverId));
+  if (onNode.some((r) => r.publishedPort === port)) throw conflict(`Host port ${port} is already published by a service on the node`);
+  if (onNode.some((r) => (r.portMappings ?? []).some((m) => portMappingsOverlap(m, { hostPort: port, containerPort: port, protocol: 'tcp' })))) {
+    throw conflict(`Host port ${port} is already published by a service's port mapping on the node`);
+  }
+}
+
 // ── rendering ──────────────────────────────────────────────────────────────
 
 /**
@@ -251,6 +282,8 @@ export interface SidecarRunSpec {
   hostDir: string;
   /** `uid:gid` the sidecar runs as (the owner of its 0600 config files). */
   user?: string | null;
+  /** The network it joins: the panel's `ninedeploy`, or a node database's own bridge. */
+  network?: string;
 }
 
 /** The `docker run` argv for one sidecar. */
@@ -258,7 +291,7 @@ export function sidecarRunArgs(spec: SidecarRunSpec): string[] {
   return [
     'run', '-d',
     '--name', spec.name,
-    '--network', NETWORK,
+    '--network', spec.network ?? NETWORK,
     '--restart', 'unless-stopped',
     '--memory', '128m',
     '--memory-swap', '128m',
@@ -276,7 +309,7 @@ export function sidecarRunArgs(spec: SidecarRunSpec): string[] {
   ];
 }
 
-function panelUser(): string | null {
+export function panelUser(): string | null {
   const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
   const gid = typeof process.getgid === 'function' ? process.getgid() : undefined;
   return uid === undefined || gid === undefined ? null : `${uid}:${gid}`;
@@ -305,7 +338,7 @@ function readIfExists(file: string): string | null {
 }
 
 /** Write what differs; true when the dynamic file changed. */
-function writeConfigFiles(dir: string, dynamic: string): boolean {
+export function writeConfigFiles(dir: string, dynamic: string): boolean {
   if (readIfExists(staticPathFor(dir)) !== PUBLIC_DB_STATIC_CONFIG) writeAtomic(staticPathFor(dir), PUBLIC_DB_STATIC_CONFIG);
   if (readIfExists(dynamicPathFor(dir)) === dynamic) return false;
   writeAtomic(dynamicPathFor(dir), dynamic);
@@ -322,12 +355,12 @@ function removeConfigDir(slug: string): void {
 
 // ── docker ─────────────────────────────────────────────────────────────────
 
-interface SidecarState {
+export interface SidecarState {
   running: boolean;
   fingerprint: string | null;
 }
 
-async function inspectSidecar(name: string): Promise<SidecarState | null> {
+export async function inspectSidecar(name: string): Promise<SidecarState | null> {
   try {
     const out = await capture('docker', [
       'inspect', name, '--format', `{{.State.Running}}|{{ index .Config.Labels "${DBPUB_CONFIG_LABEL}" }}`,
@@ -345,14 +378,14 @@ function normaliseMountSource(value: string): string {
   return out;
 }
 
-async function removeContainer(name: string): Promise<void> {
+export async function removeContainer(name: string): Promise<void> {
   await run('docker', ['rm', '-f', name], {}, swallow).catch(swallow);
 }
 
 const PORT_BUSY = /port is already allocated|address already in use|bind for .* failed/i;
 
 /** Pull (when missing), replace and start one sidecar; throws unless it stays up. */
-async function startSidecar(spec: SidecarRunSpec, log: (line: string) => void): Promise<void> {
+export async function startSidecar(spec: SidecarRunSpec, log: (line: string) => void): Promise<void> {
   await ensureDockerImage(TRAEFIK_IMAGE, log);
   await removeContainer(spec.name);
   const output: string[] = [];
@@ -466,6 +499,7 @@ export async function applyPublicAccess(
   input: PublicAccessInput,
   opts: { userId: number | null; log: (line: string) => void },
 ): Promise<ApplyResult> {
+  if (d.serverId != null) return applyNodePublicAccess(db, d, d.serverId, input, opts);
   assertOnPanelHost(d);
   assertPublicAccessEngine(d.engine, input.tlsMode);
   const desired: Desired = {
@@ -552,6 +586,92 @@ export async function applyPublicAccess(
   });
 }
 
+const nodeSidecarInput = (d: Database, desired: Desired) => ({
+  databaseId: d.id,
+  slug: d.slug,
+  container: nodeContainerOf(d),
+  enginePort: d.internalPort ?? ENGINE_PORTS[d.engine] ?? 0,
+  port: desired.port,
+  allowlist: desired.allowlist,
+});
+
+/**
+ * A node database (ROADMAP item 10): the node's agent runs the same sidecar
+ * on the database's own bridge (agentOps/publicAccess.ts). TLS stays end to
+ * end: the certificates are on the panel, so `terminate` is refused. On a
+ * failed change the previous configuration is applied again.
+ */
+async function applyNodePublicAccess(
+  db: DB,
+  d: Database,
+  serverId: number,
+  input: PublicAccessInput,
+  opts: { userId: number | null; log: (line: string) => void },
+): Promise<ApplyResult> {
+  assertPublicAccessEngine(d.engine, input.tlsMode);
+  if (input.tlsMode !== 'none') {
+    throw unprocessable(
+      'TLS termination is not available for a database on a node: its certificates are on the panel. Use tlsMode "none"; the client and the database still negotiate TLS end to end.',
+      'unsupported_tls_mode',
+    );
+  }
+  const desired: Desired = { port: input.port, allowlist: normaliseAllowlist(input.ipAllowlist), tlsMode: 'none', tlsHostname: null };
+  return guard(d.id, async () => {
+    await assertNodePublicPortAvailable(db, serverId, desired.port, d.id);
+    await assertNodePublicAccessSupport(db, serverId);
+    const previous = await getPublicAccessRow(db, d.id);
+    const name = sidecarName(d.slug);
+    const values = {
+      enabled: true,
+      publicPort: desired.port,
+      tlsMode: desired.tlsMode,
+      tlsHostname: null,
+      ipAllowlist: desired.allowlist,
+      containerName: name,
+      appliedAt: new Date(),
+      lastError: null,
+      updatedAt: new Date(),
+    };
+    try {
+      const { mode } = await nodeApplySidecar(db, serverId, nodeSidecarInput(d, desired));
+      let row: DatabasePublicAccess;
+      try {
+        const [saved] = await db
+          .insert(databasePublicAccess)
+          .values({ databaseId: d.id, createdByUserId: opts.userId, ...values })
+          .onConflictDoUpdate({ target: databasePublicAccess.databaseId, set: values })
+          .returning();
+        row = saved!;
+      } catch (err) {
+        if (isUniqueViolation(err)) throw conflict(`Host port ${desired.port} is already used by another database's public access`);
+        throw err;
+      }
+      opts.log(
+        `public access for ${d.name}: ${mode === 'hot' ? 'configuration reloaded in place' : `${name} publishes port ${desired.port} on node #${serverId}`}`,
+      );
+      return { row, previous, mode };
+    } catch (err) {
+      if (previous?.enabled) {
+        await nodeApplySidecar(db, serverId, nodeSidecarInput(d, desiredOf(previous))).then(
+          () => opts.log(`public access for ${d.name}: restored the previous proxy on port ${previous.publicPort}`),
+          (restoreErr: unknown) => opts.log(`public access for ${d.name}: restoring the previous proxy failed: ${message(restoreErr)}`),
+        );
+      } else {
+        await nodeRemoveSidecar(db, serverId, d.slug).catch(swallow);
+      }
+      if (previous) {
+        await db
+          .update(databasePublicAccess)
+          .set({ lastError: message(err), updatedAt: new Date() })
+          .where(eq(databasePublicAccess.databaseId, d.id))
+          .catch(swallow);
+      }
+      if (typeof err === 'object' && err !== null) applyFailures.add(err);
+      throw err;
+    }
+  });
+}
+
 /**
  * Turn public access off: remove the sidecar and its config directory and set
  * `enabled = false`. The configuration stays in the row for a later re-enable.
@@ -565,8 +685,13 @@ export async function disablePublicAccess(
   return guard(d.id, async () => {
     const row = await getPublicAccessRow(db, d.id);
     if (!row) return null;
-    await removeContainer(row.containerName ?? sidecarName(d.slug));
-    removeConfigDir(d.slug);
+    if (d.serverId != null) {
+      // Thrown while the node cannot confirm: the port would stay open.
+      await nodeRemoveSidecar(db, d.serverId, d.slug);
+    } else {
+      await removeContainer(row.containerName ?? sidecarName(d.slug));
+      removeConfigDir(d.slug);
+    }
     await db
       .update(databasePublicAccess)
       .set({ enabled: false, containerName: null, lastError: null, updatedAt: new Date() })
@@ -589,6 +714,12 @@ export async function removePublicAccessSidecar(
 ): Promise<void> {
   await guard(d.id, async () => {
     const row = await getPublicAccessRow(db, d.id);
+    if (d.serverId != null) {
+      if (!row) return;
+      await nodeRemoveSidecar(db, d.serverId, d.slug);
+      log(`public access sidecar for ${d.name} removed from node #${d.serverId}`);
+      return;
+    }
     if (!row && !existsSync(sidecarConfigDir(d.slug))) return;
     await removeContainer(row?.containerName ?? sidecarName(d.slug));
     removeConfigDir(d.slug);
@@ -601,7 +732,8 @@ async function ensureOne(db: DB, databaseId: number, log: (line: string) => void
   const row = await getPublicAccessRow(db, databaseId);
   if (!row?.enabled) return 'skipped';
   const d = await db.query.databases.findFirst({ where: eq(databases.id, databaseId) });
-  if (!d) return 'skipped';
+  // A node's sidecar restarts with the node's Docker (`unless-stopped`); the panel does not reconcile it.
+  if (!d || d.serverId != null) return 'skipped';
   try {
     assertOnPanelHost(d);
     assertPublicAccessEngine(d.engine, row.tlsMode);
@@ -742,6 +874,16 @@ export async function resolvePublicHost(db: DB, tlsHostname: string | null | und
   }
 }
 
+/** A node database is reached at its node's address. */
+async function nodeHost(db: DB, serverId: number): Promise<string | null> {
+  return (await db.query.servers.findFirst({ where: eq(servers.id, serverId), columns: { host: true } }))?.host ?? null;
+}
+
+/** Where a client connects: the node's address for a node database, else {@link resolvePublicHost}. */
+export async function publicHostFor(db: DB, d: Database, tlsHostname: string | null | undefined): Promise<string | null> {
+  return d.serverId != null ? nodeHost(db, d.serverId) : resolvePublicHost(db, tlsHostname);
+}
+
 /** The GET (and PUT) response for one database. */
 export async function publicAccessStatus(db: DB, d: Database): Promise<PublicAccessStatus> {
   const row = await getPublicAccessRow(db, d.id);
@@ -758,13 +900,16 @@ export async function publicAccessStatus(db: DB, d: Database): Promise<PublicAcc
       status: 'off',
       lastError: null,
       appliedAt: null,
-      publicHost: await resolvePublicHost(db, null),
+      publicHost: await publicHostFor(db, d, null),
     };
   }
   let status: PublicAccessStatus['status'] = 'off';
   if (row.enabled) {
-    const state = await inspectSidecar(row.containerName ?? sidecarName(d.slug));
-    status = state?.running ? 'running' : 'error';
+    const running =
+      d.serverId != null
+        ? await nodeSidecarRunning(db, d.serverId, d.slug)
+        : (await inspectSidecar(row.containerName ?? sidecarName(d.slug)))?.running;
+    status = running ? 'running' : 'error';
   }
   return {
     supported,
@@ -777,7 +922,7 @@ export async function publicAccessStatus(db: DB, d: Database): Promise<PublicAcc
     status,
     lastError: row.lastError ?? null,
     appliedAt: row.appliedAt ? row.appliedAt.toISOString() : null,
-    publicHost: await resolvePublicHost(db, row.tlsHostname),
+    publicHost: await publicHostFor(db, d, row.tlsHostname),
   };
 }
 

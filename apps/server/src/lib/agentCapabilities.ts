@@ -404,6 +404,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'gha.runner': '0.18.7',
   // Dockerfile build stage and build arguments on a node
   'docker.buildOptions': '0.18.10',
+  // Public access to a node database
+  'db.publicAccess': '0.18.11',
 };
 
 /**
@@ -424,6 +426,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'volume.files': 'NINEDEPLOY_AGENT_VOLUME_FILES',
   'db.client': 'NINEDEPLOY_AGENT_DATABASE_CLIENTS',
   'db.studio': 'NINEDEPLOY_AGENT_DATABASE_STUDIOS',
+  'db.publicAccess': 'NINEDEPLOY_AGENT_PUBLIC_DATABASES',
   'build.nixpacks': 'NINEDEPLOY_AGENT_BUILDS',
   'build.railpack': 'NINEDEPLOY_AGENT_BUILDS',
   'docker.buildOptions': 'NINEDEPLOY_AGENT_BUILDS',

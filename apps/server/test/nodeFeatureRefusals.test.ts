@@ -77,6 +77,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'volume.files': 'browse and edit volume files',
   'db.client': 'open database client terminals',
   'db.studio': 'open database Web Studio',
+  'db.publicAccess': 'expose a database publicly',
   'proxy.traffic': 'observe proxy traffic',
   'docker.readiness': 'verify candidate replica readiness',
   'docker.metrics': 'measure immutable container resources',

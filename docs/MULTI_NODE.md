@@ -142,7 +142,8 @@ GitHub App repositories work on nodes since 0.13 without any toggle: [GITHUB_APP
 
 - each one runs as `nd-db-<slug>` on its own `nd-dbnet-<slug>` network on the node; services on the **same node** that attach it are connected to that network at deploy;
 - backups, policies, off-site upload, restore, drills, imports and shell terminals work; the dump files land on the panel;
-- refused: attaching it to a service on another host (`409 attachment_host_mismatch`), fan-out targets of a service that uses it (`409 fanout_database_host`), PgBouncer and public access (`422 remote_database`), adopting an existing volume, and moving it to another host. Published 0.17.1 also refuses a client-mode terminal (`422 client_mode_unsupported`); 0.18.2 adds sealed [node database client terminals](NODE_OPERATIONS.md#node-database-client-terminals-unreleased-0180);
+- refused: attaching it to a service on another host (`409 attachment_host_mismatch`), fan-out targets of a service that uses it (`409 fanout_database_host`), PgBouncer (`422 remote_database`), adopting an existing volume, and moving it to another host. Published 0.17.1 also refuses a client-mode terminal (`422 client_mode_unsupported`); 0.18.2 adds sealed [node database client terminals](NODE_OPERATIONS.md#node-database-client-terminals-unreleased-0180);
+- public access works on a node with agent 0.18.11 or newer, with TLS end to end only ([NODE_OPERATIONS.md](NODE_OPERATIONS.md#public-access-to-a-node-database));
 - a node that hosts databases cannot be deleted, even with `?force=true` (`409 server_hosts_databases`).
 
 ## 8. Swarm (0.15.4)

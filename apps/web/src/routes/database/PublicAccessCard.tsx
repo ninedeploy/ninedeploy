@@ -13,6 +13,7 @@ import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { formatDateTime, useCopy } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
+import { isNodeDatabase } from '../../components/NodeDatabaseBadge.js';
 import { Button, Card, CardBody, ConfirmDialog, Field, Input, Select, Skeleton, StatusBadge, Switch } from '../../components/ui.js';
 import { fill, msg, translate, useT, type Translate } from '../../lib/i18n.js';
 
@@ -230,7 +231,9 @@ export function PublicAccessCard({ db }: { db: DatabaseDetail }) {
     /^\d+$/.test(form.port) && portNum >= PUBLIC_ACCESS_PORT_MIN && portNum <= PUBLIC_ACCESS_PORT_MAX
       ? null
       : t('A port between {min} and {max}', { min: PUBLIC_ACCESS_PORT_MIN, max: PUBLIC_ACCESS_PORT_MAX });
-  const terminateRefused = NO_TERMINATE.has(db.engine);
+  // A node database keeps TLS end to end: the certificates are on the panel.
+  const onNode = isNodeDatabase(db);
+  const terminateRefused = NO_TERMINATE.has(db.engine) || onNode;
   const invalid =
     portError != null || entries.length === 0 || analyses.some((a) => a.error) || (terminateRefused && form.tlsMode === 'terminate');
   const conn = masked(creds.data);
@@ -304,7 +307,7 @@ export function PublicAccessCard({ db }: { db: DatabaseDetail }) {
                   <Field label={t('Public port')} hint={`${PUBLIC_ACCESS_PORT_MIN}–${PUBLIC_ACCESS_PORT_MAX}`} error={form.port === '' ? null : portError}>
                     <Input type="number" value={form.port} onChange={(e) => set({ port: e.target.value })} placeholder="15432" />
                   </Field>
-                  <Field label="TLS" hint={terminateRefused ? t('MySQL/MariaDB negotiate TLS themselves') : undefined}>
+                  <Field label="TLS" hint={onNode ? t('On a node, TLS stays end to end between the client and the database') : terminateRefused ? t('MySQL/MariaDB negotiate TLS themselves') : undefined}>
                     <Select value={form.tlsMode} onChange={(e) => set({ tlsMode: e.target.value as PublicAccessTlsMode })}>
                       <option value="none">{t('None (passthrough)')}</option>
                       <option value="terminate" disabled={terminateRefused}>

@@ -22,7 +22,7 @@ import {
   getPublicAccessRow,
   publicAccessSummaries,
   removePublicAccessSidecar,
-  resolvePublicHost,
+  publicHostFor,
 } from '../lib/publicDatabaseAccess.js';
 import { capture } from '../lib/exec.js';
 import { serviceBridgeName } from '../lib/serviceBridge.js';
@@ -812,7 +812,7 @@ async function publicConnectionString(db: Parameters<typeof getPublicAccessRow>[
     const row = await getPublicAccessRow(db, d.id);
     const cfg = ENGINES[d.engine];
     if (!row?.enabled || !cfg) return null;
-    const host = await resolvePublicHost(db, row.tlsHostname);
+    const host = await publicHostFor(db, d, row.tlsHostname);
     if (!host) return null;
     const uri = cfg.connectionString(host, row.publicPort, cfg.username() ?? '', password, cfg.dbName());
     if (row.tlsMode !== 'terminate') return uri;

@@ -698,6 +698,59 @@ async function tunnelExchange(path, payload, label, { ms = 60_000 } = {}) {
   return text;
 }
 
+/** One line a TCP client reads from `host:port`, seen from the panel container (its IP is the allow-listed one). */
+function tcpFromPanel(host, port, payload) {
+  const script = `const s=require('net').connect(${port},${JSON.stringify(host)});let b='';const out=(v)=>{console.log(JSON.stringify(v));process.exit(0)};`
+    + `s.setTimeout(4000,()=>out(b||'TIMEOUT'));s.on('data',(d)=>{b+=d;if(b.includes('\\n'))out(b)});s.on('error',(e)=>out('ERR '+e.code));s.on('close',()=>out(b||'CLOSED'));s.write(${JSON.stringify(payload)})`;
+  const r = inContainer(PANEL, ['node', '-e', script], 30_000);
+  try {
+    return JSON.parse(r.stdout);
+  } catch {
+    return `NOREPLY ${r.all.slice(0, 200)}`;
+  }
+}
+
+async function publicAccessOnNodeChecks(node, database) {
+  if (!(node?.agent?.capabilities ?? []).includes('db.publicAccess')) fail(`the candidate agent does not advertise db.publicAccess: ${JSON.stringify(node?.agent ?? null)}`);
+  const PORT = 16379;
+  const url = `/v1/databases/${database.id}/public-access`;
+  const put = (body) => api(url, { method: 'PUT', body: { enabled: true, port: PORT, tlsMode: 'none', ...body } });
+  const terminate = await put({ ipAllowlist: ['203.0.113.0/24'], tlsMode: 'terminate', tlsHostname: 'db.example.test' });
+  if (terminate.status !== 422 || errorCode(terminate) !== 'unsupported_tls_mode') fail(`public access: TLS termination on a node answered ${short(terminate)}`);
+  const reserved = await put({ ipAllowlist: ['203.0.113.0/24'], port: AGENT_PORT });
+  if (reserved.status !== 400) fail(`public access: the agent's port answered ${short(reserved)}`);
+
+  // Outside the allow-list first: the sidecar runs, the port answers nothing.
+  const closed = await put({ ipAllowlist: ['203.0.113.0/24'] });
+  if (closed.status !== 200 || closed.json?.status !== 'running' || closed.json?.publicHost !== node.host) fail(`public access: enable answered ${short(closed)}`);
+  const sidecar = `nd-dbpub-${database.slug}`;
+  const networks = nodeDaemon(['inspect', sidecar, '--format', '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}']).stdout.trim();
+  if (networks !== `nd-dbnet-${database.slug}`) fail(`public access: the sidecar joined "${networks}", wanted only nd-dbnet-${database.slug}`);
+  const denied = tcpFromPanel(node.host, PORT, 'PING\r\n');
+  if (/PONG|NOAUTH/.test(denied)) fail(`public access: a client outside the allow-list was answered: ${denied}`);
+
+  // The panel's address allowed: the same sidecar, its allow-list rewritten in place.
+  const panelIp = docker(['inspect', PANEL, '--format', `{{(index .NetworkSettings.Networks "${NET}").IPAddress}}`]);
+  const open = await put({ ipAllowlist: [`${panelIp}/32`] });
+  if (open.status !== 200) fail(`public access: allow-list change answered ${short(open)}`);
+  let answer = '';
+  const reached = await until(() => {
+    answer = tcpFromPanel(node.host, PORT, 'PING\r\n');
+    return /^(\+PONG|-NOAUTH)/.test(answer);
+  }, { ms: 30_000, every: 2000 });
+  if (!reached) fail(`public access: redis did not answer through ${node.host}:${PORT}: ${answer}`);
+  const creds = await api(`/v1/databases/${database.id}/credentials`);
+  if (!String(creds.json?.publicConnectionString ?? '').includes(`@${node.host}:${PORT}`)) fail(`public access: the public connection string does not name the node: ${short(creds)}`);
+  step(`redis #${database.id}: ${sidecar} publishes ${node.host}:${PORT} on its own bridge only; outside the allow-list nothing answers (${denied.trim()}), the panel's /32 gets ${answer.trim()}; terminate 422, the agent's port 400; the connection string names the node`);
+
+  const off = await api(url, { method: 'DELETE' });
+  if (off.status !== 200) fail(`public access: disable answered ${short(off)}`);
+  if (nodeDaemon(['ps', '-a', '--filter', `name=^${sidecar}$`, '--format', '{{.Names}}']).stdout) fail('public access: the sidecar stayed on the node after it was turned off');
+  const after = tcpFromPanel(node.host, PORT, 'PING\r\n');
+  if (/PONG|NOAUTH/.test(after)) fail(`public access: the port still answers after it was turned off: ${after}`);
+  step(`turned off: the sidecar is gone from the node and ${node.host}:${PORT} answers nothing (${after.trim()})`);
+}
+
 async function newNodeFeatureChecks(ctx) {
   section('G5.8 tunnels to the node');
   const nodes = await api('/v1/servers');
@@ -718,6 +771,9 @@ async function newNodeFeatureChecks(ctx) {
   const reply = await tunnelExchange(`/v1/databases/${created.json.id}/tunnel`, 'PING\r\n', 'database tunnel');
   if (!/^(\+PONG|-NOAUTH)/.test(reply)) fail(`database tunnel: redis did not answer PING through the node agent: ${reply.slice(0, 200)}`);
   step(`database tunnel: PING to redis #${created.json.id} on the node answered ${reply.trim().split('\r\n')[0]}`);
+
+  section('ROADMAP item 10: public access to a node database');
+  await publicAccessOnNodeChecks(node, created.json);
 
   section('G3.1 a compose stack moves to the node with its volume');
   const stack = await api('/v1/services', { method: 'POST', body: {
@@ -997,7 +1053,6 @@ async function nodeDatabaseChecks(ctx, img) {
   for (const [what, p, method, body] of [
     ['Studio', `/v1/databases/${id}/studio`, 'POST', {}],
     ['PgBouncer', `/v1/databases/${id}/pgbouncer/enable`, 'POST', {}],
-    ['public access', `/v1/databases/${id}/public-access`, 'PUT', { enabled: true, port: 15432, ipAllowlist: ['203.0.113.0/24'], tlsMode: 'none' }],
   ]) {
     const r = await api(p, { method, body });
     if (r.status !== 422 || errorCode(r) !== 'remote_database') fail(`${label}: ${what} answered ${short(r)} (wanted 422 remote_database)`);
@@ -1005,7 +1060,7 @@ async function nodeDatabaseChecks(ctx, img) {
   await nodePsqlReady(container, 'select 1', `${label}: postgres accepting connections`);
   const session1 = await databaseTerminal(id, 'CREATE TABLE nd_mn_t (id integer); INSERT INTO nd_mn_t VALUES (1), (2), (3);', `${label} terminal`);
   if (nodePsql(container, 'select count(*) from nd_mn_t').stdout !== '3') fail(`${label}: the table created through the terminal is not on the node`);
-  step(`${label}: Studio, PgBouncer and public access 422 remote_database; client terminal 422; shell terminal #${session1} ran psql (nd_mn_t has 3 rows on the node)`);
+  step(`${label}: Studio and PgBouncer 422 remote_database; client terminal 422; shell terminal #${session1} ran psql (nd_mn_t has 3 rows on the node)`);
 
   // Same-node attachment: env injected, and the name resolves from the app.
   const att = await api(`/v1/services/${img.id}/attachments`, { method: 'POST', body: { databaseId: id } });
@@ -1472,7 +1527,7 @@ async function main() {
     ctx.imgId = img.id;
     if (flag('new-node-features')) {
       await newNodeFeatureChecks(ctx);
-      console.log('\nPASS: node features on a real panel and agent (service and database tunnels, compose move with data, node deploy scan, a Dockerfile stage with build arguments).');
+      console.log('\nPASS: node features on a real panel and agent (service and database tunnels, public access to a node database, compose move with data, node deploy scan, a Dockerfile stage with build arguments).');
       return;
     }
     if (flag('node-operations-only')) {

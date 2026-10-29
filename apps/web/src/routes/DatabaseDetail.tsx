@@ -1017,7 +1017,7 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
       {/* Multi-node: public access and PgBouncer need a port on the panel host; a node database has neither yet. */}
       {isNodeDatabase(db) ? (
         <>
-          <NodeUnavailableCard title={t('Public access')} db={db} />
+          <PublicAccessCard db={db} />
           <NodeUnavailableCard title={t('PgBouncer connection pooling')} db={db} />
         </>
       ) : (

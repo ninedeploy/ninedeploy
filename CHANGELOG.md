@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Public access to a database on a node (ROADMAP item 10, agent capability `db.publicAccess`, agent 0.18.11). The node's agent runs the same allow-listed TCP sidecar as the panel host, on the database's own bridge, and clients connect to the node's address. TLS stays end to end (`tlsMode: none`); termination remains panel-host only. `NINEDEPLOY_AGENT_PUBLIC_DATABASES=off` switches it off on a node. No migration.
 - Usage and cost (ROADMAP item 9), under Monitoring → Usage and cost (operators). Shows CPU core-hours, memory GiB-hours, egress and requests per service, project and workspace over 24 hours, or 7, 30 or 90 days. Each server's monthly cost is split among its services by their share of its CPU and memory. Read from the existing resource history and traffic analytics. Routes `GET /v1/usage`, `GET`/`PUT /v1/usage/costs`, SDK `usage`. No migration.
 - Nodes created as Vultr instances (G4.3, after Hetzner and DigitalOcean). Servers → Vultr takes an API key and creates a tagged instance whose user data installs Docker and starts the agent. The node is rekeyed as soon as the agent answers, exactly like a Hetzner VM. Routes `/v1/cloud/vultr/*` (operator), SDK `cloud.vultr`. `providerServerId` in the cloud server list is a string for Vultr nodes (Vultr names instances by UUID). No migration.
 

@@ -27,6 +27,7 @@ import { agentRekeyOps } from './agentRekey.js';
 import { imageScanOps } from './imageScan.js';
 import { tunnelOps } from './tunnels.js';
 import { githubRunnerOps } from './githubRunners.js';
+import { publicAccessOps } from './publicAccess.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -116,6 +117,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   tunnelOps,
   // G4.5 GitHub Actions runners on a node (agentOps/githubRunners.ts; opt-in)
   githubRunnerOps,
+  // ROADMAP item 10: public access to node databases (agentOps/publicAccess.ts)
+  publicAccessOps,
 ];
 
 /**
@@ -135,6 +138,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'proxy.traffic': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
   'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],
   'db.client': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_CLIENTS'],
+  'db.publicAccess': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_PUBLIC_DATABASES'],
   'volume.files': ['NINEDEPLOY_AGENT_VOLUME_FILES'],
   'docker.containerTools': ['NINEDEPLOY_AGENT_CONTAINER_TOOLS'],
   'build.nixpacks': ['NINEDEPLOY_AGENT_BUILDS'],

@@ -148,7 +148,7 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
 8. **Git:** commit statuses for GitLab, Gitea and Bitbucket Cloud (done; see [PRIVATE_REPO_GUIDE.md §11](PRIVATE_REPO_GUIDE.md#11-commit-statuses-on-gitlab-gitea-and-bitbucket)), and "wait for CI", which skips an auto-deploy whose checks failed (done for GitHub App links in 0.17.1).
 9. **Usage and cost:** CPU-hours, memory and bandwidth per workspace, project and service, priced from a per-server cost (done; see [OBSERVABILITY.md](OBSERVABILITY.md#usage-and-cost)). Disk is not counted yet. No self-hosted tool has this.
 10. **The remaining node gaps:**
-    - node database public access and PgBouncer (Studio done, 0.18.0);
+    - node database public access (done, agent `db.publicAccess`, TLS end to end; see [NODE_OPERATIONS.md](NODE_OPERATIONS.md#public-access-to-a-node-database)) and PgBouncer (Studio done, 0.18.0);
     - container inspect and file browsing (done, 0.18.0; see [NODE_OPERATIONS.md](NODE_OPERATIONS.md));
     - log drains and metrics from nodes (done; see [NODE_OPERATIONS.md](NODE_OPERATIONS.md#log-drains));
     - a Dockerfile build stage and build arguments on node builds (done, agent `docker.buildOptions`; see [MULTI_NODE.md](MULTI_NODE.md));

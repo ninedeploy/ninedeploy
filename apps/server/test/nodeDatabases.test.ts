@@ -387,13 +387,19 @@ describe('lifecycle routes on a node database: every action reaches the node, no
     const d = await nodeRow();
     const app = await appWith([databasesRoutes, '/databases'], [pgbouncerRoutes, '/databases'], [databasePublicAccessRoutes, '/databases']);
     h.ops = [];
-    for (const [method, url, payload] of [
-      ['POST', 'pgbouncer/enable', {}],
-      ['PUT', 'public-access', { enabled: true, port: 25432, ipAllowlist: ['203.0.113.0/24'], tlsMode: 'none' }],
-    ] as const) {
-      const res = await app.inject({ method, url: `/databases/${d.id}/${url}`, headers: asUser(), payload });
-      expect([url, res.statusCode, res.json().error.code]).toEqual([url, 422, 'remote_database']);
-    }
+    const pgbouncer = await app.inject({ method: 'POST', url: `/databases/${d.id}/pgbouncer/enable`, headers: asUser(), payload: {} });
+    expect([pgbouncer.statusCode, pgbouncer.json().error.code]).toEqual([422, 'remote_database']);
+    // Public access runs on the node's agent (ROADMAP item 10): an agent without `db.publicAccess` is refused before any change.
+    const savedPing = h.ping;
+    h.ping = 'ND-AGENT ' + JSON.stringify({ version: '0.18.10', caps: MULTI_NODE_CAPABILITIES.filter(cap => cap !== 'db.publicAccess') });
+    const pub = await app.inject({ method: 'PUT', url: `/databases/${d.id}/public-access`, headers: asUser(), payload: { enabled: true, port: 25432, ipAllowlist: ['203.0.113.0/24'], tlsMode: 'none' } });
+    expect(pub.statusCode, pub.body).toBeGreaterThanOrEqual(400);
+    expect(pub.statusCode, pub.body).toBeLessThan(500);
+    expect(pub.json().error.message).toMatch(/expose a database publicly/);
+    // Only the capability probe reached the node.
+    expect(h.ops.map((o: { op: string }) => o.op)).toEqual(['agent.ping']);
+    h.ops = [];
+    h.ping = savedPing;
     expect((await app.inject({ method: 'DELETE', url: `/databases/${d.id}/studio`, headers: asUser() })).statusCode).toBe(200);
     expect(h.ops).toEqual([]);
     h.ping = 'ND-AGENT ' + JSON.stringify({ version: '0.17.1', caps: MULTI_NODE_CAPABILITIES.filter(cap => cap !== 'db.studio') });

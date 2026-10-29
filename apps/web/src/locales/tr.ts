@@ -5997,4 +5997,8 @@ export const TR: Readonly<Record<string, string>> = {
     'Her sunucunun aylık maliyeti. Üzerindeki servisler arasında, yarısı CPU süresindeki paylarına, yarısı bellekteki paylarına göre bölünür. Fiyatlandırmak istemediğiniz sunucuyu boş bırakın.',
   'Currency': 'Para birimi',
   'Monthly cost of {name}': '{name} aylık maliyeti',
+
+  // ── Node public database access ───────────────────────────────────────
+  'On a node, TLS stays end to end between the client and the database':
+    'Node üzerinde TLS, istemci ile veritabanı arasında uçtan uca kalır',
 };
