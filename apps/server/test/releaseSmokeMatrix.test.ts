@@ -15,8 +15,9 @@ const expected = [
   command('smoke-multinode', ' --node-operations-only --no-swarm'), command('smoke-container-readiness'), command('smoke-local-docker-readiness'),
   command('smoke-container-metrics'), command('smoke-container-lifecycle'), command('smoke-container-generation-stop'),
   command('smoke-agent-creation-drain'), command('smoke-node-lifecycle-controller'),
-  command('smoke-node-lifecycle-fanout'), command('smoke-node-canary'), command('smoke-node-canary', ' --lifecycle-only'),
-  command('smoke-node-canary', ' --replica-databases-only'),
+  command('smoke-node-lifecycle-fanout'), command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'),
+  command('smoke-node-canary', ' --lifecycle-only --proof=.temp_files/release-node-smoke'),
+  command('smoke-node-canary', ' --replica-databases-only --proof=.temp_files/release-node-smoke'),
 ];
 describe('complete parallel release smoke gate', () => {
   it('keeps six mandatory cohorts bounded to three independent runners', () => {
