@@ -78,7 +78,7 @@ When a service's alert rule fires, the panel can read the service's logs for you
 **Limits**
 - At most 12 investigations an hour across the instance. Each one spends the operator's key.
 - Only service rules are investigated. A host-wide rule has no service logs.
-- A service in a protected lane is never investigated: alert rules are readable by every member of the service, and its logs are for admins only.
+- A service in a protected lane is never investigated: alert rules are readable by every member of the service, and its logs are for admins only. An answer from before the service moved into a protected lane is shown only to the lane's admins.
 - A stopped service, or one with no logs, is skipped.
 - The answer stays in the panel. Notification channels get only the alert itself, never log lines or the answer.
 - Each investigation is audited as `ai.alert_investigation`.
