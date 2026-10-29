@@ -55,7 +55,33 @@ const READ_ONLY_HOST_BINDS = new Set(['/etc/localtime', '/etc/timezone']);
  * read-only clock files stay. Checked on the blueprint and again on the
  * converted file, so folding values in cannot bring one back.
  */
-export function hostBindRefusal(services: Record<string, ServiceEntry>, topVolumes?: unknown): string | null {
+/**
+ * The service keys a Hub stack may use. Anything else (cap_add, security_opt,
+ * userns_mode, cgroup*, sysctls, devices, privileged, pid/ipc, volumes_from,
+ * runtime, …) can loosen the container's isolation, so it refuses the
+ * blueprint instead of being reviewed key by key.
+ */
+const SAFE_SERVICE_KEYS = new Set([
+  'image', 'command', 'entrypoint', 'environment', 'volumes', 'depends_on', 'restart', 'healthcheck', 'labels',
+  'expose', 'ports', 'networks', 'working_dir', 'user', 'hostname', 'logging', 'deploy', 'ulimits', 'shm_size',
+  'tmpfs', 'stop_grace_period', 'stop_signal', 'init', 'tty', 'stdin_open', 'read_only', 'mem_limit',
+  'mem_reservation', 'cpus', 'platform', 'extra_hosts', 'dns', 'links', 'container_name', 'domainname',
+  'pull_policy', 'scale', 'network_mode', 'build', 'env_file', 'profiles',
+]);
+
+export function hostBindRefusal(doc: { services?: unknown; volumes?: unknown; secrets?: unknown; configs?: unknown } | null | undefined): string | null {
+  const services = (doc?.services && typeof doc.services === 'object' ? doc.services : {}) as Record<string, ServiceEntry>;
+  for (const [key] of Object.entries(doc ?? {})) {
+    if (key === 'secrets' || key === 'configs') return `declares top-level ${key} (they can read host files)`;
+  }
+  for (const [name, entry] of Object.entries(services)) {
+    if (!entry || typeof entry !== 'object') continue;
+    for (const key of Object.keys(entry)) {
+      if (!SAFE_SERVICE_KEYS.has(key) && !key.startsWith('x-')) return `service '${name}' uses ${key}`;
+    }
+    const nm = (entry as { network_mode?: unknown }).network_mode;
+    if (typeof nm === 'string' && nm.trim() !== '' && !['bridge', 'none'].includes(nm.trim())) return `service '${name}' joins network mode ${nm}`;
+  }
   for (const [name, entry] of Object.entries(services)) {
     const e = entry as { volumes?: unknown; privileged?: unknown; pid?: unknown; ipc?: unknown; devices?: unknown };
     if (e.privileged === true || e.privileged === 'true') return `service '${name}' runs privileged`;
@@ -92,10 +118,13 @@ export function hostBindRefusal(services: Record<string, ServiceEntry>, topVolum
       if (!looksAbsolute && !source.startsWith('.') && !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(source)) return `service '${name}' mounts an unusual source (${source})`;
     }
   }
+  const topVolumes = doc?.volumes;
   if (topVolumes && typeof topVolumes === 'object') {
     for (const [vol, spec] of Object.entries(topVolumes as Record<string, unknown>)) {
       if (!spec || typeof spec !== 'object') continue;
-      const s = spec as { driver?: unknown; driver_opts?: unknown; external?: unknown };
+      const s = spec as { driver?: unknown; driver_opts?: unknown; external?: unknown; name?: unknown };
+      // A fixed name escapes the stack's project scope and can share another stack's volume.
+      if (s.name !== undefined) return `volume '${vol}' sets a fixed name`;
       if (s.driver_opts !== undefined) return `volume '${vol}' sets driver options (it can bind a host path)`;
       if (s.driver !== undefined && s.driver !== 'local') return `volume '${vol}' uses the ${String(s.driver)} driver`;
       if (s.external !== undefined && s.external !== false) return `volume '${vol}' is external`;
@@ -334,7 +363,7 @@ function convert(bp: DokployBlueprint): Template {
   const services = original?.services ?? {};
   if (Object.keys(services).length === 0) throw new Refusal('no services');
   if (!(mainService in services)) throw new Refusal(`routed service '${mainService}' is not in the compose file`);
-  const refusal = composeServiceRefusal(services) ?? hostBindRefusal(services, (original as { volumes?: unknown } | null)?.volumes);
+  const refusal = composeServiceRefusal(services) ?? hostBindRefusal(original as Parameters<typeof hostBindRefusal>[0]);
   if (refusal) throw new Refusal(refusal);
   const dokployVar = /\bDOKPLOY_[A-Z0-9_]+\b/.exec(bp.compose);
   if (dokployVar) throw new Refusal(`uses ${dokployVar[0]}, a variable only Dokploy provides`);
@@ -367,8 +396,7 @@ function convert(bp: DokployBlueprint): Template {
 
   const pre = preflightCompose(rewritten);
   if (!pre.ok) throw new Refusal(pre.reasons[0]!);
-  const final = yaml.load(rewritten) as { services?: Record<string, ServiceEntry>; volumes?: unknown };
-  const finalRefusal = hostBindRefusal(final.services ?? {}, final.volumes);
+  const finalRefusal = hostBindRefusal(yaml.load(rewritten) as Parameters<typeof hostBindRefusal>[0]);
   if (finalRefusal) throw new Refusal(finalRefusal);
 
   // ── metadata ─────────────────────────────────────────────────────────────

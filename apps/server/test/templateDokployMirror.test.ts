@@ -238,9 +238,23 @@ PUID = "${v('PUID:-1000')}"
     expect(top('    driver_opts:\n      type: none\n      o: bind\n      device: /root\n')).toBe("volume 'data' sets driver options (it can bind a host path)");
     expect(top('    driver: nfs\n')).toBe("volume 'data' uses the nfs driver");
     expect(top('    external: true\n')).toBe("volume 'data' is external");
-    expect(top('    labels: {}\n', '    privileged: true\n')).toBe("service 'n8n' runs privileged");
-    expect(top('    labels: {}\n', '    pid: host\n')).toBe("service 'n8n' shares the host's pid namespace");
-    expect(top('    labels: {}\n', '    devices:\n      - /dev/kvm:/dev/kvm\n')).toBe("service 'n8n' maps host devices");
+    // Only known-safe service keys pass (third review): everything else that can loosen isolation refuses.
+    for (const [svc, why] of [
+      ['    privileged: true\n', 'uses privileged'],
+      ['    pid: host\n', 'uses pid'],
+      ['    ipc: "service:db"\n', 'uses ipc'],
+      ['    devices:\n      - /dev/kvm:/dev/kvm\n', 'uses devices'],
+      ['    cap_add: [SYS_ADMIN]\n', 'uses cap_add'],
+      ['    security_opt: ["seccomp:unconfined"]\n', 'uses security_opt'],
+      ['    volumes_from: ["container:other"]\n', 'uses volumes_from'],
+      ['    userns_mode: host\n', 'uses userns_mode'],
+      ['    network_mode: "container:other"\n', 'joins network mode container:other'],
+    ] as const) {
+      expect(top('    labels: {}\n', svc)).toBe(`service 'n8n' ${why}`);
+    }
+    expect(top('    name: shared-data\n')).toBe("volume 'data' sets a fixed name");
+    expect(reason(bp({ compose: `services:\n  n8n:\n    image: x\nsecrets:\n  key:\n    file: /etc/shadow\n` }))).toBe('declares top-level secrets (they can read host files)');
+    expect(reason(bp({ compose: `services:\n  n8n:\n    image: x\nconfigs:\n  c:\n    file: ./c\n` }))).toBe('declares top-level configs (they can read host files)');
     // Named volumes, paths inside the stack and the read-only clock files stay.
     for (const ok of ['data:/home/node/data', './config:/config', '/etc/localtime:/etc/localtime:ro']) expect(withVolume(ok) ?? '').not.toMatch(/mounts|interpolates/);
   });
