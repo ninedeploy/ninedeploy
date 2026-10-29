@@ -44,6 +44,8 @@ export const aiConfigUpdate = z
     baseUrl: z.string().trim().url().max(300).optional(),
     model: z.string().trim().min(1).max(120),
     apiKey: z.string().trim().min(8).max(400).optional(),
+    /** Investigate a service's firing alerts automatically (absent = keep the stored choice). */
+    alertInvestigation: z.boolean().optional(),
   })
   .refine((c) => (c.provider ?? 'openai') !== 'openai' || !!c.baseUrl, {
     message: 'An OpenAI-compatible provider needs its base URL',
@@ -60,6 +62,8 @@ export const aiConfigStatus = z.object({
   baseUrl: z.string().nullable(),
   model: z.string().nullable(),
   hasApiKey: z.boolean(),
+  /** Absent on panels before alert investigations. */
+  alertInvestigation: z.boolean().optional(),
 });
 
 /** 0.16.15: `POST /v1/ai/services/:id/logs/analyze` — what the model made of a service's recent runtime logs. */

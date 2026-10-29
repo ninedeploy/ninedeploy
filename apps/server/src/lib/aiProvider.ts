@@ -37,6 +37,8 @@ export interface StoredAiConfig {
   provider?: AiProvider;
   baseUrl?: string;
   model?: string;
+  /** ROADMAP item 6: investigate a service's firing alerts (lib/alertInvestigation.ts). */
+  alertInvestigation?: boolean;
 }
 
 /** The base URL a configuration calls: its own, or the Anthropic API for `anthropic`. */

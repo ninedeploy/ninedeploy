@@ -146,10 +146,21 @@ describe('providers', () => {
 describe('config routes', () => {
   it('report the provider; a row from before 0.16.15 reads as openai', async () => {
     const asOp = (await app.inject({ url: '/ai/config', headers: OPERATOR })).json();
-    expect(asOp).toEqual({ configured: true, provider: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5-5', hasApiKey: true });
+    expect(asOp).toEqual({ configured: true, provider: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5-5', hasApiKey: true, alertInvestigation: false });
     await setSettingJson(db, 'ai_diagnosis_config', { baseUrl: 'https://ai.example.com/v1', model: 'gpt-test' });
     const old = (await app.inject({ url: '/ai/config', headers: MEMBER })).json();
-    expect(old).toEqual({ configured: true, provider: 'openai', baseUrl: null, model: 'gpt-test', hasApiKey: true });
+    expect(old).toEqual({ configured: true, provider: 'openai', baseUrl: null, model: 'gpt-test', hasApiKey: true, alertInvestigation: false });
+  });
+
+  it('item 6: alert investigations are switched on with the configuration, and a save that omits the switch keeps it', async () => {
+    const on = await app.inject({ method: 'PUT', url: '/ai/config', headers: OPERATOR, payload: { provider: 'anthropic', model: 'claude-opus-5-5', alertInvestigation: true } });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(await getSettingJson(db, 'ai_diagnosis_config', null)).toEqual({ provider: 'anthropic', model: 'claude-opus-5-5', alertInvestigation: true });
+    expect((await app.inject({ url: '/ai/config', headers: MEMBER })).json()).toMatchObject({ alertInvestigation: true });
+    await app.inject({ method: 'PUT', url: '/ai/config', headers: OPERATOR, payload: { provider: 'anthropic', model: 'claude-sonnet-5-5' } });
+    expect(await getSettingJson(db, 'ai_diagnosis_config', null)).toMatchObject({ alertInvestigation: true });
+    await app.inject({ method: 'PUT', url: '/ai/config', headers: OPERATOR, payload: { provider: 'anthropic', model: 'claude-sonnet-5-5', alertInvestigation: false } });
+    expect(await getSettingJson(db, 'ai_diagnosis_config', null)).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5-5' });
   });
 
   it('store Claude without a base URL, and refuse openai without one', async () => {

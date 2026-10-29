@@ -204,6 +204,26 @@ describe('Monitoring', () => {
     expect(await screen.findByText('Saving…')).toBeInTheDocument();
   });
 
+  it('item 6: shows a rule\'s AI investigation, and asks for a service on an error-rate rule', async () => {
+    apiMock.api.stats.snapshot.mockResolvedValue(snapshot as never);
+    apiMock.api.alerts.list.mockResolvedValue([
+      {
+        id: 8, serviceId: 3, name: 'api errors', metric: 'error_rate', operator: '>', threshold: 5, durationWindows: 1, enabled: true,
+        status: 'firing', lastValue: 12, firedAt: null, createdAt: 'x', lastEvaluatedAt: null,
+        investigation: { at: new Date().toISOString(), model: 'claude-sonnet-5-5', value: 12, analysis: 'Health: failing. The database refuses connections.' },
+      },
+    ] as never);
+    renderWithProviders(<Monitoring />);
+    expect(await screen.findByText(/AI investigation/)).toBeInTheDocument();
+    expect(screen.getByText('Health: failing. The database refuses connections.')).toBeInTheDocument();
+    expect(screen.getByText(/claude-sonnet-5-5 read the newest logs/)).toBeInTheDocument();
+
+    const metric = screen.getAllByRole('combobox').find((el) => (el as HTMLSelectElement).value === 'cpu')!;
+    fireEvent.change(metric, { target: { value: 'error_rate' } });
+    expect(await screen.findByText(/Error-rate and latency rules watch one service/)).toBeInTheDocument();
+    expect(screen.getByText('pick a service')).toBeInTheDocument();
+  });
+
   it('toasts on alert rule create/delete and limit-save failures', async () => {
     apiMock.api.stats.snapshot.mockResolvedValue(snapshot as never);
     apiMock.api.alerts.list.mockResolvedValue([] as never);

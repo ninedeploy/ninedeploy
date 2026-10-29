@@ -37,7 +37,7 @@ describe('AI diagnosis routes', () => {
     const res = await app.inject({ method: 'GET', url: '/ai/config', headers: asUser({ isOperator: false }) });
     expect(res.statusCode).toBe(200);
     // 0.16.15: an unconfigured instance reads as the openai provider (the pre-0.16.15 meaning).
-    expect(res.json()).toEqual({ configured: false, provider: 'openai', baseUrl: null, model: null, hasApiKey: false });
+    expect(res.json()).toEqual({ configured: false, provider: 'openai', baseUrl: null, model: null, hasApiKey: false, alertInvestigation: false });
     await app.close();
   });
 
@@ -142,7 +142,7 @@ describe('AI diagnosis routes', () => {
     // Operator view (r658: a non-operator gets baseUrl: null).
     const res = await app.inject({ method: 'GET', url: '/ai/config', headers: asUser() });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ configured: false, provider: 'openai', baseUrl: 'https://ai.example.com/v1', model: 'gpt-test', hasApiKey: false });
+    expect(res.json()).toEqual({ configured: false, provider: 'openai', baseUrl: 'https://ai.example.com/v1', model: 'gpt-test', hasApiKey: false, alertInvestigation: false });
     await app.close();
   });
 

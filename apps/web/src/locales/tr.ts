@@ -5928,4 +5928,13 @@ export const TR: Readonly<Record<string, string>> = {
   'High error rate (5xx, needs traffic analytics)': 'Yüksek hata oranı (5xx, trafik analitiği gerekir)',
   'Slow responses (p95, needs traffic analytics)': 'Yavaş yanıtlar (p95, trafik analitiği gerekir)',
   'Threshold (ms, p95)': 'Eşik (ms, p95)',
+
+  // ── AI alert investigations ───────────────────────────────────────────
+  'Investigate firing alerts': 'Tetiklenen alarmları incele',
+  'When a service\'s alert rule fires, send its newest runtime logs to the provider and show the answer under the rule in Monitoring. At most 12 an hour; never for a protected lane; the answer is not put into notifications.':
+    'Bir servisin alarm kuralı tetiklendiğinde en yeni çalışma loglarını sağlayıcıya gönderir ve yanıtı İzleme\'de kuralın altında gösterir. Saatte en fazla 12; korumalı lane\'lerde asla; yanıt bildirimlere eklenmez.',
+  'AI investigation · {when} · at {value}': 'AI incelemesi · {when} · {value} değerinde',
+  '{model} read the newest logs when the rule fired. It can be wrong: check the logs before acting.':
+    '{model}, kural tetiklendiğinde en yeni logları okudu. Yanılıyor olabilir: harekete geçmeden önce logları kontrol edin.',
+  'AI alert investigation': 'AI alarm incelemesi',
 };

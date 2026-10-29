@@ -66,6 +66,24 @@ It is told not to invent problems the logs do not show. Still, an analysis can b
 - **SDK:** `ai.analyzeLogs(serviceId, { tail })`.
 - **CLI:** `ninedeploy logs analyze <service> [--tail <n>] [--json]`.
 
+## Alert investigations
+
+When a service's alert rule fires, the panel can read the service's logs for you. The operator turns this on under **Settings → AI assistant → Investigate firing alerts**, or with `PUT /v1/ai/config { …, "alertInvestigation": true }`. A save that leaves out `alertInvestigation` keeps the stored choice.
+
+**What happens when a rule fires**
+1. The newest 300 runtime log lines are read and sanitized as described above.
+2. They are sent together with the alert, for example `error_rate = 12 (threshold > 5)`.
+3. The answer is shown under the rule in **Monitoring → Alert Rules**, with the model and the value the rule fired on. A later firing replaces it.
+
+**Limits**
+- At most 12 investigations an hour across the instance. Each one spends the operator's key.
+- Only service rules are investigated. A host-wide rule has no service logs.
+- A service in a protected lane is never investigated: alert rules are readable by every member of the service, and its logs are for admins only.
+- A stopped service, or one with no logs, is skipped.
+- The answer stays in the panel. Notification channels get only the alert itself, never log lines or the answer.
+- Each investigation is audited as `ai.alert_investigation`.
+- The answer is stored as the settings row `alert_investigation:<ruleId>`; there is no migration. Deleting the rule deletes it.
+
 ## Manifest suggestions
 
 In the manifest creator, describe the app in plain words and get a `.ninedeploy` manifest back. The model's answer is checked against the strict manifest schema before you see it, so it cannot add fields that do not exist.

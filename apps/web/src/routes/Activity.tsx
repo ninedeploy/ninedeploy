@@ -134,6 +134,7 @@ export function Activity() {
     'alert.oom': t('Out of memory'),
     'ai.diagnose': t('AI diagnosis'),
     'ai.analyze_logs': t('AI log analysis'),
+    'ai.alert_investigation': t('AI alert investigation'),
     'ai.suggest': t('AI manifest'),
     'service.oom': t('Out of memory'),
     // 0.16.11 scale to zero (service.wake carries meta.trigger: request, manual, start or restart).

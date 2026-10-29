@@ -457,6 +457,17 @@ export interface AlertRule {
   lastEvaluatedAt: string | null;
   firedAt: string | null;
   createdAt: string;
+  /** The AI's reading of the service's logs when the rule last fired (absent when none). */
+  investigation?: AlertInvestigation | null;
+}
+
+/** An automatic AI investigation of a fired alert (ROADMAP item 6). */
+export interface AlertInvestigation {
+  at: string;
+  model: string;
+  /** The metric value the rule fired on. */
+  value: number;
+  analysis: string;
 }
 
 /** Input for creating an alert rule — defaults optional (zod applies them server-side). */

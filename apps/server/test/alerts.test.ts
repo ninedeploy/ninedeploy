@@ -195,6 +195,26 @@ describe('alert routes', () => {
     expect(both.statusCode).toBe(200);
   });
 
+  it('item 6: a rule carries its AI investigation when it has one', async () => {
+    const investigation = { at: '2026-10-29T12:00:00.000Z', model: 'claude-sonnet-5-5', value: 12, analysis: 'Health: failing.' };
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findMany: { alertRules: [ruleRow({ id: 3 }), ruleRow({ id: 4 })], alertState: [] },
+        select: {
+          settings: [
+            { key: 'alert_investigation:3', value: investigation },
+            { key: 'alert_investigation:x', value: investigation },
+          ],
+        },
+      }),
+    });
+    await app.register(alertRoutes);
+    const res = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+    const [three, four] = res.json() as Array<Record<string, unknown>>;
+    expect(three!.investigation).toEqual(investigation);
+    expect(four).not.toHaveProperty('investigation');
+  });
+
   it('item 7: error_rate and latency_p95 rules must stay scoped to a service', async () => {
     let updated = false;
     let current = ruleRow({ id: 12, metric: 'error_rate', serviceId: 3 });

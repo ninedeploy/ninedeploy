@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Commit statuses on GitLab, Gitea and Bitbucket Cloud (ROADMAP item 8). A service that clones through a token source of one of those types can mark each deploy on its commit (`ninedeploy/<slug>`: running, then success, failure or cancelled). Turn it on under Service → Settings, or with `PUT /v1/services/:id/commit-status` (service admin). The token goes only to the repository's own host, fork previews never report, and a failed status never fails a deploy. No migration.
 - Error-rate and latency alerts (ROADMAP item 7). Two new alert metrics, `error_rate` (percent of requests answered 5xx) and `latency_p95` (ms), read the last 5 minutes of a service's traffic analytics. They are per service, need traffic analytics on, and skip a service with fewer than 20 requests in the window. A `.ninedeploy` manifest declares them as the alert triggers `highErrorRate` (`thresholdPct`) and `slowResponses` (`thresholdMs`). No migration.
+- AI alert investigations (ROADMAP item 6), opt-in under Settings → AI assistant. When a service's alert rule fires, the panel sends the service's newest runtime logs (sanitized) and the alert to the configured provider, and shows the answer under the rule in Monitoring. At most 12 an hour; a protected lane is never investigated; notifications never carry the logs or the answer. No migration.
 
 ### Fixed
 

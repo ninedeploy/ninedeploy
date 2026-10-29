@@ -137,7 +137,7 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
 5. **Protected environments and deploy approvals** (done: lanes and approvals in 0.16.13, fork PR previews in 0.16.14; see [DEPLOYMENTS.md](DEPLOYMENTS.md#protected-lanes-and-deploy-approvals-01613)). Production variables and logs hidden from members while git deploys keep working. Approval before a production deploy, and before a preview of a fork's PR builds; a fork is cloned with no credential.
 6. **AI that fixes, not only explains:**
    - a failed-deploy diagnosis that proposes a concrete change, applied in one click (done, 0.17.0; see [AI.md](AI.md#a-proposed-fix-0170)) or opened as a PR through the GitHub App;
-   - an automatic investigation when an alert fires;
+   - an automatic investigation when an alert fires (done; see [AI.md](AI.md#alert-investigations));
    - runtime-log analysis (done, 0.16.15; see [AI.md](AI.md));
    - Claude as a first-class provider next to OpenAI-compatible endpoints (done, 0.16.15).
 7. **Observability:**

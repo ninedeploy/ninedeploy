@@ -770,6 +770,21 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                       </Button>
                     </div>
                   )}
+
+                  {r.investigation && (
+                    <details className="basis-full rounded-lg bg-white/[0.03] px-3 py-2 ring-1 ring-inset ring-white/[0.06]">
+                      <summary className="cursor-pointer text-[11px] text-indigo-300">
+                        {t('AI investigation · {when} · at {value}', {
+                          when: formatRelative(r.investigation.at),
+                          value: `${r.investigation.value}${meta.unit === '%' ? '%' : ` ${meta.unit}`}`,
+                        })}
+                      </summary>
+                      <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-300">{r.investigation.analysis}</p>
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        {t('{model} read the newest logs when the rule fired. It can be wrong: check the logs before acting.', { model: r.investigation.model })}
+                      </p>
+                    </details>
+                  )}
                 </li>
               );
             })}

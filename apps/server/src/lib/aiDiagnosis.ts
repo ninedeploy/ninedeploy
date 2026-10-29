@@ -129,3 +129,17 @@ export function parseChatCompletionContent(body: unknown): string | null {
   const content = (message as { content?: unknown }).content;
   return typeof content === 'string' && content.trim().length > 0 ? content.trim() : null;
 }
+
+/**
+ * F833: the log tail the provider sees, sanitized BEFORE the final cut. The
+ * sanitizer keys on whole lines (`DB_PASSWORD=…`, `scheme://user:pass@`); a
+ * character cut inside such a line left `WORD=hunter2` / `ploy:pw@host`
+ * unmasked. Sanitize a window one MAX_LOG_CHARS wider, started on a line
+ * boundary when it has one, then cut — every mask is applied in full context.
+ */
+export function logTailForAi(raw: string): string {
+  const window = truncateTail(raw, MAX_LOG_CHARS * 2);
+  const midLine = window.length < raw.length && raw[raw.length - window.length - 1] !== '\n';
+  const start = midLine ? window.indexOf('\n') + 1 : 0;
+  return truncateTail(sanitizeLogForAi(window.slice(start)));
+}

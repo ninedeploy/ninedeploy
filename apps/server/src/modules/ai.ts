@@ -15,14 +15,7 @@ import { assertServiceRole, roleAtLeast, serviceWorkspaceIds, userWorkspaceMembe
 import { logBus } from '../engine/logs.js';
 import { assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 import { redactEgressTarget } from '../lib/egressGuard.js';
-import {
-  buildRuntimeLogMessages,
-  buildSuggestMessages,
-  MAX_LOG_CHARS,
-  sanitizeLogForAi,
-  stripJsonFence,
-  truncateTail,
-} from '../lib/aiDiagnosis.js';
+import { buildRuntimeLogMessages, buildSuggestMessages, logTailForAi, stripJsonFence } from '../lib/aiDiagnosis.js';
 
 /**
  * AI features (BYO-key). The operator configures a provider (0.16.15: an
@@ -93,19 +86,6 @@ const asPrompt = (messages: Array<{ role: 'system' | 'user'; content: string }>)
   user: messages.filter((m) => m.role === 'user').map((m) => m.content).join('\n\n'),
 });
 
-/**
- * F833: the log tail the provider sees, sanitized BEFORE the final cut. The
- * sanitizer keys on whole lines (`DB_PASSWORD=…`, `scheme://user:pass@`); a
- * character cut inside such a line left `WORD=hunter2` / `ploy:pw@host`
- * unmasked. Sanitize a window one MAX_LOG_CHARS wider, started on a line
- * boundary when it has one, then cut — every mask is applied in full context.
- */
-function logTailForAi(raw: string): string {
-  const window = truncateTail(raw, MAX_LOG_CHARS * 2);
-  const midLine = window.length < raw.length && raw[raw.length - window.length - 1] !== '\n';
-  const start = midLine ? window.indexOf('\n') + 1 : 0;
-  return truncateTail(sanitizeLogForAi(window.slice(start)));
-}
 
 export const aiRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
@@ -125,6 +105,7 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       baseUrl: req.user!.isOperator ? baseUrl : null,
       model: json?.model ?? null,
       hasApiKey: hasKey,
+      alertInvestigation: json?.alertInvestigation === true,
     };
     return status;
   });
@@ -134,12 +115,15 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
   app.put('/config', { onRequest: [app.requireOperator] }, async (req) => {
     const input = aiConfigUpdate.parse(req.body ?? {});
     const provider = input.provider ?? 'openai';
+    // A save that does not mention alert investigations keeps the stored choice.
+    const investigate = input.alertInvestigation ?? (await loadStoredAiConfig(app.db))?.alertInvestigation === true;
     // 0.16.15: an `anthropic` configuration without a base URL calls the
     // Anthropic API; the stored row then carries no baseUrl.
     await setSettingJson(app.db, AI_CONFIG_KEY, {
       provider,
       ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
       model: input.model,
+      ...(investigate ? { alertInvestigation: true } : {}),
     });
     if (input.apiKey) await setSettingString(app.db, AI_KEY_KEY, encrypt(input.apiKey));
     // F832: the audit entity fans out to the activity feed, the live event

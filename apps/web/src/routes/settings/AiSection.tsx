@@ -26,6 +26,7 @@ export function AiSection() {
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [investigate, setInvestigate] = useState(false);
 
   const config = useQuery({
     queryKey: ['ai-config'],
@@ -44,6 +45,7 @@ export function AiSection() {
       const defaults = stored === 'anthropic' ? { baseUrl: '', model: ANTHROPIC_DEFAULT_MODEL } : OPENAI_DEFAULTS;
       setBaseUrl(stored === 'anthropic' && config.data.baseUrl === ANTHROPIC_DEFAULT_BASE_URL ? '' : (config.data.baseUrl ?? defaults.baseUrl));
       setModel(config.data.model ?? defaults.model);
+      setInvestigate(config.data.alertInvestigation === true);
     }
   }, [config.data]);
 
@@ -57,8 +59,10 @@ export function AiSection() {
 
   const save = useMutation({
     mutationFn: () => {
-      const payload: { provider?: AiProvider; baseUrl?: string; model: string; apiKey?: string } = { model: model.trim() };
+      const payload: { provider?: AiProvider; baseUrl?: string; model: string; apiKey?: string; alertInvestigation?: boolean } = { model: model.trim() };
       if (knowsProviders) payload.provider = provider;
+      // A panel that does not report the switch would refuse the field.
+      if (config.data?.alertInvestigation !== undefined) payload.alertInvestigation = investigate;
       if (baseUrl.trim()) payload.baseUrl = baseUrl.trim();
       if (apiKey.trim()) payload.apiKey = apiKey.trim();
       return api.ai.updateConfig(payload as Parameters<typeof api.ai.updateConfig>[0]);
@@ -162,6 +166,24 @@ export function AiSection() {
                   autoComplete="off"
                 />
               </Field>
+              {config.data?.alertInvestigation !== undefined && (
+                <label className="flex items-start gap-2 text-xs text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={investigate}
+                    onChange={(e) => setInvestigate(e.target.checked)}
+                    disabled={!isOperator}
+                    aria-label={t('Investigate firing alerts')}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    {t('Investigate firing alerts')}
+                    <span className="block text-slate-500">
+                      {t("When a service's alert rule fires, send its newest runtime logs to the provider and show the answer under the rule in Monitoring. At most 12 an hour; never for a protected lane; the answer is not put into notifications.")}
+                    </span>
+                  </span>
+                </label>
+              )}
               {isOperator ? (
                 <div className="flex items-center gap-2">
                   <Button onClick={() => save.mutate()} disabled={save.isPending || (!anthropic && !baseUrl.trim()) || !model.trim()}>

@@ -116,6 +116,21 @@ describe('AiSection', () => {
     expect(screen.getByRole('button', { name: /Save AI settings/ })).toBeDisabled();
   });
 
+  it('item 6: the alert-investigation switch is saved with the configuration', async () => {
+    mockOf(api.ai.getConfig).mockResolvedValue({
+      configured: true, provider: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5-5', hasApiKey: true, alertInvestigation: false,
+    });
+    const updateSpy = vi.fn().mockResolvedValue({ ok: true });
+    mockOf(api.ai.updateConfig).mockImplementation(updateSpy);
+    renderWithProviders(<AiSection />);
+    const user = userEvent.setup();
+    const box = await screen.findByLabelText('Investigate firing alerts');
+    expect(box).not.toBeChecked();
+    await user.click(box);
+    await user.click(screen.getByRole('button', { name: /Save AI settings/ }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith({ provider: 'anthropic', model: 'claude-sonnet-5-5', alertInvestigation: true }));
+  });
+
   it('0.16.15: shows a stored Claude configuration with the default API left empty', async () => {
     mockOf(api.ai.getConfig).mockResolvedValue({
       configured: true,

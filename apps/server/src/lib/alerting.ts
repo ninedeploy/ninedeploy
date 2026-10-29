@@ -131,6 +131,12 @@ export async function evaluateAlerts(db: DB, snapshots: MetricSnapshot[], now = 
           // G3.7: ruleId lets incident channels (PagerDuty, Opsgenie) resolve what they opened.
           { ruleId: rule.id, ...(rule.serviceId != null ? { serviceId: rule.serviceId } : {}) },
         );
+        // ROADMAP item 6: opt-in AI reading of the service's logs, off the tick.
+        if (rule.serviceId != null) {
+          void import('./alertInvestigation.js')
+            .then((m) => m.investigateFiredAlert(db, rule, snap.value, snap.detail))
+            .catch(() => undefined);
+        }
       } else {
         await db.update(alertState).set({ lastValue: snap.value }).where(eq(alertState.ruleId, rule.id));
       }

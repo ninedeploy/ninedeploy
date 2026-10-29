@@ -1,8 +1,16 @@
 import { desc, eq } from 'drizzle-orm';
-import { alertRules, type alertState } from '@ninedeploy/db';
+import { alertRules, settings, type alertState } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { HOST_ONLY_ALERT_METRICS, SERVICE_ONLY_ALERT_METRICS, alertRuleCreate, alertRulePatch, type AlertMetric } from '@ninedeploy/schemas';
+import {
+  HOST_ONLY_ALERT_METRICS,
+  SERVICE_ONLY_ALERT_METRICS,
+  alertRuleCreate,
+  alertRulePatch,
+  type AlertInvestigation,
+  type AlertMetric,
+} from '@ninedeploy/schemas';
 import { ensureAlertState, resetAlertState } from '../lib/alerting.js';
+import { ALERT_INVESTIGATION_PREFIX, loadAlertInvestigations } from '../lib/alertInvestigation.js';
 import { badRequest, notFound, parseId } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { visibleServiceIdSet } from '../lib/resourceAccess.js';
@@ -15,7 +23,7 @@ import { visibleServiceIdSet } from '../lib/resourceAccess.js';
 type StoredMetric = typeof alertRules.$inferInsert.metric;
 const storedMetric = (m: AlertMetric) => m as StoredMetric;
 
-function serialize(rule: typeof alertRules.$inferSelect, state?: typeof alertState.$inferSelect) {
+function serialize(rule: typeof alertRules.$inferSelect, state?: typeof alertState.$inferSelect, investigation?: AlertInvestigation) {
   return {
     id: rule.id,
     serviceId: rule.serviceId,
@@ -32,6 +40,7 @@ function serialize(rule: typeof alertRules.$inferSelect, state?: typeof alertSta
     lastEvaluatedAt: state?.updatedAt ? new Date(state.updatedAt).toISOString() : null,
     firedAt: state?.firedAt?.toISOString() ?? null,
     createdAt: rule.createdAt.toISOString(),
+    ...(investigation ? { investigation } : {}),
   };
 }
 
@@ -50,7 +59,8 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
     if (rules.length === 0) return [];
     const states = await app.db.query.alertState.findMany();
     const byRule = new Map(states.map((s) => [s.ruleId, s]));
-    return rules.map((r) => serialize(r, byRule.get(r.id)));
+    const investigations = await loadAlertInvestigations(app.db);
+    return rules.map((r) => serialize(r, byRule.get(r.id), investigations.get(r.id)));
   });
 
   // Everything below mutates system-wide config — admin-only per the RBAC model.
@@ -114,6 +124,7 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:id', { preHandler: [app.requireAdmin] }, async (req) => {
     const id = parseId((req.params as { id: string }).id);
     const [gone] = await app.db.delete(alertRules).where(eq(alertRules.id, id)).returning();
+    await app.db.delete(settings).where(eq(settings.key, `${ALERT_INVESTIGATION_PREFIX}${id}`));
     if (gone) void audit(app.db, req.user!.id, 'alert.delete', gone.name);
     return { ok: true };
   });
