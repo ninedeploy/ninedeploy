@@ -448,17 +448,32 @@ jobs:
       - name: Public node canary lifecycle smoke on the pushed image
         if: matrix.suite == 'public-canary'
         timeout-minutes: 20
-        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-node-smoke
 
       - name: Public ordered node Start, Stop, Restart and panel-crash recovery
         if: matrix.suite == 'public-lifecycle'
         timeout-minutes: 15
-        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --lifecycle-only
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --lifecycle-only --proof=.temp_files/release-node-smoke
 
       - name: Node replica database SQL readiness, rollback and cancellation
         if: matrix.suite == 'replica-databases'
         timeout-minutes: 10
-        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --replica-databases-only
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --replica-databases-only --proof=.temp_files/release-node-smoke
+
+      # Only synthetic fixture summaries and container names: raw logs may
+      # contain sensitive configuration and are deliberately not uploaded.
+      - name: Preserve failed node smoke diagnostics
+        if: failure() && (matrix.suite == 'public-canary' || matrix.suite == 'public-lifecycle' || matrix.suite == 'replica-databases')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: node-smoke-failure-${{ matrix.suite }}
+          path: |
+            .temp_files/release-node-smoke/cases.json
+            .temp_files/release-node-smoke/inner-containers.log
+            .temp_files/release-node-smoke/runtime-cleanup.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Recorded Compose release restore smoke on the pushed image
         if: matrix.suite == 'upgrade-journey'
