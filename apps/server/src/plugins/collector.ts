@@ -4,6 +4,7 @@ import { persistServiceMetrics, pruneServiceMetrics } from '../lib/serviceMetric
 import fp from 'fastify-plugin';
 import { collectContainerStats, collectHostStats, type ContainerStat, type HostStat } from '../lib/stats.js';
 import { evaluateAlerts, type MetricSnapshot } from '../lib/alerting.js';
+import { trafficAlertSnapshots } from '../lib/trafficAlerts.js';
 import { createNodeHealthWatch } from '../lib/nodeHealth.js';
 import { readCertificates } from '../engine/proxy.js';
 import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
@@ -118,6 +119,13 @@ export default fp(
           snapshots.push(...(await nodeHealth.cycle(fastify.db, now)));
         } catch (err) {
           fastify.log.warn({ err }, 'node health probe failed');
+        }
+
+        // Error rate and p95 latency per service from traffic analytics (ROADMAP item 7).
+        try {
+          snapshots.push(...(await trafficAlertSnapshots(fastify.db, now.getTime())));
+        } catch (err) {
+          fastify.log.warn({ err }, 'traffic alert sampling failed');
         }
 
         await evaluateAlerts(fastify.db, snapshots);

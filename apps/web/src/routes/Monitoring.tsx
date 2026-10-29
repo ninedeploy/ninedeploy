@@ -536,13 +536,17 @@ export function Monitoring() {
   );
 }
 
-type AlertMetric = 'cpu' | 'memory' | 'cert-expiry' | 'disk' | 'server_offline';
+type AlertMetric = 'cpu' | 'memory' | 'cert-expiry' | 'disk' | 'server_offline' | 'error_rate' | 'latency_p95';
 
 /**
  * Display metadata per rule metric: label, value unit, sane default threshold
- * and operator, and whether the server only samples it host-wide.
+ * and operator, and whether the server only samples it host-wide or only per
+ * service.
  */
-const METRIC_META: Record<AlertMetric, { label: string; option: string; unit: string; threshold: number; operator: '>' | '<'; hostOnly: boolean }> = {
+const METRIC_META: Record<
+  AlertMetric,
+  { label: string; option: string; unit: string; threshold: number; operator: '>' | '<'; hostOnly: boolean; serviceOnly?: true }
+> = {
   cpu: { label: 'CPU', option: msg('cpu %'), unit: '%', threshold: 80, operator: '>', hostOnly: false },
   memory: { label: 'Memory', option: msg('memory MiB'), unit: 'MiB', threshold: 512, operator: '>', hostOnly: false },
   // fewer days remaining is the danger
@@ -551,6 +555,9 @@ const METRIC_META: Record<AlertMetric, { label: string; option: string; unit: st
   disk: { label: 'Disk', option: msg('disk % used'), unit: '%', threshold: 85, operator: '>', hostOnly: true },
   // Minutes the longest-unseen remote node has gone without contact.
   server_offline: { label: 'Server offline', option: msg('server offline min'), unit: 'min', threshold: 5, operator: '>', hostOnly: true },
+  // Per service, from traffic analytics over the last 5 minutes.
+  error_rate: { label: 'Error rate', option: msg('error rate % 5xx'), unit: '%', threshold: 5, operator: '>', hostOnly: false, serviceOnly: true },
+  latency_p95: { label: 'Latency p95', option: msg('latency p95 ms'), unit: 'ms', threshold: 1000, operator: '>', hostOnly: false, serviceOnly: true },
 };
 const METRICS = Object.keys(METRIC_META) as AlertMetric[];
 
@@ -631,7 +638,8 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const parsedThreshold = toInt(threshold);
-  const canSubmit = Boolean(name.trim()) && parsedThreshold !== undefined;
+  const needsService = METRIC_META[metric].serviceOnly === true && !serviceId;
+  const canSubmit = Boolean(name.trim()) && parsedThreshold !== undefined && !needsService;
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -806,9 +814,15 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
                 onChange={(e) => setServiceId(e.target.value)}
                 disabled={METRIC_META[metric].hostOnly}
                 className="mt-auto h-8 text-xs"
-                title={METRIC_META[metric].hostOnly ? t('{metric} rules are host-wide', { metric }) : t('Scope (empty = host-wide)')}
+                title={
+                  METRIC_META[metric].hostOnly
+                    ? t('{metric} rules are host-wide', { metric })
+                    : METRIC_META[metric].serviceOnly
+                      ? t('{metric} rules are per service', { metric })
+                      : t('Scope (empty = host-wide)')
+                }
               >
-                <option value="">{t('host-wide')}</option>
+                <option value="">{METRIC_META[metric].serviceOnly ? t('pick a service') : t('host-wide')}</option>
                 {(services.data ?? []).map((svc) => (
                   <option key={svc.id} value={svc.id}>{svc.name}</option>
                 ))}
@@ -828,7 +842,11 @@ function AlertRulesCard({ isAdmin }: { isAdmin: boolean }) {
               </label>
             </div>
             {!canSubmit && (
-              <p className="text-[11px] text-slate-500">{t('A rule needs a name and a numeric threshold before it can be added.')}</p>
+              <p className="text-[11px] text-slate-500">
+                {needsService
+                  ? t('Error-rate and latency rules watch one service: pick it. They need traffic analytics on, and skip a service with fewer than 20 requests in 5 minutes.')
+                  : t('A rule needs a name and a numeric threshold before it can be added.')}
+              </p>
             )}
             <div className="flex justify-end">
               <Button type="submit" size="sm" variant="ghost" className="h-8 px-3 text-xs" disabled={!canSubmit || create.isPending}>

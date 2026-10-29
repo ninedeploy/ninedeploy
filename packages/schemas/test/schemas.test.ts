@@ -997,6 +997,17 @@ describe('service', () => {
       bad(alertRuleCreate, { name: 'x', metric: 'inodes', threshold: 5 });
     });
 
+    it('error_rate and latency_p95 are per-service metrics', () => {
+      for (const metric of ['error_rate', 'latency_p95']) {
+        ok(alertRuleCreate, { name: metric, metric, threshold: 5, serviceId: 3 });
+        bad(alertRuleCreate, { name: metric, metric, threshold: 5 });
+        bad(alertRuleCreate, { name: metric, metric, threshold: 5, serviceId: null });
+        ok(alertRulePatch, { metric });
+        ok(alertRulePatch, { metric, serviceId: 3 });
+        bad(alertRulePatch, { metric, serviceId: null });
+      }
+    });
+
     it('notificationType accepts every channel type', () => {
       for (const type of ['telegram', 'webhook', 'discord', 'slack', 'ntfy', 'gotify', 'pushover', 'lark', 'email', 'fcm', 'teams', 'resend']) {
         ok(notificationChannelCreate, { name: 'n', type, target: 't' });

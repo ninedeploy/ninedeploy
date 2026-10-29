@@ -222,6 +222,22 @@ Without a release, an issue is linked to the deploy that was live when it first 
 **Upgrade**
 - Migration `0105_error_ingest` only adds the two tables.
 
+## Error-rate and latency alerts
+
+Two alert metrics read the traffic analytics of one service: `error_rate`, the share of requests answered 5xx in percent, and `latency_p95`, the 95th percentile response time in milliseconds. Add them under **Monitoring → Alert Rules**, or with `POST /v1/alerts` (operator), for example `{ "name": "api errors", "metric": "error_rate", "operator": ">", "threshold": 5, "serviceId": 12 }`.
+
+**How they are measured**
+- Each 30-second collector tick sums the minute rollups of the last 5 minutes for the rule's service, across all its domains.
+- A service with fewer than 20 requests in that window gets no sample, so its rule keeps its current state: two failed requests on a quiet service are not an outage, and silence is not a recovery.
+- The p95 is estimated from the latency histogram (buckets 5 ms to 10 s), so it is exact only to its bucket.
+- Fire-after counts collector samples as for every other metric. Because the window is 5 minutes, a short spike keeps the value up for up to 5 minutes.
+
+**Limits**
+- Traffic analytics must be on (**Traefik → Traffic**). With it off, these rules never sample.
+- They are per service: a rule without a `serviceId` is refused (`error_rate rules are per service`), and so is a patch that clears it.
+- Only traffic that passes the panel host's Traefik is counted, as in the traffic view.
+- Fired and recovered alerts go to the same channels and subscriptions as the other alert metrics. No migration: `alert_rules.metric` is free text.
+
 ## API and SDK
 
 All monitoring settings/export and log-queue management routes require an

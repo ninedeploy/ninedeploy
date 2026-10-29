@@ -195,6 +195,40 @@ describe('alert routes', () => {
     expect(both.statusCode).toBe(200);
   });
 
+  it('item 7: error_rate and latency_p95 rules must stay scoped to a service', async () => {
+    let updated = false;
+    let current = ruleRow({ id: 12, metric: 'error_rate', serviceId: 3 });
+    const app = await buildTestApp({
+      db: createFakeDb({
+        findFirst: { alertRules: () => current },
+        update: {
+          alert_rules: () => {
+            updated = true;
+            return [ruleRow({ id: 12, metric: 'error_rate', serviceId: 3 })];
+          },
+        },
+      }),
+    });
+    await app.register(alertRoutes);
+    const hostWide = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { name: 'errs', metric: 'error_rate', threshold: 5 } });
+    expect(hostWide.statusCode).toBe(400);
+    expect(hostWide.body).toContain('error_rate rules are per service');
+    // Clearing the service of a stored per-service rule is refused.
+    const unscope = await app.inject({ method: 'PATCH', url: '/12', headers: asUser(), payload: { serviceId: null } });
+    expect(unscope.statusCode).toBe(400);
+    expect(unscope.body).toContain('error_rate rules are per service');
+    // So is switching a host-wide rule to a per-service metric.
+    current = ruleRow({ id: 13, metric: 'cpu', serviceId: null });
+    const toServiceOnly = await app.inject({ method: 'PATCH', url: '/13', headers: asUser(), payload: { metric: 'latency_p95' } });
+    expect(toServiceOnly.statusCode).toBe(400);
+    expect(toServiceOnly.body).toContain('latency_p95 rules are per service');
+    expect(updated).toBe(false);
+    // A scoped rule may switch between the two.
+    current = ruleRow({ id: 12, metric: 'error_rate', serviceId: 3 });
+    const swap = await app.inject({ method: 'PATCH', url: '/12', headers: asUser(), payload: { metric: 'latency_p95' } });
+    expect(swap.statusCode).toBe(200);
+  });
+
   it('forbids members from creating rules', async () => {
     const app = await buildTestApp({ db: createFakeDb() });
     await app.register(alertRoutes);

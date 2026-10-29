@@ -1,7 +1,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { alertRules, type alertState } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
-import { HOST_ONLY_ALERT_METRICS, alertRuleCreate, alertRulePatch, type AlertMetric } from '@ninedeploy/schemas';
+import { HOST_ONLY_ALERT_METRICS, SERVICE_ONLY_ALERT_METRICS, alertRuleCreate, alertRulePatch, type AlertMetric } from '@ninedeploy/schemas';
 import { ensureAlertState, resetAlertState } from '../lib/alerting.js';
 import { badRequest, notFound, parseId } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
@@ -78,7 +78,9 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
     const input = alertRulePatch.parse(req.body ?? {});
     // The schema rejects a host-only metric + service in ONE body; a patch that
     // supplies only one half is checked against the stored other half.
-    const scoping = input.serviceId != null || (input.metric !== undefined && HOST_ONLY_ALERT_METRICS.includes(input.metric));
+    const scoping =
+      input.serviceId !== undefined ||
+      (input.metric !== undefined && (HOST_ONLY_ALERT_METRICS.includes(input.metric) || SERVICE_ONLY_ALERT_METRICS.includes(input.metric)));
     if (scoping && !(input.metric !== undefined && input.serviceId !== undefined)) {
       const current = await app.db.query.alertRules.findFirst({ where: eq(alertRules.id, id) });
       if (current) {
@@ -86,6 +88,9 @@ export const alertRoutes: FastifyPluginAsync = async (app) => {
         const serviceId = input.serviceId !== undefined ? input.serviceId : current.serviceId;
         if (HOST_ONLY_ALERT_METRICS.includes(metric) && serviceId != null) {
           throw badRequest(`${metric} rules are host-wide (omit serviceId)`);
+        }
+        if (SERVICE_ONLY_ALERT_METRICS.includes(metric) && serviceId == null) {
+          throw badRequest(`${metric} rules are per service (name a serviceId)`);
         }
       }
     }

@@ -167,16 +167,23 @@ export type NotificationChannelPatch = z.infer<typeof notificationChannelPatch>;
 
 /**
  * cpu %, memory MiB, cert-expiry days remaining, disk % used (panel host and
- * nodes, worst wins), server_offline minutes a node has gone unseen (0.12).
+ * nodes, worst wins), server_offline minutes a node has gone unseen (0.12),
+ * error_rate % of 5xx answers and latency_p95 ms, per service over the last
+ * 5 minutes of traffic analytics (ROADMAP 0.16.8 item 7).
  * `alert_rules.metric` is a free-text column, so new values need no migration.
  */
-export const alertMetricEnum = z.enum(['cpu', 'memory', 'cert-expiry', 'disk', 'server_offline']);
+export const alertMetricEnum = z.enum(['cpu', 'memory', 'cert-expiry', 'disk', 'server_offline', 'error_rate', 'latency_p95']);
 export type AlertMetric = z.infer<typeof alertMetricEnum>;
 /** Metrics sampled host-wide only — a service-scoped rule could never fire. */
 export const HOST_ONLY_ALERT_METRICS: readonly AlertMetric[] = ['cert-expiry', 'disk', 'server_offline'];
+/** Metrics measured per service from traffic analytics — a host-wide rule could never fire. */
+export const SERVICE_ONLY_ALERT_METRICS: readonly AlertMetric[] = ['error_rate', 'latency_p95'];
 const hostOnlyAlertRule = (r: { metric?: AlertMetric; serviceId?: number | null }, ctx: z.RefinementCtx) => {
   if (r.metric && HOST_ONLY_ALERT_METRICS.includes(r.metric) && r.serviceId) {
     ctx.addIssue({ code: 'custom', message: `${r.metric} rules are host-wide (omit serviceId)`, path: ['serviceId'] });
+  }
+  if (r.metric && SERVICE_ONLY_ALERT_METRICS.includes(r.metric) && r.serviceId === null) {
+    ctx.addIssue({ code: 'custom', message: `${r.metric} rules are per service (name a serviceId)`, path: ['serviceId'] });
   }
 };
 export const alertOperatorEnum = z.enum(['>', '<']);
@@ -192,8 +199,14 @@ export const alertRuleCreate = z
     enabled: z.boolean().default(true),
   })
   // Certificate expiry (the ACME store), disk and node liveness are tracked
-  // per HOST, so a service-scoped rule could never evaluate.
-  .superRefine(hostOnlyAlertRule);
+  // per HOST, so a service-scoped rule could never evaluate; error rate and
+  // latency per SERVICE, so a host-wide one could not either.
+  .superRefine(hostOnlyAlertRule)
+  .superRefine((r, ctx) => {
+    if (SERVICE_ONLY_ALERT_METRICS.includes(r.metric) && r.serviceId == null) {
+      ctx.addIssue({ code: 'custom', message: `${r.metric} rules are per service (name a serviceId)`, path: ['serviceId'] });
+    }
+  });
 export type AlertRuleCreate = z.infer<typeof alertRuleCreate>;
 
 export const alertRulePatch = z

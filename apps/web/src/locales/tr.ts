@@ -5915,4 +5915,12 @@ export const TR: Readonly<Record<string, string>> = {
   'Commit statuses off': 'Commit durumları kapalı',
   'Each deploy marks its commit as deploying, then deployed, failed or cancelled (ninedeploy/{slug}), with the source token. A failed status never fails the deploy.':
     'Her dağıtım, commit\'ini önce dağıtılıyor, ardından dağıtıldı, başarısız ya da iptal edildi olarak işaretler (ninedeploy/{slug}); bunun için kaynağın token\'ı kullanılır. Durum gönderilemezse dağıtım bundan etkilenmez.',
+
+  // ── Error-rate and latency alerts ─────────────────────────────────────
+  'error rate % 5xx': 'hata oranı % 5xx',
+  'latency p95 ms': 'gecikme p95 ms',
+  '{metric} rules are per service': '{metric} kuralları servis başınadır',
+  'pick a service': 'bir servis seçin',
+  'Error-rate and latency rules watch one service: pick it. They need traffic analytics on, and skip a service with fewer than 20 requests in 5 minutes.':
+    'Hata oranı ve gecikme kuralları tek bir servisi izler: servisi seçin. Trafik analitiğinin açık olması gerekir; 5 dakikada 20\'den az isteği olan servis atlanır.',
 };
