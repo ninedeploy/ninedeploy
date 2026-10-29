@@ -63,7 +63,9 @@ describe('CanaryPanel', () => {
   afterEach(cleanup);
   beforeEach(() => {
     vi.clearAllMocks();
-    status.mockResolvedValue(ACTIVE);
+    // The step end is taken per test: one fixed at import time drifted out of "1m 3xs" when a loaded run reached
+    // this test seconds later. 95 s leaves the countdown five seconds to render before it would read 1m 29s.
+    status.mockResolvedValue({ ...ACTIVE, stepEndsAt: new Date(Date.now() + 95_000).toISOString() });
     promote.mockResolvedValue({ ok: true });
     apiMock.api.deploys.cancel.mockResolvedValue({ ok: true });
   });
