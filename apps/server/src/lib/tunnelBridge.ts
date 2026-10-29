@@ -1,4 +1,5 @@
-import net from 'node:net';
+import type net from 'node:net';
+import type { Duplex } from 'node:stream';
 import type { WebSocket } from '@fastify/websocket';
 
 /**
@@ -37,7 +38,8 @@ export function reserveTunnel(userId: number): (() => void) | null {
 
 export interface BridgeOptions {
   socket: WebSocket;
-  tcp: net.Socket;
+  /** The target side: a TCP socket, or (G5.8 nodes) a tunnel stream through the node's agent. */
+  tcp: net.Socket | Duplex;
   release: () => void;
   /** Resolves false when access was revoked; checked every minute. */
   stillAllowed: () => Promise<boolean>;
@@ -53,7 +55,7 @@ export function bridgeTunnel(o: BridgeOptions): void {
   let bytesOut = 0;
   let lastActivity = Date.now();
   let closed = false;
-  tcp.setNoDelay(true);
+  if ('setNoDelay' in tcp) tcp.setNoDelay(true);
 
   const finish = (code: number, reason: string) => {
     if (closed) return;

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ninedeploy tunnel service` reaches docker services on nodes (G5.8). The panel asks the node agent, in a sealed request, for a single-use channel encrypted per tunnel. The agent connects from inside the container's network namespace through a helper with no capabilities. Needs agent 0.18.7 (`tunnel.tcp`); `NINEDEPLOY_AGENT_TUNNELS=off` turns it off.
 - The image scan deploy gate covers docker services on nodes (G5.1). The node agent scans the new container before it gets traffic; a node that cannot scan records why and does not block.
 - Compose stacks move to another host with their data (G3.1). Every named volume compose made for the stack is copied to the target, with compose's labels, before the stack is deployed there. Stacks with a fixed volume name are refused. Nodes need agent 0.18.7 (`volume.compose`; `NINEDEPLOY_AGENT_VOLUME_COMPOSE=off` turns it off).
 - Image scanning covers Swarm services (G5.1). The scan runs on the panel host, the manager, against the image the service spec runs, on the schedule and on request. If that image is not present on the panel host, the result says so.

@@ -3,8 +3,9 @@ import { databaseClientInput, databaseClientCommand } from './lib/databaseClient
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join as joinPath, relative as relativePath, resolve as resolvePath, sep as pathSep } from 'node:path';
-import { agentStreamRoute, agentStudioRoute, agentWebsocketOptions, buildAgentApp } from './agentApp.js';
+import { agentStreamRoute, agentStudioRoute, agentTunnelRoute, agentWebsocketOptions, buildAgentApp } from './agentApp.js';
 import { closeAllStudioChannels } from './agentOps/studios.js';
+import { closeAllTunnelChannels } from './agentOps/tunnels.js';
 import { nodeProxyTraffic } from './lib/nodeProxyTraffic.js';
 import { advertisedCapabilities, AGENT_OPS, registeredCapabilities, runRegisteredOp } from './agentOps/index.js';
 import { gitCredentialEnv } from './agentOps/gitCredential.js';
@@ -1830,6 +1831,7 @@ export const agentRoutes = async (
     await closeAllTerminalChannels();
     await closeAllStreamChannels();
     closeAllStudioChannels();
+    closeAllTunnelChannels();
     nodeProxyTraffic.closeAll();
   });
   app.get(AGENT_TERMINAL_PATH, { websocket: true, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (socket, req) => {
@@ -1861,6 +1863,7 @@ export const agentRoutes = async (
   // frame encrypted under a per-channel key (stream-domain HKDF info).
   await agentStreamRoute(app, { tokenHash });
   await agentStudioRoute(app, { tokenHash });
+  await agentTunnelRoute(app, { tokenHash });
 };
 
 // Boot when the agent flag is set. Tests set NINEDEPLOY_AGENT=1 explicitly

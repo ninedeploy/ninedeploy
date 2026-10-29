@@ -88,6 +88,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'db.dump.extra': 'back up and restore clickhouse on a node',
   'image.scan': 'scan images for vulnerabilities',
   'volume.compose': 'move a compose stack with its volumes',
+  'tunnel.tcp': 'open tunnels to node services',
 };
 
 let db: DB;

@@ -1,4 +1,5 @@
 import net from 'node:net';
+import type { Duplex } from 'node:stream';
 import type { FastifyPluginAsync } from 'fastify';
 import { audit } from '../lib/audit.js';
 import { resolveUser } from '../lib/auth.js';
@@ -9,13 +10,16 @@ import { swarmRuntimeOf } from '../lib/swarm.js';
 import { authorizeWebsocketUser } from '../plugins/auth.js';
 import { containerIp } from '../engine/builders/docker.js';
 import { replicaNames } from '../engine/dockerNames.js';
+import { openNodeTunnel } from '../lib/nodeTunnel.js';
 
 /**
  * G5.8 service tunnels: `GET /v1/services/:id/tunnel?port=&replica=`
  * (WebSocket) carries one TCP connection to a port of a running docker
- * service on the panel host, so `ninedeploy tunnel service <id>` can reach
- * an admin port, a debugger or a service with no domain without publishing
- * anything.
+ * service, so `ninedeploy tunnel service <id>` can reach an admin port, a
+ * debugger or a service with no domain without publishing anything. On the
+ * panel host the panel connects to the container; on a node (agent 0.18.7,
+ * `tunnel.tcp`) the node's agent does, over an encrypted channel
+ * (lib/nodeTunnel.ts).
  *
  * Who: the service's `admin` role or higher. The tunnel reaches the container
  * directly, past what its domains enforce (forward auth, IP allow lists,
@@ -28,6 +32,7 @@ import { replicaNames } from '../engine/dockerNames.js';
 export const serviceTunnelDeps = {
   resolveAddress: containerIp,
   connect: (host: string, port: number): net.Socket => net.connect({ host, port }),
+  openNode: openNodeTunnel as (db: Parameters<typeof openNodeTunnel>[0], serverId: number, target: { container: string; port: number }) => Promise<Duplex>,
 };
 
 export const serviceTunnelRoutes: FastifyPluginAsync = async (app) => {
@@ -46,7 +51,6 @@ export const serviceTunnelRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       return refuse('not found or not allowed');
     }
-    if (svc.serverId != null) return refuse('the service runs on a node; tunnels reach panel-host services only for now');
     if (svc.type !== 'docker' || svc.orchestrator === 'swarm' || swarmRuntimeOf(svc)) return refuse('tunnels reach docker services (not Swarm, compose or PM2)');
     const port = q.port === undefined ? (svc.port ?? null) : Number(q.port);
     if (port === null || !Number.isInteger(port) || port < 1 || port > 65535) return refuse('name the container port with ?port=');
@@ -57,16 +61,30 @@ export const serviceTunnelRoutes: FastifyPluginAsync = async (app) => {
     if (!container) return refuse(`the service runs ${names.length} replica(s)`);
     const release = reserveTunnel(user.id);
     if (!release) return refuse(`at most ${MAX_TUNNELS_PER_USER} tunnels at once`);
-    const host = await serviceTunnelDeps.resolveAddress(container);
-    if (!host) {
-      release();
-      return refuse('the service container has no address');
+    let target: net.Socket | Duplex;
+    if (svc.serverId != null) {
+      try {
+        target = await serviceTunnelDeps.openNode(app.db, svc.serverId, { container, port });
+      } catch (err) {
+        release();
+        return refuse((err instanceof Error ? err.message : String(err)).slice(0, 120));
+      }
+    } else {
+      const host = await serviceTunnelDeps.resolveAddress(container);
+      if (!host) {
+        release();
+        return refuse('the service container has no address');
+      }
+      target = serviceTunnelDeps.connect(host, port);
     }
-    if (socket.readyState !== socket.OPEN) return release();
-    void audit(app.db, user.id, 'service.tunnel.open', `${svc.name}:${port}`, { serviceId: svc.id, port, replica }, { ip: req.ip, userAgent: req.headers['user-agent'] });
+    if (socket.readyState !== socket.OPEN) {
+      target.destroy();
+      return release();
+    }
+    void audit(app.db, user.id, 'service.tunnel.open', `${svc.name}:${port}`, { serviceId: svc.id, port, replica, serverId: svc.serverId ?? null }, { ip: req.ip, userAgent: req.headers['user-agent'] });
     bridgeTunnel({
       socket,
-      tcp: serviceTunnelDeps.connect(host, port),
+      tcp: target,
       release,
       label: 'service',
       stillAllowed: async () => {

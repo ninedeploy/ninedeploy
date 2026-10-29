@@ -879,7 +879,7 @@ version to install, and nothing else changes. The full reference is
 
 ## Service tunnels (G5.8)
 
-`ninedeploy tunnel service <id>` makes a container port of a running panel-host docker service available on your machine. Use it for an admin port, a debugger, or a service that has no domain. Nothing is published.
+`ninedeploy tunnel service <id>` makes a container port of a running docker service, on the panel host or on a node, available on your machine. Use it for an admin port, a debugger, or a service that has no domain. Nothing is published.
 
 ```bash
 ninedeploy tunnel service 12                          # the service port, on the same local port when it is free
@@ -889,6 +889,7 @@ ninedeploy tunnel service 12 --replica 2              # the second replica
 
 **How it works**
 - Each local connection travels over its own WebSocket (`GET /v1/services/:id/tunnel?port=&replica=`) to the container, byte for byte, as the database tunnel does.
+- On a node, the panel asks the node's agent (0.18.7 or newer, capability `tunnel.tcp`) inside a sealed request to open the connection. The bytes between panel and agent travel over a single-use channel encrypted per tunnel. The agent connects from inside the container's own network namespace, so it reaches the port whatever network the container is on. It does this through a helper container (the pinned `alpine` helper image) that has no capabilities and a read-only root filesystem. The agent refuses any container the panel did not start as a service. The node owner can turn tunnels off with `NINEDEPLOY_AGENT_TUNNELS=off`.
 
 **Access**
 - The tunnel reaches the container directly, past what the service's domains enforce: forward auth, IP allow lists and basic auth. It therefore needs the service `admin` role, the role that can change those settings.
@@ -899,7 +900,7 @@ ninedeploy tunnel service 12 --replica 2              # the second replica
 - At most 32 tunnels per user, database and service tunnels together.
 - An idle tunnel closes after 30 minutes.
 - Opening and closing are audited as `service.tunnel.open` / `service.tunnel.close`, with byte counts.
-- Swarm, compose, PM2 and node services are refused for now.
+- Swarm, compose and PM2 services are refused for now.
 
 ## Docker artifact promotion (0.17.1)
 

@@ -183,8 +183,8 @@ export interface ServiceTunnelOptions extends TunnelOptions {
 
 /**
  * G5.8 `ninedeploy tunnel service <id> [--target <port>] [--replica <n>]
- * [--port <n>] [--bind <address>]`: offer a port of a panel-host docker
- * service locally, for an admin port, a debugger or a service with no domain.
+ * [--port <n>] [--bind <address>]`: offer a port of a docker service (on
+ * the panel host, or on a node with agent 0.18.7) locally, for an admin port, a debugger or a service with no domain.
  * Needs the service's admin role.
  */
 export async function tunnelService(client: NineDeployClient, idRaw: string, opts: ServiceTunnelOptions = {}, deps: TunnelDeps = {}): Promise<void> {
@@ -207,7 +207,6 @@ export async function tunnelService(client: NineDeployClient, idRaw: string, opt
   } catch (err) {
     return error(plain(err instanceof Error ? err.message : String(err)));
   }
-  if (svc.serverId != null) return error('This service runs on a node; tunnels reach panel-host services only for now.');
   const containerPort = target ?? svc.port ?? undefined;
   if (!containerPort) return error('The service has no port; name the container port with --target <port>.');
   const query = new URLSearchParams({ port: String(containerPort), ...(replica ? { replica: String(replica) } : {}) });

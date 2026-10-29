@@ -25,6 +25,7 @@ import { volumeFileOps } from './volumeFiles.js';
 import { osUpdateOps } from './osUpdates.js';
 import { agentRekeyOps } from './agentRekey.js';
 import { imageScanOps } from './imageScan.js';
+import { tunnelOps } from './tunnels.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -110,6 +111,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   imageScanOps,
   // G3.1 compose stack volumes moved with their stack (agentOps/volumes.ts)
   composeVolumeOps,
+  // G5.8 tunnels to node services (agentOps/tunnels.ts; the channel is GET /agent/tunnel)
+  tunnelOps,
 ];
 
 /**
@@ -138,6 +141,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'image.scan': ['NINEDEPLOY_AGENT_IMAGE_SCAN'],
   // G3.1: compose volume transfers are the node owner's call.
   'volume.compose': ['NINEDEPLOY_AGENT_VOLUME_COMPOSE'],
+  // G5.8: tunnels into service containers are the node owner's call.
+  'tunnel.tcp': ['NINEDEPLOY_AGENT_TUNNELS'],
   // 0.16.6: GPUs and added Linux capabilities are the node owner's call.
   'docker.runtimeOptions': ['NINEDEPLOY_AGENT_RUNTIME_OPTIONS'],
   // G4.2: the host's package configuration is the node owner's call too.

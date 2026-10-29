@@ -155,17 +155,15 @@ describe('ninedeploy tunnel service', () => {
     c1.destroy();
   });
 
-  it('refuses a bad target or replica, a service with no port, and a service on a node', async () => {
+  it('refuses a bad target or replica and a service with no port', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const creds = { credentials: async () => ({ url: (p: string) => p, token: '' }) };
     await tunnelService(client({}), '5', { target: '0' });
     await tunnelService(client({}), '5', { replica: '0' });
     await tunnelService(client({ port: null }), '5', {}, creds);
-    await tunnelService(client({ serverId: 3 }), '5', {}, creds);
     const text = errors.mock.calls.map((c) => String(c[0])).join('\n');
     expect(text).toContain('--target must be a container port');
     expect(text).toContain('--replica must be 1 or more');
     expect(text).toContain('--target <port>');
-    expect(text).toContain('runs on a node');
   });
 });

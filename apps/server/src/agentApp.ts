@@ -5,6 +5,8 @@ import { config } from './config.js';
 import { AGENT_STREAM_PATH } from './lib/agentStream.js';
 import { attachStudioChannel, type AgentStudioSocket } from './agentOps/studios.js';
 import { STUDIO_RELAY_PATH } from './lib/studioRelayProtocol.js';
+import { attachTunnelChannel, type AgentTunnelSocket } from './agentOps/tunnels.js';
+import { TUNNEL_PATH } from './lib/nodeTunnelProtocol.js';
 import rateLimitPlugin from './plugins/rateLimit.js';
 
 /**
@@ -99,5 +101,17 @@ export async function agentStudioRoute(app: FastifyInstance, opts: { tokenHash: 
   // bound live work, including failed or abandoned reservations.
   app.get(STUDIO_RELAY_PATH, { websocket: true, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, (socket, req) => {
     attachStudioChannel(socket as unknown as AgentStudioSocket, req.headers['sec-websocket-protocol'], opts.tokenHash);
+  });
+}
+
+/**
+ * G5.8: `GET /agent/tunnel`, the channel a SEALED `tunnel.open` hands out.
+ * Same model as the stream channel: single use, 30 s to attach, every frame
+ * encrypted under a per-channel key (tunnel-domain HKDF info); nothing
+ * connects before the panel's first frame opened under that key.
+ */
+export async function agentTunnelRoute(app: FastifyInstance, opts: { tokenHash: string }): Promise<void> {
+  app.get(TUNNEL_PATH, { websocket: true, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, (socket, req) => {
+    attachTunnelChannel(socket as unknown as AgentTunnelSocket, req.headers['sec-websocket-protocol'], opts.tokenHash);
   });
 }

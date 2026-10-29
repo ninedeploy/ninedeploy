@@ -64,6 +64,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'image.scan',
   // G3.1 compose stack volumes listed, created and transferred when a stack moves with its data
   'volume.compose',
+  // G5.8 TCP tunnels to node service containers (sealed tunnel.open + /agent/tunnel)
+  'tunnel.tcp',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

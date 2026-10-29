@@ -131,4 +131,33 @@ describe('service tunnels', () => {
     }
     expect(echoSockets.size).toBe(0);
   });
+
+  it('reaches a service on a node through its agent, and shows why when the node cannot', async () => {
+    const { sql } = await import('drizzle-orm');
+    await db.run(sql`PRAGMA foreign_keys = OFF`);
+    await db.update(services).set({ serverId: 9, runtimeReplicas: 1 } as never).where(eq(services.id, 5));
+    const openNode = serviceTunnelDeps.openNode;
+    const calls: unknown[] = [];
+    serviceTunnelDeps.openNode = async (_db, serverId, target) => {
+      calls.push({ serverId, ...target });
+      return net.connect({ host: '127.0.0.1', port: echoPort });
+    };
+    try {
+      const ws = open('/v1/services/5/tunnel', 'op');
+      await opened(ws);
+      const reply = new Promise<Buffer>((r) => ws.addEventListener('message', (e) => r(Buffer.from(e.data as ArrayBuffer))));
+      ws.send(Buffer.from('ping'));
+      expect((await reply).toString()).toBe('ping');
+      expect(calls).toEqual([{ serverId: 9, container: 'nd-svc-api', port: echoPort }]);
+      expect(resolved).toEqual([]);
+      const end = closed(ws);
+      ws.close(1000);
+      await end;
+
+      serviceTunnelDeps.openNode = async () => Promise.reject(new Error('update the node agent to v0.18.7 to open tunnels to node services'));
+      expect(await closed(open('/v1/services/5/tunnel', 'op'))).toEqual({ code: 1008, reason: 'update the node agent to v0.18.7 to open tunnels to node services' });
+    } finally {
+      serviceTunnelDeps.openNode = openNode;
+    }
+  });
 });
