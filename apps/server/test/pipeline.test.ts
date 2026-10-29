@@ -362,7 +362,8 @@ describe('explicit Stop during primary readiness', () => {
       calls.push(op);
       if (superseded) throw Error('Obsolete runtime effect attempted');
       if (op === 'docker.pull') {
-        await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
+        const stop = await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
+        await f.db.update(nodeLifecycleIntents).set({ phase: 'completed', completedAt: new Date() }).where(eq(nodeLifecycleIntents.id, stop.id));
         await f.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
         const next = await claimNodeDeploymentAttempt(f.db, 10, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, '{}');
         expect(next.claimed).toBe(true); superseded = true;

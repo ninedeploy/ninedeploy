@@ -43,13 +43,13 @@ async function resolveBuildCache(
 }
 
 const POLL_MS = 2000;
-// Keep a successor queued while an unfinished selected Stop has not yet
-// accounted for the candidate generations it interrupted.
+// Keep a successor queued while an initial Stop or an interrupted selected
+// Stop has not yet completed its node-side handoff.
 const noPendingNodeStopHandoff = sql`NOT EXISTS (
   SELECT 1 FROM node_lifecycle_intents AS node_stop
   WHERE node_stop.service_id = ${deployments.serviceId} AND node_stop.action = 'stop'
-    AND node_stop.runtime_id IS NOT NULL AND node_stop.phase NOT IN ('completed', 'superseded')
-    AND json_array_length(node_stop.snapshot, '$.interruptedDeployments') > 0
+    AND node_stop.phase NOT IN ('completed', 'superseded')
+    AND (node_stop.runtime_id IS NULL OR json_array_length(node_stop.snapshot, '$.interruptedDeployments') > 0)
 )`;
 /** How often the stale-`building` sweep re-runs after boot (r169). */
 export const STALE_SWEEP_EVERY_MS = 5 * 60 * 1000;

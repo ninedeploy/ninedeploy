@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import { setImmediate as yieldIO } from 'node:timers';
 import { eq } from 'drizzle-orm';
 import { afterEach, expect, it, vi } from 'vitest';
-import { deployments, primaryTransitions, servers, services } from '@ninedeploy/db';
+import { deployments, nodeLifecycleIntents, primaryTransitions, servers, services } from '@ninedeploy/db';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { observabilityDb } from '../fixtures/observability.js';
 const work = vi.hoisted(() => ({ pipeline: vi.fn(async (..._args: unknown[]) => {}), ci: vi.fn(async (..._args: unknown[]) => false) }));
@@ -56,17 +56,21 @@ it('leaves only the protected service queued while other services use the host d
   expect(work.pipeline.mock.calls.map(c => c[1])).toEqual([11]);
   expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 10) }))?.status).toBe('queued');
 });
-it('leaves a node deployment queued while its selected Stop has an interrupted candidate', async () => {
+it.each(['web-8', null])('leaves a node deployment queued while Stop is unsettled: runtime=%s', async runtimeId => {
   f = await observabilityDb();
   await f.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
-  await f.db.update(services).set({ serverId: 4, runtimeId: 'web-8', status: 'running' }).where(eq(services.id, 1));
+  await f.db.update(services).set({ serverId: 4, runtimeId, status: 'running' }).where(eq(services.id, 1));
   await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'deploying' });
-  await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
+  const stop = await acceptNodeLifecycleIntent(f.db, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, 'stop');
   await f.db.insert(services).values({ id: 2, name: 'Other', slug: 'other', type: 'docker' });
   await f.db.insert(deployments).values([{ id: 10, serviceId: 1, status: 'queued' }, { id: 11, serviceId: 2, status: 'queued' }]);
   await startWorkerTick();
   expect(work.pipeline.mock.calls.map(c => c[1])).toEqual([11]);
   expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 10) }))?.status).toBe('queued');
+  await f.db.update(nodeLifecycleIntents).set({ phase: 'completed', completedAt: new Date() }).where(eq(nodeLifecycleIntents.id, stop.id));
+  await vi.advanceTimersByTimeAsync(2001);
+  for (let i = 0; i < 1000; i++) await new Promise<void>(resolve => yieldIO(resolve));
+  expect(work.pipeline.mock.calls.map(c => c[1])).toEqual([11, 10]);
 });
 it('rechecks a journal created after queue selection inside the atomic claim', async () => {
   f = await observabilityDb(); await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });

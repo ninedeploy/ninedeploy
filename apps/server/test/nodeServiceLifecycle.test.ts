@@ -68,15 +68,16 @@ describe('public ordered node lifecycle', () => {
       if(op==='agent.ping') return {exitCode:0,lines:['ND-AGENT '+JSON.stringify({version:'0.19.0',caps:['docker.mutations','proxy.routingAck']})]};
       const header={requestId:params.requestId,serviceId:params.serviceId,revision:params.revision,complete:true};
       const target={id:'a'.repeat(64),name:serverId===4?'web-9':'web-t5-9',deploymentId:9};
-      if(op==='docker.runtimeFence'){trace.push('fence:'+serverId);return{exitCode:0,lines:['ND-RUNTIME-FENCE '+JSON.stringify(header)]};}
+      if(op==='docker.runtimeFence'){trace.push('fence:'+serverId);return{exitCode:0,lines:['ND-RUNTIME-FENCE '+JSON.stringify({...header,deploymentWatermark:params.deploymentWatermark})]};}
       if(op==='docker.runtimeInventory'){trace.push('inventory:'+serverId);expect(params.expectedNames).toContain(target.name);return{exitCode:0,lines:['ND-RUNTIME-INVENTORY '+JSON.stringify({...header,items:[{...target,running:true}]})]};}
       if(op==='docker.stopSet'){trace.push('stop:'+serverId);expect(params.targets).toEqual([target]);return{exitCode:0,lines:['ND-STOPPED-SET '+JSON.stringify({...header,items:[{...target,running:false}]})]};}
+      if(op==='docker.runtimeLegacyHandoff'){trace.push('handoff:'+serverId);return{exitCode:0,lines:['ND-RUNTIME-LEGACY '+JSON.stringify({...header,deploymentWatermark:params.deploymentWatermark})]};}
       throw Error('Unexpected initial Stop operation '+op);
     });
     const instance=await app(),response=await instance.inject({method:'POST',url:'/1/stop',headers:asUser()});expect(response.statusCode).toBe(202);
     vi.useFakeTimers({toFake:['Date','setTimeout','clearTimeout']});
     expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{id:response.json().lifecycle.id,state:'completed'}]);
-    expect(trace).toEqual(['fence:4','fence:5','inventory:4','inventory:5','route:4','route:5','stop:4','stop:5']);
+    expect(trace).toEqual(['fence:4','fence:5','inventory:4','inventory:5','route:4','route:5','stop:4','handoff:4','stop:5','handoff:5']);
     expect((await c.db.query.serviceTargets.findFirst({where:eq(serviceTargets.id,42)}))?.status).toBe('idle');
   });
 
@@ -104,15 +105,16 @@ describe('public ordered node lifecycle', () => {
         if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT '+JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'proxy.routingAck'] })] };
         const header = { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true };
         expect(params).not.toHaveProperty('deploymentId');
-        if (op === 'docker.runtimeFence') { trace.push('fence'); return { exitCode: 0, lines: ['ND-RUNTIME-FENCE '+JSON.stringify(header)] }; }
+        if (op === 'docker.runtimeFence') { trace.push('fence'); return { exitCode: 0, lines: ['ND-RUNTIME-FENCE '+JSON.stringify({ ...header, deploymentWatermark: params.deploymentWatermark })] }; }
         if (op === 'docker.runtimeInventory') { trace.push('inventory'); expect(params.expectedNames).toContain('web-9'); return { exitCode: 0, lines: ['ND-RUNTIME-INVENTORY '+JSON.stringify({ ...header, items: members })] }; }
         if (op === 'docker.stopSet') { trace.push('stop'); expect(trace).toContain('routing'); expect(params.targets).toEqual(members.map(({ running: _running, ...item }) => item)); return { exitCode: 0, lines: ['ND-STOPPED-SET '+JSON.stringify({ ...header, items: params.targets.map((item: object) => ({ ...item, running: false })) })] }; }
+        if (op === 'docker.runtimeLegacyHandoff') { trace.push('handoff'); return { exitCode: 0, lines: ['ND-RUNTIME-LEGACY '+JSON.stringify({ ...header, deploymentWatermark: params.deploymentWatermark })] }; }
         throw Error('No legacy fallback during unselected Stop: '+op);
       });
       const instance = await app(), response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() }); expect(response.statusCode).toBe(202);
       vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
       expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{ id: response.json().lifecycle.id, state: 'completed' }]);
-      expect(trace).toEqual(['fence', 'inventory', 'routing', 'stop']);
+      expect(trace).toEqual(['fence', 'inventory', 'routing', 'stop', 'handoff']);
       const stored = (await c.db.select().from(nodeLifecycleIntents))[0]!; expect(stored.phase).toBe('completed'); expect(stored.runtimeId).toBeNull();
       expect((await service()).status).toBe('stopped');
     })();
@@ -126,9 +128,10 @@ describe('public ordered node lifecycle', () => {
     network.agentOp.mockImplementation(async (_db, _server, op, params) => {
       if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT '+JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'] })] };
       const header = { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true };
-      if (op === 'docker.runtimeFence') { trace.push('fence'); return { exitCode: 0, lines: ['ND-RUNTIME-FENCE '+JSON.stringify(header)] }; }
+      if (op === 'docker.runtimeFence') { trace.push('fence'); return { exitCode: 0, lines: ['ND-RUNTIME-FENCE '+JSON.stringify({ ...header, deploymentWatermark: params.deploymentWatermark })] }; }
       if (op === 'docker.runtimeInventory') { trace.push('inventory'); return { exitCode: 0, lines: ['ND-RUNTIME-INVENTORY '+JSON.stringify({ ...header, items: [{ ...target, running: true }] })] }; }
       if (op === 'docker.stopSet') { trace.push('stop'); expect(params.targets).toEqual([target]); return { exitCode: 0, lines: ['ND-STOPPED-SET '+JSON.stringify({ ...header, items: [{ ...target, running: false }] })] }; }
+      if (op === 'docker.runtimeLegacyHandoff') { trace.push('handoff'); return { exitCode: 0, lines: ['ND-RUNTIME-LEGACY '+JSON.stringify({ ...header, deploymentWatermark: params.deploymentWatermark })] }; }
       throw Error('Unexpected unselected Stop operation: '+op);
     });
     const instance = await app(), response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
@@ -143,7 +146,7 @@ describe('public ordered node lifecycle', () => {
     expect(retry.statusCode).toBe(mode === 'retry' ? 202 : 409);
     if (mode === 'retry') {
       expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{ id, state: 'completed' }]);
-      expect(trace).toEqual(['fence', 'inventory', 'stop']);
+      expect(trace).toEqual(['fence', 'inventory', 'stop', 'handoff']);
     } else {
       await vi.advanceTimersByTimeAsync(600_000);
       await finish(reconcileNodeLifecycleIntents(c.db));

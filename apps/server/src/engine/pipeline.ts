@@ -22,7 +22,8 @@ import { getInlineDockerfile, inlineDockerfileSha, prepareEmptyContext, writeInl
 import { composeRouteEnv } from '../lib/composeRoutes.js';
 import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
-import { agentOp } from '../lib/agentClient.js';
+import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
+import { recoverCompletedInitialStop } from '../lib/nodeLegacyStopRecovery.js';
 import { nodeLabel, parseAgentCapabilities } from '../lib/agentCapabilities.js';
 import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
 import { deployToTargets, type FanoutContext, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
@@ -839,6 +840,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   }
   const nodeAuthority = admission?.claimed ? createNodeDeploymentAuthority(db, admission.owner) : undefined;
   if (nodeAuthority) trackNodeAuthority?.(nodeAuthority);
+  if (nodeAuthority) await recoverCompletedInitialStop(db, service, {
+    check: () => nodeAuthority.check(),
+    sealed: serverId => agentTransportSealed(db, serverId, deployAbortSignal()),
+    agent: (serverId, op, params) => agentOp(db, serverId, op, params, () => undefined, { timeoutMs: 35_000, signal: deployAbortSignal() }),
+  });
   const claimed = admission?.claimed ? [{ id: deploymentId }] : await db
     .update(deployments)
     .set({ status: 'building', startedAt: new Date(), configSnapshot })

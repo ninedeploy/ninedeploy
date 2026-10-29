@@ -18,6 +18,18 @@ export function assertLegacyNodeMutationAllowed(database: DatabaseSync): void {
   if (!table) return;
   const mode = database.prepare('SELECT version FROM runtime_protocol WHERE id=1').get();
   if (!mode) return;
+  if (mode.version === 2) {
+    const evidence = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='legacy_runtime_handoff'").get();
+    const fenceTable = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='legacy_create_fence'").get();
+    const handoff = evidence ? database.prepare('SELECT revision,watermark FROM legacy_runtime_handoff WHERE id=1').get() : undefined;
+    const fence = fenceTable ? database.prepare('SELECT deployment_id FROM legacy_create_fence WHERE id=1').get() : undefined;
+    if (!handoff || !fence || !Number.isSafeInteger(handoff.revision) || Number(handoff.revision) < 1 ||
+      !Number.isSafeInteger(handoff.watermark) || Number(handoff.watermark) < 1 ||
+      !Number.isSafeInteger(fence.deployment_id) || Number(fence.deployment_id) < Number(handoff.watermark)) {
+      throw new Error('Legacy runtime handoff evidence is unconfirmed');
+    }
+    return;
+  }
   if (mode.version !== 1) throw new Error('Unsupported runtime journal protocol; retained for review');
   throw new Error('Unversioned container mutation is fenced by ordered runtime ownership; update the panel');
 }
@@ -164,18 +176,33 @@ export async function withNodeServiceJournal<T>(root: string, serviceId: number,
 /** Drain the complete admitted create/network/Start sequence before acknowledging a lifecycle effect. */
 export function runNodeCreation<T>(root: string, serviceId: number,
   operation: (remaining: () => number, current: () => void) => Promise<T>, deploymentId?: number): Promise<T> {
-  return withNodeServiceJournal(root, serviceId, 595_000, ({ database, write, remaining, current }) => write(async () => {
-    assertLegacyNodeMutationAllowed(database);
-    database.exec(CREATE_FENCE_SCHEMA);
-    const fence = database.prepare('SELECT deployment_id FROM legacy_create_fence WHERE id=1').get();
-    if (fence) {
-      const high = Number(fence.deployment_id);
-      if (!Number.isSafeInteger(high) || high < 1 || !Number.isSafeInteger(deploymentId) || deploymentId! <= high) {
-        throw new Error('Node creation is stale or its deployment identity is fenced by Stop');
+  return withNodeServiceJournal(root, serviceId, 595_000, async ({ database, write, remaining, current }) => {
+    const check = () => {
+      assertLegacyNodeMutationAllowed(database);
+      database.exec(CREATE_FENCE_SCHEMA);
+      const fence = database.prepare('SELECT deployment_id FROM legacy_create_fence WHERE id=1').get();
+      if (fence) {
+        const high = Number(fence.deployment_id);
+        if (!Number.isSafeInteger(high) || high < 1 || !Number.isSafeInteger(deploymentId) || deploymentId! <= high) {
+          throw new Error('Node creation is stale or its deployment identity is fenced by Stop');
+        }
       }
-    }
-    return operation(remaining, current);
-  }));
+      const latestTable = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='legacy_latest_creation'").get();
+      const latest = latestTable ? database.prepare('SELECT deployment_id FROM legacy_latest_creation WHERE id=1').get() : undefined;
+      if (latest && (!Number.isSafeInteger(latest.deployment_id) || Number(latest.deployment_id) < 1 ||
+        !Number.isSafeInteger(deploymentId) || deploymentId! < Number(latest.deployment_id))) {
+        throw new Error('Node creation is stale or its deployment identity is unconfirmed');
+      }
+    };
+    await write(async () => {
+      check();
+      if (Number.isSafeInteger(deploymentId) && deploymentId! > 0) {
+        database.exec('CREATE TABLE IF NOT EXISTS legacy_latest_creation (id INTEGER PRIMARY KEY CHECK(id=1), deployment_id INTEGER NOT NULL)');
+        database.prepare('INSERT INTO legacy_latest_creation(id,deployment_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET deployment_id=MAX(deployment_id,excluded.deployment_id)').run(deploymentId!);
+      }
+    });
+    return write(async () => { check(); return operation(remaining, current); });
+  });
 }
 
 /** The committed head is never rolled back with a failed or interrupted Docker effect. */

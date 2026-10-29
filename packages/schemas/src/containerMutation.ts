@@ -5,7 +5,7 @@ const positive = z.number().int().positive();
 const name = z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
 const target = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), name, deploymentId: positive }).strict();
 const distinct = (items: ReadonlyArray<{ id: string; name: string }>) => new Set(items.map(item => item.id)).size === items.length && new Set(items.map(item => item.name)).size === items.length;
-export const runtimeFenceRequest = z.object({ requestId, serviceId: positive, revision: positive, timeoutMs: z.number().int().min(1).max(30_000) }).strict();
+export const runtimeFenceRequest = z.object({ requestId, serviceId: positive, revision: positive, timeoutMs: z.number().int().min(1).max(30_000), deploymentWatermark: positive.optional() }).strict();
 export const runtimeFenceReply = runtimeFenceRequest.omit({ timeoutMs: true }).extend({ complete: z.literal(true) }).strict();
 export const containerPrepareRequest = z.object({ requestId, serviceId: positive, deploymentId: positive, revision: positive,
   timeoutMs: z.number().int().min(1).max(300_000), startNames: z.array(name).max(10).refine(names => new Set(names).size === names.length, 'Duplicate serving name').optional(), specs: z.array(z.record(z.string(), z.unknown())).min(1).max(10),

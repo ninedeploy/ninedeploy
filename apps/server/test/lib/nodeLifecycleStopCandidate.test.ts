@@ -28,7 +28,7 @@ it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt'] as c
           const found = containers.find(container => container.name === params.name);
           return reply('ND-CONTAINER ', found ? { id: found.id, name: found.name, managed: 'service', serviceId: String(found.serviceId), deploymentId: String(found.deploymentId) } : null);
         }
-        if (op === 'docker.runtimeFence') return reply('ND-RUNTIME-FENCE ', { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true });
+        if (op === 'docker.runtimeFence') return reply('ND-RUNTIME-FENCE ', { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, deploymentWatermark: params.deploymentWatermark, complete: true });
         if (op === 'docker.runtimeInventory') return reply('ND-RUNTIME-INVENTORY ', { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true,
           items: containers.filter(container => container.serviceId === params.serviceId).map(({ serviceId: _serviceId, ...container }) => container) });
         if (op === 'docker.stopSet' || op === 'docker.retireSet') {

@@ -50,13 +50,13 @@ export async function claimNodeDeploymentAttempt(db: DB, deploymentId: number, s
     if (!fresh || fresh.type !== 'docker' || fresh.orchestrator === 'swarm' || fresh.serverId !== service.serverId) return { claimed: false, reason: 'placement_changed' };
     const pendingStop = await tx.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id),
       eq(nodeLifecycleIntents.action, 'stop'), inArray(nodeLifecycleIntents.phase, ['fencing', 'preparing', 'routing', 'applying'])) });
-    if (pendingStop?.runtimeId !== null && (pendingStop?.snapshot.interruptedDeployments?.length ?? 0) > 0) {
-      return { claimed: false, reason: 'not_claimable' };
-    }
     const [stamp] = await tx.select().from(deploymentRuntimeOwners).where(eq(deploymentRuntimeOwners.deploymentId, deploymentId)).limit(1);
     const current = await readServiceRuntimeOwner(tx, service.id);
     if (stamp && (stamp.serviceId !== service.id || stamp.serverId !== service.serverId || current?.kind !== 'deploy' ||
       current.epoch !== stamp.epoch || current.requestId !== stamp.requestId)) return { claimed: false, reason: 'owner_changed' };
+    if (pendingStop && (pendingStop.runtimeId === null || (pendingStop.snapshot.interruptedDeployments?.length ?? 0) > 0)) {
+      return { claimed: false, reason: 'not_claimable' };
+    }
     const claimed = await tx.update(deployments).set({ status: 'building', startedAt: new Date(), configSnapshot })
       .where(and(eq(deployments.id, deploymentId), eq(deployments.serviceId, service.id), inArray(deployments.status, ['queued', 'building']),
         sql`NOT EXISTS (SELECT 1 FROM deployments AS active WHERE active.service_id = ${service.id} AND active.id <> ${deploymentId} AND active.status IN ('building','deploying'))`))

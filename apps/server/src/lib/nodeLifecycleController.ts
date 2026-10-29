@@ -71,7 +71,8 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     })];
   };
   const fenceRequest = (participant: Participant) => ({ requestId: createHash('sha256').update(intent.requestId + ':fence' + (participant.serverId === intent.serverId ? '' : ':' + participant.serverId)).digest('hex').slice(0,32),
-    serviceId: intent.serviceId, revision: nodeLifecycleWireRevision(intent, 'fence'), timeoutMs: 30_000 });
+    serviceId: intent.serviceId, revision: nodeLifecycleWireRevision(intent, 'fence'), timeoutMs: 30_000,
+    ...(intent.snapshot.creationFenceDeploymentId === undefined ? {} : { deploymentWatermark: intent.snapshot.creationFenceDeploymentId }) });
   const machine = <T extends { requestId: string; serviceId: number; revision: number }>(result: AgentOpResult, prefix: string, parse: (value: unknown) => T, input: { requestId: string; serviceId: number; revision: number }): T => {
     const frames = result.lines.filter(line => line.startsWith(prefix));
     if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 65_536) throw new Error('Node runtime receipt unavailable');
@@ -140,12 +141,19 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     if (intent.snapshot.unselected) {
       if (fence) {
         const request = runtimeFenceRequest.parse(fenceRequest(participant));
-        machine(await call(participant.serverId, 'docker.runtimeFence', request, 35_000), 'ND-RUNTIME-FENCE ', value => runtimeFenceReply.parse(value), request);
+        const reply = machine(await call(participant.serverId, 'docker.runtimeFence', request, 35_000), 'ND-RUNTIME-FENCE ', value => runtimeFenceReply.parse(value), request);
+        if (reply.deploymentWatermark !== request.deploymentWatermark) throw new Error('Node Stop fence watermark is unconfirmed');
       } else {
         const request = containerStopSetRequest.parse({ requestId: intent.requestId, serviceId: intent.serviceId, revision: nodeLifecycleWireRevision(intent, 'effect'), timeoutMs: 30_000, graceSeconds: 5,
           targets: (intent.targets ?? []).filter(target => (target.serverId ?? intent.serverId) === participant.serverId).map(({ serverId: _server, ...target }) => target) });
         const reply = machine(await call(participant.serverId, 'docker.stopSet', request, 35_000), 'ND-STOPPED-SET ', value => containerStopSetReply.parse(value), request);
         if (reply.items.length !== request.targets.length || request.targets.some(target => !reply.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId))) throw new Error('Node Stop generation coverage changed');
+        const watermark = intent.snapshot.creationFenceDeploymentId;
+        if (!Number.isSafeInteger(watermark) || watermark! < 1 || request.targets.some(target => target.deploymentId > watermark!)) throw new Error('Node Stop creation watermark is unconfirmed');
+        const handoff = { requestId: request.requestId, serviceId: request.serviceId, revision: request.revision, deploymentWatermark: watermark!, timeoutMs: 30_000 };
+        const confirmation = machine(await call(participant.serverId, 'docker.runtimeLegacyHandoff', handoff, 35_000), 'ND-RUNTIME-LEGACY ',
+          value => z.object({ requestId: z.string(), serviceId: z.number(), revision: z.number(), deploymentWatermark: z.number(), complete: z.literal(true) }).strict().parse(value), handoff);
+        if (confirmation.deploymentWatermark !== watermark) throw new Error('Node Stop creation watermark changed');
       }
       return;
     }

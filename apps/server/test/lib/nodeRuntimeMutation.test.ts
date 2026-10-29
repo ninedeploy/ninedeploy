@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createNodeRuntimeMutation } from '../../src/lib/nodeRuntimeMutation.js';
+import { handoffStoppedNodeToLegacy } from '../../src/lib/nodeLegacyHandoff.js';
 import { createNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
 import { runOp } from '../../src/agent.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
@@ -44,6 +45,21 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
 });
 describe('persistent runtime request admission', () => {
+  it('hands off a Stop only after every captured generation is stopped and covered by its watermark', async () => {
+    const prepared = await runtime().prepare(prepare());
+    const input = { ...fence(), graceSeconds: 5, targets: prepared.items.map(({ running: _running, ...target }) => target) };
+    const receipt = await runtime().stop(input);
+    const handoff = { requestId: input.requestId, serviceId: input.serviceId, revision: input.revision, timeoutMs: 5000, deploymentWatermark: 10 };
+    await expect(handoffStoppedNodeToLegacy(join(root, '.agent-work', '.lifecycle'), { ...handoff, deploymentWatermark: 9 })).rejects.toThrow(/watermark/);
+    await handoffStoppedNodeToLegacy(join(root, '.agent-work', '.lifecycle'), handoff);
+    io.spawn.mockClear();
+    expect(await runtime().stop(input)).toEqual(receipt);
+    expect(io.spawn).not.toHaveBeenCalled();
+    await expect(runOp('docker.runSpec', spec(10), () => {}, { sealed: true })).rejects.toThrow(/stale|fenced/);
+    expect(await runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).toBe(0);
+    expect(rows.find(row => row.name === 'web-10')?.running).toBe(false);
+    expect(rows.find(row => row.name === 'web-11')?.running).toBe(true);
+  });
   it('rejects a delayed lower-revision preparation after Stop fencing and permits a genuinely newer deployment', async () => {
     const delayed = prepare(); await runtime().fence(fence());
     await expect(runtime().prepare(delayed)).rejects.toThrow(/stale/); expect(effects()).toEqual([]);
@@ -198,7 +214,7 @@ describe('persistent runtime request admission', () => {
   it('refuses an invalid mode version without replacing the prior owner', async () => {
     await runtime().fence(fence()); const db = new DatabaseSync(journalFile());
     try { db.exec('UPDATE runtime_protocol SET version=2'); } finally { db.close(); }
-    await expect(runtime().fence(fence(12))).rejects.toThrow(/Unsupported/); expect(effects()).toEqual([]);
+    await expect(runtime().fence(fence(12))).rejects.toThrow(/Unsupported|unconfirmed/); expect(effects()).toEqual([]);
   });
   it.each(['ninedeploy.mutation', 'ninedeploy.spec'])('rejects a forged private identity label %s before journal or Docker access', async label => {
     await expect(runtime().prepare(prepare(5, 10, [{ ...spec(), labels: { [label]: 'forged' } }]))).rejects.toThrow(/Invalid label/);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, deploymentRuntimeOwners, deployments, eq, servers, serviceRuntimeOwners, services, type Service } from '@ninedeploy/db';
+import { createDb, runMigrations, deploymentRuntimeOwners, deployments, eq, nodeLifecycleIntents, servers, serviceRuntimeOwners, services, type Service } from '@ninedeploy/db';
 import { claimNodeDeploymentAttempt, createNodeDeploymentAuthority, NodeDeploymentOwnershipLost } from '../../src/lib/nodeDeploymentOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { readServiceRuntimeOwner, MAX_RUNTIME_EPOCH } from '../../src/lib/serviceRuntimeOwner.js';
@@ -15,6 +15,15 @@ beforeEach(async () => {
 afterEach(() => c.client!.close());
 
 describe('durable node deployment admission', () => {
+  it('holds a successor while an initial Stop is still settling', async () => {
+    const first = await claimNodeDeploymentAttempt(c.db, 9, await service(), '{}');
+    expect(first.claimed).toBe(true);
+    await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    await c.db.insert(deployments).values({ id: 11, serviceId: 1, status: 'queued' });
+    const stoppedOwner = await readServiceRuntimeOwner(c.db, 1);
+    expect(await claimNodeDeploymentAttempt(c.db, 11, await service(), '{}')).toEqual({ claimed: false, reason: 'not_claimable' });
+    expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(stoppedOwner);
+  });
   it('does not grant a later deployment authority over an unfinished Stop candidate handoff', async () => {
     await c.db.update(services).set({ runtimeId: 'web-8', status: 'running' }).where(eq(services.id, 1));
     const first = await claimNodeDeploymentAttempt(c.db, 9, await service(), '{}');
@@ -60,6 +69,8 @@ describe('durable node deployment admission', () => {
     expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(stopOwner); expect((await service()).status).toBe('stopped');
     expect(stopped.action).toBe('stop');
     await c.db.insert(deployments).values({ id: 11, serviceId: 1, status: 'queued' });
+    expect(await claimNodeDeploymentAttempt(c.db, 11, await service(), '{}')).toEqual({ claimed: false, reason: 'not_claimable' });
+    await c.db.update(nodeLifecycleIntents).set({ phase: 'completed', completedAt: new Date() }).where(eq(nodeLifecycleIntents.id, stopped.id));
     const newer = await claimNodeDeploymentAttempt(c.db, 11, await service(), '{}');
     expect(newer.claimed).toBe(true); if (!newer.claimed) throw Error('Missing newer owner');
     expect(newer.owner.epoch).toBeGreaterThan(stopOwner!.epoch);

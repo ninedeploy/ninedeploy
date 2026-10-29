@@ -5,9 +5,10 @@ import { containerInventoryRequest, containerInventoryReply, containerStopSetReq
   runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply, type ContainerNetworkSetReply, type ContainerPrepareReply, type ContainerRetireSetReply, type RuntimeFenceReply } from '@ninedeploy/schemas';
 import { parseRunSpec, runSpecArgv, type RunSpec } from '../agentOps/runSpec.js';
 import { assertFileMountsWritten } from '../agentOps/fileMounts.js';
-import { withNodeServiceJournal, type NodeServiceJournal } from './nodeLifecycle.js';
+import { assertLegacyNodeMutationAllowed, withNodeServiceJournal, type NodeServiceJournal } from './nodeLifecycle.js';
 import { spawnValidated } from './spawnValidated.js';
 import { confirmsMissingContainer } from './dockerContainerAbsence.js';
+import { replayHandedOffStop } from './nodeLegacyHandoff.js';
 
 const MODE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_protocol (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)';
 const PREPARE_SHAPE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL)';
@@ -26,14 +27,24 @@ function head(journal: NodeServiceJournal) {
   if (row && (!Number.isSafeInteger(row.revision) || Number(row.revision) < 1 || typeof row.request_hash !== 'string' || !/^[a-f0-9]{64}$/.test(row.request_hash))) throw new Error('Invalid runtime journal; retained for review');
   return row;
 }
-async function claim(journal: NodeServiceJournal, input: Header, intent: object, legacyFence = false, prepareShape?: string) {
+async function claim(journal: NodeServiceJournal, input: Header, intent: object, legacyFence = false, prepareShape?: string, deploymentWatermark?: number) {
   const payload = JSON.stringify(intent), hash = digest(payload);
   let compatible = false;
   await journal.write(async () => {
     journal.database.exec(MODE_SCHEMA);
     const mode = journal.database.prepare('SELECT version FROM runtime_protocol WHERE id=1').get();
-    if (mode && mode.version !== 1) throw new Error('Unsupported runtime journal protocol; retained for review');
     const previous = head(journal);
+    if (mode?.version === 2 && legacyFence) {
+      assertLegacyNodeMutationAllowed(journal.database);
+      const fence = journal.database.prepare('SELECT deployment_id FROM legacy_create_fence WHERE id=1').get();
+      const latestTable = journal.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='legacy_latest_creation'").get();
+      const latest = latestTable ? journal.database.prepare('SELECT deployment_id FROM legacy_latest_creation WHERE id=1').get() : undefined;
+      if (!Number.isSafeInteger(deploymentWatermark) || deploymentWatermark! < 1 || !fence ||
+        !Number.isSafeInteger(fence.deployment_id) || deploymentWatermark! < Number(fence.deployment_id) ||
+        latest && (!Number.isSafeInteger(latest.deployment_id) || deploymentWatermark! < Number(latest.deployment_id)) ||
+        !previous || Number(previous.revision) >= input.revision) throw new Error('Runtime fence watermark or revision is stale');
+      journal.database.prepare('UPDATE runtime_protocol SET version=1 WHERE id=1 AND version=2').run();
+    } else if (mode && mode.version !== 1) throw new Error('Unsupported runtime journal protocol; retained for review');
     if (previous && Number(previous.revision) > input.revision) throw new Error('Runtime request is stale; superseded by a newer command');
     if (previous && Number(previous.revision) === input.revision && previous.request_hash !== hash) {
       const parsed = legacyFence ? containerLifecycleRequest.safeParse({ ...JSON.parse(String(previous.intent)), timeoutMs: 1 }) : null;
@@ -112,7 +123,7 @@ export function createNodeRuntimeMutation(root: string) {
       const input = runtimeFenceRequest.parse(params);
       return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, async journal => {
         const { timeoutMs: _timeout, ...identity } = input;
-        const admitted = await claim(journal, input, { kind: 'fence', ...identity }, true);
+        const admitted = await claim(journal, input, { kind: 'fence', ...identity }, true, undefined, input.deploymentWatermark);
         if (admitted.compatible) return runtimeFenceReply.parse({ ...identity, complete: true });
         return effect(journal, input, admitted.hash, value => runtimeFenceReply.parse(value), async () => ({ ...identity, complete: true }));
       });
@@ -151,6 +162,8 @@ export function createNodeRuntimeMutation(root: string) {
     },
     async stop(params: unknown, onLine: (line: string) => void = () => {}): Promise<ContainerStopSetReply> {
       const input = containerStopSetRequest.parse(params), { timeoutMs: _timeout, ...intent } = input;
+      const replay = await replayHandedOffStop(directory, input);
+      if (replay) return replay;
       return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, async journal => {
         const admitted = await claim(journal, input, { kind: 'stop', ...intent });
         return effect(journal, input, admitted.hash, value => containerStopSetReply.parse(value), async () => {
