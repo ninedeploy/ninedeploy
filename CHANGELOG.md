@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.8] - 2026-10-29
+
+This release includes the previously unpublished 0.18.6 and 0.18.7 changes described below, along with subsequent verification and fixes. The v0.18.7 Git tag remains unchanged.
+
+### Fixed
+
+- Clear stale GitOps apply results after a new check or configuration update, and allow removal of a GitOps configuration.
+- Refuse malformed Dokploy service definitions instead of treating them as safe to import.
+- Strengthen release verification with additional tests for node tunnels, runners, image scans, Compose volumes, service moves and panel workflows.
+
 ## [0.18.7] - 2026-10-29
 
 ### Added

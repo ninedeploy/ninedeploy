@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.18.8",
+    "date": "2026-10-29",
+    "title": "Deployment, fleet and security improvements",
+    "changes": [
+      "Add image scanning, a pending-changes tray, instance GitOps, forward authentication, SAML, workspace two-factor policies and a service error inbox.",
+      "Add encrypted service and database tunnels to panel-host and node containers, and move Docker services and Compose stacks with their data.",
+      "Add node support for image scanning, opt-in GitHub Actions runners and backups for ClickHouse, Meilisearch and RabbitMQ. RabbitMQ backups contain definitions, not queued messages.",
+      "Add deploy freezes, registry push webhooks, restart-loop limits, inline Dockerfiles and Compose build skipping.",
+      "Add self-hosted GitLab sources, Hetzner Cloud node creation, OS update controls, additional DNS providers, secret managers and notification channels.",
+      "Improve node deployment ownership and recovery, and clarify the limits of legacy node readiness checks.",
+      "Add Turkish panel translations and reviewed Dokploy blueprints. Node capabilities require an agent with the corresponding feature support."
+    ]
+  },
+  {
     "version": "0.18.7",
     "date": "2026-10-29",
     "title": "Competitor gap roadmap: nodes catch up, scanning, tunnels and GitOps",
