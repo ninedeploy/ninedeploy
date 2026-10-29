@@ -95,3 +95,25 @@ describe('scanning a node service', () => {
     expect(onNewCritical).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Swarm services', () => {
+  it('scan the image the service spec runs on the panel host, and record why when it is not there', async () => {
+    await db.insert(services).values({ id: 9, name: 'swarmy', slug: 'swarmy', type: 'docker', branch: 'main', ownerUserId: 2, runtimeId: 'nd-swarm-swarmy', orchestrator: 'swarm' } as never);
+    await lib.setImageScanPolicy(db, { enabled: true, rescanHours: 24 });
+    const trivy = vi.fn(async () => JSON.stringify({ SchemaVersion: 2, Results: [] }));
+    let swarmImage: string | null = null;
+    const deps = {
+      trivy,
+      nodeScan: async () => JSON.stringify({ imageId: IMG, unchanged: true }),
+      imageIdOf: async () => Promise.reject(new Error('none')),
+      stackImagesOf: async () => [],
+      swarmImageIdOf: async () => (swarmImage ? swarmImage : Promise.reject(new Error('The image x of this Swarm service is not on the panel host, so it cannot be scanned here'))),
+    };
+    await lib.rescanRunningImages(db, deps);
+    expect(await lib.getImageScanResult(db, 9)).toMatchObject({ status: 'error', error: expect.stringContaining('not on the panel host') });
+    swarmImage = IMG2;
+    await lib.rescanRunningImages(db, deps);
+    expect(await lib.getImageScanResult(db, 9)).toMatchObject({ status: 'ok', imageId: IMG2 });
+    expect(trivy).toHaveBeenCalledWith(IMG2);
+  });
+});

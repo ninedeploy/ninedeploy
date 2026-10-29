@@ -264,6 +264,23 @@ export async function scanServiceImage(
   return result;
 }
 
+/**
+ * G5.1: a Swarm service is scanned on the panel host (the manager): the image
+ * its spec runs (`repo:tag@sha256:…`), when that image is present here.
+ */
+export function scannableSwarm(service: { type: string }, onSwarm: boolean): boolean {
+  return service.type === 'docker' && onSwarm;
+}
+
+/** The local image id of the image a Swarm service's spec runs, or an error saying why there is none. */
+export async function swarmServiceImageId(runtimeId: string): Promise<string> {
+  const ref = (await capture('docker', ['service', 'inspect', '--format', '{{.Spec.TaskTemplate.ContainerSpec.Image}}', runtimeId], { timeoutMs: 30_000 })).trim();
+  if (!ref) throw new Error(`Swarm service ${runtimeId} names no image`);
+  const id = (await capture('docker', ['image', 'inspect', '--format', '{{.Id}}', ref], { timeoutMs: 30_000 }).catch(() => '')).trim();
+  if (!/^sha256:[a-f0-9]{64}$/.test(id)) throw new Error(`The image ${ref} of this Swarm service is not on the panel host, so it cannot be scanned here`);
+  return id;
+}
+
 /** G5.1: docker services on a node (not Swarm) are scanned by the node's agent, on schedule and on request. */
 export function scannableOnNode(service: { type: string; serverId: number | null }, onSwarm: boolean): boolean {
   return service.type === 'docker' && service.serverId != null && !onSwarm;
@@ -477,6 +494,7 @@ export async function scanBeforeTraffic(
 
 export interface RescanDeps extends ScanDeps {
   imageIdOf?: typeof containerImageId;
+  swarmImageIdOf?: typeof swarmServiceImageId;
   stackImagesOf?: typeof composeStackImages;
   /** Called when a rescan finds fixable critical findings that the previous scan did not have. */
   onNewCritical?: (service: { id: number; name: string }, result: ImageScanResult) => void;
@@ -534,6 +552,29 @@ export async function rescanRunningImages(db: DB, deps: RescanDeps = {}): Promis
       if (!result) continue;
       scanned++;
       const before = last && last.imageId === result.imageId && last.status === 'ok' ? last.fixable.critical : 0;
+      if (result.status === 'ok' && result.fixable.critical > before) deps.onNewCritical?.(svc, result);
+      continue;
+    }
+    if (svc.runtimeId && scannableSwarm(svc, isSwarmService(svc))) {
+      const last = await getImageScanResult(db, svc.id);
+      let imageId: string;
+      try {
+        imageId = await (deps.swarmImageIdOf ?? swarmServiceImageId)(svc.runtimeId);
+      } catch (err) {
+        // Recorded once per stale period, so the page says why there is no scan.
+        if (!last || Date.parse(last.scannedAt) <= staleBefore) {
+          await setSettingJson(db, resultKey(svc.id), {
+            serviceId: svc.id, imageId: last?.imageId ?? 'swarm:unknown', trigger: 'schedule', deploymentId: null, blocked: false,
+            scannedAt: new Date().toISOString(), status: 'error', error: (err instanceof Error ? err.message : String(err)).slice(0, 1000),
+            os: null, counts: zero(), fixable: zero(), findings: [], findingsTruncated: false,
+          } satisfies ImageScanResult);
+        }
+        continue;
+      }
+      if (last && last.status === 'ok' && !last.error && last.imageId === imageId && Date.parse(last.scannedAt) > staleBefore) continue;
+      const result = await scanServiceImage(db, svc.id, imageId, 'schedule', { deps });
+      scanned++;
+      const before = last && last.imageId === imageId && last.status === 'ok' ? last.fixable.critical : 0;
       if (result.status === 'ok' && result.fixable.critical > before) deps.onNewCritical?.(svc, result);
       continue;
     }
