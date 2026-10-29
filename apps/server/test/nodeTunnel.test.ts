@@ -32,7 +32,7 @@ function socketPair() {
   const panelHandlers: Record<string, Array<(ev?: unknown) => void>> = {};
   const state = { open: true, agentClose: null as null | { code?: number; reason?: string } };
   const fire = (side: 'agent' | 'panel', type: string, ...args: unknown[]) =>
-    queueMicrotask(() => (side === 'agent' ? agentHandlers[type] : panelHandlers[type])?.forEach((cb) => (cb as (...a: unknown[]) => void)(...args)));
+    queueMicrotask(() => (side === 'agent' ? agentHandlers[type] : panelHandlers[type])?.forEach((cb) => { (cb as (...a: unknown[]) => void)(...args); }));
   const shut = (code?: number, reason?: string) => {
     if (!state.open) return;
     state.open = false;
@@ -47,7 +47,7 @@ function socketPair() {
     bufferedAmount: 0,
     send: (data: Buffer) => state.open && fire('panel', 'message', { data: new Uint8Array(data) }),
     close: shut,
-    on: (type: string, cb: (...a: unknown[]) => void) => void (agentHandlers[type] ??= []).push(cb),
+    on: (type: string, cb: (...a: unknown[]) => void) => { const handlers = agentHandlers[type] ?? []; agentHandlers[type] = handlers; handlers.push(cb); },
   };
   const panel = {
     get readyState() {
@@ -57,7 +57,7 @@ function socketPair() {
     bufferedAmount: 0,
     send: (data: Uint8Array) => state.open && fire('agent', 'message', Buffer.from(data), true),
     close: shut,
-    addEventListener: (type: string, cb: (ev?: unknown) => void) => void (panelHandlers[type] ??= []).push(cb),
+    addEventListener: (type: string, cb: (ev?: unknown) => void) => { const handlers = panelHandlers[type] ?? []; panelHandlers[type] = handlers; handlers.push(cb); },
   };
   return { agent, panel, state };
 }

@@ -85,7 +85,8 @@ export class NodeTunnelStream extends Duplex {
       if (!bytes) throw new Error('not binary');
       frame = this.rx.open(bytes);
     } catch {
-      return this.end_(new Error('the node tunnel sent a bad frame'));
+      this.end_(new Error('the node tunnel sent a bad frame'));
+      return;
     }
     switch (frame.type) {
       case TUNNEL_FRAME.data:
@@ -102,7 +103,8 @@ export class NodeTunnelStream extends Duplex {
         this.flushWrite();
         return;
       default:
-        return this.end_(null);
+        this.end_(null);
+        return;
     }
   }
 
@@ -123,9 +125,15 @@ export class NodeTunnelStream extends Duplex {
   }
 
   override _write(chunk: Buffer, _enc: BufferEncoding, cb: (err?: Error | null) => void): void {
-    if (this.finished) return cb(new Error('the node tunnel is closed'));
+    if (this.finished) {
+      cb(new Error('the node tunnel is closed'));
+      return;
+    }
     for (const frame of this.tx.sealData(chunk)) this.sendFrame(frame);
-    if (!this.agentPaused && (this.socket.bufferedAmount ?? 0) <= WRITE_HIGH_WATER) return cb();
+    if (!this.agentPaused && (this.socket.bufferedAmount ?? 0) <= WRITE_HIGH_WATER) {
+      cb();
+      return;
+    }
     // Hold the callback (and with it the writer) until the agent can take more.
     this.pendingWrite = cb;
     this.pressure ??= setInterval(() => this.flushWrite(), 50);
