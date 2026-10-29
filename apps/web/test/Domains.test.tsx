@@ -148,6 +148,28 @@ describe('Domains', () => {
     await waitFor(() => expect(api.domains.remove).toHaveBeenCalledWith(5, 1));
   });
 
+  it('reports a refused domain removal while retaining the routing row', async () => {
+    mockOf(api.domains.all).mockResolvedValue(domains as never);
+    mockOf(api.domains.remove).mockRejectedValue(new Error('Domain is protected') as never);
+    renderWithProviders(<Domains />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove app.example.com' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Remove$/ }));
+    expect(await screen.findByText('Domain is protected')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'app.example.com' })).toHaveAttribute('href', 'https://app.example.com');
+  });
+
+  it('offers a retry when loading the selected domain fails', async () => {
+    mockOf(api.domains.all).mockResolvedValue(domains as never);
+    mockOf(api.domains.list).mockRejectedValue(new Error('Domain lookup failed') as never);
+    renderWithProviders(<Domains />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit app.example.com' }));
+    expect(await screen.findByText("Couldn't load this domain")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(api.domains.list).toHaveBeenCalledTimes(2));
+    expect(api.domains.create).not.toHaveBeenCalled();
+    expect(api.domains.remove).not.toHaveBeenCalled();
+  });
+
   it('changes a hostname by adding the new one with the same settings, then removing the old', async () => {
     mockOf(api.domains.all).mockResolvedValue(domains as never);
     mockOf(api.domains.list).mockResolvedValue([
