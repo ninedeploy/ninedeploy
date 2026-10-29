@@ -5,6 +5,7 @@
     "title": "Deployment, fleet and security improvements",
     "changes": [
       "Bound Docker readiness retry waits to the remaining deploy deadline, including when a container has no address yet.",
+      "Fix reading empty encrypted backups and remove abandoned node upload files when a stream closes during file creation.",
       "Include the previously unpublished 0.18.6–0.18.8 changes: image scanning, pending changes, instance GitOps, forward authentication, SAML and workspace two-factor policies.",
       "Add encrypted service and database tunnels to panel-host and node containers, and move Docker services and Compose stacks with their data.",
       "Add node image scanning, opt-in GitHub Actions runners, and backups for ClickHouse, Meilisearch and RabbitMQ. RabbitMQ backups contain definitions, not queued messages.",

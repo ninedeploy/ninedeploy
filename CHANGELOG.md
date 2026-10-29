@@ -16,6 +16,8 @@ Includes the previously unpublished 0.18.6–0.18.8 changes below. Existing Git 
 ### Fixed
 
 - Bound Docker readiness retry waits to the remaining deadline, including when a container has not yet acquired an address.
+- Allow empty encrypted backups to be read while still checking their authentication tag.
+- Remove a node upload's temporary file when its stream closes before the file finishes opening.
 
 ## [0.18.8] - 2026-10-29
 

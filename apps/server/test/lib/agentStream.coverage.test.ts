@@ -326,10 +326,17 @@ describe('agent → panel: what arrives is counted, hashed and verified', () => 
     o.toAgent(T.data, big);
     o.toAgent(T.data, big); // still paused: no second pause frame
     expect(o.sentTypes().map((f) => f.type)).toEqual([T.resume, T.pause]);
-    const first = o.handle.readable.read() as Buffer | null;
-    expect(first).not.toBeNull();
-    await new Promise((r) => setImmediate(r));
-    expect(o.sentTypes().map((f) => f.type)).toEqual([T.resume, T.pause, T.resume]);
+    let drained = 0;
+    // read() can return one queued chunk or combine several; drain until
+    // the buffer falls below its high-water mark before requesting more.
+    while (o.handle.readable.readableLength > 0) {
+      const chunk = o.handle.readable.read() as Buffer | null;
+      if (!chunk) break;
+      drained += chunk.length;
+    }
+    expect(drained).toBe(big.length * 2);
+    o.handle.readable.read(0);
+    await vi.waitFor(() => expect(o.sentTypes().map((f) => f.type)).toEqual([T.resume, T.pause, T.resume]));
     o.handle.abort();
   });
 
