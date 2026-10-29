@@ -149,8 +149,10 @@ async function fileHead(file: string, bytes = 32): Promise<string> {
 export async function createBackupReadStream(file: string): Promise<Readable> {
   const layout = await streamBackupLayout(file);
   if (layout) {
-    return createReadStream(file, { start: layout.dataStart, end: layout.dataEnd })
-      .pipe(createBackupDecipher(layout.header, layout.authTag));
+    // An empty dump is a header and a tag with no data: createReadStream refuses end < start,
+    // so feed the decipher nothing; its final() still checks the tag.
+    const data = layout.dataEnd < layout.dataStart ? Readable.from([]) : createReadStream(file, { start: layout.dataStart, end: layout.dataEnd });
+    return data.pipe(createBackupDecipher(layout.header, layout.authTag));
   }
   const head = await fileHead(file);
   if (ENVELOPE_RE.test(head)) return Readable.from(readBackupBytes(file));
