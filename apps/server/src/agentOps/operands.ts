@@ -45,6 +45,21 @@ export const RE_MANAGED_VOLUME = /^nd-(?:svc|db)-[a-z0-9][a-z0-9_.-]*$/;
 export const isManagedVolume = (value: string): boolean => value.length <= 128 && RE_MANAGED_VOLUME.test(value);
 
 /**
+ * G3.1: a compose stack's named volume, `ndcmp-<slug>_<key>` (a slug never
+ * contains `_`, so the first `_` ends the project). Only the volume transfer
+ * stream kinds and `volume.compose` take one, and only after Docker confirms
+ * compose created it for that project.
+ */
+export const RE_COMPOSE_PROJECT = /^ndcmp-[a-z0-9][a-z0-9-]*$/;
+export const RE_COMPOSE_VOLUME = /^ndcmp-[a-z0-9][a-z0-9-]*_[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+export const isComposeVolume = (value: string): boolean => value.length <= 128 && RE_COMPOSE_VOLUME.test(value);
+/** `ndcmp-shop_data` → `{ project: 'ndcmp-shop', key: 'data' }`. */
+export function composeVolumeParts(name: string): { project: string; key: string } {
+  const i = name.indexOf('_');
+  return { project: name.slice(0, i), key: name.slice(i + 1) };
+}
+
+/**
  * Stream transfer files (agentOps/stream.ts) live here, 0600. `.transfer`
  * can never be a service workspace: RE_NAME refuses a leading dot.
  */

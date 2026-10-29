@@ -394,6 +394,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'db.dump.extra': '0.18.7',
   // G5.1 image scans of node services
   'image.scan': '0.18.7',
+  // G3.1 compose stacks moved with their volumes
+  'volume.compose': '0.18.7',
 };
 
 /**
@@ -418,6 +420,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'db.manage': 'NINEDEPLOY_AGENT_DATABASES',
   'db.dump.extra': 'NINEDEPLOY_AGENT_DATABASES',
   'image.scan': 'NINEDEPLOY_AGENT_IMAGE_SCAN',
+  'volume.compose': 'NINEDEPLOY_AGENT_VOLUME_COMPOSE',
   'docker.runtimeOptions': 'NINEDEPLOY_AGENT_RUNTIME_OPTIONS',
   'host.packages': 'NINEDEPLOY_AGENT_HOST_PACKAGES',
   // ── 0.16 T7 swarm ── opt-in (security review M2): unset means off.

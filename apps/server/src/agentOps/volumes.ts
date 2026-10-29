@@ -4,7 +4,7 @@ import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { spawnValidated, spawnValidatedStream } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
-import { isManagedVolume, type Params, str, validated } from './operands.js';
+import { composeVolumeParts, isComposeVolume, isManagedVolume, type Params, RE_COMPOSE_PROJECT, str, switchedOff, validated } from './operands.js';
 import type { PreparedStream, StreamKindHandler } from './stream.js';
 
 /**
@@ -89,11 +89,35 @@ async function containersUsing(volume: string): Promise<string[]> {
   return ids;
 }
 
+/** The `com.docker.compose.project` label of a volume, or null when it does not exist. */
+async function composeProjectLabel(name: string): Promise<string | null> {
+  const out: string[] = [];
+  const code = await spawnValidated('docker', ['volume', 'inspect', '--format', '{{index .Labels "com.docker.compose.project"}}', name], (l) => out.push(l));
+  return code === 0 ? (out.find((l) => l.trim() !== '') ?? '').trim() : null;
+}
+
+/** The node owner's switch for compose volume transfers (`volume.compose`). */
+const COMPOSE_VOLUME_SWITCH = 'NINEDEPLOY_AGENT_VOLUME_COMPOSE';
+
+/**
+ * A volume the transfer kinds may read or replace: a managed name, or (G3.1)
+ * a compose stack's volume that compose created for the project its name
+ * starts with. A volume someone made by hand under such a name is refused.
+ */
+async function transferVolume(value: string | undefined): Promise<string> {
+  if (value === undefined || !isComposeVolume(value)) return managedVolume(value);
+  if (switchedOff(process.env[COMPOSE_VOLUME_SWITCH])) throw new Error(`Compose volume transfers are switched off on this node (${COMPOSE_VOLUME_SWITCH})`);
+  const label = await composeProjectLabel(value);
+  if (label === null) throw new Error(`Volume ${value} does not exist on this node`);
+  if (label !== composeVolumeParts(value).project) throw new Error(`Volume ${value} was not created by compose for ${composeVolumeParts(value).project}`);
+  return value;
+}
+
 /** `volume.export {volume}` (agent→panel): `tar -czf - -C /v .` of the volume, read-only, no network. */
 export const volumeExportKind: StreamKindHandler = {
   keys: ['volume'],
   async prepare(params) {
-    const volume = managedVolume(str(params, 'volume'));
+    const volume = await transferVolume(str(params, 'volume'));
     // `docker run -v` would CREATE a missing volume: check first.
     if (!(await volumeExists(volume))) throw new Error(`Volume ${volume} does not exist on this node`);
     return {
@@ -125,7 +149,7 @@ export const volumeExportKind: StreamKindHandler = {
 export const volumeImportKind: StreamKindHandler = {
   keys: ['volume'],
   async prepare(params) {
-    const volume = managedVolume(str(params, 'volume'));
+    const volume = await transferVolume(str(params, 'volume'));
     if (!(await volumeExists(volume))) throw new Error(`Volume ${volume} does not exist on this node (create it first)`);
     const refuseInUse = async () => {
       if ((await containersUsing(volume)).length > 0) throw new Error(`Volume ${volume} is in use by a running container; stop it before restoring`);
@@ -206,3 +230,45 @@ export const nodeVolumeOps: AgentOpModule = {
   },
 };
 // ── end 0.16 T5 ──
+
+// ── G3.1 compose stack volumes ───────────────────────────────────────────────
+// Moving a compose stack with its data copies every named volume compose made
+// for it (`ndcmp-<slug>_<key>`). Listing reads Docker's own project label;
+// creating stamps the same labels compose would, so the stack's `up` on this
+// node adopts the restored volume instead of warning about a foreign one.
+
+/** Separator of a `docker.composeVolumes` line: `<name>\t<key>`. */
+export const COMPOSE_VOLUME_FORMAT = '{{.Name}}\t{{.Label "com.docker.compose.volume"}}';
+
+/** `docker.composeVolumes {project}`: the volumes compose created for `ndcmp-<slug>`. */
+async function composeVolumesOp(params: Params, onLine: (line: string) => void): Promise<number> {
+  const project = validated(str(params, 'project'), RE_COMPOSE_PROJECT, 'compose project');
+  return spawnValidated('docker', ['volume', 'ls', '--filter', `label=com.docker.compose.project=${project}`, '--format', COMPOSE_VOLUME_FORMAT], onLine);
+}
+
+/**
+ * `docker.composeVolumeCreate {name}`: create `ndcmp-<slug>_<key>` with the
+ * project and volume labels compose gives it. An existing volume compose made
+ * for the same project is kept as it is (the restore replaces its contents);
+ * any other volume under that name is refused.
+ */
+async function composeVolumeCreateOp(params: Params, onLine: (line: string) => void): Promise<number> {
+  const name = validated(str(params, 'name'), isComposeVolume, 'compose volume name (ndcmp-<slug>_<key>)');
+  const { project, key } = composeVolumeParts(name);
+  return withVolumeCreate(name, async () => {
+    const label = await composeProjectLabel(name);
+    if (label === project) return 0;
+    if (label !== null) throw new Error(`Volume ${name} exists and was not created by compose for ${project}`);
+    return spawnValidated('docker', ['volume', 'create', '--label', `com.docker.compose.project=${project}`, '--label', `com.docker.compose.volume=${key}`, name], onLine);
+  });
+}
+
+export const composeVolumeOps: AgentOpModule = {
+  name: 'agentOps/volumes.ts (compose volumes)',
+  caps: ['volume.compose'],
+  ops: {
+    'docker.composeVolumes': { cap: 'volume.compose', sealedOnly: true, run: (p, onLine) => composeVolumesOp(p, onLine) },
+    'docker.composeVolumeCreate': { cap: 'volume.compose', sealedOnly: true, run: (p, onLine) => composeVolumeCreateOp(p, onLine) },
+  },
+};
+// ── end G3.1 ──

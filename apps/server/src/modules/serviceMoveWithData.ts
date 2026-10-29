@@ -13,6 +13,7 @@ import { enqueueUserDeploy } from '../lib/deployQueue.js';
 import { HttpError, badRequest, parseId } from '../lib/errors.js';
 import { backupNodeVolume, createNodeVolume, nodeVolumeExists, restoreNodeVolume } from '../lib/nodeVolumes.js';
 import { loadServiceForUser } from '../lib/resourceAccess.js';
+import { composeVolumes, createComposeVolume, type ComposeVolume } from '../lib/composeVolumes.js';
 import { primaryServiceVolumeName } from '../lib/retainedSlugVolume.js';
 import { getSettingJson, setSettingJson } from '../lib/settings.js';
 import type { AuthUser } from '../plugins/auth.js';
@@ -30,6 +31,13 @@ import type { AuthUser } from '../plugins/auth.js';
  *     created on the target and restored there; node transfers use the
  *     sealed stream channel, which checks bytes and sha256 end to end.
  *  4. The service is deployed on the target.
+ *
+ * A compose stack (not Swarm) moves every named volume compose made for it,
+ * `ndcmp-<slug>_<key>`, one after the other; the target gets them with
+ * compose's own labels so the stack's `up` there adopts them. A stack with a
+ * fixed volume `name:` is refused (that volume would be left behind);
+ * external volumes and bind mounts are never moved. Nodes need the agent's
+ * `volume.compose` (0.18.7) on both ends.
  *
  * The source volume is kept until the operator removes it (Volumes page).
  * A failed copy leaves the service on the target, undeployed, with the
@@ -50,6 +58,8 @@ export interface MoveDeps {
   restoreNode: typeof restoreNodeVolume;
   nodeExists: typeof nodeVolumeExists;
   createNode: typeof createNodeVolume;
+  composeVolumes: (db: DB, host: number | null, slug: string) => Promise<ComposeVolume[]>;
+  createCompose: (db: DB, host: number | null, name: string) => Promise<void>;
 }
 
 export const defaultMoveDeps: MoveDeps = {
@@ -63,19 +73,36 @@ export const defaultMoveDeps: MoveDeps = {
   restoreNode: restoreNodeVolume,
   nodeExists: nodeVolumeExists,
   createNode: createNodeVolume,
+  composeVolumes,
+  createCompose: createComposeVolume,
 };
 
 async function setState(db: DB, id: number, state: ServiceMoveView): Promise<void> {
   await setSettingJson(db, key(id), state);
 }
 
-/** Copy one volume from `from` to `to` (null = the panel host). */
-export async function copyVolume(db: DB, name: string, from: number | null, to: number | null, log: (line: string) => void, deps: MoveDeps = defaultMoveDeps): Promise<void> {
+/**
+ * Copy one volume from `from` to `to` (null = the panel host). `compose`
+ * creates the target volume with compose's labels instead of a plain one.
+ */
+export async function copyVolume(
+  db: DB,
+  name: string,
+  from: number | null,
+  to: number | null,
+  log: (line: string) => void,
+  deps: MoveDeps = defaultMoveDeps,
+  compose = false,
+): Promise<void> {
   const file = path.join(config.paths.backupsDir, `move-${name}-${randomUUID()}.tar.gz`);
   try {
     if (from === null) await deps.backupLocal(name, file, log);
     else await deps.backupNode(db, from, name, file, log);
-    if (to === null) {
+    if (compose) {
+      await deps.createCompose(db, to, name);
+      if (to === null) await deps.restoreLocal(name, file, log);
+      else await deps.restoreNode(db, to, name, file, log);
+    } else if (to === null) {
       if (!(await deps.localExists(name))) await deps.createLocal(name);
       await deps.restoreLocal(name, file, log);
     } else {
@@ -102,8 +129,9 @@ export function serviceMoveRoutes(deps: MoveDeps = defaultMoveDeps): FastifyPlug
       const { serverId: to } = serviceMoveInput.parse(req.body ?? {});
       const from = svc.serverId ?? null;
       if (to === from) throw badRequest('The service already runs there', 'move_same_host');
-      if (svc.type !== 'docker' || svc.orchestrator === 'swarm') throw badRequest('Moving with data is for docker services (not Swarm, compose or PM2)', 'move_unsupported');
-      if (!svc.volumeMount) throw badRequest('This service has no data volume; move it with a plain host change instead', 'move_no_volume');
+      const compose = svc.type === 'compose';
+      if ((svc.type !== 'docker' && !compose) || svc.orchestrator === 'swarm') throw badRequest('Moving with data is for docker services and compose stacks (not Swarm or PM2)', 'move_unsupported');
+      if (!compose && !svc.volumeMount) throw badRequest('This service has no data volume; move it with a plain host change instead', 'move_no_volume');
       if (svc.status !== 'stopped') throw new HttpError(409, 'move_stop_first', 'Stop the service first, so its data does not change while it is copied');
       if (running.has(svc.id)) throw new HttpError(409, 'move_running', 'A move of this service is already running');
       const busy = await app.db.query.deployments.findFirst({
@@ -112,9 +140,21 @@ export function serviceMoveRoutes(deps: MoveDeps = defaultMoveDeps): FastifyPlug
       if (busy) throw new HttpError(409, 'move_deploying', 'Wait for the running deployment to finish');
       const extra = await app.db.query.serviceVolumeAttachments.findFirst({ where: eq(serviceVolumeAttachments.serviceId, svc.id) });
       if (extra) throw badRequest('Only the primary data volume moves; detach the extra volumes first', 'move_extra_volumes');
-      const volume = primaryServiceVolumeName(svc.slug);
-      const present = from === null ? await deps.localExists(volume) : await deps.nodeExists(app.db, from, volume);
-      if (!present) throw badRequest(`The data volume ${volume} is not on the current host; move it with a plain host change instead`, 'move_no_volume');
+      let volumes: string[];
+      if (compose) {
+        const listed = await deps.composeVolumes(app.db, from, svc.slug);
+        const fixed = listed.filter((v) => v.fixed).map((v) => v.name);
+        if (fixed.length) throw badRequest(`Volumes with a fixed name cannot move with the stack: ${fixed.join(', ')}`, 'move_fixed_volume_names');
+        if (!listed.length) throw badRequest('This stack has no named volumes on the current host; move it with a plain host change instead', 'move_no_volume');
+        // The target must be able to take them before anything changes.
+        if (to !== null) await deps.composeVolumes(app.db, to, svc.slug);
+        volumes = listed.map((v) => v.name);
+      } else {
+        const volume = primaryServiceVolumeName(svc.slug);
+        const present = from === null ? await deps.localExists(volume) : await deps.nodeExists(app.db, from, volume);
+        if (!present) throw badRequest(`The data volume ${volume} is not on the current host; move it with a plain host change instead`, 'move_no_volume');
+        volumes = [volume];
+      }
 
       // The move itself, with every check the plain host change makes.
       const headers: Record<string, string> = { 'content-type': 'application/json' };
@@ -129,15 +169,19 @@ export function serviceMoveRoutes(deps: MoveDeps = defaultMoveDeps): FastifyPlug
       }
 
       const startedAt = new Date().toISOString();
-      const state: ServiceMoveView = { state: 'running', from, to, step: 'copying', error: null, startedAt, finishedAt: null, deploymentId: null };
+      const state: ServiceMoveView = { state: 'running', from, to, step: 'copying', error: null, startedAt, finishedAt: null, deploymentId: null, volumes, copied: 0 };
       await setState(app.db, svc.id, state);
-      void audit(app.db, req.user!.id, 'service.move_with_data', `${svc.name}: ${from ?? 'panel host'} → ${to ?? 'panel host'}`, { serviceId: svc.id, from, to });
+      void audit(app.db, req.user!.id, 'service.move_with_data', `${svc.name}: ${from ?? 'panel host'} → ${to ?? 'panel host'}`, { serviceId: svc.id, from, to, volumes });
       running.add(svc.id);
       const user: AuthUser = { ...req.user! };
       const log = (line: string) => req.log.info({ serviceId: svc.id, component: 'move' }, line);
       void (async () => {
         try {
-          await copyVolume(app.db, volume, from, to, log, deps);
+          for (const [i, volume] of volumes.entries()) {
+            await copyVolume(app.db, volume, from, to, log, deps, compose);
+            state.copied = i + 1;
+            await setState(app.db, svc.id, state);
+          }
           await setState(app.db, svc.id, { ...state, step: 'deploying' });
           const fresh = await app.db.query.services.findFirst({ where: eq(services.id, svc.id) });
           const deploymentId = fresh ? await enqueueUserDeploy(app.db, user, fresh, { message: 'Moved with its data' }) : null;
@@ -151,7 +195,7 @@ export function serviceMoveRoutes(deps: MoveDeps = defaultMoveDeps): FastifyPlug
         }
       })();
       reply.code(202);
-      return state;
+      return { ...state, volumes: [...volumes] };
     });
   };
 }

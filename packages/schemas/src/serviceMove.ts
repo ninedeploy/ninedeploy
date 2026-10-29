@@ -17,4 +17,8 @@ export interface ServiceMoveView {
   finishedAt: string | null;
   /** The deployment started on the target. */
   deploymentId: number | null;
+  /** The volumes being moved (a compose stack moves every named volume it made). Absent on older rows. */
+  volumes?: string[];
+  /** How many of `volumes` are copied so far. */
+  copied?: number;
 }

@@ -425,9 +425,11 @@ Switching is audited as `os_updates.auto_enable` or `os_updates.auto_disable`.
 
 `PATCH /v1/services/:id { serverId }` moves only the configuration: the next deploy starts the service on the new host with an empty volume. **Service → Settings → Move with data** (`POST /v1/services/:id/move`, operators) also moves the data:
 
-1. The service must be stopped, with no deployment running and no extra volume attachments. Its primary volume `nd-svc-<slug>-data` must be on the current host. Docker services only; Swarm, compose and PM2 are refused.
+1. The service must be stopped, with no deployment running and no extra volume attachments. Its primary volume `nd-svc-<slug>-data` must be on the current host. Docker services and compose stacks; Swarm and PM2 are refused.
 2. The host change is that same PATCH, with every check it makes: attached databases stay on their host, and a volume of the same name already on the target is refused.
 3. The volume is archived on the source, created on the target and restored there. Node archives travel over the agent's sealed stream channel, which checks the size and sha256 end to end. The temporary archive under the backups directory is deleted afterwards.
 4. The service is deployed on the target.
 
 The request answers 202 at once. `GET /v1/services/:id/move` reports `copying`, then `deploying`, then `done` with the deployment id, or `failed` with the reason. After a failed copy the service stays on the target, undeployed; moving it back is a plain host change, because the source volume is never deleted. Remove the old volume from the Volumes page once the service runs on the target. The state is the settings row `service_move:<id>`; there is no migration.
+
+A **compose stack** moves every named volume compose created for it, `ndcmp-<slug>_<key>` (found by compose's own `com.docker.compose.project` label), one after the other; `GET …/move` lists them in `volumes` and counts them in `copied`. Each one is created on the target with compose's project and volume labels, so the stack's `up` there adopts it. A stack with a volume that has a fixed `name:` is refused (`move_fixed_volume_names`), because that volume would be left behind. External volumes and bind mounts are not moved. A node on either end needs agent 0.18.7 or newer with the `volume.compose` capability; its owner can turn it off with `NINEDEPLOY_AGENT_VOLUME_COMPOSE=off`. The agent transfers such a volume only when Docker says compose created it for the project its name starts with.

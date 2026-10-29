@@ -5898,4 +5898,9 @@ export const TR: Readonly<Record<string, string>> = {
   'Choose a service': 'Bir servis seçin',
   'Prove you control {host}: publish this DNS record, then press Verify under Manage.':
     '{host} alan adının sizde olduğunu kanıtlayın: bu DNS kaydını yayımlayın, ardından Yönet altında Doğrula\'ya basın.',
+
+  // ── G3.1 compose stacks moved with their volumes ──────────────────────
+  'Moves the stack to another host and copies every named volume compose made for it, then deploys it. Stop the stack first; the volumes on the old host are kept until you remove them. Bind mounts and external volumes are not moved.':
+    'Yığını başka bir sunucuya taşır, compose\'un onun için oluşturduğu tüm adlandırılmış volume\'ları oraya kopyalar ve ardından dağıtır. Önce yığını durdurun; eski sunucudaki volume\'lar siz silene kadar saklanır. Bind mount\'lar ve harici volume\'lar taşınmaz.',
+  'copying the data ({copied} of {total} volumes)': 'veri kopyalanıyor ({total} volume\'dan {copied} tanesi)',
 };

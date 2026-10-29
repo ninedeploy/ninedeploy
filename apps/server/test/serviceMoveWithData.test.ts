@@ -26,6 +26,7 @@ beforeEach(async () => {
     { id: 5, name: 'api', slug: 'api', type: 'docker', branch: 'main', ownerUserId: 1, image: 'nginx:1.27', volumeMount: '/data', status: 'stopped' },
     { id: 6, name: 'web', slug: 'web', type: 'docker', branch: 'main', ownerUserId: 1, image: 'nginx:1.27', volumeMount: '/data', status: 'running' },
     { id: 7, name: 'tmp', slug: 'tmp', type: 'docker', branch: 'main', ownerUserId: 1, image: 'nginx:1.27', status: 'stopped' },
+    { id: 8, name: 'shop', slug: 'shop', type: 'compose', branch: 'main', ownerUserId: 1, status: 'stopped' },
   ] as never);
 });
 afterEach(() => closeMigratedDb(db));
@@ -40,6 +41,15 @@ function fakeDeps(volumes: Set<string>, calls: string[]) {
     restoreNode: vi.fn(async (_db: DB, node: number, name: string) => void calls.push(`restore ${node} ${name}`)),
     nodeExists: vi.fn(async (_db: DB, node: number, name: string) => volumes.has(`${node}:${name}`)),
     createNode: vi.fn(async (_db: DB, node: number, name: string) => void calls.push(`create ${node} ${name}`)),
+    composeVolumes: vi.fn(async (_db: DB, host: number | null, slug: string) =>
+      [...volumes]
+        .filter((v) => v.startsWith(`${host ?? 'local'}:`) && v.includes(`ndcmp-${slug}_`) || v.startsWith(`${host ?? 'local'}:fixed:`))
+        .map((v) => {
+          const name = v.split(':').at(-1)!;
+          return { name, key: name.split('_').at(-1)!, fixed: v.includes(':fixed:') };
+        }),
+    ),
+    createCompose: vi.fn(async (_db: DB, host: number | null, name: string) => void calls.push(`create compose ${host ?? 'local'} ${name}`)),
   } as never;
 }
 
@@ -116,5 +126,33 @@ describe('move with data', () => {
     calls.length = 0;
     await copyVolume(db, 'nd-svc-x-data', 2, null, () => undefined, fakeDeps(new Set(), calls));
     expect(calls).toEqual(['backup 2 nd-svc-x-data', 'create local nd-svc-x-data', 'restore local nd-svc-x-data']);
+  });
+
+  it('moves a compose stack with every named volume compose made for it', async () => {
+    const calls: string[] = [];
+    const patched: unknown[] = [];
+    const a = await app(fakeDeps(new Set(['local:ndcmp-shop_db', 'local:ndcmp-shop_uploads']), calls), patched);
+    const res = await a.inject({ method: 'POST', url: '/services/8/move', headers: asUser(1), payload: { serverId: 3 } });
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toMatchObject({ state: 'running', volumes: ['ndcmp-shop_db', 'ndcmp-shop_uploads'], copied: 0 });
+    expect(await settle(a, 8)).toMatchObject({ state: 'done', copied: 2, deploymentId: 77 });
+    expect(calls).toEqual([
+      'backup local ndcmp-shop_db', 'create compose 3 ndcmp-shop_db', 'restore 3 ndcmp-shop_db',
+      'backup local ndcmp-shop_uploads', 'create compose 3 ndcmp-shop_uploads', 'restore 3 ndcmp-shop_uploads',
+    ]);
+    expect(patched).toEqual([{ id: 8, serverId: 3 }]);
+    await a.close();
+  });
+
+  it('refuses a compose stack with a fixed-name volume or none at all, before anything moves', async () => {
+    const patched: unknown[] = [];
+    let a = await app(fakeDeps(new Set(['local:ndcmp-shop_db', 'local:fixed:pgdata']), []), patched);
+    const fixed = await a.inject({ method: 'POST', url: '/services/8/move', headers: asUser(1), payload: { serverId: 3 } });
+    expect(fixed.json().error).toMatchObject({ code: 'move_fixed_volume_names', message: expect.stringContaining('pgdata') });
+    await a.close();
+    a = await app(fakeDeps(new Set(), []), patched);
+    expect((await a.inject({ method: 'POST', url: '/services/8/move', headers: asUser(1), payload: { serverId: 3 } })).json().error.code).toBe('move_no_volume');
+    expect(patched).toEqual([]);
+    await a.close();
   });
 });

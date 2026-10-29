@@ -38,6 +38,16 @@ describe('MoveWithDataCard (G3.1)', () => {
     expect((screen.getByRole('button', { name: 'Move' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('offers a compose stack the move and counts the volumes it copies', async () => {
+    mockOf(api.services.move.get).mockResolvedValue({
+      state: 'running', from: null, to: 3, step: 'copying', error: null, startedAt: 'x', finishedAt: null, deploymentId: null,
+      volumes: ['ndcmp-shop_db', 'ndcmp-shop_uploads'], copied: 1,
+    } as never);
+    renderWithProviders(<MoveWithDataCard svc={{ id: 8, type: 'compose', orchestrator: null, volumeMount: null, serverId: null, status: 'stopped' } as never} />);
+    expect(await screen.findByText(/copies every named volume compose made for it/)).toBeTruthy();
+    expect(await screen.findByText(/copying the data \(1 of 2 volumes\)/)).toBeTruthy();
+  });
+
   it('is hidden for a service without a data volume', () => {
     const { container } = renderWithProviders(<MoveWithDataCard svc={{ id: 6, type: 'docker', volumeMount: null } as never} />);
     expect(container.textContent).toBe('');

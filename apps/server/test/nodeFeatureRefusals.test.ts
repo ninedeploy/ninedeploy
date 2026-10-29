@@ -87,6 +87,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'agent.rekey': 'rotate its agent key',
   'db.dump.extra': 'back up and restore clickhouse on a node',
   'image.scan': 'scan images for vulnerabilities',
+  'volume.compose': 'move a compose stack with its volumes',
 };
 
 let db: DB;

@@ -18,7 +18,8 @@ export function MoveWithDataCard({ svc }: { svc: ServiceDetail }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
-  const eligible = user?.isOperator === true && svc.type === 'docker' && svc.orchestrator !== 'swarm' && !!svc.volumeMount;
+  const compose = svc.type === 'compose';
+  const eligible = user?.isOperator === true && svc.orchestrator !== 'swarm' && ((svc.type === 'docker' && !!svc.volumeMount) || compose);
   const servers = useQuery({ queryKey: ['servers'], queryFn: () => api.servers.list(), enabled: eligible });
   const move = useQuery({
     queryKey: ['service-move', svc.id],
@@ -50,12 +51,20 @@ export function MoveWithDataCard({ svc }: { svc: ServiceDetail }) {
           <Truck size={15} className="text-slate-500" /> {t('Move with data')}
         </div>
         <p className="text-xs text-slate-500">
-          {t('Moves the service to another host and copies its data volume there, then deploys it. Stop the service first; the volume on the old host is kept until you remove it.')}
+          {compose
+            ? t('Moves the stack to another host and copies every named volume compose made for it, then deploys it. Stop the stack first; the volumes on the old host are kept until you remove them. Bind mounts and external volumes are not moved.')
+            : t('Moves the service to another host and copies its data volume there, then deploys it. Stop the service first; the volume on the old host is kept until you remove it.')}
         </p>
         {view.state !== 'none' && (
           <p className="text-xs text-slate-400" role="status">
             {view.state === 'running'
-              ? t('Moving from {from} to {to}: {step}', { from: hostName(view.from), to: hostName(view.to), step: view.step === 'deploying' ? t('deploying') : t('copying the data') })
+              ? t('Moving from {from} to {to}: {step}', { from: hostName(view.from), to: hostName(view.to), step:
+                    view.step === 'deploying'
+                      ? t('deploying')
+                      : (view.volumes?.length ?? 0) > 1
+                        ? t('copying the data ({copied} of {total} volumes)', { copied: view.copied ?? 0, total: view.volumes!.length })
+                        : t('copying the data'),
+                })
               : view.state === 'done'
                 ? t('Moved from {from} to {to}.', { from: hostName(view.from), to: hostName(view.to) })
                 : t('The move to {to} failed: {error}', { to: hostName(view.to), error: view.error ?? '' })}

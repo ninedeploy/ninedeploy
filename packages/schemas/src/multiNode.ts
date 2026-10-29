@@ -62,6 +62,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'db.dump.extra',
   // G5.1 Trivy image scans of node services
   'image.scan',
+  // G3.1 compose stack volumes listed, created and transferred when a stack moves with its data
+  'volume.compose',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

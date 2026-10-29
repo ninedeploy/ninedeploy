@@ -17,7 +17,7 @@ import { switchedOff } from './operands.js';
 import { runSpecOps } from './runSpec.js';
 import { streamOps } from './stream.js';
 import { swarmOps } from './swarm.js';
-import { nodeVolumeOps, volumeOps } from './volumes.js';
+import { composeVolumeOps, nodeVolumeOps, volumeOps } from './volumes.js';
 import { proxyRoutingOps } from './proxyRouting.js';
 import { containerIdentityOps } from './containerIdentity.js';
 import { containerToolOps } from './containerTools.js';
@@ -108,6 +108,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   agentRekeyOps,
   // G5.1 Trivy image scans (agentOps/imageScan.ts)
   imageScanOps,
+  // G3.1 compose stack volumes moved with their stack (agentOps/volumes.ts)
+  composeVolumeOps,
 ];
 
 /**
@@ -134,6 +136,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'db.dump.extra': ['NINEDEPLOY_AGENT_DATABASES'],
   // G5.1: Trivy on the node is the node owner's call.
   'image.scan': ['NINEDEPLOY_AGENT_IMAGE_SCAN'],
+  // G3.1: compose volume transfers are the node owner's call.
+  'volume.compose': ['NINEDEPLOY_AGENT_VOLUME_COMPOSE'],
   // 0.16.6: GPUs and added Linux capabilities are the node owner's call.
   'docker.runtimeOptions': ['NINEDEPLOY_AGENT_RUNTIME_OPTIONS'],
   // G4.2: the host's package configuration is the node owner's call too.
