@@ -129,6 +129,17 @@ describe('the deploy hook', () => {
 });
 
 describe('scheduled rescans', () => {
+  it('retries a failed image scan on the next sweep instead of treating it as fresh', async () => {
+    await lib.setImageScanPolicy(db, { enabled: true, rescanHours: 24 });
+    const trivy = vi.fn().mockRejectedValueOnce(new Error('scanner offline')).mockResolvedValue(report([]));
+    const deps = { trivy, imageIdOf: async () => IMG, stackImagesOf: async () => [] };
+    expect(await lib.rescanRunningImages(db, deps)).toBe(1);
+    expect(await lib.getImageScanResult(db, 5)).toMatchObject({ status: 'error' });
+    expect(await lib.rescanRunningImages(db, deps)).toBe(1);
+    expect(await lib.getImageScanResult(db, 5)).toMatchObject({ status: 'ok', error: null });
+    expect(trivy).toHaveBeenCalledTimes(2);
+  });
+
   it('rescan stale or changed images only, report new fixable criticals, and drop results of deleted services', async () => {
     const images: Record<string, string> = { 'web-1': IMG, 'edge-1': IMG2 };
     const imageIdOf = vi.fn(async (c: string) => images[c] ?? Promise.reject(new Error('no such container')));
@@ -198,6 +209,9 @@ describe('compose stacks', () => {
     trivy.mockImplementation(async (image: string) => (image === IMG ? report([]) : Promise.reject(new Error('no space left'))));
     expect(await lib.rescanRunningImages(db, deps)).toBe(1);
     expect(await lib.getImageScanResult(db, 6)).toMatchObject({ status: 'ok', os: '1 image', error: 'cache: no space left' });
+    trivy.mockImplementation(async () => report([]));
+    expect(await lib.rescanRunningImages(db, deps)).toBe(1);
+    expect(await lib.getImageScanResult(db, 6)).toMatchObject({ status: 'ok', os: '2 images', error: null });
   });
 });
 

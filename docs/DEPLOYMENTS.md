@@ -622,7 +622,7 @@ No migration is needed: the freezes are stored in a single settings row.
 
 ### Image vulnerability scanning (G5.1)
 
-Trivy scans each docker deploy's image on the panel host, and rescans running images on a schedule. It is off by default; an operator turns it on under Settings → Image scanning.
+Trivy scans each Docker deploy's image on the panel host and rescans running images on a schedule. Panel-host Compose stacks are scanned on request and on the schedule, after they start; their scans are report-only. It is off by default; an operator turns it on under Settings → Image scanning.
 
 **How the scan runs**
 - Trivy runs in a throwaway container that reads the image from `docker save` on its stdin. It never gets the Docker socket and needs no host path.
@@ -639,6 +639,7 @@ Trivy scans each docker deploy's image on the panel host, and rescans running im
 
 **Scheduled rescans**
 - Once an hour, running images whose latest scan is older than the interval (default 24 hours), or was of another image, are scanned again.
+- Failed scans and incomplete Compose scans are retried at the next hourly sweep. A partial result keeps findings from scanned images and names the images that could not be scanned; it does not report the stack as clean.
 - A rescan that finds new fixable critical findings is audited as `image_scan.critical`, which notifies the channels that receive audit events.
 
 **Where the results show**
@@ -646,7 +647,7 @@ Trivy scans each docker deploy's image on the panel host, and rescans running im
 - A service admin can press *Scan now*.
 
 **What is not scanned yet**
-- Services on nodes, Swarm services and Compose stacks.
+- Services on nodes and Swarm services. Compose stacks do not have a pre-traffic deploy gate.
 
 **API, SDK and storage**
 - API: `GET`/`PUT /v1/image-scanning` (operator), `GET /v1/services/:id/image-scan` (viewer) and `POST /v1/services/:id/image-scan` (admin, runs in the background).

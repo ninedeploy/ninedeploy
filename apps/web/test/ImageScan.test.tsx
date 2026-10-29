@@ -76,6 +76,24 @@ describe('ImageScanCard (G5.1)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Show all 21' }));
     expect(screen.getByText('CVE-20')).toBeInTheDocument();
   });
+
+  it('warns about an incomplete Compose scan instead of calling the stack clean', async () => {
+    mockOf(api.imageScans.get).mockResolvedValue({ result: { ...RESULT, findings: [], blocked: false, error: 'cache: no space left',
+      images: [{ imageId: RESULT.imageId, services: ['api'], os: 'debian' }] }, scanning: false } as never);
+    renderWithProviders(<ImageScanCard serviceId={5} />);
+    expect(await screen.findByText('Scan incomplete: cache: no space left')).toBeInTheDocument();
+    expect(screen.queryByText('No known vulnerabilities.')).not.toBeInTheDocument();
+  });
+
+  it('retains known findings while warning about a failed Compose image', async () => {
+    mockOf(api.imageScans.get).mockResolvedValue({ result: { ...RESULT, error: 'cache: no space left',
+      images: [{ imageId: RESULT.imageId, services: ['api'], os: 'debian' }],
+      findings: [{ ...RESULT.findings[0], target: 'api: debian' }] }, scanning: false } as never);
+    renderWithProviders(<ImageScanCard serviceId={5} />);
+    expect(await screen.findByText('Scan incomplete: cache: no space left')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'CVE-2024-1' })).toBeInTheDocument();
+    expect(screen.getByText('api')).toBeInTheDocument();
+  });
 });
 
 describe('ImageScanSection (G5.1)', () => {

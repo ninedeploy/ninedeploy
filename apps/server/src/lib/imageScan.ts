@@ -430,7 +430,7 @@ export async function rescanRunningImages(db: DB, deps: RescanDeps = {}): Promis
       if (!images.length) continue; // not running right now
       const last = await getImageScanResult(db, svc.id);
       const setId = composeImageSetId(images);
-      if (last && last.imageId === setId && Date.parse(last.scannedAt) > staleBefore) continue;
+      if (last && last.status === 'ok' && !last.error && last.imageId === setId && Date.parse(last.scannedAt) > staleBefore) continue;
       const result = await scanComposeStack(db, svc.id, images, 'schedule', { deps });
       scanned++;
       const before = last && last.imageId === setId && last.status === 'ok' ? last.fixable.critical : 0;
@@ -445,7 +445,7 @@ export async function rescanRunningImages(db: DB, deps: RescanDeps = {}): Promis
       continue; // not running right now
     }
     const last = await getImageScanResult(db, svc.id);
-    if (last && last.imageId === imageId && Date.parse(last.scannedAt) > staleBefore) continue;
+    if (last && last.status === 'ok' && !last.error && last.imageId === imageId && Date.parse(last.scannedAt) > staleBefore) continue;
     const result = await scanServiceImage(db, svc.id, imageId, 'schedule', { deps });
     scanned++;
     const before = last && last.imageId === imageId && last.status === 'ok' ? last.fixable.critical : 0;

@@ -71,6 +71,7 @@ export function ImageScanCard({ serviceId }: { serviceId: number }) {
               <p className="text-xs text-rose-300">{t('The scan could not run: {error}', { error: r.error ?? '' })}</p>
             ) : (
               <>
+                {r.error && <p className="text-xs text-amber-300" role="alert">{t('Scan incomplete: {error}', { error: r.error })}</p>}
                 <div className="flex flex-wrap gap-2">
                   <Badge tone="rose">{t('{n} critical ({f} fixable)', { n: r.counts.critical, f: r.fixable.critical })}</Badge>
                   <Badge tone="amber">{t('{n} high ({f} fixable)', { n: r.counts.high, f: r.fixable.high })}</Badge>
@@ -78,7 +79,7 @@ export function ImageScanCard({ serviceId }: { serviceId: number }) {
                   <Badge>{t('{n} low', { n: r.counts.low })}</Badge>
                 </div>
                 {findings.length === 0 ? (
-                  <p className="text-xs text-emerald-300">{t('No known vulnerabilities.')}</p>
+                  !r.error && <p className="text-xs text-emerald-300">{t('No known vulnerabilities.')}</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
