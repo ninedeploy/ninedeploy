@@ -45,6 +45,7 @@ import { cloudRoutes } from './cloud.js';
 import { deployFreezeRoutes } from './deployFreezes.js';
 import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { databaseTunnelRoutes } from './databaseTunnel.js';
+import { serviceTunnelRoutes } from './serviceTunnel.js';
 import { pendingChangeRoutes } from './pendingChanges.js';
 import { restartLimitRoutes } from './restartLimit.js';
 import { serviceMaintenanceRoutes } from './maintenance.js';
@@ -169,6 +170,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(databasePublicAccessRoutes, { prefix: '/databases' });
   // G5.8: a TCP tunnel to a panel-host database (WebSocket)
   await app.register(databaseTunnelRoutes, { prefix: '/databases' });
+  // G5.8: the same tunnel to a port of a panel-host docker service
+  await app.register(serviceTunnelRoutes, { prefix: '/services' });
   // Chunked dump imports into a managed database (0.14, DESIGN §3.3).
   await app.register(databaseImportRoutes, { prefix: '/databases' });
   // Deployment lanes (production / staging / development) per workspace.

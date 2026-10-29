@@ -469,8 +469,8 @@ describe('program registration', () => {
     // 0.16.16: + `deploys diagnose`.
     // Resource monitoring: settings/configure plus log-drains and its three actions.
     // Node volume files: list, read, write, mkdir, delete-file.
-    // G5.8: tunnel + tunnel db.
-    expect(h.FakeCommand.instances).toHaveLength(328);
+    // G5.8: tunnel + tunnel db + tunnel service.
+    expect(h.FakeCommand.instances).toHaveLength(329);
     expect(findCommand('monitors').children.map((c) => c.cmdName)).toEqual([
       'list', 'add <name> <target>', 'show <id>', 'check <id>', 'pause <id>', 'resume <id>', 'rm <id>',
     ]);

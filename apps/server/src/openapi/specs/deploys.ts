@@ -305,6 +305,17 @@ export const deploysSpecs: RouteSpecMap = {
     sensitive: true,
     websocket: true,
   },
+  'GET /v1/services/:id/tunnel': {
+    summary: 'A TCP tunnel to a port of a panel-host docker service (WebSocket; `ninedeploy tunnel service`)',
+    tag: 'services',
+    description:
+      'WebSocket, framed as the database tunnel. `?port=` names the container port (default: the service port), `?replica=` the replica (default 1). It reaches the container past what its domains enforce, so it needs the service admin role. G5.8.',
+    floor: 'admin',
+    queryType: '{ port?: string; replica?: string }',
+    validation: 'handler',
+    sensitive: true,
+    websocket: true,
+  },
   'GET /v1/services/:id/exec': {
     summary: 'Interactive container shell (WebSocket)',
     tag: 'terminals',

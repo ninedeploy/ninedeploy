@@ -250,6 +250,7 @@ GET /v1/services/:id/swarm/recovery viewer nd://scope/read/services
 GET /v1/services/:id/tags viewer nd://scope/read/services
 GET /v1/services/:id/targets viewer nd://scope/read/services
 GET /v1/services/:id/targets/recovery viewer nd://scope/read/services
+GET /v1/services/:id/tunnel admin nd://scope/read/services
 GET /v1/services/:id/volumes viewer nd://scope/read/volumes
 GET /v1/services/:id/webhooks viewer nd://scope/read/webhooks
 GET /v1/services/approvals authed nd://scope/read/services

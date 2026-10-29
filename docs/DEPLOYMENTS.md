@@ -869,6 +869,30 @@ version to install, and nothing else changes. The full reference is
   affected.
 - **Health** on a node is container state, not an HTTP probe through Traefik.
 
+## Service tunnels (G5.8)
+
+`ninedeploy tunnel service <id>` makes a container port of a running panel-host docker service available on your machine. Use it for an admin port, a debugger, or a service that has no domain. Nothing is published.
+
+```bash
+ninedeploy tunnel service 12                          # the service port, on the same local port when it is free
+ninedeploy tunnel service 12 --target 9229 --port 0   # the Node inspector, on any free local port
+ninedeploy tunnel service 12 --replica 2              # the second replica
+```
+
+**How it works**
+- Each local connection travels over its own WebSocket (`GET /v1/services/:id/tunnel?port=&replica=`) to the container, byte for byte, as the database tunnel does.
+
+**Access**
+- The tunnel reaches the container directly, past what the service's domains enforce: forward auth, IP allow lists and basic auth. It therefore needs the service `admin` role, the role that can change those settings.
+- A scoped API token must also be allowed to write services.
+- Access is re-checked every minute.
+
+**Limits**
+- At most 32 tunnels per user, database and service tunnels together.
+- An idle tunnel closes after 30 minutes.
+- Opening and closing are audited as `service.tunnel.open` / `service.tunnel.close`, with byte counts.
+- Swarm, compose, PM2 and node services are refused for now.
+
 ## Docker artifact promotion (0.17.1)
 
 A successful repository-backed Docker deployment on the panel or a capable node records its actual immutable image ID and buildpack conventions. Node-built artifacts retain a verified image copy on the panel before their record is saved, so recovery does not depend on the origin node staying online. In Deploys, choose **Same artifact · no rebuild** and a service tracking the same repository. Confirmation names the image and target. The deployment detail shows the original build, historical build node and promotion source.

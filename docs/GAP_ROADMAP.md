@@ -71,7 +71,7 @@ None of the Docker-based rivals has these.
 | G5.5 | **Deploy freeze.** An admin block on deploys for a project or environment, with a reason and an expiry, checked by the queue. | Tsuru event blocks | S | ✅ unreleased (operator only; held deploys wait as queued and start when it ends) |
 | G5.6 | **Autoscale on schedules and right-sizing hints.** Cron-scheduled replica floors, and memory and CPU limit suggestions from the metric history. | Tsuru | M | ✅ unreleased (weekly floor windows in a time zone; hints are advisory) |
 | G5.7 | **Certificates shared across node proxies,** so any ingress node can serve any domain. | Uncloud 0.21 | M | ✅ unreleased (opt-in; the panel's ACME certificates for hosts each node routes; cross-node routing itself is not part of it) |
-| G5.8 | **`ninedeploy tunnel`.** Forward a local port to a service or database through the panel, so database ports stay closed. | Haloy, Disco | S | ✅ unreleased (`ninedeploy tunnel db`; panel-host databases; services and node databases not yet) |
+| G5.8 | **`ninedeploy tunnel`.** Forward a local port to a service or database through the panel, so database ports stay closed. | Haloy, Disco | S | ✅ unreleased (`ninedeploy tunnel db` and `tunnel service`; panel-host databases and docker services; node targets not yet) |
 
 ---
 

@@ -2,7 +2,7 @@ import { EventEmitter, once } from 'node:events';
 import net from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NineDeployClient } from '../src/client.js';
-import { pipeConnection, tunnelDb, type TunnelSocket } from '../src/commands/tunnel.js';
+import { pipeConnection, tunnelDb, tunnelService, type TunnelSocket } from '../src/commands/tunnel.js';
 
 /** A fake tunnel WebSocket: what the CLI sends, and a handle to answer as the panel. */
 class FakeSocket extends EventEmitter {
@@ -125,6 +125,47 @@ describe('ninedeploy tunnel db', () => {
     const text = errors.mock.calls.map((c) => String(c[0])).join('\n');
     expect(text).toContain('Usage: ninedeploy tunnel db <id>');
     expect(text).toContain('--port must be 0-65535');
+    expect(text).toContain('runs on a node');
+  });
+});
+
+describe('ninedeploy tunnel service', () => {
+  const client = (detail: Record<string, unknown>) =>
+    ({ services: { get: vi.fn(async () => ({ name: 'api', port: 3000, serverId: null, ...detail })) } }) as unknown as NineDeployClient;
+
+  it('tunnels to the chosen container port and replica', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const sockets: FakeSocket[] = [];
+    let listening: { host: string; port: number } | undefined;
+    await tunnelService(client({}), '5', { port: '0', target: '9229', replica: '2' }, {
+      credentials: async () => ({ url: (p) => `wss://panel.example.com${p}`, token: 'tok' }),
+      socketFactory: (url, protocols) => {
+        const s = new FakeSocket(url, protocols);
+        sockets.push(s);
+        return asTunnel(s);
+      },
+      onListening: (address, server) => {
+        listening = address;
+        servers.push(server);
+      },
+    });
+    const c1 = net.connect(listening!.port, '127.0.0.1');
+    await vi.waitFor(() => expect(sockets).toHaveLength(1));
+    expect(sockets[0]!.url).toBe('wss://panel.example.com/v1/services/5/tunnel?port=9229&replica=2');
+    c1.destroy();
+  });
+
+  it('refuses a bad target or replica, a service with no port, and a service on a node', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const creds = { credentials: async () => ({ url: (p: string) => p, token: '' }) };
+    await tunnelService(client({}), '5', { target: '0' });
+    await tunnelService(client({}), '5', { replica: '0' });
+    await tunnelService(client({ port: null }), '5', {}, creds);
+    await tunnelService(client({ serverId: 3 }), '5', {}, creds);
+    const text = errors.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(text).toContain('--target must be a container port');
+    expect(text).toContain('--replica must be 1 or more');
+    expect(text).toContain('--target <port>');
     expect(text).toContain('runs on a node');
   });
 });

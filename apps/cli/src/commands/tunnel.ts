@@ -92,26 +92,11 @@ function parseId(raw: string | undefined): number {
   return /^[1-9]\d*$/.test(t) && Number.isSafeInteger(Number(t)) ? Number(t) : 0;
 }
 
-export async function tunnelDb(client: NineDeployClient, idRaw: string, opts: TunnelOptions = {}, deps: TunnelDeps = {}): Promise<void> {
-  const id = parseId(idRaw);
-  if (!id) return error('Usage: ninedeploy tunnel db <id> [--port <n>] [--bind <address>]');
-  const requested = opts.port === undefined ? undefined : Number(opts.port);
-  if (requested !== undefined && !(Number.isInteger(requested) && requested >= 0 && requested <= 65535)) {
-    return error('--port must be 0-65535 (0 picks a free one)');
-  }
-  const host = opts.bind ?? '127.0.0.1';
-  if (net.isIP(host) === 0) return error('--bind must be an IP address');
-
-  let detail: Awaited<ReturnType<NineDeployClient['databases']['get']>>;
-  try {
-    detail = await client.databases.get(id);
-  } catch (err) {
-    return error(plain(err instanceof Error ? err.message : String(err)));
-  }
-  if (detail.serverId != null) return error('This database runs on a node; tunnels reach panel-host databases only for now.');
+/** Listen locally and carry each connection over its own tunnel WebSocket to `path`. Null when it cannot listen. */
+async function serveTunnel(path: string, host: string, requested: number | undefined, preferred: number, deps: TunnelDeps): Promise<number | null> {
   const creds = await (deps.credentials ?? defaultCredentials)();
   const factory = deps.socketFactory ?? (await defaultSocketFactory());
-  const url = creds.url(`/v1/databases/${id}/tunnel`);
+  const url = creds.url(path);
   const open = () => factory(url, ['ninedeploy.tunnel.v1', `ninedeploy.bearer.${creds.token}`]);
 
   let reported = '';
@@ -132,17 +117,27 @@ export async function tunnelDb(client: NineDeployClient, idRaw: string, opts: Tu
         resolve((server.address() as net.AddressInfo).port);
       });
     });
-  // Default: the engine's own port when it is free locally, else any free one.
+  // Default: the preferred port when it is free locally, else any free one.
   let port: number;
   try {
-    port = await listen(requested ?? detail.port ?? 0);
+    port = await listen(requested ?? preferred);
   } catch (err) {
-    if (requested !== undefined) return error(`Cannot listen on ${host}:${requested}: ${err instanceof Error ? err.message : String(err)}`);
+    if (requested !== undefined) {
+      error(`Cannot listen on ${host}:${requested}: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
     port = await listen(0);
   }
+  tunnelServers.set(port, server);
+  return port;
+}
 
-  success(`Tunnel to ${plain(detail.name)} (${plain(detail.engine)}) listening on ${host}:${port}`);
-  info(`Connect your client to ${host}:${port} with the database's own credentials (Database page → Credentials).`);
+const tunnelServers = new Map<number, net.Server>();
+
+/** Hand the listening server to a test, or run until Ctrl-C. */
+async function untilInterrupted(host: string, port: number, deps: TunnelDeps): Promise<void> {
+  const server = tunnelServers.get(port)!;
+  tunnelServers.delete(port);
   if (host !== '127.0.0.1' && host !== '::1') console.log(`  ${c.yellow(`⚠ Bound to ${host}: anyone who can reach this address can use the tunnel.`)}`);
   info(c.dim('Ctrl-C closes the tunnel.'));
   deps.onListening?.({ host, port }, server);
@@ -153,4 +148,73 @@ export async function tunnelDb(client: NineDeployClient, idRaw: string, opts: Tu
       resolve();
     });
   });
+}
+
+export async function tunnelDb(client: NineDeployClient, idRaw: string, opts: TunnelOptions = {}, deps: TunnelDeps = {}): Promise<void> {
+  const id = parseId(idRaw);
+  if (!id) return error('Usage: ninedeploy tunnel db <id> [--port <n>] [--bind <address>]');
+  const requested = opts.port === undefined ? undefined : Number(opts.port);
+  if (requested !== undefined && !(Number.isInteger(requested) && requested >= 0 && requested <= 65535)) {
+    return error('--port must be 0-65535 (0 picks a free one)');
+  }
+  const host = opts.bind ?? '127.0.0.1';
+  if (net.isIP(host) === 0) return error('--bind must be an IP address');
+
+  let detail: Awaited<ReturnType<NineDeployClient['databases']['get']>>;
+  try {
+    detail = await client.databases.get(id);
+  } catch (err) {
+    return error(plain(err instanceof Error ? err.message : String(err)));
+  }
+  if (detail.serverId != null) return error('This database runs on a node; tunnels reach panel-host databases only for now.');
+  const port = await serveTunnel(`/v1/databases/${id}/tunnel`, host, requested, detail.port ?? 0, deps);
+  if (port === null) return;
+
+  success(`Tunnel to ${plain(detail.name)} (${plain(detail.engine)}) listening on ${host}:${port}`);
+  info(`Connect your client to ${host}:${port} with the database's own credentials (Database page → Credentials).`);
+  await untilInterrupted(host, port, deps);
+}
+
+export interface ServiceTunnelOptions extends TunnelOptions {
+  /** The container port (default: the service port). */
+  target?: string;
+  replica?: string;
+}
+
+/**
+ * G5.8 `ninedeploy tunnel service <id> [--target <port>] [--replica <n>]
+ * [--port <n>] [--bind <address>]`: offer a port of a panel-host docker
+ * service locally, for an admin port, a debugger or a service with no domain.
+ * Needs the service's admin role.
+ */
+export async function tunnelService(client: NineDeployClient, idRaw: string, opts: ServiceTunnelOptions = {}, deps: TunnelDeps = {}): Promise<void> {
+  const id = parseId(idRaw);
+  if (!id) return error('Usage: ninedeploy tunnel service <id> [--target <port>] [--replica <n>] [--port <n>] [--bind <address>]');
+  const requested = opts.port === undefined ? undefined : Number(opts.port);
+  if (requested !== undefined && !(Number.isInteger(requested) && requested >= 0 && requested <= 65535)) {
+    return error('--port must be 0-65535 (0 picks a free one)');
+  }
+  const target = opts.target === undefined ? undefined : Number(opts.target);
+  if (target !== undefined && !(Number.isInteger(target) && target >= 1 && target <= 65535)) return error('--target must be a container port, 1-65535');
+  const replica = opts.replica === undefined ? undefined : Number(opts.replica);
+  if (replica !== undefined && !(Number.isInteger(replica) && replica >= 1)) return error('--replica must be 1 or more');
+  const host = opts.bind ?? '127.0.0.1';
+  if (net.isIP(host) === 0) return error('--bind must be an IP address');
+
+  let svc: Awaited<ReturnType<NineDeployClient['services']['get']>>;
+  try {
+    svc = await client.services.get(id);
+  } catch (err) {
+    return error(plain(err instanceof Error ? err.message : String(err)));
+  }
+  if (svc.serverId != null) return error('This service runs on a node; tunnels reach panel-host services only for now.');
+  const containerPort = target ?? svc.port ?? undefined;
+  if (!containerPort) return error('The service has no port; name the container port with --target <port>.');
+  const query = new URLSearchParams({ port: String(containerPort), ...(replica ? { replica: String(replica) } : {}) });
+  const port = await serveTunnel(`/v1/services/${id}/tunnel?${query.toString()}`, host, requested, containerPort, deps);
+  if (port === null) return;
+
+  success(`Tunnel to ${plain(svc.name)}:${containerPort}${replica ? ` (replica ${replica})` : ''} listening on ${host}:${port}`);
+  info('It reaches the container directly, past what the service domains enforce.');
+  await untilInterrupted(host, port, deps);
 }

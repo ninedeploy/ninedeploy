@@ -139,6 +139,8 @@ ninedeploy databases public-access <db-id> --disable
 
 # Database tunnel (G5.8, database admin) — a panel-host database on a local port, no public access needed
 ninedeploy tunnel db <db-id> [--port 15432] [--bind 127.0.0.1]
+# Service tunnel (G5.8, service admin) — a container port of a panel-host docker service, past its domains
+ninedeploy tunnel service <svc-id> [--target 9229] [--replica 2] [--port 9229] [--bind 127.0.0.1]
 
 # Dump import (0.14) — chunked, resumable upload; a pre-import backup is taken first
 ninedeploy databases import <db-id> --file dump.sql.gz                       # waits for the result

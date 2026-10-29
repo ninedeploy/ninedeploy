@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ninedeploy tunnel service <id> [--target <port>] [--replica <n>]` (G5.8): a container port of a panel-host docker service on a local port, over the same WebSocket bridge as the database tunnel.
+  - **Access:** the service admin role (it reaches the container past its domain protections), re-checked every minute.
+  - **Limits:** 32 tunnels per user together with database tunnels; audited with byte counts.
+  - **Route:** `GET /v1/services/:id/tunnel`.
 - The service Network tab and the Domains page are translated too, so the whole panel is available in Turkish (G4.6).
 - Settings → Integrations → Create a DNS record (G1.5): the domain-presets route by hand. It creates the A, AAAA or CNAME record for a hostname through the configured DNS provider (admins).
 - Sentry-compatible error ingest (G5.4). Under Service → Activity → Errors, a service gets a DSN (`https://<key>@<panel>/<serviceId>`) for any Sentry SDK.
