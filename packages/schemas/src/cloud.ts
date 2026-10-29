@@ -64,8 +64,9 @@ export type HetznerOptions = z.infer<typeof hetznerOptions>;
 export const cloudServer = z.object({
   serverId: z.number().int(),
   name: z.string(),
-  provider: z.enum(['hetzner', 'digitalocean']),
-  providerServerId: z.number().int(),
+  provider: z.enum(['hetzner', 'digitalocean', 'vultr']),
+  /** Hetzner and DigitalOcean number their VMs; Vultr names them by UUID. */
+  providerServerId: z.union([z.number().int(), z.string()]),
   location: z.string(),
   serverType: z.string(),
   image: z.string(),
@@ -125,3 +126,49 @@ export const digitalOceanOptions = z.object({
   sshKeys: z.array(z.object({ id: z.number(), name: z.string(), fingerprint: z.string() })),
 });
 export type DigitalOceanOptions = z.infer<typeof digitalOceanOptions>;
+
+// ── Vultr (G4.3, third provider) ───────────────────────────────────────────
+// `/v1/cloud/vultr/*`, operator only, the same flow again: an instance whose
+// user data installs Docker and starts the agent.
+
+/** PUT /v1/cloud/vultr/token. An account API key (Account → API). */
+export const vultrTokenInput = z.object({ token: z.string().trim().min(32).max(128).regex(/^[A-Za-z0-9]+$/, 'not a Vultr API key') });
+export type VultrTokenInput = z.infer<typeof vultrTokenInput>;
+
+/** GET /v1/cloud/vultr (same shape as Hetzner's). */
+export const vultrStatus = hetznerStatus;
+export type VultrStatus = HetznerStatus;
+
+/** POST /v1/cloud/vultr/servers. The name is the instance's label and hostname. */
+export const vultrServerCreate = z.object({
+  name: hetznerServerName,
+  region: slug(20),
+  plan: slug(60),
+  /** A Vultr operating system id (`GET /v1/cloud/vultr/options` → images). */
+  osId: z.number().int().positive(),
+  /** Vultr SSH key ids (UUIDs) added to root's authorized_keys. */
+  sshKeyIds: z.array(z.string().uuid()).max(10).default([]),
+  agentPort: z.number().int().min(1024).max(65535).default(4600),
+});
+export type VultrServerCreate = z.input<typeof vultrServerCreate>;
+
+/** GET /v1/cloud/vultr/options. */
+export const vultrOptions = z.object({
+  regions: z.array(z.object({ id: z.string(), city: z.string(), country: z.string() })),
+  plans: z.array(
+    z.object({
+      id: z.string(),
+      vcpus: z.number(),
+      memoryGb: z.number(),
+      diskGb: z.number(),
+      /** Monthly price in USD. */
+      priceMonthly: z.number(),
+      /** Regions that offer it. */
+      regions: z.array(z.string()),
+    }),
+  ),
+  /** Operating systems the agent bootstrap supports (x64; Vultr offers each one in every region). */
+  images: z.array(z.object({ id: z.number().int(), name: z.string(), family: z.string() })),
+  sshKeys: z.array(z.object({ id: z.string(), name: z.string() })),
+});
+export type VultrOptions = z.infer<typeof vultrOptions>;

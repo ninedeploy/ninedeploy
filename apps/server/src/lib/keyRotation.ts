@@ -258,6 +258,7 @@ export const SETTINGS_ENCRYPTED_KEYS = [
   'dns_records_credentials_encrypted', // G3.5 lib/dnsProviderCredentials.ts (Route 53, OVH, Porkbun, Hetzner)
   'hetzner_cloud_token_encrypted', // G4.3 lib/hetznerCloud.ts (Hetzner Cloud API token)
   'digitalocean_token_encrypted', // G4.3 lib/digitaloceanCloud.ts (DigitalOcean API token)
+  'vultr_token_encrypted', // G4.3 lib/vultrCloud.ts (Vultr API key)
   'panel_backup_passphrase_encrypted', // lib/panelBackup.ts (recovery passphrase)
   'traefik_custom_config_encrypted', // 0.14 lib/traefikCustomConfig.ts (custom dynamic config)
   'traefik_custom_config_last_good_encrypted', // 0.14 lib/traefikCustomConfig.ts (last good version)

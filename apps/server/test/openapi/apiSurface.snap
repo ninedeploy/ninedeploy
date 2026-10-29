@@ -18,6 +18,8 @@ DELETE /v1/cloud/digitalocean/servers/:serverId operator -
 DELETE /v1/cloud/digitalocean/token operator -
 DELETE /v1/cloud/hetzner/servers/:serverId operator -
 DELETE /v1/cloud/hetzner/token operator -
+DELETE /v1/cloud/vultr/servers/:serverId operator -
+DELETE /v1/cloud/vultr/token operator -
 DELETE /v1/config-presets/:id operator nd://scope/write/config
 DELETE /v1/config/:key operator nd://scope/write/config
 DELETE /v1/containers/:container/files operator -
@@ -121,6 +123,9 @@ GET /v1/cloud/digitalocean/servers operator -
 GET /v1/cloud/hetzner operator -
 GET /v1/cloud/hetzner/options operator -
 GET /v1/cloud/hetzner/servers operator -
+GET /v1/cloud/vultr operator -
+GET /v1/cloud/vultr/options operator -
+GET /v1/cloud/vultr/servers operator -
 GET /v1/config operator nd://scope/read/config
 GET /v1/config-presets operator nd://scope/read/config
 GET /v1/config-presets/:id operator nd://scope/read/config
@@ -387,6 +392,7 @@ POST /v1/backup-destinations/:id/test operator nd://scope/write/backups
 POST /v1/build-cache/store operator -
 POST /v1/cloud/digitalocean/servers operator -
 POST /v1/cloud/hetzner/servers operator -
+POST /v1/cloud/vultr/servers operator -
 POST /v1/config-presets operator nd://scope/write/config
 POST /v1/config/:key operator nd://scope/write/config
 POST /v1/containers/:container/files/dir operator -
@@ -561,6 +567,7 @@ PUT /scim/v2/Users/:id scim -
 PUT /v1/ai/config operator -
 PUT /v1/cloud/digitalocean/token operator -
 PUT /v1/cloud/hetzner/token operator -
+PUT /v1/cloud/vultr/token operator -
 PUT /v1/config-presets/:id/apply operator nd://scope/write/config
 PUT /v1/containers/:container/files operator -
 PUT /v1/databases/:id/backup-policy admin nd://scope/write/databases

@@ -18,6 +18,9 @@ import type {
   HetznerOptions,
   HetznerServerCreate,
   HetznerStatus,
+  VultrOptions,
+  VultrServerCreate,
+  VultrStatus,
 } from '@ninedeploy/schemas';
 import type { ServerListEntry, ServerRolesResult, SwarmJoinResult, SwarmLeaveResult } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -112,6 +115,16 @@ export interface ServersApi {
       /** Delete the VM and its node (409 while the node hosts anything). */
       deleteServer: (serverId: number) => Promise<{ ok: boolean }>;
     };
+    vultr: {
+      status: () => Promise<VultrStatus>;
+      setToken: (token: string) => Promise<VultrStatus>;
+      deleteToken: () => Promise<VultrStatus>;
+      options: () => Promise<VultrOptions>;
+      servers: () => Promise<CloudServer[]>;
+      /** Vultr names its instances by UUID. */
+      createServer: (input: VultrServerCreate) => Promise<{ serverId: number; providerServerId: string; ipv4: string }>;
+      deleteServer: (serverId: number) => Promise<{ ok: boolean }>;
+    };
   };
   orchestrators: {
     /** Every `IOrchestrator` the running kernel has registered. G-10 PR-A. */
@@ -200,6 +213,15 @@ export function serversApi(t: Transport): ServersApi {
         createServer: (input) =>
           send<{ serverId: number; providerServerId: number; ipv4: string }>('POST', '/v1/cloud/hetzner/servers', input),
         deleteServer: (serverId) => send<{ ok: boolean }>('DELETE', `/v1/cloud/hetzner/servers/${serverId}`),
+      },
+      vultr: {
+        status: () => get<VultrStatus>('/v1/cloud/vultr'),
+        setToken: (token) => send<VultrStatus>('PUT', '/v1/cloud/vultr/token', { token }),
+        deleteToken: () => send<VultrStatus>('DELETE', '/v1/cloud/vultr/token'),
+        options: () => get<VultrOptions>('/v1/cloud/vultr/options'),
+        servers: () => get<CloudServer[]>('/v1/cloud/vultr/servers'),
+        createServer: (input) => send<{ serverId: number; providerServerId: string; ipv4: string }>('POST', '/v1/cloud/vultr/servers', input),
+        deleteServer: (serverId) => send<{ ok: boolean }>('DELETE', `/v1/cloud/vultr/servers/${serverId}`),
       },
     },
     orchestrators: {

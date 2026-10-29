@@ -386,7 +386,7 @@ export function createFakeApiModule() {
     // Multi-node: Swarm on the panel host (Settings → Swarm).
     swarm: { get: vi.fn(), init: vi.fn(), settings: vi.fn() },
     osUpdates: { get: vi.fn(), setAuto: vi.fn() },
-    cloud: { digitalocean: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() }, hetzner: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() } },
+    cloud: { digitalocean: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() }, hetzner: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() }, vultr: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() } },
     deployFreezes: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), lift: vi.fn() },
     imageScans: { policy: vi.fn(), setPolicy: vi.fn(), get: vi.fn().mockResolvedValue({ result: null, scanning: false }), scan: vi.fn() },
     traefik: {

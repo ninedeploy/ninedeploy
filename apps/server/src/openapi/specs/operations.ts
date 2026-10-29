@@ -17,6 +17,8 @@ import {
   panelBackupSettingsPatch,
   selfUpdateStart,
   statsSnapshotQuery,
+  vultrServerCreate,
+  vultrTokenInput,
 } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
@@ -433,6 +435,38 @@ export const operationsSpecs: RouteSpecMap = {
   },
   'DELETE /v1/cloud/digitalocean/servers/:serverId': {
     summary: 'Delete a DigitalOcean droplet and its node (refused while it hosts anything)',
+    tag: 'cloud',
+    floor: 'operator',
+  },
+  // G4.3 cloud servers (Vultr)
+  'GET /v1/cloud/vultr': { summary: 'Whether a Vultr API key is saved', tag: 'cloud', floor: 'operator', responseType: 'VultrStatus' },
+  'PUT /v1/cloud/vultr/token': {
+    summary: 'Save the Vultr API key (checked with a read call first)',
+    tag: 'cloud',
+    floor: 'operator',
+    body: vultrTokenInput,
+    validation: 'zod',
+    responseType: 'VultrStatus',
+    sensitive: true,
+  },
+  'DELETE /v1/cloud/vultr/token': { summary: 'Forget the Vultr API key', tag: 'cloud', floor: 'operator', responseType: 'VultrStatus' },
+  'GET /v1/cloud/vultr/options': {
+    summary: 'Regions, plans, supported operating systems and SSH keys of the Vultr account',
+    tag: 'cloud',
+    floor: 'operator',
+    responseType: 'VultrOptions',
+  },
+  'GET /v1/cloud/vultr/servers': { summary: 'Nodes created on Vultr', tag: 'cloud', floor: 'operator', responseType: 'CloudServer[]' },
+  'POST /v1/cloud/vultr/servers': {
+    summary: 'Create a Vultr instance that bootstraps the agent and registers as a node',
+    tag: 'cloud',
+    floor: 'operator',
+    body: vultrServerCreate,
+    validation: 'zod',
+    responseType: '{ serverId: number; providerServerId: string; ipv4: string }',
+  },
+  'DELETE /v1/cloud/vultr/servers/:serverId': {
+    summary: 'Delete a Vultr instance and its node (refused while it hosts anything)',
     tag: 'cloud',
     floor: 'operator',
   },

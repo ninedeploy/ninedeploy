@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Nodes created as Vultr instances (G4.3, after Hetzner and DigitalOcean). Servers → Vultr takes an API key and creates a tagged instance whose user data installs Docker and starts the agent. The node is rekeyed as soon as the agent answers, exactly like a Hetzner VM. Routes `/v1/cloud/vultr/*` (operator), SDK `cloud.vultr`. `providerServerId` in the cloud server list is a string for Vultr nodes (Vultr names instances by UUID). No migration.
+
 ## [0.18.10] - 2026-10-29
 
 Includes the previously unpublished 0.18.5–0.18.9 changes. Existing tags are preserved.

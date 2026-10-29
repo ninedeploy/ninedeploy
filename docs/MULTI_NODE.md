@@ -266,4 +266,32 @@ What happens then:
 - `GET` and `POST /v1/cloud/digitalocean/servers`
 - `DELETE /v1/cloud/digitalocean/servers/:serverId`
 
-SDK: `cloud.digitalocean.*`, the same methods as `cloud.hetzner`. Vultr would follow the same shape.
+SDK: `cloud.digitalocean.*`, the same methods as `cloud.hetzner`.
+
+## Creating nodes on Vultr (G4.3)
+
+Servers → *Vultr* creates an instance that joins the panel by itself, the same way again. Operators only.
+
+1. In the Vultr control panel, under Account → API, enable the API and copy the key. Vultr's API access control lists the addresses allowed to use it: add the panel's public address there.
+2. Paste the key into the card. The panel checks it with a read call, stores it encrypted, and shows back only its last four characters.
+3. Choose a name, a region, a plan and an operating system, and optionally SSH keys for root. Plans are filtered to the region; GPU plans are not offered. Only x64 builds of the distributions the bootstrap supports are offered: Ubuntu, Debian, Fedora, Rocky Linux, AlmaLinux and CentOS.
+
+What happens then:
+- The instance is created with the tag `ninedeploy`, the name as its label and hostname, and the same user data as a Hetzner VM (base64 encoded, as Vultr requires): Docker for its distribution, then the agent on the chosen port (default 4600).
+- Vultr answers the create call with the address `0.0.0.0`. The panel reads the instance back for up to three minutes; one that gets no public IPv4 in that time is deleted again.
+- The node is registered `offline`, rekeyed as soon as its agent first answers, and turns online after that. Vultr serves the user data on the instance's metadata endpoint too, so the rekey matters here for the same reason.
+
+**Vultr bills the instance from the moment it is created.** Deleting it from the card works like the others: refused while the node hosts anything, and an instance already gone only cleans up the panel side.
+
+- No migration: the key is the encrypted setting `vultr_token_encrypted`, and the link is the same `cloud_server:<serverId>` row with `provider: "vultr"`. Vultr names instances by UUID, so `providerServerId` is a string for these nodes (a number for Hetzner and DigitalOcean).
+- Tested against a fake Vultr API built from Vultr's API client (govultr); not yet against a real account.
+
+**Routes** (operator only), all audited (`cloud.*`):
+
+- `GET /v1/cloud/vultr`
+- `PUT` and `DELETE /v1/cloud/vultr/token`
+- `GET /v1/cloud/vultr/options`
+- `GET` and `POST /v1/cloud/vultr/servers` (the create body takes `osId`, a Vultr operating system id, and `plan`)
+- `DELETE /v1/cloud/vultr/servers/:serverId`
+
+SDK: `cloud.vultr.*`, the same methods as `cloud.hetzner`.

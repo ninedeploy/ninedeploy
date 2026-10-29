@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cloudServer, hetznerOptions, hetznerServerCreate, hetznerStatus, hetznerTokenInput } from '../src/cloud.js';
+import { cloudServer, hetznerOptions, hetznerServerCreate, hetznerStatus, hetznerTokenInput, vultrOptions, vultrServerCreate, vultrStatus, vultrTokenInput } from '../src/cloud.js';
 
 describe('Hetzner Cloud contracts', () => {
   it('validates tokens and never includes one in status', () => {
@@ -21,5 +21,26 @@ describe('Hetzner Cloud contracts', () => {
     const server = { serverId: 1, name: 'worker', provider: 'hetzner', providerServerId: 2, location: 'fsn1', serverType: 'cx22', image: 'ubuntu', ipv4: '192.0.2.1', providerStatus: null, nodeStatus: 'offline', createdAt: 'now' };
     expect(cloudServer.parse(server)).toEqual(server);
     expect(cloudServer.safeParse({ ...server, provider: 'other' }).success).toBe(false);
+  });
+});
+
+describe('Vultr contracts', () => {
+  it('validates the API key, the create input and the options', () => {
+    expect(vultrTokenInput.parse({ token: 'A'.repeat(36) }).token).toBe('A'.repeat(36));
+    expect(vultrTokenInput.safeParse({ token: 'A-'.repeat(18) }).success).toBe(false);
+    const input = { name: 'edge-1', region: 'ams', plan: 'vc2-1c-1gb', osId: 2284 };
+    expect(vultrServerCreate.parse(input)).toEqual({ ...input, sshKeyIds: [], agentPort: 4600 });
+    const key = '3b8066a7-b438-455a-9688-44afc9a3597f';
+    expect(vultrServerCreate.parse({ ...input, sshKeyIds: [key] }).sshKeyIds).toEqual([key]);
+    for (const change of [{ osId: 0 }, { osId: 1.5 }, { sshKeyIds: ['7'] }, { plan: 'A' }, { name: 'a_b' }]) {
+      expect(vultrServerCreate.safeParse({ ...input, ...change }).success).toBe(false);
+    }
+    const options = { regions: [{ id: 'ams', city: 'Amsterdam', country: 'NL' }], plans: [{ id: 'vc2-1c-1gb', vcpus: 1, memoryGb: 1, diskGb: 25, priceMonthly: 5, regions: ['ams'] }], images: [{ id: 2284, name: 'Ubuntu 24.04 LTS x64', family: 'ubuntu' }], sshKeys: [{ id: key, name: 'laptop' }] };
+    expect(vultrOptions.parse(options)).toEqual(options);
+    expect(vultrStatus).toBe(hetznerStatus);
+  });
+  it('a Vultr node row carries its UUID', () => {
+    const server = { serverId: 1, name: 'edge', provider: 'vultr', providerServerId: 'cb676a46-66fd-4dfb-b839-443f2e6c0b60', location: 'ams', serverType: 'vc2-1c-1gb', image: 'Ubuntu', ipv4: '192.0.2.1', providerStatus: 'active', nodeStatus: 'online', createdAt: 'now' };
+    expect(cloudServer.parse(server)).toEqual(server);
   });
 });

@@ -173,13 +173,14 @@ export async function hetznerOptions(db: DB): Promise<HetznerOptions> {
 
 // ── create ─────────────────────────────────────────────────────────────────
 
-/** The provider behind a cloud node (G4.3: Hetzner first, then DigitalOcean). */
-export type CloudProvider = 'hetzner' | 'digitalocean';
+/** The provider behind a cloud node (G4.3: Hetzner first, then DigitalOcean and Vultr). */
+export type CloudProvider = 'hetzner' | 'digitalocean' | 'vultr';
 
 /** The settings row that links a node to its VM; shared by every provider. */
 export interface StoredLink {
   provider: CloudProvider;
-  providerServerId: number;
+  /** Hetzner and DigitalOcean number their VMs; Vultr uses UUIDs. */
+  providerServerId: number | string;
   name: string;
   location: string;
   serverType: string;
@@ -204,7 +205,7 @@ export function hetznerUserData(agentPort: number, tokenSha256: string, imageTag
 
 export interface CreatedCloudServer {
   serverId: number;
-  providerServerId: number;
+  providerServerId: number | string;
   ipv4: string;
 }
 
@@ -447,7 +448,7 @@ export async function readCloudLinks(db: DB, provider?: CloudProvider): Promise<
 }
 
 /** The list rows of one provider's nodes; `remote` is the provider's status per VM id, null when it could not be read. */
-export async function cloudServerRows(db: DB, provider: CloudProvider, remote: Map<number, string> | null): Promise<CloudServer[]> {
+export async function cloudServerRows(db: DB, provider: CloudProvider, remote: Map<number | string, string> | null): Promise<CloudServer[]> {
   const out: CloudServer[] = [];
   for (const { serverId, link } of await readCloudLinks(db, provider)) {
     const node = await db.query.servers.findFirst({ where: eq(servers.id, serverId), columns: { status: true } });
@@ -521,7 +522,7 @@ export async function forgetCloudNode(db: DB, serverId: number, nodeExists: bool
 }
 
 /** Delete the VM and its node row. Refused while the node hosts services, databases or Swarm work. */
-export async function deleteHetznerServer(db: DB, serverId: number): Promise<{ providerServerId: number; name: string }> {
+export async function deleteHetznerServer(db: DB, serverId: number): Promise<{ providerServerId: number | string; name: string }> {
   const link = await cloudLink(db, serverId, 'hetzner', 'Hetzner');
   const token = await requireToken(db);
   const nodeExists = await assertCloudNodeRemovable(db, serverId);

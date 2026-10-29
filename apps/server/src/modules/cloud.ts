@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { digitalOceanServerCreate, digitalOceanTokenInput, hetznerServerCreate, hetznerTokenInput } from '@ninedeploy/schemas';
+import { digitalOceanServerCreate, digitalOceanTokenInput, hetznerServerCreate, hetznerTokenInput, vultrServerCreate, vultrTokenInput } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { parseId } from '../lib/errors.js';
 import {
@@ -21,9 +21,10 @@ import {
   listDigitalOceanServers,
   saveDigitalOceanToken,
 } from '../lib/digitaloceanCloud.js';
+import { createVultrServer, deleteVultrServer, deleteVultrToken, listVultrServers, saveVultrToken, vultrOptions, vultrStatus } from '../lib/vultrCloud.js';
 
 /**
- * G4.3 cloud servers, operator only: `/v1/cloud/hetzner/*`. The token is
+ * G4.3 cloud servers, operator only: `/v1/cloud/{hetzner,digitalocean,vultr}/*`. The token is
  * write-only (its last four characters are shown back). Creating a server
  * starts a VM that bootstraps the agent by itself; the node turns online when
  * the agent first answers.
@@ -117,6 +118,52 @@ export const cloudRoutes: FastifyPluginAsync = async (app) => {
     const removed = await deleteDigitalOceanServer(app.db, serverId);
     void audit(app.db, req.user!.id, 'cloud.server_delete', removed.name, {
       provider: 'digitalocean',
+      serverId,
+      providerServerId: removed.providerServerId,
+    });
+    return { ok: true };
+  });
+
+  // ── Vultr: the same flow, `/v1/cloud/vultr/*` ──
+  app.get('/vultr', async () => vultrStatus(app.db));
+
+  app.put('/vultr/token', async (req) => {
+    const { token } = vultrTokenInput.parse(req.body ?? {});
+    const status = await saveVultrToken(app.db, token);
+    void audit(app.db, req.user!.id, 'cloud.vultr_token_set', 'vultr', { tokenHint: status.tokenHint });
+    return status;
+  });
+
+  app.delete('/vultr/token', async (req) => {
+    await deleteVultrToken(app.db);
+    void audit(app.db, req.user!.id, 'cloud.vultr_token_delete', 'vultr');
+    return vultrStatus(app.db);
+  });
+
+  app.get('/vultr/options', async () => vultrOptions(app.db));
+
+  app.get('/vultr/servers', async () => listVultrServers(app.db));
+
+  app.post('/vultr/servers', async (req) => {
+    const input = vultrServerCreate.parse(req.body ?? {});
+    const created = await createVultrServer(app.db, input, { waitForAgent: waitForAgentInBackground(app.db, req.log) });
+    void audit(app.db, req.user!.id, 'cloud.server_create', input.name, {
+      provider: 'vultr',
+      serverId: created.serverId,
+      providerServerId: created.providerServerId,
+      ipv4: created.ipv4,
+      location: input.region,
+      serverType: input.plan,
+      osId: input.osId,
+    });
+    return created;
+  });
+
+  app.delete('/vultr/servers/:serverId', async (req) => {
+    const serverId = parseId((req.params as { serverId: string }).serverId, 'Invalid node id');
+    const removed = await deleteVultrServer(app.db, serverId);
+    void audit(app.db, req.user!.id, 'cloud.server_delete', removed.name, {
+      provider: 'vultr',
       serverId,
       providerServerId: removed.providerServerId,
     });

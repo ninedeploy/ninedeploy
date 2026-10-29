@@ -24,6 +24,7 @@ import { useToast } from '../components/Toast.js';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorCard, Field, Input, Modal, PageHeader, Skeleton, cn } from '../components/ui.js';
 import { HetznerCloudCard } from '../components/HetznerCloudCard.js';
 import { DigitalOceanCloudCard } from '../components/DigitalOceanCloudCard.js';
+import { VultrCloudCard } from '../components/VultrCloudCard.js';
 import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
 import { formatRelative, useCopy } from '../lib/format.js';
 import { agentDockerRunCommand } from '@ninedeploy/schemas';
@@ -388,9 +389,10 @@ export function Servers() {
         </div>
       </Card>
 
-      {/* G4.3: nodes created on Hetzner Cloud (operator-only routes). */}
+      {/* G4.3: nodes created on Hetzner Cloud, DigitalOcean and Vultr (operator-only routes). */}
       {isOperator && <HetznerCloudCard />}
       {isOperator && <DigitalOceanCloudCard />}
+      {isOperator && <VultrCloudCard />}
 
       {/* Discovery & Pending Approval Section */}
       {pendingServers.length > 0 && (

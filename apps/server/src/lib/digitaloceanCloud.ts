@@ -236,7 +236,7 @@ export async function listDigitalOceanServers(db: DB): Promise<CloudServer[]> {
 }
 
 /** Delete the droplet and its node row. Refused while the node hosts services, databases or Swarm work. */
-export async function deleteDigitalOceanServer(db: DB, serverId: number): Promise<{ providerServerId: number; name: string }> {
+export async function deleteDigitalOceanServer(db: DB, serverId: number): Promise<{ providerServerId: number | string; name: string }> {
   const link = await cloudLink(db, serverId, 'digitalocean', 'DigitalOcean');
   const token = await requireToken(db);
   const nodeExists = await assertCloudNodeRemovable(db, serverId);

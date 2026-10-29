@@ -5953,4 +5953,20 @@ export const TR: Readonly<Record<string, string>> = {
   '{cpus} vCPU, {memory} GB RAM, {disk} GB, USD {price}/month': '{cpus} vCPU, {memory} GB RAM, {disk} GB, ayda {price} USD',
   'DigitalOcean bills the droplet from the moment it is created. Its user data installs Docker and starts the NineDeploy agent on port 4600; the panel replaces the agent key as soon as the agent answers.':
     'DigitalOcean droplet\'ı oluşturulduğu andan itibaren ücretlendirir. User data\'sı Docker\'ı kurar ve NineDeploy agent\'ını 4600 portunda başlatır; agent yanıt verir vermez panel agent anahtarını değiştirir.',
+
+  // ── Vultr instances ───────────────────────────────────────────────────
+  'Vultr API key saved': 'Vultr API anahtarı kaydedildi',
+  'Instance deleted on Vultr': 'Instance Vultr\'da silindi',
+  'Create instance': 'Instance oluştur',
+  'Vultr API key': 'Vultr API anahtarı',
+  'Create instances on Vultr that join this panel by themselves. Paste an API key (Account → API) and allow the panel’s address in its access control; it is stored encrypted and never shown again.':
+    'Bu panele kendiliğinden katılan instance\'ları Vultr\'da oluşturun. Bir API anahtarı yapıştırın (Account → API) ve erişim kontrolünde panelin adresine izin verin; şifreli saklanır ve bir daha gösterilmez.',
+  'Delete instance': 'Instance\'ı sil',
+  'Delete the instance "{name}" on Vultr and remove its node? The instance and everything on its disk are destroyed. This is refused while the node hosts services or databases.':
+    'Vultr\'daki "{name}" instance\'ı silinsin ve node\'u kaldırılsın mı? Instance ve diskindeki her şey yok edilir. Node servis veya veritabanı barındırırken bu reddedilir.',
+  'Could not read the Vultr account: {error}': 'Vultr hesabı okunamadı: {error}',
+  'Reading the Vultr account…': 'Vultr hesabı okunuyor…',
+  'Plan': 'Plan',
+  'Vultr bills the instance from the moment it is created. Its user data installs Docker and starts the NineDeploy agent on port 4600; the panel replaces the agent key as soon as the agent answers.':
+    'Vultr instance\'ı oluşturulduğu andan itibaren ücretlendirir. User data\'sı Docker\'ı kurar ve NineDeploy agent\'ını 4600 portunda başlatır; agent yanıt verir vermez panel agent anahtarını değiştirir.',
 };
