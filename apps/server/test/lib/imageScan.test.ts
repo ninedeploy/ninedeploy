@@ -129,6 +129,16 @@ describe('the deploy hook', () => {
 });
 
 describe('scheduled rescans', () => {
+  it('replaces a stale clean verdict with an error when the running Compose inventory is unavailable', async () => {
+    await lib.setImageScanPolicy(db, { enabled: true, rescanHours: 24 });
+    const stackImagesOf = vi.fn().mockResolvedValueOnce([{ imageId: IMG, services: ['api'] }]).mockRejectedValueOnce(new Error('inspect unavailable'));
+    const deps = { trivy: async () => report([]), imageIdOf: async () => Promise.reject(new Error('none')), stackImagesOf };
+    expect(await lib.rescanRunningImages(db, deps)).toBe(1);
+    expect(await lib.getImageScanResult(db, 6)).toMatchObject({ status: 'ok' });
+    expect(await lib.rescanRunningImages(db, deps)).toBe(0);
+    expect(await lib.getImageScanResult(db, 6)).toMatchObject({ status: 'error', error: 'The running Compose image inventory could not be confirmed' });
+  });
+
   it('retries a failed image scan on the next sweep instead of treating it as fresh', async () => {
     await lib.setImageScanPolicy(db, { enabled: true, rescanHours: 24 });
     const trivy = vi.fn().mockRejectedValueOnce(new Error('scanner offline')).mockResolvedValue(report([]));

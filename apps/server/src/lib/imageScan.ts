@@ -282,15 +282,20 @@ export async function composeStackImages(slug: string): Promise<Array<{ imageId:
   const ids = (await capture('docker', ['ps', '-q', '--filter', `label=com.docker.compose.project=ndcmp-${slug}`], { timeoutMs: 30_000 }))
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => /^[a-f0-9]{12,64}$/.test(l));
+    .filter(Boolean);
   if (!ids.length) return [];
-  const lines = (await capture('docker', ['inspect', '--format', '{{.Image}}\t{{ index .Config.Labels "com.docker.compose.service" }}', ...ids], { timeoutMs: 30_000 })).split('\n');
+  if (ids.some(id => !/^[a-f0-9]{12,64}$/.test(id)) || new Set(ids).size !== ids.length) throw new Error('Compose container inventory is incomplete or unconfirmed');
+  const lines = (await capture('docker', ['inspect', '--format', '{{.Image}}\t{{ index .Config.Labels "com.docker.compose.service" }}', ...ids], { timeoutMs: 30_000 }))
+    .split('\n').map(line => line.trim()).filter(Boolean);
+  if (lines.length !== ids.length) throw new Error('Compose image inventory is incomplete or unconfirmed');
   const byImage = new Map<string, Set<string>>();
   for (const line of lines) {
-    const [imageId, service] = line.trim().split('\t');
-    if (!imageId || !/^sha256:[a-f0-9]{64}$/.test(imageId)) continue;
+    const [imageId, service, extra] = line.split('\t');
+    if (!imageId || !/^sha256:[a-f0-9]{64}$/.test(imageId) || !service || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(service) || extra !== undefined) {
+      throw new Error('Compose image inventory is incomplete or unconfirmed');
+    }
     const set = byImage.get(imageId) ?? new Set<string>();
-    if (service) set.add(service);
+    set.add(service);
     byImage.set(imageId, set);
   }
   return [...byImage.entries()].map(([imageId, services]) => ({ imageId, services: [...services].sort() })).sort((a, b) => a.imageId.localeCompare(b.imageId));
@@ -425,6 +430,13 @@ export async function rescanRunningImages(db: DB, deps: RescanDeps = {}): Promis
       try {
         images = await (deps.stackImagesOf ?? composeStackImages)(svc.slug);
       } catch {
+        const result: ImageScanResult = {
+          serviceId: svc.id, imageId: 'compose:unconfirmed', trigger: 'schedule', deploymentId: null,
+          blocked: false, scannedAt: new Date().toISOString(), status: 'error',
+          error: 'The running Compose image inventory could not be confirmed', os: null,
+          counts: zero(), fixable: zero(), findings: [], findingsTruncated: false, images: [],
+        };
+        await setSettingJson(db, resultKey(svc.id), result);
         continue;
       }
       if (!images.length) continue; // not running right now

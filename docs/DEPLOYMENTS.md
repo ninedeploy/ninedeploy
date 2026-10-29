@@ -640,6 +640,7 @@ Trivy scans each Docker deploy's image on the panel host and rescans running ima
 **Scheduled rescans**
 - Once an hour, running images whose latest scan is older than the interval (default 24 hours), or was of another image, are scanned again.
 - Failed scans and incomplete Compose scans are retried at the next hourly sweep. A partial result keeps findings from scanned images and names the images that could not be scanned; it does not report the stack as clean.
+- If Docker cannot provide a complete Compose container and image inventory, the scheduled result is marked as an error instead of retaining a previous clean verdict.
 - A rescan that finds new fixable critical findings is audited as `image_scan.critical`, which notifies the channels that receive audit events.
 
 **Where the results show**
