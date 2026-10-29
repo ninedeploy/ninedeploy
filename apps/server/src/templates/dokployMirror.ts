@@ -75,7 +75,8 @@ export function hostBindRefusal(doc: { services?: unknown; volumes?: unknown; ne
     if (key === 'secrets' || key === 'configs') return `declares top-level ${key} (they can read host files)`;
   }
   for (const [name, entry] of Object.entries(services)) {
-    if (!entry || typeof entry !== 'object') continue;
+    // Fail closed: the loop below reads every entry's keys, so a null or scalar service must not slip past.
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return `service '${name}' is not a mapping`;
     for (const key of Object.keys(entry)) {
       if (!SAFE_SERVICE_KEYS.has(key) && !key.startsWith('x-')) return `service '${name}' uses ${key}`;
     }

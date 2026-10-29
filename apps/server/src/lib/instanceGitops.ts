@@ -2,7 +2,7 @@ import { closeSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, read
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { and, eq, isNull, isNotNull } from 'drizzle-orm';
-import { accessGrants, domains, projects, serviceProjects, services, users, workspaces, type DB } from '@ninedeploy/db';
+import { accessGrants, domains, projects, serviceProjects, services, settings, users, workspaces, type DB } from '@ninedeploy/db';
 import {
   instanceSpec,
   scanForSecrets,
@@ -36,9 +36,14 @@ const CHECK_KEY = 'instance_gitops_check';
 export const MAX_SPEC_BYTES = 256 * 1024;
 
 export const getGitopsConfig = (db: DB) => getSettingJson<GitopsConfig>(db, CONFIG_KEY, null);
-export const setGitopsConfig = (db: DB, cfg: GitopsConfig | null) => setSettingJson(db, CONFIG_KEY, cfg);
+/** null removes the row: settings.value is NOT NULL, so storing null failed (DELETE /v1/gitops answered 500). */
+const setOrClear = async <T>(db: DB, key: string, value: T | null): Promise<void> => {
+  if (value === null) await db.delete(settings).where(eq(settings.key, key));
+  else await setSettingJson(db, key, value);
+};
+export const setGitopsConfig = (db: DB, cfg: GitopsConfig | null) => setOrClear(db, CONFIG_KEY, cfg);
 export const getLastCheck = (db: DB) => getSettingJson<GitopsCheck>(db, CHECK_KEY, null);
-export const setLastCheck = (db: DB, check: GitopsCheck | null) => setSettingJson(db, CHECK_KEY, check);
+export const setLastCheck = (db: DB, check: GitopsCheck | null) => setOrClear(db, CHECK_KEY, check);
 
 /** Parse and validate the file: size, no secrets, the schema, unique names. */
 export function parseInstanceSpec(text: string): InstanceSpec {
