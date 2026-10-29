@@ -75,4 +75,36 @@ describe('OsUpdatesCard (G4.2)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Check updates' }));
     expect(await screen.findByText(/Could not read the host: node_agent_outdated/)).toBeInTheDocument();
   });
+
+  it('reports failed changes and refreshes without showing an unconfirmed state', async () => {
+    mockOf(api.osUpdates.get).mockImplementation(async (_id, opts) => {
+      if (opts?.refresh) throw new Error('refresh denied');
+      return status() as never;
+    });
+    mockOf(api.osUpdates.setAuto).mockRejectedValue(new Error('policy denied'));
+    renderWithProviders(<OsUpdatesCard serverId={7} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Check updates' }));
+    const toggle = await screen.findByRole('switch', { name: 'Install security updates automatically' });
+    await userEvent.click(toggle);
+    expect(await screen.findByText('Could not change automatic updates: policy denied')).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh package lists' }));
+    expect(await screen.findByText('Could not refresh the package lists: refresh denied')).toBeInTheDocument();
+    expect(screen.getByText('2 pending updates, 1 of them security updates')).toBeInTheDocument();
+  });
+
+  it('lets operators inspect a long security update list and collapse it again', async () => {
+    const updates = Array.from({ length: 16 }, (_, i) => ({ name: `pkg-${String(i).padStart(2, '0')}`, version: '2', from: '1', security: i === 15 }));
+    mockOf(api.osUpdates.get).mockResolvedValue(status({ updates, securityCount: 1, updatesTruncated: true, rebootRequired: null }) as never);
+    renderWithProviders(<OsUpdatesCard serverId={7} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Check updates' }));
+    expect(await screen.findByText('pkg-15')).toBeInTheDocument();
+    expect(screen.getByText(/\(list cut short\)/)).toBeInTheDocument();
+    expect(screen.getByText('This host cannot tell whether a reboot is pending.')).toBeInTheDocument();
+    expect(screen.queryByText('pkg-14')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show all 16' }));
+    expect(screen.getByText('pkg-14')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show fewer' }));
+    expect(screen.queryByText('pkg-14')).not.toBeInTheDocument();
+  });
 });

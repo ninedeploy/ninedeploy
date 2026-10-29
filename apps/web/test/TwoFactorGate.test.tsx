@@ -47,4 +47,35 @@ describe('TwoFactorPolicyCard (G1.4)', () => {
     await waitFor(() => expect(api.workspaces.twoFactor.set).toHaveBeenCalledWith(3, { required: true, ssoExemptProviders: [] }));
     expect(await screen.findByText('2 members have no second factor yet')).toBeTruthy();
   });
+
+  it('adds and removes only the selected SSO exemption and excludes GitHub', async () => {
+    mockOf(api.workspaces.twoFactor.get).mockResolvedValue({ required: true, ssoExemptProviders: ['oidc:2'], membersWithout: 1 } as never);
+    mockOf(api.auth.oidc.publicProviders).mockResolvedValue([
+      { id: 2, slug: 'corp', name: 'Corporate SSO' },
+      { id: 3, slug: 'partner', name: 'Partner SSO' },
+      { id: 4, slug: 'github', name: 'GitHub' },
+    ] as never);
+    mockOf(api.workspaces.twoFactor.set).mockResolvedValueOnce({ required: true, ssoExemptProviders: ['oidc:2', 'oidc:3'], membersWithout: 1 } as never)
+      .mockResolvedValueOnce({ required: true, ssoExemptProviders: ['oidc:3'], membersWithout: 1 } as never);
+    renderWithProviders(<TwoFactorPolicyCard workspaceId={3} />);
+    const partner = await screen.findByRole('checkbox', { name: 'Partner SSO' });
+    expect(screen.queryByRole('checkbox', { name: 'GitHub' })).not.toBeInTheDocument();
+    await userEvent.click(partner);
+    await waitFor(() => expect(api.workspaces.twoFactor.set).toHaveBeenCalledWith(3, { required: true, ssoExemptProviders: ['oidc:2', 'oidc:3'] }));
+    await waitFor(() => expect(partner).toBeChecked());
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Corporate SSO' }));
+    await waitFor(() => expect(api.workspaces.twoFactor.set).toHaveBeenCalledWith(3, { required: true, ssoExemptProviders: ['oidc:3'] }));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Corporate SSO' })).not.toBeChecked());
+  });
+
+  it('reports a refused policy change without claiming the requirement is enabled', async () => {
+    mockOf(api.workspaces.twoFactor.get).mockResolvedValue({ required: false, ssoExemptProviders: [], membersWithout: 2 } as never);
+    mockOf(api.auth.oidc.publicProviders).mockResolvedValue([] as never);
+    mockOf(api.workspaces.twoFactor.set).mockRejectedValue(new Error('Verify your second factor first'));
+    renderWithProviders(<TwoFactorPolicyCard workspaceId={3} />);
+    const toggle = await screen.findByRole('switch', { name: 'Require two-factor authentication' });
+    await userEvent.click(toggle);
+    expect(await screen.findByText('Verify your second factor first')).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+  });
 });
