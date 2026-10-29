@@ -1,0 +1,210 @@
+{
+  "generatedAt": "2026-10-29T01:15:37.774Z",
+  "registryVersion": 2,
+  "results": [
+    {
+      "id": "dokploy-mattermost",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 127,
+      "error": "exited before readiness (restarting):\n{\"timestamp\":\"2026-10-29 00:41:15.419 Z\",\"level\":\"info\",\"msg\":\"Successfully connected to cache backend\",\"caller\":\"platform/service.go:193\",\"backend\":\"lru\",\"result\":\"OK\"}\n{\"timestamp\":\"2026-10-29 00:41:15.419 Z\",\"level\":\"info\",\"msg\":\"Server is initializing...\",\"caller\":\"platform/service.go:196\",\"go_version\":\"go1.22.6\"}\n{\"timestamp\":\"2026-10-29 00:41:15.419 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:15.421 Z\",\"level\":\"error\",\"msg\":\"Failed to ping DB\",\"caller\":\"sql/sql_utils.go:76\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\",\"retrying in seconds\":2,\"error\":\"dial tcp [::1]:5432: connect: connection refused\"}\n{\"timestamp\":\"2026-10-29 00:41:17.421 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:17.421 Z\",\"level\":\"error\",\"msg\":\"Failed to ping DB\",\"caller\":\"sql/sql_utils.go:76\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\",\"retrying in seconds\":2,\"error\":\"dial tcp [::1]:5432: connect: connection refused\"}\n{\"timestamp\":\"2026-10-29 00:41:19.422 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:19.422 Z\",\"level\":\"error\",\"msg\":\"Failed to ping DB\",\"caller\":\"sql/sql_utils.go:76\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\",\"retrying in seconds\":2,\"error\":\"dial tcp [::1]:5432: connect: connection refused\"}\n{\"timestamp\":\"2026-10-29 00:41:21.423 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:21.424 Z\",\"level\":\"error\",\"msg\":\"Failed to ping DB\",\"caller\":\"sql/sql_utils.go:76\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\",\"retrying in seconds\":2,\"error\":\"dial tcp [::1]:5432: connect: connection refused\"}\n{\"timestamp\":\"2026-10-29 00:41:23.425 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:23.427 Z\",\"level\":\"error\",\"msg\":\"failed to initialize platform: cannot create store: error setting up connections: dial tcp [::1]:5432: connect: connection refused\",\"caller\":\"commands/server.go:75\"}\n{\"timestamp\":\"2026-10-29 00:41:24.149 Z\",\"level\":\"info\",\"msg\":\"Successfully connected to cache backend\",\"caller\":\"platform/service.go:193\",\"backend\":\"lru\",\"result\":\"OK\"}\n{\"timestamp\":\"2026-10-29 00:41:24.149 Z\",\"level\":\"info\",\"msg\":\"Server is initializing...\",\"caller\":\"platform/service.go:196\",\"go_version\":\"go1.22.6\"}\n{\"timestamp\":\"2026-10-29 00:41:24.149 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:24.150 Z\",\"level\":\"error\",\"msg\":\"Failed to ping DB\",\"caller\":\"sql/sql_utils.go:76\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\",\"retrying in seconds\":2,\"error\":\"dial tcp [::1]:5432: connect: connection refused\"}\n{\"timestamp\":\"2026-10-29 00:41:26.149 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:26.150 Z\",\"level\":\"error\",\"msg\":\"Failed to ping DB\",\"caller\":\"sql/sql_utils.go:76\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\",\"retrying in seconds\":2,\"error\":\"dial tcp [::1]:5432: connect: connection refused\"}\n{\"timestamp\":\"2026-10-29 00:41:28.150 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:28.151 Z\",\"level\":\"error\",\"msg\":\"Failed to ping DB\",\"caller\":\"sql/sql_utils.go:76\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\",\"retrying in seconds\":2,\"error\":\"dial tcp [::1]:5432: connect: connection refused\"}\n{\"timestamp\":\"2026-10-29 00:41:30.151 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:30.152 Z\",\"level\":\"error\",\"msg\":\"Failed to ping DB\",\"caller\":\"sql/sql_utils.go:76\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\",\"retrying in seconds\":2,\"error\":\"dial tcp [::1]:5432: connect: connection refused\"}\n{\"timestamp\":\"2026-10-29 00:41:32.153 Z\",\"level\":\"info\",\"msg\":\"Pinging SQL\",\"caller\":\"sql/sql_utils.go:68\",\"database\":\"master\",\"dataSource\":\"postgres://%2A%2A%2A%2A:%2A%2A%2A%2A@localhost/mattermost_test?binary_parameters=yes&connect_timeout=10&sslmode=disable\"}\n{\"timestamp\":\"2026-10-29 00:41:32.154 Z\",\"level\":\"error\",\"msg\":\"failed to initialize platform: cannot create store: error setting up connections: dial tcp [::1]:5432: connect: connection refused\",\"caller\":\"commands/server.go:75\"}"
+    },
+    {
+      "id": "dokploy-stirling",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 87,
+      "error": "passed the smoke run; not promoted: image pinned to the mutable :latest tag"
+    },
+    {
+      "id": "dokploy-paperless-ngx",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 103
+    },
+    {
+      "id": "dokploy-gitea-postgres",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 15,
+      "error": "passed the smoke run; not promoted: open registration on a public URL"
+    },
+    {
+      "id": "dokploy-n8n-with-postgres",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 92,
+      "error": "passed the smoke run; not promoted: whoever opens it first becomes the owner of a code-running app"
+    },
+    {
+      "id": "dokploy-tandoor-recipes",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 48
+    },
+    {
+      "id": "dokploy-kitchenowl",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 60
+    },
+    {
+      "id": "dokploy-flarum",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 41,
+      "error": "passed the smoke run; not promoted: open install wizard"
+    },
+    {
+      "id": "dokploy-formbricks",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 171,
+      "error": "passed the smoke run; not promoted: refused by the converter host-access rules"
+    },
+    {
+      "id": "dokploy-hoppscotch",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 90,
+      "error": "Command failed: docker compose -p ndsmokeaa5d951d4310 -f C:\\Users\\ersin\\AppData\\Local\\Temp\\nd-smoke-gHpUWS\\docker-compose.yml up -d --quiet-pull\n Image postgres:16 Pulling \n Image postgres:16 Pulled \n Network ndsmokeaa5d951d4310_default Creating \n Volume ndsmokeaa5d951d4310_hoppscotch-data Creating \n Volume ndsmokeaa5d951d4310_hoppscotch-postgres Creating \n Volume ndsmokeaa5d951d4310_hoppscotch-data Creating \n Volume ndsmokeaa5d951d4310_hoppscotch-postgres Creating \n Network ndsmokeaa5d951d4310_default Creating \n Volume ndsmokeaa5d951d4310_hoppscotch-postgres Created \n Volume ndsmokeaa5d951d4310_hoppscotch-postgres Created \n Volume ndsmokeaa5d951d4310_hoppscotch-data Created \n Volume ndsmokeaa5d951d4310_hoppscotch-data Created \n Network ndsmokeaa5d951d4310_default Created \n Network ndsmokeaa5d951d4310_default Created \n Container ndsmokeaa5d951d4310-postgres-1 Creating \n Container ndsmokeaa5d951d4310-postgres-1 Created \n Container ndsmokeaa5d951d4310-migrate-1 Creating \n Container ndsmokeaa5d951d4310-migrate-1 Created \n Container ndsmokeaa5d951d4310-hoppscotch-1 Creating \n Container ndsmokeaa5d951d4310-hoppscotch-1 Created \n Container ndsmokeaa5d951d4310-postgres-1 Starting \n Container ndsmokeaa5d951d4310-postgres-1 Started \n Container ndsmokeaa5d951d4310-postgres-1 Waiting \n Container ndsmokeaa5d951d4310-postgres-1 Healthy "
+    },
+    {
+      "id": "dokploy-litellm",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 75,
+      "error": "passed the smoke run; not promoted: image pinned to the mutable main-latest tag"
+    },
+    {
+      "id": "dokploy-roundcube",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 61
+    },
+    {
+      "id": "dokploy-rsshub",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 116
+    },
+    {
+      "id": "dokploy-ryot",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 52
+    },
+    {
+      "id": "dokploy-sftpgo",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 16,
+      "error": "passed the smoke run; not promoted: whoever opens it first becomes the file server admin"
+    },
+    {
+      "id": "dokploy-typecho",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 56,
+      "error": "passed the smoke run; not promoted: fixed database passwords"
+    },
+    {
+      "id": "dokploy-yt-dlp-webui",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 41,
+      "error": "passed the smoke run; not promoted: no authentication; anyone can download to the server"
+    },
+    {
+      "id": "dokploy-pastefy",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 104,
+      "error": "passed the smoke run; not promoted: refused by the converter host-access rules"
+    },
+    {
+      "id": "dokploy-movary",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 26,
+      "error": "exited before readiness (restarting):\nALERT: Required config not set: APPLICATION_SECRET\nALERT: Required config not set: APPLICATION_SECRET\nALERT: Required config not set: APPLICATION_SECRET\nALERT: Required config not set: APPLICATION_SECRET\nALERT: Required config not set: APPLICATION_SECRET\n"
+    },
+    {
+      "id": "dokploy-lubelogger",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 45,
+      "error": "passed the smoke run; not promoted: authentication off (EnableAuth=false)"
+    },
+    {
+      "id": "dokploy-homebridge",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 370,
+      "error": "passed the smoke run; not promoted: whoever opens it first becomes admin, and it has a terminal"
+    },
+    {
+      "id": "dokploy-netdata",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 36,
+      "error": "passed the smoke run; not promoted: refused by the converter host-access rules"
+    },
+    {
+      "id": "dokploy-baikal",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 16,
+      "error": "passed the smoke run; not promoted: open install wizard"
+    },
+    {
+      "id": "dokploy-ampache",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 74,
+      "error": "passed the smoke run; not promoted: refused by the converter host-access rules"
+    },
+    {
+      "id": "dokploy-calibre",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 115,
+      "error": "passed the smoke run; not promoted: a desktop without a password"
+    },
+    {
+      "id": "dokploy-backrest",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 11,
+      "error": "Command failed: docker compose -p ndsmokeaa5d951d4326 -f C:\\Users\\ersin\\AppData\\Local\\Temp\\nd-smoke-gHpUWS\\docker-compose.yml up -d --quiet-pull\nservice \"backrest\" refers to undefined volume backrest/data: invalid compose project\n"
+    },
+    {
+      "id": "dokploy-dagu",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 26
+    },
+    {
+      "id": "dokploy-go2rtc",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 24,
+      "error": "passed the smoke run; not promoted: no authentication; exec sources can run commands"
+    },
+    {
+      "id": "dokploy-opencloud",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 26,
+      "error": "passed the smoke run; not promoted: upstream typo breaks the admin password"
+    },
+    {
+      "id": "dokploy-gitea-mysql",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 17,
+      "error": "passed the smoke run; not promoted: open registration on a public URL"
+    }
+  ],
+  "source": "Dokploy blueprints (Dokploy/templates, MIT), converted by scripts/buildDokployMirror.ts; smoke-template-runtime.mjs --registry; reviewed before promotion"
+}
