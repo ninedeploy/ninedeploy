@@ -853,6 +853,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/registry-hook': R('member'),
   'POST /v1/services/:id/registry-hook': R('member'),
   'DELETE /v1/services/:id/registry-hook': R('member'),
+  'GET /v1/services/:id/commit-status': R('member'),
+  'PUT /v1/services/:id/commit-status': R('admin', { body: () => ({ enabled: false }) }),
   'POST /v1/registry-hooks/:serviceId/:token': R('token', { allow404: 'no hook is minted in the shared seed; the token path is covered by test/registryHooks.test.ts' }),
   'GET /v1/services/:id/files': R('viewer'),
   'GET /v1/services/:id/files/:fileId': R('member', { allow404: 'no file is seeded; reads are covered by test/serviceFiles.test.ts' }),

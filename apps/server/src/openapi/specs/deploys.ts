@@ -1,4 +1,4 @@
-import { serviceFilePut } from '@ninedeploy/schemas';
+import { serviceCommitStatusInput, serviceFilePut } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -169,6 +169,24 @@ export const deploysSpecs: RouteSpecMap = {
     description: 'The URL answers 404 from now on. Audited service.registry_hook.disable. G1.7.',
     floor: 'member',
     responseType: '{ enabled: boolean; mine: boolean; url: string | null; createdAt: string | null; lastPushAt: string | null }',
+  },
+  'GET /v1/services/:id/commit-status': {
+    summary: 'Whether the service reports commit statuses to GitLab, Gitea or Bitbucket',
+    tag: 'deploys',
+    description:
+      '`provider` is the type of the token source the service clones through, when it can report; `unavailable` says why it cannot (a preview, no source, another provider, no token, a non-https URL, or Bitbucket other than bitbucket.org). GitHub reports through the GitHub App instead. ROADMAP 0.16.8 item 8.',
+    floor: 'member',
+    responseType: "{ enabled: boolean; provider: 'gitlab' | 'gitea' | 'bitbucket' | null; unavailable: string | null }",
+  },
+  'PUT /v1/services/:id/commit-status': {
+    summary: 'Turn commit statuses on GitLab, Gitea or Bitbucket on or off',
+    tag: 'deploys',
+    description:
+      'Each deploy then sets `ninedeploy/<slug>` (previews: `ninedeploy/<parent>/preview`) to pending, then success, failure or cancelled, with the source token on the repository host. Turning it on answers 400 commit_status_unavailable when the service cannot report. Observational: a failed status never fails a deploy. Audited service.commit_status.enable / disable. Service admin.',
+    floor: 'admin',
+    body: serviceCommitStatusInput,
+    validation: 'zod',
+    responseType: "{ enabled: boolean; provider: 'gitlab' | 'gitea' | 'bitbucket' | null; unavailable: string | null }",
   },
   'POST /v1/registry-hooks/:serviceId/:token': {
     summary: 'Redeploy an image service when its tag is pushed (registry webhook)',

@@ -51,6 +51,7 @@ import type {
   ErrorPagesInput,
   InlineDockerfileView,
   ServiceMoveView,
+  ServiceCommitStatusView,
   ErrorEventView,
   ErrorIngestView,
   ErrorIssueView,
@@ -257,6 +258,11 @@ export interface ServicesApi {
      * Harbor, registry:2) calls after a push; the service redeploys when the
      * pushed tag is its image. The URL is returned once, by `enable`.
      */
+    /** GitLab, Gitea and Bitbucket commit statuses (ROADMAP 0.16.8 item 8). */
+    commitStatus: {
+      get: (id: number) => Promise<ServiceCommitStatusView>;
+      set: (id: number, enabled: boolean) => Promise<ServiceCommitStatusView>;
+    };
     registryHook: {
       get: (id: number) => Promise<RegistryHookView>;
       enable: (id: number) => Promise<RegistryHookView>;
@@ -448,6 +454,10 @@ export function servicesApi(t: Transport): ServicesApi {
       inlineDockerfile: {
         get: (id) => get<InlineDockerfileView>(`/v1/services/${id}/inline-dockerfile`),
         set: (id, content) => send<InlineDockerfileView>('PUT', `/v1/services/${id}/inline-dockerfile`, { content }),
+      },
+      commitStatus: {
+        get: (id) => get<ServiceCommitStatusView>(`/v1/services/${id}/commit-status`),
+        set: (id, enabled) => send<ServiceCommitStatusView>('PUT', `/v1/services/${id}/commit-status`, { enabled }),
       },
       registryHook: {
         get: (id) => get<RegistryHookView>(`/v1/services/${id}/registry-hook`),

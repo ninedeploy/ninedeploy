@@ -120,6 +120,7 @@ export function createFakeApiModule() {
         enable: vi.fn(),
         disable: vi.fn(),
       },
+      commitStatus: { get: vi.fn().mockResolvedValue({ enabled: false, provider: null, unavailable: 'The service does not clone through a git source' }), set: vi.fn() },
       registryHook: {
         get: vi.fn().mockResolvedValue({ enabled: false, mine: false, url: null, createdAt: null, lastPushAt: null }),
         enable: vi.fn(),

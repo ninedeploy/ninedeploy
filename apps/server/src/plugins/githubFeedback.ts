@@ -1,9 +1,12 @@
 import fp from 'fastify-plugin';
 import { deployingFeedback, outcomeFeedback } from '../lib/githubFeedback.js';
+import { deployingCommitStatus, outcomeCommitStatus } from '../lib/gitCommitStatus.js';
 
 /**
  * Deploy feedback to GitHub (0.13): commit statuses and preview PR comments
- * for services whose GitHub link opted in (`lib/githubFeedback.ts`).
+ * for services whose GitHub link opted in (`lib/githubFeedback.ts`), and
+ * commit statuses on GitLab, Gitea and Bitbucket for services that opted in
+ * with a token source of that type (`lib/gitCommitStatus.ts`).
  *
  * Listens on the kernel bus, so it must be registered after the kernel
  * plugin: `service.deploying` comes straight from the pipeline, and
@@ -19,6 +22,8 @@ export default fp(
     const off = [
       events.on('service.deploying', (p) => deployingFeedback(fastify.db, log, p.serviceId, p.deployId)),
       events.on('deployment.status_changed', (p) => outcomeFeedback(fastify.db, log, p.deploymentId, p.status)),
+      events.on('service.deploying', (p) => deployingCommitStatus(fastify.db, log, p.serviceId, p.deployId)),
+      events.on('deployment.status_changed', (p) => outcomeCommitStatus(fastify.db, log, p.deploymentId, p.status)),
     ];
     fastify.addHook('onClose', async () => {
       for (const unsubscribe of off) unsubscribe();

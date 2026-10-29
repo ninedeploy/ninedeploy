@@ -21,6 +21,8 @@ it('routes deployment management, identity and instance operations with their in
     [() => api.services.move.start(7, 3), 'POST', '/v1/services/7/move', { serverId: 3 }],
     [() => api.services.inlineDockerfile.get(7), 'GET', '/v1/services/7/inline-dockerfile'],
     [() => api.services.inlineDockerfile.set(7, 'FROM alpine'), 'PUT', '/v1/services/7/inline-dockerfile', { content: 'FROM alpine' }],
+    [() => api.services.commitStatus.get(7), 'GET', '/v1/services/7/commit-status'],
+    [() => api.services.commitStatus.set(7, true), 'PUT', '/v1/services/7/commit-status', { enabled: true }],
     [() => api.services.registryHook.get(7), 'GET', '/v1/services/7/registry-hook'],
     [() => api.services.registryHook.enable(7), 'POST', '/v1/services/7/registry-hook'],
     [() => api.services.registryHook.disable(7), 'DELETE', '/v1/services/7/registry-hook'],

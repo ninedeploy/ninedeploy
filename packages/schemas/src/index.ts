@@ -53,5 +53,6 @@ export * from './maintenance.js';
 export * from './forwardAuth.js';
 export * from './inlineDockerfile.js';
 export * from './serviceMove.js';
+export * from './commitStatus.js';
 export * from './instanceGitops.js';
 export * from './errorIngest.js';

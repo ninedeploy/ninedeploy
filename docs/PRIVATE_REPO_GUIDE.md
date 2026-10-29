@@ -475,3 +475,26 @@ A service placed on a remote node clones its repository on that node. A PAT or d
    - a `github`, `gitlab` or `bitbucket` source, or one with a base URL, is never sent to a repository on another host.
 
 While the clone runs, the PAT or key is on the node, and a PAT stays valid afterwards. Prefer option 1 for nodes you trust less than the panel. GitHub App repositories need neither: each node clone gets a short-lived token ([GITHUB_APP.md §6](./GITHUB_APP.md)). Turning the toggle off needs no password. See [MULTI_NODE.md §6](./MULTI_NODE.md) for the details.
+
+## 11. Commit statuses on GitLab, Gitea and Bitbucket
+
+A service that clones through a GitLab, Gitea or Bitbucket **token** source can report each deploy on its commit, the way the GitHub App does for GitHub ([GITHUB_APP.md §5](./GITHUB_APP.md)). Turn it on under **Service → Settings → Commit statuses**, or with `PUT /v1/services/:id/commit-status { "enabled": true }` (service admin). In the SDK, use `services.commitStatus.get` and `set`.
+
+**What is sent**
+- When a deploy starts with a known commit, the commit is marked as running. When the deploy ends, it is marked success, failure or cancelled.
+- The status is named `ninedeploy/<slug>`. A PR preview reports through its parent's setting, as `ninedeploy/<parent-slug>/preview`.
+- When the service has a domain, the status links to it.
+
+| Provider | Request | Token |
+|---|---|---|
+| GitLab (gitlab.com or self-hosted) | `POST /api/v4/projects/<path>/statuses/<sha>` on the repository host | `PRIVATE-TOKEN`; needs the `api` scope |
+| Gitea | `POST /api/v1/repos/<owner>/<repo>/statuses/<sha>` on the repository host | `Authorization: token …`; needs repository write |
+| Bitbucket Cloud | `POST https://api.bitbucket.org/2.0/repositories/<workspace>/<repo>/commit/<sha>/statuses/build` | `Authorization: Bearer …`, a repository or workspace access token with repository write |
+
+**Limits and safety**
+- The token goes only to the repository's own host, which is the host the clone already sends it to. A self-hosted source with a base URL never reports to a repository on another host. Bitbucket Server and Data Center are not supported.
+- A preview of a fork never reports: its commit is not in the parent's repository.
+- Requests go through the egress guard. A git server on a private address needs `NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1`, as other outbound integrations do.
+- Statuses are observational. A provider that is down, or a token without the scope, is logged (without the token) and never fails or delays a deploy.
+- The setting is the settings row `commit_status:<serviceId>`; there is no migration. Changes are audited as `service.commit_status.enable` and `service.commit_status.disable`.
+

@@ -58,6 +58,7 @@ import { samlLoginRoutes } from './samlLogin.js';
 import { domainForwardAuthRoutes, forwardAuthGrantRoutes } from './forwardAuth.js';
 import { twoFactorRequirementRoutes, workspaceTwoFactorRoutes } from './twoFactorPolicy.js';
 import { publicRegistryHookRoutes, serviceRegistryHookRoutes } from './registryHooks.js';
+import { commitStatusRoutes } from './commitStatus.js';
 import { projectRoutes } from './projects.js';
 import { notificationRoutes } from './notifications.js';
 import { networkRoutes } from './networks.js';
@@ -265,6 +266,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(publicDeployHookRoutes, { prefix: '/deploy-hooks' });
   // G1.7 registry push webhooks: management (member) and the public POST (token).
   await app.register(serviceRegistryHookRoutes, { prefix: '/services' });
+  // ROADMAP 0.16.8 item 8: commit statuses on GitLab, Gitea and Bitbucket.
+  await app.register(commitStatusRoutes, { prefix: '/services' });
   await app.register(publicRegistryHookRoutes, { prefix: '/registry-hooks' });
   // 0.16.8 uptime monitors and status pages (operator), and the public page JSON.
   await app.register(monitorRoutes, { prefix: '/monitors' });

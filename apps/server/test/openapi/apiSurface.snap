@@ -205,6 +205,7 @@ GET /v1/services/:id/attachments viewer nd://scope/read/services
 GET /v1/services/:id/autoscale viewer nd://scope/read/services
 GET /v1/services/:id/badge member nd://scope/read/services
 GET /v1/services/:id/canary viewer nd://scope/read/services
+GET /v1/services/:id/commit-status member nd://scope/read/services
 GET /v1/services/:id/deploy-hook member nd://scope/read/services
 GET /v1/services/:id/deploys viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/diff viewer nd://scope/read/deploys
@@ -569,6 +570,7 @@ PUT /v1/image-scanning operator -
 PUT /v1/onboarding/dismissed operator -
 PUT /v1/servers/:serverId/containers/:container/files operator -
 PUT /v1/servers/:serverId/volumes/:name/files operator -
+PUT /v1/services/:id/commit-status admin nd://scope/write/services
 PUT /v1/services/:id/error-pages member nd://scope/write/services
 PUT /v1/services/:id/files member nd://scope/write/services
 PUT /v1/services/:id/github operator nd://scope/write/services

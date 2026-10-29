@@ -5908,4 +5908,11 @@ export const TR: Readonly<Record<string, string>> = {
   'Run on': 'Çalışacağı yer',
   'A node runs jobs only after its owner sets NINEDEPLOY_AGENT_GHA_RUNNERS=on for its agent (0.18.7 or newer).':
     'Bir düğüm, sahibi ajanı (0.18.7 veya daha yeni) için NINEDEPLOY_AGENT_GHA_RUNNERS=on ayarlayana kadar iş çalıştırmaz.',
+
+  // ── ROADMAP 8: GitLab, Gitea and Bitbucket commit statuses ────────────
+  'Commit statuses on {provider}': '{provider} üzerinde commit durumları',
+  'Commit statuses on': 'Commit durumları açık',
+  'Commit statuses off': 'Commit durumları kapalı',
+  'Each deploy marks its commit as deploying, then deployed, failed or cancelled (ninedeploy/{slug}), with the source token. A failed status never fails the deploy.':
+    'Her dağıtım, commit\'ini önce dağıtılıyor, ardından dağıtıldı, başarısız ya da iptal edildi olarak işaretler (ninedeploy/{slug}); bunun için kaynağın token\'ı kullanılır. Durum gönderilemezse dağıtım bundan etkilenmez.',
 };

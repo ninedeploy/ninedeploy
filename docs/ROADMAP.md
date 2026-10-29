@@ -117,7 +117,7 @@ superiority over another platform:
 - panel self-backup with offline restore;
 - image auto-update;
 - GitHub commit statuses and PR comments;
-- SSO through OIDC, and SCIM, in the self-hosted build. SAML is **not** available: creating a SAML provider is refused (`saml_unavailable`, r354) until a vetted XML-signature implementation lands ([GAP_ROADMAP.md](GAP_ROADMAP.md) G3.6).
+- SSO through OIDC, SAML (SP-initiated, [GAP_ROADMAP.md](GAP_ROADMAP.md) G3.6) and SCIM, in the self-hosted build.
 
 The 0.17.0 readiness, node metric history, log-drain and availability work is
 tracked in [Node operations](NODE_OPERATIONS.md), including its verification and
@@ -145,7 +145,7 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
    - per-container utilisation history (Coolify, 139 votes);
    - error-rate and latency alerts;
    - PagerDuty and Opsgenie channels (done, G3.7; see [GAP_ROADMAP.md](GAP_ROADMAP.md)).
-8. **Git:** commit statuses for GitLab, Gitea and Bitbucket, and "wait for CI", which skips an auto-deploy whose checks failed.
+8. **Git:** commit statuses for GitLab, Gitea and Bitbucket Cloud (done; see [PRIVATE_REPO_GUIDE.md §11](PRIVATE_REPO_GUIDE.md#11-commit-statuses-on-gitlab-gitea-and-bitbucket)), and "wait for CI", which skips an auto-deploy whose checks failed (done for GitHub App links in 0.17.1).
 9. **Usage and cost:** CPU-hours, memory, disk and bandwidth per workspace, project and service, priced from a per-server cost. No self-hosted tool has this.
 10. **The remaining node gaps:**
     - node database public access, PgBouncer and Studio;
