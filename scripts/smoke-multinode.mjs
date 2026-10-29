@@ -504,6 +504,10 @@ function repositories() {
       Dockerfile: `FROM ${APP_IMAGE}\nCOPY index.html /usr/share/nginx/html/index.html\n`,
       'index.html': `${MARKER}\n`,
     },
+    // docker.buildOptions: the last stage is `dev`; the node must build `runtime` with ND_GREETING.
+    stages: {
+      Dockerfile: `FROM ${APP_IMAGE} AS runtime\nARG ND_GREETING\nRUN echo "$ND_GREETING" > /usr/share/nginx/html/greeting.txt\nFROM runtime AS dev\nRUN echo dev > /usr/share/nginx/html/greeting.txt\n`,
+    },
   };
   if (WITH_BUILDS) {
     const app = (name) => ({
@@ -754,6 +758,24 @@ async function newNodeFeatureChecks(ctx) {
   if (scan.status !== 'ok') step(`  note: the node's Trivy recorded "${scan.error}" (no network for the vulnerability database?), and did not block`);
   else step(`node deploy #${dep.id} scanned on the node by Trivy: ${scan.counts.critical} critical, ${scan.counts.high} high (${scan.os ?? 'os unknown'})`);
   await api('/v1/image-scanning', { method: 'PUT', body: { enabled: false } });
+
+  section('a Dockerfile stage with build arguments, built on the node');
+  if (!(node?.agent?.capabilities ?? []).includes('docker.buildOptions')) fail(`the candidate agent does not advertise docker.buildOptions: ${JSON.stringify(node?.agent ?? null)}`);
+  const greeting = `hello-${suffix}`;
+  // The Git server's repositories are private: the node clones with the PAT source.
+  ctx.sourceId ??= await patSource('stage');
+  await setAllowOnNodes(ctx.sourceId, true, 'stage source');
+  const stagedId = await createService({
+    name: `mn-stage-${suffix}`, type: 'docker', repoUrl: repoUrl(ctx, 'stages'), branch: 'main', serverId: ctx.serverId, port: 80, sourceId: ctx.sourceId,
+    build: { buildPack: 'dockerfile', buildTarget: 'runtime', buildArgs: ['ND_GREETING'] },
+  }, 'staged service');
+  const envSet = await api(`/v1/services/${stagedId}/env`, { method: 'POST', body: { key: 'ND_GREETING', value: greeting } });
+  if (envSet.status >= 300) fail(`staged service env: ${short(envSet)}`);
+  const built = await deploy(stagedId, 'node Dockerfile stage build', { ms: 20 * 60_000 });
+  const staged = await serviceRow(stagedId);
+  const served = nodeDaemon(['exec', staged.runtimeId, 'cat', '/usr/share/nginx/html/greeting.txt']).stdout.trim();
+  if (served !== greeting) fail(`node stage build: the container holds "${served}" (wanted "${greeting}" from the runtime stage; "dev" means the last stage was built, an empty line that the argument was not passed)`);
+  step(`node deploy #${built.id}: built the "runtime" stage on the node with the build argument ND_GREETING (the container holds ${served})`);
 }
 
 /** The PAT source (type custom: any host) the private repositories need. */
@@ -1450,7 +1472,7 @@ async function main() {
     ctx.imgId = img.id;
     if (flag('new-node-features')) {
       await newNodeFeatureChecks(ctx);
-      console.log('\nPASS: 0.18.7 node features on a real panel and agent (service and database tunnels, compose move with data, node deploy scan).');
+      console.log('\nPASS: node features on a real panel and agent (service and database tunnels, compose move with data, node deploy scan, a Dockerfile stage with build arguments).');
       return;
     }
     if (flag('node-operations-only')) {
