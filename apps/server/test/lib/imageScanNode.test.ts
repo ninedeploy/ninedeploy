@@ -96,6 +96,30 @@ describe('scanning a node service', () => {
   });
 });
 
+describe('the deploy gate on a node', () => {
+  it('scans the candidate container on its node and fails the deploy when the gate counts findings', async () => {
+    await lib.setImageScanPolicy(db, { enabled: true, gate: 'critical' });
+    const nodeScan = vi.fn(async () => JSON.stringify({ imageId: IMG, ...report(2) }));
+    const lines: string[] = [];
+    await expect(lib.scanBeforeTraffic(db, { serviceId: 8, deploymentId: 41, container: 'nd-svc-edge-g2', serverId: 3 }, (l) => lines.push(l), { nodeScan })).rejects.toThrow(
+      /Image scan gate: 2 critical fixable vulnerabilities/,
+    );
+    expect(nodeScan).toHaveBeenCalledWith(db, 3, { container: 'nd-svc-edge-g2' });
+    expect(lines[0]).toContain('on the node');
+    expect(await lib.getImageScanResult(db, 8)).toMatchObject({ trigger: 'deploy', deploymentId: 41, blocked: true, imageId: IMG });
+  });
+
+  it('does not block when the node cannot scan (an older agent), and says so', async () => {
+    await lib.setImageScanPolicy(db, { enabled: true, gate: 'critical' });
+    const nodeScan = vi.fn(async () => Promise.reject(new Error('update the node agent to v0.18.7')));
+    const lines: string[] = [];
+    expect(await lib.scanBeforeTraffic(db, { serviceId: 8, deploymentId: 42, container: 'nd-svc-edge-g3', serverId: 3 }, (l) => lines.push(l), { nodeScan })).toMatchObject({
+      status: 'error',
+    });
+    expect(lines.join('\n')).toContain('does not block this deploy: update the node agent to v0.18.7');
+  });
+});
+
 describe('Swarm services', () => {
   it('scan the image the service spec runs on the panel host, and record why when it is not there', async () => {
     await db.insert(services).values({ id: 9, name: 'swarmy', slug: 'swarmy', type: 'docker', branch: 'main', ownerUserId: 2, runtimeId: 'nd-swarm-swarmy', orchestrator: 'swarm' } as never);

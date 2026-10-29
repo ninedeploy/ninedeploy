@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The image scan deploy gate covers docker services on nodes (G5.1). The node agent scans the new container before it gets traffic; a node that cannot scan records why and does not block.
 - Compose stacks move to another host with their data (G3.1). Every named volume compose made for the stack is copied to the target, with compose's labels, before the stack is deployed there. Stacks with a fixed volume name are refused. Nodes need agent 0.18.7 (`volume.compose`; `NINEDEPLOY_AGENT_VOLUME_COMPOSE=off` turns it off).
 - Image scanning covers Swarm services (G5.1). The scan runs on the panel host, the manager, against the image the service spec runs, on the schedule and on request. If that image is not present on the panel host, the result says so.
 - Compose stacks on nodes also skip the build when the commit and the resolved compose model are unchanged (G2.4). The resolved model is hashed on the panel and never logged. Older agents build as before.

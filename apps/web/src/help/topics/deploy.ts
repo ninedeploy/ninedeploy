@@ -208,7 +208,7 @@ export const DEPLOY_TOPICS: Record<string, HelpTopic> = {
           'Each service shows its latest scan on its Deploys tab: counts by severity and the findings, most severe first.',
           'Running images are rescanned on the interval you set (default every 24 hours). New fixable critical findings are audited as image_scan.critical, which notifies the channels that receive audit events.',
           'Compose stacks on the panel host are scanned on the schedule and on request: every distinct image of the stack, merged into one result whose findings name the compose services. There is no deploy gate for a stack, because compose up starts it at once.',
-          'Docker services on nodes are scanned by their node agent (0.18.7 or newer, capability image.scan) on the schedule and on request. The node owner can turn it off with NINEDEPLOY_AGENT_IMAGE_SCAN=off. There is no deploy gate on a node yet.',
+          'Docker services on nodes are scanned by their node agent (0.18.7 or newer, capability image.scan) on the schedule and on request. The node owner can turn it off with NINEDEPLOY_AGENT_IMAGE_SCAN=off. A docker deploy on a node is scanned by its agent before it gets traffic, under the same gate; a node that cannot scan records why and does not block the deploy.',
           'A Swarm service is scanned on the panel host from the image its spec runs, when that image is here (it is built here before it is pushed). If it is not, the scan result says so.',
         ],
       },

@@ -648,8 +648,12 @@ Trivy scans each Docker deploy's image on the panel host and rescans running ima
 - Each service shows its latest scan on its Deploys tab: counts by severity (with how many are fixable) and up to 300 findings, most severe first.
 - A service admin can press *Scan now*.
 
-**What is not scanned yet**
-- Swarm services. Compose stacks and node services do not have a pre-traffic deploy gate.
+**Nodes and Swarm**
+- A docker deploy on a node is scanned by the node agent (0.18.7 or newer, capability `image.scan`) before it gets traffic, under the same gate. A node that cannot scan (an older agent, or `NINEDEPLOY_AGENT_IMAGE_SCAN=off`) records why and does not block the deploy.
+- Swarm services are scanned on the panel host from the image their spec runs, on the schedule and on request.
+
+**What has no deploy gate**
+- Compose stacks (`compose up` replaces the stack at once, so there is no moment before traffic) and Swarm services. Both are scanned on the schedule and on request.
 
 **API, SDK and storage**
 - API: `GET`/`PUT /v1/image-scanning` (operator), `GET /v1/services/:id/image-scan` (viewer) and `POST /v1/services/:id/image-scan` (admin, runs in the background).

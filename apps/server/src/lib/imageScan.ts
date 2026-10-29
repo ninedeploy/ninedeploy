@@ -305,10 +305,10 @@ export async function scanNodeServiceImage(
   db: DB,
   svc: { id: number; serverId: number; runtimeId: string },
   trigger: ImageScanResult['trigger'],
-  opts: { knownImageId?: string; deps?: ScanDeps } = {},
+  opts: { knownImageId?: string; deploymentId?: number | null; deps?: ScanDeps } = {},
 ): Promise<ImageScanResult | null> {
   const nodeScan = opts.deps?.nodeScan ?? defaultNodeScan;
-  const base = { serviceId: svc.id, trigger, deploymentId: null, blocked: false };
+  const base = { serviceId: svc.id, trigger, deploymentId: opts.deploymentId ?? null, blocked: false };
   let result: ImageScanResult;
   try {
     const raw = await oneAtATime(() => nodeScan(db, svc.serverId, { container: svc.runtimeId, ...(opts.knownImageId ? { knownImageId: opts.knownImageId } : {}) }));
@@ -454,25 +454,38 @@ export async function scanComposeStack(
 /**
  * Pipeline hook: scan the new container's image before it gets traffic. Throws
  * (failing the deploy; the previous release keeps serving) only when the gate
- * counts findings. Off unless an operator enabled scanning.
+ * counts findings. Off unless an operator enabled scanning. With `serverId`
+ * the candidate container runs on that node and its agent scans it
+ * (`image.scan`); a node that cannot scan records why and does not block.
  */
 export async function scanBeforeTraffic(
   db: DB,
-  input: { serviceId: number; deploymentId: number; container: string },
+  input: { serviceId: number; deploymentId: number; container: string; serverId?: number | null },
   log: (line: string) => void,
   deps: ScanDeps & { imageIdOf?: typeof containerImageId } = {},
 ): Promise<ImageScanResult | null> {
   const policy = await getImageScanPolicy(db);
   if (!policy.enabled) return null;
-  log('▶ Scanning the new image for known vulnerabilities (Trivy) …');
-  let imageId: string;
-  try {
-    imageId = await (deps.imageIdOf ?? containerImageId)(input.container);
-  } catch (err) {
-    log(`warning: image scan skipped: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
+  log(`▶ Scanning the new image for known vulnerabilities (Trivy${input.serverId != null ? ', on the node' : ''}) …`);
+  let result: ImageScanResult;
+  if (input.serverId != null) {
+    // Without knownImageId the node always answers a report (or the scan records an error).
+    const scanned = await scanNodeServiceImage(db, { id: input.serviceId, serverId: input.serverId, runtimeId: input.container }, 'deploy', {
+      deploymentId: input.deploymentId,
+      deps,
+    });
+    if (!scanned) return null;
+    result = scanned;
+  } else {
+    let imageId: string;
+    try {
+      imageId = await (deps.imageIdOf ?? containerImageId)(input.container);
+    } catch (err) {
+      log(`warning: image scan skipped: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+    result = await scanServiceImage(db, input.serviceId, imageId, 'deploy', { deploymentId: input.deploymentId, deps });
   }
-  const result = await scanServiceImage(db, input.serviceId, imageId, 'deploy', { deploymentId: input.deploymentId, deps });
   if (result.status === 'error') {
     log(`warning: the image scan could not run, so it does not block this deploy: ${result.error}`);
     return result;
