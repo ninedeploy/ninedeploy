@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.18.7",
+    "date": "2026-10-29",
+    "title": "Competitor gap roadmap: nodes catch up, scanning, tunnels and GitOps",
+    "changes": [
+      "Add Trivy image scanning with an optional deploy gate for docker services on the panel host and on nodes, plus scheduled scans of Compose stacks and Swarm services.",
+      "Add ninedeploy tunnel db and tunnel service: reach a database or a container port through the panel, on the panel host or on a node, without opening a port.",
+      "Move services and Compose stacks between hosts together with their volume data.",
+      "Run GitHub Actions just-in-time runners on the panel host or on a node whose owner opts in, isolated from the host and private networks.",
+      "Add instance GitOps, a Sentry-compatible error inbox, SAML sign-in, workspace-enforced 2FA, forward auth, maintenance pages and a pending-changes tray.",
+      "Add deploy freezes, registry push webhooks, a restart-loop limit, inline Dockerfiles, per-service compose domains and Compose build skipping on the panel host and nodes.",
+      "Add Hetzner Cloud node creation, OS security updates, more Linux distributions, more log-drain targets, backup replicas and node backups for ClickHouse, Meilisearch and RabbitMQ.",
+      "Translate the whole panel into Turkish and add three reviewed Dokploy blueprints to the Hub.",
+      "New node agent capabilities need agent 0.18.7: update node agents to use them on nodes; older agents keep working and are refused only for the new features."
+    ]
+  },
+  {
     "version": "0.18.6",
     "date": "2026-10-27",
     "title": "Expanded integrations and deployment safety",

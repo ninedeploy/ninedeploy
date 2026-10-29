@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.7] - 2026-10-29
+
 ### Added
 
 - GitHub Actions runners can run on a node (G4.5). Pick the node under the App's **Run on**. The node's owner must opt in with `NINEDEPLOY_AGENT_GHA_RUNNERS=on` (agent 0.18.7, `gha.runner`). The agent applies the panel host's firewall isolation to its own host before every start and receives the just-in-time configuration only sealed.
