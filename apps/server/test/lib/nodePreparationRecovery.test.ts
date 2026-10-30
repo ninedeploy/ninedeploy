@@ -6,7 +6,7 @@ import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation } fro
 const h = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn(async () => true) }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: h.agent, agentTransportSealed: h.sealed }));
 const { recoverPreparedNodeCandidate, createNodePreparationRecoveryRunner } = await import('../../src/lib/nodePreparationRecovery.js');
-let c: ReturnType<typeof createDb>, owner: Awaited<ReturnType<typeof claimNodeDeploymentAttempt>> & { claimed: true }, loseReply: boolean;
+let c: ReturnType<typeof createDb>, owner: Awaited<ReturnType<typeof claimNodeDeploymentAttempt>> & { claimed: true }, loseReply: boolean, loseFence: boolean, loseHandoff: boolean;
 const targets = [{ id: 'a'.repeat(64), name: 'web-9', deploymentId: 9 }, { id: 'b'.repeat(64), name: 'web-9-r2', deploymentId: 9 }];
 beforeEach(async () => {
   c = createDb({ url: 'file::memory:' }); await c.ready; await runMigrations(c.db);
@@ -18,15 +18,22 @@ beforeEach(async () => {
   await beginNodeDeploymentPreparation(c.db, owner.owner, { runtimeId: 'web-9', imageId: `sha256:${'f'.repeat(64)}`, serving: 1, capacity: 2 });
   await completeNodeDeploymentPreparation(c.db, owner.owner, targets);
   await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 9));
-  loseReply = false; h.sealed.mockReset().mockResolvedValue(true);
+  loseReply = false; loseFence = false; loseHandoff = false; h.sealed.mockReset().mockResolvedValue(true);
   h.agent.mockReset().mockImplementation(async (_db, _server, op, params) => {
-    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.mutations"]}'] };
+    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.mutations","docker.retireHandoff"]}'] };
     const common = { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true };
-    if (op === 'docker.runtimeFence') return { exitCode: 0, lines: [`ND-RUNTIME-FENCE ${JSON.stringify({ ...common, deploymentWatermark: params.deploymentWatermark })}`] };
+    if (op === 'docker.runtimeFence') {
+      if (loseFence) { loseFence = false; throw Error('lost fence reply'); }
+      return { exitCode: 0, lines: [`ND-RUNTIME-FENCE ${JSON.stringify({ ...common, deploymentWatermark: params.deploymentWatermark })}`] };
+    }
     if (op === 'docker.runtimeInventory') return { exitCode: 0, lines: [`ND-RUNTIME-INVENTORY ${JSON.stringify({ ...common, deploymentWatermark: params.deploymentWatermark, items: targets.map(item => ({ ...item, running: true })) })}`] };
     if (op === 'docker.retireSet') {
       if (loseReply) { loseReply = false; throw Error('lost reply'); }
       return { exitCode: 0, lines: [`ND-RETIRED-SET ${JSON.stringify({ ...common, items: params.targets.map((item: object) => ({ ...item, removed: true })) })}`] };
+    }
+    if (op === 'docker.runtimeLegacyHandoff') {
+      if (loseHandoff) { loseHandoff = false; throw Error('lost handoff reply'); }
+      return { exitCode: 0, lines: [`ND-RUNTIME-LEGACY ${JSON.stringify({ ...common, deploymentWatermark: params.deploymentWatermark })}`] };
     }
     throw Error(`Unexpected operation ${op}`);
   });
@@ -42,12 +49,33 @@ it('replays retirement after a lost reply without reissuing the older fence', as
   expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
   expect((await c.db.query.services.findFirst())?.runtimeId).toBe('web-8');
 });
+it('replays a lost fence with the originally persisted watermark', async () => {
+  loseFence = true;
+  await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).rejects.toThrow('lost fence reply');
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'fencing', recoveryWatermark: 9 });
+  await c.db.insert(deployments).values({ id: 20, serviceId: 1, status: 'queued' });
+  await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).resolves.toMatchObject({ deploymentId: 9 });
+  expect(h.agent.mock.calls.filter(call => call[2] === 'docker.runtimeFence').map(call => call[3].deploymentWatermark)).toEqual([9, 9]);
+});
+it('retains the journal and replays retirement after a lost legacy handoff reply', async () => {
+  loseHandoff = true;
+  await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).rejects.toThrow('lost handoff reply');
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'retiring', recoveryWatermark: 9 });
+  await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).resolves.toMatchObject({ deploymentId: 9 });
+  expect(h.agent.mock.calls.filter(call => call[2] === 'docker.runtimeLegacyHandoff')).toHaveLength(2);
+});
 
 it('does not retire a generation selected by the service', async () => {
   await c.db.update(services).set({ runtimeId: 'web-9' }).where(eq(services.id, 1));
   await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).rejects.toThrow(/routing|ownership/);
   expect(h.agent).not.toHaveBeenCalled();
   expect(await c.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
+});
+it('refuses an agent without retirement handoff before changing the node or journal', async () => {
+  h.agent.mockResolvedValue({ exitCode: 0, lines: ['ND-AGENT {"version":"0.18.13","caps":["docker.mutations"]}'] });
+  await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).rejects.toThrow(/agent|update/i);
+  expect(h.agent.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]?.phase).toBe('prepared');
 });
 it('retains the candidate if the node reports a replacement under its name', async () => {
   const original = h.agent.getMockImplementation()!;
@@ -61,7 +89,7 @@ it('retains the candidate if the node reports a replacement under its name', asy
   });
   await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).rejects.toThrow(/identity changed/);
   expect(h.agent.mock.calls.some(call => call[2] === 'docker.retireSet')).toBe(false);
-  expect((await c.db.select().from(nodeDeploymentPreparations))[0]?.phase).toBe('prepared');
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]?.phase).toBe('fencing');
 });
 it('leaves an active deployment untouched', async () => {
   await c.db.update(deployments).set({ status: 'deploying' }).where(eq(deployments.id, 9));

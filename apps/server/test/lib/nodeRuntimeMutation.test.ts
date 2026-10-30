@@ -57,7 +57,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
 });
 describe('persistent runtime request admission', () => {
-  it('replays a lost prepared-candidate retirement through the real node journal', async () => {
+  it.each(['retirement', 'handoff'] as const)('replays a lost prepared-candidate %s reply through the real node journal', async lost => {
     const c = createDb({ url: 'file::memory:' });
     try {
       await c.ready; await runMigrations(c.db);
@@ -73,14 +73,14 @@ describe('persistent runtime request admission', () => {
         running: true, status: 'running', networks: { ninedeploy: {} } });
       await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
       vi.spyOn(agentClient, 'agentTransportSealed').mockResolvedValue(true);
-      let retireCalls = 0;
+      let lostCalls = 0;
       vi.spyOn(agentClient, 'agentOp').mockImplementation(async (_db, _server, op, params) => {
-        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.mutations"]}'] };
+        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.mutations","docker.retireHandoff"]}'] };
         const lines: string[] = [], exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });
-        if (op === 'docker.retireSet' && ++retireCalls === 1) throw Error('lost retirement reply');
+        if (op === (lost === 'retirement' ? 'docker.retireSet' : 'docker.runtimeLegacyHandoff') && ++lostCalls === 1) throw Error('lost recovery reply');
         return { exitCode, lines };
       });
-      await expect(recoverPreparedNodeCandidate(c.db, admission.owner)).rejects.toThrow('lost retirement reply');
+      await expect(recoverPreparedNodeCandidate(c.db, admission.owner)).rejects.toThrow('lost recovery reply');
       expect(rows.map(row => row.name)).toEqual(['web-8']);
       expect((await c.db.select().from(nodeDeploymentPreparations))[0]?.phase).toBe('retiring');
       const before = effects().filter(args => args[0] === 'rm').length;
@@ -88,6 +88,7 @@ describe('persistent runtime request admission', () => {
       expect(effects().filter(args => args[0] === 'rm')).toHaveLength(before);
       expect(rows.map(row => [row.name, row.running])).toEqual([['web-8', true]]);
       expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
+      await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
     } finally { c.client?.close(); }
   });
   it('retires a real journaled initial preparation and replays a lost handoff without touching another service', async () => {

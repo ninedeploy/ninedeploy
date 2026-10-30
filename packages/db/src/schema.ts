@@ -1915,7 +1915,8 @@ export const nodeDeploymentPreparations = sqliteTable('node_deployment_preparati
   serverId: integer('server_id').notNull(), epoch: integer('epoch').notNull(), requestId: text('request_id').notNull(),
   runtimeId: text('runtime_id').notNull(), imageId: text('image_id').notNull(),
   serving: integer('serving').notNull(), capacity: integer('capacity').notNull(),
-  phase: text('phase', { enum: ['preparing', 'prepared', 'retiring'] }).notNull().default('preparing'),
+  phase: text('phase', { enum: ['preparing', 'prepared', 'fencing', 'retiring'] }).notNull().default('preparing'),
+  recoveryWatermark: integer('recovery_watermark'),
   targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>(),
   createdAt: ts('created_at'), updatedAt: tsUpdatable('updated_at'),
 });

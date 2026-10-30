@@ -10,6 +10,7 @@ import {
 } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
+import { z } from 'zod';
 
 type Header = { requestId: string; serviceId: number; revision: number };
 type Target = { id: string; name: string; deploymentId: number };
@@ -53,6 +54,13 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
     return reply;
   }
   return {
+    legacyHandoff(params: { requestId: string; serviceId: number; revision: number; timeoutMs: number; deploymentWatermark: number }) {
+      const input = z.object({ requestId: z.string().regex(/^[a-f0-9]{32}$/), serviceId: z.number().int().positive().safe(), revision: z.number().int().positive().safe(),
+        timeoutMs: z.number().int().positive().max(595_000), deploymentWatermark: z.number().int().positive().safe() }).strict().parse(params);
+      return exchange('docker.runtimeLegacyHandoff', 'ND-RUNTIME-LEGACY ', input,
+        value => z.object({ requestId: z.string(), serviceId: z.number(), revision: z.number(), deploymentWatermark: z.number(), complete: z.literal(true) }).strict().parse(value),
+        reply => reply.deploymentWatermark === input.deploymentWatermark, 'docker.retireHandoff');
+    },
     fence(params: RuntimeFenceRequest) {
       const input = runtimeFenceRequest.parse(params);
       return exchange('docker.runtimeFence', 'ND-RUNTIME-FENCE ', input, value => runtimeFenceReply.parse(value), reply => reply.deploymentWatermark === input.deploymentWatermark);
