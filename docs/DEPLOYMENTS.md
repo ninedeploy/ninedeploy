@@ -321,7 +321,8 @@ When an HTTP answer does not prove the app is ready (a database, a worker that n
 
 - These are structured fields, not free-form flags: privileged mode, host mounts and the host network cannot be requested, and capabilities that lead out of the container (`SYS_ADMIN`, `SYS_MODULE`, …) are not offered.
 - Only an operator changes them; members see them and can redeploy. A member's clone and every PR preview start without them.
-- They apply on the panel host, and (0.16.6) on a node and each fan-out target whose agent is 0.16.6 or newer (capability `docker.runtimeOptions`). A node's owner can refuse them with `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off` on the agent. On an older agent, a switched-off one, or a Swarm service, the container starts without them, as before 0.16.6, and the deploy log says why; such a deploy is never refused for them. GPUs need the NVIDIA container toolkit on the node itself.
+- They apply on the panel host, and (0.16.6) on a node and each fan-out target whose agent is 0.16.6 or newer (capability `docker.runtimeOptions`). A node's owner can refuse them with `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off` on the agent. On an older agent or a switched-off one, the container starts without them, as before 0.16.6, and the deploy log says why; such a deploy is never refused for them. GPUs need the NVIDIA container toolkit on the node itself.
+- On a Swarm service every option but GPUs applies, carried in each task's spec: init, the open-files limit and the added capabilities as Swarm's own fields, and shared memory as a tmpfs of that size mounted at `/dev/shm` (Swarm has no `--shm-size`). Swarm has no equivalent of `--gpus`, so a GPU setting is left out and the deploy log says so. Capabilities and the open-files limit need Docker 20.10 or newer on the nodes that run the tasks. Before this release a Swarm service ignored all of them; its next deploy applies them.
 
 ### Port mappings: UDP, ranges and a dedicated IP (0.16.1)
 

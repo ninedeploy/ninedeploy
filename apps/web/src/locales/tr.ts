@@ -911,8 +911,8 @@ export const TR: Readonly<Record<string, string>> = {
     'Konteyner seçenekleri kaydedildi — sonraki dağıtımda uygulanır',
   'Could not save the container options': 'Konteyner seçenekleri kaydedilemedi',
   'Container options': 'Konteyner seçenekleri',
-  'GPUs, shared memory and extra capabilities for this service\'s container, applied on the next deploy on the panel host, or on a node whose agent is 0.16.6 or newer (not on Swarm).':
-    'Bu servisin konteyneri için GPU’lar, paylaşılan bellek ve ek yetkiler; sonraki dağıtımda panel sunucusunda ya da ajanı 0.16.6 veya daha yeni olan bir düğümde uygulanır (Swarm’da değil).',
+  'GPUs, shared memory and extra capabilities for this service\'s container, applied on the next deploy on the panel host, on a node whose agent is 0.16.6 or newer, or on Swarm (all but GPUs).':
+    'Bu servisin konteyneri için GPU’lar, paylaşılan bellek ve ek yetkiler; sonraki dağıtımda panel sunucusunda, ajanı 0.16.6 veya daha yeni olan bir düğümde ya da Swarm’da (GPU’lar hariç) uygulanır.',
   'Only operators can change them.': 'Bunları yalnızca operatörler değiştirebilir.',
   'Set by an operator.': 'Bir operatör tarafından ayarlanır.',
   'Docker defaults.': 'Docker varsayılanları.',

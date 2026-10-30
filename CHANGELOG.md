@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Container options on Swarm services (ROADMAP item 10). Init, the open-files limit, added capabilities and shared memory now apply to each Swarm task: the first three as Swarm's own task fields, shared memory as a sized tmpfs at `/dev/shm`. GPUs have no Swarm equivalent and stay off; the deploy log says so. A Swarm service with these options set ignored them before; its next deploy applies them. No migration.
+
 ## [0.18.13] - 2026-10-30
 
 ### Fixed

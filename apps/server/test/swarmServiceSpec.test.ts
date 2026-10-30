@@ -22,6 +22,24 @@ describe('managed Swarm ServiceSpec', () => {
     const spec = await managedSwarmServiceSpec(stack), container = (spec.TaskTemplate as { ContainerSpec: Record<string, unknown> }).ContainerSpec;
     expect(container.StopGracePeriod).toBe(10_000_000_000); expect(container).not.toHaveProperty('Args'); expect(container).not.toHaveProperty('Healthcheck');
   });
+  it('ROADMAP item 10: carries init, nofile, capabilities and shared memory in the shape Docker round-trips', async () => {
+    const stack = input(); stack.services[0]!.containerOptions = { init: true, ulimitNofile: 65536, capAdd: ['CAP_NET_ADMIN', 'CAP_SYS_PTRACE'], shmSizeMb: 256 };
+    const container = ((await managedSwarmServiceSpec(stack)).TaskTemplate as { ContainerSpec: Record<string, unknown> }).ContainerSpec;
+    expect(container).toMatchObject({ Init: true, CapabilityAdd: ['CAP_NET_ADMIN', 'CAP_SYS_PTRACE'], Ulimits: [{ Name: 'nofile', Soft: 65536, Hard: 65536 }],
+      Mounts: [{ Type: 'tmpfs', Target: '/dev/shm', TmpfsOptions: { SizeBytes: 268435456 } }] });
+    // What Docker 28 returned for this spec from GET /services/<id>: the same fields, other key order.
+    const observed = { ...container, Ulimits: [{ Name: 'nofile', Hard: 65536, Soft: 65536 }] };
+    expect(swarmSpecFingerprint({ TaskTemplate: { ContainerSpec: observed } })).toBe(swarmSpecFingerprint({ TaskTemplate: { ContainerSpec: container } }));
+  });
+  it('sets none of the container options when the service has none', async () => {
+    const stack = input(); stack.services[0]!.containerOptions = {};
+    const container = ((await managedSwarmServiceSpec(stack)).TaskTemplate as { ContainerSpec: Record<string, unknown> }).ContainerSpec;
+    for (const key of ['Init', 'CapabilityAdd', 'Ulimits', 'Mounts']) expect(container).not.toHaveProperty(key);
+  });
+  it.each([['NET_ADMIN'], ['CAP_net_admin'], ['CAP_X;rm']])('refuses a capability outside the CAP_ form: %s', async cap => {
+    const stack = input(); stack.services[0]!.containerOptions = { capAdd: [cap] };
+    await expect(managedSwarmServiceSpec(stack)).rejects.toThrow('Unsupported managed Swarm capability');
+  });
   it.each(['--help', 'network-name', 'f'.repeat(64)])('refuses an unconfirmed overlay identity: %s', async id => {
     h.capture.mockResolvedValue(id); await expect(managedSwarmServiceSpec(input())).rejects.toThrow('overlay network identity is unconfirmed');
   });
