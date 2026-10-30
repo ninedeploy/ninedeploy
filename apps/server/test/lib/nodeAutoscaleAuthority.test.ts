@@ -15,6 +15,30 @@ beforeEach(async () => {
 });
 afterEach(() => c.client?.close());
 
+it('refuses a desired count below the configured minimum without taking ownership', async () => {
+  await c.db.update(services).set({ runtimeReplicas: 3,
+    autoscale: { minReplicas: 2, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
+  expect(await admitNodeAutoscale(c.db, await service(), 1)).toBeNull();
+  expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
+  expect(await admitNodeAutoscale(c.db, await service(), 2)).not.toBeNull();
+});
+it('refuses to recover a stored decision below the configured minimum', async () => {
+  await c.db.update(services).set({ runtimeReplicas: 3,
+    autoscale: { minReplicas: 2, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
+  expect(await admitNodeAutoscale(c.db, await service(), 2)).not.toBeNull();
+  await c.db.update(nodeAutoscaleTransitions).set({ toReplicas: 1, leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  await expect(recoverNodeAutoscaleAdmission(c.db, 1)).rejects.toThrow(/outside configured bounds/);
+  expect((await service()).runtimeReplicas).toBe(3);
+});
+it('can restore the original count when the minimum was raised above it', async () => {
+  await c.db.update(services).set({ runtimeReplicas: 1,
+    autoscale: { minReplicas: 2, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  await commitNodeAutoscaleReplicas(c.db, admitted, 1, 2);
+  await commitNodeAutoscaleReplicas(c.db, admitted, 2, 1);
+  expect((await service()).runtimeReplicas).toBe(1);
+});
 it('reserves an ordered scale owner for the observed generation and node placements', async () => {
   await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5, runtimeId: 'web-t5-9' });
   const admitted = await admitNodeAutoscale(c.db, await service(), 2);

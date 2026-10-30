@@ -28,7 +28,7 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
   if (expected.type !== 'docker' || expected.orchestrator === 'swarm' || swarmRuntimeOf(expected) ||
     !expected.serverId || expected.status !== 'running' || !expected.runtimeId || expected.asleepAt != null ||
     !config.success || !Number.isSafeInteger(expected.runtimeReplicas) || expected.runtimeReplicas < 1 || expected.runtimeReplicas > MAX_REPLICAS ||
-    !Number.isSafeInteger(desiredReplicas) || desiredReplicas < 1 || desiredReplicas > config.data.maxReplicas ||
+    !Number.isSafeInteger(desiredReplicas) || desiredReplicas < config.data.minReplicas || desiredReplicas > config.data.maxReplicas ||
     desiredReplicas === expected.runtimeReplicas) return null;
   return db.transaction(async tx => {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
@@ -62,6 +62,9 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
 
 async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAutoscaleAdmission, expectedReplicas: number): Promise<void> {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, admission.service.id) });
+    const config = autoscaleConfig.safeParse(admission.service.autoscale);
+    if (!config.success || !Number.isSafeInteger(admission.desiredReplicas) || admission.desiredReplicas < config.data.minReplicas ||
+      admission.desiredReplicas > config.data.maxReplicas) throw new Error('Node autoscale desired count is outside configured bounds');
     if (!fresh || admission.owner.kind !== 'scale' || snapshot(fresh) !== snapshot(admission.service) || fresh.runtimeReplicas !== expectedReplicas ||
       !sameRuntimeOwner(await readServiceRuntimeOwner(tx, fresh.id), admission.owner) ||
       JSON.stringify(await placements(tx, fresh.id)) !== JSON.stringify(admission.targets)) throw new Error('Node autoscale ownership, runtime or placement changed');
