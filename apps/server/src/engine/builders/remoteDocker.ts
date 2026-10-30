@@ -678,7 +678,7 @@ export function createRemoteDockerBuilder(
               );
             }
           }
-          if (status === 'running' && (health === 'none' || health === 'healthy')) {
+          if (status === 'running' && (health === 'healthy' || health === 'none' && readinessMode !== 'command')) {
             if (!Number.isSafeInteger(restarts) || restarts < 0 || !Number.isSafeInteger(failingStreak) || failingStreak < 0) {
               throw new Error('Node health counters are unconfirmed');
             }

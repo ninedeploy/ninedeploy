@@ -554,6 +554,19 @@ describe('remote docker builder — runtime shape', () => {
 describe('remote docker builder — health and teardown', () => {
   const runtime = { runtimeId: 'web-7', port: 3000, healthPath: '/', healthCheck: 'running' as const };
 
+  it('does not accept a missing Docker healthcheck when command readiness is configured', async () => {
+    vi.useFakeTimers();
+    try {
+      const { agent } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: ['running|none|0|0'] } });
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ ...runtime, healthCheck: 'command', healthCommand: 'check' }, 300, 1000);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
+  it('accepts a passing Docker healthcheck when command readiness is configured', async () => {
+    const { agent } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: ['running|healthy|0|0'] } });
+    await expect(createRemoteDockerBuilder(agent, { pollMs: 1 }).isHealthy({ ...runtime, healthCheck: 'command', healthCommand: 'check' }, 1000, 0)).resolves.toBe(true);
+  });
   it('does not treat failed Docker inspection output as a healthy container', async () => {
     vi.useFakeTimers();
     try {
