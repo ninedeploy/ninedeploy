@@ -1,4 +1,4 @@
-import type { DB, Service, ServiceRuntimeOwner } from '@ninedeploy/db';
+import { eq, nodeAutoscaleCapacity, type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { autoscaleConfig } from '@ninedeploy/schemas';
 import { admitNodeAutoscale, type NodeAutoscaleAdmission } from './nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from './nodeAutoscaleController.js';
@@ -28,6 +28,12 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
         if (!config.success || config.data.metric === 'rps' || await deps.blocked(service.id)) {
           forget(service.id);
           return { state: 'held', reason: 'node autoscale is blocked or its metric is unavailable' };
+        }
+        const deploymentId = Number(/-([1-9]\d*)$/.exec(service.runtimeId ?? '')?.[1]);
+        const capacity = Number.isSafeInteger(deploymentId) && deploymentId > 0
+          ? await db.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, deploymentId) }) : null;
+        if (!capacity || capacity.serviceId !== service.id || capacity.serverId !== service.serverId || capacity.runtimeId !== service.runtimeId) {
+          forget(service.id); return { state: 'held', reason: 'node autoscale capacity is not confirmed' };
         }
         const measuredOwner = await readServiceRuntimeOwner(db, service.id);
         if (owners.has(service.id) && !sameRuntimeOwner(owners.get(service.id)!, measuredOwner)) forget(service.id);

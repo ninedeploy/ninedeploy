@@ -1335,6 +1335,8 @@ export const TR: Readonly<Record<string, string>> = {
     'Yedek konteynerleri oluşturan sonraki dağıtımda tamamen uygulanır; o zamana kadar yalnızca küçültebilir. Kapatıldığında, şu an hizmet veren konteynerler, Kopyalar sayısını yeniden çalıştıran sonraki dağıtıma kadar hizmet vermeye devam eder.',
   'This service runs on a node, so the autoscaler holds for it for now.':
     'Bu servis bir düğümde çalışıyor, bu yüzden otomatik ölçekleyici şimdilik onun için bekliyor.',
+  'Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.':
+    'Düğümde otomatik ölçekleme doğrulanmış kopya kapasitesi gerektirir ve CPU veya belleği destekler; istek hızına göre ölçekleme henüz kullanılamıyor.',
   'This service runs on Swarm, which scales with its own replicas; the autoscaler holds for it.':
     'Bu servis, kendi kopyalarıyla ölçeklenen Swarm üzerinde çalışıyor; otomatik ölçekleyici onun için bekliyor.',
   'Min containers': 'En az konteyner',

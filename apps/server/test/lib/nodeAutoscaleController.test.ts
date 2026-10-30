@@ -35,6 +35,14 @@ beforeEach(async () => {
 });
 afterEach(() => { endCanary(1); c.client?.close(); vi.restoreAllMocks(); });
 
+it('holds without sampling when the active generation has no capacity receipt', async () => {
+  await c.db.delete(nodeAutoscaleCapacity).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
+  const sample = vi.fn();
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, sample });
+  expect(await worker.step(await service())).toEqual({ state: 'held', reason: 'node autoscale capacity is not confirmed' });
+  expect(sample).not.toHaveBeenCalled();
+});
+
 it('starts and verifies scale-up before publishing the new route', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
   const runtime = deps(), ready = runtime.ready, route = runtime.route;

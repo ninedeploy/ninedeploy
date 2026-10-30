@@ -151,7 +151,7 @@ export function AutoscaleCard({ svc }: { svc: ServiceDetail }) {
           {t('It applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turned off, the containers serving now keep serving until the next deploy, which runs the Replicas count again.')}
         </p>
         {svc.serverId != null ? (
-          <p className="mt-1.5 text-xs text-amber-300">{t('This service runs on a node, so the autoscaler holds for it for now.')}</p>
+          <p className="mt-1.5 text-xs text-amber-300">{t('Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.')}</p>
         ) : svc.placement?.orchestrator === 'swarm' ? (
           <p className="mt-1.5 text-xs text-amber-300">{t('This service runs on Swarm, which scales with its own replicas; the autoscaler holds for it.')}</p>
         ) : null}

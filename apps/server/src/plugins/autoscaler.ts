@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import { deployments, type Service, services } from '@ninedeploy/db';
-import { and, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { dockerBuilder } from '../engine/builders/docker.js';
 import { canaryActive } from '../engine/canaryState.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
@@ -10,6 +10,7 @@ import { run, sleep } from '../lib/exec.js';
 import type { ContainerStat } from '../lib/stats.js';
 import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
 import { reconcileNodeAutoscale } from '../lib/nodeAutoscaleRecovery.js';
+import { createNodeAutoscaleWorker } from '../lib/nodeAutoscaleWorker.js';
 
 /**
  * 0.16.10: runs lib/autoscaler.ts every 30 s over the services that have an
@@ -95,6 +96,11 @@ export function createAutoscaler(deps: {
 
 export default fp(
   async (fastify) => {
+    const nodeWorker = createNodeAutoscaleWorker(fastify.db, { blocked: async serviceId => {
+      if (canaryActive(serviceId)) return true;
+      return (await fastify.db.select({ id: deployments.id }).from(deployments)
+        .where(and(eq(deployments.serviceId, serviceId), inArray(deployments.status, [...AUTOSCALE_IN_FLIGHT]))).limit(1)).length > 0;
+    } });
     const scaler = createAutoscaler({
       recover: signal => reconcileNodeAutoscale(fastify.db, { signal, log: line => fastify.log.warn({ component: 'autoscaler' }, line) }),
       load: async () => {
@@ -117,6 +123,10 @@ export default fp(
       sampledAt: () => fastify.stats?.raw().sampledAt,
       analyticsOn: () => trafficAnalyticsEnabled(fastify.db),
       canaryRunning: canaryActive,
+      nodeStep: (service, blocked, signal) => {
+        if (blocked) { nodeWorker.forget(service.id); return Promise.resolve(); }
+        return nodeWorker.step(service, signal);
+      },
       step: {
         db: fastify.db,
         docker: async (args) => {
