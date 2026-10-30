@@ -974,9 +974,12 @@ describe('services routes', () => {
   });
 
   it('live-applies limits to a running docker container via docker update', async () => {
+    const id = 'a'.repeat(64);
+    const inspection = JSON.stringify({ id, name: '/web-3', managed: 'service', serviceId: '1', deploymentId: '3', status: 'running', restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 1_073_741_824, memorySwap: 1_073_741_824 });
+    execMocks.capture.mockResolvedValueOnce(inspection).mockResolvedValueOnce('').mockResolvedValueOnce(inspection);
     const app = await buildTestApp({
       db: createFakeDb({
-        findFirst: { services: svcRow({ id: 1, status: 'running', runtimeId: 'web-3' }) },
+        findFirst: { services: svcRow({ id: 1, status: 'running', runtimeId: 'web-3', memLimitMb: 1024 }) },
         update: { services: [svcRow({ id: 1, status: 'running', runtimeId: 'web-3', memLimitMb: 1024 })] },
       }),
     });
@@ -988,7 +991,7 @@ describe('services routes', () => {
     expect(res.json()).toEqual({ cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 1024, liveApplied: true });
     // Swap pinned to memory — a bare --memory would allow 2× via swap.
     expect(execMocks.capture).toHaveBeenCalledWith('docker', [
-      'update', '--memory', '1024m', '--memory-swap', '1024m', 'web-3',
+      'update', '--memory', '1024m', '--memory-swap', '1024m', id,
     ]);
   });
 
@@ -1000,6 +1003,35 @@ describe('services routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ memLimitMb: 1024, liveApplied: false });
     expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['update']));
+  });
+
+  it('does not report live limits as fully applied when a running replica is omitted', async () => {
+    const running = svcRow({ id: 1, status: 'running', runtimeId: 'web-3', runtimeReplicas: 2, replicas: 2, memLimitMb: 1024 });
+    const ids = ['a'.repeat(64), 'b'.repeat(64)];
+    const inspection = ids.map((id, index) => JSON.stringify({ id, name: index ? '/web-3-r2' : '/web-3', managed: 'service', serviceId: '1', deploymentId: '3', status: 'running', restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 1_073_741_824, memorySwap: 1_073_741_824 })).join('\n');
+    execMocks.capture.mockResolvedValueOnce(inspection).mockResolvedValueOnce('').mockResolvedValueOnce(inspection);
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: running }, update: { services: [running] } }) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { memLimitMb: 1024 } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ liveApplied: true });
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', ['update', '--memory', '1024m', '--memory-swap', '1024m', ...ids]);
+  });
+
+  it.each(['foreign', 'missing', 'changed-after-update'] as const)('does not claim a live limit update when replica evidence is %s', async mode => {
+    const running = svcRow({ id: 1, status: 'running', runtimeId: 'web-3', runtimeReplicas: 2, replicas: 2, memLimitMb: 1024 });
+    const ids = ['a'.repeat(64), 'b'.repeat(64)];
+    const rows = ids.map((id, index) => ({ id, name: index ? '/web-3-r2' : '/web-3', managed: 'service', serviceId: '1', deploymentId: '3', status: 'running', restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 1_073_741_824, memorySwap: 1_073_741_824 }));
+    const before = mode === 'missing' ? rows.slice(0, 1) : mode === 'foreign' ? [rows[0]!, { ...rows[1]!, serviceId: '2' }] : rows;
+    execMocks.capture.mockResolvedValueOnce(before.map(row => JSON.stringify(row)).join('\n'));
+    if (mode === 'changed-after-update') {
+      execMocks.capture.mockResolvedValueOnce('').mockResolvedValueOnce([rows[0]!, { ...rows[1]!, memory: 512 * 1_048_576 }].map(row => JSON.stringify(row)).join('\n'));
+    }
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: running }, update: { services: [running] } }) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { memLimitMb: 1024 } });
+    expect(res.statusCode).toBe(200); expect(res.json()).toMatchObject({ liveApplied: false });
+    if (mode !== 'changed-after-update') expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['update']));
   });
 
   it.each([{ cpuLimitMilli: 0 }, { cpuLimitMilli: null }, { cpuShares: 0 }, { memLimitMb: 0 }])('defers a request that clears a limit: %j', async payload => {
