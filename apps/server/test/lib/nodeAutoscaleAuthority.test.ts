@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createDb, deployments, eq, fanoutTransitions, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
-import { admitNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas } from '../../src/lib/nodeAutoscaleAuthority.js';
+import { admitNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 
@@ -95,6 +95,26 @@ it('can restore the original serving count when the configured maximum was lower
   await commitNodeAutoscaleReplicas(c.db, admitted, 3, 2);
   await commitNodeAutoscaleReplicas(c.db, admitted, 2, 3);
   expect((await service()).runtimeReplicas).toBe(3);
+});
+it('recovers the same decision after its serving count changes and refuses changed health settings', async () => {
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  await commitNodeAutoscaleReplicas(c.db, admitted, 1, 2);
+  const recovered = await recoverNodeAutoscaleAdmission(c.db, 1);
+  expect(recovered).toMatchObject({ owner: admitted.owner, watermark: admitted.watermark, desiredReplicas: 2,
+    targets: admitted.targets, service: { id: 1, runtimeId: 'web-9', runtimeReplicas: 1 } });
+  await checkpointNodeAutoscale(c.db, recovered!, 2);
+  await c.db.update(services).set({ healthTimeoutSeconds: 42 }).where(eq(services.id, 1));
+  await expect(recoverNodeAutoscaleAdmission(c.db, 1)).rejects.toThrow(/changed/);
+});
+it('holds legacy or non-accepted decisions instead of guessing their authority on recovery', async () => {
+  expect(await recoverNodeAutoscaleAdmission(c.db, 1)).toBeNull();
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const original = (await c.db.select().from(nodeAutoscaleTransitions))[0]!;
+  await c.db.update(nodeAutoscaleTransitions).set({ configuration: '' }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  await expect(recoverNodeAutoscaleAdmission(c.db, 1)).rejects.toThrow(/configuration/);
+  await c.db.update(nodeAutoscaleTransitions).set({ configuration: original.configuration, phase: 'held' }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  await expect(recoverNodeAutoscaleAdmission(c.db, 1)).rejects.toThrow(/transition changed/);
+  await expect(checkpointNodeAutoscale(c.db, admitted, 1)).rejects.toThrow(/transition changed/);
 });
 it('refuses effects if the durable transition disappears or changes', async () => {
   const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;

@@ -48,3 +48,26 @@ it('upgrades without changing existing work and retains the unique scale decisio
     cleanupScratch(scratch);
   }
 });
+
+it('retains a pre-configuration scale decision while leaving its configuration unconfirmed on upgrade', async () => {
+  const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-node-autoscale-migration-')));
+  if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.includes('nd-node-autoscale-migration-')) throw Error('Unsafe migration scratch');
+  const c = createDb({ url: `file:${join(scratch, 'state.db').split(sep).join('/')}` });
+  try {
+    const previous = join(scratch, 'migrations');
+    cpSync(fileURLToPath(new URL('../src/migrations', import.meta.url)), previous, { recursive: true });
+    const journalPath = join(previous, 'meta/_journal.json'), journal = JSON.parse(readFileSync(journalPath, 'utf8'));
+    const index = journal.entries.findIndex((entry: { tag: string }) => entry.tag === '0107_node_autoscale_configuration');
+    expect(index).toBeGreaterThan(0); journal.entries = journal.entries.slice(0, index); writeFileSync(journalPath, JSON.stringify(journal));
+    await c.ready; await runMigrations(c.db, previous);
+    await c.client!.execute("INSERT INTO servers(id,name,host,token_encrypted) VALUES(4,'Node','node.test','fixture')");
+    await c.client!.execute("INSERT INTO services(id,name,slug,type,server_id,status,runtime_id) VALUES(1,'Web','web','docker',4,'running','web-9')");
+    await c.client!.execute({ sql: "INSERT INTO node_autoscale_transitions(service_id,owner_epoch,request_id,server_id,runtime_id,from_replicas,to_replicas,watermark,targets) VALUES(1,4,?,4,'web-9',1,2,9,'[]')", args: ['a'.repeat(32)] });
+    await runMigrations(c.db);
+    expect((await c.client!.execute('SELECT service_id,request_id,configuration FROM node_autoscale_transitions')).rows)
+      .toEqual([{ service_id: 1, request_id: 'a'.repeat(32), configuration: '' }]);
+  } finally {
+    c.client?.close();
+    cleanupScratch(scratch);
+  }
+});

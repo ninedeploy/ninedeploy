@@ -743,6 +743,13 @@
       "when": 1793371170307,
       "tag": "0106_node_autoscale_transitions",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "6",
+      "when": 1793371614032,
+      "tag": "0107_node_autoscale_configuration",
+      "breakpoints": true
     }
   ]
 }

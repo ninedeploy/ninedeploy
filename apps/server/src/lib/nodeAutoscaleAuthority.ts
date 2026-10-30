@@ -10,7 +10,7 @@ import { swarmRuntimeOf } from './swarm.js';
 type Placement = { serverId: number; runtimeId: string | null };
 export type NodeAutoscaleAdmission = { owner: ServiceRuntimeOwner; service: Service; targets: Placement[]; watermark: number; desiredReplicas: number };
 const snapshot = (s: Service) => JSON.stringify([s.type, s.orchestrator, s.slug, s.serverId, s.status, s.asleepAt,
-  s.runtimeId, s.replicas, s.autoscale, s.port, s.healthCheck, s.healthPath, s.healthCommand,
+  s.runtimeId, s.replicas, s.autoscale, s.port, s.healthCheck, s.healthPath, s.healthCommand, s.healthTimeoutSeconds,
   s.cpuShares, s.cpuLimitMilli, s.memLimitMb]);
 const placements = (db: Pick<DB, 'select'>, serviceId: number) => db.select({ serverId: serviceTargets.serverId, runtimeId: serviceTargets.runtimeId })
   .from(serviceTargets).where(eq(serviceTargets.serviceId, serviceId)).orderBy(serviceTargets.id);
@@ -46,20 +46,20 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
     const owner = await reserveServiceRuntimeOwnerInTransaction(tx, fresh.id, 'scale', randomBytes(16).toString('hex'), prior);
     await tx.insert(nodeAutoscaleTransitions).values({ serviceId: fresh.id, ownerEpoch: owner.epoch, requestId: owner.requestId!,
       serverId: fresh.serverId!, runtimeId: fresh.runtimeId!, fromReplicas: fresh.runtimeReplicas, toReplicas: desiredReplicas,
-      watermark, targets: targets.map(t => ({ serverId: t.serverId, runtimeId: t.runtimeId! })) });
+      watermark, configuration: snapshot(fresh), targets: targets.map(t => ({ serverId: t.serverId, runtimeId: t.runtimeId! })) });
     return { owner, service: fresh, targets, watermark, desiredReplicas };
   });
 }
 
 async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAutoscaleAdmission, expectedReplicas: number): Promise<void> {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, admission.service.id) });
-    if (!fresh || snapshot(fresh) !== snapshot(admission.service) || fresh.runtimeReplicas !== expectedReplicas ||
+    if (!fresh || admission.owner.kind !== 'scale' || snapshot(fresh) !== snapshot(admission.service) || fresh.runtimeReplicas !== expectedReplicas ||
       !sameRuntimeOwner(await readServiceRuntimeOwner(tx, fresh.id), admission.owner) ||
       JSON.stringify(await placements(tx, fresh.id)) !== JSON.stringify(admission.targets)) throw new Error('Node autoscale ownership, runtime or placement changed');
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, fresh.id)).limit(1);
     if (!transition || transition.phase !== 'accepted' || transition.ownerEpoch !== admission.owner.epoch || transition.requestId !== admission.owner.requestId ||
       transition.serverId !== fresh.serverId || transition.runtimeId !== fresh.runtimeId || transition.fromReplicas !== admission.service.runtimeReplicas ||
-      transition.toReplicas !== admission.desiredReplicas || transition.watermark !== admission.watermark ||
+      transition.toReplicas !== admission.desiredReplicas || transition.watermark !== admission.watermark || transition.configuration !== snapshot(admission.service) ||
       JSON.stringify(transition.targets) !== JSON.stringify(admission.targets)) throw new Error('Node autoscale transition changed');
     const [active, lifecycle, primary, fanout] = await Promise.all([
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
@@ -68,6 +68,24 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
       tx.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(eq(fanoutTransitions.serviceId, fresh.id)).limit(1),
     ]);
     if (active.length || lifecycle.length || primary.length || fanout.length) throw new Error('Node autoscale blocked by active runtime work');
+}
+
+/** Reconstruct a recorded decision only while its original runtime authority is still current. */
+export async function recoverNodeAutoscaleAdmission(db: DB, serviceId: number): Promise<NodeAutoscaleAdmission | null> {
+  return db.transaction(async tx => {
+    const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, serviceId)).limit(1);
+    if (!transition) return null;
+    const service = await tx.query.services.findFirst({ where: eq(services.id, serviceId) });
+    const owner = await readServiceRuntimeOwner(tx, serviceId);
+    if (!service || !owner || transition.configuration !== snapshot(service) ||
+      (service.runtimeReplicas !== transition.fromReplicas && service.runtimeReplicas !== transition.toReplicas)) {
+      throw new Error('Node autoscale recovery configuration or count changed');
+    }
+    const admission: NodeAutoscaleAdmission = { owner, service: { ...service, runtimeReplicas: transition.fromReplicas },
+      targets: transition.targets, watermark: transition.watermark, desiredReplicas: transition.toReplicas };
+    await assertCurrent(tx, admission, service.runtimeReplicas);
+    return admission;
+  });
 }
 
 /** Recheck ownership, placement and serving count around every awaited scale effect. */

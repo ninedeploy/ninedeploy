@@ -1,0 +1,1 @@
+ALTER TABLE `node_autoscale_transitions` ADD `configuration` text DEFAULT '' NOT NULL;
