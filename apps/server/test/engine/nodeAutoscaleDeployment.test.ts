@@ -66,6 +66,11 @@ it('stores the preparation intent and receipt under the real SQLite deployment o
   const opts = await options();
   const journal = { begin: (spec: Parameters<typeof beginNodeDeploymentPreparation>[2]) => beginNodeDeploymentPreparation(c.db, owner, spec),
     complete: (targets: Parameters<typeof completeNodeDeploymentPreparation>[2]) => completeNodeDeploymentPreparation(c.db, owner, targets) };
+  const prepare = opts.client.prepare.getMockImplementation()!;
+  opts.client.prepare.mockImplementation(async input => {
+    expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'preparing', targets: null, runtimeId: 'web-9' });
+    return prepare(input);
+  });
   const result = await prepareNodeAutoscaleDeployment({ ...opts, journal });
   expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'prepared', runtimeId: 'web-9',
     imageId: result.imageId, serving: 1, capacity: 3, targets: result.capacity });
@@ -85,12 +90,12 @@ it('reuses a persisted intent after an unconfirmed preparation attempt', async (
   expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'prepared', targets: resumed.capacity });
   expect(opts.client.prepare.mock.calls[0]![0].requestId).toBe(opts.client.prepare.mock.calls[2]![0].requestId);
 });
-it('retains the attempt environment if the receipt cannot be saved', async () => {
+it('defers panel-side environment cleanup if the receipt cannot be saved', async () => {
   const opts = await options(), messages: string[] = []; opts.log = line => messages.push(line);
   const journal = { begin: async () => {}, complete: async () => { throw new Error('journal unavailable'); } };
   await expect(prepareNodeAutoscaleDeployment({ ...opts, journal })).rejects.toThrow('journal unavailable');
   expect(calls).not.toContain('file.deleteEnv');
-  expect(messages).toContain('Node environment retained: preparation outcome is unconfirmed.');
+  expect(messages).toContain('Node environment cleanup deferred: preparation outcome is unconfirmed.');
 });
 it('refuses an older or unsealed agent before writing any environment file', async () => {
   const opts = await options(); caps = [];
@@ -130,12 +135,12 @@ it('does not delete another concurrent attempt environment when its own preparat
     expect(writes).toHaveLength(2); expect(writes[0]).not.toBe(writes[1]); expect(deletes).toEqual([writes[1]]);
   } finally { release(); await first; }
 });
-it('retains its temporary environment while an ambiguous preparation may still be running', async () => {
+it('defers panel-side environment cleanup while preparation may still be running', async () => {
   const opts = await options(), messages: string[] = []; opts.log = line => messages.push(line);
   opts.client.prepare.mockRejectedValue(new Error('reply lost'));
   await expect(prepareNodeAutoscaleDeployment(opts)).rejects.toThrow('reply lost');
   expect(calls).toContain('file.writeEnv'); expect(calls).not.toContain('file.deleteEnv');
-  expect(messages).toContain('Node environment retained: preparation outcome is unconfirmed.');
+  expect(messages).toContain('Node environment cleanup deferred: preparation outcome is unconfirmed.');
 });
 it('retains the environment if ownership changes while preparation is in flight', async () => {
   const opts = await options(); let current = true;

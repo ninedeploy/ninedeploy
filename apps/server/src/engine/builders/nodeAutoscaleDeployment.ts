@@ -75,7 +75,7 @@ export async function prepareNodeAutoscaleDeployment(input: {
     prepareConfirmed = true;
   } finally {
     // An unanswered prepare may still be using this file on the node.
-    if (prepareStarted && !prepareConfirmed) input.log('Node environment retained: preparation outcome is unconfirmed.');
+    if (prepareStarted && !prepareConfirmed) input.log('Node environment cleanup deferred: preparation outcome is unconfirmed.');
     else await input.agent('file.deleteEnv', { name: envName }, () => undefined).then(result => {
       if (result.exitCode !== 0) throw new Error('Node environment cleanup failed');
     }).catch(() => input.log('Node environment file cleanup is unconfirmed.'));
