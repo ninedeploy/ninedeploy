@@ -973,6 +973,35 @@ describe('services routes', () => {
     expect(res.json()).toEqual({ cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 1024, liveApplied: false });
   });
 
+  it('does not claim or partially apply live limits when a service has a remote target', async () => {
+    const running = svcRow({ id: 1, status: 'running', runtimeId: 'web-3', memLimitMb: 1024 });
+    const id = 'a'.repeat(64);
+    const inspection = JSON.stringify({ id, name: '/web-3', managed: 'service', serviceId: '1', deploymentId: '3', status: 'running', restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 1_073_741_824, memorySwap: 1_073_741_824 });
+    execMocks.capture.mockResolvedValueOnce(inspection);
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: running }, update: { services: [running] },
+      select: { serviceTargets: [{ serverId: 2, runtimeId: 'web-3' }] } }) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { memLimitMb: 1024 } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ liveApplied: false });
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['update']));
+  });
+
+  it('does not claim a full live update when a remote target appears during the update', async () => {
+    const running = svcRow({ id: 1, status: 'running', runtimeId: 'web-3', memLimitMb: 1024 });
+    const id = 'a'.repeat(64);
+    const inspection = JSON.stringify({ id, name: '/web-3', managed: 'service', serviceId: '1', deploymentId: '3', status: 'running', restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 1_073_741_824, memorySwap: 1_073_741_824 });
+    execMocks.capture.mockResolvedValueOnce(inspection).mockResolvedValueOnce('').mockResolvedValueOnce(inspection);
+    let reads = 0;
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: running }, update: { services: [running] },
+      select: { serviceTargets: () => ++reads === 1 ? [] : [{ serverId: 2, runtimeId: 'web-3' }] } }) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { memLimitMb: 1024 } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ liveApplied: false });
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', expect.arrayContaining(['update', id]));
+  });
+
   it('live-applies limits to a running docker container via docker update', async () => {
     const id = 'a'.repeat(64);
     const inspection = JSON.stringify({ id, name: '/web-3', managed: 'service', serviceId: '1', deploymentId: '3', status: 'running', restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 1_073_741_824, memorySwap: 1_073_741_824 });

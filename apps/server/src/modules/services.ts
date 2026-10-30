@@ -1289,7 +1289,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         return !!current && current.type === 'docker' && current.serverId == null && current.orchestrator !== 'swarm' &&
           current.status === 'running' && current.runtimeId === svc.runtimeId && current.replicas === svc.replicas &&
           current.runtimeReplicas === svc.runtimeReplicas && JSON.stringify(current.autoscale) === JSON.stringify(svc.autoscale) &&
-          current.cpuShares === svc.cpuShares && current.cpuLimitMilli === svc.cpuLimitMilli && current.memLimitMb === svc.memLimitMb;
+          current.cpuShares === svc.cpuShares && current.cpuLimitMilli === svc.cpuLimitMilli && current.memLimitMb === svc.memLimitMb &&
+          (await targetsForService(app.db, svc.id)).length === 0;
       });
     }
     void audit(app.db, req.user!.id, 'service.limits', `${svc.name}: cpu=${svc.cpuShares} cpus=${svc.cpuLimitMilli / 1000} mem=${svc.memLimitMb}MB`);
