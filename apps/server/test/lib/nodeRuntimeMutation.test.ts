@@ -13,6 +13,7 @@ import { createDb, deployments, eq, nodeAutoscaleTransitions, runMigrations, ser
 import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
+import { retireNodeDeploymentGeneration } from '../../src/lib/nodeDeploymentRetirement.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
 type Row = { id: string; name: string; managed: string | null; serviceId: string | null; deploymentId: string | null; composeProject?: string | null; nonce: string | null; specHash: string | null; running: boolean; status: string; networks: Record<string, object> };
@@ -103,6 +104,19 @@ describe('persistent runtime request admission', () => {
     expect(effects().filter(args => args[0] === 'start')).toEqual(result.items.map(item => ['start', item.id]));
     expect(effects()).toContainEqual(['network', 'connect', 'nd-extra', result.items[1]!.id]);
     expect(rows.every(row => row.nonce === nonce(5) && /^[a-f0-9]{64}$/.test(row.specHash!))).toBe(true);
+  });
+  it('retires an observed previous generation as one fenced batch without touching the selected generation', async () => {
+    const previous = await runtime().prepare(prepare(5, 10, [spec(10), spec(10, 'web-10-r2')]));
+    const selected = await runtime().prepare(prepare(9, 11));
+    const owner = { serviceId: 7, serverId: 4, deploymentId: 11, epoch: 2, requestId: nonce(11) };
+    const group = { runtimeId: 'web-10', port: 3000, healthPath: '/', healthCheck: null, replicas: 1, commitSha: null,
+      containers: [{ name: 'web-10', id: previous.items[0]!.id, observed: true }],
+      spares: [{ name: 'web-10-r2', id: previous.items[1]!.id, observed: true }] };
+    const client = { retire: (input: unknown) => runtime().retire(input) }, input = { owner, group, selectedRuntimeId: 'web-11', graceSeconds: 1, checkpoint: async () => {} };
+    await retireNodeDeploymentGeneration(client, input);
+    expect(rows.map(row => row.id)).toEqual([selected.items[0]!.id]);
+    io.spawn.mockClear(); await retireNodeDeploymentGeneration(client, input);
+    expect(effects()).toEqual([]); expect(rows[0]!.running).toBe(true);
   });
   it('prepares autoscale serving and stopped capacity through the real journal and agent operation', async () => {
     mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
