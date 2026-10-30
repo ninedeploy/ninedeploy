@@ -601,6 +601,19 @@ export function createRemoteDockerBuilder(
         const remaining = deadline - Date.now();
         if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(pollMs, remaining)));
       };
+      if (!runtime.nodeTargets?.length && !runtime.healthCheck && readinessMode === 'tcp') {
+        try {
+          const ping = await healthCall('agent.ping', {});
+          if (ping.exitCode !== 0) throw new Error('Node agent capability check failed');
+          const refusal = capabilityRefusalFor(parseAgentCapabilities(ping.lines), opts.nodeLabel ?? 'node',
+            { cap: 'docker.probe', feature: 'verify the configured application port' });
+          if (refusal) { log(refusal.message); return false; }
+        } catch (error) {
+          if (interruption) throw interruption.reason;
+          log(`Node readiness probe capability is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+          return false;
+        }
+      }
       if (runtime.nodeTargets?.length) {
         return verifyNodeReadiness((op, params, sink) => healthCall(op, params, sink), {
           targets: runtime.nodeTargets, port: runtime.port, mode: readinessMode ?? 'auto', path: runtime.healthPath,

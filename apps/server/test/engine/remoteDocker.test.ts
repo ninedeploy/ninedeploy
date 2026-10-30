@@ -317,10 +317,18 @@ describe('remote docker builder — repository services', () => {
 });
 
 describe('remote docker builder — what it refuses', () => {
+  it('reports an unsupported default port probe without waiting for the readiness timeout', async () => {
+    const { agent, calls } = fakeAgent(); const logs: string[] = [];
+    const result = await createRemoteDockerBuilder(agent).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/' }, 300, 10_000, line => logs.push(line));
+    expect(result).toBe(false);
+    expect(logs.join('\n')).toMatch(/agent|probe/i);
+    expect(calls.some(call => call.op === 'docker.inspect' || call.op === 'docker.probe')).toBe(false);
+  });
   it('does not accept a running default-health candidate before its configured port listens', async () => {
     vi.useFakeTimers();
     try {
-      const { agent, calls } = fakeAgent({ 'docker.probe': { exitCode: 0, lines: ['ND-PROBE {"ready":false,"protocol":"tcp"}'] } });
+      const { agent, calls } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.probe"]}'] },
+        'docker.probe': { exitCode: 0, lines: ['ND-PROBE {"ready":false,"protocol":"tcp"}'] } });
       const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/' }, 300, 10_000);
       await vi.advanceTimersByTimeAsync(300);
       expect(await pending).toBe(false);
@@ -330,7 +338,7 @@ describe('remote docker builder — what it refuses', () => {
   it('accepts a default-health candidate only after consecutive successful TCP probes', async () => {
     vi.useFakeTimers();
     try {
-      let probes = 0; const { agent: base } = fakeAgent();
+      let probes = 0; const { agent: base } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.probe"]}'] } });
       const agent: AgentCall = async (op, params, sink) => op === 'docker.probe'
         ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: ++probes >= 2, protocol: 'tcp' })}`] } : base(op, params, sink);
       const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/' }, 1000, 10_000);
