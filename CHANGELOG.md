@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.13] - 2026-10-30
+
+### Fixed
+
+- Probe a node service's port before promotion when no explicit readiness mode is configured. Explicit HTTP, TCP, command and running modes retain their selected policy. A TCP probe confirms a listening port; configure strict HTTP readiness to require a successful application response.
+- Bind node readiness and primary promotion to recorded container identities, recheck container state, and refuse missing sealed agent capabilities before mutation. Older agents that cannot provide the required checks must be updated before the affected deployment proceeds.
+- Preserve the existing fan-out generation when creation, routing or cleanup is unconfirmed. Persist candidate creation identities, hold ambiguous outcomes for review and reconcile only confirmed ownership.
+- Use the claimed recovery state and recheck retry eligibility after concurrent recovery attempts. Do not report a target without a serving runtime as running.
+
+### In progress
+
+- Node autoscaling contains preparation and recovery infrastructure but is not yet available end to end. It remains disabled for node services until deployment integration, fresh identity-bound metrics and real-system acceptance are complete.
+
 ## [0.18.12] - 2026-10-30
 
 ### Added

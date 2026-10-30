@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.18.13",
+    "date": "2026-10-30",
+    "title": "Safer node readiness and deployment recovery",
+    "changes": [
+      "Probe node service ports before promotion by default, and confirm the selected container identity and running state before routing traffic.",
+      "Keep existing fan-out generations when a creation result or routing transition cannot be confirmed, and recover only identities recorded for the deployment.",
+      "Preserve recovery ownership and retry backoff across concurrent workers; report an empty recovered target as failed rather than running.",
+      "Require compatible sealed node capabilities before changes to routed services. Node autoscaling remains under development."
+    ]
+  },
+  {
     "version": "0.18.12",
     "date": "2026-10-30",
     "title": "Node operations and safer resource limits",
