@@ -81,6 +81,16 @@ it('discards an expired accepted measurement before effects and permits a fresh 
   expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
   expect(await admitNodeAutoscale(c.db, await service(), 2, { ...measurement, sampledAt: Date.now() })).not.toBeNull();
 });
+it('releases a stale accepted decision when a deploy is queued', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  expect(await admitNodeAutoscale(c.db, await service(), 2, measurement)).not.toBeNull();
+  await c.db.update(nodeAutoscaleTransitions).set({ measurement: { ...measurement, sampledAt: Date.now() - 100_000 }, leaseUntil: new Date(0) });
+  await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+  expect(await reconcileNodeAutoscale(c.db, { runtime })).toEqual([{ serviceId: 1, state: 'discarded' }]);
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
+  expect((await service()).runtimeReplicas).toBe(1); expect(calls).toEqual([]);
+});
 it('continues a started transition even if its original sample is now old', async () => {
   const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
     targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };

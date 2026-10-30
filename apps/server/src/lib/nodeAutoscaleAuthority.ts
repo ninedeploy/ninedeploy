@@ -103,7 +103,7 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, fresh.id)).limit(1);
     if (transition && (!/^[a-f0-9]{32}$/.test(admission.workerToken) || transition.workerToken !== admission.workerToken ||
       !transition.leaseUntil || transition.leaseUntil.getTime() <= Date.now())) throw new Error('Node autoscale worker lease changed or expired');
-    if (!transition || !['accepted', 'fencing', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping', 'handoff', 'abort_fencing', 'abort_handoff'].includes(transition.phase) || transition.ownerEpoch !== admission.owner.epoch || transition.requestId !== admission.owner.requestId ||
+    if (!transition || !['accepted', 'fencing', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping', 'handoff', 'abort_fencing', 'abort_handoff', 'abort_stopping', 'abort_started_handoff'].includes(transition.phase) || transition.ownerEpoch !== admission.owner.epoch || transition.requestId !== admission.owner.requestId ||
       transition.serverId !== fresh.serverId || transition.runtimeId !== fresh.runtimeId || transition.fromReplicas !== admission.service.runtimeReplicas ||
       transition.toReplicas !== admission.desiredReplicas || transition.watermark !== admission.watermark || transition.configuration !== snapshot(admission.service) ||
       JSON.stringify(transition.targets) !== JSON.stringify(admission.targets) ||
@@ -115,13 +115,29 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
     }
     const [active, lifecycle, primary, fanout] = await Promise.all([
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status,
-        allowQueued || ['fencing', 'handoff', 'abort_fencing', 'abort_handoff'].includes(transition.phase) ? ['building', 'deploying'] : ['queued', 'building', 'deploying']))).limit(1),
+        allowQueued || ['fencing', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping', 'handoff', 'abort_fencing', 'abort_handoff', 'abort_stopping', 'abort_started_handoff'].includes(transition.phase) ? ['building', 'deploying'] : ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, fresh.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
       tx.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, fresh.id)).limit(1),
       tx.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(eq(fanoutTransitions.serviceId, fresh.id)).limit(1),
     ]);
     if (active.length || lifecycle.length || primary.length || fanout.length) throw new Error('Node autoscale blocked by active runtime work');
     if (canaryActive(fresh.id)) throw new Error('Node autoscale blocked by active canary');
+}
+
+/** A queued deploy supersedes an unpublished scale decision, including an in-flight Start. */
+export async function abortQueuedPreparedNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission): Promise<boolean> {
+  return db.transaction(async tx => {
+    await assertCurrent(tx, admission, admission.service.runtimeReplicas, true);
+    const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
+    if (!transition || !['prepared', 'started', 'ready'].includes(transition.phase)) return false;
+    const queued = await tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, admission.service.id), eq(deployments.status, 'queued'))).limit(1);
+    if (!queued.length) return false;
+    const next = admission.desiredReplicas > admission.service.runtimeReplicas ? 'abort_stopping' : 'abort_fencing';
+    const updated = await tx.update(nodeAutoscaleTransitions).set({ phase: next }).where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id),
+      eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), eq(nodeAutoscaleTransitions.phase, transition.phase))).returning({ id: nodeAutoscaleTransitions.serviceId });
+    if (updated.length !== 1) throw new Error('Node autoscale abort ownership changed');
+    return true;
+  });
 }
 
 /** A queued deploy or stale sample cancels an unstarted decision but first releases all node fences. */
@@ -176,6 +192,8 @@ export async function discardExpiredNodeAutoscale(db: DB, admission: NodeAutosca
     if (!transition || transition.phase !== 'accepted' || !admission.measurement) return false;
     const now = Date.now();
     if (admission.measurement.sampledAt <= now && now - admission.measurement.sampledAt <= AUTOSCALE_STATS_MAX_AGE_MS) return false;
+    const queued = await tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, admission.service.id), eq(deployments.status, 'queued'))).limit(1);
+    if (queued.length) return false;
     await assertCurrent(tx, admission, admission.service.runtimeReplicas);
     const deleted = await tx.delete(nodeAutoscaleTransitions).where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id),
       eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), eq(nodeAutoscaleTransitions.phase, 'accepted'))).returning({ id: nodeAutoscaleTransitions.serviceId });
@@ -221,7 +239,7 @@ export async function freezeNodeAutoscaleInventory(db: DB, admission: NodeAutosc
   });
 }
 
-export type NodeAutoscalePhase = 'accepted' | 'fencing' | 'prepared' | 'started' | 'ready' | 'routing' | 'draining' | 'stopping' | 'handoff' | 'abort_fencing' | 'abort_handoff';
+export type NodeAutoscalePhase = 'accepted' | 'fencing' | 'prepared' | 'started' | 'ready' | 'routing' | 'draining' | 'stopping' | 'handoff' | 'abort_fencing' | 'abort_handoff' | 'abort_stopping' | 'abort_started_handoff';
 /** Each phase change is fenced by the same worker, service owner, generation and expected serving count. */
 export async function advanceNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission, expected: NodeAutoscalePhase,
   next: NodeAutoscalePhase | 'completed'): Promise<void> {
@@ -229,7 +247,8 @@ export async function advanceNodeAutoscale(db: DB, admission: NodeAutoscaleAdmis
   const order: Array<NodeAutoscalePhase | 'completed'> = up
     ? ['accepted', 'fencing', 'prepared', 'started', 'ready', 'routing', 'handoff', 'completed']
     : ['accepted', 'fencing', 'prepared', 'routing', 'draining', 'stopping', 'handoff', 'completed'];
-  const abortTransition = expected === 'abort_fencing' && next === 'abort_handoff' || expected === 'abort_handoff' && next === 'completed';
+  const abortTransition = expected === 'abort_fencing' && next === 'abort_handoff' || expected === 'abort_handoff' && next === 'completed' ||
+    expected === 'abort_stopping' && next === 'abort_started_handoff' || expected === 'abort_started_handoff' && next === 'completed';
   if (!abortTransition && (order.indexOf(next) !== order.indexOf(expected) + 1 || order.indexOf(expected) < 0)) throw new Error('Invalid node autoscale phase transition');
   const publishing = next === 'routing', serving = expected === 'routing' || expected === 'draining' || expected === 'stopping' || expected === 'handoff'
     ? admission.desiredReplicas : admission.service.runtimeReplicas;
@@ -242,6 +261,10 @@ export async function advanceNodeAutoscale(db: DB, admission: NodeAutoscaleAdmis
       if (queued.length || admission.measurement && (admission.measurement.sampledAt > Date.now() || Date.now() - admission.measurement.sampledAt > AUTOSCALE_STATS_MAX_AGE_MS)) {
         throw new Error('Node autoscale decision was superseded before preparation');
       }
+    }
+    if (['prepared', 'started', 'ready'].includes(expected) && !abortTransition) {
+      const queued = await tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, admission.service.id), eq(deployments.status, 'queued'))).limit(1);
+      if (queued.length) throw new Error('Node autoscale decision was superseded before routing');
     }
     if (publishing) {
       const [updated] = await tx.update(services).set({ runtimeReplicas: admission.desiredReplicas }).where(and(eq(services.id, admission.service.id), eq(services.runtimeReplicas, serving))).returning();

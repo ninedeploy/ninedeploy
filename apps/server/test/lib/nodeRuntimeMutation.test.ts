@@ -341,6 +341,43 @@ describe('persistent runtime request admission', () => {
       await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
     } finally { c.client?.close(); }
   });
+  it('stops an unacknowledged scale-up before a queued deploy, even if the Stop reply is lost', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-10', port: 3000,
+        autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'running' });
+      const deployOwner = await reserveServiceRuntimeOwner(c.db, 7, 'deploy', null, nonce(44));
+      const owner = { serviceId: 7, serverId: 4, deploymentId: 10, epoch: deployOwner.epoch, requestId: deployOwner.requestId! };
+      const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
+      mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
+      const agent = runtime();
+      const prepared = await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
+        { service: await service(), owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
+      await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 10, serviceId: 7, serverId: 4, runtimeId: 'web-10', imageId: image, targets: prepared.capacity });
+      let lostStop = true;
+      const deps: NodeAutoscaleControllerDeps = {
+        preflight: async () => {}, fence: (_node, input) => agent.fence(input), inventory: (_node, input) => agent.inventory(input),
+        start: async (_node, input) => { await agent.start(input); await c.db.insert(deployments).values({ id: 11, serviceId: 7, status: 'queued' }); throw Error('lost start reply'); },
+        stop: async (_node, input) => { const reply = await agent.stop(input); if (lostStop) { lostStop = false; throw Error('lost abort stop'); } return reply; },
+        retire: (_node, input) => agent.retire(input), handoff: (_node, input) => handoffStoppedNodeToLegacy(join(root, '.agent-work', '.lifecycle'), input),
+        ready: async () => { throw Error('unexpected readiness'); }, route: async () => { throw Error('unexpected routing'); }, drain: async () => {},
+      };
+      const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+      await expect(executeNodeAutoscale(c.db, admitted, deps)).rejects.toThrow('lost start reply');
+      expect(rows.map(row => row.running)).toEqual([true, true, false]);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+      await expect(executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).rejects.toThrow('lost abort stop');
+      expect((await c.db.select().from(nodeAutoscaleTransitions))[0]?.phase).toBe('abort_stopping');
+      expect(rows.map(row => row.running)).toEqual([true, false, false]);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+      expect(await executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).toBe('aborted');
+      expect((await service()).runtimeReplicas).toBe(1);
+      await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
+    } finally { c.client?.close(); }
+  });
   it('replays a completed creation receipt across a fresh journal instance without creating or starting a replacement', async () => {
     const first = await runtime().prepare(prepare()); const count = io.spawn.mock.calls.length; rows = [];
     expect(await runtime().prepare(prepare())).toEqual(first); expect(io.spawn.mock.calls).toHaveLength(count);

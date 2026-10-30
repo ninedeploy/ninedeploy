@@ -67,6 +67,20 @@ it('finishes the ownership handoff even when a new deploy is queued during it', 
   expect((await service()).runtimeReplicas).toBe(2);
   expect(await transition()).toBeUndefined();
 });
+it.each(['up', 'down'] as const)('finishes an already published scale-%s when a deploy is queued during routing', async direction => {
+  if (direction === 'down') {
+    items[1]!.running = true;
+    await c.db.update(services).set({ runtimeReplicas: 2 }).where(eq(services.id, 1));
+  }
+  const desired = direction === 'up' ? 2 : 1;
+  const admission = (await admitNodeAutoscale(c.db, await service(), desired))!;
+  const runtime = deps(), route = runtime.route;
+  runtime.route = async (...args) => { await route(...args); await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' }); };
+  expect(await executeNodeAutoscale(c.db, admission, runtime)).toBe('completed');
+  expect((await service()).runtimeReplicas).toBe(desired);
+  expect(await transition()).toBeUndefined();
+  expect(calls).toContain('handoff');
+});
 it('releases node ownership without scaling when a deploy is queued during fencing', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
   const runtime = deps(), fence = runtime.fence; let queued = false;
@@ -252,8 +266,9 @@ it('never publishes a scale-up when a deploy is queued during readiness', async 
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
   const runtime = deps();
   runtime.ready = async () => { calls.push('ready'); await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' }); return true; };
-  await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow(/active runtime work/);
+  expect(await executeNodeAutoscale(c.db, admission, runtime)).toBe('aborted');
   expect((await service()).runtimeReplicas).toBe(1); expect(calls).not.toContain('route');
+  expect(calls).toContain('stop'); expect(calls).toContain('handoff'); expect(await transition()).toBeUndefined();
 });
 it('never publishes a scale-up when a canary starts during readiness', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
