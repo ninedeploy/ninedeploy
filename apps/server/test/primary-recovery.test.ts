@@ -78,6 +78,30 @@ async function pump(run: Promise<unknown>, pending = false) {
 async function finish<T>(run: Promise<T>) { await pump(run); return run; }
 
 describe('primary recovery through SQLite and the real routing writer', () => {
+  it('does not adopt a candidate identity returned by a failed Docker inspection', async () => {
+    const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'docker.identity' && args[3].name === candidate) return { exitCode: 1,
+        lines: [`ND-CONTAINER ${JSON.stringify(containers.get(candidateId))}`] };
+      return original(...args);
+    });
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/' };
+    await expect(beginPrimaryTransition(f.db, (await service())!, 9, runtime, { ...runtime, runtimeId: old }, null)).rejects.toThrow(/identit/i);
+    expect((await rows())[0]?.candidate.containers[0]).toMatchObject({ id: null, observed: false });
+    expect(writes).toEqual([]); expect(stops()).toEqual([]);
+  });
+  it('retains the candidate when its identity receipt exceeds the limit', async () => {
+    const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'docker.identity' && args[3].name === candidate) return { exitCode: 0,
+        lines: [`ND-CONTAINER ${JSON.stringify({ ...containers.get(candidateId), padding: 'x'.repeat(16_384) })}`] };
+      return original(...args);
+    });
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/' };
+    await expect(beginPrimaryTransition(f.db, (await service())!, 9, runtime, { ...runtime, runtimeId: old }, null)).rejects.toThrow(/identit/i);
+    expect((await rows())[0]?.candidate.containers[0]).toMatchObject({ id: null, observed: false });
+    expect(writes).toEqual([]); expect(stops()).toEqual([]);
+  });
   it('does not adopt a replacement that reused the candidate name after creation', async () => {
     const replacement = 'c'.repeat(64);
     containers.delete(candidateId);

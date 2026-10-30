@@ -63,7 +63,7 @@ function caller(db: DB, serverId: number | null) {
 async function identity(db: DB, serverId: number | null, name: string): Promise<Identity | null> {
   const reply = await caller(db, serverId)('docker.identity', { name }, () => {});
   const lines = reply.lines.filter(l => l.startsWith('ND-CONTAINER '));
-  if (lines.length !== 1) throw new Error('Container identity was not confirmed');
+  if (reply.exitCode !== 0 || lines.length !== 1 || Buffer.byteLength(lines[0]!) > 16_384) throw new Error('Container identity was not confirmed');
   const value = JSON.parse(lines[0]!.slice(13)) as Identity | null;
   if (value !== null && (typeof value !== 'object' || !/^[a-f0-9]{64}$/.test(value.id) || typeof value.name !== 'string')) throw new Error('Invalid container identity receipt');
   return value;
