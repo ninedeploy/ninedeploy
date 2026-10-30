@@ -6006,6 +6006,7 @@ export const TR: Readonly<Record<string, string>> = {
 
   // ── Usage disk ────────────────────────────────────────────────────────
   'Disk (GB-hours)': 'Disk (GB-saat)',
+  'Disk figures use available samples and may undercount usage when measurements are missing.': 'Disk değerleri mevcut ölçümlere dayanır; eksik ölçümler varsa kullanım daha düşük görünebilir.',
 
   // ── Private node network (ROADMAP item 11) ────────────────────────────
   'Join a Tailscale tailnet and reach the agent only there':

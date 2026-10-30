@@ -64,12 +64,13 @@ describe('the hourly sample', () => {
     ] as never);
     const nodeSize = vi.fn(async (_serverId: number, volume: string) => (volume === 'unmeasurable' ? null : 5e9));
     const panelSizes = vi.fn(async () => new Map([['nd-svc-web-data', 2e9], ['shared', 1e9]]));
-    expect(await lib.sampleServiceDisk(db, { panelSizes, nodeSize }, NOW)).toBe(2);
+    expect(await lib.sampleServiceDisk(db, { panelSizes, nodeSize }, NOW)).toBe(1);
     expect(panelSizes).toHaveBeenCalledTimes(1);
     expect(nodeSize).toHaveBeenCalledWith(node!.id, 'nd-svc-api-cache');
     const rows = await disk();
     expect(rows.find((r) => r.serviceId === web!.id)?.value).toBe(3e9);
-    expect(rows.find((r) => r.serviceId === api!.id)?.value).toBe(5e9);
+    // A partial sum is not the service's total disk usage.
+    expect(rows.some((r) => r.serviceId === api!.id)).toBe(false);
     expect(rows.some((r) => r.serviceId === none!.id)).toBe(false);
   });
 

@@ -245,7 +245,7 @@ Two alert metrics read the traffic analytics of one service: `error_rate`, the s
 What is counted:
 - **CPU in core-hours.** One fully busy core for an hour is 1. It comes from the 30-second samples and their summaries described under [resource history](#configure-resource-history). The window uses the same tier boundaries as the charts, so no sample is counted twice.
 - **Memory in GiB-hours**, from the same samples.
-- **Disk in GB-hours**: once an hour, the panel measures the volumes each service mounts, its data volume and its attached volumes, and stores the total. The panel host reads every volume with one `docker system df -v`; a node's agent measures each volume. A volume that cannot be measured is left out of that hour rather than counted as zero. Disk follows the same retention as CPU and memory.
+- **Disk in GB-hours**: once an hour, the panel measures the volumes each service mounts, its data volume and its attached volumes, and stores the total. The panel host reads every volume with one `docker system df -v`; a node's agent measures each volume. If any volume cannot be measured, that service's hourly sample is omitted. Earlier versions could store partial totals. Missing or partial samples make the reported usage lower than the actual total; the report cannot recover those measurements. Disk follows the same retention as CPU and memory.
 - **Egress in GB and requests**, from the hourly rows of traffic analytics. Both stay at zero while traffic analytics is off.
 
 Each sample stands for one 30-second interval. A collection cycle the panel skipped, for example while it was restarting, is not counted.

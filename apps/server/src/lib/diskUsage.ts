@@ -11,7 +11,8 @@ import { type MetricInput, persistServiceMetrics } from './serviceMetricHistory.
  *
  * The panel host's sizes come from one `docker system df -v`; a node's from
  * its agent (`docker.volumeSize`), one call per volume. A volume that cannot
- * be measured is left out of that hour, never counted as zero.
+ * be measured makes the service's sample unavailable for that hour; a partial
+ * volume total must never be stored as the complete service total.
  */
 
 /** How often disk is sampled: each sample stands for this long in the usage report. */
@@ -72,7 +73,7 @@ export async function sampleServiceDisk(db: DB, deps: DiskSamplerDeps = {}, now 
     const volumes = volumesOf.get(s.id);
     if (!volumes) continue;
     let total = 0;
-    let measured = false;
+    let complete = true;
     for (const volume of volumes) {
       let bytes: number | null = null;
       if (s.serverId == null) {
@@ -81,11 +82,10 @@ export async function sampleServiceDisk(db: DB, deps: DiskSamplerDeps = {}, now 
       } else if (deps.nodeSize) {
         bytes = await deps.nodeSize(s.serverId, volume).catch(() => null);
       }
-      if (bytes === null) continue;
+      if (bytes === null) { complete = false; continue; }
       total += bytes;
-      measured = true;
     }
-    if (measured) sample.push({ serviceId: s.id, kind: 'disk', value: total, ts: now });
+    if (complete) sample.push({ serviceId: s.id, kind: 'disk', value: total, ts: now });
   }
   if (sample.length) await persistServiceMetrics(db, sample);
   return sample.length;

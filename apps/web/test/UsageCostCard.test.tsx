@@ -41,6 +41,7 @@ describe('UsageCostCard (ROADMAP item 9)', () => {
   it('shows usage per service with the total, and per project or workspace', async () => {
     renderWithProviders(<UsageCostCard />);
     const api1 = (await screen.findByText('api')).closest('tr')!;
+    expect(screen.getByText('Disk figures use available samples and may undercount usage when measurements are missing.')).toBeInTheDocument();
     expect(within(api1).getByText('Panel host')).toBeInTheDocument();
     expect(within(api1).getByText('18 EUR')).toBeInTheDocument();
     expect(within(api1).getByText(/^7[.,]5$/)).toBeInTheDocument();

@@ -78,6 +78,7 @@ function UsageTable({ report, view }: { report: UsageReport; view: View }) {
         </p>
       )}
       {!report.trafficAnalytics && <p className="text-xs text-slate-500">{t('Traffic analytics is off: bandwidth and requests are not counted.')}</p>}
+      <p className="text-xs text-slate-500">{t('Disk figures use available samples and may undercount usage when measurements are missing.')}</p>
       {view !== 'services' && <p className="text-xs text-slate-500">{t('A service in several groups counts in each, so groups do not add up to the total.')}</p>}
       {rows.length === 0 ? (
         <p className="text-xs text-slate-500">{t('Nothing to show yet.')}</p>
