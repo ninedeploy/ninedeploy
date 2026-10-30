@@ -89,6 +89,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.lifecycle.retire': 'retire stopped node candidates',
   'docker.mutations': 'prepare, fence and retire owned container sets',
   'docker.prepareAttemptEnv': 'prepare isolated environments',
+  'docker.retireHandoff': 'retire a generation and hand runtime ownership back',
   'docker.limits': 'update owned container resource limits',
   'docker.startSet': 'start owned container replicas',
   'host.packages': 'read and change OS updates',
