@@ -6,6 +6,7 @@ import { createNodeAutoscaleDecider } from './nodeAutoscaleDecision.js';
 import { nodeAutoscaleRuntime } from './nodeAutoscaleRuntime.js';
 import { readNodeAutoscaleSample } from './nodeAutoscaleSample.js';
 import { readServiceRuntimeOwner, sameRuntimeOwner } from './serviceRuntimeOwner.js';
+import { recordNodeAutoscaleHolding } from './autoscaler.js';
 
 /** Compose measurement and durable effects; the caller schedules and supplies its live conflict check. */
 export function createNodeAutoscaleWorker(db: DB, deps: {
@@ -22,39 +23,48 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
     async step(service: Service, signal?: AbortSignal): Promise<{ state: 'held' | 'busy' | 'completed' | 'pending'; reason?: string }> {
       if (busy.has(service.id)) return { state: 'busy' };
       busy.add(service.id);
+      const held = (reason: string) => { recordNodeAutoscaleHolding(service, reason); return { state: 'held' as const, reason }; };
       try {
         signal?.throwIfAborted();
         const config = autoscaleConfig.safeParse(service.autoscale);
         if (!config.success || config.data.metric === 'rps' || await deps.blocked(service.id)) {
           forget(service.id);
-          return { state: 'held', reason: 'node autoscale is blocked or its metric is unavailable' };
+          return held('node autoscale is blocked or its metric is unavailable');
         }
         const deploymentId = Number(/-([1-9]\d*)$/.exec(service.runtimeId ?? '')?.[1]);
         const capacity = Number.isSafeInteger(deploymentId) && deploymentId > 0
           ? await db.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, deploymentId) }) : null;
         if (!capacity || capacity.serviceId !== service.id || capacity.serverId !== service.serverId || capacity.runtimeId !== service.runtimeId) {
-          forget(service.id); return { state: 'held', reason: 'node autoscale capacity is not confirmed' };
+          forget(service.id); return held('node autoscale capacity is not confirmed');
         }
         const measuredOwner = await readServiceRuntimeOwner(db, service.id);
         if (owners.has(service.id) && !sameRuntimeOwner(owners.get(service.id)!, measuredOwner)) forget(service.id);
         const sample = await (deps.sample ?? readNodeAutoscaleSample)(db, service, { signal });
         signal?.throwIfAborted();
-        if (await deps.blocked(service.id)) { forget(service.id); return { state: 'held', reason: 'node autoscale is blocked' }; }
+        if (await deps.blocked(service.id)) { forget(service.id); return held('node autoscale is blocked'); }
         if (!sameRuntimeOwner(await readServiceRuntimeOwner(db, service.id), measuredOwner)) {
-          forget(service.id); return { state: 'held', reason: 'node runtime ownership changed during measurement' };
+          forget(service.id); return held('node runtime ownership changed during measurement');
         }
         owners.set(service.id, measuredOwner);
         const decision = decider.observe(service, sample, (deps.now ?? Date.now)());
-        if (decision.to === null || !decision.evidence) return { state: 'held', ...(decision.holding ? { reason: decision.holding } : {}) };
+        if (decision.to === null || !decision.evidence) {
+          recordNodeAutoscaleHolding(service, decision.holding);
+          return { state: 'held', ...(decision.holding ? { reason: decision.holding } : {}) };
+        }
         signal?.throwIfAborted();
         const admission = await admitNodeAutoscale(db, service, decision.to, decision.evidence, measuredOwner);
         owners.delete(service.id);
-        if (!admission) return { state: 'held', reason: 'node autoscale ownership changed' };
+        if (!admission) return held('node autoscale ownership changed');
         signal?.throwIfAborted();
-        if (await deps.blocked(service.id)) return { state: 'pending', reason: 'node autoscale transition awaits recovery' };
+        if (await deps.blocked(service.id)) {
+          recordNodeAutoscaleHolding(service, 'node autoscale transition awaits recovery');
+          return { state: 'pending', reason: 'node autoscale transition awaits recovery' };
+        }
         const result = await executeNodeAutoscale(db, admission, deps.runtime?.(admission, signal) ?? nodeAutoscaleRuntime(db, admission, { signal }));
-        return result === 'aborted' ? { state: 'held', reason: 'node autoscale decision was superseded' } : { state: 'completed' };
-      } catch (error) { forget(service.id); throw error; }
+        if (result === 'aborted') return held('node autoscale decision was superseded');
+        recordNodeAutoscaleHolding(service, null);
+        return { state: 'completed' };
+      } catch (error) { forget(service.id); recordNodeAutoscaleHolding(service, 'node autoscale evaluation failed; see server logs'); throw error; }
       finally { busy.delete(service.id); }
     },
   };

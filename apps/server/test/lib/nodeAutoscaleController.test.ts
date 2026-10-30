@@ -6,6 +6,7 @@ import { createNodeAutoscaleDecider } from '../../src/lib/nodeAutoscaleDecision.
 import { createNodeAutoscaleWorker } from '../../src/lib/nodeAutoscaleWorker.js';
 import { beginCanary, endCanary } from '../../src/engine/canaryState.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
+import { autoscaleStatus, resetAutoscaleState } from '../../src/lib/autoscaler.js';
 
 let c: ReturnType<typeof createDb>;
 const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
@@ -36,13 +37,16 @@ beforeEach(async () => {
     targets: ['web-9', 'web-9-r2', 'web-9-r3'].map((name, index) => ({ name, id: ['a', 'b', 'c'][index]!.repeat(64) })) });
   items[1]!.running = false; calls = []; readiness = true; routingFails = false;
 });
-afterEach(() => { endCanary(1); c.client?.close(); vi.restoreAllMocks(); });
+afterEach(() => { endCanary(1); resetAutoscaleState(); c.client?.close(); vi.restoreAllMocks(); });
 
 it('holds without sampling when the active generation has no capacity receipt', async () => {
   await c.db.delete(nodeAutoscaleCapacity).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
   const sample = vi.fn();
   const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, sample });
   expect(await worker.step(await service())).toEqual({ state: 'held', reason: 'node autoscale capacity is not confirmed' });
+  expect(autoscaleStatus(await service()).holding).toBe('node autoscale capacity is not confirmed');
+  await c.db.update(services).set({ runtimeId: 'web-10' }).where(eq(services.id, 1));
+  expect(autoscaleStatus(await service()).holding).not.toBe('node autoscale capacity is not confirmed');
   expect(sample).not.toHaveBeenCalled();
 });
 
@@ -156,6 +160,7 @@ it('holds when a conflicting operation starts during sampling', async () => {
       items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95, cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] };
   } });
   expect((await worker.step(svc)).state).toBe('held');
+  expect(autoscaleStatus(svc).holding).toBe('node autoscale is blocked');
   expect(await transition()).toBeUndefined();
   expect(calls).toEqual([]);
 });
@@ -214,8 +219,10 @@ it('restarts the decision window after node sampling fails', async () => {
   } });
   expect((await worker.step(svc)).state).toBe('held');
   fail = true; await expect(worker.step(svc)).rejects.toThrow('node offline');
+  expect(autoscaleStatus(svc).holding).toBe('node autoscale evaluation failed; see server logs');
   fail = false; time = now;
   expect((await worker.step(svc)).state).toBe('held');
+  expect(autoscaleStatus(svc).holding).toBeNull();
   expect(calls).toEqual([]);
 });
 it('recovers a failed readiness check without starting the same set again or routing early', async () => {

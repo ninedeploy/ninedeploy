@@ -50,6 +50,14 @@ interface ServiceState {
 }
 
 const states = new Map<number, ServiceState>();
+const nodeHolds = new Map<number, { generation: string; reason: string | null }>();
+
+const nodeStatusGeneration = (svc: Service) => JSON.stringify([svc.serverId, svc.orchestrator, svc.runtimeId, svc.runtimeReplicas, svc.status, svc.asleepAt, svc.autoscale]);
+
+/** Keep node observations bound to the service configuration and runtime that produced them. */
+export function recordNodeAutoscaleHolding(svc: Service, reason: string | null): void {
+  nodeHolds.set(svc.id, { generation: nodeStatusGeneration(svc), reason });
+}
 
 function stateOf(serviceId: number): ServiceState {
   let s = states.get(serviceId);
@@ -366,7 +374,9 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
   const cfg = autoscaleOf(svc);
   const replicas = servingReplicas(svc);
   if (!cfg) return { enabled: false, replicas };
-  const st = states.get(svc.id);
+  const node = svc.serverId != null && svc.orchestrator !== 'swarm';
+  const st = node ? undefined : states.get(svc.id);
+  const nodeHold = nodeHolds.get(svc.id);
   return {
     enabled: true,
     replicas,
@@ -376,7 +386,7 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
     target: cfg.target,
     value: st?.value ?? null,
     desired: st?.desired ?? null,
-    holding: st?.holding ?? null,
+    holding: node ? (nodeHold?.generation === nodeStatusGeneration(svc) ? nodeHold.reason : 'waiting for node autoscale evaluation') : st?.holding ?? null,
     lastEvent: st?.lastEvent ?? null,
     scheduledFloor: (() => {
       const f = effectiveMinimum(cfg, Date.now());
@@ -387,6 +397,6 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
 
 /** Forget a service's windows (its configuration changed or it was redeployed). */
 export function resetAutoscaleState(serviceId?: number): void {
-  if (serviceId === undefined) states.clear();
-  else states.delete(serviceId);
+  if (serviceId === undefined) { states.clear(); nodeHolds.clear(); }
+  else { states.delete(serviceId); nodeHolds.delete(serviceId); }
 }

@@ -5,7 +5,7 @@ import { dockerBuilder } from '../engine/builders/docker.js';
 import { canaryActive } from '../engine/canaryState.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
-import { AUTOSCALE_IN_FLIGHT, AUTOSCALE_PROBE_MS, AUTOSCALE_TICK_MS, type AutoscaleDeps, autoscaleOf, autoscaleStep } from '../lib/autoscaler.js';
+import { AUTOSCALE_IN_FLIGHT, AUTOSCALE_PROBE_MS, AUTOSCALE_TICK_MS, type AutoscaleDeps, autoscaleOf, autoscaleStep, recordNodeAutoscaleHolding } from '../lib/autoscaler.js';
 import { run, sleep } from '../lib/exec.js';
 import type { ContainerStat } from '../lib/stats.js';
 import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
@@ -124,7 +124,7 @@ export default fp(
       analyticsOn: () => trafficAnalyticsEnabled(fastify.db),
       canaryRunning: canaryActive,
       nodeStep: (service, blocked, signal) => {
-        if (blocked) { nodeWorker.forget(service.id); return Promise.resolve(); }
+        if (blocked) { nodeWorker.forget(service.id); recordNodeAutoscaleHolding(service, 'a deploy or canary is in progress'); return Promise.resolve(); }
         return nodeWorker.step(service, signal);
       },
       step: {
