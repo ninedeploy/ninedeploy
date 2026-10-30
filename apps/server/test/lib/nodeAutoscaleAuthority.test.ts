@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createDb, deployments, eq, fanoutTransitions, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
-import { admitNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
+import { admitNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas, recoverNodeAutoscaleAdmission, freezeNodeAutoscaleInventory, nodeAutoscaleFence } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 
@@ -130,6 +130,43 @@ it('allows one recovery claimant after expiry and rejects the previous worker', 
   await expect(checkpointNodeAutoscale(c.db, first, 1)).rejects.toThrow(/lease/);
   await expect(commitNodeAutoscaleReplicas(c.db, first, 1, 2)).rejects.toThrow(/lease/);
   await expect(commitNodeAutoscaleReplicas(c.db, recovered, 1, 2)).resolves.toBeUndefined();
+});
+it('freezes the complete selected generation as immutable targets before scaling', async () => {
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const fence = nodeAutoscaleFence(admitted);
+  const items = [{ id: 'a'.repeat(64), name: 'web-9', deploymentId: 9, running: true },
+    { id: 'b'.repeat(64), name: 'web-9-r2', deploymentId: 9, running: false }];
+  const receipt = { ...fence, complete: true as const, items };
+  const { timeoutMs: _timeout, ...reply } = receipt;
+  await freezeNodeAutoscaleInventory(c.db, admitted, reply);
+  expect((await c.db.select().from(nodeAutoscaleTransitions))[0]!.replicaInventory).toEqual(items);
+  await freezeNodeAutoscaleInventory(c.db, admitted, reply);
+  await expect(freezeNodeAutoscaleInventory(c.db, admitted, { ...reply, items: [items[0]!, { ...items[1]!, id: 'c'.repeat(64) }] })).rejects.toThrow(/inventory changed/);
+});
+it('refuses incomplete, wrongly owned, or already running scale-up capacity', async () => {
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const { timeoutMs: _timeout, ...fence } = nodeAutoscaleFence(admitted);
+  const primary = { id: 'a'.repeat(64), name: 'web-9', deploymentId: 9, running: true };
+  const spare = { id: 'b'.repeat(64), name: 'web-9-r2', deploymentId: 9, running: false };
+  for (const items of [[primary], [primary, { ...spare, deploymentId: 8 }], [primary, { ...spare, running: true }],
+    [{ ...primary, running: false }, spare], [primary, { ...spare, id: primary.id }]]) {
+    await expect(freezeNodeAutoscaleInventory(c.db, admitted, { ...fence, complete: true, items })).rejects.toThrow();
+  }
+  expect((await c.db.select().from(nodeAutoscaleTransitions))[0]!.replicaInventory).toBeNull();
+});
+it('freezes every routed replica for scale-down and rejects foreign fence evidence', async () => {
+  await c.db.update(services).set({ runtimeReplicas: 3 }).where(eq(services.id, 1));
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 1))!;
+  const { timeoutMs: _timeout, ...fence } = nodeAutoscaleFence(admitted);
+  const items = ['web-9', 'web-9-r2', 'web-9-r3'].map((name, index) => ({ id: String(index + 1).repeat(64), name, deploymentId: 9, running: true }));
+  const reply = { ...fence, complete: true as const, items };
+  for (const change of [{ requestId: 'f'.repeat(32) }, { revision: fence.revision + 1 }, { deploymentWatermark: fence.deploymentWatermark + 1 }]) {
+    await expect(freezeNodeAutoscaleInventory(c.db, admitted, { ...reply, ...change })).rejects.toThrow(/fence/);
+  }
+  await freezeNodeAutoscaleInventory(c.db, admitted, reply);
+  expect((await c.db.select().from(nodeAutoscaleTransitions))[0]!.replicaInventory).toEqual(items);
+  await reserveServiceRuntimeOwner(c.db, 1, 'deploy', admitted.owner, 'b'.repeat(32));
+  await expect(freezeNodeAutoscaleInventory(c.db, admitted, reply)).rejects.toThrow(/ownership/);
 });
 it('refuses effects if the durable transition disappears or changes', async () => {
   const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;

@@ -757,6 +757,13 @@
       "when": 1793371731527,
       "tag": "0108_node_autoscale_worker_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "6",
+      "when": 1793372058352,
+      "tag": "0109_node_autoscale_inventory",
+      "breakpoints": true
     }
   ]
 }

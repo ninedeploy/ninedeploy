@@ -1,15 +1,20 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, inArray, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import { deployments, fanoutTransitions, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, serviceTargets, services,
   type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
-import { autoscaleConfig } from '@ninedeploy/schemas';
-import { MAX_REPLICAS } from '../engine/dockerNames.js';
-import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner } from './serviceRuntimeOwner.js';
+import { autoscaleConfig, containerInventoryReply } from '@ninedeploy/schemas';
+import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
+import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 import { swarmRuntimeOf } from './swarm.js';
 
 type Placement = { serverId: number; runtimeId: string | null };
 export type NodeAutoscaleAdmission = { owner: ServiceRuntimeOwner; service: Service; targets: Placement[]; watermark: number; desiredReplicas: number; workerToken: string };
 export const NODE_AUTOSCALE_LEASE_MS = 90_000;
+/** The fence identity is stable across worker lease changes and panel restarts. */
+export function nodeAutoscaleFence(admission: NodeAutoscaleAdmission) {
+  return { requestId: createHash('sha256').update(`${admission.owner.requestId}:scale-fence:${admission.service.serverId}`).digest('hex').slice(0, 32),
+    serviceId: admission.service.id, revision: serviceRuntimeRevision(admission.owner.epoch, 0), timeoutMs: 30_000, deploymentWatermark: admission.watermark };
+}
 const snapshot = (s: Service) => JSON.stringify([s.type, s.orchestrator, s.slug, s.serverId, s.status, s.asleepAt,
   s.runtimeId, s.replicas, s.autoscale, s.port, s.healthCheck, s.healthPath, s.healthCommand, s.healthTimeoutSeconds,
   s.cpuShares, s.cpuLimitMilli, s.memLimitMb]);
@@ -101,6 +106,32 @@ export async function checkpointNodeAutoscale(db: DB, admission: NodeAutoscaleAd
     await assertCurrent(tx, admission, expectedReplicas);
     await tx.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(Date.now() + NODE_AUTOSCALE_LEASE_MS) })
       .where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id), eq(nodeAutoscaleTransitions.workerToken, admission.workerToken)));
+  });
+}
+
+/** Freeze primary replica identities before any scale effect; retries cannot replace a target. */
+export async function freezeNodeAutoscaleInventory(db: DB, admission: NodeAutoscaleAdmission, evidence: unknown): Promise<void> {
+  const receipt = containerInventoryReply.parse(evidence), fence = nodeAutoscaleFence(admission);
+  if (receipt.requestId !== fence.requestId || receipt.serviceId !== fence.serviceId || receipt.revision !== fence.revision ||
+    receipt.deploymentWatermark !== fence.deploymentWatermark) throw new Error('Node autoscale inventory fence changed');
+  const runtimeId = admission.service.runtimeId;
+  const deploymentId = Number(/-([1-9]\d*)$/.exec(runtimeId ?? '')?.[1]);
+  if (!runtimeId || !Number.isSafeInteger(deploymentId) || deploymentId < 1) throw new Error('Node autoscale generation is unconfirmed');
+  const from = admission.service.runtimeReplicas, names = replicaNames(runtimeId, Math.max(from, admission.desiredReplicas));
+  const knownNames = replicaNames(runtimeId, MAX_REPLICAS);
+  const known = receipt.items.filter(item => knownNames.includes(item.name));
+  if (known.some(item => item.deploymentId !== deploymentId || item.running !== (knownNames.indexOf(item.name) < from))) {
+    throw new Error('Node autoscale inventory state or generation changed');
+  }
+  const selected = names.map(name => known.find(item => item.name === name));
+  if (selected.some(item => !item)) throw new Error('Node autoscale inventory is incomplete');
+  await db.transaction(async tx => {
+    await assertCurrent(tx, admission, from);
+    const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
+    if (!transition) throw new Error('Node autoscale transition changed');
+    if (transition.replicaInventory !== null && JSON.stringify(transition.replicaInventory) !== JSON.stringify(selected)) throw new Error('Node autoscale inventory changed');
+    if (transition.replicaInventory === null) await tx.update(nodeAutoscaleTransitions).set({ replicaInventory: selected as NonNullable<typeof transition.replicaInventory> })
+      .where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id), eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), isNull(nodeAutoscaleTransitions.replicaInventory)));
   });
 }
 
