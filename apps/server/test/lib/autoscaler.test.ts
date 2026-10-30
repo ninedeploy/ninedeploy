@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, type DB, runMigrations, type Service, services, users } from '@ninedeploy/db';
 import { autoscaleConfig } from '@ninedeploy/schemas';
+import { eq } from 'drizzle-orm';
 import {
   autoscaleOf,
   autoscaleStatus,
@@ -267,6 +268,41 @@ describe('autoscaleStep', () => {
     expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 60_000 }))).toBe(4);
   });
 
+  it('starts a new decision window and confirms routing after a redeploy between ticks', async () => {
+    const { deps } = fakeDeps();
+    await autoscaleStep(deps, await row(), cfg, ctx({ now: 0 }));
+    await db.update(services).set({ runtimeId: 'web-10' }).where(eq(services.id, 5));
+    const containers = new Map([['web-10', stat('web-10', 90)], ['web-10-r2', stat('web-10-r2', 90)]]);
+    expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 60_000, containers }))).toBe(2);
+    expect(deps.docker).not.toHaveBeenCalled();
+    expect(deps.writeConfig).toHaveBeenCalledTimes(2);
+    expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 120_000, containers }))).toBe(4);
+  });
+
+  it('does not treat a long unobserved gap as sustained load', async () => {
+    const { deps } = fakeDeps();
+    await autoscaleStep(deps, await row(), cfg, ctx({ now: 0 }));
+    expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 600_000 }))).toBe(2);
+    expect(deps.docker).not.toHaveBeenCalled();
+    expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 660_000 }))).toBe(4);
+  });
+
+  it('does not scale on the same cached sample twice', async () => {
+    const { deps } = fakeDeps();
+    await autoscaleStep(deps, await row(), cfg, ctx({ now: 1_000, sampledAt: 1_000 }));
+    expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 61_000, sampledAt: 1_000 }))).toBe(2);
+    expect(deps.docker).not.toHaveBeenCalled();
+    expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 61_000, sampledAt: 61_000 }))).toBe(4);
+  });
+
+  it('restarts the decision window when the collector sample timestamp moves backwards', async () => {
+    const { deps } = fakeDeps();
+    await autoscaleStep(deps, await row(), cfg, ctx({ now: 10_000, sampledAt: 10_000 }));
+    expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 70_000, sampledAt: 9_000 }))).toBe(2);
+    expect(deps.docker).not.toHaveBeenCalled();
+    expect(await autoscaleStep(deps, await row(), cfg, ctx({ now: 130_000, sampledAt: 130_000 }))).toBe(4);
+  });
+
   it('holds when the metric cannot be read', async () => {
     const { deps } = fakeDeps();
     expect(await autoscaleStep(deps, await row(), cfg, ctx({ containers: new Map() }))).toBe(2);
@@ -297,6 +333,39 @@ describe('holdReason, autoscaleOf, status', () => {
 });
 
 describe('createAutoscaler', () => {
+  it('dispatches node work separately and cancels it during shutdown', async () => {
+    const svc = { ...await row(), serverId: 4 };
+    const { deps } = fakeDeps(); let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const nodeStep = vi.fn((_svc: Service, _blocked: boolean, signal: AbortSignal) => new Promise<void>((_resolve, reject) => {
+      entered(); signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    const scaler = createAutoscaler({ load: async () => [svc], inFlightDeploys: async () => new Set([5]), containers: () => new Map(),
+      analyticsOn: async () => false, canaryRunning: () => false, step: deps, nodeStep });
+    expect(await scaler.tick()).toBe(1);
+    expect(nodeStep).toHaveBeenCalledOnce();
+    await started;
+    expect(nodeStep.mock.calls[0]![0]).toEqual(svc);
+    expect(nodeStep.mock.calls[0]![1]).toBe(true);
+    expect(await scaler.tick()).toBe(0);
+    await scaler.stop();
+    expect(nodeStep.mock.calls[0]![2].aborted).toBe(true);
+    expect(deps.docker).not.toHaveBeenCalled();
+  });
+  it('releases a node service after a worker failure so a later tick can retry', async () => {
+    const svc = { ...await row(), serverId: 4 }, { deps } = fakeDeps();
+    const errors: unknown[] = [];
+    const nodeStep = vi.fn().mockRejectedValueOnce(new Error('node offline')).mockResolvedValueOnce(undefined);
+    const scaler = createAutoscaler({ load: async () => [svc], inFlightDeploys: async () => new Set(), containers: () => new Map(),
+      analyticsOn: async () => false, canaryRunning: () => false, step: deps, nodeStep, onError: error => errors.push(error) });
+    expect(await scaler.tick()).toBe(1);
+    await vi.waitFor(() => expect(scaler.busy.size).toBe(0));
+    expect(errors).toHaveLength(1);
+    expect(await scaler.tick()).toBe(1);
+    await vi.waitFor(() => expect(scaler.busy.size).toBe(0));
+    expect(nodeStep).toHaveBeenCalledTimes(2);
+    await scaler.stop();
+  });
   it('runs recovery even without configured autoscaling services', async () => {
     const { deps } = fakeDeps(), recover = vi.fn(async (_signal: AbortSignal) => undefined);
     const scaler = createAutoscaler({ load: async () => [], inFlightDeploys: async () => new Set(), containers: () => new Map(),

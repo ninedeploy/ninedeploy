@@ -4,11 +4,14 @@ import { deployments, fanoutTransitions, nodeAutoscaleTransitions, nodeLifecycle
   type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { autoscaleConfig, containerInventoryReply } from '@ninedeploy/schemas';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
+import { canaryActive } from '../engine/canaryState.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 import { swarmRuntimeOf } from './swarm.js';
+import type { NodeAutoscaleEvidence } from './nodeAutoscaleDecision.js';
+import { AUTOSCALE_STATS_MAX_AGE_MS } from './autoscaler.js';
 
 type Placement = { serverId: number; runtimeId: string | null };
-export type NodeAutoscaleAdmission = { owner: ServiceRuntimeOwner; service: Service; targets: Placement[]; watermark: number; desiredReplicas: number; workerToken: string };
+export type NodeAutoscaleAdmission = { owner: ServiceRuntimeOwner; service: Service; targets: Placement[]; watermark: number; desiredReplicas: number; workerToken: string; measurement?: NodeAutoscaleEvidence | null };
 export const NODE_AUTOSCALE_LEASE_MS = 90_000;
 /** The fence identity is stable across worker lease changes and panel restarts. */
 export function nodeAutoscaleFence(admission: NodeAutoscaleAdmission, serverId = admission.service.serverId!) {
@@ -23,16 +26,28 @@ const placements = (db: Pick<DB, 'select'>, serviceId: number) => db.select({ se
   .from(serviceTargets).where(eq(serviceTargets.serviceId, serviceId)).orderBy(serviceTargets.id);
 
 /** Reserve a scale owner only for the exact running generation observed by the controller. */
-export async function admitNodeAutoscale(db: DB, expected: Service, desiredReplicas: number): Promise<NodeAutoscaleAdmission | null> {
+export async function admitNodeAutoscale(db: DB, expected: Service, desiredReplicas: number, measurement?: NodeAutoscaleEvidence,
+  measuredOwner?: ServiceRuntimeOwner | null): Promise<NodeAutoscaleAdmission | null> {
   const config = autoscaleConfig.safeParse(expected.autoscale);
   if (expected.type !== 'docker' || expected.orchestrator === 'swarm' || swarmRuntimeOf(expected) ||
     !expected.serverId || expected.status !== 'running' || !expected.runtimeId || expected.asleepAt != null ||
     !config.success || !Number.isSafeInteger(expected.runtimeReplicas) || expected.runtimeReplicas < 1 || expected.runtimeReplicas > MAX_REPLICAS ||
     !Number.isSafeInteger(desiredReplicas) || desiredReplicas < config.data.minReplicas || desiredReplicas > config.data.maxReplicas ||
-    desiredReplicas === expected.runtimeReplicas) return null;
+    desiredReplicas === expected.runtimeReplicas || canaryActive(expected.id)) return null;
+  if (measurement) {
+    const now = Date.now(), deploymentId = Number(/-([1-9]\d*)$/.exec(expected.runtimeId)?.[1]);
+    const names = replicaNames(expected.runtimeId, expected.runtimeReplicas);
+    if (measurement.serverId !== expected.serverId || measurement.serviceId !== expected.id || measurement.deploymentId !== deploymentId ||
+      !Number.isSafeInteger(deploymentId) || !Number.isFinite(measurement.sampledAt) || measurement.sampledAt > now ||
+      now - measurement.sampledAt > AUTOSCALE_STATS_MAX_AGE_MS || typeof measurement.requestId !== 'string' || !/^[a-f0-9]{32}$/.test(measurement.requestId) ||
+      !Array.isArray(measurement.targets) || measurement.targets.length !== names.length ||
+      measurement.targets.some(target => !target || typeof target.name !== 'string' || typeof target.id !== 'string' || !/^[a-f0-9]{64}$/.test(target.id)) ||
+      new Set(measurement.targets.map(target => target.id)).size !== names.length ||
+      names.some(name => !measurement.targets.some(target => target.name === name))) return null;
+  }
   return db.transaction(async tx => {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
-    if (!fresh || snapshot(fresh) !== snapshot(expected) || fresh.runtimeReplicas !== expected.runtimeReplicas) return null;
+    if (!fresh || snapshot(fresh) !== snapshot(expected) || fresh.runtimeReplicas !== expected.runtimeReplicas || canaryActive(expected.id)) return null;
     const [active, lifecycle, primary, fanout, priorTransition] = await Promise.all([
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, fresh.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
@@ -49,14 +64,19 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
     if (generations.some(id => !Number.isSafeInteger(id) || id < 1)) return null;
     const watermark = Math.max(Number(sequence?.id ?? 0), ...generations);
     if (!Number.isSafeInteger(watermark) || watermark < 1) return null;
+    if (measurement && (measurement.sampledAt > Date.now() || Date.now() - measurement.sampledAt > AUTOSCALE_STATS_MAX_AGE_MS)) return null;
     const prior = await readServiceRuntimeOwner(tx, fresh.id);
+    if (measuredOwner !== undefined && !sameRuntimeOwner(prior, measuredOwner)) return null;
+    if (canaryActive(expected.id)) return null;
     const owner = await reserveServiceRuntimeOwnerInTransaction(tx, fresh.id, 'scale', randomBytes(16).toString('hex'), prior);
+    if (canaryActive(expected.id)) throw new Error('Node autoscale admission interrupted by active canary');
     const workerToken = randomBytes(16).toString('hex');
     await tx.insert(nodeAutoscaleTransitions).values({ serviceId: fresh.id, ownerEpoch: owner.epoch, requestId: owner.requestId!,
       serverId: fresh.serverId!, runtimeId: fresh.runtimeId!, fromReplicas: fresh.runtimeReplicas, toReplicas: desiredReplicas,
       watermark, configuration: snapshot(fresh), workerToken, leaseUntil: new Date(Date.now() + NODE_AUTOSCALE_LEASE_MS),
-      targets: targets.map(t => ({ serverId: t.serverId, runtimeId: t.runtimeId! })) });
-    return { owner, service: fresh, targets, watermark, desiredReplicas, workerToken };
+      targets: targets.map(t => ({ serverId: t.serverId, runtimeId: t.runtimeId! })), measurement: measurement ?? null });
+    if (canaryActive(expected.id)) throw new Error('Node autoscale admission interrupted by active canary');
+    return { owner, service: fresh, targets, watermark, desiredReplicas, workerToken, measurement: measurement ?? null };
   });
 }
 
@@ -74,7 +94,8 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
     if (!transition || !['accepted', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping'].includes(transition.phase) || transition.ownerEpoch !== admission.owner.epoch || transition.requestId !== admission.owner.requestId ||
       transition.serverId !== fresh.serverId || transition.runtimeId !== fresh.runtimeId || transition.fromReplicas !== admission.service.runtimeReplicas ||
       transition.toReplicas !== admission.desiredReplicas || transition.watermark !== admission.watermark || transition.configuration !== snapshot(admission.service) ||
-      JSON.stringify(transition.targets) !== JSON.stringify(admission.targets)) throw new Error('Node autoscale transition changed');
+      JSON.stringify(transition.targets) !== JSON.stringify(admission.targets) ||
+      JSON.stringify(transition.measurement) !== JSON.stringify(admission.measurement ?? null)) throw new Error('Node autoscale transition changed');
     const [active, lifecycle, primary, fanout] = await Promise.all([
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, fresh.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
@@ -82,6 +103,7 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
       tx.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(eq(fanoutTransitions.serviceId, fresh.id)).limit(1),
     ]);
     if (active.length || lifecycle.length || primary.length || fanout.length) throw new Error('Node autoscale blocked by active runtime work');
+    if (canaryActive(fresh.id)) throw new Error('Node autoscale blocked by active canary');
 }
 
 /** Reconstruct a recorded decision only while its original runtime authority is still current. */
@@ -98,7 +120,7 @@ export async function recoverNodeAutoscaleAdmission(db: DB, serviceId: number): 
       throw new Error('Node autoscale recovery configuration or count changed');
     }
     const admission: NodeAutoscaleAdmission = { owner, service: { ...service, runtimeReplicas: transition.fromReplicas },
-      targets: transition.targets, watermark: transition.watermark, desiredReplicas: transition.toReplicas, workerToken };
+      targets: transition.targets, watermark: transition.watermark, desiredReplicas: transition.toReplicas, workerToken, measurement: transition.measurement };
     await assertCurrent(tx, admission, service.runtimeReplicas);
     return admission;
   });
@@ -110,6 +132,21 @@ export async function checkpointNodeAutoscale(db: DB, admission: NodeAutoscaleAd
     await assertCurrent(tx, admission, expectedReplicas);
     await tx.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(Date.now() + NODE_AUTOSCALE_LEASE_MS) })
       .where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id), eq(nodeAutoscaleTransitions.workerToken, admission.workerToken)));
+  });
+}
+
+/** An accepted transition has not started containers or published routing; expired evidence can be discarded. */
+export async function discardExpiredNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission): Promise<boolean> {
+  return db.transaction(async tx => {
+    const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
+    if (!transition || transition.phase !== 'accepted' || !admission.measurement) return false;
+    const now = Date.now();
+    if (admission.measurement.sampledAt <= now && now - admission.measurement.sampledAt <= AUTOSCALE_STATS_MAX_AGE_MS) return false;
+    await assertCurrent(tx, admission, admission.service.runtimeReplicas);
+    const deleted = await tx.delete(nodeAutoscaleTransitions).where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id),
+      eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), eq(nodeAutoscaleTransitions.phase, 'accepted'))).returning({ id: nodeAutoscaleTransitions.serviceId });
+    if (deleted.length !== 1) throw new Error('Node autoscale expired transition changed');
+    return true;
   });
 }
 
@@ -129,11 +166,17 @@ export async function freezeNodeAutoscaleInventory(db: DB, admission: NodeAutosc
   }
   const selected = names.map(name => known.find(item => item.name === name));
   if (selected.some(item => !item)) throw new Error('Node autoscale inventory is incomplete');
+  if (admission.measurement && admission.measurement.targets.some(target => !selected.some(item => item?.name === target.name && item.id === target.id && item.running))) {
+    throw new Error('Node autoscale measured replica identity changed');
+  }
   await db.transaction(async tx => {
     await assertCurrent(tx, admission, from);
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
     if (!transition) throw new Error('Node autoscale transition changed');
     if (transition.phase !== 'accepted') throw new Error('Node autoscale inventory phase changed');
+    if (admission.measurement && (admission.measurement.sampledAt > Date.now() || Date.now() - admission.measurement.sampledAt > AUTOSCALE_STATS_MAX_AGE_MS)) {
+      throw new Error('Node autoscale measurement expired before inventory freeze');
+    }
     if (transition.replicaInventory !== null && JSON.stringify(transition.replicaInventory) !== JSON.stringify(selected)) throw new Error('Node autoscale inventory changed');
     if (transition.replicaInventory === null) await tx.update(nodeAutoscaleTransitions).set({ replicaInventory: selected as NonNullable<typeof transition.replicaInventory> })
       .where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id), eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), isNull(nodeAutoscaleTransitions.replicaInventory)));

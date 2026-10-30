@@ -64,3 +64,25 @@ it('defers an unclaimable stale owner without reviving its expired worker', asyn
   expect(await reconcileNodeAutoscale(c.db, { runtime })).toEqual([]);
   await expect(checkpointNodeAutoscale(c.db, first, 1)).rejects.toThrow();
 });
+it('discards an expired accepted measurement before effects and permits a fresh decision', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  expect(await admitNodeAutoscale(c.db, await service(), 2, measurement)).not.toBeNull();
+  await c.db.update(nodeAutoscaleTransitions).set({ measurement: { ...measurement, sampledAt: Date.now() - 100_000 }, leaseUntil: new Date(0) })
+    .where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  expect(await reconcileNodeAutoscale(c.db, { runtime })).toEqual([{ serviceId: 1, state: 'discarded' }]);
+  expect(calls).toEqual([]);
+  expect((await service()).runtimeReplicas).toBe(1);
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
+  expect(await admitNodeAutoscale(c.db, await service(), 2, { ...measurement, sampledAt: Date.now() })).not.toBeNull();
+});
+it('continues a started transition even if its original sample is now old', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  await admitNodeAutoscale(c.db, await service(), 2, measurement);
+  await c.db.update(nodeAutoscaleTransitions).set({ measurement: { ...measurement, sampledAt: Date.now() - 100_000 }, phase: 'started',
+    replicaInventory: items, leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  expect(await reconcileNodeAutoscale(c.db, { runtime })).toEqual([{ serviceId: 1, state: 'completed' }]);
+  expect(calls).toEqual(['ready', 'ready', 'route']);
+  expect((await service()).runtimeReplicas).toBe(2);
+});

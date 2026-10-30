@@ -13,25 +13,26 @@ export async function readNodeContainerMetrics(db: DB, serverId: number,
   if (!Number.isFinite(budget) || budget < 1 || budget > 15_000) throw new Error('Invalid node metrics deadline');
   const input = containerMetricsRequest.parse({ ...spec, requestId: randomBytes(16).toString('hex'), timeoutMs: 1 });
   const deadline = Date.now() + budget;
+  const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(Math.ceil(budget))]);
   const current = async () => {
-    options.signal?.throwIfAborted();
+    signal.throwIfAborted();
     await options.checkpoint();
-    options.signal?.throwIfAborted();
+    signal.throwIfAborted();
     if (Date.now() >= deadline) throw new Error('Node metrics deadline exceeded');
   };
   await current();
-  const sealed = await agentTransportSealed(db, serverId);
+  const sealed = await agentTransportSealed(db, serverId, signal);
   await current();
   const refusal = await capabilityRefusal(async (op, params, sink) => {
     await current();
-    const result = await agentOp(db, serverId, op, params, sink, { signal: options.signal, timeoutMs: Math.min(5000, deadline - Date.now()) });
+    const result = await agentOp(db, serverId, op, params, sink, { signal, timeoutMs: Math.min(5000, deadline - Date.now()) });
     await current();
     return result;
   }, `#${serverId}`, sealed, { cap: 'docker.metrics', feature: 'measure immutable container resources', sealedRequired: true });
   if (refusal) throw new Error(`Node metrics unavailable: ${refusal.message}`);
   await current();
   const request = containerMetricsRequest.parse({ ...input, timeoutMs: Math.max(1, Math.min(10_000, Math.floor(deadline - Date.now()))) });
-  const result = await agentOp(db, serverId, 'docker.metrics', request, () => undefined, { signal: options.signal, timeoutMs: deadline - Date.now() });
+  const result = await agentOp(db, serverId, 'docker.metrics', request, () => undefined, { signal, timeoutMs: deadline - Date.now() });
   await current();
   const frames = result.lines.filter(line => line.startsWith('ND-METRICS '));
   if (result.exitCode !== 0 || frames.length !== 1 || Buffer.byteLength(frames[0]!) > 64 * 1024) throw new Error('Node metric receipt unavailable');

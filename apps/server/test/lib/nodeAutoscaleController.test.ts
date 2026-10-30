@@ -2,6 +2,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createDb, deployments, eq, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
 import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
+import { createNodeAutoscaleDecider } from '../../src/lib/nodeAutoscaleDecision.js';
+import { createNodeAutoscaleWorker } from '../../src/lib/nodeAutoscaleWorker.js';
+import { beginCanary, endCanary } from '../../src/engine/canaryState.js';
+import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 
 let c: ReturnType<typeof createDb>;
 const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
@@ -27,7 +31,7 @@ beforeEach(async () => {
   await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'running' });
   items[1]!.running = false; calls = []; readiness = true; routingFails = false;
 });
-afterEach(() => { c.client?.close(); vi.restoreAllMocks(); });
+afterEach(() => { endCanary(1); c.client?.close(); vi.restoreAllMocks(); });
 
 it('starts and verifies scale-up before publishing the new route', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
@@ -38,6 +42,115 @@ it('starts and verifies scale-up before publishing the new route', async () => {
   await executeNodeAutoscale(c.db, admission, runtime);
   expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route']);
   expect((await service()).runtimeReplicas).toBe(2); expect(await transition()).toBeUndefined();
+});
+it('connects an identity-bound measurement decision to durable admission and ordered scale-up', async () => {
+  const now = Date.now(), svc = await service(), decider = createNodeAutoscaleDecider();
+  const sample = (at: number, request: string, id = 'a'.repeat(64)) => ({ serverId: 4, serviceId: 1, deploymentId: 9,
+    sampledAt: at, requestId: request.repeat(32), complete: true, items: [{ id, name: 'web-9', cpuPct: 95,
+      cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] });
+  expect(decider.observe(svc, sample(now - 60_000, 'a'), now - 60_000).to).toBeNull();
+  const decision = decider.observe(svc, sample(now, 'b'), now);
+  expect(decision.to).toBe(2);
+  const admission = (await admitNodeAutoscale(c.db, svc, decision.to!, decision.evidence!))!;
+  expect((await transition())?.measurement).toEqual(decision.evidence);
+  await executeNodeAutoscale(c.db, admission, deps());
+  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route']);
+  expect((await service()).runtimeReplicas).toBe(2);
+});
+it('does not start replicas when a measured container was replaced before inventory', async () => {
+  const now = Date.now(), svc = await service(), decider = createNodeAutoscaleDecider();
+  const sample = (at: number, request: string) => ({ serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: at,
+    requestId: request.repeat(32), complete: true, items: [{ id: 'c'.repeat(64), name: 'web-9', cpuPct: 95,
+      cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] });
+  decider.observe(svc, sample(now - 60_000, 'a'), now - 60_000);
+  const decision = decider.observe(svc, sample(now, 'b'), now);
+  const admission = (await admitNodeAutoscale(c.db, svc, decision.to!, decision.evidence!))!;
+  await expect(executeNodeAutoscale(c.db, admission, deps())).rejects.toThrow(/measured replica identity changed/);
+  expect(calls).toEqual(['fence', 'inventory']);
+  expect((await service()).runtimeReplicas).toBe(1);
+});
+it('runs sampled decisions through durable admission and the controller', async () => {
+  const now = Date.now(), svc = await service();
+  let time = now - 60_000, request = 0;
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, now: () => time, runtime: () => deps(),
+    sample: async () => ({ serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: time,
+      requestId: (++request === 1 ? 'a' : 'b').repeat(32), complete: true, items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95,
+        cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] }) });
+  expect((await worker.step(svc)).state).toBe('held');
+  time = now;
+  expect(await worker.step(svc)).toEqual({ state: 'completed' });
+  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route']);
+  expect((await service()).runtimeReplicas).toBe(2);
+});
+it('holds when a conflicting operation starts during sampling', async () => {
+  const svc = await service(); let blocked = false;
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => blocked, runtime: () => deps(), sample: async () => {
+    blocked = true;
+    return { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'a'.repeat(32), complete: true,
+      items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95, cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] };
+  } });
+  expect((await worker.step(svc)).state).toBe('held');
+  expect(await transition()).toBeUndefined();
+  expect(calls).toEqual([]);
+});
+it('does not measure the same node service twice concurrently', async () => {
+  const svc = await service();
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, runtime: () => deps(), sample: async () => {
+    entered(); await pending;
+    return { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'a'.repeat(32), complete: true,
+      items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95, cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] };
+  } });
+  const first = worker.step(svc);
+  try { await started; expect(await worker.step(svc)).toEqual({ state: 'busy' }); } finally { release(); }
+  expect((await first).state).toBe('held');
+  expect(calls).toEqual([]);
+});
+it('preserves a newer runtime owner when ownership changes while sampling', async () => {
+  const now = Date.now(), svc = await service(); let time = now - 60_000, count = 0, enter!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { enter = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, now: () => time, runtime: () => deps(), sample: async () => {
+    if (++count === 2) { enter(); await pending; }
+    return { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: time, requestId: (count === 1 ? 'a' : 'b').repeat(32), complete: true,
+      items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95, cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] };
+  } });
+  expect((await worker.step(svc)).state).toBe('held'); time = now;
+  const result = worker.step(svc);
+  let newer: Awaited<ReturnType<typeof reserveServiceRuntimeOwner>> | undefined;
+  try { await started; newer = await reserveServiceRuntimeOwner(c.db, 1, 'restart', null, 'c'.repeat(32)); } finally { release(); }
+  expect(await result).toMatchObject({ state: 'held', reason: expect.stringMatching(/ownership changed/) });
+  expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(newer);
+  expect(calls).toEqual([]);
+  expect(await transition()).toBeUndefined();
+});
+it('starts a new decision window when ownership changes between samples', async () => {
+  const now = Date.now(), svc = await service(); let time = now - 60_000, count = 0;
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, now: () => time, runtime: () => deps(), sample: async () => ({
+    serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: time, requestId: (++count === 1 ? 'a' : 'b').repeat(32), complete: true,
+    items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95, cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }],
+  }) });
+  expect((await worker.step(svc)).state).toBe('held');
+  const newer = await reserveServiceRuntimeOwner(c.db, 1, 'restart', null, 'c'.repeat(32));
+  time = now;
+  expect((await worker.step(svc)).state).toBe('held');
+  expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(newer);
+  expect(calls).toEqual([]);
+});
+it('restarts the decision window after node sampling fails', async () => {
+  const now = Date.now(), svc = await service(); let time = now - 60_000, fail = false, count = 0;
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, now: () => time, runtime: () => deps(), sample: async () => {
+    if (fail) throw new Error('node offline');
+    return { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: time, requestId: ['a', 'b', 'c'][count++]!.repeat(32), complete: true,
+      items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95, cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] };
+  } });
+  expect((await worker.step(svc)).state).toBe('held');
+  fail = true; await expect(worker.step(svc)).rejects.toThrow('node offline');
+  fail = false; time = now;
+  expect((await worker.step(svc)).state).toBe('held');
+  expect(calls).toEqual([]);
 });
 it('recovers a failed readiness check without starting the same set again or routing early', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
@@ -89,6 +202,19 @@ it('never publishes a scale-up when a deploy is queued during readiness', async 
   runtime.ready = async () => { calls.push('ready'); await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' }); return true; };
   await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow(/active runtime work/);
   expect((await service()).runtimeReplicas).toBe(1); expect(calls).not.toContain('route');
+});
+it('never publishes a scale-up when a canary starts during readiness', async () => {
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const runtime = deps();
+  runtime.ready = async () => { calls.push('ready'); beginCanary(1, 'web', 10, 2, false, false, { serverId: 4, stableRuntimeId: 'web-9' }); return true; };
+  await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow(/canary/i);
+  expect((await service()).runtimeReplicas).toBe(1);
+  expect(calls).not.toContain('route');
+});
+it('refuses scale admission while a canary already owns routing', async () => {
+  beginCanary(1, 'web', 10, 2, false, false, { serverId: 4, stableRuntimeId: 'web-9' });
+  expect(await admitNodeAutoscale(c.db, await service(), 2)).toBeNull();
+  expect(await transition()).toBeUndefined();
 });
 it('fences the fan-out node before freezing and changing the primary replicas', async () => {
   await c.db.insert(servers).values({ id: 5, name: 'Target', host: 'target.test', tokenEncrypted: 'fixture' });

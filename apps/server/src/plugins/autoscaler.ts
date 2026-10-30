@@ -26,6 +26,7 @@ export function createAutoscaler(deps: {
   analyticsOn: () => Promise<boolean>;
   canaryRunning: (serviceId: number) => boolean;
   step: AutoscaleDeps;
+  nodeStep?: (service: Service, blocked: boolean, signal: AbortSignal) => Promise<unknown>;
   recover?: (signal: AbortSignal) => Promise<unknown>;
   now?: () => number;
   onError?: (err: unknown) => void;
@@ -56,14 +57,17 @@ export function createAutoscaler(deps: {
           if (stopped || busy.has(svc.id)) continue;
           busy.add(svc.id);
           looked++;
-          const job = autoscaleStep({ ...deps.step, signal: abort.signal }, svc, autoscaleOf(svc)!, {
+          const context = {
             containers,
             analyticsOn,
             inFlight,
             canaryRunning: deps.canaryRunning(svc.id),
             now,
             ...(deps.sampledAt ? { sampledAt: sampledAt ?? null } : {}),
-          })
+          };
+          const job = Promise.resolve().then(() => svc.serverId != null && svc.orchestrator !== 'swarm' && deps.nodeStep
+            ? deps.nodeStep(svc, inFlight.has(svc.id) || context.canaryRunning, abort.signal)
+            : autoscaleStep({ ...deps.step, signal: abort.signal }, svc, autoscaleOf(svc)!, context))
             .then(() => undefined)
             .catch((err) => { if (!stopped) deps.onError?.(err); })
             .finally(() => { busy.delete(svc.id); pending.delete(job); });

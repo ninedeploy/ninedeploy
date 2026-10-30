@@ -1,7 +1,9 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createDb, deployments, eq, fanoutTransitions, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
 import { admitNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas, recoverNodeAutoscaleAdmission, freezeNodeAutoscaleInventory, nodeAutoscaleFence } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
+import * as runtimeOwner from '../../src/lib/serviceRuntimeOwner.js';
+import { beginCanary, endCanary } from '../../src/engine/canaryState.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 
 let c: ReturnType<typeof createDb>;
@@ -13,7 +15,7 @@ beforeEach(async () => {
     autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
   await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'running' });
 });
-afterEach(() => c.client?.close());
+afterEach(() => { endCanary(1); vi.restoreAllMocks(); c.client?.close(); });
 
 it('refuses a desired count below the configured minimum without taking ownership', async () => {
   await c.db.update(services).set({ runtimeReplicas: 3,
@@ -22,6 +24,18 @@ it('refuses a desired count below the configured minimum without taking ownershi
   expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
   expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
   expect(await admitNodeAutoscale(c.db, await service(), 2)).not.toBeNull();
+});
+it('rolls back a reserved scale owner if a canary starts before admission commits', async () => {
+  const prior = await reserveServiceRuntimeOwner(c.db, 1, 'deploy', null, 'c'.repeat(32));
+  const original = runtimeOwner.reserveServiceRuntimeOwnerInTransaction;
+  vi.spyOn(runtimeOwner, 'reserveServiceRuntimeOwnerInTransaction').mockImplementation(async (...args) => {
+    const owner = await original(...args);
+    beginCanary(1, 'web', 10, 2, false, false, { serverId: 4, stableRuntimeId: 'web-9' });
+    return owner;
+  });
+  await expect(admitNodeAutoscale(c.db, await service(), 2)).rejects.toThrow(/canary/i);
+  expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(prior);
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
 });
 it('refuses to recover a stored decision below the configured minimum', async () => {
   await c.db.update(services).set({ runtimeReplicas: 3,
@@ -166,6 +180,53 @@ it('freezes the complete selected generation as immutable targets before scaling
   expect((await c.db.select().from(nodeAutoscaleTransitions))[0]!.replicaInventory).toEqual(items);
   await freezeNodeAutoscaleInventory(c.db, admitted, reply);
   await expect(freezeNodeAutoscaleInventory(c.db, admitted, { ...reply, items: [items[0]!, { ...items[1]!, id: 'c'.repeat(64) }] })).rejects.toThrow(/inventory changed/);
+});
+it('persists measured identities across recovery and rejects replaced serving containers', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2, measurement))!;
+  expect((await c.db.select().from(nodeAutoscaleTransitions))[0]!.measurement).toEqual(measurement);
+  await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  const recovered = (await recoverNodeAutoscaleAdmission(c.db, 1))!;
+  expect(recovered.measurement).toEqual(measurement);
+  const { timeoutMs: _timeout, ...fence } = nodeAutoscaleFence(recovered);
+  const items = [{ id: 'b'.repeat(64), name: 'web-9', deploymentId: 9, running: true },
+    { id: 'c'.repeat(64), name: 'web-9-r2', deploymentId: 9, running: false }];
+  await expect(freezeNodeAutoscaleInventory(c.db, recovered, { ...fence, complete: true, items })).rejects.toThrow(/measured replica identity changed/);
+  expect((await c.db.select().from(nodeAutoscaleTransitions))[0]!.replicaInventory).toBeNull();
+  await freezeNodeAutoscaleInventory(c.db, recovered, { ...fence, complete: true, items: [{ ...items[0]!, id: 'a'.repeat(64) }, items[1]!] });
+  expect((await c.db.select().from(nodeAutoscaleTransitions))[0]!.replicaInventory).toHaveLength(2);
+});
+it('refuses stale or foreign measurement before reserving runtime ownership', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  for (const change of [{ serverId: 5 }, { serviceId: 2 }, { deploymentId: 8 }, { sampledAt: Date.now() - 100_000 },
+    { sampledAt: Date.now() + 100_000 }, { targets: [] }, { targets: [{ name: 'web-9', id: 'bad' }] }]) {
+    expect(await admitNodeAutoscale(c.db, await service(), 2, { ...measurement, ...change })).toBeNull();
+  }
+  expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
+});
+it('does not replace a runtime owner newer than the measured owner', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  const newer = await reserveServiceRuntimeOwner(c.db, 1, 'restart', null, 'c'.repeat(32));
+  expect(await admitNodeAutoscale(c.db, await service(), 2, measurement, null)).toBeNull();
+  expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(newer);
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
+});
+it('refuses to freeze inventory if the decision sample expires after admission', async () => {
+  const now = Date.now();
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: now - 89_900, requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2, measurement))!;
+  const { timeoutMs: _timeout, ...fence } = nodeAutoscaleFence(admitted);
+  const items = [{ id: 'a'.repeat(64), name: 'web-9', deploymentId: 9, running: true },
+    { id: 'b'.repeat(64), name: 'web-9-r2', deploymentId: 9, running: false }];
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 200);
+  try {
+    await expect(freezeNodeAutoscaleInventory(c.db, admitted, { ...fence, complete: true, items })).rejects.toThrow(/measurement.*expired/i);
+    expect((await c.db.select().from(nodeAutoscaleTransitions))[0]!.replicaInventory).toBeNull();
+  } finally { clock.mockRestore(); }
 });
 it('refuses incomplete, wrongly owned, or already running scale-up capacity', async () => {
   const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
