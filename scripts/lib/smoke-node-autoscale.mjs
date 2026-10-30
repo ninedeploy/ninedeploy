@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 /** Public API, sealed node agent, real resource samples and Traefik on isolated daemons. */
-export async function smokeNodeAutoscale({ api, inner, id, fixtureImage, service, domain, until, report, cleared, success, scaleSettled, saveTraffic = () => {} }) {
+export async function smokeNodeAutoscale({ api, inner, id, fixtureImage, service, domain, until, report, cleared, success, scaleSettled, database, saveTraffic = () => {} }) {
   const cfg = target => ({ minReplicas: 1, maxReplicas: 2, metric: 'memory', target, scaleUpSeconds: 30, scaleDownSeconds: 60 });
   const initial = await service(id);
   const client = `nd-autoscale-client-${id}`;
@@ -22,11 +22,25 @@ export async function smokeNodeAutoscale({ api, inner, id, fixtureImage, service
   const members = names.map(inspect);
   assert.equal(new Set(members.map(item => item[0])).size, 2);
   assert.deepEqual(members.map(item => item[1]), ['true', 'false'], 'prepared spare must begin stopped');
+  if (database) {
+    const network = `nd-dbnet-${database.slug}`;
+    for (const [containerId] of members) {
+      const networks = JSON.parse(inner(['inspect', containerId, '--format', '{{json .NetworkSettings.Networks}}']).out);
+      assert.ok(Object.hasOwn(networks, network), 'each immutable replica must join the database network before scaling');
+    }
+  }
   const status = () => api(`/v1/services/${id}/autoscale`);
   const up = await until(async () => { const value = await status(); return value.replicas === 2 && value.value > 0 ? value : false; }, 'node memory scale-up', 300_000);
   await until(() => inner(['inspect', members[1][0], '--format', '{{.State.Running}}']).out === 'true', 'started spare');
+  if (database) {
+    for (const [containerId] of members) {
+      const ready = JSON.parse(inner(['exec', containerId, 'node', '-e', "fetch('http://127.0.0.1:8080/ready').then(async r=>console.log(JSON.stringify({status:r.status,...await r.json()})))"]).out);
+      assert.deepEqual(ready, { status: 200, ready: true, value: 42, replica: containerId.slice(0, 12) });
+    }
+  }
   const readTraffic = endpoint => JSON.parse(inner(['exec', client, 'node', '-e', `fetch('http://127.0.0.1:8091/${endpoint}').then(r=>r.text()).then(console.log)`]).out);
-  await until(() => { const seen = new Set(readTraffic('snapshot').filter(row => row.status === 200).map(row => row.body.split(':').at(-1)));
+  const replica = row => database ? JSON.parse(row.body).replica : row.body.split(':').at(-1);
+  await until(() => { const seen = new Set(readTraffic('snapshot').filter(row => row.status === 200).map(replica));
     return members.every(([containerId]) => seen.has(containerId.slice(0, 12))); }, 'both replicas serving proxy traffic', 90_000);
   await until(scaleSettled, 'scale-up ownership handoff', 120_000);
   await api(`/v1/services/${id}`, { method: 'PATCH', body: { autoscale: cfg(100) } });
@@ -37,9 +51,10 @@ export async function smokeNodeAutoscale({ api, inner, id, fixtureImage, service
   saveTraffic(records);
   assert.ok(records.length >= 100, 'continuous traffic must cover deploy and both scale transitions');
   assert.deepEqual(records.filter(row => row.error || row.status !== 200), [], 'all routed requests must succeed');
-  const observed = new Set(records.filter(row => row.status === 200).map(row => row.body.split(':').at(-1)));
+  if (database) for (const row of records) assert.equal(JSON.parse(row.body).value, 42, 'each routed response must execute the database query');
+  const observed = new Set(records.filter(row => row.status === 200).map(replica));
   for (const [containerId] of members) assert.ok(observed.has(containerId.slice(0, 12)), 'both replicas must serve actual proxy traffic');
-  report({ case: 'node-autoscale-memory', deploymentId, immutableReplicas: members.map(item => item[0]),
+  report({ case: database ? 'node-autoscale-memory-database' : 'node-autoscale-memory', deploymentId, immutableReplicas: members.map(item => item[0]),
     scaleUp: { replicas: up.replicas, memoryPercent: up.value }, scaleDown: { replicas: down.replicas, memoryPercent: down.value },
     requests: records.length, unexpected502: 0, bothReplicasServed: true });
 }

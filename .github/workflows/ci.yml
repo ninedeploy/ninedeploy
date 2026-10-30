@@ -208,7 +208,7 @@ jobs:
   docker-image:
     name: Docker image build and node autoscaling
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -218,6 +218,12 @@ jobs:
 
       - name: Verify Node security baseline
         run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       # Verifies the release workflow's Dockerfile compiles; no push happens here.
       - name: Build the image
@@ -233,6 +239,19 @@ jobs:
         with:
           name: ci-node-autoscale-${{ github.run_id }}
           path: .temp_files/ci-node-autoscale/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+      - name: Verify node autoscaling with PostgreSQL and real routing
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-database-only --proof=.temp_files/ci-node-autoscale-database
+
+      - name: Preserve database autoscale proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-node-autoscale-database-${{ github.run_id }}
+          path: .temp_files/ci-node-autoscale-database/
           include-hidden-files: true
           if-no-files-found: ignore
 
