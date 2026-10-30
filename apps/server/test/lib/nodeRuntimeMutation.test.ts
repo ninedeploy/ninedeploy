@@ -208,6 +208,14 @@ describe('persistent runtime request admission', () => {
     unlinkSync(file); io.spawn.mockClear();
     await expect(runtime().prepare(input)).rejects.toThrow(/receipt unavailable/); expect(effects()).toEqual([]);
   });
+  it('retries an incomplete preparation when the same temporary environment is recreated', async () => {
+    mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env', extraNetworks: ['nd-extra'] }]);
+    failNetwork = true; await expect(runtime().prepare(input)).rejects.toThrow(/network attachment/);
+    const created = rows[0]!.id; unlinkSync(file); writeFileSync(file, 'KEY=first'); failNetwork = false;
+    const completed = await runtime().prepare(input);
+    expect(completed.items[0]!.id).toBe(created); expect(rows).toHaveLength(1); expect(rows[0]!.running).toBe(true);
+  });
   it('refuses a changed remaining environment in a partly cleaned replica set', async () => {
     mkdirSync(join(root, '.agent-env')); const first = join(root, '.agent-env/first.env'), second = join(root, '.agent-env/second.env');
     writeFileSync(first, 'KEY=first'); writeFileSync(second, 'KEY=second');
