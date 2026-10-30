@@ -48,8 +48,12 @@ describe('fan-out application readiness', () => {
     expect(h.agent.mock.calls.map(c => c[2])).not.toContain('docker.runEnv');
     expect(stopped()).toEqual([]);
   });
-  it('retains container-state compatibility when application readiness is not requested', async () => {
+  it('uses a TCP probe for the default readiness mode when a port is present', async () => {
     expect((await run('http'))[0]).toMatchObject({ ok: true });
+    expect(h.agent.mock.calls.find(c => c[2] === 'docker.probe')?.[3]).toMatchObject({ protocol: 'tcp', port: 8080 });
+  });
+  it('uses container-state readiness when running is explicitly requested', async () => {
+    expect((await run('running'))[0]).toMatchObject({ ok: true });
     expect(h.agent.mock.calls.map(c => c[2])).not.toContain('docker.probe');
   });
   it('refuses plaintext transport before sending a sealed-only readiness operation', async () => {

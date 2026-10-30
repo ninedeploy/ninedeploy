@@ -30,7 +30,7 @@ function emitClose(child: FakeChild, code: number) {
 
 describe('buildEnv', () => {
   const snapshot: Record<string, string | undefined> = {};
-  const keys = ['PATH', 'NINEDEPLOY_MASTER_KEY', 'NINEDEPLOY_JWT_SECRET', 'LC_MESSAGES', 'BUILDKIT_HOST'];
+  const keys = ['PATH', 'NINEDEPLOY_MASTER_KEY', 'NINEDEPLOY_JWT_SECRET', 'LC_MESSAGES', 'BUILDKIT_HOST', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'COMPOSE_FILE'];
 
   beforeEach(() => {
     for (const k of keys) snapshot[k] = process.env[k];
@@ -67,6 +67,7 @@ describe('buildEnv', () => {
     // effective precisely when the HOST defines no value of its own.
     const { spawn: cpSpawn } = await import('node:child_process');
     void cpSpawn;
+    for (const key of ['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'COMPOSE_FILE']) delete process.env[key];
     const env = buildEnv({
       DOCKER_HOST: 'tcp://attacker:2375',
       DOCKER_CONTEXT: 'evil',

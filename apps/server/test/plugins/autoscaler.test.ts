@@ -93,7 +93,10 @@ describe('autoscaler plugin', () => {
   it('a panel whose database predates migration 0088 looks at nothing', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const app = Fastify();
-    app.decorate('db', { select: () => ({ from: () => ({ where: async () => Promise.reject(new Error('no such column: autoscale')) }) }) } as never);
+    app.decorate('db', { select: () => ({ from: () => ({ where: () => {
+      const query = Promise.resolve().then(() => { throw new Error('no such column: autoscale'); });
+      return Object.assign(query, { orderBy: () => ({ limit: () => query }) });
+    } }) }) } as never);
     await app.register(autoscalerPlugin);
     await app.ready();
     await vi.advanceTimersByTimeAsync(40_000);
