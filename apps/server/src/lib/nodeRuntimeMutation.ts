@@ -236,7 +236,13 @@ export function createNodeRuntimeMutation(root: string) {
       const specs = input.specs.map(raw => parseRunSpec(raw));
       for (const spec of specs) assertFileMountsWritten(spec.fileMounts);
       const serving = new Set(input.startNames ?? specs.map(spec => spec.name));
-      const normalSpecs = specs.map(spec => ({ ...spec, labels: [...spec.labels].sort(labelOrder), userLabels: [...spec.userLabels].sort(labelOrder) }));
+      // Attempt files are private to a caller, but their contents still bind the
+      // durable intent. Normalize only names scoped to this exact request.
+      const attemptPrefix = `.agent-env/nd-prep-${input.requestId}-`;
+      const normalSpecs = specs.map(spec => ({ ...spec,
+        envFile: spec.envFile?.startsWith(attemptPrefix) && /^[a-f0-9]{32}\.env$/.test(spec.envFile.slice(attemptPrefix.length))
+          ? `${attemptPrefix}attempt.env` : spec.envFile,
+        labels: [...spec.labels].sort(labelOrder), userLabels: [...spec.userLabels].sort(labelOrder) }));
       const shape = digest(JSON.stringify(canonical({ requestId: input.requestId, serviceId: input.serviceId, deploymentId: input.deploymentId,
         revision: input.revision, specs: normalSpecs, serving: specs.map(spec => serving.has(spec.name)) })));
       const missing = Symbol('missing environment');

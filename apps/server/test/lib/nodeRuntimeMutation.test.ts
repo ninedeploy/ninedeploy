@@ -189,6 +189,33 @@ describe('persistent runtime request admission', () => {
     expect(effects()).toEqual([]);
     expect(readFileSync(journalFile()).includes(Buffer.from('temporary-fixture'))).toBe(false);
   });
+  it('resumes a preparation with a separate attempt file only when the environment matches', async () => {
+    mkdirSync(join(root, '.agent-env'));
+    const path = (attempt: string) => `.agent-env/nd-prep-${nonce(5)}-${attempt.repeat(32)}.env`;
+    const original = path('a'), retry = path('b');
+    writeFileSync(join(root, original), 'KEY=first'); writeFileSync(join(root, retry), 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: original, extraNetworks: ['nd-extra'] }]);
+    failNetwork = true; await expect(runtime().prepare(input)).rejects.toThrow(/network attachment/);
+    const created = rows[0]!.id; failNetwork = false;
+    const next = { ...input, specs: [{ ...input.specs[0], envFile: retry }] };
+    writeFileSync(join(root, retry), 'KEY=changed');
+    await expect(runtime().prepare(next)).rejects.toThrow(/conflict/);
+    writeFileSync(join(root, retry), 'KEY=first');
+    const result = await runtime().prepare(next);
+    expect(result.items[0]!.id).toBe(created); expect(rows).toHaveLength(1);
+    unlinkSync(join(root, retry)); io.spawn.mockClear();
+    expect(await runtime().prepare(next)).toEqual(result); expect(effects()).toEqual([]);
+  });
+  it('does not normalize attempt files belonging to a different request', async () => {
+    mkdirSync(join(root, '.agent-env'));
+    const path = (attempt: string) => `.agent-env/nd-prep-${nonce(6)}-${attempt.repeat(32)}.env`;
+    const original = path('a'), retry = path('b');
+    writeFileSync(join(root, original), 'KEY=first'); writeFileSync(join(root, retry), 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: original }]);
+    await runtime().prepare(input); io.spawn.mockClear();
+    await expect(runtime().prepare({ ...input, specs: [{ ...input.specs[0], envFile: retry }] })).rejects.toThrow(/conflict/);
+    expect(effects()).toEqual([]);
+  });
   it('refuses a changed request shape after the environment file is removed', async () => {
     mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
     const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]);
