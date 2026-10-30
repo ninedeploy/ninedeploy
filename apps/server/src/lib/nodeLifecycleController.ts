@@ -91,7 +91,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       }
       if (record.phase === 'preparing' && record.targets === null) continue;
       const names = replicaNames(record.runtimeId, record.capacity);
-      if (record.phase !== 'prepared' || !Number.isSafeInteger(record.capacity) || record.capacity < 1 || record.capacity > MAX_REPLICAS ||
+      if ((record.phase !== 'prepared' && record.phase !== 'retiring') || !Number.isSafeInteger(record.capacity) || record.capacity < 1 || record.capacity > MAX_REPLICAS ||
         !Array.isArray(record.targets) || record.targets.length !== names.length ||
         record.targets.some((target, index) => target.name !== names[index] || !/^[a-f0-9]{64}$/.test(target.id)) ||
         new Set(record.targets.map(target => target.id)).size !== names.length) throw new Error('Node preparation receipt is invalid');

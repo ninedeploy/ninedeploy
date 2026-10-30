@@ -15,7 +15,7 @@ function validRecord(row: typeof nodeDeploymentPreparations.$inferSelect, owner:
   return row.serviceId === owner.serviceId && row.serverId === owner.serverId && row.epoch === owner.epoch && row.requestId === owner.requestId &&
     row.runtimeId === `${slug}-${owner.deploymentId}` && /^sha256:[a-f0-9]{64}$/.test(row.imageId) &&
     Number.isSafeInteger(row.serving) && Number.isSafeInteger(row.capacity) && row.serving >= 1 && row.capacity >= row.serving && row.capacity <= MAX_REPLICAS &&
-    (row.phase === 'preparing' ? row.targets === null : row.phase === 'prepared' && validTargets(row.runtimeId, row.capacity, row.targets));
+    (row.phase === 'preparing' ? row.targets === null : (row.phase === 'prepared' || row.phase === 'retiring') && validTargets(row.runtimeId, row.capacity, row.targets));
 }
 
 async function assertOwner(tx: Tx, owner: DeploymentRuntimeOwner) {
@@ -47,7 +47,7 @@ export async function beginNodeDeploymentPreparation(db: DB, owner: DeploymentRu
     await tx.insert(nodeDeploymentPreparations).values({ deploymentId: owner.deploymentId, serviceId: owner.serviceId, serverId: owner.serverId,
       epoch: owner.epoch, requestId: owner.requestId, ...spec }).onConflictDoNothing();
     const row = await tx.query.nodeDeploymentPreparations.findFirst({ where: eq(nodeDeploymentPreparations.deploymentId, owner.deploymentId) });
-    if (!row || !validRecord(row, owner, service.slug) || row.runtimeId !== spec.runtimeId || row.imageId !== spec.imageId ||
+    if (!row || !validRecord(row, owner, service.slug) || row.phase === 'retiring' || row.runtimeId !== spec.runtimeId || row.imageId !== spec.imageId ||
       row.serving !== spec.serving || row.capacity !== spec.capacity) {
       throw new Error('Node preparation intent changed');
     }
