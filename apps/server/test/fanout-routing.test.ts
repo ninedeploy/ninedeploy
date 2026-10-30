@@ -53,7 +53,7 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.useRealTimers(); f?.close(); });
 afterAll(() => rmSync(temp, { recursive: true, force: true }));
-function start() { return deployToTargets(f.db, { service, deploymentId: 9, primaryRuntimeId: 'web-7', image: 'app:1', env: {}, primaryServerId: null }, line => logs.push(line)).then(async result => { await recordFanoutResults(f.db, 1, result); return result; }); }
+function start(selectedService = service) { return deployToTargets(f.db, { service: selectedService, deploymentId: 9, primaryRuntimeId: 'web-7', image: 'app:1', env: {}, primaryServerId: null }, line => logs.push(line)).then(async result => { await recordFanoutResults(f.db, 1, result); return result; }); }
 async function pump(run: Promise<unknown>, pending = false) {
   let done = false; void run.then(() => { done = true; }, () => { done = true; });
   for (let i = 0; i < 2000 && !done; i++) {
@@ -137,9 +137,10 @@ describe('routed fan-out promotion through SQLite and the real renderer/writer',
     expect((await finish(start()))[0]).toMatchObject({ ok: false, runtimeId: old, error: expect.stringMatching(/confirm loaded HTTP\/TLS routing/) });
     expect(h.agent.mock.calls.map(c => c[2])).not.toContain('docker.runEnv'); expect(stops()).toEqual([]);
   });
-  it('still deploys an unrouted worker with a legacy agent (unaffected control)', async () => {
+  it('still deploys an unrouted worker using explicit running readiness on a legacy agent', async () => {
     caps = []; await f.db.delete(domains);
-    expect((await finish(start()))[0]).toMatchObject({ ok: true, runtimeId: candidate });
+    const worker = { ...service, healthCheck: 'running' };
+    expect((await finish(start(worker)))[0]).toMatchObject({ ok: true, runtimeId: candidate });
     expect(stops()).toContain(old); expect(writes).toEqual([]);
   });
 });
@@ -152,6 +153,18 @@ async function journal(overrides: Partial<typeof fanoutTransitions.$inferInsert>
 const pendingJournal = () => f.db.select().from(fanoutTransitions);
 const recover = () => reconcileFanoutTransitions(f.db, { serviceId: 1, force: true });
 describe('durable fan-out reconciliation', () => {
+  it('holds both generations if a configured command healthcheck is missing during recovery', async () => {
+    await journal({ healthCheck: 'command' }); await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'idle' });
+    expect(await finish(recover())).toEqual({ recovered: 0, held: 1 });
+    expect((await target())?.runtimeId).toBe(candidate); expect(stops()).toEqual([]); expect(writes).toEqual([]);
+  });
+  it('preserves explicit running readiness without requiring the port-probe capability', async () => {
+    caps = ['proxy.routingAck', 'docker.recovery'];
+    await journal({ healthCheck: 'running' }); await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'idle' });
+    expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
+    expect(h.agent.mock.calls.some(call => call[2] === 'docker.probe')).toBe(false);
+    expect(stops()).toEqual([old]);
+  });
   it('restores a healthy previous generation before retiring an unhealthy uncommitted candidate', async () => {
     await journal({ healthCheck: 'http-strict' }); await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'idle' });
     const original = h.agent.getMockImplementation()!;

@@ -146,8 +146,8 @@ export async function reconcileFanoutTransitions(db: DB, opts: { serviceId?: num
         if (!id) return false;
         const actual = await containerIdentity(db, entry.serverId, id);
         if (!actual || actual.name !== name) return false;
-        const mode = entry.healthCheck === 'http-strict' || entry.healthCheck === 'tcp' ? entry.healthCheck : undefined;
-        if (mode) {
+        const mode = entry.healthCheck === 'http-strict' || entry.healthCheck === 'tcp' || entry.healthCheck === 'running' || entry.healthCheck === 'command' ? entry.healthCheck : undefined;
+        if (mode === 'http-strict' || mode === 'tcp' || !mode && entry.port) {
           const why = await capabilityRefusal((op, p, sink) => agentOp(db, entry.serverId, op, p, sink), `#${entry.serverId}`, true,
             { cap: 'docker.probe', feature: 'probe application readiness', sealedRequired: true });
           if (why) throw new Error(why.message);
