@@ -33,9 +33,19 @@ const options = async () => ({ service: await service(), owner, image: 'example:
 it('pins the inspected image and removes the environment only after confirmed preparation', async () => {
   const opts = await options(), result = await prepareNodeAutoscaleDeployment(opts);
   expect(result.imageId).toBe(`sha256:${'f'.repeat(64)}`); expect(result.serving).toHaveLength(1); expect(result.capacity).toHaveLength(3);
+  expect(result.runtime).toMatchObject({ runtimeId: 'web-9', replicas: 1, nodeDeploymentOwner: owner,
+    nodeTargets: result.serving, nodeCapacityTargets: result.capacity, imageDigest: result.imageId });
   expect(calls.indexOf('docker.imageInspect')).toBeLessThan(calls.indexOf('file.writeEnv'));
   expect(calls.at(-1)).toBe('file.deleteEnv');
   expect(opts.client.prepare.mock.calls[0]![0].specs.every((spec: { image: string }) => spec.image === result.imageId)).toBe(true);
+});
+it('preserves strict readiness settings in the candidate runtime', async () => {
+  const opts = await options();
+  opts.service = { ...opts.service, port: 3000, healthCheck: 'http-strict', healthPath: '/ready' };
+  const result = await prepareNodeAutoscaleDeployment(opts);
+  expect(result.runtime).toMatchObject({ port: 3000, healthCheck: 'http-strict', healthPath: '/ready' });
+  expect(result.runtime.nodeTargets).toEqual(result.capacity.slice(0, result.replicas));
+  expect(result.runtime.nodeCapacityTargets).not.toBe(result.capacity);
 });
 it('refuses an older or unsealed agent before writing any environment file', async () => {
   const opts = await options(); caps = [];

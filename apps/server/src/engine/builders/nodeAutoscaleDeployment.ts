@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { DeploymentRuntimeOwner, Service } from '@ninedeploy/db';
 import { autoscaleConfig } from '@ninedeploy/schemas';
 import type { AgentCall } from './remoteDocker.js';
+import type { DeployRuntime } from '../types.js';
 import { capabilityRefusal } from '../../lib/agentCapabilities.js';
 import { confirmedNodeEnvFile } from '../../lib/nodeEnvReceipt.js';
 import { ensureNodeVolumes, nodeFileMountChecks, nodeRunCapabilities, nodeRunExtrasChecks, nodeRuntimeOptions, nodeVolumeLabels,
@@ -70,5 +71,12 @@ export async function prepareNodeAutoscaleDeployment(input: {
     }).catch(() => input.log('Node environment file cleanup is unconfirmed.'));
   }
   await input.checkpoint();
-  return { ...result, imageId: match[1]! };
+  const health = service.healthCheck;
+  const runtime: DeployRuntime = { runtimeId: `${service.slug}-${owner.deploymentId}`, replicas: result.replicas,
+    nodeDeploymentOwner: { ...owner }, nodeTargets: result.serving.map(target => ({ ...target })),
+    nodeCapacityTargets: result.capacity.map(target => ({ ...target })), port: service.port ?? null, healthPath: service.healthPath ?? '/',
+    ...(health === 'running' || health === 'http-strict' || health === 'tcp' ? { healthCheck: health } : {}),
+    ...(health === 'command' && service.healthCommand ? { healthCheck: 'command' as const, healthCommand: service.healthCommand } : {}),
+    imageDigest: match[1]! };
+  return { ...result, imageId: match[1]!, runtime };
 }
