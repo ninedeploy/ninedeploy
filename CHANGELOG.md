@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- PgBouncer for a postgres database on a node (ROADMAP item 10, agent capability `db.pgbouncer`, agent 0.18.12). The node's agent runs the same sidecar as the panel host, on the database's own bridge, with no port of the node published; attached services connect to `nd-pgb-<slug>`. `NINEDEPLOY_AGENT_PGBOUNCER=off` switches it off on a node. No migration.
+
 ## [0.18.11] - 2026-10-30
 
 ### Added

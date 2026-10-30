@@ -3549,8 +3549,6 @@ export const TR: Readonly<Record<string, string>> = {
   'reachable': 'erişilebilir',
   'unreachable': 'erişilemiyor',
   'not probed yet': 'henüz yoklanmadı',
-  'Not available for a database on a node ({node}) yet: it needs a port on the node and a proxy path through the panel. Create the database on the panel host if you need it.':
-    'Bir düğümdeki ({node}) veritabanı için henüz kullanılamıyor: düğümde bir port ve panel üzerinden bir proxy yolu gerektirir. Gerekiyorsa veritabanını panel sunucusunda oluşturun.',
   'HTTP/TCP readiness': 'HTTP/TCP hazırlık kontrolü',
   'Log drains': 'Log aktarımları',
   'Scale to zero': 'Sıfıra ölçekleme',

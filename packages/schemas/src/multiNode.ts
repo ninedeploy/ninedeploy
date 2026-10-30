@@ -74,6 +74,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'docker.buildOptions',
   // ROADMAP item 10: public access to a node database (a TCP sidecar behind an IP allow-list)
   'db.publicAccess',
+  // ROADMAP item 10: PgBouncer for a node database (a sidecar on the database's own bridge)
+  'db.pgbouncer',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

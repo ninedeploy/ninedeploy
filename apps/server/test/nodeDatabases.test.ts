@@ -106,6 +106,12 @@ vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
         return answer(0);
       case 'db.publicAccess.remove':
         return answer(0, ['ND-PUBLIC-DB {"removed":true}']);
+      case 'db.pgbouncer.enable':
+        return answer(0, ['ND-PGBOUNCER {"containerName":"nd-pgb-orders","running":true}']);
+      case 'db.pgbouncer.status':
+        return answer(0, ['ND-PGBOUNCER {"running":true,"poolMode":"transaction"}']);
+      case 'db.pgbouncer.disable':
+        return answer(0, ['ND-PGBOUNCER {"removed":true}']);
       default:
         throw new Error(`agent ${op} failed (400): {"error":{"code":"unknown_op"}}`);
     }
@@ -389,8 +395,6 @@ describe('lifecycle routes on a node database: every action reaches the node, no
     const d = await nodeRow();
     const app = await appWith([databasesRoutes, '/databases'], [pgbouncerRoutes, '/databases'], [databasePublicAccessRoutes, '/databases']);
     h.ops = [];
-    const pgbouncer = await app.inject({ method: 'POST', url: `/databases/${d.id}/pgbouncer/enable`, headers: asUser(), payload: {} });
-    expect([pgbouncer.statusCode, pgbouncer.json().error.code]).toEqual([422, 'remote_database']);
     // Public access runs on the node's agent (ROADMAP item 10): an agent without `db.publicAccess` is refused before any change.
     const savedPing = h.ping;
     h.ping = 'ND-AGENT ' + JSON.stringify({ version: '0.18.10', caps: MULTI_NODE_CAPABILITIES.filter(cap => cap !== 'db.publicAccess') });
@@ -434,6 +438,49 @@ describe('lifecycle routes on a node database: every action reaches the node, no
     const res = await app.inject({ method: 'DELETE', url: `/databases/${forced.id}?force=true`, headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json().note).toMatch(/nd-db-orders .*may still run on node/);
+    expect(h.local).toEqual([]);
+  });
+
+  it('PgBouncer runs on the node: refused by an older agent, enabled, reported, disabled and removed with the database', async () => {
+    const d = await nodeRow();
+    const app = await appWith([databasesRoutes, '/databases'], [pgbouncerRoutes, '/databases']);
+    const savedPing = h.ping;
+    h.ping = 'ND-AGENT ' + JSON.stringify({ version: '0.18.10', caps: MULTI_NODE_CAPABILITIES.filter(cap => cap !== 'db.pgbouncer') });
+    const old = await app.inject({ method: 'POST', url: `/databases/${d.id}/pgbouncer/enable`, headers: asUser(), payload: {} });
+    expect(old.statusCode, old.body).toBeGreaterThanOrEqual(400);
+    expect(old.statusCode).toBeLessThan(500);
+    expect(old.json().error.message).toMatch(/pool connections with PgBouncer/);
+    h.ping = savedPing;
+    h.ops = [];
+    const on = await app.inject({ method: 'POST', url: `/databases/${d.id}/pgbouncer/enable`, headers: asUser(), payload: {} });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(on.json()).toMatchObject({ enabled: true, containerName: 'nd-pgb-orders', running: true, poolMode: 'transaction' });
+    expect(on.json().pooledConnectionString).toMatch(/@nd-pgb-orders:6432\/app$/);
+    const enable = h.ops.find((o) => o.op === 'db.pgbouncer.enable')!.params;
+    expect(enable).toMatchObject({ databaseId: d.id, slug: 'orders', container: 'nd-db-orders', listenPort: 6432, password: 'pw-orders' });
+    const status = await app.inject({ method: 'GET', url: `/databases/${d.id}/pgbouncer`, headers: asUser() });
+    expect(status.json()).toMatchObject({ running: true, directConnectionString: expect.stringContaining('@nd-db-orders:') });
+    // Enabled and running: a second enable reuses it.
+    h.ops = [];
+    expect((await app.inject({ method: 'POST', url: `/databases/${d.id}/pgbouncer/enable`, headers: asUser(), payload: {} })).statusCode).toBe(200);
+    expect(h.ops.some((o) => o.op === 'db.pgbouncer.enable')).toBe(false);
+    // Disable is refused while the node cannot confirm; the row stays enabled.
+    h.unreachable = true;
+    const down = await app.inject({ method: 'POST', url: `/databases/${d.id}/pgbouncer/disable`, headers: asUser() });
+    expect([down.statusCode, down.json().error.code]).toEqual([502, 'node_unreachable']);
+    // Delete is refused too, unless forced.
+    const del = await app.inject({ method: 'DELETE', url: `/databases/${d.id}`, headers: asUser() });
+    expect([del.statusCode, del.json().error.code]).toEqual([502, 'node_pgbouncer_cleanup_unconfirmed']);
+    h.unreachable = false;
+    expect((await app.inject({ method: 'POST', url: `/databases/${d.id}/pgbouncer/disable`, headers: asUser() })).json()).toMatchObject({ enabled: false });
+    expect(h.ops.some((o) => o.op === 'db.pgbouncer.disable')).toBe(true);
+
+    expect((await app.inject({ method: 'POST', url: `/databases/${d.id}/pgbouncer/enable`, headers: asUser(), payload: {} })).statusCode).toBe(200);
+    h.unreachable = true;
+    const forced = await app.inject({ method: 'DELETE', url: `/databases/${d.id}?force=true`, headers: asUser() });
+    expect(forced.statusCode).toBe(200);
+    expect(forced.json().note).toMatch(/nd-pgb-orders may still run on node #\d+/);
+    h.unreachable = false;
     expect(h.local).toEqual([]);
   });
 

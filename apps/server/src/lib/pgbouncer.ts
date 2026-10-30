@@ -23,6 +23,8 @@ import { decrypt } from './crypto.js';
 import { capture, run } from './exec.js';
 import { NETWORK } from '../engine/proxy.js';
 import { writeSecretFile, type SecretFile } from './secretFile.js';
+import { nodeContainerOf } from './nodeDatabase.js';
+import { assertNodePgbouncerSupport, nodeDisablePgbouncer, nodeEnablePgbouncer, nodePgbouncerState } from './nodePgbouncer.js';
 
 /**
  * r243: `bitnami/pgbouncer:1.24.1` no longer exists on Docker Hub (Bitnami
@@ -85,6 +87,7 @@ export async function enablePgbouncer(db: DB, d: Database, log: (line: string) =
   if (d.engine !== 'postgres') {
     throw new Error('PgBouncer sidecar is only supported for the postgres engine');
   }
+  if (d.serverId != null) return enableNodePgbouncer(db, d, d.serverId, log);
   if (!d.containerName) throw new Error('database has no container name');
   const port = d.pgbouncerPort ?? DEFAULT_PORT;
   const containerName = pgbouncerContainerName(d);
@@ -111,35 +114,10 @@ export async function enablePgbouncer(db: DB, d: Database, log: (line: string) =
   const user = d.username ?? 'nine';
   const dbName = d.dbName ?? 'app';
 
-  const ini = renderPgbouncerIni({
-    postgresHost: d.containerName,
-    postgresPort: d.internalPort ?? 5432,
-    listenPort: port,
-    user,
-    password,
-    dbName,
-  });
-  const userlist = renderUserlist({ user, password });
-  const iniFile = await writeTempFile('pgbouncer.ini', ini);
-  let userlistFile: SecretFile | undefined;
-
-  try {
-    userlistFile = await writeTempFile('userlist.txt', userlist);
-    // Remove any stale (stopped) container of the same
-    // name so the create below does not fail with a name
-    // conflict; pgbouncer has no retained state.
-    await run('docker', ['rm', '-f', containerName], {}, swallow).catch(swallow);
-
-    // Create → docker cp → start: the config files are copied INTO the
-    // container instead of bind-mounted, so the host-side copies (which
-    // carry the DB password) can be deleted as soon as this sequence ends.
-    // A bind mount would force them to stay on disk for the container's
-    // lifetime, leaking secret material in the shared tmp dir.
-    const args = [
-      'create',
-      '--name', containerName,
-      '--network', NETWORK,
-      '--restart', 'unless-stopped',
+  await createPgbouncerSidecar(
+    {
+      containerName,
+      network: NETWORK,
       // Only publish when the operator chose an explicit sidecar port: the
       // default (6432) is shared by EVERY sidecar, so publishing it makes
       // the second enable fail with "port is already allocated". Clients
@@ -152,20 +130,88 @@ export async function enablePgbouncer(db: DB, d: Database, log: (line: string) =
       // published 127.0.0.1:6432 — the second enable failed. "Chosen" now
       // means "not the default". Existing sidecars are not recreated; this
       // applies from their next enable (owner decision O8).
-      ...(port !== DEFAULT_PORT ? ['-p', `127.0.0.1:${port}:${port}`] : []),
+      publishPort: port !== DEFAULT_PORT ? port : null,
+      ini: renderPgbouncerIni({ postgresHost: d.containerName, postgresPort: d.internalPort ?? 5432, listenPort: port, user, password, dbName }),
+      userlist: renderUserlist({ user, password }),
+    },
+    log,
+  );
+
+  // Stamp the row.
+  await db
+    .update(databases)
+    .set({ pgbouncerEnabled: true, pgbouncerContainerName: containerName, pgbouncerPort: port, updatedAt: new Date() })
+    .where(eq(databases.id, d.id));
+}
+
+/**
+ * A node database (ROADMAP item 10): the node's agent runs the same sidecar
+ * on the database's own bridge (agentOps/pgbouncer.ts), the network the
+ * services attached to it are on. No port of the node is published.
+ */
+async function enableNodePgbouncer(db: DB, d: Database, serverId: number, log: (line: string) => void): Promise<void> {
+  const port = d.pgbouncerPort ?? DEFAULT_PORT;
+  if (d.pgbouncerEnabled && (await nodePgbouncerState(db, serverId, d.slug))?.running) {
+    log(`PgBouncer sidecar nd-pgb-${d.slug} already running on node #${serverId} — reusing`);
+    return;
+  }
+  await assertNodePgbouncerSupport(db, serverId);
+  log(`Starting PgBouncer for ${d.name} on node #${serverId} …`);
+  const containerName = await nodeEnablePgbouncer(db, serverId, {
+    databaseId: d.id,
+    slug: d.slug,
+    container: nodeContainerOf(d),
+    postgresPort: d.internalPort ?? 5432,
+    listenPort: port,
+    user: d.username ?? 'nine',
+    dbName: d.dbName ?? 'app',
+    password: decrypt(d.passwordEncrypted),
+  });
+  await db
+    .update(databases)
+    .set({ pgbouncerEnabled: true, pgbouncerContainerName: containerName, pgbouncerPort: port, updatedAt: new Date() })
+    .where(eq(databases.id, d.id));
+}
+
+export interface PgbouncerSidecarSpec {
+  containerName: string;
+  /** The panel's `ninedeploy` network, or a node database's own bridge. */
+  network: string;
+  /** A loopback host port to publish, or null for none. */
+  publishPort: number | null;
+  ini: string;
+  userlist: string;
+}
+
+/**
+ * Replace and start one sidecar (shared with the node agent,
+ * agentOps/pgbouncer.ts). Create → docker cp → start: the config files are
+ * copied INTO the container instead of bind-mounted, so the host-side copies
+ * (which carry the DB password) can be deleted as soon as this sequence ends.
+ * A bind mount would force them to stay on disk for the container's
+ * lifetime, leaking secret material in the shared tmp dir.
+ */
+export async function createPgbouncerSidecar(spec: PgbouncerSidecarSpec, log: (line: string) => void): Promise<void> {
+  const iniFile = await writeTempFile('pgbouncer.ini', spec.ini);
+  let userlistFile: SecretFile | undefined;
+  try {
+    userlistFile = await writeTempFile('userlist.txt', spec.userlist);
+    // Remove any stale (stopped) container of the same name so the create
+    // below does not fail with a name conflict; pgbouncer has no retained state.
+    await run('docker', ['rm', '-f', spec.containerName], {}, swallow).catch(swallow);
+    const args = [
+      'create',
+      '--name', spec.containerName,
+      '--network', spec.network,
+      '--restart', 'unless-stopped',
+      ...(spec.publishPort !== null ? ['-p', `127.0.0.1:${spec.publishPort}:${spec.publishPort}`] : []),
       PGBOUNCER_IMAGE,
     ];
-    log(`Creating PgBouncer sidecar ${containerName} on port ${port} …`);
+    log(`Creating PgBouncer sidecar ${spec.containerName} …`);
     await run('docker', args, {}, log);
-    await run('docker', ['cp', iniFile.path, `${containerName}:/etc/pgbouncer/pgbouncer.ini`], {}, swallow);
-    await run('docker', ['cp', userlistFile.path, `${containerName}:/etc/pgbouncer/userlist.txt`], {}, swallow);
-    await run('docker', ['start', containerName], {}, log);
-
-    // Stamp the row.
-    await db
-      .update(databases)
-      .set({ pgbouncerEnabled: true, pgbouncerContainerName: containerName, pgbouncerPort: port, updatedAt: new Date() })
-      .where(eq(databases.id, d.id));
+    await run('docker', ['cp', iniFile.path, `${spec.containerName}:/etc/pgbouncer/pgbouncer.ini`], {}, swallow);
+    await run('docker', ['cp', userlistFile.path, `${spec.containerName}:/etc/pgbouncer/userlist.txt`], {}, swallow);
+    await run('docker', ['start', spec.containerName], {}, log);
   } finally {
     // The container has its own copy; the host-side secret files are no
     // longer needed and must never outlive this call — even on failure.
@@ -181,7 +227,12 @@ export async function disablePgbouncer(db: DB, d: Database, log: (line: string) 
   if (!d.pgbouncerEnabled) return;
   const containerName = d.pgbouncerContainerName ?? pgbouncerContainerName(d);
   log(`Stopping PgBouncer sidecar ${containerName} …`);
-  await run('docker', ['rm', '-f', containerName], {}, swallow).catch(swallow);
+  if (d.serverId != null) {
+    // Thrown while the node cannot confirm: the row stays enabled, so a retry (or the delete) still removes it.
+    await nodeDisablePgbouncer(db, d.serverId, d.slug);
+  } else {
+    await run('docker', ['rm', '-f', containerName], {}, swallow).catch(swallow);
+  }
   await db
     .update(databases)
     .set({ pgbouncerEnabled: false, pgbouncerContainerName: null, updatedAt: new Date() })
@@ -194,7 +245,7 @@ export async function disablePgbouncer(db: DB, d: Database, log: (line: string) 
  *  the operator can read). */
 export async function pgbouncerStatusFor(
   d: Database,
-  opts: { maskPassword?: boolean } = {},
+  opts: { maskPassword?: boolean; db?: DB } = {},
 ): Promise<PgbouncerStatus> {
   const containerName = d.pgbouncerContainerName;
   if (!d.pgbouncerEnabled || !containerName) {
@@ -207,22 +258,11 @@ export async function pgbouncerStatusFor(
       pooledConnectionString: null,
     };
   }
-  const running = await containerRunning(containerName);
-  let poolMode: string | null = null;
-  if (running) {
-    try {
-      // pool_mode lives in the ini that `enablePgbouncer` docker-cp'd into
-      // the container — that file is the config the sidecar actually runs
-      // with. The container ENV never carries PGBOUNCER_POOL_MODE (the
-      // create argv passes no -e flags), and `{{index .Config.Env}}` is
-      // invalid Go template usage anyway, so inspecting env never answers.
-      const ini = await capture('docker', ['exec', containerName, 'cat', '/etc/pgbouncer/pgbouncer.ini']);
-      const m = /^pool_mode\s*=\s*([A-Za-z0-9_]+)/m.exec(ini);
-      if (m) poolMode = m[1] ?? null;
-    } catch {
-      /* the exec failed; poolMode stays null */
-    }
-  }
+  // A node database's sidecar is asked of its node; an unreachable node reads as not running.
+  const { running, poolMode } =
+    d.serverId != null
+      ? ((opts.db ? await nodePgbouncerState(opts.db, d.serverId, d.slug) : null) ?? { running: false, poolMode: null })
+      : await pgbouncerSidecarState(containerName);
   return {
     enabled: true,
     containerName,
@@ -235,7 +275,28 @@ export async function pgbouncerStatusFor(
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-async function containerRunning(name: string): Promise<boolean> {
+/** Whether the sidecar runs, and its pool mode (shared with the node agent). */
+export async function pgbouncerSidecarState(containerName: string): Promise<{ running: boolean; poolMode: string | null }> {
+  const running = await containerRunning(containerName);
+  let poolMode: string | null = null;
+  if (running) {
+    try {
+      // pool_mode lives in the ini that was docker-cp'd into the container —
+      // that file is the config the sidecar actually runs with. The container
+      // ENV never carries PGBOUNCER_POOL_MODE (the create argv passes no -e
+      // flags), and `{{index .Config.Env}}` is invalid Go template usage
+      // anyway, so inspecting env never answers.
+      const ini = await capture('docker', ['exec', containerName, 'cat', '/etc/pgbouncer/pgbouncer.ini']);
+      const m = /^pool_mode\s*=\s*([A-Za-z0-9_]+)/m.exec(ini);
+      if (m) poolMode = m[1] ?? null;
+    } catch {
+      /* the exec failed; poolMode stays null */
+    }
+  }
+  return { running, poolMode };
+}
+
+export async function containerRunning(name: string): Promise<boolean> {
   try {
     const out = await capture('docker', ['inspect', '--format', '{{.State.Running}}', name]);
     return out.trim() === 'true';
@@ -258,7 +319,7 @@ async function writeTempFile(suffix: string, body: string): Promise<SecretFile> 
   return writeSecretFile(ref, suffix, body, 0o644);
 }
 
-interface RenderInput {
+export interface RenderInput {
   postgresHost: string;
   postgresPort: number;
   listenPort: number;
@@ -277,7 +338,7 @@ interface RenderInput {
  * what pgbouncer must know anyway. `pool_mode = transaction` is the
  * common-case setting; session-mode is opt-in via a future PR.
  */
-function renderPgbouncerIni(input: RenderInput): string {
+export function renderPgbouncerIni(input: RenderInput): string {
   return [
     '[databases]',
     `${input.dbName} = host=${input.postgresHost} port=${input.postgresPort}`,
@@ -304,6 +365,6 @@ function renderPgbouncerIni(input: RenderInput): string {
 /** pgbouncer's userlist format for SCRAM: the cleartext password in plain
  *  `"user" "password"` form — with `auth_type = scram-sha-256` pgbouncer
  *  derives the SCRAM exchange from it for both client and server auth. */
-function renderUserlist(input: { user: string; password: string }): string {
+export function renderUserlist(input: { user: string; password: string }): string {
   return `"${input.user}" "${input.password}"\n`;
 }

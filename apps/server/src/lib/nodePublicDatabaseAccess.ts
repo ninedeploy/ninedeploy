@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { DB } from '@ninedeploy/db';
 import { agentOp, agentTransportSealed } from './agentClient.js';
+import { agentReplyCall } from './nodeAgentReply.js';
 import { capabilityRefusal, nodeLabel, type AgentCaller } from './agentCapabilities.js';
 import { HttpError } from './errors.js';
 
@@ -13,7 +14,6 @@ import { HttpError } from './errors.js';
 
 export const NODE_PUBLIC_ACCESS_FEATURE = 'expose a database publicly';
 const REPLY = 'ND-PUBLIC-DB ';
-const refusal = z.object({ error: z.object({ status: z.number().int().min(400).max(599), code: z.string().min(1).max(64), message: z.string().min(1).max(600) }) });
 
 /** Re-probed before every change: the agent must offer the op and the transport must be sealed. */
 export async function assertNodePublicAccessSupport(db: DB, serverId: number): Promise<void> {
@@ -27,32 +27,13 @@ export async function assertNodePublicAccessSupport(db: DB, serverId: number): P
   if (refused) throw new HttpError(refused.status, refused.code, refused.message);
 }
 
-async function call<T>(db: DB, serverId: number, op: string, params: Record<string, unknown>, shape: z.ZodType<T>, timeoutMs: number): Promise<T> {
-  const unconfirmed = () => new HttpError(502, 'node_public_access_unconfirmed', 'The node did not confirm the public access change');
-  let reply: Awaited<ReturnType<typeof agentOp>>;
-  try {
-    reply = await agentOp(db, serverId, op, params, () => undefined, { timeoutMs, tolerateExit: true });
-  } catch (err) {
-    if (err instanceof HttpError) throw err;
-    throw new HttpError(502, 'node_unreachable', `The node could not be reached: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
-  }
-  const line = reply.lines.find((l) => l.startsWith(REPLY));
-  if (!line) throw unconfirmed();
-  let value: unknown;
-  try {
-    value = JSON.parse(line.slice(REPLY.length));
-  } catch {
-    throw unconfirmed();
-  }
-  if (reply.exitCode !== 0) {
-    const r = refusal.safeParse(value);
-    if (r.success) throw new HttpError(r.data.error.status, r.data.error.code, r.data.error.message);
-    throw unconfirmed();
-  }
-  const parsed = shape.safeParse(value);
-  if (!parsed.success) throw unconfirmed();
-  return parsed.data;
-}
+const call = <T>(db: DB, serverId: number, op: string, params: Record<string, unknown>, shape: z.ZodType<T>, timeoutMs: number): Promise<T> =>
+  agentReplyCall(db, serverId, op, params, {
+    prefix: REPLY,
+    shape,
+    timeoutMs,
+    unconfirmed: { code: 'node_public_access_unconfirmed', message: 'The node did not confirm the public access change' },
+  });
 
 export interface NodeSidecarApply {
   databaseId: number;

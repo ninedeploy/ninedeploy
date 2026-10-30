@@ -390,6 +390,20 @@ Limits on a node:
 
 Requires agent 0.18.11 or newer (`db.publicAccess`) and a sealed transport. The node owner turns it off with `NINEDEPLOY_AGENT_PUBLIC_DATABASES=off`; `NINEDEPLOY_AGENT_DATABASES=off` turns it off together with every other node database feature.
 
+## PgBouncer for a node database
+
+A postgres database on a node can have the same PgBouncer sidecar as one on the panel host: **Database → Settings → PgBouncer**, or `POST /v1/databases/:id/pgbouncer/enable` (database admin).
+
+How it works on a node:
+- The node's agent runs `nd-pgb-<slug>` on the database's own bridge `nd-dbnet-<slug>`. Services attached to the database are on that bridge too.
+- It publishes no port of the node. Attached services connect to `nd-pgb-<slug>:6432`, or to the port you chose; the pooled connection string names it.
+- Before creating the sidecar, the agent checks that `nd-db-<slug>` is the running managed database with that id.
+- The database password travels only in a sealed request. The config is copied into the container, and the temporary files are deleted at once.
+
+Turning it off, or deleting the database, is refused while the node cannot confirm the sidecar is gone (`502 node_unreachable`, `502 node_pgbouncer_cleanup_unconfirmed`); `?force=true` on the delete names what was left.
+
+Requires agent 0.18.12 or newer (`db.pgbouncer`) and a sealed transport. The node owner turns it off with `NINEDEPLOY_AGENT_PGBOUNCER=off`; `NINEDEPLOY_AGENT_DATABASES=off` turns it off together with every other node database feature.
+
 ## OS security updates (G4.2)
 
 Operators can see each host's pending package updates and turn automatic **security** updates on or off:

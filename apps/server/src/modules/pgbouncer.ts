@@ -13,7 +13,8 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { databases, type Database } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
-import { badRequest, notFound, parseId as num, unprocessable } from '../lib/errors.js';
+import { HttpError, badRequest, notFound, parseId as num, unprocessable } from '../lib/errors.js';
+import { nodeContainerOf } from '../lib/nodeDatabase.js';
 import {
   disablePgbouncer,
   enablePgbouncer,
@@ -51,12 +52,12 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
     // the password masked, like `directConnectionString` below.
     const role = await databaseRole(app.db, d, req.user!);
     const revealPassword = role !== null && roleAtLeast(role, 'admin');
-    const status = await pgbouncerStatusFor(d, { maskPassword: !revealPassword });
+    const status = await pgbouncerStatusFor(d, { maskPassword: !revealPassword, db: app.db });
     return {
       databaseId: d.id,
       ...status,
       // Always return both shapes; the caller picks.
-      directConnectionString: `postgres://${encodeURIComponent(d.username ?? 'nine')}:${encodeURIComponent('*')}@${d.internalHost ?? d.containerName ?? 'localhost'}:${d.internalPort ?? 5432}/${d.dbName ?? 'app'}`,
+      directConnectionString: `postgres://${encodeURIComponent(d.username ?? 'nine')}:${encodeURIComponent('*')}@${d.internalHost ?? (d.serverId != null ? nodeContainerOf(d) : d.containerName) ?? 'localhost'}:${d.internalPort ?? 5432}/${d.dbName ?? 'app'}`,
     };
   });
 
@@ -71,11 +72,7 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
       async (req) => {
         const id = num((req.params as { id: string }).id);
         const d = await loadDatabaseForUser(app.db, id, req.user!);
-        // ── 0.16 T6 node databases (design §5.7, §12) ── the sidecar runs on the panel host only.
-        if (d.serverId != null) {
-          throw unprocessable('PgBouncer is not available for a database on a node yet; it runs on the panel host only.', 'remote_database');
-        }
-        // ── end 0.16 T6 ──
+        // A node database's sidecar runs on its node (ROADMAP item 10, lib/pgbouncer.ts).
         const body = enableBody.safeParse(req.body ?? {});
         if (!body.success) throw unprocessable(body.error.issues[0]!.message);
         // Apply the port override to the row before enabling
@@ -91,10 +88,12 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
         try {
           await enablePgbouncer(app.db, d, log);
         } catch (err) {
+          // A node's refusal (agent too old, unreachable, database not running) keeps its status.
+          if (err instanceof HttpError) throw err;
           throw badRequest(err instanceof Error ? err.message : String(err));
         }
         void audit(app.db, req.user!.id, 'database.pgbouncer_enable', `${d.name} (port=${d.pgbouncerPort})`);
-        return pgbouncerStatusFor(await reloadRow(app, d));
+        return pgbouncerStatusFor(await reloadRow(app, d), { db: app.db });
       },
     );
 
@@ -105,10 +104,11 @@ export const pgbouncerRoutes: FastifyPluginAsync = async (app) => {
       try {
         await disablePgbouncer(app.db, d, log);
       } catch (err) {
+        if (err instanceof HttpError) throw err;
         throw badRequest(err instanceof Error ? err.message : String(err));
       }
       void audit(app.db, req.user!.id, 'database.pgbouncer_disable', d.name);
-      return pgbouncerStatusFor(await reloadRow(app, d));
+      return pgbouncerStatusFor(await reloadRow(app, d), { db: app.db });
     });
   });
 };

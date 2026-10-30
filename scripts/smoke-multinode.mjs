@@ -751,6 +751,48 @@ async function publicAccessOnNodeChecks(node, database) {
   step(`turned off: the sidecar is gone from the node and ${node.host}:${PORT} answers nothing (${after.trim()})`);
 }
 
+async function pgbouncerOnNodeChecks(ctx, node) {
+  if (!(node?.agent?.capabilities ?? []).includes('db.pgbouncer')) fail(`the candidate agent does not advertise db.pgbouncer: ${JSON.stringify(node?.agent ?? null)}`);
+  const created = await api('/v1/databases', { method: 'POST', body: { name: `mn-pg-${suffix}`, engine: 'postgres', serverId: ctx.serverId } });
+  if ((created.status !== 200 && created.status !== 201) || created.json?.status !== 'running') fail(`node postgres: ${short(created)}`);
+  const { id, slug } = created.json;
+  const container = `nd-db-${slug}`;
+  await nodePsqlReady(container, 'select 1', 'node postgres accepting connections');
+  const on = await api(`/v1/databases/${id}/pgbouncer/enable`, { method: 'POST', body: {} });
+  if (on.status !== 200 || on.json?.running !== true || on.json?.containerName !== `nd-pgb-${slug}`) fail(`PgBouncer: enable answered ${short(on)}`);
+  const sidecar = `nd-pgb-${slug}`;
+  const networks = nodeDaemon(['inspect', sidecar, '--format', '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}']).stdout.trim();
+  if (networks !== `nd-dbnet-${slug}`) fail(`PgBouncer: the sidecar joined "${networks}", wanted only nd-dbnet-${slug}`);
+  const ports = nodeDaemon(['port', sidecar]).stdout.trim();
+  if (ports) fail(`PgBouncer: the sidecar publishes a node port: ${ports}`);
+
+  // A client on the database's bridge (where attached services are) goes through the pool.
+  const creds = await api(`/v1/databases/${id}/credentials`);
+  const password = creds.json?.password;
+  if (!password) fail(`PgBouncer: no password in the credentials: ${short(creds)}`);
+  const image = nodeDaemon(['inspect', container, '--format', '{{.Config.Image}}']).stdout.trim();
+  let out = null;
+  const pooled = await until(() => {
+    out = nodeDaemon(['run', '--rm', '--network', `nd-dbnet-${slug}`, '-e', `PGPASSWORD=${password}`, image,
+      'psql', '-h', sidecar, '-p', '6432', '-U', 'nine', '-d', 'app', '-tAc', 'select 40 + 2'], 120_000);
+    return out.status === 0 && out.stdout.trim() === '42';
+  }, { ms: 60_000, every: 3000 });
+  if (!pooled) fail(`PgBouncer: psql through ${sidecar}:6432 failed: ${out?.all.slice(0, 400)}`);
+  const status = await api(`/v1/databases/${id}/pgbouncer`);
+  if (status.json?.running !== true || status.json?.poolMode !== 'transaction') fail(`PgBouncer: status answered ${short(status)}`);
+  step(`postgres #${id}: ${sidecar} runs on nd-dbnet-${slug} only, publishes no node port; psql through it answered 42; status reads pool mode ${status.json.poolMode} from the node`);
+
+  const off = await api(`/v1/databases/${id}/pgbouncer/disable`, { method: 'POST', body: {} });
+  if (off.status !== 200 || off.json?.enabled !== false) fail(`PgBouncer: disable answered ${short(off)}`);
+  if (nodeDaemon(['ps', '-a', '--filter', `name=^${sidecar}$`, '--format', '{{.Names}}']).stdout) fail('PgBouncer: the sidecar stayed on the node after disable');
+  // Enabled again, then the database is deleted: the sidecar goes with it.
+  if ((await api(`/v1/databases/${id}/pgbouncer/enable`, { method: 'POST', body: {} })).status !== 200) fail('PgBouncer: re-enable failed');
+  const del = await api(`/v1/databases/${id}`, { method: 'DELETE' });
+  if (del.status !== 200) fail(`PgBouncer: database delete answered ${short(del)}`);
+  if (nodeDaemon(['ps', '-a', '--filter', `name=^${sidecar}$`, '--format', '{{.Names}}']).stdout) fail('PgBouncer: the sidecar stayed on the node after the database was deleted');
+  step(`disabled: the sidecar is gone; enabled again and the database deleted: it went with the database`);
+}
+
 async function newNodeFeatureChecks(ctx) {
   section('G5.8 tunnels to the node');
   const nodes = await api('/v1/servers');
@@ -774,6 +816,9 @@ async function newNodeFeatureChecks(ctx) {
 
   section('ROADMAP item 10: public access to a node database');
   await publicAccessOnNodeChecks(node, created.json);
+
+  section('ROADMAP item 10: PgBouncer for a node database');
+  await pgbouncerOnNodeChecks(ctx, node);
 
   section('G3.1 a compose stack moves to the node with its volume');
   const stack = await api('/v1/services', { method: 'POST', body: {
@@ -1527,7 +1572,7 @@ async function main() {
     ctx.imgId = img.id;
     if (flag('new-node-features')) {
       await newNodeFeatureChecks(ctx);
-      console.log('\nPASS: node features on a real panel and agent (service and database tunnels, public access to a node database, compose move with data, node deploy scan, a Dockerfile stage with build arguments).');
+      console.log('\nPASS: node features on a real panel and agent (service and database tunnels, public access and PgBouncer for node databases, compose move with data, node deploy scan, a Dockerfile stage with build arguments).');
       return;
     }
     if (flag('node-operations-only')) {

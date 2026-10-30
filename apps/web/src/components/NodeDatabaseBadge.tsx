@@ -36,28 +36,3 @@ export function NodeDatabaseBadge({ db }: { db: DatabasePlacement }) {
     </span>
   );
 }
-
-/**
- * Database detail, for a node database: a feature that needs a port on the
- * panel host (Web Studio, PgBouncer, the public-access sidecar) shown
- * disabled with the reason, instead of controls the server refuses
- * (`remote_database`).
- */
-export function NodeUnavailableCard({ title, db }: { title: string; db: DatabasePlacement }) {
-  const t = useT();
-  return (
-    <div
-      aria-disabled="true"
-      data-testid="node-unavailable"
-      className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 opacity-80"
-    >
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">{title}</h2>
-      <p className="mt-2 text-xs leading-relaxed text-slate-500">
-        {t(
-          'Not available for a database on a node ({node}) yet: it needs a port on the node and a proxy path through the panel. Create the database on the panel host if you need it.',
-          { node: db.serverName ?? t('node #{id}', { id: String(db.serverId) }) },
-        )}
-      </p>
-    </div>
-  );
-}

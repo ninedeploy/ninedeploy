@@ -170,16 +170,20 @@ describe('DatabaseDetail — node database', () => {
     expect(screen.queryByTestId('node-unavailable')).toBeNull();
   });
 
-  it('settings: public access works on a node with TLS end to end only; PgBouncer is disabled with the reason', async () => {
+  it('settings: public access and PgBouncer run on the node', async () => {
     mockOf(api.databases.get).mockResolvedValue({ ...nodeDb, serverName: null } as never);
     mockOf(api.databases.publicAccess.get).mockResolvedValue({
       supported: true, configured: false, enabled: false, port: null, tlsMode: 'none', tlsHostname: null, ipAllowlist: [],
       status: 'off', lastError: null, appliedAt: null, publicHost: '198.51.100.3',
     } as never);
+    mockOf(api.databases.pgbouncerStatus).mockResolvedValue({
+      databaseId: 7, enabled: false, containerName: null, port: 6432, running: false, poolMode: null, pooledConnectionString: null,
+      directConnectionString: 'postgres://nine:*@nd-db-orders:5432/app',
+    } as never);
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/7?tab=settings' });
-    expect(await screen.findByText('PgBouncer connection pooling')).toBeInTheDocument();
-    expect(screen.getAllByText(/Not available for a database on a node \(node #3\)/)).toHaveLength(1);
     await waitFor(() => expect(api.databases.publicAccess.get).toHaveBeenCalledWith(7));
+    await waitFor(() => expect(api.databases.pgbouncerStatus).toHaveBeenCalledWith(7));
+    expect(screen.queryByTestId('node-unavailable')).toBeNull();
   });
 
   it('a panel-host database keeps the Studio and public-access cards', async () => {

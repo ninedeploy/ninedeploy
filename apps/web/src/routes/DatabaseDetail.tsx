@@ -53,7 +53,7 @@ import { ImportCard } from './database/ImportCard.js';
 import { PublicAccessCard } from './database/PublicAccessCard.js';
 import { TunnelHintCard } from './database/TunnelHintCard.js';
 import { PgbouncerCard } from './database/PgbouncerCard.js';
-import { isNodeDatabase, NodeDatabaseBadge, NodeUnavailableCard } from '../components/NodeDatabaseBadge.js';
+import { isNodeDatabase, NodeDatabaseBadge } from '../components/NodeDatabaseBadge.js';
 import { ManifestTab } from './service/ManifestTab.js';
 import { TerminalPanel } from '../components/terminal/TerminalPanel.js';
 import { useAuth } from '../lib/auth.js';
@@ -1014,11 +1014,11 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
         </div>
       </Card>
 
-      {/* Multi-node: public access and PgBouncer need a port on the panel host; a node database has neither yet. */}
+      {/* Multi-node: on a node, public access and PgBouncer run on that node (its agent); no tunnel hint. */}
       {isNodeDatabase(db) ? (
         <>
           <PublicAccessCard db={db} />
-          <NodeUnavailableCard title={t('PgBouncer connection pooling')} db={db} />
+          {db.engine === 'postgres' && <PgbouncerCard db={db} />}
         </>
       ) : (
         <>

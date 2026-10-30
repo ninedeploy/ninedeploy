@@ -23,7 +23,9 @@ describe('the runtime dispatch reaches every caller (M17)', () => {
     ['../src/engine/templateDependencies.ts', [/databaseRuntime\(db, database\)/, /runtime\.start\(log, \{ labels/], [/\bstartDatabase\(/, /\battachDatabaseToServiceBridges\(/]],
     ['../src/modules/databases.ts', [/databaseRuntime\(app\.db, d\)\.restart\(/, /databaseRuntime\(app\.db, d\)\.stop\(/, /databaseRuntime\(app\.db, d\)\.logs\(lines\)/, /const runtime = databaseRuntime\(app\.db, updated\)/, /nodeDatabaseRuntime\(app\.db, row\)/, /startNodeStudioForDatabase\(app\.db, id, abort\.signal\)/, /stopNodeStudioForDatabase\(app\.db, id\)/, /clearNodeStudioForMutation\(app\.db, d\)/], [/\brestartDatabase\(/, /\bdatabaseLogs\(/]],
     ['../src/modules/terminals.ts', [/if \(d\.serverId != null\) \{/, /assertNodeTerminal\(d\.serverId, false\)/], []],
-    ['../src/modules/pgbouncer.ts', [/if \(d\.serverId != null\) \{\r?\n\s+throw unprocessable\([^)]*'remote_database'\)/], []],
+    // ROADMAP item 10: a node database's PgBouncer runs on its node; the route no longer refuses it.
+    ['../src/modules/pgbouncer.ts', [/enablePgbouncer\(app\.db, d, log\)/, /disablePgbouncer\(app\.db, d, log\)/], [/'remote_database'/]],
+    ['../src/lib/pgbouncer.ts', [/if \(d\.serverId != null\) return enableNodePgbouncer\(db, d, d\.serverId, log\);/, /await nodeDisablePgbouncer\(db, d\.serverId, d\.slug\)/], []],
     ['../src/lib/publicDatabaseAccess.ts', [/if \(d\.serverId != null\) \{\r?\n\s+throw unprocessable\([^)]*'remote_database'\)/], []],
   ];
   for (const [file, must, mustNot] of callers) {
@@ -53,7 +55,11 @@ describe('the runtime dispatch reaches every caller (M17)', () => {
   });
 
   it('D5: a sidecar publishes only a non-default port', () => {
-    expect(read('../src/lib/pgbouncer.ts')).toMatch(/\.\.\.\(port !== DEFAULT_PORT \? \['-p', `127\.0\.0\.1:\$\{port\}:\$\{port\}`\] : \[\]\)/);
+    const src = read('../src/lib/pgbouncer.ts');
+    expect(src).toMatch(/publishPort: port !== DEFAULT_PORT \? port : null/);
+    expect(src).toMatch(/\.\.\.\(spec\.publishPort !== null \? \['-p', `127\.0\.0\.1:\$\{spec\.publishPort\}:\$\{spec\.publishPort\}`\] : \[\]\)/);
+    // A node's sidecar publishes nothing: it is reached on the database's own bridge.
+    expect(read('../src/agentOps/pgbouncer.ts')).toMatch(/publishPort: null/);
   });
 });
 

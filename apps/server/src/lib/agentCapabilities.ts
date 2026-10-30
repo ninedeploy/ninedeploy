@@ -406,6 +406,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.buildOptions': '0.18.10',
   // Public access to a node database
   'db.publicAccess': '0.18.11',
+  // PgBouncer for a node database
+  'db.pgbouncer': '0.18.12',
 };
 
 /**
@@ -427,6 +429,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'db.client': 'NINEDEPLOY_AGENT_DATABASE_CLIENTS',
   'db.studio': 'NINEDEPLOY_AGENT_DATABASE_STUDIOS',
   'db.publicAccess': 'NINEDEPLOY_AGENT_PUBLIC_DATABASES',
+  'db.pgbouncer': 'NINEDEPLOY_AGENT_PGBOUNCER',
   'build.nixpacks': 'NINEDEPLOY_AGENT_BUILDS',
   'build.railpack': 'NINEDEPLOY_AGENT_BUILDS',
   'docker.buildOptions': 'NINEDEPLOY_AGENT_BUILDS',

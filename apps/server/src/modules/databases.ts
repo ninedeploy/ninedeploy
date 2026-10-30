@@ -600,6 +600,13 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
           const proxy = `nd-dbpub-${d.slug}`;
           orphanedOnNode = (orphanedOnNode ? orphanedOnNode + ' ' : '') + `The public access proxy ${proxy} may still publish a port on node #${d.serverId}: remove it there with docker rm -f ${proxy}.`;
         }
+        // The PgBouncer sidecar holds the database password; it goes with the database.
+        try { await disablePgbouncer(app.db, d, dbLog); }
+        catch {
+          if (!force) throw new HttpError(502, 'node_pgbouncer_cleanup_unconfirmed', 'The node could not confirm removing the PgBouncer sidecar; the database record and data were retained. Retry when the node is back, or pass ?force=true to delete the record and leave the sidecar on the node.');
+          const sidecar = `nd-pgb-${d.slug}`;
+          orphanedOnNode = (orphanedOnNode ? orphanedOnNode + ' ' : '') + `The PgBouncer sidecar ${sidecar} may still run on node #${d.serverId}: remove it there with docker rm -f ${sidecar}.`;
+        }
         try {
           await runtime.remove({ purgeVolume: (req.query as { purgeVolume?: string }).purgeVolume === 'true' }, dbLog);
         } catch (err) {
