@@ -3,6 +3,7 @@ import { createDb, runMigrations, deploymentRuntimeOwners, deployments, eq, node
 import { claimNodeDeploymentAttempt, createNodeDeploymentAuthority, NodeDeploymentOwnershipLost } from '../../src/lib/nodeDeploymentOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { readServiceRuntimeOwner, MAX_RUNTIME_EPOCH } from '../../src/lib/serviceRuntimeOwner.js';
+import { beginNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
 
 let c: ReturnType<typeof createDb>;
 const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
@@ -15,6 +16,16 @@ beforeEach(async () => {
 afterEach(() => c.client!.close());
 
 describe('durable node deployment admission', () => {
+  it.each(['failed', 'cancelled'] as const)('keeps the preparation owner when a %s deployment has an unresolved node receipt', async status => {
+    const first = await claimNodeDeploymentAttempt(c.db, 9, await service(), '{}');
+    if (!first.claimed) throw Error('Missing admitted owner');
+    await beginNodeDeploymentPreparation(c.db, first.owner, { runtimeId: 'web-9', imageId: `sha256:${'f'.repeat(64)}`, serving: 1, capacity: 2 });
+    await c.db.update(deployments).set({ status }).where(eq(deployments.id, 9));
+    const before = await readServiceRuntimeOwner(c.db, 1);
+    expect(await claimNodeDeploymentAttempt(c.db, 10, await service(), '{}')).toEqual({ claimed: false, reason: 'not_claimable' });
+    expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(before);
+    expect((await c.db.query.deployments.findFirst({ where: eq(deployments.id, 10) }))?.status).toBe('queued');
+  });
   it('holds a successor while an initial Stop is still settling', async () => {
     const first = await claimNodeDeploymentAttempt(c.db, 9, await service(), '{}');
     expect(first.claimed).toBe(true);

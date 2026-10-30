@@ -59,7 +59,8 @@ export async function claimNodeDeploymentAttempt(db: DB, deploymentId: number, s
     }
     const claimed = await tx.update(deployments).set({ status: 'building', startedAt: new Date(), configSnapshot })
       .where(and(eq(deployments.id, deploymentId), eq(deployments.serviceId, service.id), inArray(deployments.status, ['queued', 'building']),
-        sql`NOT EXISTS (SELECT 1 FROM deployments AS active WHERE active.service_id = ${service.id} AND active.id <> ${deploymentId} AND active.status IN ('building','deploying'))`))
+        sql`NOT EXISTS (SELECT 1 FROM deployments AS active WHERE active.service_id = ${service.id} AND active.id <> ${deploymentId} AND active.status IN ('building','deploying'))`,
+        sql`NOT EXISTS (SELECT 1 FROM node_deployment_preparations AS pending WHERE pending.service_id = ${service.id} AND pending.deployment_id <> ${deploymentId})`))
       .returning({ id: deployments.id });
     if (!claimed.length) return { claimed: false, reason: 'not_claimable' };
     let owner = stamp;
