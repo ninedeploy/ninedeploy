@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Public node canary acceptance on isolated panel/node daemons. Keeps owned proof artifacts.
-// Usage: node scripts/smoke-node-canary.mjs --image=<candidate> [--proof=<output directory>] [--lifecycle-only]
+// Usage: node scripts/smoke-node-canary.mjs --image=<candidate> [--proof=<output directory>]
+// Optional focused modes: --lifecycle-only, --replica-databases-only, --initial-stop-only, --mixed-agent-only.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -12,9 +13,11 @@ import { nodeReplicaDatabaseApp } from './fixtures/node-replica-database-app.mjs
 const lifecycleOnly=process.argv.includes('--lifecycle-only');
 const replicaDatabasesOnly=process.argv.includes('--replica-databases-only');
 const initialStopOnly=process.argv.includes('--initial-stop-only');
-assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
+const mixedAgentOnly=process.argv.includes('--mixed-agent-only');
+assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image&&/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
+const agentImage=mixedAgentOnly?'ghcr.io/ninedeploy/ninedeploy:v0.18.10':image;
 const proof=resolve(process.argv.find(arg=>arg.startsWith('--proof='))?.slice(8)??('.temp_files/node-canary-'+randomBytes(6).toString('hex')));
 mkdirSync(proof,{recursive:true});
 const AGENT_IMAGE_REPO='ghcr.io/ninedeploy/ninedeploy';
@@ -35,7 +38,7 @@ async function api(path,{method='GET',body,raw=false,expectedStatus}={}){
  catch(error){throw new Error(`${method} ${path} did not complete within its request budget`,{cause:error});}
  const text=await r.text();if(expectedStatus!==undefined)assert.equal(r.status,expectedStatus,`${method} ${path}: ${text.slice(0,1200)}`);else assert.ok(r.ok,`${method} ${path}: ${r.status} ${text.slice(0,1200)}`);return raw?text:text?JSON.parse(text):null;
 }
-async function seed(){const save=spawn('docker',['save','node:26-slim',image,'busybox:1.36','registry:2'],{windowsHide:true,stdio:['ignore','pipe','pipe']}),load=spawn('docker',['exec','-i',daemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});save.stdout.pipe(load.stdin);save.stderr.resume();load.stdout.resume();load.stderr.resume();await Promise.all([save,load].map(p=>new Promise((r,j)=>{const timer=setTimeout(()=>{p.kill();j(Error('image transfer deadline'));},180000);p.on('error',j);p.on('close',c=>{clearTimeout(timer);c===0?r():j(Error(`image transfer ${c}`));});})));}
+async function seed(){const images=[...new Set(['node:26-slim',image,agentImage,'busybox:1.36','registry:2'])];const save=spawn('docker',['save',...images],{windowsHide:true,stdio:['ignore','pipe','pipe']}),load=spawn('docker',['exec','-i',daemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});save.stdout.pipe(load.stdin);save.stderr.resume();load.stdout.resume();load.stderr.resume();await Promise.all([save,load].map(p=>new Promise((r,j)=>{const timer=setTimeout(()=>{p.kill();j(Error('image transfer deadline'));},180000);p.on('error',j);p.on('close',c=>{clearTimeout(timer);c===0?r():j(Error(`image transfer ${c}`));});})));}
 const service=async id=>{const r=await api(`/v1/services/${id}`);return r.service??r;};
 const rows=id=>api(`/v1/services/${id}/deploys`);
 const log=(id,dep)=>api(`/v1/services/${id}/deploys/${dep}/logs/download`,{raw:true});
@@ -49,7 +52,7 @@ try{
  run(panelDaemon,['--network',net,'--privileged','-v',`${volume}:/data`,'-e','DOCKER_TLS_CERTDIR=','docker:28-dind']);
  await until(()=>docker(['exec',panelDaemon,'docker','info'],{allowFailure:true}).status===0,'Panel Docker daemon');
  await until(()=>inner(['info'],{allowFailure:true}).status===0,'Docker daemon');
- for(const required of ['node:26-slim',image,'busybox:1.36','registry:2'])if(docker(['image','inspect',required],{allowFailure:true}).status!==0)docker(['pull',required]);
+ for(const required of new Set(['node:26-slim',image,agentImage,'busybox:1.36','registry:2']))if(docker(['image','inspect',required],{allowFailure:true}).status!==0)docker(['pull',required]);
  await seed();console.log('Lightweight HTTP fixture base loaded');
  const fixtureImage=`127.0.0.1:5000/nd-readiness-app:${suffix}`;
  inner(["run","-d","--name","nd-owned-registry","-p","127.0.0.1:5000:5000","registry:2"]);
@@ -68,7 +71,7 @@ try{
  const nodeIp=docker(['inspect',daemon,'--format','{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}']).out;
  const registration=await api('/v1/servers',{method:'POST',body:{name:'Owned node routing proof',host:nodeIp,port:4600}});
  assert.ok(registration.id);assert.match(registration.tokenSha256,/^[a-f0-9]{64}$/);
- assert.ok(registration.agentCommand?.startsWith('docker run '));const args=registration.agentCommand.split(' ').slice(1);const imageSlot=args.findIndex(arg=>arg.startsWith(AGENT_IMAGE_REPO+':'));assert.ok(imageSlot>0);args[imageSlot]=image;args.splice(imageSlot,0,'--label','ninedeploy.proof='+label,'-e','NINEDEPLOY_AGENT_PROXY_TRAFFIC=on');inner(args);assert.equal(inner(['inspect','ninedeploy-agent','--format','{{.HostConfig.NetworkMode}}']).out,'bridge');
+ assert.ok(registration.agentCommand?.startsWith('docker run '));const args=registration.agentCommand.split(' ').slice(1);const imageSlot=args.findIndex(arg=>arg.startsWith(AGENT_IMAGE_REPO+':'));assert.ok(imageSlot>0);args[imageSlot]=agentImage;args.splice(imageSlot,0,'--label','ninedeploy.proof='+label,'-e','NINEDEPLOY_AGENT_PROXY_TRAFFIC=on');inner(args);assert.equal(inner(['inspect','ninedeploy-agent','--format','{{.HostConfig.NetworkMode}}']).out,'bridge');
  await until(async()=>{try{return(await api(`/v1/servers/${registration.id}/test`,{method:'POST'})).ok;}catch{return false;}},'sealed agent enrollment');
  const nodes=await api('/v1/servers');assert.ok(nodes.find(n=>n.id===registration.id)?.agent?.capabilities.includes('docker.readiness'));
 
@@ -85,9 +88,20 @@ try{
    assert.ok(replicaDatabase.id);assert.equal(replicaDatabase.status,'running');
    await api(`/v1/services/${id}/attachments`,{method:'POST',body:{databaseId:replicaDatabase.id,envAlias:'DATABASE_URL'}});
  }
- const readyEnv=initialStopOnly?await api('/v1/services/'+id+'/env',{method:'POST',body:{key:'NEEDS_READINESS',value:'1'}}):null;
+ const readyEnv=initialStopOnly||mixedAgentOnly?await api('/v1/services/'+id+'/env',{method:'POST',body:{key:'NEEDS_READINESS',value:'1'}}):null;
  const first=(await api('/v1/services/'+id+'/deploys',{method:'POST',body:{}})).deploymentId;
- if(initialStopOnly){
+ if(mixedAgentOnly){
+   const slug=(await service(id)).slug,name=`${slug}-${first}`;
+   await until(async()=>{const row=(await rows(id)).find(item=>item.id===first);if(row?.status==='failed')throw Error(await log(id,first));return inner(['inspect',name,'--format','{{.State.Running}}'],{allowFailure:true}).out==='true'&&(await log(id,first)).includes('Running healthcheck');},'old agent unready runtime',180000);
+   await api(`/v1/services/${id}/stop`,{method:'POST'});
+   const held=await until(async()=>{const command=(await api(`/v1/services/${id}/lifecycle`)).command;return command?.reason?command:false;},'old agent held Stop',90000);
+   assert.match(held.reason,/update.*0\.18\.11/i);assert.equal(held.phase,'fencing');
+   assert.equal(inner(['inspect',name,'--format','{{.State.Running}}']).out,'true');
+   assert.equal((await rows(id)).find(item=>item.id===first)?.status,'cancelled');
+   results.push({case:'old-agent-initial-stop-held',agentImage,passed:true});
+   writeFileSync(proof+'/runtime-result.json',JSON.stringify({realPublicApi:true,realWorker:true,standardBridgeAgent:true,mixedAgentOnly:true,cases:results,publicDnsTls:'NOT RUN',publication:false},null,2));
+   console.log(JSON.stringify(results[0]));
+ } else if(initialStopOnly){
    const slug=(await service(id)).slug;
    async function stopUnready(dep){
      const name=`${slug}-${dep}`;

@@ -356,6 +356,11 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect(steps[initialStop]!.if).toBe("matrix.suite == 'public-lifecycle'");
     expect(steps[initialStop]!['timeout-minutes']).toBeGreaterThan(0);
     expect((steps[initialStop] as Record<string, unknown>)['continue-on-error']).not.toBe(true);
+    const mixedAgent = steps.findIndex((s) => s.run?.includes('--mixed-agent-only'));
+    expect(mixedAgent).toBeGreaterThan(initialStop);
+    expect(steps[mixedAgent]!.if).toBe("matrix.suite == 'public-lifecycle'");
+    expect(steps[mixedAgent]!['timeout-minutes']).toBeGreaterThan(0);
+    expect((steps[mixedAgent] as Record<string, unknown>)['continue-on-error']).not.toBe(true);
     expect(composeRestore).toBeGreaterThan(nodeOps);
     expect(steps[composeRestore]!.run).toBe('node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only');
     expect(steps[composeRestore]!.if).toBe("matrix.suite == 'upgrade-journey'");
