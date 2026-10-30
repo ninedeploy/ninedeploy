@@ -2,11 +2,17 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, it } from 'vitest';
+import { afterEach, expect, it } from 'vitest';
 import { createDb, runMigrations } from '../src/index.js';
 
+let scratch: string;
+afterEach(() => {
+  try { rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); }
+  catch (error) { if (process.platform !== 'win32' || !['EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error; }
+});
+
 it('adds durable capacity evidence without changing existing deployments', async () => {
-  const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-node-capacity-migration-')));
+  scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-node-capacity-migration-')));
   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.includes('nd-node-capacity-migration-')) throw Error('Unsafe migration scratch');
   const url = `file:${join(scratch, 'state.db').split(sep).join('/')}`;
   let c = createDb({ url });
@@ -30,7 +36,5 @@ it('adds durable capacity evidence without changing existing deployments', async
     expect((await c.client!.execute('PRAGMA foreign_key_check')).rows).toEqual([]);
   } finally {
     c.client?.close();
-    try { rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); }
-    catch (error) { if (process.platform !== 'win32' || !['EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error; }
   }
 });
