@@ -154,7 +154,8 @@ describe('selected-node ordered runtime mutation client', () => {
   it('preserves cancellation through discovery and the actual mutation', async () => {
     const abort = new AbortController(); mutate = () => abort.abort(new Error('Cancelled'));
     await expect(invoke('retire', requests.retire, abort.signal)).rejects.toThrow('Cancelled');
-    expect(io.sealed).toHaveBeenCalledWith(db, 2, abort.signal); expect(io.op.mock.calls.every(call => call[5].signal === abort.signal)).toBe(true);
+    expect(io.sealed).toHaveBeenCalledWith(db, 2, expect.any(AbortSignal));
+    expect(io.op.mock.calls.every(call => call[5].signal.aborted && call[5].signal.reason === abort.signal.reason)).toBe(true);
     io.op.mockClear(); await expect(invoke('fence', requests.fence, abort.signal)).rejects.toThrow('Cancelled'); expect(io.op).not.toHaveBeenCalled();
   });
   it('charges discovery against the original deadline and rejects a late success', async () => {
@@ -163,5 +164,15 @@ describe('selected-node ordered runtime mutation client', () => {
     await expect(invoke('fence')).rejects.toThrow(/deadline/);
     expect(io.op.mock.calls[1]![3].timeoutMs).toBe(header.timeoutMs - 1000);
     expect(io.op.mock.calls[1]![5].timeoutMs).toBe(header.timeoutMs - 1000);
+  });
+  it('cancels stalled sealed discovery at the request deadline', async () => {
+    const abort = new AbortController();
+    io.sealed.mockImplementation(async (_db, _server, signal: AbortSignal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    const result = invoke('fence', { ...header, timeoutMs: 40 }, abort.signal);
+    const outcome = Promise.race([result.then(() => 'resolved', () => 'rejected'), new Promise<string>(resolve => setTimeout(() => resolve('hung'), 400))]);
+    try { expect(await outcome).toBe('rejected'); } finally { abort.abort(); await result.catch(() => undefined); }
+    expect(io.op).not.toHaveBeenCalled();
   });
 });
