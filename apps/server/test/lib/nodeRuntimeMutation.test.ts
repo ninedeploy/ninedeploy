@@ -302,6 +302,16 @@ describe('persistent runtime request admission', () => {
     expect(effects().filter(args => args[0] === 'start')).toEqual([['start', reply.items[0]!.id]]);
     io.spawn.mockClear(); await expect(runtime().prepare({ ...input, startNames: ['web-10', 'web-10-r2'] })).rejects.toThrow(/conflict/); expect(effects()).toEqual([]);
   });
+  it('does not use a later preparation owner to adopt and start an existing spare', async () => {
+    const specs = [spec(), spec(10, 'web-10-r2')];
+    await runtime().prepare({ ...prepare(5, 10, specs), startNames: ['web-10'] });
+    const spare = rows.find(row => row.name === 'web-10-r2')!;
+    expect(spare.running).toBe(false);
+    io.spawn.mockClear();
+    await expect(runtime().prepare({ ...prepare(9, 10, specs), startNames: ['web-10', 'web-10-r2'] })).rejects.toThrow(/occupied by another intent/);
+    expect(rows.find(row => row.id === spare.id)?.running).toBe(false);
+    expect(effects().filter(args => args[0] === 'start')).toEqual([]);
+  });
   it('prepares a completely stopped spare batch and joins its network without starting it', async () => {
     const prepared = await runtime().prepare({ ...prepare(), startNames: [] }); expect(prepared.items[0]!.running).toBe(false);
     const { running: _running, ...target } = prepared.items[0]!;
