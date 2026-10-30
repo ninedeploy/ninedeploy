@@ -368,7 +368,7 @@ describe('explicit Stop during primary readiness', () => {
         const next = await claimNodeDeploymentAttempt(f.db, 10, (await f.db.query.services.findFirst({ where: eq(services.id, 1) }))!, '{}');
         expect(next.claimed).toBe(true); superseded = true;
       }
-      return { exitCode: 0, lines: op === 'agent.ping' ? ['ND-AGENT {"version":"0.18.4","caps":["build-path-guard"]}'] : [] };
+      return { exitCode: 0, lines: op === 'agent.ping' ? ['ND-AGENT {"version":"0.18.4","caps":["build-path-guard","docker.recovery","docker.probe"]}'] : [] };
     });
     try {
       await f.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
@@ -2648,6 +2648,16 @@ describe('runDeployment on a remote-server target', () => {
       return { exitCode: 0, lines: [] };
     });
   };
+  it('refuses an unsealed node before pulling or changing a runtime', async () => {
+    const { db } = makeDb(); baseSetup(db, { image: 'nginx:latest', serverId: 4 });
+    h.agentTransportSealed.mockResolvedValue(false); h.agentOp.mockClear();
+    const lines = collectLogs(1);
+    try {
+      await runDeployment(db as never, 1);
+      expect(lines.join(' ')).toMatch(/sealed agent connection/i);
+      expect(h.agentOp.mock.calls.some(call => ['docker.pull', 'docker.runEnv', 'docker.runSpec', 'docker.rm', 'file.writeEnv'].includes(call[2]))).toBe(false);
+    } finally { h.agentTransportSealed.mockResolvedValue(true); logBus.removeAllListeners(); }
+  });
 
   /**
    * r037. `server_id` existed on the services table, on the Servers page and
@@ -3941,7 +3951,7 @@ describe('0.13: a GitHub App clone', () => {
 describe('0.13 (T5): GitHub App repositories on nodes — pipeline wiring', () => {
   const PANEL_TOKEN = 'ghs_PANELCLONE0123';
   const NODE_TOKEN = 'ghs_NODEJOB4567';
-  const CAPS = 'ND-AGENT {"version":"0.13.0","caps":["build-path-guard","workspace.remove","git.credential"]}';
+  const CAPS = 'ND-AGENT {"version":"0.13.0","caps":["build-path-guard","workspace.remove","git.credential","docker.recovery","docker.probe"]}';
   let egressEnv: string | undefined;
 
   beforeEach(() => {

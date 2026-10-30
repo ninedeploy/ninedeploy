@@ -333,6 +333,11 @@ describe('remote docker builder — what it refuses', () => {
     await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }))).rejects.toThrow(/agent|recovery/i);
     expect(calls.some(call => ['docker.runEnv', 'docker.runSpec', 'docker.rm', 'docker.stop'].includes(call.op))).toBe(false);
   });
+  it('refuses an unsealed node before any runtime or secret operation', async () => {
+    const { agent, calls } = fakeAgent();
+    await expect(createRemoteDockerBuilder(agent, { isSealed: async () => false }).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }))).rejects.toThrow(/sealed|unencrypted/i);
+    expect(calls).toEqual([]);
+  });
   it('refuses an unsupported default port probe before retiring the previous container', async () => {
     const { agent, calls } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.18.0","caps":["docker.recovery"]}'] } });
     await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1', publishedPort: 8080 }) }),

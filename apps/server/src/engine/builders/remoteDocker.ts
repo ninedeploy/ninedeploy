@@ -380,6 +380,8 @@ export function createRemoteDockerBuilder(
   opts: {
     pollMs?: number;
     nodeLabel?: string;
+    /** Confirm that sealed-only readiness and identity operations can run before mutation. */
+    isSealed?: () => Promise<boolean>;
     /** 0.13 (T5): the service's per-job Git credential (a GitHub App token); absent = anonymous clone. */
     gitCredential?: NodeGitCredentialSource;
     /**
@@ -410,6 +412,7 @@ export function createRemoteDockerBuilder(
   return {
     async buildAndRun(ctx: BuildContext, previous?: DeployRuntime): Promise<DeployRuntime> {
       const { service, deploymentId, env, imageDigest, registryAuth, log } = ctx;
+      if (opts.isSealed && !await opts.isSealed()) throw new RemoteDeployUnsupportedError('Node deployment requires a sealed agent connection for readiness and identity verification.');
       if (previous && (service.runtimeReplicas ?? 1) > 1) previousReplicaOwners.set(previous.runtimeId, service.id);
       const probeProtocol = service.healthCheck === 'http-strict' ? 'http' : service.healthCheck === 'tcp' ? 'tcp' : undefined;
       if (probeProtocol) {

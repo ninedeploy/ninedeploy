@@ -1056,7 +1056,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     remoteBuilderFor = (prebuiltImage) =>
       service.type === 'compose'
         ? createRemoteComposeBuilder(call, { nodeLabel: label, gitCredential })
-        : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential, ...(prebuiltImage ? { prebuiltImage } : {}) });
+        : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential, isSealed: async () => {
+          await nodeAuthority?.check();
+          try { return await agentTransportSealed(db, serverId, deployAbortSignal()); } finally { await nodeAuthority?.check(); }
+        }, ...(prebuiltImage ? { prebuiltImage } : {}) });
     builder = remoteBuilderFor();
   }
   // ── 0.16 T7 swarm: the builder (design §7.4, §7.5) ──
