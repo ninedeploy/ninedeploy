@@ -49,3 +49,15 @@ it('refuses old-owner updates after a newer operation or node placement wins', a
   await c.db.update(services).set({ serverId: null }).where(eq(services.id, 1));
   await expect(beginNodeDeploymentPreparation(c.db, owner, spec)).rejects.toThrow(/ownership|placement/);
 });
+it('does not admit new preparation for a settled deployment even if its owner remains current', async () => {
+  for (const status of ['failed', 'cancelled', 'running'] as const) {
+    await c.db.update(deployments).set({ status }).where(eq(deployments.id, 9));
+    await expect(beginNodeDeploymentPreparation(c.db, owner, spec)).rejects.toThrow(/deployment.*active/i);
+    expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
+  }
+});
+it('can retain an already-started creation receipt after cancellation', async () => {
+  await beginNodeDeploymentPreparation(c.db, owner, spec);
+  await c.db.update(deployments).set({ status: 'cancelled' }).where(eq(deployments.id, 9));
+  expect(await completeNodeDeploymentPreparation(c.db, owner, targets)).toMatchObject({ phase: 'prepared', targets });
+});

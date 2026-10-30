@@ -1,4 +1,4 @@
-import { eq, deploymentRuntimeOwners, nodeDeploymentPreparations, services, type DB, type DeploymentRuntimeOwner } from '@ninedeploy/db';
+import { eq, deploymentRuntimeOwners, deployments, nodeDeploymentPreparations, services, type DB, type DeploymentRuntimeOwner } from '@ninedeploy/db';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { readServiceRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 
@@ -27,6 +27,10 @@ export async function beginNodeDeploymentPreparation(db: DB, owner: DeploymentRu
     spec.serving < 1 || spec.capacity < spec.serving || spec.capacity > MAX_REPLICAS) throw new Error('Invalid node preparation intent');
   return db.transaction(async tx => {
     const service = await assertOwner(tx, owner);
+    const deployment = await tx.query.deployments.findFirst({ where: eq(deployments.id, owner.deploymentId) });
+    if (!deployment || deployment.serviceId !== owner.serviceId || !['building', 'deploying'].includes(deployment.status)) {
+      throw new Error('Node preparation deployment is not active');
+    }
     if (spec.runtimeId !== `${service.slug}-${owner.deploymentId}`) throw new Error('Invalid node preparation generation');
     await tx.insert(nodeDeploymentPreparations).values({ deploymentId: owner.deploymentId, serviceId: owner.serviceId, serverId: owner.serverId,
       epoch: owner.epoch, requestId: owner.requestId, ...spec }).onConflictDoNothing();
