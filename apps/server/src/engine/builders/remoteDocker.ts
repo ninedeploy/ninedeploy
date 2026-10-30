@@ -557,6 +557,7 @@ export function createRemoteDockerBuilder(
         port: resolvedPort,
         healthPath: service.healthPath ?? '/',
         ...(probeProtocol ? { healthCheck: service.healthCheck as 'http-strict' | 'tcp' } : {}),
+        ...(service.healthCheck === 'running' ? { healthCheck: 'running' as const } : {}),
         // r270: only a real digest is a digest. Recording the mutable tag (or
         // the node-local build tag) here made the deployment row claim digest
         // pinning while a rollback re-pulled whatever the tag points at today.
@@ -578,6 +579,9 @@ export function createRemoteDockerBuilder(
       options: { checkpoint?: () => Promise<void> } = {},
     ): Promise<boolean> {
       const deadline = Date.now() + timeoutMs;
+      // A running container is not ready to receive proxied traffic until its
+      // configured port listens. Explicit modes and rollback checks keep their policy.
+      const readinessMode = runtime.healthCheck ?? (runtime.port && directGraceMs > 0 ? 'tcp' : undefined);
       let interruption: { reason: unknown } | undefined;
       const checkpoint = async () => {
         try { await options.checkpoint?.(); }
@@ -599,7 +603,7 @@ export function createRemoteDockerBuilder(
       };
       if (runtime.nodeTargets?.length) {
         return verifyNodeReadiness((op, params, sink) => healthCall(op, params, sink), {
-          targets: runtime.nodeTargets, port: runtime.port, mode: runtime.healthCheck ?? 'auto', path: runtime.healthPath,
+          targets: runtime.nodeTargets, port: runtime.port, mode: readinessMode ?? 'auto', path: runtime.healthPath,
         }, Math.max(0, deadline - Date.now()), checkpoint, log);
       }
       // r265: the first `running` sample used to be the verdict and
@@ -647,13 +651,13 @@ export function createRemoteDockerBuilder(
             }
           }
           if (status === 'running' && (health === 'none' || health === 'healthy')) {
-            if (runtime.healthCheck === 'http-strict' || runtime.healthCheck === 'tcp') {
+            if (readinessMode === 'http-strict' || readinessMode === 'tcp') {
               if (!runtime.port) return failWithLogs('HTTP/TCP readiness needs a container port.');
               const result = await healthCall('docker.probe', {
                 name: runtime.runtimeId, port: runtime.port,
-                protocol: runtime.healthCheck === 'tcp' ? 'tcp' : 'http', path: runtime.healthPath,
+                protocol: readinessMode === 'tcp' ? 'tcp' : 'http', path: runtime.healthPath,
               });
-              const ready = confirmedNodeProbe(result.lines, result.exitCode, runtime.healthCheck === 'tcp' ? 'tcp' : 'http');
+              const ready = confirmedNodeProbe(result.lines, result.exitCode, readinessMode === 'tcp' ? 'tcp' : 'http');
               if (!ready) {
                 stable = 0;
                 await wait();
@@ -663,9 +667,9 @@ export function createRemoteDockerBuilder(
             stable += 1;
             if (stable >= needed) {
               log(
-                runtime.healthCheck === 'http-strict' || runtime.healthCheck === 'tcp'
-                  ? `${runtime.runtimeId} passed its ${runtime.healthCheck === 'tcp' ? 'TCP' : 'HTTP'} readiness probe on the node.`
-                  : runtime.healthCheck === 'command'
+                readinessMode === 'http-strict' || readinessMode === 'tcp'
+                  ? `${runtime.runtimeId} passed its ${readinessMode === 'tcp' ? 'TCP' : 'HTTP'} readiness probe on the node.`
+                  : readinessMode === 'command'
                   ? `${runtime.runtimeId} is running on the node and its healthcheck command passes.`
                   : `${runtime.runtimeId} is running on the node. Remote health is container state, not an ` +
                       'HTTP probe: the panel is outside the node network.',

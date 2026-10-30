@@ -122,6 +122,17 @@ it('does not promote a multi-replica runtime when only its primary is ready', as
   expect(samples.length).toBeGreaterThan(0);
   expect(samples.every(c => (c.params.targets as unknown[]).length === 2)).toBe(true);
 });
+it('requires a TCP readiness sample for each default-health node replica', async () => {
+  const f = fixture(), builder = createRemoteDockerBuilder(f.agent);
+  const runtime = await builder.buildAndRun(context(2));
+  vi.useFakeTimers();
+  const pending = builder.isHealthy({ ...runtime, healthCheck: undefined }, 6000, 1000);
+  await vi.advanceTimersByTimeAsync(6001);
+  expect(await pending).toBe(false);
+  const samples = f.calls.filter(call => call.op === 'docker.readiness');
+  expect(samples.length).toBeGreaterThan(0);
+  expect(samples.every(call => call.params.mode === 'tcp' && (call.params.targets as unknown[]).length === 2)).toBe(true);
+});
 
 it('retires every immutable prepared replica when a candidate fails before routing recovery is established', async () => {
   const f = fixture(); const builder = createRemoteDockerBuilder(f.agent);

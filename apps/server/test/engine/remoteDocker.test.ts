@@ -77,6 +77,11 @@ const ctx = (over: Partial<BuildContext> = {}): BuildContext =>
   }) as BuildContext;
 
 describe('remote docker builder — image services', () => {
+  it('preserves an explicitly configured container-state readiness mode', async () => {
+    const { agent } = fakeAgent();
+    const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1', healthCheck: 'running' }) }));
+    expect(runtime.healthCheck).toBe('running');
+  });
   it('records the actual image and pack conventions of an ordinary node source build when requested', async () => {
     const imageId = `sha256:${'c'.repeat(64)}`;
     const { agent, ops } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: [imageId] } });
@@ -312,6 +317,27 @@ describe('remote docker builder — repository services', () => {
 });
 
 describe('remote docker builder — what it refuses', () => {
+  it('does not accept a running default-health candidate before its configured port listens', async () => {
+    vi.useFakeTimers();
+    try {
+      const { agent, calls } = fakeAgent({ 'docker.probe': { exitCode: 0, lines: ['ND-PROBE {"ready":false,"protocol":"tcp"}'] } });
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/' }, 300, 10_000);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(false);
+      expect(calls.some(call => call.op === 'docker.probe' && call.params.protocol === 'tcp')).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+  it('accepts a default-health candidate only after consecutive successful TCP probes', async () => {
+    vi.useFakeTimers();
+    try {
+      let probes = 0; const { agent: base } = fakeAgent();
+      const agent: AgentCall = async (op, params, sink) => op === 'docker.probe'
+        ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: ++probes >= 2, protocol: 'tcp' })}`] } : base(op, params, sink);
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/' }, 1000, 10_000);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(true); expect(probes).toBe(4);
+    } finally { vi.useRealTimers(); }
+  });
   it('refuses opted-in readiness on an old agent before creating any runtime', async () => {
     const { agent, ops } = fakeAgent();
     await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1', healthCheck: 'http-strict' }) }))).rejects.toThrow(/Update the node agent/);
@@ -472,7 +498,7 @@ describe('remote docker builder — runtime shape', () => {
 });
 
 describe('remote docker builder — health and teardown', () => {
-  const runtime = { runtimeId: 'web-7', port: 3000, healthPath: '/' };
+  const runtime = { runtimeId: 'web-7', port: 3000, healthPath: '/', healthCheck: 'running' as const };
 
   it.each([
     { samples: ['running|none|0|0', null, 'running|none|0|0', null, 'running|none|0|0', 'exited|none|0|0'], healthy: false, inspects: 6 },
