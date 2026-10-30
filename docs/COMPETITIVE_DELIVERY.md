@@ -2,7 +2,9 @@
 
 Baseline: NineDeploy 0.17.1, main abf5a39a. This is an implementation and acceptance tracker, not a statement of competitor parity.
 
-Current published release: **0.18.4 = R1 (public node canary) plus the completed deployment-safety and durable node-lifecycle maintenance package**. Next feature release: **0.19.0 (R2: remaining runtime support)**. R3–R6 remain separate planned milestones; publish validated maintenance fixes between feature releases.
+Current published release: **0.18.11**. It includes R1's public node canary and incremental deployment-safety and node-lifecycle fixes. Next feature release: **0.19.0 (R2: remaining runtime support)**. R3–R6 remain separate planned milestones; publish validated maintenance fixes between feature releases.
+
+The [v0.18.11 release](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.18.11) points to `1b69b62d0ecda7269c81039fc1c14c8f9706bf53`. Its clean Linux `release:check`, exact-commit GitHub CI, release workflow and six published-image smoke groups passed, including two initial-deploy Stops followed by a successful deploy. The release archive and installer matched `SHA256SUMS`, and all five npm packages became available. The public smoke uses an isolated HTTP fixture; production DNS/TLS and broader R2 acceptance remain separate work.
 
 The v0.18.0 tag and image remain available as an unpublished candidate. The hosted smoke caught a setup race: readiness was changed during primary retirement, so the safety journal retained both generations and held the next deployment. The corrected smoke waits for settlement before the next readiness case. The 0.18.1 tag was also withheld after a repeated real canary smoke exposed agent operation capacity exhaustion; its workflow was cancelled before producing a registry image. Commit d8615abc separates bounded operation capacity from the invalid-request rejection budget. Published 0.18.2 preserves both earlier Git tags and the v0.18.0 image.
 
