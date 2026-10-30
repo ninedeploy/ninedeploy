@@ -11,8 +11,9 @@ type Placement = { serverId: number; runtimeId: string | null };
 export type NodeAutoscaleAdmission = { owner: ServiceRuntimeOwner; service: Service; targets: Placement[]; watermark: number; desiredReplicas: number; workerToken: string };
 export const NODE_AUTOSCALE_LEASE_MS = 90_000;
 /** The fence identity is stable across worker lease changes and panel restarts. */
-export function nodeAutoscaleFence(admission: NodeAutoscaleAdmission) {
-  return { requestId: createHash('sha256').update(`${admission.owner.requestId}:scale-fence:${admission.service.serverId}`).digest('hex').slice(0, 32),
+export function nodeAutoscaleFence(admission: NodeAutoscaleAdmission, serverId = admission.service.serverId!) {
+  if (serverId !== admission.service.serverId && !admission.targets.some(target => target.serverId === serverId)) throw new Error('Node autoscale fence placement changed');
+  return { requestId: createHash('sha256').update(`${admission.owner.requestId}:scale-fence:${serverId}`).digest('hex').slice(0, 32),
     serviceId: admission.service.id, revision: serviceRuntimeRevision(admission.owner.epoch, 0), timeoutMs: 30_000, deploymentWatermark: admission.watermark };
 }
 const snapshot = (s: Service) => JSON.stringify([s.type, s.orchestrator, s.slug, s.serverId, s.status, s.asleepAt,
@@ -67,7 +68,7 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, fresh.id)).limit(1);
     if (transition && (!/^[a-f0-9]{32}$/.test(admission.workerToken) || transition.workerToken !== admission.workerToken ||
       !transition.leaseUntil || transition.leaseUntil.getTime() <= Date.now())) throw new Error('Node autoscale worker lease changed or expired');
-    if (!transition || transition.phase !== 'accepted' || transition.ownerEpoch !== admission.owner.epoch || transition.requestId !== admission.owner.requestId ||
+    if (!transition || !['accepted', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping'].includes(transition.phase) || transition.ownerEpoch !== admission.owner.epoch || transition.requestId !== admission.owner.requestId ||
       transition.serverId !== fresh.serverId || transition.runtimeId !== fresh.runtimeId || transition.fromReplicas !== admission.service.runtimeReplicas ||
       transition.toReplicas !== admission.desiredReplicas || transition.watermark !== admission.watermark || transition.configuration !== snapshot(admission.service) ||
       JSON.stringify(transition.targets) !== JSON.stringify(admission.targets)) throw new Error('Node autoscale transition changed');
@@ -129,9 +130,34 @@ export async function freezeNodeAutoscaleInventory(db: DB, admission: NodeAutosc
     await assertCurrent(tx, admission, from);
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
     if (!transition) throw new Error('Node autoscale transition changed');
+    if (transition.phase !== 'accepted') throw new Error('Node autoscale inventory phase changed');
     if (transition.replicaInventory !== null && JSON.stringify(transition.replicaInventory) !== JSON.stringify(selected)) throw new Error('Node autoscale inventory changed');
     if (transition.replicaInventory === null) await tx.update(nodeAutoscaleTransitions).set({ replicaInventory: selected as NonNullable<typeof transition.replicaInventory> })
       .where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id), eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), isNull(nodeAutoscaleTransitions.replicaInventory)));
+  });
+}
+
+export type NodeAutoscalePhase = 'accepted' | 'prepared' | 'started' | 'ready' | 'routing' | 'draining' | 'stopping';
+/** Each phase change is fenced by the same worker, service owner, generation and expected serving count. */
+export async function advanceNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission, expected: NodeAutoscalePhase,
+  next: NodeAutoscalePhase | 'completed'): Promise<void> {
+  const up = admission.desiredReplicas > admission.service.runtimeReplicas;
+  const order: Array<NodeAutoscalePhase | 'completed'> = up
+    ? ['accepted', 'prepared', 'started', 'ready', 'routing', 'completed']
+    : ['accepted', 'prepared', 'routing', 'draining', 'stopping', 'completed'];
+  if (order.indexOf(next) !== order.indexOf(expected) + 1 || order.indexOf(expected) < 0) throw new Error('Invalid node autoscale phase transition');
+  const publishing = next === 'routing', serving = expected === 'routing' || expected === 'draining' || expected === 'stopping'
+    ? admission.desiredReplicas : admission.service.runtimeReplicas;
+  await db.transaction(async tx => {
+    await assertCurrent(tx, admission, serving);
+    const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
+    if (!transition || transition.phase !== expected || !transition.replicaInventory) throw new Error('Node autoscale phase or inventory changed');
+    if (publishing) {
+      const [updated] = await tx.update(services).set({ runtimeReplicas: admission.desiredReplicas }).where(and(eq(services.id, admission.service.id), eq(services.runtimeReplicas, serving))).returning();
+      if (!updated) throw new Error('Node autoscale replica count changed');
+    }
+    if (next === 'completed') await tx.delete(nodeAutoscaleTransitions).where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id), eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), eq(nodeAutoscaleTransitions.phase, expected)));
+    else await tx.update(nodeAutoscaleTransitions).set({ phase: next }).where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id), eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), eq(nodeAutoscaleTransitions.phase, expected)));
   });
 }
 

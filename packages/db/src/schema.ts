@@ -1877,7 +1877,7 @@ export const nodeAutoscaleTransitions = sqliteTable('node_autoscale_transitions'
   workerToken: text('worker_token'),
   leaseUntil: integer('lease_until', { mode: 'timestamp' }),
   replicaInventory: text('replica_inventory', { mode: 'json' }).$type<Array<{ id: string; name: string; deploymentId: number; running: boolean }>>(),
-  phase: text('phase', { enum: ['accepted', 'held'] }).notNull().default('accepted'),
+  phase: text('phase', { enum: ['accepted', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping', 'held'] }).notNull().default('accepted'),
   reason: text('reason'),
   createdAt: ts('created_at'),
   updatedAt: tsUpdatable('updated_at'),
