@@ -8,6 +8,8 @@ import { createNodeRuntimeMutation } from '../../src/lib/nodeRuntimeMutation.js'
 import { handoffStoppedNodeToLegacy } from '../../src/lib/nodeLegacyHandoff.js';
 import { createNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
 import { runOp } from '../../src/agent.js';
+import { prepareNodeAutoscaleCapacity } from '../../src/engine/builders/nodeAutoscalePrepare.js';
+import type { Service } from '@ninedeploy/db';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
 type Row = { id: string; name: string; managed: string | null; serviceId: string | null; deploymentId: string | null; composeProject?: string | null; nonce: string | null; specHash: string | null; running: boolean; status: string; networks: Record<string, object> };
@@ -98,6 +100,28 @@ describe('persistent runtime request admission', () => {
     expect(effects().filter(args => args[0] === 'start')).toEqual(result.items.map(item => ['start', item.id]));
     expect(effects()).toContainEqual(['network', 'connect', 'nd-extra', result.items[1]!.id]);
     expect(rows.every(row => row.nonce === nonce(5) && /^[a-f0-9]{64}$/.test(row.specHash!))).toBe(true);
+  });
+  it('prepares autoscale serving and stopped capacity through the real journal and agent operation', async () => {
+    mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
+    const service = { id: 7, serverId: 4, slug: 'web', type: 'docker', orchestrator: null, runtimeReplicas: 1, port: 3000,
+      autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } } as Service;
+    const owner = { serviceId: 7, serverId: 4, deploymentId: 10, epoch: 2, requestId: nonce(44) };
+    const client = { fence: (input: Parameters<ReturnType<typeof runtime>['fence']>[0]) => runtime().fence(input),
+      prepare: (input: Parameters<ReturnType<typeof runtime>['prepare']>[0]) => runtime().prepare(input) };
+    const result = await prepareNodeAutoscaleCapacity(client, { service, owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10,
+      extraNetworks: ['nd-extra'] });
+    expect(result.serving).toHaveLength(1); expect(result.capacity).toHaveLength(3);
+    expect(rows.map(row => [row.name, row.running, !!row.networks['nd-extra']])).toEqual([
+      ['web-10', true, true], ['web-10-r2', false, true], ['web-10-r3', false, true],
+    ]);
+    expect(effects().filter(args => args[0] === 'start')).toEqual([['start', result.serving[0]!.id]]);
+    expect(readFileSync(journalFile()).includes(Buffer.from('KEY=fixture'))).toBe(false);
+    await runtime().stop({ requestId: nonce(13), serviceId: 7, revision: 13, timeoutMs: 5000, graceSeconds: 0,
+      targets: result.capacity.map(target => ({ ...target, deploymentId: 10 })) });
+    io.spawn.mockClear();
+    await expect(prepareNodeAutoscaleCapacity(client, { service, owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10,
+      extraNetworks: ['nd-extra'] })).rejects.toThrow(/stale/);
+    expect(rows.every(row => !row.running)).toBe(true); expect(effects()).toEqual([]);
   });
   it('replays a completed creation receipt across a fresh journal instance without creating or starting a replacement', async () => {
     const first = await runtime().prepare(prepare()); const count = io.spawn.mock.calls.length; rows = [];
