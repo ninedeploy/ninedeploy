@@ -68,6 +68,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'docker.lifecycle.creationFence',
       'docker.lifecycle.retire',
       'docker.mutations',
+      'docker.prepareAttemptEnv',
       'docker.limits',
       'docker.startSet',
       'host.packages',
