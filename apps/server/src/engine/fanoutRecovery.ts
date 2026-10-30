@@ -42,7 +42,7 @@ function recoveryLease(db: DB, row: FanoutTransition, token: string) {
     const identity = await containerIdentity(db, row.serverId, row.candidateRuntimeId);
     if (!identity || identity.name !== row.candidateRuntimeId || identity.managed !== 'service' || identity.serviceId !== String(row.serviceId) || identity.deploymentId !== String(row.deploymentId)) throw new Error('Candidate ownership was not confirmed; runtimes retained');
     if (row.candidateContainerId && row.candidateContainerId !== identity.id) throw new Error('Candidate container identity changed; retained');
-    await patch({ candidateContainerId: identity.id });
+    await patch({ candidateContainerId: identity.id, ...(createdId ? { phase: 'preparing' as const, reason: null } : {}) });
   };
   const retire = async (name: string) => {
     await check();

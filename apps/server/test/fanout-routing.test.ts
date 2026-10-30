@@ -71,6 +71,33 @@ async function finish<T>(run: Promise<T>) { await pump(run); return run; }
 const stops = () => h.agent.mock.calls.filter(c => c[2] === 'docker.stop' || c[2] === 'docker.retire').map(c => c[3].name);
 const target = () => f.db.query.serviceTargets.findFirst({ where: eq(serviceTargets.id, 1) });
 describe('routed fan-out promotion through SQLite and the real renderer/writer', () => {
+  it('persists an unknown-creation hold before sending the container start request', async () => {
+    const original = h.agent.getMockImplementation()!; let phaseAtStart: string | undefined;
+    h.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'docker.runEnv') phaseAtStart = (await pendingJournal())[0]?.phase;
+      return original(...args);
+    });
+    expect((await finish(start()))[0]).toMatchObject({ ok: true, runtimeId: candidate });
+    expect(phaseAtStart).toBe('blocked');
+  });
+  it('does not adopt an in-flight candidate after the worker lease expires', async () => {
+    const original = h.agent.getMockImplementation()!, pending = gate(); let started = false;
+    h.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'docker.runEnv') { started = true; await pending.promise; }
+      return original(...args);
+    });
+    const run = start();
+    let result: Awaited<typeof run>;
+    try {
+      for (let i = 0; i < 2000 && !started; i++) await new Promise<void>(resolve => yieldIO(resolve));
+      expect(started).toBe(true);
+      await f.db.update(fanoutTransitions).set({ leaseUntil: new Date(0) });
+      expect(await finish(recover())).toEqual({ recovered: 0, held: 1 });
+      expect(stops()).toEqual([]); expect(writes).toEqual([]);
+    } finally { pending.release(); result = await finish(run); }
+    expect(result[0]).toMatchObject({ ok: false, runtimeId: old });
+    expect((await target())?.runtimeId).toBe(old); expect(stops()).toEqual([]); expect(writes).toEqual([]);
+  });
   it('retains the old target when the created candidate name is replaced before identity capture', async () => {
     const original = h.agent.getMockImplementation()!;
     h.agent.mockImplementation(async (...args) => args[2] === 'docker.identity' && args[3].name === candidate

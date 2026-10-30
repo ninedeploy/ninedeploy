@@ -494,6 +494,7 @@ export async function deployToTargets(
           }
           // 0.16.5: the files are on the target before its container starts.
           const fileMounts = await writeNodeFileMounts(agent, ctx.service, ctx.deploymentId, files, log);
+          if (recovery) await recovery.blockUnknownCreation();
           recordCreation(await agent(
             'docker.runSpec',
             runSpecParams(ctx.service as never, {
@@ -510,6 +511,7 @@ export async function deployToTargets(
             log,
           ));
         } else {
+          if (recovery) await recovery.blockUnknownCreation();
           recordCreation(await agent('docker.runEnv', runParams, log));
         }
         // ── end 0.16 T4 ──
