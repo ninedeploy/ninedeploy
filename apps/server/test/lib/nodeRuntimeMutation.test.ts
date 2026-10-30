@@ -140,6 +140,24 @@ describe('persistent runtime request admission', () => {
       extraNetworks: ['nd-extra'] })).rejects.toThrow(/stale/);
     expect(rows.every(row => !row.running)).toBe(true); expect(effects()).toEqual([]);
   });
+  it('replays a lost autoscale preparation response without repeating container effects', async () => {
+    mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
+    const service = { id: 7, serverId: 4, slug: 'web', type: 'docker', orchestrator: null, runtimeReplicas: 1, port: 3000,
+      autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } } as Service;
+    const owner = { serviceId: 7, serverId: 4, deploymentId: 10, epoch: 2, requestId: nonce(44) };
+    let attempts = 0;
+    const client = { fence: (input: Parameters<ReturnType<typeof runtime>['fence']>[0]) => runtime().fence(input),
+      prepare: async (input: Parameters<ReturnType<typeof runtime>['prepare']>[0]) => {
+        const receipt = await runtime().prepare(input);
+        if (++attempts === 1) throw new Error('response lost after preparation');
+        return receipt;
+      } };
+    const result = await prepareNodeAutoscaleCapacity(client, { service, owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
+    expect(attempts).toBe(2); expect(result.capacity).toHaveLength(3);
+    expect(effects().filter(args => args[0] === 'create')).toHaveLength(3);
+    expect(effects().filter(args => args[0] === 'start')).toHaveLength(1);
+    expect(rows.map(row => row.running)).toEqual([true, false, false]);
+  });
   it('replays a lost scale-up receipt and safely scales down through the same agent journal', async () => {
     const c = createDb({ url: 'file::memory:' });
     try {
