@@ -23,19 +23,30 @@ export async function recoverCompletedInitialStop(db: DB, service: Service, deps
   const nodes = command.snapshot.unselected.participants;
   if (!Array.isArray(nodes) || nodes.length !== accepted.length || new Set(accepted).size !== accepted.length ||
     new Set(nodes.map(node => node.serverId)).size !== nodes.length || nodes.some(node => !accepted.includes(node.serverId))) throw new Error('Completed initial Stop placement is unconfirmed');
-  const current = await db.query.services.findFirst({ where: and(eq(services.id, service.id), eq(services.serverId, command.serverId)) });
-  const fanout = await db.select({ targetId: serviceTargets.id, serverId: serviceTargets.serverId, runtimeId: serviceTargets.runtimeId })
-    .from(serviceTargets).where(eq(serviceTargets.serviceId, service.id)).orderBy(serviceTargets.id);
-  if (!current || current.runtimeId !== null || JSON.stringify(fanout) !== JSON.stringify(command.snapshot.fanout ?? [])) throw new Error('Completed initial Stop placement changed');
+  const checkpoint = async () => {
+    await deps.check();
+    const current = await db.query.services.findFirst({ where: and(eq(services.id, service.id), eq(services.serverId, command.serverId)) });
+    const fanout = await db.select({ targetId: serviceTargets.id, serverId: serviceTargets.serverId, runtimeId: serviceTargets.runtimeId })
+      .from(serviceTargets).where(eq(serviceTargets.serviceId, service.id)).orderBy(serviceTargets.id);
+    const latest = await db.query.nodeLifecycleIntents.findFirst({ where: eq(nodeLifecycleIntents.serviceId, service.id), orderBy: desc(nodeLifecycleIntents.id) });
+    await deps.check();
+    if (!current || current.type !== 'docker' || current.orchestrator === 'swarm' || current.runtimeId !== null ||
+      JSON.stringify(fanout) !== JSON.stringify(command.snapshot.fanout ?? []) || latest?.id !== command.id || latest.phase !== 'completed' ||
+      latest.requestId !== command.requestId || latest.serverId !== command.serverId || latest.action !== 'stop' || latest.runtimeId !== null ||
+      JSON.stringify(latest.snapshot) !== JSON.stringify(command.snapshot) || JSON.stringify(latest.targets) !== JSON.stringify(command.targets)) {
+      throw new Error('Completed initial Stop placement changed');
+    }
+  };
+  await checkpoint();
   for (const serverId of accepted) {
-    await deps.check();
+    await checkpoint();
     if (!await deps.sealed(serverId)) throw new Error('Completed initial Stop requires a sealed node connection');
-    await deps.check();
+    await checkpoint();
     let ping: { exitCode: number; lines: string[] } | undefined;
     const refusal = await capabilityRefusal(async (op, params) => {
-      await deps.check();
+      await checkpoint();
       const result = await deps.agent(serverId, op, params);
-      await deps.check();
+      await checkpoint();
       if (op === 'agent.ping') ping = result;
       return result;
     }, `#${serverId}`, true, { cap: 'docker.mutations', feature: 'recover an initial Stop', sealedRequired: true });
@@ -45,10 +56,10 @@ export async function recoverCompletedInitialStop(db: DB, service: Service, deps
     }
   }
   for (const serverId of accepted) {
-    await deps.check();
+    await checkpoint();
     const input = { requestId: command.requestId, serviceId: command.serviceId, revision: nodeLifecycleWireRevision(command, 'effect'), deploymentWatermark: watermark!, timeoutMs: 30_000 };
     const result = await deps.agent(serverId, 'docker.runtimeLegacyHandoff', input);
-    await deps.check();
+    await checkpoint();
     const frames = result.lines.filter(line => line.startsWith('ND-RUNTIME-LEGACY '));
     if (result.exitCode !== 0 || frames.length !== 1 || Buffer.byteLength(frames[0]!) > 16_384) throw new Error('Completed initial Stop handoff receipt unavailable');
     const reply = confirmation.parse(JSON.parse(frames[0]!.slice('ND-RUNTIME-LEGACY '.length)));

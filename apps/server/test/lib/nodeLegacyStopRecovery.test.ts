@@ -42,9 +42,36 @@ describe('completed initial Stop recovery', () => {
     await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5 });
     await expect(recoverCompletedInitialStop(c.db, await service(), deps)).rejects.toThrow(/placement changed/);
   });
+  it('rechecks placement after a slow agent ping before any handoff', async () => {
+    const deps = dependencies();
+    const original = deps.agent.getMockImplementation()!;
+    deps.agent.mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (args[1] === 'agent.ping') await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5 });
+      return result;
+    });
+    await expect(recoverCompletedInitialStop(c.db, await service(), deps)).rejects.toThrow(/placement changed/);
+    expect(deps.agent.mock.calls.map(call => call[1])).toEqual(['agent.ping']);
+  });
+  it('rejects a changed completed Stop snapshot after an agent reply', async () => {
+    const deps = dependencies(), original = deps.agent.getMockImplementation()!;
+    const saved = (await c.db.query.nodeLifecycleIntents.findFirst())!;
+    deps.agent.mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (args[1] === 'agent.ping') await c.db.update(nodeLifecycleIntents).set({ snapshot: { ...saved.snapshot, creationFenceDeploymentId: 11 } }).where(eq(nodeLifecycleIntents.id, saved.id));
+      return result;
+    });
+    await expect(recoverCompletedInitialStop(c.db, await service(), deps)).rejects.toThrow(/placement changed/);
+    expect(deps.agent.mock.calls.map(call => call[1])).toEqual(['agent.ping']);
+  });
   it('does not accept a reply after deployment authority is lost', async () => {
     const deps = dependencies();
-    deps.check.mockResolvedValueOnce().mockResolvedValueOnce().mockResolvedValueOnce().mockResolvedValueOnce().mockRejectedValueOnce(new Error('lost authority'));
+    const original = deps.agent.getMockImplementation()!;
+    deps.agent.mockImplementationOnce(async (...args) => {
+      const result = await original(...args);
+      deps.check.mockRejectedValue(new Error('lost authority'));
+      return result;
+    });
     await expect(recoverCompletedInitialStop(c.db, await service(), deps)).rejects.toThrow('lost authority');
     expect(deps.agent).toHaveBeenCalledOnce();
   });
@@ -66,5 +93,20 @@ describe('completed initial Stop recovery', () => {
       : [] }));
     await expect(recoverCompletedInitialStop(c.db, await service(), deps)).rejects.toThrow(/node #5.*0\.18\.11/i);
     expect(deps.agent.mock.calls.map(call => [call[0], call[1]])).toEqual([[4, 'agent.ping'], [5, 'agent.ping']]);
+  });
+  it('does not continue to another node when placement changes during a handoff', async () => {
+    await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5 });
+    await c.db.update(services).set({ status: 'deploying' }).where(eq(services.id, 1));
+    await c.db.insert(deployments).values({ id: 11, serviceId: 1, status: 'building' });
+    const stop = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    await c.db.update(nodeLifecycleIntents).set({ phase: 'completed', targets: [], completedAt: new Date() }).where(eq(nodeLifecycleIntents.id, stop.id));
+    const deps = dependencies(), original = deps.agent.getMockImplementation()!;
+    deps.agent.mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (args[0] === 4 && args[1] === 'docker.runtimeLegacyHandoff') await c.db.delete(serviceTargets).where(eq(serviceTargets.serviceId, 1));
+      return result;
+    });
+    await expect(recoverCompletedInitialStop(c.db, await service(), deps)).rejects.toThrow(/placement changed/);
+    expect(deps.agent.mock.calls.map(call => [call[0], call[1]])).toEqual([[4, 'agent.ping'], [5, 'agent.ping'], [4, 'docker.runtimeLegacyHandoff']]);
   });
 });
