@@ -1,4 +1,5 @@
 import { pruneErrorEvents } from '../lib/errorIngest.js';
+import { nodePreparationExists } from '../lib/nodePreparationRetention.js';
 import { tmpdir } from 'node:os';
 import { readdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
@@ -264,7 +265,7 @@ async function pruneOldDeployments(db: import('@ninedeploy/db').DB, maxAgeMs: nu
  * the build log of the deploy currently serving traffic was deleted.
  */
 function recoveryProtectsHistory() {
-  return sql`EXISTS (SELECT 1 FROM swarm_transitions WHERE swarm_transitions.service_id = ${deployments.serviceId}) OR EXISTS (SELECT 1 FROM primary_transitions WHERE primary_transitions.service_id = ${deployments.serviceId})`;
+  return sql`EXISTS (SELECT 1 FROM swarm_transitions WHERE swarm_transitions.service_id = ${deployments.serviceId}) OR EXISTS (SELECT 1 FROM primary_transitions WHERE primary_transitions.service_id = ${deployments.serviceId}) OR ${nodePreparationExists()}`;
 }
 
 export async function unsweepableDeploymentIds(db: import('@ninedeploy/db').DB): Promise<Set<number>> {
