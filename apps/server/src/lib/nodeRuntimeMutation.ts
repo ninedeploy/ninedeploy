@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, type ContainerInventoryReply, type ContainerStopSetReply, containerLifecycleRequest, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest,
   runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply, type ContainerNetworkSetReply, type ContainerPrepareReply, type ContainerRetireSetReply, type RuntimeFenceReply } from '@ninedeploy/schemas';
 import { parseRunSpec, runSpecArgv, type RunSpec } from '../agentOps/runSpec.js';
+import { containerLimitsRequest, containerLimitsReply, type ContainerLimitsReply } from '@ninedeploy/schemas';
 import { assertFileMountsWritten } from '../agentOps/fileMounts.js';
 import { assertLegacyNodeMutationAllowed, withNodeServiceJournal, type NodeServiceJournal } from './nodeLifecycle.js';
 import { spawnValidated } from './spawnValidated.js';
@@ -13,6 +14,7 @@ import { replayHandedOffStop } from './nodeLegacyHandoff.js';
 const MODE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_protocol (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)';
 const PREPARE_SHAPE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL)';
 const INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"nonce":{{json (index .Config.Labels "ninedeploy.mutation")}},"specHash":{{json (index .Config.Labels "ninedeploy.spec")}},"status":{{json .State.Status}},"running":{{json .State.Running}},"networks":{{json .NetworkSettings.Networks}}}';
+const LIMIT_INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"status":{{json .State.Status}},"running":{{json .State.Running}},"restarts":{{json .RestartCount}},"cpuShares":{{json .HostConfig.CpuShares}},"nanoCpus":{{json .HostConfig.NanoCpus}},"memory":{{json .HostConfig.Memory}},"memorySwap":{{json .HostConfig.MemorySwap}}}';
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
   : value !== null && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical((value as Record<string, unknown>)[key])])) : value;
@@ -312,6 +314,53 @@ export function createNodeRuntimeMutation(root: string) {
           }
           return containerNetworkSetReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision,
             action: input.action, networks: input.networks, complete: true, items: input.targets.map(target => ({ ...target, connected })) });
+        });
+      });
+    },
+    async limits(params: unknown, onLine: (line: string) => void = () => {}): Promise<ContainerLimitsReply> {
+      const input = containerLimitsRequest.parse(params), { timeoutMs: _timeout, ...intent } = input;
+      return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, async journal => {
+        const admitted = await claim(journal, input, { kind: 'limits', ...intent });
+        return effect(journal, input, admitted.hash, value => {
+          const receipt = containerLimitsReply.parse(value);
+          if (receipt.items.length !== input.targets.length || input.targets.some(target => !receipt.items.some(item =>
+            item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId))) throw new Error('Limit receipt identity changed');
+          return receipt;
+        }, async () => {
+          const read = async (target: typeof input.targets[number]) => {
+            journal.current(); const lines: string[] = []; let bytes = 0;
+            const code = await spawnValidated('docker', ['inspect', '--type', 'container', '--format', LIMIT_INSPECT, target.id], line => {
+              bytes += Buffer.byteLength(line); if (bytes <= 16_384) lines.push(line);
+            }, { timeoutMs: journal.remaining() });
+            journal.current();
+            if (code !== 0 || bytes > 16_384 || lines.length !== 1) throw new Error('Limit target inspection unavailable');
+            const row = JSON.parse(lines[0]!) as Record<string, unknown>;
+            if (!row || typeof row !== 'object' || row.id !== target.id || row.name !== target.name && row.name !== '/' + target.name ||
+              row.managed !== 'service' || row.serviceId !== String(input.serviceId) || row.deploymentId !== String(target.deploymentId) ||
+              !['running', 'created', 'exited'].includes(String(row.status)) || typeof row.running !== 'boolean' ||
+              row.running !== (row.status === 'running') || !['restarts', 'cpuShares', 'nanoCpus', 'memory'].every(key => Number.isSafeInteger(row[key]) && Number(row[key]) >= 0) ||
+              !Number.isSafeInteger(row.memorySwap) || Number(row.memorySwap) < -1) throw new Error('Limit target ownership or state changed');
+            return row;
+          };
+          const before = [];
+          for (const target of input.targets) before.push(await read(target));
+          const args = ['update'];
+          if (input.cpuShares !== undefined) args.push('--cpu-shares', String(input.cpuShares));
+          if (input.cpuLimitMilli !== undefined) args.push('--cpus', String(input.cpuLimitMilli / 1000));
+          if (input.memLimitMb !== undefined) args.push('--memory', `${input.memLimitMb}m`, '--memory-swap', `${input.memLimitMb}m`);
+          journal.current();
+          const code = await spawnValidated('docker', [...args, ...input.targets.map(target => target.id)], onLine, { timeoutMs: journal.remaining() });
+          journal.current(); if (code !== 0) throw new Error('Limit update is unconfirmed');
+          for (const [index, target] of input.targets.entries()) {
+            const after = await read(target), first = before[index]!;
+            if (after.status !== first.status || after.running !== first.running || after.restarts !== first.restarts ||
+              input.cpuShares !== undefined && after.cpuShares !== input.cpuShares ||
+              input.cpuLimitMilli !== undefined && after.nanoCpus !== input.cpuLimitMilli * 1_000_000 ||
+              input.memLimitMb !== undefined && (after.memory !== input.memLimitMb * 1_048_576 || after.memorySwap !== after.memory)) {
+              throw new Error('Updated limits or target state are unconfirmed');
+            }
+          }
+          return containerLimitsReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision, complete: true, items: input.targets });
         });
       });
     },
