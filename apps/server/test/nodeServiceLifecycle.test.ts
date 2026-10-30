@@ -57,6 +57,40 @@ async function finish<T>(promise: Promise<T>): Promise<T> {
 }
 
 describe('public ordered node lifecycle', () => {
+  it('holds an initial Stop with an actionable update reason before effects on a 0.18.10 agent', async () => {
+    await c.db.update(services).set({ runtimeId: null, status: 'deploying' }).where(eq(services.id, 1));
+    await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'building' });
+    network.agentOp.mockImplementation(async (_db, _server, op) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.18.10', caps: ['docker.mutations', 'proxy.routingAck'] })] };
+      return { exitCode: 1, lines: ['Unsupported operation'] };
+    });
+    const instance = await app();
+    const response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    expect(response.statusCode).toBe(202);
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{ id: response.json().lifecycle.id, state: 'held' }]);
+    const command = (await c.db.query.nodeLifecycleIntents.findFirst())!;
+    expect(command.reason).toMatch(/update.*0\.18\.11/i);
+    expect(network.agentOp.mock.calls.map(call => call[2])).toEqual(['agent.ping']);
+    expect((await service()).status).toBe('stopped');
+  });
+  it('preflights every initial Stop participant before mutating any node', async () => {
+    await c.db.insert(servers).values({ id: 5, name: 'Old node', host: 'old.test', tokenEncrypted: 'fixture' });
+    await c.db.update(services).set({ runtimeId: null, status: 'deploying' }).where(eq(services.id, 1));
+    await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5 });
+    await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'building' });
+    network.agentOp.mockImplementation(async (_db, serverId, op) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: serverId === 4 ? '0.18.11' : '0.18.10', caps: ['docker.mutations', 'proxy.routingAck'] })] };
+      throw Error('A node was mutated before every participant was checked');
+    });
+    const instance = await app();
+    const response = await instance.inject({ method: 'POST', url: '/1/stop', headers: asUser() });
+    expect(response.statusCode).toBe(202);
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    expect(await finish(reconcileNodeLifecycleIntents(c.db))).toEqual([{ id: response.json().lifecycle.id, state: 'held' }]);
+    expect((await c.db.query.nodeLifecycleIntents.findFirst())!.reason).toMatch(/node #5.*0\.18\.11/i);
+    expect(network.agentOp.mock.calls.map(call => [call[1], call[2]])).toEqual([[4, 'agent.ping'], [5, 'agent.ping']]);
+  });
   it('stops every accepted unselected node and clears pending fan-out state without mixing equal IDs across hosts', async () => {
     await c.db.update(services).set({ runtimeId: null, status: 'deploying' }).where(eq(services.id,1));
     await c.db.insert(deployments).values({id:9,serviceId:1,status:'building'});

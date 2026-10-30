@@ -32,7 +32,7 @@ it.each(['normal', 'lost-handoff-reply', 'wrong-fence-watermark', 'old-panel'] a
     const deps = {
       sealed: async () => true, route: async () => {}, sleep: async () => {},
       agent: async (_server: number, op: string, params: Record<string, unknown>) => {
-        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.18.10', caps: ['docker.mutations', 'proxy.routingAck'] })] };
+        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.18.11', caps: ['docker.mutations', 'proxy.routingAck'] })] };
         if (op === 'docker.runtimeLegacyHandoff' && mode === 'old-panel') return { exitCode: 0, lines: ['ND-RUNTIME-LEGACY ' + JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, deploymentWatermark: params.deploymentWatermark, complete: true })] };
         const lines: string[] = [];
         const exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });

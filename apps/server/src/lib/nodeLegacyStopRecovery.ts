@@ -1,6 +1,7 @@
 import { and, desc, eq, nodeLifecycleIntents, serviceTargets, services, type DB, type Service } from '@ninedeploy/db';
 import { z } from 'zod';
 import { nodeLifecycleWireRevision } from './nodeLifecycleIntent.js';
+import { agentVersionAtLeast, capabilityRefusal, parseAgentCapabilities } from './agentCapabilities.js';
 
 type RecoveryDeps = {
   check: () => Promise<void>;
@@ -29,6 +30,21 @@ export async function recoverCompletedInitialStop(db: DB, service: Service, deps
   for (const serverId of accepted) {
     await deps.check();
     if (!await deps.sealed(serverId)) throw new Error('Completed initial Stop requires a sealed node connection');
+    await deps.check();
+    let ping: { exitCode: number; lines: string[] } | undefined;
+    const refusal = await capabilityRefusal(async (op, params) => {
+      await deps.check();
+      const result = await deps.agent(serverId, op, params);
+      await deps.check();
+      if (op === 'agent.ping') ping = result;
+      return result;
+    }, `#${serverId}`, true, { cap: 'docker.mutations', feature: 'recover an initial Stop', sealedRequired: true });
+    if (refusal) throw new Error(refusal.message);
+    if (!ping || ping.exitCode !== 0 || !agentVersionAtLeast(parseAgentCapabilities(ping.lines).version, '0.18.11')) {
+      throw new Error(`Update the agent on node #${serverId} to 0.18.11 or newer to recover its initial Stop`);
+    }
+  }
+  for (const serverId of accepted) {
     await deps.check();
     const input = { requestId: command.requestId, serviceId: command.serviceId, revision: nodeLifecycleWireRevision(command, 'effect'), deploymentWatermark: watermark!, timeoutMs: 30_000 };
     const result = await deps.agent(serverId, 'docker.runtimeLegacyHandoff', input);

@@ -4,7 +4,7 @@ import { containerInventoryRequest, containerInventoryReply, containerStopSetReq
 import { z } from 'zod';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import type { AgentOpResult } from './agentClient.js';
-import { capabilityRefusal } from './agentCapabilities.js';
+import { agentVersionAtLeast, capabilityRefusal, parseAgentCapabilities } from './agentCapabilities.js';
 import { HttpError } from './errors.js';
 import {
   advanceNodeLifecycleIntent, checkpointNodeLifecycleIntent, claimNodeLifecycleIntent, holdNodeLifecycleIntent,
@@ -226,12 +226,20 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
     for (const participant of participants()) {
       const sealed = await deps.sealed(participant.serverId);
       await checkpoint();
-      const refusal = await capabilityRefusal((op, params) => call(participant.serverId, op, params, 5000), `#${participant.serverId}`, sealed, {
+      let ping: AgentOpResult | undefined;
+      const refusal = await capabilityRefusal(async (op, params) => {
+        const result = await call(participant.serverId, op, params, 5000);
+        if (op === 'agent.ping') ping = result;
+        return result;
+      }, `#${participant.serverId}`, sealed, {
         cap: intent.snapshot.unselected ? ['docker.mutations', 'proxy.routingAck'] : ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck',
           ...(requiresCreationFence ? ['docker.lifecycle.creationFence' as const, 'docker.lifecycle.generations' as const, 'docker.lifecycle.retire' as const] : [])], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
       });
       await checkpoint();
       if (refusal) throw new Error(refusal.message);
+      if (intent.snapshot.unselected && !agentVersionAtLeast(parseAgentCapabilities(ping?.lines ?? []).version, '0.18.11')) {
+        throw new Error(`Update the agent on node #${participant.serverId} to 0.18.11 or newer to complete initial Stop safely`);
+      }
     }
     let readyThisRun = false, routingRemovedThisRun = false;
     while (true) {
