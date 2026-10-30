@@ -18,10 +18,13 @@ export async function prepareNodeAutoscaleDeployment(input: {
   service: Service; owner: DeploymentRuntimeOwner; image: string; creationWatermark: number; env: Record<string, string>;
   attachments?: readonly NodeVolumeAttachment[]; files?: readonly NodeServiceFile[]; extraNetworks?: readonly string[];
   agent: AgentCall; client: CapacityClient; sealed: boolean; checkpoint: () => Promise<void>; log: (line: string) => void;
-  journal?: { begin: (spec: { runtimeId: string; imageId: string; serving: number; capacity: number }) => Promise<unknown>;
+  journal: { begin: (spec: { runtimeId: string; imageId: string; serving: number; capacity: number }) => Promise<unknown>;
     complete: (targets: Array<{ id: string; name: string }>) => Promise<unknown> };
 }) {
   const { service, owner } = input, label = `#${owner.serverId}`, attachments = input.attachments ?? [], files = input.files ?? [];
+  if (!input.journal || typeof input.journal.begin !== 'function' || typeof input.journal.complete !== 'function') {
+    throw new Error('Node autoscale preparation requires a durable journal');
+  }
   const scale = autoscaleConfig.safeParse(service.autoscale);
   if (service.type !== 'docker' || service.orchestrator === 'swarm' || service.id !== owner.serviceId || service.serverId !== owner.serverId ||
     !Number.isSafeInteger(owner.deploymentId) || owner.deploymentId < 1 || !Number.isSafeInteger(input.creationWatermark) ||
@@ -47,12 +50,10 @@ export async function prepareNodeAutoscaleDeployment(input: {
   if (image.exitCode !== 0 || !match) throw new Error('Node autoscale immutable image is unconfirmed');
   const runtimeOptions = await nodeRuntimeOptions(call, label, input.sealed, service, input.log);
   if (hasRuntimeOptions(service.runtimeOptions) && !runtimeOptions) throw new Error('Node autoscale container options are unavailable');
-  if (input.journal) {
-    await input.checkpoint();
-    await input.journal.begin({ runtimeId: `${service.slug}-${owner.deploymentId}`, imageId: match[1]!,
-      serving: Math.max(scale.data.minReplicas, Math.min(service.runtimeReplicas, scale.data.maxReplicas)), capacity: scale.data.maxReplicas });
-    await input.checkpoint();
-  }
+  await input.checkpoint();
+  await input.journal.begin({ runtimeId: `${service.slug}-${owner.deploymentId}`, imageId: match[1]!,
+    serving: Math.max(scale.data.minReplicas, Math.min(service.runtimeReplicas, scale.data.maxReplicas)), capacity: scale.data.maxReplicas });
+  await input.checkpoint();
   const volumeNames = [...(service.volumeMount ? [`nd-svc-${service.slug}-data`] : []), ...attachments.map(item => item.volumeName)];
   if (volumeNames.length) {
     const { missingDatabaseVolumes } = await ensureNodeVolumes(call, volumeNames, nodeVolumeLabels({ serviceId: service.id, userId: service.ownerUserId }), input.log);
@@ -71,7 +72,7 @@ export async function prepareNodeAutoscaleDeployment(input: {
     result = await prepareNodeAutoscaleCapacity(guarded, { service, owner, imageId: match[1]!, envFile,
       creationWatermark: input.creationWatermark, attachments, files: fileMounts, runtimeOptions, extraNetworks: input.extraNetworks });
     await input.checkpoint();
-    if (input.journal) { await input.journal.complete(result.capacity); await input.checkpoint(); }
+    await input.journal.complete(result.capacity); await input.checkpoint();
     prepareConfirmed = true;
   } finally {
     // An unanswered prepare may still be using this file on the node.

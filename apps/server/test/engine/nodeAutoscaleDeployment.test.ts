@@ -30,7 +30,13 @@ beforeEach(async () => {
 });
 afterEach(() => c.client?.close());
 const options = async () => ({ service: await service(), owner, image: 'example:latest', creationWatermark: 9, env: { KEY: 'fixture' },
-  agent, client: client(), sealed: true, checkpoint: async () => {}, log: () => {} });
+  agent, client: client(), sealed: true, checkpoint: async () => {}, log: () => {}, journal: { begin: async () => {}, complete: async () => {} } });
+
+it('refuses to prepare a node generation without its durable journal before any agent effects', async () => {
+  const opts = await options();
+  await expect(prepareNodeAutoscaleDeployment({ ...opts, journal: undefined } as never)).rejects.toThrow(/journal/i);
+  expect(calls).toEqual([]); expect(opts.client.fence).not.toHaveBeenCalled(); expect(opts.client.prepare).not.toHaveBeenCalled();
+});
 
 it('pins the inspected image and removes the environment only after confirmed preparation', async () => {
   const opts = await options(), result = await prepareNodeAutoscaleDeployment(opts);
