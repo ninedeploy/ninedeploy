@@ -2,8 +2,10 @@ import { expect, it } from 'vitest';
 import { createDb, runMigrations, services, servers, users, deployments, nodeLifecycleIntents, eq } from '@ninedeploy/db';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { executeNodeLifecycleIntent, type NodeLifecycleControllerDeps } from '../../src/lib/nodeLifecycleController.js';
+import { claimNodeDeploymentAttempt } from '../../src/lib/nodeDeploymentOwner.js';
+import { beginNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
 
-it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt'] as const)('retires interrupted candidates after %s', async mode => {
+it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt', 'failed-preparation'] as const)('retires interrupted candidates after %s', async mode => {
   const c = createDb({ url: 'file::memory:' });
   try {
     await c.ready; await runMigrations(c.db);
@@ -12,6 +14,14 @@ it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt'] as c
     await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', ownerUserId: 1, serverId: 4,
       runtimeId: 'web-9', status: 'running', runtimeReplicas: 1, port: 3000 });
     await c.db.insert(deployments).values([{ id: 9, serviceId: 1, status: 'running' }, { id: 10, serviceId: 1, status: 'deploying' }]);
+    if (mode === 'failed-preparation') {
+      await c.db.update(deployments).set({ status: 'queued' }).where(eq(deployments.id, 10));
+      const service = (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
+      const admitted = await claimNodeDeploymentAttempt(c.db, 10, service, '{}');
+      if (!admitted.claimed) throw Error('Missing deployment authority');
+      await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: `sha256:${'f'.repeat(64)}`, serving: 1, capacity: 2 });
+      await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+    }
     const containers = [
       { id: 'a'.repeat(64), name: 'web-9', serviceId: 1, deploymentId: 9, running: true },
       { id: 'b'.repeat(64), name: 'web-10', serviceId: 1, deploymentId: 10, running: true },
@@ -69,7 +79,7 @@ it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt'] as c
     const service = (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
     const intent = await acceptNodeLifecycleIntent(c.db, service, 'stop');
     let result = await executeNodeLifecycleIntent(c.db, intent.id, deps);
-    if (mode !== 'normal') {
+    if (mode !== 'normal' && mode !== 'failed-preparation') {
       expect(result.state).toBe('held');
       expect((await c.db.query.nodeLifecycleIntents.findFirst())?.phase).toBe('applying');
       await c.db.update(nodeLifecycleIntents).set({ nextAttemptAt: new Date(0) }).where(eq(nodeLifecycleIntents.id, intent.id));

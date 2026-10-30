@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
-import { deployments, fanoutTransitions, nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
+import { deployments, fanoutTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
 import { HttpError } from './errors.js';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
@@ -51,7 +51,12 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
     }
     const activeWork = action === 'stop' ? await tx.select({ id: deployments.id, status: deployments.status }).from(deployments)
       .where(and(eq(deployments.serviceId, service.id), inArray(deployments.status, [...cancellable]))).orderBy(deployments.id) : [];
-    if (fresh.runtimeId === null && activeWork.length === 0) {
+    const preparations = action === 'stop' ? await tx.select().from(nodeDeploymentPreparations)
+      .where(eq(nodeDeploymentPreparations.serviceId, service.id)) : [];
+    if (preparations.some(row => row.serverId !== fresh.serverId || row.runtimeId !== `${fresh.slug}-${row.deploymentId}` || row.runtimeId === fresh.runtimeId)) {
+      throw new Error('Node preparation placement or generation changed; Stop requires review');
+    }
+    if (fresh.runtimeId === null && activeWork.length === 0 && preparations.length === 0) {
       const pending = await tx.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id), notInArray(nodeLifecycleIntents.phase, [...terminal])) });
       if (pending?.action === 'stop' && pending.runtimeId === null && await nodeLifecycleHasRuntimeAuthority(tx, pending)) return pending;
       throw new HttpError(404, 'not_found', 'Service has no selected runtime or active deployment to stop');
@@ -74,11 +79,11 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
     if (fanout.some(target => target.serverId === fresh.serverId)) throw new HttpError(422, 'node_lifecycle_placement_invalid', 'A fan-out target duplicates the primary node');
     const [sequence] = action === 'stop' ? await tx.select({ id: sql<number>`COALESCE((SELECT seq FROM sqlite_sequence WHERE name='deployments'), 0)` })
       .from(services).where(eq(services.id, fresh.id)).limit(1) : [];
-    const creationFenceDeploymentId = [...interrupted.map(row => row.id), ...activeWork.map(row => row.id),
+    const creationFenceDeploymentId = [...interrupted.map(row => row.id), ...activeWork.map(row => row.id), ...preparations.map(row => row.deploymentId),
       ...fanout.map(target => Number(/-([1-9]\d*)$/.exec(target.runtimeId ?? '')?.[1] ?? 0))]
       .reduce((highest, id) => Math.max(highest, id), Math.max(Number(sequence?.id ?? 0), deploymentId ?? 0, pendingStop?.snapshot.creationFenceDeploymentId ?? 0));
     if (action === 'stop' && (!Number.isSafeInteger(creationFenceDeploymentId) || creationFenceDeploymentId < 1)) throw new Error('Stop creation fence identity is invalid');
-    const interruptedIds = [...new Set([...interrupted.map(row => row.id),
+    const interruptedIds = [...new Set([...interrupted.map(row => row.id), ...preparations.map(row => row.deploymentId),
       ...activeWork.filter(row => row.status === 'building' || row.status === 'deploying').map(row => row.id)])].sort((a, b) => a - b);
     const candidateParticipants = action === 'stop' && fresh.runtimeId !== null && interruptedIds.length ? [
       { serverId: fresh.serverId!, targets: interruptedIds.flatMap(id => replicaNames(`${fresh.slug}-${id}`, MAX_REPLICAS).map(name => ({ name, deploymentId: id }))) },
@@ -110,8 +115,8 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
         ...(action === 'stop' ? { interruptedDeployments: interruptedIds.map(id => ({ id })), creationFenceDeploymentId,
           ...(candidateParticipants ? { candidateParticipants, candidateSlug: fresh.slug } : {}) } : {}),
         ...(fresh.runtimeId === null ? { unselected: { participants: [
-          { serverId: fresh.serverId!, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-' + row.id, MAX_REPLICAS)) },
-          ...fanout.map(target => ({ serverId: target.serverId, expectedNames: activeWork.filter(row => row.status === 'building' || row.status === 'deploying').flatMap(row => replicaNames(fresh.slug + '-t' + target.serverId + '-' + row.id, MAX_REPLICAS)) })),
+          { serverId: fresh.serverId!, expectedNames: interruptedIds.flatMap(id => replicaNames(fresh.slug + '-' + id, MAX_REPLICAS)) },
+          ...fanout.map(target => ({ serverId: target.serverId, expectedNames: interruptedIds.flatMap(id => replicaNames(fresh.slug + '-t' + target.serverId + '-' + id, MAX_REPLICAS)) })),
         ] } } : {}) } }).returning();
     nodeLifecycleWireRevision(intent!, 'effect');
     if (action !== 'start') {
