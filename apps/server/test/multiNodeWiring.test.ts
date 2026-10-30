@@ -317,7 +317,7 @@ function fakeAgent() {
   const calls: Array<{ op: string; params: Record<string, unknown> }> = [];
   const agent = async (op: string, params: Record<string, unknown>) => {
     calls.push({ op, params });
-    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.recovery","build-path-guard"]}'] };
+    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.recovery","docker.probe","build-path-guard"]}'] };
     if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/web-7.env'] };
     if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['a'.repeat(64)] };
     return { exitCode: 0, lines: [] };

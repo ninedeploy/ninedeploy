@@ -371,7 +371,7 @@ describe('T3: node builds and private clones against a 0.15 agent', () => {
     const sent: string[] = [];
     const agent015 = async (op: string) => {
       sent.push(op);
-      return { exitCode: 0, lines: op === 'agent.ping' ? [pingLine('0.15.1', [...CAPS_015_LIST, 'docker.recovery'])] : [] };
+      return { exitCode: 0, lines: op === 'agent.ping' ? [pingLine('0.15.1', [...CAPS_015_LIST, 'docker.recovery', 'docker.probe'])] : [] };
     };
     const err = await createRemoteDockerBuilder(agent015, { nodeLabel: '"edge-1" (#1)' })
       .buildAndRun({

@@ -333,6 +333,18 @@ describe('remote docker builder — what it refuses', () => {
     await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }))).rejects.toThrow(/agent|recovery/i);
     expect(calls.some(call => ['docker.runEnv', 'docker.runSpec', 'docker.rm', 'docker.stop'].includes(call.op))).toBe(false);
   });
+  it('refuses an unsupported default port probe before retiring the previous container', async () => {
+    const { agent, calls } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.18.0","caps":["docker.recovery"]}'] } });
+    await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1', publishedPort: 8080 }) }),
+      { runtimeId: 'web-6', port: 3000, healthPath: '/' })).rejects.toThrow(/probe/i);
+    expect(calls.some(call => ['file.writeEnv', 'docker.runEnv', 'docker.runSpec', 'docker.rm', 'docker.stop'].includes(call.op))).toBe(false);
+  });
+  it('checks the default probe after resolving a static image port and before starting the container', async () => {
+    const { agent, calls } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.18.0","caps":["docker.recovery"]}'] } });
+    const builder = createRemoteDockerBuilder(agent, { prebuiltImage: { tag: 'fixture', imageId: `sha256:${'a'.repeat(64)}`, builtStatic: true } });
+    await expect(builder.buildAndRun(ctx({ service: svc({ port: null }) }))).rejects.toThrow(/probe/i);
+    expect(calls.some(call => ['file.writeEnv', 'docker.runEnv', 'docker.runSpec', 'docker.rm'].includes(call.op))).toBe(false);
+  });
   it('reports an unsupported default port probe without waiting for the readiness timeout', async () => {
     const { agent, calls } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.16.0","caps":[]}'] } }); const logs: string[] = [];
     const result = await createRemoteDockerBuilder(agent).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/' }, 300, 10_000, line => logs.push(line));
@@ -773,7 +785,7 @@ describe('r660: source builds need an agent that guards build paths', () => {
     });
 
   it('refuses a source build to an agent that predates the guard, before anything is cloned', async () => {
-    const { agent, ops } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.41","caps":["docker.recovery"]}'] } });
+    const { agent, ops } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.41","caps":["docker.recovery","docker.probe"]}'] } });
     const err = await createRemoteDockerBuilder(agent, { nodeLabel: '"edge-1" (#4)' }).buildAndRun(sourceCtx()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toContain('"edge-1" (#4)');

@@ -430,9 +430,16 @@ export function createRemoteDockerBuilder(
       try { identityPing = await agent('agent.ping', {}, () => undefined); }
       catch { throw new RemoteDeployUnsupportedError(`Could not confirm immutable container support on node ${opts.nodeLabel ?? `#${service.serverId ?? '?'}`}. Update the node agent and try again.`); }
       if (identityPing.exitCode !== 0) throw new RemoteDeployUnsupportedError('Node agent identity capability is unavailable.');
-      const identityRefusal = capabilityRefusalFor(parseAgentCapabilities(identityPing.lines), opts.nodeLabel ?? `#${service.serverId ?? '?'}`,
+      const agentInfo = parseAgentCapabilities(identityPing.lines);
+      const identityRefusal = capabilityRefusalFor(agentInfo, opts.nodeLabel ?? `#${service.serverId ?? '?'}`,
         { cap: 'docker.recovery', feature: 'verify the immutable deployment container' });
       if (identityRefusal) throw new RemoteDeployUnsupportedError(identityRefusal.message);
+      const requireDefaultProbe = () => {
+        const refusal = capabilityRefusalFor(agentInfo, opts.nodeLabel ?? `#${service.serverId ?? '?'}`,
+          { cap: 'docker.probe', feature: 'probe the default application port' });
+        if (refusal) throw new RemoteDeployUnsupportedError(refusal.message);
+      };
+      if (!service.healthCheck && service.port) requireDefaultProbe();
 
       // (The node workspace is the service slug: see buildSourceOnNode.)
       const name = `${service.slug}-${deploymentId}`;
@@ -513,6 +520,7 @@ export function createRemoteDockerBuilder(
         }
         if (builtWithNixpacks && env['PORT'] === undefined) runEnv = { ...env, PORT: String(port) };
       }
+      if (!service.healthCheck && !service.port && runService.port) requireDefaultProbe();
 
       // 0.16.6: container options travel on docker.runSpec when the agent
       // can apply them; otherwise runRemoteContainer warns, as 0.16.1 did.
