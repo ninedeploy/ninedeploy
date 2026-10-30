@@ -23,6 +23,15 @@ From 0.15.2 a node can do almost everything the panel host does: Nixpacks and Ra
 
 A non-root SSH user needs passwordless `sudo`.
 
+**A node on a tailnet** (ROADMAP item 11). SSH bootstrap can join the node to a Tailscale tailnet first: tick **Join a Tailscale tailnet** and give an auth key (`privateNetwork: {provider: 'tailscale', authKey, hostname?, loginServer?}` over the API). For a [Headscale](https://headscale.net/) control server, set its https URL as the login server. The panel then:
+
+1. installs Tailscale from `tailscale.com/install.sh` if it is missing, and starts `tailscaled`;
+2. runs `tailscale up --reset --accept-dns=false` with the key. The key reaches the node on the SSH session's stdin and is read by Tailscale from a 0600 file that is deleted straight after. It is never in an argument list, a log or the database. The node's DNS is left alone, so containers keep its resolver;
+3. publishes the agent on the node's tailnet IPv4 address only (`-p 100.x.y.z:4600:4600`), and registers the node under that address;
+4. sets `net.ipv4.ip_nonlocal_bind = 1` (`/etc/sysctl.d/90-ninedeploy-agent-bind.conf`). After a reboot, Docker can then publish the agent before `tailscaled` has brought the address up.
+
+The panel host must be on the same tailnet, and the tailnet's access rules must let it reach the agent port. If the panel cannot reach the agent there, the bootstrap stops and says so. Use a pre-approved auth key: a key that needs approval leaves the node waiting. The cloud nodes (Hetzner, DigitalOcean, Vultr) do not offer this: their user data is readable from inside the VM, so an auth key placed there would not stay secret. Join such a node to the tailnet yourself and register it by its tailnet address. For Swarm, use the tailnet address as the node's advertise address, so the join check in section 8 matches it.
+
 **Self-enrolment:** start the agent with `NINEDEPLOY_MASTER_URL` and `NINEDEPLOY_ENROLMENT_TOKEN` instead of a token hash. It announces itself every 60 seconds and waits for an operator to approve it. See `.env.example` for the agent's variables.
 
 Register a node by **IP address** where you can. Swarm's join check compares the node's address with the server's host (section 8), and a hostname makes that check depend on DNS.

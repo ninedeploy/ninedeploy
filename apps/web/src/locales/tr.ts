@@ -6005,4 +6005,13 @@ export const TR: Readonly<Record<string, string>> = {
 
   // ── Usage disk ────────────────────────────────────────────────────────
   'Disk (GB-hours)': 'Disk (GB-saat)',
+
+  // ── Private node network (ROADMAP item 11) ────────────────────────────
+  'Join a Tailscale tailnet and reach the agent only there':
+    'Düğümü bir Tailscale tailnet\'ine kat ve agent\'a yalnızca oradan ulaş',
+  'The node joins the tailnet and its agent listens on its tailnet address only. The panel host must be on the same tailnet. The auth key is used once and not stored.':
+    'Düğüm tailnet\'e katılır ve agent yalnızca tailnet adresinde dinler. Panel sunucusu da aynı tailnet\'te olmalıdır. Auth key bir kez kullanılır ve saklanmaz.',
+  'Tailscale auth key': 'Tailscale auth key',
+  'Tailnet hostname (optional)': 'Tailnet ana bilgisayar adı (isteğe bağlı)',
+  'Headscale server (optional)': 'Headscale sunucusu (isteğe bağlı)',
 };

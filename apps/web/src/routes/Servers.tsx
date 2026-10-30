@@ -94,6 +94,11 @@ export function Servers() {
   const [agentPort, setAgentPort] = useState('4600');
   // r661: optional expected SSH host key; empty = trust on first use.
   const [hostKeyFingerprint, setHostKeyFingerprint] = useState('');
+  // ROADMAP item 11: join the node to a Tailscale/Headscale tailnet first.
+  const [tailnet, setTailnet] = useState(false);
+  const [tsAuthKey, setTsAuthKey] = useState('');
+  const [tsHostname, setTsHostname] = useState('');
+  const [tsLoginServer, setTsLoginServer] = useState('');
 
   // SSH Test Probe Feedback State
   const [probeResult, setProbeResult] = useState<ServerSshTestResult | null>(null);
@@ -172,6 +177,14 @@ export function Servers() {
         installDocker,
         agentPort: Number(agentPort) || 4600,
         hostKeyFingerprint: hostKeyFingerprint.trim() || undefined,
+        privateNetwork: tailnet
+          ? {
+              provider: 'tailscale',
+              authKey: tsAuthKey.trim(),
+              hostname: tsHostname.trim() || undefined,
+              loginServer: tsLoginServer.trim() || undefined,
+            }
+          : undefined,
       }),
     onMutate: () => {
       setBootstrapRunning(true);
@@ -530,7 +543,7 @@ export function Servers() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (sshName.trim() && sshHost.trim()) {
+                if (sshName.trim() && sshHost.trim() && (!tailnet || tsAuthKey.trim())) {
                   sshBootstrapMutation.mutate();
                 }
               }}
@@ -651,6 +664,39 @@ export function Servers() {
                 </div>
               </div>
 
+              <div className="space-y-2 rounded-lg border border-white/5 p-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="tailnet-checkbox"
+                    checked={tailnet}
+                    onChange={(e) => setTailnet(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-black/40 text-indigo-600 focus:ring-0"
+                  />
+                  <label htmlFor="tailnet-checkbox" className="text-xs text-slate-300 select-none">
+                    {t('Join a Tailscale tailnet and reach the agent only there')}
+                  </label>
+                </div>
+                {tailnet && (
+                  <>
+                    <p className="text-[11px] text-slate-500">
+                      {t('The node joins the tailnet and its agent listens on its tailnet address only. The panel host must be on the same tailnet. The auth key is used once and not stored.')}
+                    </p>
+                    <Field label={t('Tailscale auth key')}>
+                      <Input type="password" value={tsAuthKey} onChange={(e) => setTsAuthKey(e.target.value)} placeholder="tskey-auth-…" className="h-9 font-mono text-xs" />
+                    </Field>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <Field label={t('Tailnet hostname (optional)')}>
+                        <Input value={tsHostname} onChange={(e) => setTsHostname(e.target.value)} placeholder="edge-1" className="h-9 font-mono text-xs" />
+                      </Field>
+                      <Field label={t('Headscale server (optional)')}>
+                        <Input value={tsLoginServer} onChange={(e) => setTsLoginServer(e.target.value)} placeholder="https://headscale.example.com" className="h-9 font-mono text-xs" />
+                      </Field>
+                    </div>
+                  </>
+                )}
+              </div>
+
               <Field
                 label={t('Expected host key fingerprint (optional)')}
                 hint={t('SHA256:… from ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub on the host. Empty: the first key is trusted and recorded.')}
@@ -706,7 +752,7 @@ export function Servers() {
                   <Button
                     type="submit"
                     size="sm"
-                    disabled={!sshName.trim() || !sshHost.trim() || sshBootstrapMutation.isPending}
+                    disabled={!sshName.trim() || !sshHost.trim() || (tailnet && !tsAuthKey.trim()) || sshBootstrapMutation.isPending}
                     className="bg-indigo-600 hover:bg-indigo-500 text-white"
                   >
                     <Terminal size={14} className="mr-1" />

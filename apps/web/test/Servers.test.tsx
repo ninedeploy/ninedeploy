@@ -566,6 +566,32 @@ describe('Servers', () => {
     await waitFor(() => expect(screen.queryByText('Zero-Touch Server Onboarding')).not.toBeInTheDocument());
   });
 
+  it('joins the node to a tailnet when asked: the auth key is required, hostname and Headscale server optional (ROADMAP item 11)', async () => {
+    mockOf(api.servers.list).mockResolvedValue([] as never);
+    mockOf(api.servers.sshBootstrap).mockResolvedValue({ ok: true, serverId: 16, serverName: 'ts-node', steps: [], logs: [] } as never);
+    renderWithProviders(<Servers />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add server' }));
+    fireEvent.change(screen.getByPlaceholderText('production-vps-1'), { target: { value: 'ts-node' } });
+    fireEvent.change(screen.getByPlaceholderText('195.201.45.10'), { target: { value: '1.2.3.5' } });
+
+    expect(screen.queryByLabelText('Tailscale auth key')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Join a Tailscale tailnet and reach the agent only there'));
+    const start = screen.getByRole('button', { name: /Start Automated Onboarding/i });
+    expect(start).toBeDisabled();
+    fireEvent.submit(start.closest('form')!);
+    expect(api.servers.sshBootstrap).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Tailscale auth key'), { target: { value: ' tskey-auth-abc123456789 ' } });
+    fireEvent.change(screen.getByPlaceholderText('edge-1'), { target: { value: ' edge-1 ' } });
+    fireEvent.change(screen.getByPlaceholderText('https://headscale.example.com'), { target: { value: 'https://hs.example.com' } });
+    fireEvent.click(start);
+    await waitFor(() =>
+      expect(api.servers.sshBootstrap).toHaveBeenCalledWith(
+        expect.objectContaining({ privateNetwork: { provider: 'tailscale', authKey: 'tskey-auth-abc123456789', hostname: 'edge-1', loginServer: 'https://hs.example.com' } }),
+      ),
+    );
+  });
+
   it('handles automated SSH bootstrap failure with Error and string', async () => {
     mockOf(api.servers.list).mockResolvedValue([] as never);
     mockOf(api.servers.sshBootstrap).mockRejectedValueOnce(new Error('Fatal SSH error'));

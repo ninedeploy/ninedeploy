@@ -364,6 +364,20 @@ export const serverSshBootstrap = z.object({
     .optional()
     .transform((v) => Number(v ?? 4600) || 4600)
     .pipe(z.number().int().min(1).max(65535)),
+  /**
+   * ROADMAP item 11: join the node to a Tailscale (or Headscale) tailnet and
+   * publish its agent on the tailnet address only. The auth key reaches the
+   * node on the SSH session's stdin and is never stored.
+   */
+  privateNetwork: z
+    .object({
+      provider: z.literal('tailscale'),
+      authKey: z.string().trim().min(10).max(512).regex(/^[!-~]+$/, 'An auth key is printable ASCII without spaces'),
+      hostname: z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/, 'A hostname is letters, digits and dashes').optional(),
+      /** A Headscale (or other control) server; Tailscale's own when absent. */
+      loginServer: z.string().trim().max(2048).url().regex(/^https:\/\/[^\s'"\\`$]+$/,'The login server is an https URL').optional(),
+    })
+    .optional(),
 });
 export type ServerSshBootstrap = z.infer<typeof serverSshBootstrap>;
 
@@ -383,7 +397,7 @@ export interface ServerSshTestResult {
 }
 
 export interface ServerBootstrapStep {
-  step: 'connecting' | 'os_detect' | 'docker_check' | 'docker_install' | 'agent_deploy' | 'verify' | 'done' | 'error';
+  step: 'connecting' | 'os_detect' | 'docker_check' | 'docker_install' | 'private_network' | 'agent_deploy' | 'verify' | 'done' | 'error';
   status: 'pending' | 'running' | 'success' | 'failed';
   message: string;
   timestamp: string;

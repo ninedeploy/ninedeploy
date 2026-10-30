@@ -1121,6 +1121,25 @@ describe('service', () => {
       bad(serverSshBootstrap, { name: 'W', host: 'h', agentPort: 80000 });
     });
 
+    it('serverSshBootstrap takes an optional Tailscale join (ROADMAP item 11)', () => {
+      const key = 'tskey-auth-kAbCdEf12CNTRL-0123456789abcdef';
+      expect(ok(serverSshBootstrap, { name: 'W', host: 'h', privateNetwork: { provider: 'tailscale', authKey: ` ${key} `, hostname: 'Edge-1', loginServer: 'https://hs.example.com' } })?.privateNetwork).toEqual({
+        provider: 'tailscale',
+        authKey: key,
+        hostname: 'edge-1',
+        loginServer: 'https://hs.example.com',
+      });
+      expect(ok(serverSshBootstrap, { name: 'W', host: 'h' })?.privateNetwork).toBeUndefined();
+      for (const privateNetwork of [
+        { provider: 'wireguard', authKey: key },
+        { provider: 'tailscale', authKey: 'short' },
+        { provider: 'tailscale', authKey: 'tskey has spaces' },
+        { provider: 'tailscale', authKey: key, hostname: 'bad_host' },
+        { provider: 'tailscale', authKey: key, loginServer: 'http://hs.example.com' },
+        { provider: 'tailscale', authKey: key, loginServer: "https://hs.example.com/'$(id)" },
+      ]) bad(serverSshBootstrap, { name: 'W', host: 'h', privateNetwork });
+    });
+
     it('r661: the expected host-key fingerprint is optional, OpenSSH-shaped, and normalised', () => {
       const fp = `SHA256:${'A'.repeat(43)}`;
       expect(ok(serverSshBootstrap, { name: 'W', host: 'h', hostKeyFingerprint: `${fp}=` })?.hostKeyFingerprint).toBe(fp);

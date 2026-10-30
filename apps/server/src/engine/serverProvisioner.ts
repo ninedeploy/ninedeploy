@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import { isIPv4 } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { servers, type DB } from '@ninedeploy/db';
@@ -149,6 +150,69 @@ export function nodeDockerInstallCommand(): string {
   return `printf %s ${Buffer.from(NODE_DOCKER_INSTALL_SCRIPT, 'utf8').toString('base64')} | base64 -d | sh`;
 }
 
+/**
+ * ROADMAP item 11: join a node to a Tailscale (or Headscale) tailnet. The auth
+ * key is the first line of stdin, written to a 0600 file for `--auth-key=file:`
+ * and removed on exit, so it is never in an argument list. Tailscale comes
+ * from its own install script when missing; MagicDNS is not taken over
+ * (`--accept-dns=false`), so containers keep the node's resolver. The agent is
+ * then published on the tailnet address only, and `ip_nonlocal_bind` lets
+ * Docker publish it at boot before tailscaled has brought that address up.
+ * The last line is `ND_TAILNET_IP=<address>`.
+ */
+export function nodeTailscaleScript(opts: { hostname?: string; loginServer?: string }): string {
+  const quote = (v: string) => `'${v.replace(/'/g, `'\\''`)}'`;
+  return [
+    'set -e',
+    `TS_HOSTNAME=${quote(opts.hostname ?? '')}`,
+    `TS_LOGIN_SERVER=${quote(opts.loginServer ?? '')}`,
+    String.raw`S=""
+if [ "$(id -u)" != 0 ]; then
+  command -v sudo >/dev/null 2>&1 || { echo "Joining the tailnet needs root or passwordless sudo." >&2; exit 1; }
+  S="sudo -n"
+fi
+IFS= read -r TS_AUTH_KEY || true
+[ -n "$TS_AUTH_KEY" ] || { echo "No Tailscale auth key arrived." >&2; exit 1; }
+if ! command -v tailscale >/dev/null 2>&1; then
+  curl -fsSL https://tailscale.com/install.sh | $S sh
+fi
+$S systemctl enable --now tailscaled >/dev/null 2>&1 || { $S rc-update add tailscale default >/dev/null 2>&1; $S rc-service tailscale start >/dev/null 2>&1; } || true
+KEY_FILE="$(umask 077; mktemp)"
+trap 'rm -f "$KEY_FILE"' EXIT
+printf '%s' "$TS_AUTH_KEY" > "$KEY_FILE"
+TS_AUTH_KEY=""
+set -- --reset --auth-key="file:$KEY_FILE" --accept-dns=false
+[ -z "$TS_HOSTNAME" ] || set -- "$@" --hostname="$TS_HOSTNAME"
+[ -z "$TS_LOGIN_SERVER" ] || set -- "$@" --login-server="$TS_LOGIN_SERVER"
+$S tailscale up "$@"
+IP=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  IP="$($S tailscale ip -4 2>/dev/null | head -n 1)"
+  [ -z "$IP" ] || break
+  sleep 1
+done
+[ -n "$IP" ] || { echo "Tailscale gave this node no IPv4 address." >&2; exit 1; }
+printf 'net.ipv4.ip_nonlocal_bind = 1\n' | $S tee /etc/sysctl.d/90-ninedeploy-agent-bind.conf >/dev/null
+$S sysctl -q -w net.ipv4.ip_nonlocal_bind=1
+echo "ND_TAILNET_IP=$IP"
+`,
+  ].join('\n');
+}
+
+/**
+ * The remote command for {@link nodeTailscaleScript}: the script travels
+ * base64 in the argument, so stdin stays free for the auth key.
+ */
+export function nodeTailscaleCommand(opts: { hostname?: string; loginServer?: string }): string {
+  return `sh -c "$(printf %s ${Buffer.from(nodeTailscaleScript(opts), 'utf8').toString('base64')} | base64 -d)"`;
+}
+
+/** The tailnet address from {@link nodeTailscaleScript}'s output, or null. */
+export function parseTailnetIp(output: string): string | null {
+  const ip = /^ND_TAILNET_IP=(\S+)$/m.exec(output)?.[1];
+  return ip && isIPv4(ip) ? ip : null;
+}
+
 /** r661: where the key a host presented on first contact is recorded. */
 const hostKeySettingKey = (host: string, port: number) => `ssh.hostKeys:${host}:${port}`;
 
@@ -192,6 +256,8 @@ export async function runSshCommand(
   opts: SshExecOptions,
   command: string,
   onLine?: (line: string) => void,
+  /** Written to the remote command's stdin (a secret that must not be in an argument). */
+  input?: Buffer,
 ): Promise<{ exitCode: number; stdout: string; stderr: string; hostKeys: string[] }> {
   if (opts.authType === 'password') {
     throw new Error(
@@ -256,7 +322,7 @@ export async function runSshCommand(
     try {
       await run('ssh', args, {
         timeoutMs: opts.timeoutMs ?? 60000,
-      }, lineSink);
+      }, lineSink, input);
     } catch (err) {
       if (pinned && lines.some((l) => /Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(l))) {
         throw new SshHostKeyMismatchError(
@@ -512,8 +578,32 @@ export async function bootstrapServer(
       emitStep('docker_install', 'success', 'Docker successfully installed and started');
     }
 
+    // ── Step 3b: Private network (ROADMAP item 11) ───────────────────────────
+    // The agent's address: the SSH host, or the node's tailnet address.
+    let agentHost = host;
+    let bindAddress: string | undefined;
+    if (input.privateNetwork) {
+      const { authKey, hostname, loginServer } = input.privateNetwork;
+      emitStep('private_network', 'running', `Joining the node to ${loginServer ? `the tailnet at ${loginServer}` : 'the Tailscale tailnet'}...`);
+      const joined = await runSshCommand(
+        { ...sshOpts, timeoutMs: REMOTE_SETUP_TIMEOUT_MS },
+        nodeTailscaleCommand({ hostname, loginServer }),
+        // The key is never logged; drop any line that would echo it back.
+        (line) => { if (!line.includes(authKey)) emitLog(line); },
+        Buffer.from(`${authKey}\n`, 'utf8'),
+      );
+      const ip = parseTailnetIp(joined.stdout);
+      if (!ip) {
+        emitStep('private_network', 'failed', 'Tailscale reported no IPv4 address for the node.');
+        return { ok: false, steps, logs, error: 'The node joined no tailnet address.' };
+      }
+      agentHost = ip;
+      bindAddress = ip;
+      emitStep('private_network', 'success', `Node is on the tailnet at ${ip}; the agent will listen there only`);
+    }
+
     // ── Step 4: Deploy Agent ────────────────────────────────────────────────
-    emitStep('agent_deploy', 'running', `Deploying NineDeploy Node Agent on port ${input.agentPort}...`);
+    emitStep('agent_deploy', 'running', `Deploying NineDeploy Node Agent on ${bindAddress ? `${bindAddress}:` : 'port '}${input.agentPort}...`);
     const agentToken = generateAgentToken();
     const tokenSha256 = createHash('sha256').update(agentToken).digest('hex');
 
@@ -524,7 +614,7 @@ export async function bootstrapServer(
       // core's release so the node matches the core's protocol (seal/nonce).
       // r175: the line used to start the image's default command — the full
       // panel — so no agent ever listened and every bootstrap failed its ping.
-      agentDockerRunCommand({ hostPort: input.agentPort, imageTag: `v${VERSION}`, tokenSha256 }),
+      agentDockerRunCommand({ hostPort: input.agentPort, imageTag: `v${VERSION}`, tokenSha256, bindAddress }),
     ].join(' && ');
 
     await runSshCommand({ ...sshOpts, timeoutMs: REMOTE_SETUP_TIMEOUT_MS }, agentStartCmd, emitLog);
@@ -533,11 +623,20 @@ export async function bootstrapServer(
     // ── Step 5: Verify & Database Registration ──────────────────────────────
     emitStep('verify', 'running', 'Performing agent authentication handshake...');
     try {
-      await agentPing(host, input.agentPort, agentToken);
+      await agentPing(agentHost, input.agentPort, agentToken);
     } catch {
       emitLog('Initial ping timed out. Waiting 2s for container startup and retrying...');
       await new Promise((r) => setTimeout(r, 2000));
-      await agentPing(host, input.agentPort, agentToken);
+      try {
+        await agentPing(agentHost, input.agentPort, agentToken);
+      } catch (err) {
+        if (!bindAddress) throw err;
+        throw new Error(
+          `The agent listens on the tailnet address ${bindAddress} only, and the panel could not reach it there. ` +
+            `Put the panel host on the same tailnet (and allow it to reach port ${input.agentPort} in the tailnet's access rules), then bootstrap again.`,
+          { cause: err },
+        );
+      }
     }
 
     // r399: (host, port) is the endpoint's identity — re-bootstrapping an
@@ -550,7 +649,7 @@ export async function bootstrapServer(
       .insert(servers)
       .values({
         name: input.name,
-        host,
+        host: agentHost,
         port: input.agentPort,
         tokenEncrypted,
         status: 'online',

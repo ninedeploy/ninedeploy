@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Nodes on a tailnet (ROADMAP item 11). SSH bootstrap can join a node to a Tailscale or Headscale tailnet (Servers → Add server → Join a Tailscale tailnet; `privateNetwork` on `POST /v1/servers/ssh-bootstrap`). The agent is then published on the node's tailnet address only, and the node is registered under it. The auth key travels on the SSH session's stdin and is not stored. The panel host must be on the same tailnet. No migration.
 - openSUSE Leap, Tumbleweed, SLES, Arch, Manjaro and EndeavourOS in `install.sh` and in node SSH bootstrap and cloud-init (G4.1). Docker comes from the distribution's own `docker`, `docker-compose` and `docker-buildx` packages, enabled with systemd; on SLES the Containers Module must be active. The installer does not install Node there: the bare-metal mode needs it already present. On Arch nothing else is upgraded.
 - Disk in the usage report (ROADMAP item 9). Once an hour the panel records the size of each service's volumes, on the panel host and on nodes, and Monitoring → Usage and cost shows it in GB-hours. No migration.
 - File mounts on Swarm (ROADMAP item 10). A Swarm service's files (Service → Volumes → Files) are mounted read-only in every task, each one as a Swarm secret whose name carries a keyed version of its content; an edited file rolls the tasks, and the secrets no deploy uses any more are removed, keeping the rollback target's. Swarm services with files used to be refused at deploy time. No migration.

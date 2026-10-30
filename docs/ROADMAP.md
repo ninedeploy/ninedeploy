@@ -153,7 +153,7 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
     - log drains and metrics from nodes (done; see [NODE_OPERATIONS.md](NODE_OPERATIONS.md#log-drains));
     - a Dockerfile build stage and build arguments on node builds (done, agent `docker.buildOptions`; see [MULTI_NODE.md](MULTI_NODE.md));
     - file mounts on Swarm (done: each file a Swarm secret carried through the native spec, its fingerprint and pruning; see [DEPLOYMENTS.md](DEPLOYMENTS.md#file-mounts-0163)); container options on Swarm remain (Swarm's service spec has no equivalent for most of them).
-11. **Later:** Postgres point-in-time recovery (WAL-G), and Tailscale/WireGuard node networking.
+11. **Later:** Postgres point-in-time recovery (WAL-G). Tailscale node networking is done: SSH bootstrap can join a node to a Tailscale or Headscale tailnet and publish its agent there only (see [MULTI_NODE.md](MULTI_NODE.md#1-enrolling-a-node)). A plain WireGuard mesh managed by the panel is not planned; Tailscale and Headscale are WireGuard underneath.
 
 ## Ongoing, every release
 

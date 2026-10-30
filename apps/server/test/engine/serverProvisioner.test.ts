@@ -14,7 +14,7 @@ import {
 import { createFakeDb } from '../helpers.js';
 
 const execMocks = vi.hoisted(() => ({
-  run: vi.fn(async (_cmd: string, _args: string[], _opts?: Record<string, unknown>, sink?: (l: string) => void) => {
+  run: vi.fn(async (_cmd: string, _args: string[], _opts?: Record<string, unknown>, sink?: (l: string) => void, _input?: Buffer) => {
     sink?.('PRETTY_NAME="Ubuntu 24.04 LTS"');
     sink?.('Docker version 27.1.1, build 6312585');
   }),
@@ -30,7 +30,7 @@ const hostKey = vi.hoisted(() => ({
 vi.mock('../../src/lib/exec.js', async () => {
   const { appendFile, readFile } = await import('node:fs/promises');
   return {
-    run: async (cmd: string, args: string[], opts?: Record<string, unknown>, sink?: (l: string) => void) => {
+    run: async (cmd: string, args: string[], opts?: Record<string, unknown>, sink?: (l: string) => void, input?: Buffer) => {
       const file = args.find((a) => a.startsWith('UserKnownHostsFile='))?.slice('UserKnownHostsFile='.length);
       if (file && args.includes('StrictHostKeyChecking=accept-new')) {
         await appendFile(file, `ninedeploy-node ${hostKey.presented}\n`);
@@ -40,7 +40,7 @@ vi.mock('../../src/lib/exec.js', async () => {
           throw new Error('`ssh -p 22 <remote command>` exited with code 255');
         }
       }
-      return execMocks.run(cmd, args, opts, sink);
+      return execMocks.run(cmd, args, opts, sink, input);
     },
   };
 });
@@ -92,6 +92,7 @@ describe('serverProvisioner engine', () => {
       expect.arrayContaining(['-p', '2222']),
       expect.any(Object),
       expect.any(Function),
+      undefined,
     );
     expect(lines.length).toBeGreaterThan(0);
   });
@@ -201,6 +202,67 @@ describe('serverProvisioner engine', () => {
     expect(steps.length).toBeGreaterThan(3);
     expect(logs.length).toBeGreaterThan(0);
     expect(getBootstrapLogs(1).length).toBeGreaterThan(0);
+  });
+
+  describe('joining a tailnet (ROADMAP item 11)', () => {
+    const KEY = 'tskey-auth-kAbCdEf12CNTRL-0123456789abcdef';
+    const input = {
+      name: 'Edge',
+      host: '203.0.113.20',
+      sshPort: 22,
+      sshUser: 'root',
+      authType: 'key' as const,
+      installDocker: true,
+      agentPort: 4600,
+      privateNetwork: { provider: 'tailscale' as const, authKey: KEY, loginServer: 'https://hs.example.com' },
+    };
+    const joinWith = (lines: string[]) =>
+      execMocks.run.mockImplementationOnce(async (_cmd, _args, _opts, sink) => {
+        sink?.('PRETTY_NAME="Ubuntu 24.04 LTS"');
+        sink?.('Docker version 27.1.1, build 6312585');
+      }).mockImplementationOnce(async (_cmd, _args, _opts, sink) => {
+        for (const l of lines) sink?.(l);
+      });
+
+    it('sends the key on stdin, publishes the agent on the tailnet address and registers that address', async () => {
+      joinWith(['Success.', `echoed ${KEY}`, 'ND_TAILNET_IP=100.64.0.7']);
+      const db = createFakeDb({ insert: { servers: [{ id: 7, name: 'Edge', host: '100.64.0.7', port: 4600, status: 'online' }] } });
+      const logs: string[] = [];
+      const res = await bootstrapServer(db as never, input, undefined, (l) => logs.push(l));
+      expect(res.ok, res.error).toBe(true);
+
+      const join = execMocks.run.mock.calls[1]!;
+      expect((join[4] as Buffer).toString('utf8')).toBe(`${KEY}\n`);
+      expect(join[1].join(' ')).not.toContain(KEY);
+      expect(join[1].at(-1)).toMatch(/^sh -c "\$\(printf %s [A-Za-z0-9+/=]+ \| base64 -d\)"$/);
+      expect(execMocks.run.mock.calls[2]![1].at(-1)).toContain('-p 100.64.0.7:4600:4600');
+      expect(agentMocks.agentPing).toHaveBeenCalledWith('100.64.0.7', 4600, 'test-agent-token-1234567890123456');
+      expect(logs.join('\n')).not.toContain(KEY);
+      expect(logs.join('\n')).toContain('the agent will listen there only');
+      expect(res.steps.map((s) => s.step)).toContain('private_network');
+    });
+
+    it('stops when the node reports no tailnet address', async () => {
+      joinWith(['Success.']);
+      const res = await bootstrapServer(createFakeDb() as never, input);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('The node joined no tailnet address.');
+      expect(execMocks.run).toHaveBeenCalledTimes(2);
+    });
+
+    it('explains that the panel must be on the tailnet when it cannot reach the agent there', async () => {
+      joinWith(['ND_TAILNET_IP=100.64.0.8']);
+      agentMocks.agentPing.mockRejectedValueOnce(new Error('timeout')).mockRejectedValueOnce(new Error('timeout'));
+      const res = await bootstrapServer(createFakeDb() as never, input);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain('The agent listens on the tailnet address 100.64.0.8 only');
+      expect(res.error).toContain('Put the panel host on the same tailnet');
+    });
+
+    it('without a tailnet, a failed second ping is reported as it is', async () => {
+      agentMocks.agentPing.mockRejectedValueOnce(new Error('timeout')).mockRejectedValueOnce(new Error('agent refused'));
+      expect((await bootstrapServer(createFakeDb() as never, { ...input, privateNetwork: undefined })).error).toBe('agent refused');
+    });
   });
 
   it('installs Docker when missing and installDocker is true', async () => {

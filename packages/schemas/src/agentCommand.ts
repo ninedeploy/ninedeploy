@@ -35,6 +35,9 @@ export interface AgentCommandOptions {
   /** G4.3: the key is readable by others (cloud user data); the agent runs
    *  nothing but `agent.ping` and `agent.rekey` until the panel replaces it. */
   requireRekey?: boolean;
+  /** ROADMAP item 11: publish the agent on this IPv4 address only (a node's
+   *  tailnet address), instead of every interface. */
+  bindAddress?: string;
 }
 
 /** Render a value for the copy-paste shell line (r473): bare when it is
@@ -57,7 +60,7 @@ export function agentDockerRunCommand(opts: AgentCommandOptions): string {
   return [
     'docker run -d --name ninedeploy-agent --restart unless-stopped',
     '--user 0:0',
-    `-p ${opts.hostPort}:${AGENT_CONTAINER_PORT}`,
+    `-p ${opts.bindAddress ? `${opts.bindAddress}:` : ''}${opts.hostPort}:${AGENT_CONTAINER_PORT}`,
     '-v /var/run/docker.sock:/var/run/docker.sock',
     `-v ${AGENT_HOME}:${AGENT_HOME}`,
     `-w ${AGENT_HOME}`,

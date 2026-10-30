@@ -23,6 +23,10 @@ describe('r175: agentDockerRunCommand', () => {
     expect(auto).not.toContain('NINEDEPLOY_AGENT_TOKEN');
   });
 
+  it('publishes on one address only when asked (a tailnet node, ROADMAP item 11)', () => {
+    expect(agentDockerRunCommand({ hostPort: 4600, imageTag: 'latest', bindAddress: '100.64.0.7' })).toContain('-p 100.64.0.7:4600:4600');
+  });
+
   it('requires a bootstrap rekey only when explicitly requested', () => {
     const options = { hostPort: 4600, imageTag: 'latest' };
     expect(agentDockerRunCommand({ ...options, requireRekey: true })).toContain('-e NINEDEPLOY_AGENT_REKEY_REQUIRED=1');
