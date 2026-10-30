@@ -4,9 +4,10 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { advertisedCapabilities, runRegisteredOp } from '../../src/agentOps/index.js';
+import { capabilityRefusalFor } from '../../src/lib/agentCapabilities.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
-const ops = ['docker.runtimeInventory', 'docker.stopSet', 'docker.runtimeFence', 'docker.prepare', 'docker.networkSet', 'docker.retireSet'];
+const ops = ['docker.runtimeInventory', 'docker.stopSet', 'docker.runtimeFence', 'docker.runtimeLegacyHandoff', 'docker.prepare', 'docker.networkSet', 'docker.retireSet'];
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'nd-mutation-op-')); vi.spyOn(process, 'cwd').mockReturnValue(root); io.spawn.mockReset(); });
 afterEach(async () => {
@@ -17,6 +18,11 @@ afterEach(async () => {
 it('advertises the ordered mutation capability only while its owner permits it', () => {
   expect(advertisedCapabilities({})).toContain('docker.mutations');
   expect(advertisedCapabilities({ NINEDEPLOY_AGENT_CONTAINER_MUTATIONS: 'off' })).not.toContain('docker.mutations');
+});
+it('distinguishes an owner-disabled 0.18.10 mutation agent from an older agent', () => {
+  const option = { cap: 'docker.mutations' as const, feature: 'control ordered node mutations' };
+  expect(capabilityRefusalFor({ version: '0.18.10', caps: new Set() }, '#7', option)).toMatchObject({ code: 'node_feature_disabled', message: expect.stringMatching(/NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=off/) });
+  expect(capabilityRefusalFor({ version: '0.18.9', caps: new Set() }, '#7', option)).toMatchObject({ code: 'node_agent_outdated', message: expect.stringMatching(/v0\.18\.10/) });
 });
 it.each(ops)('refuses unsealed %s before validation, journal or Docker access', async op => {
   await expect(runRegisteredOp(op, {}, () => {}, { sealed: false }, {})).rejects.toThrow(/unencrypted/);

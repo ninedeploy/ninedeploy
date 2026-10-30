@@ -380,7 +380,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.lifecycle.generations': '0.18.3',
   'docker.lifecycle.creationFence': '0.18.10',
   'docker.lifecycle.retire': '0.18.10',
-  'docker.mutations': '0.19.0',
+  'docker.mutations': '0.18.10',
   'docker.logsSince': '0.17.0',
   'proxy.routingAck': '0.18.0',
   'docker.recovery': '0.18.0',
