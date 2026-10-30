@@ -13,7 +13,8 @@ export function createNodeAutoscaleDecider() {
   const states = new Map<number, State>();
   return {
     forget(serviceId: number) { states.delete(serviceId); },
-    observe(service: Service, sample: unknown, now: number, blocked = false): { to: number | null; holding: string | null; evidence?: NodeAutoscaleEvidence } {
+    observe(service: Service, sample: unknown, now: number, blocked = false,
+      onSample?: (observation: { value: number; desired: number; sampledAt: number }) => void): { to: number | null; holding: string | null; evidence?: NodeAutoscaleEvidence } {
       const hold = (reason: string) => { states.delete(service.id); return { to: null, holding: reason }; };
       const config = autoscaleConfig.safeParse(service.autoscale);
       if (blocked || service.type !== 'docker' || service.orchestrator === 'swarm' || !service.serverId || service.status !== 'running' ||
@@ -39,8 +40,9 @@ export function createNodeAutoscaleDecider() {
       const bounded = Math.min(effective.maxReplicas, Math.max(effective.minReplicas, service.runtimeReplicas));
       const evidence: NodeAutoscaleEvidence = { serverId: service.serverId, serviceId: receipt.serviceId, deploymentId: receipt.deploymentId,
         sampledAt, requestId: receipt.requestId, targets: receipt.items.map(({ name, id }) => ({ name, id })) };
-      if (bounded !== service.runtimeReplicas) { states.delete(service.id); return { to: bounded, holding: null, evidence }; }
+      if (bounded !== service.runtimeReplicas) { onSample?.({ value: measurement.value, desired: bounded, sampledAt }); states.delete(service.id); return { to: bounded, holding: null, evidence }; }
       const decision = decideWithState(state.window, service.runtimeReplicas, measurement.value, effective, now);
+      onSample?.({ value: measurement.value, desired: state.window.desired!, sampledAt });
       if (decision) states.delete(service.id);
       return decision ? { to: decision.to, holding: null, evidence } : { to: null, holding: null };
     },

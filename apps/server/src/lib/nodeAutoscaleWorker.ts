@@ -6,7 +6,7 @@ import { createNodeAutoscaleDecider } from './nodeAutoscaleDecision.js';
 import { nodeAutoscaleRuntime } from './nodeAutoscaleRuntime.js';
 import { readNodeAutoscaleSample } from './nodeAutoscaleSample.js';
 import { readServiceRuntimeOwner, sameRuntimeOwner } from './serviceRuntimeOwner.js';
-import { recordNodeAutoscaleHolding } from './autoscaler.js';
+import { recordNodeAutoscaleHolding, recordNodeAutoscaleSample } from './autoscaler.js';
 
 /** Compose measurement and durable effects; the caller schedules and supplies its live conflict check. */
 export function createNodeAutoscaleWorker(db: DB, deps: {
@@ -46,9 +46,9 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
           forget(service.id); return held('node runtime ownership changed during measurement');
         }
         owners.set(service.id, measuredOwner);
-        const decision = decider.observe(service, sample, (deps.now ?? Date.now)());
+        const decision = decider.observe(service, sample, (deps.now ?? Date.now)(), false, observation => recordNodeAutoscaleSample(service, observation));
         if (decision.to === null || !decision.evidence) {
-          recordNodeAutoscaleHolding(service, decision.holding);
+          if (decision.holding) recordNodeAutoscaleHolding(service, decision.holding);
           return { state: 'held', ...(decision.holding ? { reason: decision.holding } : {}) };
         }
         signal?.throwIfAborted();
@@ -62,7 +62,6 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
         }
         const result = await executeNodeAutoscale(db, admission, deps.runtime?.(admission, signal) ?? nodeAutoscaleRuntime(db, admission, { signal }));
         if (result === 'aborted') return held('node autoscale decision was superseded');
-        recordNodeAutoscaleHolding(service, null);
         return { state: 'completed' };
       } catch (error) { forget(service.id); recordNodeAutoscaleHolding(service, 'node autoscale evaluation failed; see server logs'); throw error; }
       finally { busy.delete(service.id); }

@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, type DB, eq, runMigrations, servers, services, users } from '@ninedeploy/db';
+import { createDb, type DB, deployments, eq, nodeAutoscaleCapacity, runMigrations, servers, services, users } from '@ninedeploy/db';
 
 /**
  * 0.16.10: `GET /v1/services/:id/autoscale` and the service PATCH that
@@ -41,7 +41,7 @@ afterEach(async () => {
 describe('autoscale configuration and status', () => {
   it('reports why node autoscaling is held to the authorized service owner', async () => {
     await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
-    await db.update(services).set({ serverId: 4, status: 'running', runtimeId: 'web-9',
+    await db.update(services).set({ serverId: 4, status: 'running', runtimeId: 'web-9', runtimeReplicas: 1,
       autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 5));
     const svc = (await db.query.services.findFirst({ where: eq(services.id, 5) }))!;
     await createNodeAutoscaleWorker(db, { blocked: () => false }).step(svc);
@@ -49,6 +49,14 @@ describe('autoscale configuration and status', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().holding).toBe('node autoscale capacity is not confirmed');
     expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OTHER })).statusCode).toBe(404);
+    await db.insert(deployments).values({ id: 9, serviceId: 5, status: 'running' });
+    await db.insert(nodeAutoscaleCapacity).values({ deploymentId: 9, serviceId: 5, serverId: 4, runtimeId: 'web-9', imageId: `sha256:${'f'.repeat(64)}`,
+      targets: [{ name: 'web-9', id: 'a'.repeat(64) }, { name: 'web-9-r2', id: 'b'.repeat(64) }] });
+    const sampledAt = Date.now();
+    await createNodeAutoscaleWorker(db, { blocked: () => false, sample: async () => ({ serverId: 4, serviceId: 5, deploymentId: 9,
+      sampledAt, requestId: 'a'.repeat(32), complete: true, items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95,
+        cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] }) }).step(svc);
+    expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toMatchObject({ value: 95, desired: 2, holding: null });
   });
   it('is off by default; a PATCH stores it with its defaults and the status shows it', async () => {
     expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toEqual({ enabled: false, replicas: 2 });

@@ -50,13 +50,17 @@ interface ServiceState {
 }
 
 const states = new Map<number, ServiceState>();
-const nodeHolds = new Map<number, { generation: string; reason: string | null }>();
+const nodeHolds = new Map<number, { generation: string; reason: string | null; sample?: { value: number; desired: number; sampledAt: number } }>();
 
 const nodeStatusGeneration = (svc: Service) => JSON.stringify([svc.serverId, svc.orchestrator, svc.runtimeId, svc.runtimeReplicas, svc.status, svc.asleepAt, svc.autoscale]);
 
 /** Keep node observations bound to the service configuration and runtime that produced them. */
 export function recordNodeAutoscaleHolding(svc: Service, reason: string | null): void {
   nodeHolds.set(svc.id, { generation: nodeStatusGeneration(svc), reason });
+}
+
+export function recordNodeAutoscaleSample(svc: Service, sample: { value: number; desired: number; sampledAt: number }): void {
+  nodeHolds.set(svc.id, { generation: nodeStatusGeneration(svc), reason: null, sample });
 }
 
 function stateOf(serviceId: number): ServiceState {
@@ -377,6 +381,10 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
   const node = svc.serverId != null && svc.orchestrator !== 'swarm';
   const st = node ? undefined : states.get(svc.id);
   const nodeHold = nodeHolds.get(svc.id);
+  const matchingNodeHold = nodeHold?.generation === nodeStatusGeneration(svc) ? nodeHold : undefined;
+  const nodeSample = matchingNodeHold?.sample;
+  const now = Date.now();
+  const freshNodeSample = nodeSample && now >= nodeSample.sampledAt && now - nodeSample.sampledAt <= AUTOSCALE_STATS_MAX_AGE_MS ? nodeSample : undefined;
   return {
     enabled: true,
     replicas,
@@ -384,9 +392,9 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
     maxReplicas: cfg.maxReplicas,
     metric: cfg.metric,
     target: cfg.target,
-    value: st?.value ?? null,
-    desired: st?.desired ?? null,
-    holding: node ? (nodeHold?.generation === nodeStatusGeneration(svc) ? nodeHold.reason : 'waiting for node autoscale evaluation') : st?.holding ?? null,
+    value: node ? freshNodeSample?.value ?? null : st?.value ?? null,
+    desired: node ? freshNodeSample?.desired ?? null : st?.desired ?? null,
+    holding: node ? (nodeSample && !freshNodeSample ? 'waiting for fresh node metrics' : matchingNodeHold ? matchingNodeHold.reason : 'waiting for node autoscale evaluation') : st?.holding ?? null,
     lastEvent: st?.lastEvent ?? null,
     scheduledFloor: (() => {
       const f = effectiveMinimum(cfg, Date.now());

@@ -50,6 +50,19 @@ it('holds without sampling when the active generation has no capacity receipt', 
   expect(sample).not.toHaveBeenCalled();
 });
 
+it('reports a verified node sample and expires its value and desired count', async () => {
+  const now = Date.now(), svc = await service();
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, sample: async () => ({
+    serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: now, requestId: 'a'.repeat(32), complete: true,
+    items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95, cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }],
+  }) });
+  await worker.step(svc);
+  expect(autoscaleStatus(svc)).toMatchObject({ value: 95, desired: 2, holding: null });
+  clock.mockReturnValue(now + 90_001);
+  expect(autoscaleStatus(svc)).toMatchObject({ value: null, desired: null, holding: 'waiting for fresh node metrics' });
+});
+
 it('starts and verifies scale-up before publishing the new route', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
   const runtime = deps(), ready = runtime.ready, route = runtime.route;
@@ -218,8 +231,9 @@ it('restarts the decision window after node sampling fails', async () => {
       items: [{ id: 'a'.repeat(64), name: 'web-9', cpuPct: 95, cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] };
   } });
   expect((await worker.step(svc)).state).toBe('held');
+  expect(autoscaleStatus(svc)).toMatchObject({ value: 95, desired: 2 });
   fail = true; await expect(worker.step(svc)).rejects.toThrow('node offline');
-  expect(autoscaleStatus(svc).holding).toBe('node autoscale evaluation failed; see server logs');
+  expect(autoscaleStatus(svc)).toMatchObject({ value: null, desired: null, holding: 'node autoscale evaluation failed; see server logs' });
   fail = false; time = now;
   expect((await worker.step(svc)).state).toBe('held');
   expect(autoscaleStatus(svc).holding).toBeNull();
