@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest, runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply } from '../src/containerMutation.js';
+import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest, runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply, containerLimitsRequest, containerLimitsReply } from '../src/containerMutation.js';
 const head = { requestId: 'a'.repeat(32), serviceId: 7, revision: 8, timeoutMs: 30_000 };
 const spec = { name: 'web-10', image: 'sha256:' + 'b'.repeat(64), serviceId: 7, deploymentId: 10 };
 const prepare = { ...head, deploymentId: 10, specs: [spec] };
@@ -110,5 +110,27 @@ describe('generation-independent Stop wire contracts', () => {
     expect(containerInventoryReply.safeParse({ ...replyHead, items: [{ ...target, running: true }, { ...target, running: false }] }).success).toBe(false);
     expect(containerStopSetReply.safeParse({ ...replyHead, items: [{ ...target, running: true }] }).success).toBe(false);
     expect(containerStopSetReply.safeParse({ ...replyHead, items: [{ ...target, running: false }, { ...target, running: false }] }).success).toBe(false);
+  });
+});
+
+describe('node resource limit contracts', () => {
+  const limits = { ...head, targets: [target], memLimitMb: 64 };
+  it.each([{ cpuShares: 512 }, { cpuLimitMilli: 500 }, { cpuShares: 0, cpuLimitMilli: 500 }, { memLimitMb: 64 },
+    { cpuShares: 0, memLimitMb: 64 }, { cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 64 },
+    { cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0 }, { cpuShares: 0, cpuLimitMilli: 0 }, {}])('requires a positive limit while accepting zero-valued verification fields: %j', fields => {
+    const parsed = containerLimitsRequest.safeParse({ ...head, targets: [target], ...fields });
+    expect(parsed.success).toBe(Object.values(fields).some(value => value > 0));
+  });
+  it.each([{ targets: [] }, { targets: [target, target] }, { targets: [target, { ...target, name: 'other' }] },
+    { targets: [target, { ...target, id: 'd'.repeat(64) }] }, { cpuShares: -1 }, { cpuShares: 262_145 },
+    { cpuLimitMilli: 512_001 }, { memLimitMb: Number.MAX_SAFE_INTEGER }, { timeoutMs: 60_001 }, { extra: true }])
+    ('rejects invalid identities, limits or bounds: %j', change => expect(containerLimitsRequest.safeParse({ ...limits, ...change }).success).toBe(false));
+  it('binds complete limit receipts to unique immutable identities', () => {
+    const reply = { ...replyHead, items: [target] };
+    expect(containerLimitsReply.parse(reply)).toEqual(reply);
+    for (const items of [[], [target, target], [target, { ...target, id: 'd'.repeat(64) }], [target, { ...target, name: 'other' }]]) {
+      expect(containerLimitsReply.safeParse({ ...reply, items }).success).toBe(false);
+    }
+    expect(containerLimitsReply.safeParse({ ...reply, complete: false }).success).toBe(false);
   });
 });
