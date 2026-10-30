@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
+import { config } from '../config.js';
 import { capture } from './exec.js';
 import type { NodeServiceFile } from './serviceFiles.js';
 
@@ -9,10 +10,13 @@ import type { NodeServiceFile } from './serviceFiles.js';
  * encrypted in the Swarm's raft log and no API call reads them back, as the
  * panel keeps them encrypted at rest.
  *
- * A secret cannot change, so its name carries the content's hash:
- * `<stack>-f<file id>-<sha12>`. An unchanged file reuses its secret, and an
- * edited one gets a new name and ID, which changes the service spec (and its
- * journal fingerprint) and rolls the tasks.
+ * A secret cannot change, so its name carries a version derived from the
+ * content: `<stack>-f<file id>-<12 hex>`, an HMAC under a key of this panel
+ * (never a plain hash: names are visible in `docker secret ls` and deploy
+ * logs, and a bare hash would confirm a guessed low-entropy file). An
+ * unchanged file reuses its secret, and an edited one gets a new name and ID,
+ * which changes the service spec (and its journal fingerprint) and rolls the
+ * tasks.
  *
  * Docker refuses to remove a secret the current spec uses, but not one only
  * the previous spec (the rollback target) uses, so pruning keeps both.
@@ -31,8 +35,11 @@ export interface SwarmFileSecret {
 
 const RE_SECRET_ID = /^[a-z0-9]{25}$/;
 
+/** The naming key: domain-separated from the panel's signing secret. */
+const namingKey = (): Buffer => createHmac('sha256', config.jwt.secret).update('nd-swarm-file-secret-v1').digest();
+
 export const fileSecretName = (stack: string, file: Pick<NodeServiceFile, 'id' | 'content'>): string =>
-  `${stack}-f${file.id}-${createHash('sha256').update(file.content).digest('hex').slice(0, 12)}`;
+  `${stack}-f${file.id}-${createHmac('sha256', namingKey()).update(`${stack}\0${file.id}\0`).update(file.content).digest('hex').slice(0, 12)}`;
 
 async function secretId(name: string): Promise<string | null> {
   const out = await capture('docker', ['secret', 'inspect', '--format', '{{.ID}}', name], { timeoutMs: 30_000, maxOutputBytes: 256 }).catch(() => null);
@@ -58,7 +65,7 @@ export async function ensureSwarmFileSecrets(stack: string, files: readonly Node
       });
       id = await secretId(name);
       if (!id) throw new Error(`Swarm secret ${name} could not be confirmed`);
-      log(`Swarm: file ${file.containerPath} stored as the secret ${name}`);
+      log(`Swarm: file ${file.containerPath} (#${file.id}) stored as a new Swarm secret`);
     }
     out.push({ secretId: id, secretName: name, target: file.containerPath });
   }

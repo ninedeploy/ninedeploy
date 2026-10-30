@@ -75,8 +75,10 @@ describe('file secrets', () => {
     expect(name).toMatch(/^nd-web-f1-[a-f0-9]{12}$/);
     expect(first[0]).toEqual({ secretId: expect.stringMatching(/^[a-f0-9]{25}$/), secretName: name, target: '/etc/app/a.conf' });
     expect(h.secrets.get(name)).toMatchObject({ data: 'a=1', labels: ['ninedeploy.swarm.stack=nd-web', 'ninedeploy.file=1'] });
-    // The content never travels on the command line.
+    // The content never travels on the command line, and the name is keyed: no bare hash a guess could be checked against.
     expect(h.calls.flat().some((a) => a.includes('a=1'))).toBe(false);
+    expect(name).not.toContain(createHash('sha256').update('a=1').digest('hex').slice(0, 12));
+    expect(log.mock.calls.flat().join(' ')).not.toContain(name);
 
     h.calls.length = 0;
     expect(await lib.ensureSwarmFileSecrets(STACK, files, log)).toEqual(first);
