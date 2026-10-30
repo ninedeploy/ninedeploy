@@ -212,6 +212,32 @@ async function journal(overrides: Partial<typeof fanoutTransitions.$inferInsert>
 const pendingJournal = () => f.db.select().from(fanoutTransitions);
 const recover = () => reconcileFanoutTransitions(f.db, { serviceId: 1, force: true });
 describe('durable fan-out reconciliation', () => {
+  it('recovers an interrupted blocked creation only when the recorded ID and name still match', async () => {
+    await journal({ phase: 'blocked', candidateContainerId: 'b'.repeat(64) });
+    expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
+    expect((await target())?.runtimeId).toBe(old); expect(stops()).toEqual([candidate]);
+    expect(await pendingJournal()).toEqual([]);
+  });
+  it('holds an interrupted blocked creation when the recorded name points to another ID', async () => {
+    await journal({ phase: 'blocked', candidateContainerId: 'b'.repeat(64) });
+    const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => args[2] === 'docker.identity' && args[3].name === candidate
+      ? { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id: 'c'.repeat(64), name: candidate, managed: 'service', serviceId: '1', deploymentId: '9' })}`] }
+      : original(...args));
+    expect(await finish(recover())).toEqual({ recovered: 0, held: 1 });
+    expect(stops()).toEqual([]); expect(writes).toEqual([]);
+    expect((await pendingJournal())[0]?.phase).toBe('blocked');
+  });
+  it('holds an interrupted blocked creation when identity inspection reports failure', async () => {
+    await journal({ phase: 'blocked', candidateContainerId: 'b'.repeat(64) });
+    const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => {
+      const response = await original(...args);
+      return args[2] === 'docker.identity' && args[3].name === candidate ? { ...response, exitCode: 1 } : response;
+    });
+    expect(await finish(recover())).toEqual({ recovered: 0, held: 1 });
+    expect(stops()).toEqual([]); expect(writes).toEqual([]);
+  });
   it('holds both generations if a configured command healthcheck is missing during recovery', async () => {
     await journal({ healthCheck: 'command' }); await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'idle' });
     expect(await finish(recover())).toEqual({ recovered: 0, held: 1 });

@@ -13,7 +13,7 @@ interface Identity { id: string; name: string; managed: string | null; serviceId
 export async function containerIdentity(db: DB, serverId: number, name: string): Promise<Identity | null> {
   const reply = await agentOp(db, serverId, 'docker.identity', { name }, () => {});
   const receipts = reply.lines.filter(line => line.startsWith('ND-CONTAINER '));
-  if (receipts.length !== 1) throw new Error('Container identity was not confirmed; update the node agent');
+  if (reply.exitCode !== 0 || receipts.length !== 1 || Buffer.byteLength(receipts[0]!) > 16_384) throw new Error('Container identity was not confirmed; update the node agent');
   const value = JSON.parse(receipts[0]!.slice(13)) as Identity | null;
   if (value && (!/^[a-f0-9]{64}$/.test(value.id) || typeof value.name !== 'string')) throw new Error('Invalid container identity receipt');
   return value;
@@ -133,10 +133,20 @@ export async function reconcileFanoutTransitions(db: DB, opts: { serviceId?: num
     try {
       const check = async () => { if (opts.signal?.aborted) throw new Error('Recovery stopped; runtimes retained'); await lease.check(); };
       await check();
-      if (claimed.phase === 'blocked') throw new Error('Candidate creation identity is unconfirmed; runtimes retained for review');
+      if (claimed.phase === 'blocked' && !claimed.candidateContainerId) throw new Error('Candidate creation identity is unconfirmed; runtimes retained for review');
       const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, entry.serverId, op, params, sink), `#${entry.serverId}`,
         await agentTransportSealed(db, entry.serverId), { cap: ['docker.recovery', 'proxy.routingAck'], feature: 'reconcile container generations', sealedRequired: true });
       if (refusal) throw new Error(refusal.message);
+      if (claimed.phase === 'blocked') {
+        const id = claimed.candidateContainerId!;
+        if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Candidate creation identity is invalid; runtimes retained');
+        const byId = await containerIdentity(db, entry.serverId, id); await check();
+        const byName = await containerIdentity(db, entry.serverId, entry.candidateRuntimeId); await check();
+        const matches = (value: Identity | null) => value?.id === id && value.name === entry.candidateRuntimeId && value.managed === 'service' &&
+          value.serviceId === String(entry.serviceId) && value.deploymentId === String(entry.deploymentId);
+        if (!matches(byId) || !matches(byName)) throw new Error('Candidate creation identity changed; runtimes retained');
+        await lease.patch({ phase: 'retained', reason: null });
+      }
       const svc = await db.query.services.findFirst({ where: eq(services.id, entry.serviceId) });
       if (!svc || svc.status !== 'running' || !svc.runtimeId) throw new Error('Service is stopped or unavailable; no runtime was started or removed');
       const primaryRuntimeId = svc.runtimeId;
