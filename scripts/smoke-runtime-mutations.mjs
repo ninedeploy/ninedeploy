@@ -11,7 +11,9 @@ assert.ok(image && /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<
 const proof=resolve(process.argv.find(arg=>arg.startsWith('--proof='))?.slice(8) ?? '.temp_files/runtime-mutation-'+randomBytes(6).toString('hex'));
 mkdirSync(proof,{recursive:true});
 writeFileSync(proof+'/agent-request.mjs',readFileSync(fileURLToPath(new URL('./fixtures/runtime-mutation-agent-request.mjs',import.meta.url))));
+writeFileSync(proof+'/autoscale-controller.mjs',readFileSync(fileURLToPath(new URL('./fixtures/runtime-autoscale-controller.mjs',import.meta.url))));
 const owner=randomBytes(16).toString('hex'), daemon='nd-runtime-mutation-'+owner, volume=daemon+'-home', home='/var/lib/ninedeploy-agent';
+const controllerOnly=process.argv.includes('--controller-only');
 const runners=[], jobs=[], cases=[]; const wrapperImage='ninedeploy-proof:runtime-mutation-'+owner;
 const docker='docker';
 const cli=args=>spawnSync(docker,args,{encoding:'utf8',windowsHide:true,timeout:90_000,maxBuffer:4<<20});
@@ -22,7 +24,7 @@ let daemonId;
 const inner=args=>check(['exec',daemonId,'docker',...args]);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async(fn,message)=>{const end=Date.now()+30_000;while(!fn()){assert.ok(Date.now()<end,message);await pause(100);}};
-const report=name=>{cases.push({name,passed:true});writeFileSync(proof+'/cases.json',JSON.stringify({image,realDocker:true,realSqlite:true,sealedHttp:true,independentAgentProcesses:true,publicPanelIntegration:false,cases},null,2));console.log('PASS '+name);};
+const report=(name,evidence={})=>{cases.push({name,passed:true,...evidence});writeFileSync(proof+'/cases.json',JSON.stringify({image,realDocker:true,realSqlite:true,sealedHttp:!controllerOnly,independentAgentProcesses:!controllerOnly,publicPanelIntegration:false,cases},null,2));console.log('PASS '+name);};
 function request(op,params,hold=false){
  const name=daemon+'-request-'+runners.length;runners.push(name);
  const args=['run','--rm','--name',name,'--label','ninedeploy.proof='+owner,'--network','container:'+daemonId,'--user','0','--no-healthcheck','-v',volume+':'+home,'-w',home,
@@ -58,6 +60,7 @@ try{
  await until(()=>cli(['exec',daemonId,'docker','info']).status===0,'Private Docker daemon readiness');
  check(['save','-o',proof+'/fixture.tar','busybox:1.36']);check(['cp',proof+'/fixture.tar',daemonId+':/root/fixture.tar']);inner(['load','-i','/root/fixture.tar']);
  for(const network of ['ninedeploy','nd-extra','nd-dbnet-proof'])inner(['network','create',network]);appImage=inner(['image','inspect','busybox:1.36','--format','{{.Id}}']);
+ if (!controllerOnly) {
  const first=batch(5,10);const prepared=receipt(run('docker.prepare',first),'ND-PREPARED ',first);
  assert.equal(prepared.items.length,3);assert.equal(new Set(prepared.items.map(x=>x.id)).size,3);
  for(const item of prepared.items){const actual=state(item.id);assert.equal(actual.running,!item.name.endsWith('-r3'));assert.equal(item.running,actual.running);assert.ok(actual.networks.ninedeploy&&actual.networks['nd-extra']);}
@@ -137,6 +140,32 @@ try{
  inner(['rm',spare.id]);const replacementId=inner(['run','-d','--name',spare.name,'--label','ninedeploy.managed=service','--label','ninedeploy.service=14','--label','ninedeploy.deployment=61',appImage,'sleep','300']);
  refused(run('docker.startSet',{...head(10,14),targets:[spare]}),/missing/);assert.equal(state(replacementId).running,true);
  report('start-set-binds-spare-id-replays-and-yields-to-stop-without-following-replacement');
+ // Inventory must acknowledge the exact completed fence watermark.
+ const boundedFence={...head(4,15),deploymentWatermark:70};receipt(run('docker.runtimeFence',boundedFence),'ND-RUNTIME-FENCE ',boundedFence);
+ const boundedInventory=receipt(run('docker.runtimeInventory',boundedFence),'ND-RUNTIME-INVENTORY ',boundedFence);
+ assert.equal(boundedInventory.deploymentWatermark,70);assert.deepEqual(boundedInventory.items,[]);
+ refused(run('docker.runtimeInventory',{...boundedFence,deploymentWatermark:71}),/watermark|fence/);
+ report('sealed-inventory-requires-the-completed-fence-watermark');
+ // An adopted ordered proxy write fences a late legacy request across native processes.
+ const proxyWrite={requestId:'a'.repeat(32),revision:2,timeoutMs:30_000,content:'http:\n  routers: {}\n'};
+ const proxyResult=run('proxy.writeOrderedConfig',proxyWrite);assert.equal(proxyResult.status,200);assert.equal(proxyResult.exitCode,0);
+ const proxyLines=proxyResult.lines.filter(line=>line.startsWith('ND-PROXY-WRITE '));assert.equal(proxyLines.length,1);
+ const proxyReceipt=JSON.parse(proxyLines[0].slice('ND-PROXY-WRITE '.length));assert.equal(proxyReceipt.revision,2);assert.equal(proxyReceipt.requestId,proxyWrite.requestId);assert.equal(proxyReceipt.complete,true);
+ refused(run('proxy.writeOrderedConfig',{...proxyWrite,revision:1,requestId:'b'.repeat(32),content:'old'}),/stale/);
+ refused(run('proxy.writeConfig',{kind:'dynamic',content:'late'}),/fenced/);
+ const proxyCheck=daemon+'-proxy-check';runners.push(proxyCheck);
+ check(['run','--rm','--name',proxyCheck,'--label','ninedeploy.proof='+owner,'--user','0','--no-healthcheck','-v',volume+':'+home,'-w',home,'--entrypoint','node',image,'-e',
+   'if(require("node:fs").readFileSync(".agent-proxy/dynamic/ninedeploy.yml","utf8")!==process.argv[1])process.exit(1)',proxyWrite.content]);
+ report('ordered-proxy-write-fences-delayed-legacy-and-older-revisions');
+ }
+ const controller=daemon+'-controller';runners.push(controller);
+ const controllerResult=cli(['run','--rm','--name',controller,'--label','ninedeploy.proof='+owner,'--network','container:'+daemonId,'--user','0','--no-healthcheck',
+   '-v',volume+':'+home,'-w',home,'--mount','type=bind,source='+proof+'/autoscale-controller.mjs,target=/proof/controller.mjs,readonly',
+   '-e','NODE_ENV=test','-e','NINEDEPLOY_DATA_DIR='+home+'/data','-e','DOCKER_HOST=tcp://127.0.0.1:2375','-e','PROOF_IMAGE='+appImage,'--entrypoint','node',image,'/proof/controller.mjs']);
+ writeFileSync(proof+'/autoscale-controller.log',(controllerResult.stdout??'')+'\n'+(controllerResult.stderr??''));
+ assert.equal(controllerResult.status,0,controllerResult.stderr||controllerResult.stdout);
+ assert.match(controllerResult.stdout,/PASS real Docker scale-up receipt recovery and scale-down/);
+ report('controller-real-docker-prepares-scales-recovers-and-fences-stale-start-proxy-stubbed', { sealedHttp:false, proxyConfirmation:false, readiness:'container-state-test-double' });
 }finally{
  for(const name of runners){const result=removeOwnedSmokeResource(cli,'container',name,owner,{removeAnonymousVolumes:true});assert.notEqual(result,'foreign',`Foreign runner: ${name}`);}
  await Promise.allSettled(jobs);
