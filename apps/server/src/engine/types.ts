@@ -127,6 +127,8 @@ export interface BuildContext {
 
 /** Identifies a running workload so the engine can stop/inspect it later. */
 export interface DeployRuntime {
+  /** Immutable creation receipt for a single node container's readiness checks. */
+  nodeReadinessId?: string;
   /** Durable authority for a generation prepared by the ordered node protocol. */
   nodeDeploymentOwner?: DeploymentRuntimeOwner;
   /** Creation receipts bind multi-replica node readiness to immutable containers. */

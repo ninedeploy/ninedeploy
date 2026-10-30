@@ -511,7 +511,7 @@ export function createRemoteDockerBuilder(
 
       // The run phase (env-file, `docker.runEnv`, cleanup) lives in
       // remoteRun.ts, unchanged.
-      const { port: resolvedPort, replicas, targets } = await runRemoteContainer(agent, {
+      const { port: resolvedPort, replicas, targets, containerId } = await runRemoteContainer(agent, {
         service: runService,
         deploymentId,
         env: runEnv,
@@ -553,6 +553,7 @@ export function createRemoteDockerBuilder(
       return {
         ...(sourceImageId ? { artifactBuild: { builtWithNixpacks, builtStatic: opts.prebuiltImage?.builtStatic ?? false } } : {}),
         runtimeId: name,
+        ...(containerId ? { nodeReadinessId: containerId } : {}),
         ...(targets ? { nodeTargets: targets, replicas } : {}),
         port: resolvedPort,
         healthPath: service.healthPath ?? '/',
@@ -601,12 +602,24 @@ export function createRemoteDockerBuilder(
         const remaining = deadline - Date.now();
         if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(pollMs, remaining)));
       };
+      const readinessTarget = runtime.nodeReadinessId ?? runtime.runtimeId;
+      const verifyReadinessIdentity = async () => {
+        if (!runtime.nodeReadinessId) return;
+        if (!/^[a-f0-9]{64}$/.test(runtime.nodeReadinessId)) throw new Error('Node readiness container identity is invalid');
+        const result = await healthCall('docker.identity', { name: runtime.runtimeId });
+        const frames = result.lines.filter(line => line.startsWith('ND-CONTAINER '));
+        if (result.exitCode !== 0 || frames.length !== 1 || Buffer.byteLength(frames[0]!) > 16_384) throw new Error('Node readiness identity is unconfirmed');
+        const value: unknown = JSON.parse(frames[0]!.slice(13));
+        if (!value || typeof value !== 'object' || !('id' in value) || !('name' in value) || value.id !== runtime.nodeReadinessId || value.name !== runtime.runtimeId) {
+          throw new Error('Node readiness container identity changed');
+        }
+      };
       if (!runtime.nodeTargets?.length && !runtime.healthCheck && readinessMode === 'tcp') {
         try {
           const ping = await healthCall('agent.ping', {});
           if (ping.exitCode !== 0) throw new Error('Node agent capability check failed');
           const refusal = capabilityRefusalFor(parseAgentCapabilities(ping.lines), opts.nodeLabel ?? 'node',
-            { cap: 'docker.probe', feature: 'verify the configured application port' });
+            { cap: runtime.nodeReadinessId ? ['docker.probe', 'docker.recovery'] : 'docker.probe', feature: 'verify the configured application port' });
           if (refusal) { log(refusal.message); return false; }
         } catch (error) {
           if (interruption) throw interruption.reason;
@@ -643,9 +656,10 @@ export function createRemoteDockerBuilder(
       let lastRestarts: number | undefined;
       while (Date.now() < deadline && !deployAborted()) {
         try {
+          await verifyReadinessIdentity();
           const res = await healthCall(
             'docker.inspect',
-            { name: runtime.runtimeId, format: 'health' },
+            { name: readinessTarget, format: 'health' },
           );
           if (res.exitCode !== 0 || res.lines.filter(line => line.trim()).length !== 1) throw new Error('Node health inspection is unconfirmed');
           const { status, health, failingStreak, restarts } = parseHealth(res.lines);
@@ -671,7 +685,7 @@ export function createRemoteDockerBuilder(
             if (readinessMode === 'http-strict' || readinessMode === 'tcp') {
               if (!runtime.port) return failWithLogs('HTTP/TCP readiness needs a container port.');
               const result = await healthCall('docker.probe', {
-                name: runtime.runtimeId, port: runtime.port,
+                name: readinessTarget, port: runtime.port,
                 protocol: readinessMode === 'tcp' ? 'tcp' : 'http', path: runtime.healthPath,
               });
               const ready = confirmedNodeProbe(result.lines, result.exitCode, readinessMode === 'tcp' ? 'tcp' : 'http');
@@ -680,7 +694,7 @@ export function createRemoteDockerBuilder(
                 await wait();
                 continue;
               }
-              const afterProbe = await healthCall('docker.inspect', { name: runtime.runtimeId, format: 'health' });
+              const afterProbe = await healthCall('docker.inspect', { name: readinessTarget, format: 'health' });
               if (afterProbe.exitCode !== 0 || afterProbe.lines.filter(line => line.trim()).length !== 1) throw new Error('Node health inspection after probe is unconfirmed');
               const observed = parseHealth(afterProbe.lines);
               if (observed.status !== 'running' || !['none', 'healthy'].includes(observed.health) || observed.restarts !== restarts ||
@@ -690,6 +704,7 @@ export function createRemoteDockerBuilder(
                 continue;
               }
             }
+            await verifyReadinessIdentity();
             stable += 1;
             if (stable >= needed) {
               log(

@@ -247,7 +247,7 @@ export async function runRemoteContainer(agent: AgentCall, input: RemoteRunInput
     await agent('file.deleteEnv', { name: envFileName }, sink).catch(() => undefined);
   }
 
-  return { port: resolvedPort, ...(input.immutableFailureCleanup && containerId ? { containerId } : {}) };
+  return { port: resolvedPort, ...(containerId ? { containerId } : {}) };
 }
 
 // ── 0.16 T5 node volumes ──

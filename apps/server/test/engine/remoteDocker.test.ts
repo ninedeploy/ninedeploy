@@ -77,6 +77,11 @@ const ctx = (over: Partial<BuildContext> = {}): BuildContext =>
   }) as BuildContext;
 
 describe('remote docker builder — image services', () => {
+  it('carries the immutable creation receipt into node readiness', async () => {
+    const id = 'a'.repeat(64), { agent } = fakeAgent({ 'docker.runEnv': { exitCode: 0, lines: [id] } });
+    const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }));
+    expect(runtime.nodeReadinessId).toBe(id);
+  });
   it('preserves an explicitly configured container-state readiness mode', async () => {
     const { agent } = fakeAgent();
     const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1', healthCheck: 'running' }) }));
@@ -365,6 +370,32 @@ describe('remote docker builder — what it refuses', () => {
       expect(await pending).toBe(true);
       expect(probes).toBe(3);
     } finally { vi.useRealTimers(); }
+  });
+  it('does not accept a probe if the candidate name changes to another immutable container', async () => {
+    vi.useFakeTimers();
+    try {
+      const id = 'a'.repeat(64), replacement = 'b'.repeat(64); let identities = 0;
+      const agent: AgentCall = async (op, params) => {
+        if (op === 'docker.identity') return { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id: ++identities === 1 ? id : replacement, name: 'web-7', managed: 'service', serviceId: '1', deploymentId: '7' })}`] };
+        if (op === 'docker.inspect') { expect(params.name).toBe(id); return { exitCode: 0, lines: ['running|none|0|0'] }; }
+        if (op === 'docker.probe') { expect(params.name).toBe(id); return { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] }; }
+        return { exitCode: 0, lines: [] };
+      };
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', nodeReadinessId: id, port: 3000, healthPath: '/', healthCheck: 'tcp' }, 300, 0);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(false); expect(identities).toBeGreaterThan(1);
+    } finally { vi.useRealTimers(); }
+  });
+  it('accepts a probe against the immutable ID while its candidate name still refers to it', async () => {
+    const id = 'a'.repeat(64); let identities = 0;
+    const agent: AgentCall = async (op, params) => {
+      if (op === 'docker.identity') { identities++; return { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id, name: 'web-7' })}`] }; }
+      if (op === 'docker.inspect') { expect(params.name).toBe(id); return { exitCode: 0, lines: ['running|none|0|0'] }; }
+      if (op === 'docker.probe') { expect(params.name).toBe(id); return { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] }; }
+      return { exitCode: 0, lines: [] };
+    };
+    await expect(createRemoteDockerBuilder(agent).isHealthy({ runtimeId: 'web-7', nodeReadinessId: id, port: 3000, healthPath: '/', healthCheck: 'tcp' }, 1000, 0)).resolves.toBe(true);
+    expect(identities).toBe(2);
   });
   it.each(['restarting|none|0|1', 'running|none|0|1', 'running|unhealthy|1|0', 'running|none||0'])
   ('rejects a probe result if the container changes during that probe: %s', async after => {
