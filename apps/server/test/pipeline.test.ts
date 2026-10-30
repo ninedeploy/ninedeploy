@@ -2627,13 +2627,17 @@ describe('runDeployment on a remote-server target', () => {
    * samples, a poll apart).
    */
   const agentAnswersRunning = () => {
-    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, params: Record<string, unknown>) =>
-      op === 'file.writeEnv'
-        ? { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] }
-        : op === 'docker.inspect'
-        ? { exitCode: 0, lines: ['running|none|0|0'] }
-        : { exitCode: 0, lines: [] },
-    );
+    let created = '';
+    const id = 'a'.repeat(64);
+    h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, params: Record<string, unknown>) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.probe","docker.recovery"]}'] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
+      if (op === 'docker.runEnv' || op === 'docker.runSpec') { created = String(params.name); return { exitCode: 0, lines: [id] }; }
+      if (op === 'docker.identity') return { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id, name: created, managed: 'service', serviceId: '5', deploymentId: '1' })}`] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      if (op === 'docker.probe') return { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: true, protocol: params.protocol, ...(params.protocol === 'http' ? { status: 200 } : {}) })}`] };
+      return { exitCode: 0, lines: [] };
+    });
   };
 
   /**
@@ -2872,7 +2876,7 @@ describe('runDeployment on a remote-server target', () => {
     }
   });
 
-  it('0.16.4: a 0.16.4 agent runs the container with the labels and the healthcheck command', async () => {
+  it('an agent with recovery support runs the container with labels and the healthcheck command', async () => {
     const { db } = makeDb();
     baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4, dockerLabels: { 'com.example.team': 'payments' }, healthCheck: 'command', healthCommand: 'pg_isready -U app' });
     const lines = collectLogs(1);
@@ -2881,7 +2885,11 @@ describe('runDeployment on a remote-server target', () => {
       op === 'file.writeEnv'
         ? { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] }
         : op === 'agent.ping'
-        ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.16.4', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.ports', 'docker.userLabels', 'docker.healthCmd'] })}`] }
+        ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.18.0', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.ports', 'docker.userLabels', 'docker.healthCmd', 'docker.recovery'] })}`] }
+        : op === 'docker.runSpec'
+        ? { exitCode: 0, lines: ['a'.repeat(64)] }
+        : op === 'docker.identity'
+        ? { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id: 'a'.repeat(64), name: 'web-1', managed: 'service', serviceId: '5', deploymentId: '1' })}`] }
         : op === 'docker.inspect'
           ? { exitCode: 0, lines: ['running|healthy|0|0'] }
           : { exitCode: 0, lines: [] },
