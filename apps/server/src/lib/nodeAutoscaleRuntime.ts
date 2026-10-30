@@ -39,7 +39,7 @@ export function nodeAutoscaleRuntime(db: DB, admission: NodeAutoscaleAdmission,
       const mode = service.healthCheck;
       return verifyNodeReadiness((op, params, sink, opts) => call(op, params, sink, Math.min(15_000, opts?.timeoutMs ?? 15_000)),
         { targets: targets.map(({ id, name }) => ({ id, name })), port: service.port, path: service.healthPath || '/',
-          mode: mode === 'running' || mode === 'command' || mode === 'http-strict' || mode === 'tcp' ? mode : 'auto' },
+          mode: mode === 'running' || mode === 'command' || mode === 'http-strict' || mode === 'tcp' ? mode : service.port ? 'tcp' : 'auto' },
         Math.min(60_000, (service.healthTimeoutSeconds ?? 60) * 1000), checkpoint, options.log ?? (() => undefined));
     },
     route: async (_service, serverId) => {

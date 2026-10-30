@@ -23,6 +23,16 @@ beforeEach(async () => {
 });
 afterEach(() => c.client?.close());
 
+it.each([
+  { healthCheck: null, port: 3000, expected: 'tcp' },
+  { healthCheck: null, port: null, expected: 'auto' },
+  { healthCheck: 'running' as const, port: 3000, expected: 'running' },
+])('applies the node readiness policy before scaling: $expected', async ({ healthCheck, port, expected }) => {
+  await c.db.update(services).set({ healthCheck, port }).where(eq(services.id, 1));
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  await nodeAutoscaleRuntime(c.db, admission).ready(admission.service, [{ id: 'a'.repeat(64), name: 'web-9-r2', deploymentId: 9 }]);
+  expect(io.ready.mock.calls[0]![1]).toMatchObject({ mode: expected, port });
+});
 it('uses sealed readiness with immutable IDs and binds scale-up promotion to the owner', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
   const runtime = nodeAutoscaleRuntime(c.db, admission);
