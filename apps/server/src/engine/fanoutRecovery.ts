@@ -34,7 +34,11 @@ function recoveryLease(db: DB, row: FanoutTransition, token: string) {
   const check = async () => {
     if (lost || stopped || !(await db.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(held()).limit(1)).length) throw new Error('Fan-out recovery ownership changed; runtimes retained');
   };
-  const captureCandidate = async () => {
+  const captureCandidate = async (createdId?: string) => {
+    if (createdId !== undefined) {
+      if (!/^[a-f0-9]{64}$/.test(createdId) || row.candidateContainerId && row.candidateContainerId !== createdId) throw new Error('Candidate creation identity changed; retained');
+      if (!row.candidateContainerId) await patch({ candidateContainerId: createdId });
+    }
     const identity = await containerIdentity(db, row.serverId, row.candidateRuntimeId);
     if (!identity || identity.name !== row.candidateRuntimeId || identity.managed !== 'service' || identity.serviceId !== String(row.serviceId) || identity.deploymentId !== String(row.deploymentId)) throw new Error('Candidate ownership was not confirmed; runtimes retained');
     if (row.candidateContainerId && row.candidateContainerId !== identity.id) throw new Error('Candidate container identity changed; retained');
@@ -66,6 +70,7 @@ function recoveryLease(db: DB, row: FanoutTransition, token: string) {
   const stopHeartbeat = async () => { clearInterval(heartbeat); await renewal; };
   return {
     row, check, patch, captureCandidate, retire,
+    async blockUnknownCreation() { await patch({ phase: 'blocked', reason: 'Candidate creation identity is unconfirmed; runtimes retained for review' }); },
     fence: () => exists(db.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(held())),
     async complete() {
       await check(); await stopHeartbeat();
@@ -75,7 +80,7 @@ function recoveryLease(db: DB, row: FanoutTransition, token: string) {
     },
     async release(reason = 'Routing or cleanup needs confirmation') {
       await stopHeartbeat();
-      if (!stopped && !lost) await patch({ phase: row.phase === 'retiring' ? 'retiring' : 'retained', reason: reason.slice(0, 300), ownerToken: null, leaseUntil: null, nextAttemptAt: new Date(Date.now() + Math.min(3600, 60 * 2 ** Math.min(row.attempts, 6)) * 1000) }).catch(() => {});
+      if (!stopped && !lost) await patch({ phase: row.phase === 'retiring' || row.phase === 'blocked' ? row.phase : 'retained', reason: reason.slice(0, 300), ownerToken: null, leaseUntil: null, nextAttemptAt: new Date(Date.now() + Math.min(3600, 60 * 2 ** Math.min(row.attempts, 6)) * 1000) }).catch(() => {});
       stopped = true;
     },
   };
@@ -128,6 +133,7 @@ export async function reconcileFanoutTransitions(db: DB, opts: { serviceId?: num
     try {
       const check = async () => { if (opts.signal?.aborted) throw new Error('Recovery stopped; runtimes retained'); await lease.check(); };
       await check();
+      if (claimed.phase === 'blocked') throw new Error('Candidate creation identity is unconfirmed; runtimes retained for review');
       const refusal = await capabilityRefusal((op, params, sink) => agentOp(db, entry.serverId, op, params, sink), `#${entry.serverId}`,
         await agentTransportSealed(db, entry.serverId), { cap: ['docker.recovery', 'proxy.routingAck'], feature: 'reconcile container generations', sealedRequired: true });
       if (refusal) throw new Error(refusal.message);

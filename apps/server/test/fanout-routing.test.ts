@@ -38,6 +38,7 @@ beforeEach(async () => {
   h.agent.mockReset().mockImplementation(async (_db, _id, op, p) => {
     if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.17.2', caps })}`] };
     if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(p.name)}.env`] };
+    if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['b'.repeat(64)] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: [p.format === 'health' ? 'running|none|0|0' : 'running|172.18.0.2'] };
     if (op === 'docker.identity') {
       const isOld = p.name === old || p.name === 'a'.repeat(64);
@@ -70,6 +71,37 @@ async function finish<T>(run: Promise<T>) { await pump(run); return run; }
 const stops = () => h.agent.mock.calls.filter(c => c[2] === 'docker.stop' || c[2] === 'docker.retire').map(c => c[3].name);
 const target = () => f.db.query.serviceTargets.findFirst({ where: eq(serviceTargets.id, 1) });
 describe('routed fan-out promotion through SQLite and the real renderer/writer', () => {
+  it('retains the old target when the created candidate name is replaced before identity capture', async () => {
+    const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => args[2] === 'docker.identity' && args[3].name === candidate
+      ? { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id: 'c'.repeat(64), name: candidate, managed: 'service', serviceId: '1', deploymentId: '9' })}`] }
+      : original(...args));
+    const result = await finish(start());
+    expect(result[0]).toMatchObject({ ok: false, runtimeId: old });
+    expect((await target())?.runtimeId).toBe(old); expect(writes).toEqual([]); expect(stops()).toEqual([]);
+    expect((await pendingJournal())[0]?.candidateContainerId).toBe('b'.repeat(64));
+  });
+  it.each([{ lines: [] }, { lines: ['b'.repeat(64), 'c'.repeat(64)] }])('retains both runtimes when a routed creation receipt is ambiguous: $lines', async ({ lines }) => {
+    const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => args[2] === 'docker.runEnv' ? { exitCode: 0, lines } : original(...args));
+    const result = await finish(start());
+    expect(result[0]).toMatchObject({ ok: false, runtimeId: old, error: expect.stringMatching(/creation identity/) });
+    expect((await target())?.runtimeId).toBe(old); expect(writes).toEqual([]); expect(stops()).toEqual([]);
+    expect((await pendingJournal())[0]?.phase).toBe('blocked');
+    expect(await finish(recover())).toEqual({ recovered: 0, held: 1 });
+    expect((await pendingJournal())[0]?.phase).toBe('blocked'); expect(stops()).toEqual([]); expect(writes).toEqual([]);
+  });
+  it('retains unknown candidate effects after a failed routed start', async () => {
+    const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'docker.runEnv') throw new Error('start reply lost');
+      return original(...args);
+    });
+    expect((await finish(start()))[0]).toMatchObject({ ok: false, runtimeId: old });
+    expect((await pendingJournal())[0]?.phase).toBe('blocked');
+    expect(await finish(recover())).toEqual({ recovered: 0, held: 1 });
+    expect(stops()).toEqual([]); expect(writes).toEqual([]);
+  });
   it('keeps the old runtime until the node confirms the loaded generation', async () => {
     const ack = gate(); confirm = () => ack.promise;
     const run = start(); await pump(run, true);

@@ -469,6 +469,11 @@ export async function deployToTargets(
       if (ctx.service.publishedPort && ctx.service.port) {
         runParams['publish'] = `${ctx.service.publishedPort}:${ctx.service.port}`;
       }
+      let creationId: string | undefined;
+      const recordCreation = (result: { exitCode: number; lines: string[] }) => {
+        const ids = result.lines.map(line => line.trim()).filter(line => /^[a-f0-9]{64}$/.test(line));
+        if (result.exitCode === 0 && ids.length === 1) creationId = ids[0];
+      };
       try {
         // ── 0.16 T4 run shape (D1) ──
         if (runSpec) {
@@ -489,7 +494,7 @@ export async function deployToTargets(
           }
           // 0.16.5: the files are on the target before its container starts.
           const fileMounts = await writeNodeFileMounts(agent, ctx.service, ctx.deploymentId, files, log);
-          await agent(
+          recordCreation(await agent(
             'docker.runSpec',
             runSpecParams(ctx.service as never, {
               name,
@@ -503,9 +508,9 @@ export async function deployToTargets(
               runtimeOptions,
             }),
             log,
-          );
+          ));
         } else {
-          await agent('docker.runEnv', runParams, log);
+          recordCreation(await agent('docker.runEnv', runParams, log));
         }
         // ── end 0.16 T4 ──
       } catch (err) {
@@ -514,14 +519,20 @@ export async function deployToTargets(
         // runtime — nothing would ever reference (or remove) it again. Same
         // cleanup as the primary (remoteDocker r264); never the tracked one.
         if (name !== target.runtimeId) {
-          if (recovery) await recovery.retire(name).catch(() => undefined);
+          if (recovery) await recovery.blockUnknownCreation();
           else await agent('docker.rm', { name }, () => undefined).catch(() => undefined);
         }
         throw err;
       } finally {
         await agent('file.deleteEnv', { name: envName }, log).catch(() => undefined);
       }
-      if (recovery) await recovery.captureCandidate();
+      if (recovery) {
+        if (!creationId) {
+          await recovery.blockUnknownCreation();
+          throw new Error('Candidate creation identity is unconfirmed; runtimes retained');
+        }
+        await recovery.captureCandidate(creationId);
+      }
       const ok = await waitRunning(agent, name, ctx.service, log);
       if (ok && routed) {
         const result = await promoteRoutedTarget(db, ctx, target, name, primaryRuntimeId!, retire, log, recovery!);
