@@ -285,6 +285,9 @@ pkg_install() {
     debian) run_apt_step apt-get install -y "$@" ;;
     rhel|fedora) run_quiet_step "dnf install $*" sudo dnf -y install "$@" ;;
     alpine) run_quiet_step "apk add $*" sudo apk add --no-cache "$@" ;;
+    suse) run_quiet_step "zypper install $*" sudo zypper --non-interactive install --no-recommends "$@" ;;
+    # --needed: never reinstall; no -y/-u here, so the installer does not upgrade the whole system.
+    arch) run_quiet_step "pacman -S $*" sudo pacman -S --noconfirm --needed "$@" ;;
     *) return 1 ;;
   esac
 }
@@ -316,6 +319,25 @@ install_docker_rpm() {
   # RHEL-family hosts ship podman/buildah/runc, which conflict with docker-ce.
   sudo dnf -y remove podman-docker buildah runc >/dev/null 2>&1 || true
   run_quiet_step "dnf install docker-ce" sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+# G4.1: Docker from the distribution's own repository on openSUSE / SLES
+# (SLES needs the Containers Module), started and enabled with systemd.
+install_docker_zypper() {
+  if ! pkg_install docker docker-compose docker-buildx; then
+    if [ "$( (. /etc/os-release && echo "$ID") 2>/dev/null)" = "sles" ]; then
+      warn "On SLES, Docker comes from the Containers Module: sudo SUSEConnect -p sle-module-containers/\$(. /etc/os-release && echo \$VERSION_ID)/\$(uname -m), then re-run."
+    fi
+    return 1
+  fi
+  sudo systemctl enable --now docker >/dev/null 2>&1 || true
+}
+
+# G4.1: Docker from Arch's own repository, started and enabled with systemd.
+# A stale package database makes pacman 404: then run `sudo pacman -Syu` and re-run.
+install_docker_pacman() {
+  pkg_install docker docker-compose docker-buildx || { warn "pacman could not install Docker; update the system first (sudo pacman -Syu) and re-run."; return 1; }
+  sudo systemctl enable --now docker >/dev/null 2>&1 || true
 }
 
 # Docker from Alpine's own repository (community), started and enabled with OpenRC.
@@ -630,6 +652,7 @@ verify_checksums_signature() {
 
 # G4.1: the distribution family from an os-release file: debian (Debian,
 # Ubuntu, Raspbian), rhel (RHEL, CentOS, Rocky, Alma, Oracle), fedora, alpine,
+# suse (openSUSE Leap/Tumbleweed, SLES), arch (Arch, Manjaro, EndeavourOS),
 # or unknown. ID decides first, then ID_LIKE. Amazon Linux is not claimed:
 # Docker's RPM repository does not serve it.
 os_family() {
@@ -643,6 +666,8 @@ os_family() {
       debian|ubuntu|raspbian) echo debian; return 0 ;;
       rhel|centos|rocky|almalinux|ol) echo rhel; return 0 ;;
       alpine) echo alpine; return 0 ;;
+      suse|opensuse|opensuse-leap|opensuse-tumbleweed|sles|sled|sles_sap) echo suse; return 0 ;;
+      arch|archarm|manjaro|endeavouros) echo arch; return 0 ;;
     esac
   done
   echo unknown
@@ -838,7 +863,7 @@ ok "Deployment mode: $INSTALL_MODE"
 
 # ── 1. Prerequisites ───────────────────────────────────────────────────────
 
-# Base system packages (G4.1: Debian/Ubuntu, RHEL/Rocky/Alma/Fedora, Alpine)
+# Base system packages (G4.1: Debian/Ubuntu, RHEL/Rocky/Alma/Fedora, Alpine, openSUSE/SLES, Arch)
 if [ "$(uname -s)" = "Linux" ]; then
   if ! command -v curl &>/dev/null || ! command -v git &>/dev/null || ! command -v tar &>/dev/null || ! command -v sha256sum &>/dev/null; then
     info "Installing base system packages (curl, git, ca-certificates, tar, coreutils)…"
@@ -850,6 +875,7 @@ if [ "$(uname -s)" = "Linux" ]; then
       # curl-minimal stays: swapping it for curl conflicts on RHEL 9.
       rhel|fedora) pkg_install git ca-certificates tar gzip coreutils || true ;;
       alpine) pkg_install curl git ca-certificates tar gzip coreutils util-linux || true ;;
+      suse|arch) pkg_install curl git ca-certificates tar gzip coreutils || true ;;
       *) warn "Unknown distribution: install curl, git, tar and coreutils yourself if a later step fails." ;;
     esac
   fi
@@ -1033,6 +1059,10 @@ if ! command -v docker &>/dev/null; then
     ok "Installed Docker from Docker Inc.'s signed RPM repository"
   elif [ "$_family" = "alpine" ] && install_docker_apk; then
     ok "Installed Docker from Alpine's repository"
+  elif [ "$_family" = "suse" ] && install_docker_zypper; then
+    ok "Installed Docker from the openSUSE/SLES repository"
+  elif [ "$_family" = "arch" ] && install_docker_pacman; then
+    ok "Installed Docker from Arch's repository"
   else
     warn "No signed Docker repository for this host — falling back to get.docker.com."
     run_vendor_script "https://get.docker.com" \
@@ -1466,6 +1496,7 @@ install_docker_mode() {
     info "Docker Compose v2 plugin missing — installing it…"
     case "$(host_family)" in
       alpine) pkg_install docker-cli-compose ;;
+      suse|arch) pkg_install docker-compose ;;
       *) pkg_install docker-compose-plugin ;;
     esac \
       || fail "Docker Compose v2 is required for the Docker install mode. Install the Compose plugin (docker-compose-plugin, or docker-cli-compose on Alpine) and re-run."

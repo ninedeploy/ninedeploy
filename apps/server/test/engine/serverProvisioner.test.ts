@@ -251,6 +251,9 @@ describe('serverProvisioner engine', () => {
     // Alpine: its own package under OpenRC.
     expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('apk add --no-cache docker docker-cli-compose docker-openrc');
     expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('rc-update add docker default');
+    // openSUSE/SLES and Arch: their own packages (get.docker.com serves neither).
+    expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('$S zypper --non-interactive install --no-recommends docker docker-compose docker-buildx');
+    expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('$S pacman -S --noconfirm --needed docker docker-compose docker-buildx');
     // Everything else as before.
     expect(NODE_DOCKER_INSTALL_SCRIPT).toContain('curl -fsSL https://get.docker.com | $S sh');
     // A non-root user never gets a password prompt.

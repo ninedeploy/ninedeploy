@@ -17,6 +17,8 @@ From 0.15.2 a node can do almost everything the panel host does: Nixpacks and Ra
 
 - RHEL, CentOS, Rocky, Alma and Oracle Linux: Docker Inc.'s signed RPM repository. `get.docker.com` refuses Rocky and Alma.
 - Alpine: its own `docker` package, enabled with OpenRC.
+- openSUSE Leap, Tumbleweed and SLES: the distribution's `docker`, `docker-compose` and `docker-buildx` packages, enabled with systemd. On SLES these come from the Containers Module, which must be active (`SUSEConnect -p sle-module-containers/...`).
+- Arch, Manjaro and EndeavourOS: the same three packages from Arch's own repository. Nothing else is upgraded, so a stale package database needs `pacman -Syu` first.
 - Debian, Ubuntu, Fedora and anything else: `get.docker.com`, as before.
 
 A non-root SSH user needs passwordless `sudo`.

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { fixtureBash, fixtureBashPath } from './bashFixture.js';
+import { NODE_DOCKER_INSTALL_SCRIPT } from '../src/engine/serverProvisioner.js';
 
 /**
  * G4.1: install.sh's distribution detection and its package-manager branches.
@@ -37,6 +38,11 @@ const OS_RELEASE: Record<string, string> = {
   'alpine-3.20': 'NAME="Alpine Linux"\nID=alpine\nVERSION_ID=3.20.8\n',
   'amazon-2023': 'NAME="Amazon Linux"\nVERSION_ID="2023"\nID="amzn"\nID_LIKE="fedora"\n',
   'opensuse-15.6': 'NAME="openSUSE Leap"\nVERSION_ID="15.6"\nID="opensuse-leap"\nID_LIKE="suse opensuse"\n',
+  'tumbleweed': 'NAME="openSUSE Tumbleweed"\nID="opensuse-tumbleweed"\nID_LIKE="opensuse suse"\n',
+  'sles-15': 'NAME="SLES"\nVERSION_ID="15.6"\nID="sles"\nID_LIKE="suse"\n',
+  'arch': 'NAME="Arch Linux"\nID=arch\nBUILD_ID=rolling\n',
+  'manjaro': 'NAME="Manjaro Linux"\nID="manjaro"\nID_LIKE="arch"\n',
+  'endeavouros': 'NAME="EndeavourOS"\nID="endeavouros"\nID_LIKE="arch"\n',
 };
 
 function family(name: string): { family: string; repo: string } {
@@ -66,11 +72,40 @@ describe.skipIf(!bashOk)('install.sh distribution detection (G4.1)', () => {
     ['rhel-9', 'rhel', 'https://download.docker.com/linux/rhel/docker-ce.repo'],
     ['fedora-41', 'fedora', 'https://download.docker.com/linux/fedora/docker-ce.repo'],
     ['alpine-3.20', 'alpine', ''],
-    // Not claimed: Docker's RPM repository does not serve Amazon Linux; SUSE comes later.
+    // Not claimed: Docker's RPM repository does not serve Amazon Linux.
     ['amazon-2023', 'unknown', ''],
-    ['opensuse-15.6', 'unknown', ''],
+    ['opensuse-15.6', 'suse', ''],
+    ['tumbleweed', 'suse', ''],
+    ['sles-15', 'suse', ''],
+    ['arch', 'arch', ''],
+    ['manjaro', 'arch', ''],
+    ['endeavouros', 'arch', ''],
   ])('%s → %s', (name, expected, repo) => {
     expect(family(name)).toEqual({ family: expected, repo });
+  });
+
+  it.each([
+    ['debian-12', 'other'],
+    ['fedora-41', 'other'],
+    ['rocky-9', 'rhel'],
+    ['alpine-3.20', 'alpine'],
+    ['amazon-2023', 'other'],
+    ['opensuse-15.6', 'suse'],
+    ['sles-15', 'suse'],
+    ['arch', 'arch'],
+    ['manjaro', 'arch'],
+  ])('the node bootstrap (SSH, cloud-init) reads %s as %s', (name, expected) => {
+    const dir = mkdtempSync(join(tmpdir(), 'nd-osrel-'));
+    dirs.push(dir);
+    const file = join(dir, 'os-release');
+    writeFileSync(file, OS_RELEASE[name]!);
+    // The detection block of NODE_DOCKER_INSTALL_SCRIPT, run against the fixture instead of /etc/os-release.
+    const start = NODE_DOCKER_INSTALL_SCRIPT.indexOf('ID=""');
+    const end = NODE_DOCKER_INSTALL_SCRIPT.indexOf('case "$FAMILY" in');
+    const detect = NODE_DOCKER_INSTALL_SCRIPT.slice(start, end).replaceAll('/etc/os-release', '"$1"');
+    const res = spawnSync(bash, ['-c', `${detect}\nprintf %s "$FAMILY"`, 'x', toBash(file)], { encoding: 'utf8' });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout).toBe(expected);
   });
 
   it('answers unknown for a host without os-release', () => {
@@ -86,11 +121,26 @@ describe('install.sh package-manager branches (G4.1)', () => {
     return installer.slice(start, installer.indexOf('\n}\n', start));
   };
 
-  it('installs with apt, dnf or apk by family', () => {
+  it('installs with apt, dnf, apk, zypper or pacman by family', () => {
     const body = fn('pkg_install');
     expect(body).toContain('debian) run_apt_step apt-get install -y "$@"');
     expect(body).toContain('rhel|fedora) run_quiet_step "dnf install $*" sudo dnf -y install "$@"');
     expect(body).toContain('alpine) run_quiet_step "apk add $*" sudo apk add --no-cache "$@"');
+    expect(body).toContain('suse) run_quiet_step "zypper install $*" sudo zypper --non-interactive install --no-recommends "$@"');
+    // --needed and no -u: the installer never upgrades the whole Arch system.
+    expect(body).toContain('arch) run_quiet_step "pacman -S $*" sudo pacman -S --noconfirm --needed "$@"');
+  });
+
+  it('takes Docker from the distribution on openSUSE/SLES and Arch, with the compose and buildx packages', () => {
+    for (const name of ['install_docker_zypper', 'install_docker_pacman']) {
+      const body = fn(name);
+      expect(body).toContain('pkg_install docker docker-compose docker-buildx');
+      expect(body).toContain('sudo systemctl enable --now docker');
+    }
+    expect(fn('install_docker_zypper')).toContain('SUSEConnect -p sle-module-containers/');
+    expect(installer).toContain('elif [ "$_family" = "suse" ] && install_docker_zypper; then');
+    expect(installer).toContain('elif [ "$_family" = "arch" ] && install_docker_pacman; then');
+    expect(installer).toContain('suse|arch) pkg_install docker-compose ;;');
   });
 
   it('takes Node and Docker from signed RPM repositories on dnf hosts', () => {

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- openSUSE Leap, Tumbleweed, SLES, Arch, Manjaro and EndeavourOS in `install.sh` and in node SSH bootstrap and cloud-init (G4.1). Docker comes from the distribution's own `docker`, `docker-compose` and `docker-buildx` packages, enabled with systemd; on SLES the Containers Module must be active. The installer does not install Node there: the bare-metal mode needs it already present. On Arch nothing else is upgraded.
 - Disk in the usage report (ROADMAP item 9). Once an hour the panel records the size of each service's volumes, on the panel host and on nodes, and Monitoring → Usage and cost shows it in GB-hours. No migration.
 - File mounts on Swarm (ROADMAP item 10). A Swarm service's files (Service → Volumes → Files) are mounted read-only in every task, each one as a Swarm secret whose name carries a keyed version of its content; an edited file rolls the tasks, and the secrets no deploy uses any more are removed, keeping the rollback target's. Swarm services with files used to be refused at deploy time. No migration.
 - PgBouncer for a postgres database on a node (ROADMAP item 10, agent capability `db.pgbouncer`, agent 0.18.12). The node's agent runs the same sidecar as the panel host, on the database's own bridge, with no port of the node published; attached services connect to `nd-pgb-<slug>`. `NINEDEPLOY_AGENT_PGBOUNCER=off` switches it off on a node. No migration.

@@ -86,8 +86,10 @@ const REMOTE_SETUP_TIMEOUT_MS = 10 * 60 * 1000;
 /**
  * G4.1: Docker on a fresh node, by distribution family. RHEL, CentOS, Rocky,
  * Alma and Oracle get Docker Inc.'s signed RPM repository (get.docker.com
- * refuses Rocky and Alma), Alpine its own `docker` package under OpenRC, and
- * everything else get.docker.com as before (Debian, Ubuntu, Fedora). A
+ * refuses Rocky and Alma), Alpine its own `docker` package under OpenRC,
+ * openSUSE/SLES and Arch their distribution's `docker` package (get.docker.com
+ * serves neither), and everything else get.docker.com as before (Debian,
+ * Ubuntu, Fedora). A
  * non-root SSH user runs it through `sudo -n` (no password prompt).
  */
 export const NODE_DOCKER_INSTALL_SCRIPT = String.raw`
@@ -105,6 +107,8 @@ for w in $ID $ID_LIKE; do
     fedora) [ "$w" = "$ID" ] && { FAMILY=other; break; } ;;
     rhel|centos|rocky|almalinux|ol) FAMILY=rhel; break ;;
     alpine) FAMILY=alpine; break ;;
+    suse|opensuse|opensuse-leap|opensuse-tumbleweed|sles|sled|sles_sap) FAMILY=suse; break ;;
+    arch|archarm|manjaro|endeavouros) FAMILY=arch; break ;;
     debian|ubuntu|raspbian) FAMILY=other; break ;;
   esac
 done
@@ -121,6 +125,14 @@ case "$FAMILY" in
     $S apk add --no-cache docker docker-cli-compose docker-openrc
     $S rc-update add docker default
     $S rc-service docker start
+    ;;
+  suse)
+    $S zypper --non-interactive install --no-recommends docker docker-compose docker-buildx
+    $S systemctl enable --now docker
+    ;;
+  arch)
+    $S pacman -S --noconfirm --needed docker docker-compose docker-buildx
+    $S systemctl enable --now docker
     ;;
   *)
     curl -fsSL https://get.docker.com | $S sh
