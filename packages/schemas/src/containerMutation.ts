@@ -73,3 +73,4 @@ export const containerLimitsReply = z.object({ requestId, serviceId: positive, r
   items: z.array(target).min(1).max(10).refine(distinct, 'Duplicate limit receipt identity'),
 }).strict();
 export type ContainerLimitsReply = z.infer<typeof containerLimitsReply>;
+export type ContainerLimitsRequest = z.infer<typeof containerLimitsRequest>;

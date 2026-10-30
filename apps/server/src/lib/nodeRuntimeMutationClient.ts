@@ -2,7 +2,8 @@ import type { DB } from '@ninedeploy/db';
 import {
   runtimeFenceRequest, runtimeFenceReply, containerPrepareRequest, containerPrepareReply,
   containerNetworkSetRequest, containerNetworkSetReply, containerRetireSetRequest, containerRetireSetReply,
-  type RuntimeFenceRequest, type ContainerPrepareRequest, type ContainerNetworkSetRequest, type ContainerRetireSetRequest,
+  containerLimitsRequest, containerLimitsReply,
+  type RuntimeFenceRequest, type ContainerPrepareRequest, type ContainerNetworkSetRequest, type ContainerRetireSetRequest, type ContainerLimitsRequest, type MultiNodeCapability,
 } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
@@ -17,7 +18,7 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
   options: { checkpoint: () => Promise<void>; signal?: AbortSignal; onLine?: (line: string) => void }) {
   if (!Number.isSafeInteger(serverId) || serverId < 1) throw new Error('Runtime mutation requires an explicit node');
   async function exchange<Request extends Header & { timeoutMs: number }, Reply extends Header>(
-    op: string, prefix: string, input: Request, parse: (value: unknown) => Reply, matches: (reply: Reply) => boolean,
+    op: string, prefix: string, input: Request, parse: (value: unknown) => Reply, matches: (reply: Reply) => boolean, cap: MultiNodeCapability = 'docker.mutations',
   ): Promise<Reply> {
     const deadline = performance.now() + input.timeoutMs;
     const remaining = () => Math.max(0, Math.floor(deadline - performance.now()));
@@ -32,7 +33,7 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
       await current();
       const result = await agentOp(db, serverId, operation, params, sink, { signal: options.signal, timeoutMs: Math.min(5000, remaining()) });
       await current(); return result;
-    }, '#' + serverId, sealed, { cap: 'docker.mutations', feature: 'order immutable runtime mutations', sealedRequired: true });
+    }, '#' + serverId, sealed, { cap, feature: 'order immutable runtime mutations', sealedRequired: true });
     if (refusal) throw new Error(refusal.message);
     await current();
     const budget = remaining();
@@ -67,6 +68,10 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
     retire(params: ContainerRetireSetRequest) {
       const input = containerRetireSetRequest.parse(params);
       return exchange('docker.retireSet', 'ND-RETIRED-SET ', input, value => containerRetireSetReply.parse(value), reply => sameTargets(input.targets, reply.items));
+    },
+    limits(params: ContainerLimitsRequest) {
+      const input = containerLimitsRequest.parse(params);
+      return exchange('docker.limits', 'ND-LIMITS ', input, value => containerLimitsReply.parse(value), reply => sameTargets(input.targets, reply.items), 'docker.limits');
     },
   };
 }

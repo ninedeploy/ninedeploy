@@ -133,6 +133,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
  */
 export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, readonly string[]>>> = {
   'docker.mutations': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
+  'docker.limits': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'docker.lifecycle': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
   'docker.lifecycle.generations': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
   'docker.lifecycle.creationFence': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],

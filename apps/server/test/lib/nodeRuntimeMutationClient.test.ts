@@ -12,17 +12,18 @@ const requests = {
   prepare: { ...header, deploymentId: 10, specs: [spec, { ...spec, name: spare.name }], startNames: [target.name] },
   networks: { ...header, action: 'connect' as const, targets: [target, spare], networks: ['nd-dbnet-pg'] },
   retire: { ...header, targets: [target, spare], graceSeconds: 5 },
+  limits: { ...header, targets: [target, spare], memLimitMb: 64 },
 };
-const kinds = ['fence', 'prepare', 'networks', 'retire'] as const;
+const kinds = ['fence', 'prepare', 'networks', 'retire', 'limits'] as const;
 type Kind = typeof kinds[number];
-const prefixes = { 'docker.runtimeFence': 'ND-RUNTIME-FENCE ', 'docker.prepare': 'ND-PREPARED ', 'docker.networkSet': 'ND-NETWORKS ', 'docker.retireSet': 'ND-RETIRED-SET ' };
+const prefixes = { 'docker.runtimeFence': 'ND-RUNTIME-FENCE ', 'docker.prepare': 'ND-PREPARED ', 'docker.networkSet': 'ND-NETWORKS ', 'docker.retireSet': 'ND-RETIRED-SET ', 'docker.limits': 'ND-LIMITS ' };
 const db = {} as DB;
 let patch: Record<string, unknown>, caps: string[], version: string, mutate: (() => void) | undefined, now: number;
 const checkpoint = vi.fn(async () => undefined);
 const client = (signal?: AbortSignal) => createNodeRuntimeMutationClient(db, 2, { checkpoint, signal });
 const invoke = (kind: Kind, input: unknown = requests[kind], signal?: AbortSignal) => Promise.resolve().then(() => client(signal)[kind](input as never));
 beforeEach(() => {
-  patch = {}; caps = ['docker.mutations']; version = '0.19.0'; mutate = undefined; now = 1000;
+  patch = {}; caps = ['docker.mutations', 'docker.limits']; version = '0.19.0'; mutate = undefined; now = 1000;
   vi.spyOn(performance, 'now').mockImplementation(() => now);
   checkpoint.mockReset().mockResolvedValue(undefined); io.sealed.mockReset().mockResolvedValue(true);
   io.op.mockReset().mockImplementation(async (_db, _server, op: keyof typeof prefixes | 'agent.ping', params) => {
@@ -32,6 +33,7 @@ beforeEach(() => {
     const reply = op === 'docker.runtimeFence' ? common : op === 'docker.prepare'
       ? { ...common, deploymentId: 10, items: [{ ...target, running: true }, { ...spare, running: false }] }
       : op === 'docker.networkSet' ? { ...common, action: params.action, networks: params.networks, items: params.targets.map((item: object) => ({ ...item, connected: params.action === 'connect' })) }
+      : op === 'docker.limits' ? { ...common, items: params.targets }
       : { ...common, items: params.targets.map((item: object) => ({ ...item, removed: true })) };
     return { exitCode: 0, lines: [prefixes[op] + JSON.stringify({ ...reply, ...patch })] };
   });
@@ -58,9 +60,19 @@ describe('selected-node ordered runtime mutation client', () => {
     io.sealed.mockResolvedValue(false); await expect(invoke(kind)).rejects.toThrow(/unencrypted/); expect(io.op).not.toHaveBeenCalled();
   });
   it('distinguishes an older agent from an owner-disabled ordered protocol', async () => {
-    caps = []; version = '0.18.3'; await expect(invoke('fence')).rejects.toThrow(/Update.*v0.19.0/);
+    caps = []; version = '0.18.3'; await expect(invoke('fence')).rejects.toThrow(/Update.*v0.18.10/);
     version = '0.19.0'; await expect(invoke('fence')).rejects.toThrow(/NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=off/);
     expect(io.op.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
+  });
+  it('does not send limits to an agent that lacks the dedicated capability', async () => {
+    caps = ['docker.mutations']; version = '0.18.11';
+    await expect(invoke('limits')).rejects.toThrow(/0\.18\.12/);
+    expect(io.op.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
+  });
+  it('requires evidence for every exact limit target', async () => {
+    for (const items of [[], [target], [target, { ...spare, id: 'e'.repeat(64) }], [target, { ...spare, deploymentId: 11 }]]) {
+      patch = { items }; await expect(invoke('limits')).rejects.toThrow();
+    }
   });
   it.each(kinds)('rejects %s replies belonging to another owner or revision', async kind => {
     for (const change of [{ requestId: 'd'.repeat(32) }, { serviceId: 8 }, { revision: 9 }, { complete: false }]) {
