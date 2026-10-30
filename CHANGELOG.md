@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.12] - 2026-10-30
+
 ### Added
 
 - Nodes on a tailnet (ROADMAP item 11). SSH bootstrap can join a node to a Tailscale or Headscale tailnet (Servers → Add server → Join a Tailscale tailnet; `privateNetwork` on `POST /v1/servers/ssh-bootstrap`). The agent is then published on the node's tailnet address only, and the node is registered under it. The auth key travels on the SSH session's stdin and is not stored. The panel host must be on the same tailnet. No migration.
@@ -16,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Disk in the usage report (ROADMAP item 9). Once an hour the panel records the size of each service's volumes, on the panel host and on nodes, and Monitoring → Usage and cost shows it in GB-hours. No migration.
 - File mounts on Swarm (ROADMAP item 10). A Swarm service's files (Service → Volumes → Files) are mounted read-only in every task, each one as a Swarm secret whose name carries a keyed version of its content; an edited file rolls the tasks, and the secrets no deploy uses any more are removed, keeping the rollback target's. Swarm services with files used to be refused at deploy time. No migration.
 - PgBouncer for a postgres database on a node (ROADMAP item 10, agent capability `db.pgbouncer`, agent 0.18.12). The node's agent runs the same sidecar as the panel host, on the database's own bridge, with no port of the node published; attached services connect to `nd-pgb-<slug>`. `NINEDEPLOY_AGENT_PGBOUNCER=off` switches it off on a node. No migration.
+
+### Fixed
+
+- Apply resource limits to the owned replicas of a running node service, including fan-out targets, after checking agent capabilities and runtime ownership. Older agents and unconfirmed or partial updates report that another deploy is needed; clearing a limit still takes effect on the next deploy. Node agents need the `docker.limits` capability.
+- Prevent a node service's resource-limit update from targeting a same-named container on the panel host, and verify every local replica before reporting a live update.
+- Explain when an initial Stop or recovery is held because a node agent needs an update; recheck placement during recovery.
+- Protect upgrade-smoke cleanup with per-run ownership labels and immutable container identities.
 
 ## [0.18.11] - 2026-10-30
 

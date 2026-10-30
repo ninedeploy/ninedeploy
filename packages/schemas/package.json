@@ -1,6 +1,6 @@
 {
   "name": "@ninedeploy/schemas",
-  "version": "0.18.11",
+  "version": "0.18.12",
   "description": "Shared Zod schemas and validation types for NineDeploy",
   "license": "MIT",
   "repository": {

@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.18.12",
+    "date": "2026-10-30",
+    "title": "Node operations and safer resource limits",
+    "changes": [
+      "Apply resource limits to verified node replicas and fan-out targets; clear limits on the next deploy and report incomplete updates accurately.",
+      "Join nodes to Tailscale or Headscale during SSH bootstrap and support openSUSE, SLES and Arch-family installations.",
+      "Add node PgBouncer, Swarm file mounts and disk usage reporting.",
+      "Improve mixed-agent Stop recovery guidance and verify resource ownership before upgrade-smoke cleanup."
+    ]
+  },
+  {
     "version": "0.18.11",
     "date": "2026-10-30",
     "title": "Safer initial node deploys and infrastructure tools",
