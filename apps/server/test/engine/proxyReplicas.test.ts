@@ -83,6 +83,14 @@ describe('fan-out replica placement', () => {
     expect(yaml).toContain('url: "http://web-9:3000"');
     expect(yaml).not.toContain('web-9-r2');
   });
+  it('keeps the last confirmed route when a scale-up transition is held', async () => {
+    const workerToken = 'b'.repeat(32), requestId = 'a'.repeat(32);
+    const db = makeDb([domainRow], [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-9', serverId: 4, type: 'docker', runtimeReplicas: 2 }], [],
+      [{ serviceId: 1, serverId: 4, runtimeId: 'web-9', fromReplicas: 1, toReplicas: 2, phase: 'held', ownerEpoch: 1, requestId, workerToken, leaseUntil: new Date(Date.now() + 60_000) }],
+      [{ serviceId: 1, epoch: 1, requestId, kind: 'scale' }]);
+    expect(await renderDynamicConfig(db as never, { serverId: 4 })).not.toContain('web-9-r2');
+    await expect(renderDynamicConfig(db as never, { serverId: 4, autoscalePromotion: { serviceId: 1, ownerEpoch: 1, requestId, workerToken } })).rejects.toThrow(/ownership/);
+  });
   it('only promotes the new route for the unexpired worker and runtime owner', async () => {
     const requestId = 'a'.repeat(32), workerToken = 'b'.repeat(32);
     const db = makeDb([domainRow], [{ id: 1, slug: 'web', port: 3000, runtimeId: 'web-9', serverId: 4, type: 'docker', runtimeReplicas: 2 }], [],

@@ -1080,12 +1080,12 @@ export async function renderDynamicConfig(
   const scaleTransitions = forNode ? await db.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serverId, opts.serverId!)) : [];
   const scaleOwners = scaleTransitions.length ? await db.select().from(serviceRuntimeOwners) : [];
   const scaleRouting = new Map(scaleTransitions.filter(transition =>
-    transition.phase === 'routing' && transition.toReplicas > transition.fromReplicas).map(transition => [transition.serviceId, transition]));
+    (transition.phase === 'routing' || transition.phase === 'held') && transition.toReplicas > transition.fromReplicas).map(transition => [transition.serviceId, transition]));
   if (opts.autoscalePromotion) {
     const requested = opts.autoscalePromotion, transition = scaleRouting.get(requested.serviceId);
     const svc = allServices.find(value => value.id === requested.serviceId);
     const owner = scaleOwners.find(value => value.serviceId === requested.serviceId);
-    if (!forNode || !transition || !svc || svc.serverId !== opts.serverId || svc.runtimeId !== transition.runtimeId ||
+    if (!forNode || !transition || transition.phase !== 'routing' || !svc || svc.serverId !== opts.serverId || svc.runtimeId !== transition.runtimeId ||
       svc.runtimeReplicas !== transition.toReplicas || !/^[a-f0-9]{32}$/.test(requested.workerToken) || requested.workerToken !== transition.workerToken ||
       requested.ownerEpoch !== transition.ownerEpoch || requested.requestId !== transition.requestId || owner?.kind !== 'scale' ||
       owner.epoch !== requested.ownerEpoch || owner.requestId !== requested.requestId || !transition.leaseUntil ||
