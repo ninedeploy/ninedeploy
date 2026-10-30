@@ -88,6 +88,7 @@ it('retains the environment if ownership changes while preparation is in flight'
   const prepare = opts.client.prepare.getMockImplementation()!;
   opts.client.prepare.mockImplementation(async input => { const reply = await prepare(input); current = false; return reply; });
   await expect(prepareNodeAutoscaleDeployment(opts)).rejects.toThrow('owner changed');
+  expect(opts.client.prepare).toHaveBeenCalledTimes(1);
   expect(calls).not.toContain('file.deleteEnv');
 });
 it('does not start preparation when ownership is lost during the fence request', async () => {
