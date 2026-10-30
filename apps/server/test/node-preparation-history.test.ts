@@ -30,6 +30,17 @@ it('protects unresolved node preparation from single deployment deletion and ret
   expect(await f.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
   expect(await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) })).toBeDefined();
 });
+it('exposes pending preparation status without private ownership or container identifiers', async () => {
+  await boot();
+  const response = await app.inject({ method: 'GET', url: '/services/1/node-preparations', headers: asUser() });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toEqual({ entries: [{ deploymentId: 9, serverId: 4, phase: 'preparing', deploymentStatus: 'failed' }] });
+  expect(response.body).not.toContain('a'.repeat(32));
+  expect(response.body).not.toContain('sha256:');
+  const outsider = await app.inject({ method: 'GET', url: '/services/1/node-preparations', headers: asUser({ id: 2, role: 'member', isOperator: false }) });
+  expect([403, 404]).toContain(outsider.statusCode);
+  expect(outsider.body).not.toContain('preparing');
+});
 it('refuses service deletion while a node preparation remains unresolved', async () => {
   await boot();
   const response = await app.inject({ method: 'DELETE', url: '/services/1', headers: asUser() });

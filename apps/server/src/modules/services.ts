@@ -6,6 +6,7 @@ import {
   buildConfigs,
   databaseAttachments,
   deployments,
+  nodeDeploymentPreparations,
   domains,
   environments,
   envVars,
@@ -1425,6 +1426,16 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const id = num((req.params as { id: string }).id);
     await loadServiceForUser(app.db, id, req.user!);
     return { entry: await listPrimaryRecovery(app.db, id) };
+  });
+
+  app.get('/:id/node-preparations', async req => {
+    const id = num((req.params as { id: string }).id);
+    await loadServiceForUser(app.db, id, req.user!);
+    const entries = await app.db.select({ deploymentId: nodeDeploymentPreparations.deploymentId, serverId: nodeDeploymentPreparations.serverId,
+      phase: nodeDeploymentPreparations.phase, deploymentStatus: deployments.status }).from(nodeDeploymentPreparations)
+      .innerJoin(deployments, and(eq(deployments.id, nodeDeploymentPreparations.deploymentId), eq(deployments.serviceId, nodeDeploymentPreparations.serviceId)))
+      .where(eq(nodeDeploymentPreparations.serviceId, id));
+    return { entries };
   });
 
   // Where the service's traffic goes right now: each domain through the router
