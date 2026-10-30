@@ -18,6 +18,8 @@ import { claimNodeDeploymentAttempt } from '../../src/lib/nodeDeploymentOwner.js
 import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { executeNodeLifecycleIntent } from '../../src/lib/nodeLifecycleController.js';
+import * as agentClient from '../../src/lib/agentClient.js';
+import { recoverPreparedNodeCandidate } from '../../src/lib/nodePreparationRecovery.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
 type Row = { id: string; name: string; managed: string | null; serviceId: string | null; deploymentId: string | null; composeProject?: string | null; nonce: string | null; specHash: string | null; running: boolean; status: string; networks: Record<string, object> };
@@ -55,6 +57,39 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
 });
 describe('persistent runtime request admission', () => {
+  it('replays a lost prepared-candidate retirement through the real node journal', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId: 'web-8', status: 'running' });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'queued' });
+      const admission = await claimNodeDeploymentAttempt(c.db, 10, (await c.db.query.services.findFirst())!, '{}');
+      if (!admission.claimed) throw Error('Missing deployment authority');
+      await beginNodeDeploymentPreparation(c.db, admission.owner, { runtimeId: 'web-10', imageId: image, serving: 1, capacity: 2 });
+      const prepared = await runtime().prepare({ ...prepare(5, 10, [spec(), spec(10, 'web-10-r2')]), startNames: ['web-10'] });
+      await completeNodeDeploymentPreparation(c.db, admission.owner, prepared.items.map(({ id, name }) => ({ id, name })));
+      rows.push({ id: 'e'.repeat(64), name: 'web-8', managed: 'service', serviceId: '7', deploymentId: '8', nonce: null, specHash: null,
+        running: true, status: 'running', networks: { ninedeploy: {} } });
+      await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+      vi.spyOn(agentClient, 'agentTransportSealed').mockResolvedValue(true);
+      let retireCalls = 0;
+      vi.spyOn(agentClient, 'agentOp').mockImplementation(async (_db, _server, op, params) => {
+        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.mutations"]}'] };
+        const lines: string[] = [], exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });
+        if (op === 'docker.retireSet' && ++retireCalls === 1) throw Error('lost retirement reply');
+        return { exitCode, lines };
+      });
+      await expect(recoverPreparedNodeCandidate(c.db, admission.owner)).rejects.toThrow('lost retirement reply');
+      expect(rows.map(row => row.name)).toEqual(['web-8']);
+      expect((await c.db.select().from(nodeDeploymentPreparations))[0]?.phase).toBe('retiring');
+      const before = effects().filter(args => args[0] === 'rm').length;
+      expect(await recoverPreparedNodeCandidate(c.db, admission.owner)).toEqual({ deploymentId: 10, retired: 2 });
+      expect(effects().filter(args => args[0] === 'rm')).toHaveLength(before);
+      expect(rows.map(row => [row.name, row.running])).toEqual([['web-8', true]]);
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
+    } finally { c.client?.close(); }
+  });
   it('retires a real journaled initial preparation and replays a lost handoff without touching another service', async () => {
     const c = createDb({ url: 'file::memory:' });
     try {

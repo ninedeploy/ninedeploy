@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, nodeDeploymentPreparations, nodeLifecycleIntents, primaryTransitions, fanoutTransitions, serviceTargets,
   deployments, services, sql, type DB, type DeploymentRuntimeOwner } from '@ninedeploy/db';
 import { inArray } from 'drizzle-orm';
+import { gt } from 'drizzle-orm';
 import { createNodeDeploymentAuthority } from './nodeDeploymentOwner.js';
 import { readNodeDeploymentPreparation } from './nodeDeploymentPreparation.js';
 import { createNodeRuntimeMutationClient } from './nodeRuntimeMutationClient.js';
@@ -73,4 +74,36 @@ export async function recoverPreparedNodeCandidate(db: DB, owner: DeploymentRunt
     if (removed.length !== 1) throw new Error('Node preparation recovery changed before settlement');
     return { deploymentId: owner.deploymentId, retired: targets.length };
   });
+}
+
+/** Process a bounded rotating batch so held candidates cannot starve later services. */
+export function createNodePreparationRecoveryRunner(db: DB, options: {
+  recover?: typeof recoverPreparedNodeCandidate; log?: (line: string) => void;
+} = {}) {
+  let cursor = 0;
+  return async (signal?: AbortSignal) => {
+    let rows = await db.select({ deploymentId: nodeDeploymentPreparations.deploymentId, serviceId: nodeDeploymentPreparations.serviceId,
+      serverId: nodeDeploymentPreparations.serverId, epoch: nodeDeploymentPreparations.epoch, requestId: nodeDeploymentPreparations.requestId })
+      .from(nodeDeploymentPreparations).innerJoin(deployments, and(eq(deployments.id, nodeDeploymentPreparations.deploymentId),
+        eq(deployments.serviceId, nodeDeploymentPreparations.serviceId)))
+      .where(and(inArray(nodeDeploymentPreparations.phase, ['prepared', 'retiring']), inArray(deployments.status, ['failed', 'cancelled']),
+        gt(nodeDeploymentPreparations.deploymentId, cursor))).orderBy(nodeDeploymentPreparations.deploymentId).limit(10);
+    if (!rows.length && cursor !== 0) {
+      cursor = 0;
+      rows = await db.select({ deploymentId: nodeDeploymentPreparations.deploymentId, serviceId: nodeDeploymentPreparations.serviceId,
+        serverId: nodeDeploymentPreparations.serverId, epoch: nodeDeploymentPreparations.epoch, requestId: nodeDeploymentPreparations.requestId })
+        .from(nodeDeploymentPreparations).innerJoin(deployments, and(eq(deployments.id, nodeDeploymentPreparations.deploymentId),
+          eq(deployments.serviceId, nodeDeploymentPreparations.serviceId)))
+        .where(and(inArray(nodeDeploymentPreparations.phase, ['prepared', 'retiring']), inArray(deployments.status, ['failed', 'cancelled'])))
+        .orderBy(nodeDeploymentPreparations.deploymentId).limit(10);
+    }
+    let recovered = 0, held = 0;
+    for (const owner of rows) {
+      if (signal?.aborted) break;
+      cursor = owner.deploymentId;
+      try { await (options.recover ?? recoverPreparedNodeCandidate)(db, owner, { signal }); recovered++; }
+      catch (error) { if (signal?.aborted) break; held++; options.log?.(`node preparation service #${owner.serviceId}: ${error instanceof Error ? error.message : 'recovery unavailable'}`); }
+    }
+    return { recovered, held };
+  };
 }

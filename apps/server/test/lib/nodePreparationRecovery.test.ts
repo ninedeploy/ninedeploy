@@ -5,7 +5,7 @@ import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation } fro
 
 const h = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn(async () => true) }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: h.agent, agentTransportSealed: h.sealed }));
-const { recoverPreparedNodeCandidate } = await import('../../src/lib/nodePreparationRecovery.js');
+const { recoverPreparedNodeCandidate, createNodePreparationRecoveryRunner } = await import('../../src/lib/nodePreparationRecovery.js');
 let c: ReturnType<typeof createDb>, owner: Awaited<ReturnType<typeof claimNodeDeploymentAttempt>> & { claimed: true }, loseReply: boolean;
 const targets = [{ id: 'a'.repeat(64), name: 'web-9', deploymentId: 9 }, { id: 'b'.repeat(64), name: 'web-9-r2', deploymentId: 9 }];
 beforeEach(async () => {
@@ -67,4 +67,29 @@ it('leaves an active deployment untouched', async () => {
   await c.db.update(deployments).set({ status: 'deploying' }).where(eq(deployments.id, 9));
   await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).rejects.toThrow(/routing|ownership/);
   expect(h.agent).not.toHaveBeenCalled();
+});
+it('retains the journal when service selection changes during retirement', async () => {
+  const original = h.agent.getMockImplementation()!;
+  h.agent.mockImplementation(async (...args) => {
+    const result = await original(...args);
+    if (args[2] === 'docker.retireSet') await c.db.update(services).set({ runtimeId: 'web-9' }).where(eq(services.id, 1));
+    return result;
+  });
+  await expect(recoverPreparedNodeCandidate(c.db, owner.owner)).rejects.toThrow(/routing|ownership/);
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]?.phase).toBe('retiring');
+});
+it('rotates held recovery work without starving later failed deployments', async () => {
+  for (let id = 10; id <= 21; id++) {
+    await c.db.insert(deployments).values({ id, serviceId: 1, status: id === 21 ? 'deploying' : 'failed' });
+    await c.db.insert(nodeDeploymentPreparations).values({ deploymentId: id, serviceId: 1, serverId: 4, epoch: 1, requestId: 'c'.repeat(32),
+      runtimeId: `web-${id}`, imageId: `sha256:${'f'.repeat(64)}`, serving: 1, capacity: 1, phase: 'prepared', targets: [{ id: 'a'.repeat(64), name: `web-${id}` }] });
+  }
+  const attempts: number[] = [];
+  const recover = vi.fn(async (_db, value) => { attempts.push(value.deploymentId); throw Error('node offline'); });
+  const run = createNodePreparationRecoveryRunner(c.db, { recover });
+  expect(await run()).toEqual({ recovered: 0, held: 10 });
+  expect(await run()).toEqual({ recovered: 0, held: 2 });
+  expect(attempts).toEqual([9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+  expect(await run()).toEqual({ recovered: 0, held: 10 });
+  expect(attempts[12]).toBe(9);
 });
