@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
-import { deployments, fanoutTransitions, nodeLifecycleIntents, primaryTransitions, services, serviceTargets,
+import { deployments, fanoutTransitions, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, services, serviceTargets,
   type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner } from './serviceRuntimeOwner.js';
 import { swarmRuntimeOf } from './swarm.js';
@@ -18,13 +18,14 @@ export async function admitNodeLimits(db: DB, expected: Service): Promise<NodeLi
   return db.transaction(async tx => {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
     if (!fresh || snapshot(fresh) !== snapshot(expected)) return null;
-    const [active, lifecycle, primary, fanout] = await Promise.all([
+    const [active, lifecycle, primary, fanout, autoscale] = await Promise.all([
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, fresh.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
       tx.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, fresh.id)).limit(1),
       tx.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(eq(fanoutTransitions.serviceId, fresh.id)).limit(1),
+      tx.select({ id: nodeAutoscaleTransitions.serviceId }).from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, fresh.id)).limit(1),
     ]);
-    if (active.length || lifecycle.length || primary.length || fanout.length) return null;
+    if (active.length || lifecycle.length || primary.length || fanout.length || autoscale.length) return null;
     const targets = await placements(tx, fresh.id);
     if (targets.some(t => !t.runtimeId || t.serverId === fresh.serverId) || new Set(targets.map(t => t.serverId)).size !== targets.length) return null;
     const [sequence] = await tx.select({ id: sql<number>`COALESCE((SELECT seq FROM sqlite_sequence WHERE name='deployments'), 0)` })
@@ -43,5 +44,6 @@ export async function admitNodeLimits(db: DB, expected: Service): Promise<NodeLi
 export async function checkpointNodeLimits(db: DB, admission: NodeLimitsAdmission): Promise<void> {
   const fresh = await db.query.services.findFirst({ where: eq(services.id, admission.service.id) });
   if (!fresh || snapshot(fresh) !== snapshot(admission.service) || !sameRuntimeOwner(await readServiceRuntimeOwner(db, fresh.id), admission.owner) ||
-    JSON.stringify(await placements(db, fresh.id)) !== JSON.stringify(admission.targets)) throw new Error('Node limit ownership or placement changed');
+    JSON.stringify(await placements(db, fresh.id)) !== JSON.stringify(admission.targets) ||
+    (await db.select({ id: nodeAutoscaleTransitions.serviceId }).from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, fresh.id)).limit(1)).length) throw new Error('Node limit ownership or placement changed');
 }

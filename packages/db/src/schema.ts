@@ -1858,6 +1858,28 @@ export const serviceRuntimeOwners = sqliteTable('service_runtime_owners', {
 });
 export type ServiceRuntimeOwner = typeof serviceRuntimeOwners.$inferSelect;
 
+/** A node scale decision survives panel restarts until a controller reconciles it. */
+export interface NodeAutoscalePlacement {
+  serverId: number;
+  runtimeId: string;
+}
+export const nodeAutoscaleTransitions = sqliteTable('node_autoscale_transitions', {
+  serviceId: integer('service_id').primaryKey().references(() => services.id, { onDelete: 'cascade' }),
+  ownerEpoch: integer('owner_epoch').notNull(),
+  requestId: text('request_id').notNull(),
+  serverId: integer('server_id').notNull(),
+  runtimeId: text('runtime_id').notNull(),
+  fromReplicas: integer('from_replicas').notNull(),
+  toReplicas: integer('to_replicas').notNull(),
+  watermark: integer('watermark').notNull(),
+  targets: text('targets', { mode: 'json' }).$type<NodeAutoscalePlacement[]>().notNull(),
+  phase: text('phase', { enum: ['accepted', 'held'] }).notNull().default('accepted'),
+  reason: text('reason'),
+  createdAt: ts('created_at'),
+  updatedAt: tsUpdatable('updated_at'),
+});
+export type NodeAutoscaleTransition = typeof nodeAutoscaleTransitions.$inferSelect;
+
 /** Private immutable deployment authority, independent of mutable configuration snapshots. */
 export const deploymentRuntimeOwners = sqliteTable('deployment_runtime_owners', {
   deploymentId: integer('deployment_id').primaryKey().references(() => deployments.id, { onDelete: 'cascade' }),

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { createDb, deployments, eq, fanoutTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
+import { createDb, deployments, eq, fanoutTransitions, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
 import { admitNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
@@ -17,41 +17,45 @@ afterEach(() => c.client?.close());
 
 it('reserves an ordered scale owner for the observed generation and node placements', async () => {
   await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5, runtimeId: 'web-t5-9' });
-  const admitted = await admitNodeAutoscale(c.db, await service());
+  const admitted = await admitNodeAutoscale(c.db, await service(), 2);
   expect(admitted).toMatchObject({ owner: { kind: 'scale', requestId: expect.stringMatching(/^[a-f0-9]{32}$/) }, watermark: 9,
-    targets: [{ serverId: 5, runtimeId: 'web-t5-9' }] });
+    desiredReplicas: 2, targets: [{ serverId: 5, runtimeId: 'web-t5-9' }] });
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toMatchObject([{ serviceId: 1, ownerEpoch: admitted!.owner.epoch,
+    requestId: admitted!.owner.requestId, serverId: 4, runtimeId: 'web-9', fromReplicas: 1, toReplicas: 2, watermark: 9,
+    phase: 'accepted', targets: [{ serverId: 5, runtimeId: 'web-t5-9' }] }]);
+  expect(await admitNodeAutoscale(c.db, await service(), 3)).toBeNull();
   await expect(checkpointNodeAutoscale(c.db, admitted!, 1)).resolves.toBeUndefined();
   await c.db.update(serviceTargets).set({ runtimeId: 'web-t5-10' }).where(eq(serviceTargets.serviceId, 1));
   await expect(checkpointNodeAutoscale(c.db, admitted!, 1)).rejects.toThrow(/placement changed/);
 });
 it.each(['queued', 'building', 'deploying'] as const)('does not displace a %s deployment', async status => {
   await c.db.insert(deployments).values({ id: 10, serviceId: 1, status });
-  expect(await admitNodeAutoscale(c.db, await service())).toBeNull();
+  expect(await admitNodeAutoscale(c.db, await service(), 2)).toBeNull();
   expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
 });
 it('does not displace a pending lifecycle command', async () => {
   await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
   const owner = await readServiceRuntimeOwner(c.db, 1);
-  expect(await admitNodeAutoscale(c.db, await service())).toBeNull();
+  expect(await admitNodeAutoscale(c.db, await service(), 2)).toBeNull();
   expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(owner);
 });
 it('does not displace unresolved fan-out recovery', async () => {
   await c.db.insert(fanoutTransitions).values({ serviceId: 1, serverId: 5, targetId: 42, deploymentId: 10, primaryRuntimeId: 'web-9',
     previousRuntimeId: 'web-t5-8', candidateRuntimeId: 'web-t5-10', port: 3000 });
-  expect(await admitNodeAutoscale(c.db, await service())).toBeNull();
+  expect(await admitNodeAutoscale(c.db, await service(), 2)).toBeNull();
 });
 it('refuses stale or sleeping configuration and unknown fan-out generations', async () => {
   const old = await service();
   await c.db.update(services).set({ runtimeReplicas: 2 }).where(eq(services.id, 1));
-  expect(await admitNodeAutoscale(c.db, old)).toBeNull();
+  expect(await admitNodeAutoscale(c.db, old, 2)).toBeNull();
   await c.db.update(services).set({ asleepAt: new Date() }).where(eq(services.id, 1));
-  expect(await admitNodeAutoscale(c.db, await service())).toBeNull();
+  expect(await admitNodeAutoscale(c.db, await service(), 3)).toBeNull();
   await c.db.update(services).set({ asleepAt: null }).where(eq(services.id, 1));
   await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5, runtimeId: null });
-  expect(await admitNodeAutoscale(c.db, await service())).toBeNull();
+  expect(await admitNodeAutoscale(c.db, await service(), 3)).toBeNull();
 });
 it('rejects checkpoints after serving count, health configuration or owner changes', async () => {
-  const admitted = (await admitNodeAutoscale(c.db, await service()))!;
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
   await expect(checkpointNodeAutoscale(c.db, admitted, 2)).rejects.toThrow(/runtime/);
   await c.db.update(services).set({ healthPath: '/new' }).where(eq(services.id, 1));
   await expect(checkpointNodeAutoscale(c.db, admitted, 1)).rejects.toThrow(/runtime/);
@@ -60,12 +64,12 @@ it('rejects checkpoints after serving count, health configuration or owner chang
   await expect(checkpointNodeAutoscale(c.db, admitted, 1)).rejects.toThrow(/ownership/);
 });
 it('stops at the checkpoint when a deployment is queued after admission', async () => {
-  const admitted = (await admitNodeAutoscale(c.db, await service()))!;
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
   await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
   await expect(checkpointNodeAutoscale(c.db, admitted, 1)).rejects.toThrow(/active/);
 });
 it('commits a serving count under the same owner and rejects stale or out-of-capacity writes', async () => {
-  const admitted = (await admitNodeAutoscale(c.db, await service()))!;
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
   await commitNodeAutoscaleReplicas(c.db, admitted, 1, 2);
   expect((await service()).runtimeReplicas).toBe(2);
   await expect(checkpointNodeAutoscale(c.db, admitted, 2)).resolves.toBeUndefined();
@@ -75,7 +79,7 @@ it('commits a serving count under the same owner and rejects stale or out-of-cap
   expect((await service()).runtimeReplicas).toBe(2);
 });
 it('does not write a count after a new deployment or owner arrives', async () => {
-  const admitted = (await admitNodeAutoscale(c.db, await service()))!;
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
   await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
   await expect(commitNodeAutoscaleReplicas(c.db, admitted, 1, 2)).rejects.toThrow(/active/);
   expect((await service()).runtimeReplicas).toBe(1);
@@ -83,4 +87,29 @@ it('does not write a count after a new deployment or owner arrives', async () =>
   await reserveServiceRuntimeOwner(c.db, 1, 'deploy', admitted.owner, 'b'.repeat(32));
   await expect(commitNodeAutoscaleReplicas(c.db, admitted, 1, 2)).rejects.toThrow(/ownership/);
   expect((await service()).runtimeReplicas).toBe(1);
+});
+it('can restore the original serving count when the configured maximum was lowered', async () => {
+  await c.db.update(services).set({ runtimeReplicas: 3,
+    autoscale: { minReplicas: 1, maxReplicas: 2, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  await commitNodeAutoscaleReplicas(c.db, admitted, 3, 2);
+  await commitNodeAutoscaleReplicas(c.db, admitted, 2, 3);
+  expect((await service()).runtimeReplicas).toBe(3);
+});
+it('refuses effects if the durable transition disappears or changes', async () => {
+  const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  await c.db.update(nodeAutoscaleTransitions).set({ toReplicas: 3 }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  await expect(commitNodeAutoscaleReplicas(c.db, admitted, 1, 2)).rejects.toThrow(/transition changed/);
+  await c.db.delete(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  await expect(checkpointNodeAutoscale(c.db, admitted, 1)).rejects.toThrow(/transition changed/);
+  expect((await service()).runtimeReplicas).toBe(1);
+});
+it('refuses an unchanged or out-of-range scale decision without reserving an owner', async () => {
+  for (const count of [0, 1, 4, 1.5]) expect(await admitNodeAutoscale(c.db, await service(), count)).toBeNull();
+  for (const count of [0, 11]) {
+    await c.db.update(services).set({ runtimeReplicas: count }).where(eq(services.id, 1));
+    expect(await admitNodeAutoscale(c.db, await service(), 2)).toBeNull();
+  }
+  expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
 });

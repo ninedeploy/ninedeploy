@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { createDb, deployments, eq, fanoutTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
+import { createDb, deployments, eq, fanoutTransitions, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
 import { admitNodeLimits, checkpointNodeLimits } from '../../src/lib/nodeLimitsAuthority.js';
+import { admitNodeAutoscale } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 
@@ -53,4 +54,17 @@ it('does not admit a target whose active generation is unknown', async () => {
   await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5, runtimeId: null });
   expect(await admitNodeLimits(c.db, await service())).toBeNull();
   expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
+});
+it('does not replace an unresolved autoscale transition with a limit update', async () => {
+  await c.db.update(services).set({ autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
+  const scale = await admitNodeAutoscale(c.db, await service(), 2);
+  expect(scale).not.toBeNull();
+  expect(await admitNodeLimits(c.db, await service())).toBeNull();
+  expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(scale!.owner);
+});
+it('invalidates an admitted limit update if an autoscale transition appears', async () => {
+  const limits = (await admitNodeLimits(c.db, await service()))!;
+  await c.db.insert(nodeAutoscaleTransitions).values({ serviceId: 1, ownerEpoch: 99, requestId: 'a'.repeat(32), serverId: 4,
+    runtimeId: 'web-9', fromReplicas: 1, toReplicas: 2, watermark: 9, targets: [] });
+  await expect(checkpointNodeLimits(c.db, limits)).rejects.toThrow(/ownership or placement/);
 });
