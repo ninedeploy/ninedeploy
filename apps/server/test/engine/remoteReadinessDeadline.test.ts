@@ -56,6 +56,6 @@ describe('remote readiness deadline', () => {
   it('still admits an immediately confirmed running and HTTP-ready candidate', async () => {
     const call = vi.fn(async (op: string) => ({ exitCode: 0, lines: [op === 'docker.inspect' ? 'running|none|0|0' : 'ND-PROBE {"ready":true,"protocol":"http","status":200}'] }));
     await expect(createRemoteDockerBuilder(call).isHealthy(runtime, 500, 0)).resolves.toBe(true);
-    expect(call.mock.calls.map(args => args[0])).toEqual(['docker.inspect', 'docker.probe']);
+    expect(call.mock.calls.map(args => args[0])).toEqual(['docker.inspect', 'docker.probe', 'docker.inspect']);
   });
 });

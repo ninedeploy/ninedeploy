@@ -236,6 +236,8 @@ describe('pipeline hooks (M5)', () => {
   it('a refused fan-out target is recorded failed and nothing is sent to it; the others proceed', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
       if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.probe"]}'] };
+      if (op === 'docker.probe') return { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] };
       if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params['name'])}.env`] };
       return { exitCode: 0, lines: [] };
     });
@@ -316,6 +318,7 @@ function fakeAgent() {
   const agent = async (op: string, params: Record<string, unknown>) => {
     calls.push({ op, params });
     if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/web-7.env'] };
+    if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['a'.repeat(64)] };
     return { exitCode: 0, lines: [] };
   };
   return { agent, calls, ops: () => calls.map((c) => c.op) };

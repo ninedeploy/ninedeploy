@@ -79,6 +79,7 @@ function fakeAgent(caps: string | null, opts: { echo?: string; failOn?: string; 
     if (opts.echo && (op.startsWith('git.'))) sink(opts.echo);
     if (op === opts.failOn) throw new Error(opts.failWith ?? `agent ${op} exited with 128`);
     if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params['name'])}.env`] };
+    if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['a'.repeat(64)] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
     return { exitCode: 0, lines: [] };
   };

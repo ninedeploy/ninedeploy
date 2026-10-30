@@ -40,6 +40,7 @@ function fakeAgent(overrides: Record<string, { exitCode: number; lines: string[]
     // r660: a current agent names its capabilities in the sealed ping.
     if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] };
     if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/web-7.env'] };
+    if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['a'.repeat(64)] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
     return { exitCode: 0, lines: [] };
   };
@@ -77,6 +78,11 @@ const ctx = (over: Partial<BuildContext> = {}): BuildContext =>
   }) as BuildContext;
 
 describe('remote docker builder — image services', () => {
+  it.each([{ lines: [] }, { lines: ['a'.repeat(64), 'b'.repeat(64)] }, { lines: ['not-a-container-id'] }])('does not accept an unconfirmed single-container creation identity: $lines', async ({ lines }) => {
+    const { agent, calls } = fakeAgent({ 'docker.runEnv': { exitCode: 0, lines } });
+    await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }))).rejects.toThrow(/creation identity.*unconfirmed/i);
+    expect(calls.some(call => call.op === 'docker.rm' || call.op === 'docker.stop')).toBe(false);
+  });
   it('carries the immutable creation receipt into node readiness', async () => {
     const id = 'a'.repeat(64), { agent } = fakeAgent({ 'docker.runEnv': { exitCode: 0, lines: [id] } });
     const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }));

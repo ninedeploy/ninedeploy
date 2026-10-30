@@ -526,6 +526,10 @@ export function createRemoteDockerBuilder(
         files: ctx.nodeFiles ?? [],
       });
 
+      if (!targets && !containerId) {
+        log(`Node container ${name} creation identity is unconfirmed; it is retained for review.`);
+        throw new Error('Node container creation identity is unconfirmed');
+      }
       if (targets) replicaSets.set(name, targets);
       if (opts.prebuiltImage && target === opts.prebuiltImage.imageId) {
         try {

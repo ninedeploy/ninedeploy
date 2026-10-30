@@ -88,6 +88,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.lifecycle.creationFence': 'fence delayed node container creation',
   'docker.lifecycle.retire': 'retire stopped node candidates',
   'docker.mutations': 'prepare, fence and retire owned container sets',
+  'docker.prepareAttemptEnv': 'prepare isolated environments',
   'docker.limits': 'update owned container resource limits',
   'docker.startSet': 'start owned container replicas',
   'host.packages': 'read and change OS updates',
@@ -305,7 +306,7 @@ describe('the regression baseline: an image deploy to a 0.15 agent is unchanged'
     const agent015 = async (op: string) => {
       sent.push(op);
       if (!OPS_015.has(op)) throw new Error(`agent ${op} failed (400): unknown_op`);
-      return { exitCode: 0, lines: op === 'file.writeEnv' ? ['wrote .agent-env/web-7.env'] : [] };
+      return { exitCode: 0, lines: op === 'file.writeEnv' ? ['wrote .agent-env/web-7.env'] : op === 'docker.runEnv' ? ['a'.repeat(64)] : [] };
     };
     const runtime = await createRemoteDockerBuilder(agent015).buildAndRun({
       deploymentId: 7,

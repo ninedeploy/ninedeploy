@@ -45,6 +45,7 @@ function fakeAgent(caps: string) {
     calls.push({ op, params });
     if (op === 'agent.ping') return { exitCode: 0, lines: [caps] };
     if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params['name'])}.env`] };
+    if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['a'.repeat(64)] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
     return { exitCode: 0, lines: [] };
   };

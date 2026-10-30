@@ -53,7 +53,7 @@ const PAT = 'ghp_staticPersonalAccessToken';
 const DEPLOY_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
 const REPO = 'https://github.com/acme/web.git';
 const UPDATE = /update the node agent to use GitHub App repositories on this node/i;
-const CAPS_NEW = 'ND-AGENT {"version":"0.13.0","caps":["build-path-guard","workspace.remove","git.credential"]}';
+const CAPS_NEW = 'ND-AGENT {"version":"0.13.0","caps":["build-path-guard","workspace.remove","git.credential","docker.probe"]}';
 const CAPS_OLD = 'ND-AGENT {"version":"0.12.0","caps":["build-path-guard","workspace.remove"]}';
 
 type Agent = (op: string, params: Record<string, unknown>, sink: (l: string) => void) => Promise<{ exitCode: number; lines: string[] }>;
@@ -91,6 +91,8 @@ function fakeAgent(caps: string | null, opts: { failOn?: string; failWith?: stri
     if (opts.echo && op.startsWith('git.')) sink(opts.echo);
     if (op === opts.failOn) throw new Error(opts.failWith ?? `agent ${op} exited with 128`);
     if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params['name'])}.env`] };
+    if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['a'.repeat(64)] };
+    if (op === 'docker.probe') return { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
     return { exitCode: 0, lines: [] };
   };
