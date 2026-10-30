@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, deploymentRuntimeOwners, deployments, eq, nodeLifecycleIntents, servers, serviceRuntimeOwners, services, type Service } from '@ninedeploy/db';
+import { createDb, runMigrations, deploymentRuntimeOwners, deployments, eq, nodeAutoscaleTransitions, nodeLifecycleIntents, servers, serviceRuntimeOwners, services, type Service } from '@ninedeploy/db';
 import { claimNodeDeploymentAttempt, createNodeDeploymentAuthority, NodeDeploymentOwnershipLost } from '../../src/lib/nodeDeploymentOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { readServiceRuntimeOwner, MAX_RUNTIME_EPOCH } from '../../src/lib/serviceRuntimeOwner.js';
@@ -16,6 +16,13 @@ beforeEach(async () => {
 afterEach(() => c.client!.close());
 
 describe('durable node deployment admission', () => {
+  it('keeps a queued deploy from superseding unfinished node autoscale recovery', async () => {
+    await c.db.insert(nodeAutoscaleTransitions).values({ serviceId: 1, ownerEpoch: 1, requestId: 'a'.repeat(32), serverId: 4,
+      runtimeId: 'web-8', fromReplicas: 1, toReplicas: 2, watermark: 9, targets: [], phase: 'handoff' });
+    expect(await claimNodeDeploymentAttempt(c.db, 9, await service(), '{}')).toEqual({ claimed: false, reason: 'not_claimable' });
+    expect(await readServiceRuntimeOwner(c.db, 1)).toBeNull();
+    expect((await c.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('queued');
+  });
   it.each(['failed', 'cancelled'] as const)('keeps the preparation owner when a %s deployment has an unresolved node receipt', async status => {
     const first = await claimNodeDeploymentAttempt(c.db, 9, await service(), '{}');
     if (!first.claimed) throw Error('Missing admitted owner');

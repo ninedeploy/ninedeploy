@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createDb, deployments, eq, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
-import { admitNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas, recoverNodeAutoscaleAdmission, freezeNodeAutoscaleInventory, nodeAutoscaleFence } from '../../src/lib/nodeAutoscaleAuthority.js';
+import { admitNodeAutoscale, advanceNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas, recoverNodeAutoscaleAdmission, freezeNodeAutoscaleInventory as freezeInventory, nodeAutoscaleFence } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import * as runtimeOwner from '../../src/lib/serviceRuntimeOwner.js';
 import { beginCanary, endCanary } from '../../src/engine/canaryState.js';
@@ -8,6 +8,11 @@ import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js'
 
 let c: ReturnType<typeof createDb>;
 const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
+async function freezeNodeAutoscaleInventory(db: typeof c.db, admission: NonNullable<Awaited<ReturnType<typeof admitNodeAutoscale>>>, evidence: unknown) {
+  const transition = await db.query.nodeAutoscaleTransitions.findFirst({ where: eq(nodeAutoscaleTransitions.serviceId, admission.service.id) });
+  if (transition?.phase === 'accepted') await advanceNodeAutoscale(db, admission, 'accepted', 'fencing');
+  return freezeInventory(db, admission, evidence);
+}
 beforeEach(async () => {
   c = createDb({ url: 'file::memory:' }); await c.ready; await runMigrations(c.db);
   await c.db.insert(servers).values([{ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' }, { id: 5, name: 'Target', host: 'target.test', tokenEncrypted: 'fixture' }]);

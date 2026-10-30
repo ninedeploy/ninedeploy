@@ -277,16 +277,23 @@ describe('persistent runtime request admission', () => {
       const prepared = await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
         { service: await service(), owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
       await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 10, serviceId: 7, serverId: 4, runtimeId: 'web-10', imageId: image, targets: prepared.capacity });
-      let lost = true, oldStart: Parameters<NodeAutoscaleControllerDeps['start']>[1] | undefined;
+      let lost = true, lostHandoff = true, oldStart: Parameters<NodeAutoscaleControllerDeps['start']>[1] | undefined;
       const deps: NodeAutoscaleControllerDeps = {
+        preflight: async () => {},
         fence: (_node, input) => agent.fence(input), inventory: (_node, input) => agent.inventory(input),
         start: async (_node, input) => { oldStart = input; const receipt = await agent.start(input); if (lost) { lost = false; throw new Error('lost start receipt'); } return receipt; },
         stop: (_node, input) => agent.stop(input), ready: async (_svc, targets) => targets.every(target => rows.some(row => row.id === target.id && row.running)),
+        retire: (_node, input) => agent.retire(input),
+        handoff: async (_node, input) => { const reply = await handoffStoppedNodeToLegacy(join(root, '.agent-work', '.lifecycle'), input);
+          if (lostHandoff) { lostHandoff = false; throw Error('lost handoff receipt'); } return reply; },
         route: async () => {}, drain: async () => {},
       };
       const up = (await admitNodeAutoscale(c.db, await service(), 2))!;
       await expect(executeNodeAutoscale(c.db, up, deps)).rejects.toThrow('lost start receipt');
       expect((await service()).runtimeReplicas).toBe(1);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+      await expect(executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).rejects.toThrow('lost handoff receipt');
+      expect((await c.db.select().from(nodeAutoscaleTransitions))[0]?.phase).toBe('handoff');
       await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
       await executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps);
       expect((await service()).runtimeReplicas).toBe(2);
@@ -294,8 +301,9 @@ describe('persistent runtime request admission', () => {
       const down = (await admitNodeAutoscale(c.db, await service(), 1))!;
       await executeNodeAutoscale(c.db, down, deps);
       expect((await service()).runtimeReplicas).toBe(1); expect(rows.map(row => row.running)).toEqual([true, false, false]);
-      await expect(agent.start(oldStart!)).rejects.toThrow(/stale/);
+      await expect(agent.start(oldStart!)).rejects.toThrow(/stale|protocol/);
       expect(rows.map(row => row.running)).toEqual([true, false, false]);
+      await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
     } finally { c.client?.close(); }
   });
   it('replays a completed creation receipt across a fresh journal instance without creating or starting a replacement', async () => {

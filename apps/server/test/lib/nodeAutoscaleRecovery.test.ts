@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { createDb, deployments, eq, nodeAutoscaleTransitions, runMigrations, servers, services } from '@ninedeploy/db';
+import { createDb, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, runMigrations, servers, services } from '@ninedeploy/db';
 import { admitNodeAutoscale, checkpointNodeAutoscale } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { reconcileNodeAutoscale } from '../../src/lib/nodeAutoscaleRecovery.js';
 import type { NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
@@ -10,10 +10,13 @@ const service = async () => (await c.db.query.services.findFirst({ where: eq(ser
 const items = [{ id: 'a'.repeat(64), name: 'web-9', deploymentId: 9, running: true }, { id: 'b'.repeat(64), name: 'web-9-r2', deploymentId: 9, running: false }];
 const withoutTimeout = <T extends { timeoutMs: number }>(input: T) => { const { timeoutMs: _timeout, ...reply } = input; return reply; };
 const runtime = (): NodeAutoscaleControllerDeps => ({
+  preflight: async () => {},
   fence: async (_node, input) => ({ ...withoutTimeout(input), complete: true }),
   inventory: async (_node, input) => { const { expectedNames: _names, ...request } = input; return { ...withoutTimeout(request), complete: true, items }; },
   start: async (_node, input) => { calls.push('start'); const { targets, ...request } = input; return { ...withoutTimeout(request), complete: true, items: targets.map(target => ({ ...target, running: true })) }; },
   stop: async () => { throw new Error('unexpected stop'); },
+  retire: async (_node, input) => { const { targets: _targets, graceSeconds: _grace, ...request } = input; return { ...withoutTimeout(request), complete: true, items: [] }; },
+  handoff: async (_node, input) => ({ ...withoutTimeout(input), complete: true }),
   ready: async () => { calls.push('ready'); return ready; }, route: async () => { calls.push('route'); }, drain: async () => {},
 });
 beforeEach(async () => {
@@ -22,6 +25,8 @@ beforeEach(async () => {
   await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-9',
     autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
   await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'running' });
+  await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 9, serviceId: 1, serverId: 4, runtimeId: 'web-9', imageId: `sha256:${'f'.repeat(64)}`,
+    targets: items.map(({ id, name }) => ({ id, name })) });
 });
 afterEach(() => c.client?.close());
 

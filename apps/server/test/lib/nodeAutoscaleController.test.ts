@@ -15,10 +15,13 @@ const items = [{ id: 'a'.repeat(64), name: 'web-9', deploymentId: 9, running: tr
 let calls: string[], readiness: boolean, routingFails: boolean;
 const withoutTimeout = <T extends { timeoutMs: number }>(input: T) => { const { timeoutMs: _timeout, ...reply } = input; return reply; };
 const deps = (): NodeAutoscaleControllerDeps => ({
+  preflight: async () => {},
   fence: async (_node, input) => { calls.push('fence'); return { ...withoutTimeout(input), complete: true }; },
   inventory: async (_node, input) => { calls.push('inventory'); const { expectedNames: _names, ...request } = input; return { ...withoutTimeout(request), complete: true, items }; },
   start: async (_node, input) => { calls.push('start'); const { targets, ...request } = input; return { ...withoutTimeout(request), complete: true, items: targets.map(target => ({ ...target, running: true })) }; },
   stop: async (_node, input) => { calls.push('stop'); const { targets, graceSeconds: _grace, ...request } = input; return { ...withoutTimeout(request), complete: true, items: targets.map(target => ({ ...target, running: false })) }; },
+  retire: async (_node, input) => { calls.push('handoff-retire'); const { targets: _targets, graceSeconds: _grace, ...request } = input; return { ...withoutTimeout(request), complete: true, items: [] }; },
+  handoff: async (_node, input) => { calls.push('handoff'); return { ...withoutTimeout(input), complete: true }; },
   ready: async () => { calls.push('ready'); return readiness; },
   route: async () => { calls.push('route'); if (routingFails) throw new Error('route unavailable'); },
   drain: async () => { calls.push('drain'); },
@@ -50,8 +53,19 @@ it('starts and verifies scale-up before publishing the new route', async () => {
   runtime.ready = async (...args) => { expect((await service()).runtimeReplicas).toBe(++probes === 1 ? 1 : 2); return ready(...args); };
   runtime.route = async (...args) => { expect((await service()).runtimeReplicas).toBe(2); return route(...args); };
   await executeNodeAutoscale(c.db, admission, runtime);
-  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route']);
+  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route', 'handoff-retire', 'handoff']);
   expect((await service()).runtimeReplicas).toBe(2); expect(await transition()).toBeUndefined();
+});
+it('finishes the ownership handoff even when a new deploy is queued during it', async () => {
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const runtime = deps(), handoff = runtime.handoff;
+  runtime.handoff = async (...args) => {
+    await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+    return handoff(...args);
+  };
+  await executeNodeAutoscale(c.db, admission, runtime);
+  expect((await service()).runtimeReplicas).toBe(2);
+  expect(await transition()).toBeUndefined();
 });
 it('connects an identity-bound measurement decision to durable admission and ordered scale-up', async () => {
   const now = Date.now(), svc = await service(), decider = createNodeAutoscaleDecider();
@@ -64,7 +78,7 @@ it('connects an identity-bound measurement decision to durable admission and ord
   const admission = (await admitNodeAutoscale(c.db, svc, decision.to!, decision.evidence!))!;
   expect((await transition())?.measurement).toEqual(decision.evidence);
   await executeNodeAutoscale(c.db, admission, deps());
-  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route']);
+  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route', 'handoff-retire', 'handoff']);
   expect((await service()).runtimeReplicas).toBe(2);
 });
 it('does not start replicas when a measured container was replaced before inventory', async () => {
@@ -89,7 +103,7 @@ it('runs sampled decisions through durable admission and the controller', async 
   expect((await worker.step(svc)).state).toBe('held');
   time = now;
   expect(await worker.step(svc)).toEqual({ state: 'completed' });
-  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route']);
+  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route', 'handoff-retire', 'handoff']);
   expect((await service()).runtimeReplicas).toBe(2);
 });
 it('holds when a conflicting operation starts during sampling', async () => {
@@ -170,7 +184,7 @@ it('recovers a failed readiness check without starting the same set again or rou
   await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
   const recovered = (await recoverNodeAutoscaleAdmission(c.db, 1))!; readiness = true;
   await executeNodeAutoscale(c.db, recovered, deps());
-  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'ready', 'route']);
+  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'ready', 'route', 'handoff-retire', 'handoff']);
   expect((await service()).runtimeReplicas).toBe(2);
 });
 it('keeps scale-down containers running until the route is confirmed and drained', async () => {
@@ -180,7 +194,7 @@ it('keeps scale-down containers running until the route is confirmed and drained
   await expect(executeNodeAutoscale(c.db, admission, deps())).rejects.toThrow('route unavailable');
   expect((await transition())?.phase).toBe('routing'); expect(calls).not.toContain('stop'); expect(calls).not.toContain('drain');
   routingFails = false; await executeNodeAutoscale(c.db, admission, deps());
-  expect(calls).toEqual(['fence', 'inventory', 'route', 'route', 'drain', 'stop']);
+  expect(calls).toEqual(['fence', 'inventory', 'route', 'route', 'drain', 'stop', 'handoff-retire', 'handoff']);
   expect((await service()).runtimeReplicas).toBe(1); expect(await transition()).toBeUndefined();
 });
 it('replays the same immutable Start request after its receipt is lost', async () => {
@@ -196,7 +210,7 @@ it('replays the same immutable Start request after its receipt is lost', async (
   await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
   await executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 1))!, runtime);
   expect(sent).toHaveLength(2); expect(sent[1]).toEqual(sent[0]);
-  expect(calls).toEqual(['fence', 'inventory', 'start', 'start', 'ready', 'ready', 'route']);
+  expect(calls).toEqual(['fence', 'inventory', 'start', 'start', 'ready', 'ready', 'route', 'handoff-retire', 'handoff']);
 });
 it('does not publish or route after an incomplete Start receipt', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
@@ -233,7 +247,16 @@ it('fences the fan-out node before freezing and changing the primary replicas', 
   const runtime = deps(), fence = runtime.fence, nodes: number[] = [];
   runtime.fence = async (node, request) => { nodes.push(node); return fence(node, request); };
   await executeNodeAutoscale(c.db, admission, runtime);
-  expect(nodes).toEqual([5, 4]); expect(calls).toEqual(['fence', 'fence', 'inventory', 'start', 'ready', 'ready', 'route']);
+  expect(nodes).toEqual([5, 4]); expect(calls).toEqual(['fence', 'fence', 'inventory', 'start', 'ready', 'ready', 'route', 'handoff-retire', 'handoff', 'handoff-retire', 'handoff']);
+});
+it('preflights every node before fencing any node', async () => {
+  await c.db.insert(servers).values({ id: 5, name: 'Target', host: 'target.test', tokenEncrypted: 'fixture' });
+  await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5, runtimeId: 'web-t5-9' });
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const runtime = deps();
+  runtime.preflight = async node => { if (node === 4) throw Error('agent cannot hand off'); };
+  await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow('agent cannot hand off');
+  expect(calls).toEqual([]); expect((await transition())?.phase).toBe('accepted');
 });
 it('rechecks readiness when retrying an unconfirmed scale-up route', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
