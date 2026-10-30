@@ -9,7 +9,10 @@ import { handoffStoppedNodeToLegacy } from '../../src/lib/nodeLegacyHandoff.js';
 import { createNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
 import { runOp } from '../../src/agent.js';
 import { prepareNodeAutoscaleCapacity } from '../../src/engine/builders/nodeAutoscalePrepare.js';
-import type { Service } from '@ninedeploy/db';
+import { createDb, deployments, eq, nodeAutoscaleTransitions, runMigrations, servers, services, type Service } from '@ninedeploy/db';
+import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
+import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
+import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
 type Row = { id: string; name: string; managed: string | null; serviceId: string | null; deploymentId: string | null; composeProject?: string | null; nonce: string | null; specHash: string | null; running: boolean; status: string; networks: Record<string, object> };
@@ -122,6 +125,42 @@ describe('persistent runtime request admission', () => {
     await expect(prepareNodeAutoscaleCapacity(client, { service, owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10,
       extraNetworks: ['nd-extra'] })).rejects.toThrow(/stale/);
     expect(rows.every(row => !row.running)).toBe(true); expect(effects()).toEqual([]);
+  });
+  it('replays a lost scale-up receipt and safely scales down through the same agent journal', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-10', port: 3000,
+        autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'running' });
+      const deployOwner = await reserveServiceRuntimeOwner(c.db, 7, 'deploy', null, nonce(44));
+      const owner = { serviceId: 7, serverId: 4, deploymentId: 10, epoch: deployOwner.epoch, requestId: deployOwner.requestId! };
+      const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
+      mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
+      const agent = runtime();
+      await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
+        { service: await service(), owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
+      let lost = true, oldStart: Parameters<NodeAutoscaleControllerDeps['start']>[1] | undefined;
+      const deps: NodeAutoscaleControllerDeps = {
+        fence: (_node, input) => agent.fence(input), inventory: (_node, input) => agent.inventory(input),
+        start: async (_node, input) => { oldStart = input; const receipt = await agent.start(input); if (lost) { lost = false; throw new Error('lost start receipt'); } return receipt; },
+        stop: (_node, input) => agent.stop(input), ready: async (_svc, targets) => targets.every(target => rows.some(row => row.id === target.id && row.running)),
+        route: async () => {}, drain: async () => {},
+      };
+      const up = (await admitNodeAutoscale(c.db, await service(), 2))!;
+      await expect(executeNodeAutoscale(c.db, up, deps)).rejects.toThrow('lost start receipt');
+      expect((await service()).runtimeReplicas).toBe(1);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+      await executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps);
+      expect((await service()).runtimeReplicas).toBe(2);
+      expect(rows.map(row => row.running)).toEqual([true, true, false]);
+      const down = (await admitNodeAutoscale(c.db, await service(), 1))!;
+      await executeNodeAutoscale(c.db, down, deps);
+      expect((await service()).runtimeReplicas).toBe(1); expect(rows.map(row => row.running)).toEqual([true, false, false]);
+      await expect(agent.start(oldStart!)).rejects.toThrow(/stale/);
+      expect(rows.map(row => row.running)).toEqual([true, false, false]);
+    } finally { c.client?.close(); }
   });
   it('replays a completed creation receipt across a fresh journal instance without creating or starting a replacement', async () => {
     const first = await runtime().prepare(prepare()); const count = io.spawn.mock.calls.length; rows = [];

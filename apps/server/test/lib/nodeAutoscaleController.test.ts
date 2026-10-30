@@ -83,6 +83,13 @@ it('does not publish or route after an incomplete Start receipt', async () => {
   expect((await transition())?.phase).toBe('prepared'); expect((await service()).runtimeReplicas).toBe(1);
   expect(calls).not.toContain('ready'); expect(calls).not.toContain('route');
 });
+it('never publishes a scale-up when a deploy is queued during readiness', async () => {
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const runtime = deps();
+  runtime.ready = async () => { calls.push('ready'); await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' }); return true; };
+  await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow(/active runtime work/);
+  expect((await service()).runtimeReplicas).toBe(1); expect(calls).not.toContain('route');
+});
 it('fences the fan-out node before freezing and changing the primary replicas', async () => {
   await c.db.insert(servers).values({ id: 5, name: 'Target', host: 'target.test', tokenEncrypted: 'fixture' });
   await c.db.insert(serviceTargets).values({ serviceId: 1, serverId: 5, runtimeId: 'web-t5-9' });
