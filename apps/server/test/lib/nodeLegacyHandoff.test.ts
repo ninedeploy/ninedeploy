@@ -15,6 +15,22 @@ beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'nd-legacy-handoff-')); });
 afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
 describe('modern Stop to legacy deployment handoff', () => {
+  it('hands off confirmed retirement and replays its receipt after a lost reply', async () => {
+    const runtime = createNodeRuntimeMutation(root);
+    const receipt = await runtime.retire(stop);
+    await handoffStoppedNodeToLegacy(root, handoff);
+    expect(await runtime.retire(stop)).toEqual(receipt);
+    await expect(runtime.retire({ ...stop, graceSeconds: 4 })).rejects.toThrow(/request changed/);
+    await expect(runNodeCreation(root, 7, async () => 'old', 10)).rejects.toThrow(/stale|fenced/);
+    await expect(runNodeCreation(root, 7, async () => 'new', 11)).resolves.toBe('new');
+  });
+  it('does not hand off a retirement whose receipt was lost', async () => {
+    await createNodeRuntimeMutation(root).retire(stop);
+    const db = new DatabaseSync(join(root, 'service-7.sqlite'));
+    try { db.exec('UPDATE lifecycle_head SET receipt=NULL'); } finally { db.close(); }
+    await expect(handoffStoppedNodeToLegacy(root, handoff)).rejects.toThrow(/unconfirmed/);
+    await expect(runNodeCreation(root, 7, async () => 'new', 11)).rejects.toThrow(/fenced/);
+  });
   it('permits only a newer deployment and rejects delayed modern operations after an idempotent handoff', async () => {
     const runtime = createNodeRuntimeMutation(root);
     await runtime.fence({ requestId: id(8), serviceId: 7, revision: 8, timeoutMs: 5000 });

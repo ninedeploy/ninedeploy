@@ -10,7 +10,7 @@ import { assertFileMountsWritten } from '../agentOps/fileMounts.js';
 import { assertLegacyNodeMutationAllowed, withNodeServiceJournal, type NodeServiceJournal } from './nodeLifecycle.js';
 import { spawnValidated } from './spawnValidated.js';
 import { confirmsMissingContainer } from './dockerContainerAbsence.js';
-import { replayHandedOffStop } from './nodeLegacyHandoff.js';
+import { replayHandedOffRetirement, replayHandedOffStop } from './nodeLegacyHandoff.js';
 
 const MODE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_protocol (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)';
 const PREPARE_SHAPE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL)';
@@ -414,6 +414,8 @@ export function createNodeRuntimeMutation(root: string) {
     },
     async retire(params: unknown, onLine: (line: string) => void = () => {}): Promise<ContainerRetireSetReply> {
       const input = containerRetireSetRequest.parse(params), { timeoutMs: _timeout, ...intent } = input;
+      const replay = await replayHandedOffRetirement(directory, input);
+      if (replay) return replay;
       return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, async journal => {
         const admitted = await claim(journal, input, { kind: 'retire', ...intent });
         return effect(journal, input, admitted.hash, value => containerRetireSetReply.parse(value), async () => {
