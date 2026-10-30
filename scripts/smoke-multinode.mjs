@@ -22,8 +22,8 @@
 //         - a node volume: create (409 when it exists), file manager refused (422),
 //           attach, back up over the stream channel, restore refused while in use
 //           (409), restore after a stop, the file is back;
-//         - a node database (§5.9): created on the node only, Studio / PgBouncer /
-//           public access 422 remote_database, client terminal 422, a shell
+//         - a node database (§5.9): created on the node only (Studio, public
+//           access and PgBouncer: see --new-node-features), a client terminal ticket, a shell
 //           terminal runs psql, attached to the node service (env + name
 //           resolution), a panel attachment 409, backup → drop → restore, a
 //           plain-SQL import, and DELETE /v1/servers/:id?force=true 409;
@@ -1000,12 +1000,18 @@ async function volumeChecks(ctx, img) {
   nodeDaemon(['exec', svc.runtimeId, 'rm', '-f', '/srv/files/marker.txt']);
   const busy = await api(`/v1/volumes/${vol}/backups/${backupId}/restore?serverId=${ctx.serverId}`, { method: 'POST' });
   if (busy.status !== 409) fail(`${label}: a restore while ${svc.runtimeId} runs answered ${short(busy)} (wanted 409)`);
+  // A node stop or start may answer 202 while the node lifecycle settles: wait for the container's real state.
+  const nodeRunning = (name) => nodeDaemon(['inspect', name, '--format', '{{.State.Running}}']).stdout === 'true';
   const stop = await api(`/v1/services/${img.id}/stop`, { method: 'POST' });
-  if (stop.status !== 200) fail(`${label}: stopping service #${img.id} answered ${short(stop)}`);
-  const restore = await api(`/v1/volumes/${vol}/backups/${backupId}/restore?serverId=${ctx.serverId}`, { method: 'POST' });
-  if (restore.status !== 200 || restore.json?.ok !== true) fail(`${label}: restore of backup #${backupId} on the node answered ${short(restore)}`);
+  if (stop.status !== 200 && !(stop.status === 202 && stop.json?.pending === true)) fail(`${label}: stopping service #${img.id} answered ${short(stop)}`);
+  if (!(await until(() => !nodeRunning(svc.runtimeId), { ms: 120_000, every: 2000 }))) fail(`${label}: ${svc.runtimeId} still runs on the node after the stop`);
+  const restore = await until(async () => {
+    const r = await api(`/v1/volumes/${vol}/backups/${backupId}/restore?serverId=${ctx.serverId}`, { method: 'POST' });
+    return r.status === 409 ? null : r;
+  }, { ms: 60_000, every: 2000 });
+  if (!restore || restore.status !== 200 || restore.json?.ok !== true) fail(`${label}: restore of backup #${backupId} on the node answered ${restore ? short(restore) : '409 for a minute'}`);
   const start = await api(`/v1/services/${img.id}/start`, { method: 'POST' });
-  if (start.status !== 200) fail(`${label}: starting service #${img.id} again answered ${short(start)}`);
+  if (start.status !== 200 && !(start.status === 202 && start.json?.pending === true)) fail(`${label}: starting service #${img.id} again answered ${short(start)}`);
   svc = await serviceRow(img.id);
   const back = await until(() => {
     const r = nodeDaemon(['exec', svc.runtimeId, 'cat', '/srv/files/marker.txt']);
@@ -1021,7 +1027,8 @@ async function volumeChecks(ctx, img) {
 /** A shell terminal on the node database runs psql (design §5.4 "Terminal"). */
 async function databaseTerminal(databaseId, sql, label) {
   const client = await api('/v1/terminals', { method: 'POST', body: { target: { kind: 'database', databaseId, mode: 'client' } } });
-  if (client.status !== 422 || errorCode(client) !== 'client_mode_unsupported') fail(`${label}: a client-mode terminal answered ${short(client)} (wanted 422 client_mode_unsupported)`);
+  // 0.18.0: sealed node database client terminals are offered (NODE_OPERATIONS.md); a ticket is enough here.
+  if (client.status !== 201 || !client.json?.ticket) fail(`${label}: a client-mode terminal answered ${short(client)} (wanted 201 with a ticket)`);
   const r = await api('/v1/terminals', { method: 'POST', body: { target: { kind: 'database', databaseId, mode: 'shell' } } });
   if (r.status !== 201 || !r.json?.ticket) fail(`${label}: POST /v1/terminals (database shell) answered ${short(r)}`);
   const t = terminalAttach(r.json);
@@ -1095,17 +1102,11 @@ async function nodeDatabaseChecks(ctx, img) {
   if ((await serverEntry(ctx.serverId)).databases !== 1) fail(`${label}: GET /v1/servers does not count the node's database`);
   step(`${label}: postgres #${id} running on the node only (${container}, on nd-dbnet-${row.slug}); GET /v1/servers counts it`);
 
-  for (const [what, p, method, body] of [
-    ['Studio', `/v1/databases/${id}/studio`, 'POST', {}],
-    ['PgBouncer', `/v1/databases/${id}/pgbouncer/enable`, 'POST', {}],
-  ]) {
-    const r = await api(p, { method, body });
-    if (r.status !== 422 || errorCode(r) !== 'remote_database') fail(`${label}: ${what} answered ${short(r)} (wanted 422 remote_database)`);
-  }
+  // Studio (0.18.0), public access and PgBouncer (ROADMAP item 10) run on the node now; --new-node-features proves them.
   await nodePsqlReady(container, 'select 1', `${label}: postgres accepting connections`);
   const session1 = await databaseTerminal(id, 'CREATE TABLE nd_mn_t (id integer); INSERT INTO nd_mn_t VALUES (1), (2), (3);', `${label} terminal`);
   if (nodePsql(container, 'select count(*) from nd_mn_t').stdout !== '3') fail(`${label}: the table created through the terminal is not on the node`);
-  step(`${label}: Studio and PgBouncer 422 remote_database; client terminal 422; shell terminal #${session1} ran psql (nd_mn_t has 3 rows on the node)`);
+  step(`${label}: client terminal ticket issued; shell terminal #${session1} ran psql (nd_mn_t has 3 rows on the node)`);
 
   // Same-node attachment: env injected, and the name resolves from the app.
   const att = await api(`/v1/services/${img.id}/attachments`, { method: 'POST', body: { databaseId: id } });
@@ -1253,6 +1254,34 @@ async function swarmChecks(ctx) {
   const codes = routeStatuses(DIND, hostname, 20);
   if (codes.length !== 20 || !codes.every(served)) fail(`${label}: 20 requests for ${hostname} through Traefik answered ${codes.join(',')}`);
   step(`${label}: service #${svcId} deployed as stack ${stack} (#${dep.id}), 2/2 tasks; Traefik answered 20/20 for ${hostname}`);
+
+  // ROADMAP item 10: file mounts on Swarm, as Swarm secrets mounted read-only in every task.
+  const filePath = '/usr/share/nginx/html/nd-file.txt';
+  const fileSecrets = () => panelDaemon(['secret', 'ls', '--filter', `label=ninedeploy.swarm.stack=${stack}`, '--format', '{{.Name}}']).stdout.split(/\s+/).filter(Boolean).sort();
+  // Read in every running task (the route answers plain HTTP with a redirect to HTTPS).
+  const fileOnEveryRequest = (want) => {
+    const tasks = panelDaemon(['ps', '--filter', `label=com.docker.swarm.service.name=${stack}_web`, '--format', '{{.Names}}']).stdout.split(/\s+/).filter(Boolean);
+    return tasks.length === 2 && tasks.every((task) => panelDaemon(['exec', task, 'cat', filePath]).stdout === want);
+  };
+  const versions = [];
+  for (const n of [1, 2, 3]) {
+    const content = `file-v${n}-${suffix}`;
+    const put = await api(`/v1/services/${svcId}/files`, { method: 'PUT', body: { path: filePath, content } });
+    if (put.status !== 200) fail(`${label} files: PUT answered ${short(put)}`);
+    const d = await deploy(svcId, `${label} deploy with file v${n}`);
+    if (!(await until(() => fileOnEveryRequest(content), { ms: 120_000, every: 3000 }))) {
+      const seen = panelDaemon(['ps', '--filter', `label=com.docker.swarm.service.name=${stack}_web`, '--format', '{{.Names}}']).stdout.split(/\s+/).filter(Boolean)
+        .map((task) => `${task}: ${panelDaemon(['exec', task, 'cat', filePath]).all.slice(0, 80)}`);
+      fail(`${label} files: the tasks do not all hold ${content} at ${filePath}: ${seen.join('; ') || 'no running task'}`);
+    }
+    const names = fileSecrets();
+    versions.push(`#${d.id}: ${names.length} secret(s)`);
+    // The current one and, after the first change, the previous one (the rollback target); never more.
+    if (names.length !== Math.min(n, 2)) fail(`${label} files: after v${n} the stack holds the secrets ${names.join(', ') || 'none'} (wanted ${Math.min(n, 2)})`);
+  }
+  const mounted = panelDaemon(['service', 'inspect', `${stack}_web`, '--format', '{{json .Spec.TaskTemplate.ContainerSpec.Secrets}}']).stdout;
+  if (!mounted.includes(`"Name":"${filePath}"`) || !mounted.includes('"Mode":292')) fail(`${label} files: the service spec mounts ${mounted}`);
+  step(`${label}: ${filePath} as a Swarm secret, read-only (0444): v1 → v2 → v3 each read back from both running tasks (${versions.join('; ')}); the secret older than the rollback target was removed`);
 
   // The node's owner opts in; then join and leave.
   startAgent(CANDIDATE_IMAGE, ctx.tokenSha256, { NINEDEPLOY_AGENT_SWARM_MANAGER: `${ctx.panelDindIp}:2377` });

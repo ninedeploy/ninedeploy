@@ -359,7 +359,11 @@ Each rule becomes one `docker run -p` operand (`-p 203.0.113.7:27015-27030:27015
 - Up to 20 files per service, 256 KiB each. The path must be absolute, name a file (not a directory), contain no `:` (0.16.5; Docker's `-v` splits on it, so such a path never mounted), and stay out of what Docker manages (`/proc`, `/sys`, `/dev`, `/etc/hosts`, `/etc/hostname`, `/etc/resolv.conf`, the Docker socket). It may not be the path of the service's data volume or of an attached volume.
 - Each deploy writes its own copy under the data directory (`service-files/<slug>/d<deployment>/`), so during a blue-green release the outgoing container keeps the content it started with. The directories are the panel user's alone (0700), so other accounts on the host cannot read the files; the container reads them through the bind mount. The three newest copies are kept; deleting the service removes them.
 - **On a node (0.16.5)**, and on each node a service fans out to, the agent writes the same copies under its home (`/var/lib/ninedeploy-agent/.agent-files/<slug>/d<deployment>/`, directories 0700) one file per request over the sealed transport, and mounts them read-only. The node needs agent 0.16.5 or newer (capability `docker.fileMounts`); an older one is refused when the deploy is queued, naming the update, before anything is written. Deleting the service removes the copies on its nodes.
-- Swarm, compose and PM2 services cannot mount files: one that has them is refused at deploy time with a message, never started without them.
+- **On Swarm**, each file becomes a Swarm secret mounted read-only (mode 0444, owned by root) at its path in every task. A secret is encrypted in the Swarm's raft log, and no API call reads it back.
+  - The secret's name carries the content's hash (`nd-<slug>-f<file id>-<hash>`). An unchanged file reuses its secret, and an edited one gets a new secret, so the tasks roll to it.
+  - After a successful deploy, the secrets the service no longer uses are removed. The previous version is kept, because a rollback needs it. Removing the service removes its secrets.
+  - File mounts on Swarm need the journalled native service apply, which every current deploy uses.
+- Compose and PM2 services cannot mount files: one that has them is refused at deploy time with a message, never started without them.
 - Reading a file's content needs a member seat (it can hold secrets); a viewer sees the paths and sizes.
 - API: `GET`/`PUT /v1/services/:id/files`, `GET`/`DELETE /v1/services/:id/files/:fileId`; SDK `services.files`.
 

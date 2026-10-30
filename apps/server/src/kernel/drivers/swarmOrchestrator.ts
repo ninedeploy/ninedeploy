@@ -281,6 +281,10 @@ export class SwarmOrchestrator implements IOrchestrator {
     // L2: an existing directory keeps whatever mode it had; tighten it every time.
     chmodSync(dir, 0o700);
 
+    // File mounts are applied by the native (journalled) path only; a stack file never carries them.
+    if (!opts.nativeApply && stack.services.some((s) => s.fileSecrets?.length)) {
+      throw new Error('File mounts on Swarm need the journalled native service apply');
+    }
     for (const n of stack.networks) await ensureNetwork(n.name, n.driver, n.attachable, log);
 
     const secretNames: Record<string, string> = {};

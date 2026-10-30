@@ -45,6 +45,15 @@ export async function managedSwarmServiceSpec(stack: StackSpec): Promise<Managed
     StopGracePeriod: (service.stopGraceSeconds ?? 10) * 1_000_000_000,
   };
   if (service.command?.length) container.Args = service.command;
+  if (service.fileSecrets?.length) {
+    // File mounts (lib/swarmFileSecrets.ts): read-only, owned by root, at their absolute path.
+    container.Secrets = service.fileSecrets.map((f) => {
+      if (!/^[a-z0-9]{25}$/.test(f.secretId) || !f.target.startsWith('/') || !/^nd-[a-z0-9-]+-f\d+-[a-f0-9]{12}$/.test(f.secretName)) {
+        throw new Error('Unsupported managed Swarm file mount');
+      }
+      return { File: { Name: f.target, UID: '0', GID: '0', Mode: 0o444 }, SecretID: f.secretId, SecretName: f.secretName };
+    });
+  }
   if (service.healthCommand) container.Healthcheck = { Test: ['CMD-SHELL', service.healthCommand], Interval: 5_000_000_000, Timeout: 10_000_000_000, Retries: 3 };
   const limits: Record<string, number> = {};
   if (service.cpuLimitMilli && service.cpuLimitMilli > 0) limits.NanoCPUs = service.cpuLimitMilli * 1_000_000;

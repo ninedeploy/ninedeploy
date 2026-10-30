@@ -22,11 +22,10 @@ import { hostPathFor } from './hostPath.js';
 
 /** Why a deploy with file mounts is refused where it would run. */
 export const FILE_MOUNTS_UNSUPPORTED =
-  'File mounts work for docker services only (on the panel host or a node), not for Swarm, compose or PM2 services; remove the files (Service → Volumes → Files) to deploy it.';
+  'File mounts work for docker services only (on the panel host, a node or Swarm), not for compose or PM2 services; remove the files (Service → Volumes → Files) to deploy it.';
 
-/** Whether a service of this shape mounts its files (the panel host or a node; never Swarm, compose or PM2). */
-export const fileMountsSupported = (service: { type: string; orchestrator?: string | null }): boolean =>
-  service.type === 'docker' && service.orchestrator !== 'swarm';
+/** Whether a service of this shape mounts its files (the panel host, a node or Swarm; never compose or PM2). */
+export const fileMountsSupported = (service: { type: string; orchestrator?: string | null }): boolean => service.type === 'docker';
 
 /** Deployment directories kept per service: the new one and the two before it. */
 const KEEP_DEPLOYMENTS = 3;

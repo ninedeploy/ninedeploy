@@ -152,7 +152,7 @@ Each item below ships as its own patch release, opt-in, with the upgrade smoke e
     - container inspect and file browsing (done, 0.18.0; see [NODE_OPERATIONS.md](NODE_OPERATIONS.md));
     - log drains and metrics from nodes (done; see [NODE_OPERATIONS.md](NODE_OPERATIONS.md#log-drains));
     - a Dockerfile build stage and build arguments on node builds (done, agent `docker.buildOptions`; see [MULTI_NODE.md](MULTI_NODE.md));
-    - file mounts and container options on Swarm. The journalled native Swarm apply refuses configs today, so file mounts need config objects carried through its fingerprint, recovery and pruning.
+    - file mounts on Swarm (done: each file a Swarm secret carried through the native spec, its fingerprint and pruning; see [DEPLOYMENTS.md](DEPLOYMENTS.md#file-mounts-0163)); container options on Swarm remain (Swarm's service spec has no equivalent for most of them).
 11. **Later:** Postgres point-in-time recovery (WAL-G), and Tailscale/WireGuard node networking.
 
 ## Ongoing, every release

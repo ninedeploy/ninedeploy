@@ -932,10 +932,6 @@ export const TR: Readonly<Record<string, string>> = {
   'Text files mounted read-only in the container, such as an nginx.conf or a config.yaml. Stored encrypted; a change applies on the next deploy.':
     'Konteynere salt okunur bağlanan metin dosyaları, örneğin bir nginx.conf ya da config.yaml. Şifreli saklanır; değişiklik sonraki dağıtımda uygulanır.',
   'On a node they need agent 0.16.5 or newer.': 'Bir düğümde ajan 0.16.5 ya da daha yeni olmalıdır.',
-  'File mounts work for docker services only, not on Swarm; this service will not deploy until they are removed.':
-    'Dosya bağlamaları yalnızca docker servislerinde çalışır, Swarm’da çalışmaz; bunlar kaldırılana kadar bu servis dağıtılmaz.',
-  'File mounts work for docker services only, not on Swarm.':
-    'Dosya bağlamaları yalnızca docker servislerinde çalışır, Swarm’da çalışmaz.',
   'Path in the container': 'Konteynerdeki yol',
   'Content': 'İçerik',
   'At most {n} KiB': 'En fazla {n} KiB',
@@ -5999,4 +5995,11 @@ export const TR: Readonly<Record<string, string>> = {
   // ── Node public database access ───────────────────────────────────────
   'On a node, TLS stays end to end between the client and the database':
     'Node üzerinde TLS, istemci ile veritabanı arasında uçtan uca kalır',
+
+  // ── Swarm file mounts ─────────────────────────────────────────────────
+  'On Swarm each file is a Swarm secret, encrypted in the cluster.':
+    'Swarm\'da her dosya, kümede şifreli tutulan bir Swarm secret\'ıdır.',
+  'File mounts work for docker services only; this service will not deploy until they are removed.':
+    'Dosya bağlamaları yalnızca docker servislerinde çalışır; bunlar kaldırılana kadar bu servis dağıtılmaz.',
+  'File mounts work for docker services only.': 'Dosya bağlamaları yalnızca docker servislerinde çalışır.',
 };

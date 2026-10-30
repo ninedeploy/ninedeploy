@@ -421,6 +421,12 @@ export interface StackServiceSpec {
   containerLabels?: Record<string, string>;
   /** 0.16.4: the command healthcheck, run by Docker in each task (`CMD-SHELL`). */
   healthCommand?: string;
+  /**
+   * The service's file mounts as Swarm secrets created beforehand
+   * (lib/swarmFileSecrets.ts), each mounted read-only at `target`. Only the
+   * native (journalled) Swarm apply takes them.
+   */
+  fileSecrets?: Array<{ secretId: string; secretName: string; target: string }>;
 }
 
 export interface StackNetworkSpec {

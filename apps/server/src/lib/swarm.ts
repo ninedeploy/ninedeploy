@@ -12,6 +12,7 @@ import { ENCRYPTED_OVERLAY_ARGS, ensureEncryptedOverlay, SwarmOrchestrator, swar
 import { capture, run } from './exec.js';
 import { getSetting, getSettingString, setSetting, setSettingString } from './settings.js';
 import type { ContainerStat } from './stats.js';
+import { pruneSwarmFileSecrets } from './swarmFileSecrets.js';
 
 /**
  * Swarm (multi-node, design §7; owner decision O4): opt-in per service, the
@@ -382,6 +383,8 @@ export async function removeSwarmStack(db: DB, slug: string, log: (line: string)
   }
   // The driver removes the networks it recorded; one created before its state was written goes here.
   await run('docker', ['network', 'rm', network], { timeoutMs: READ_TIMEOUT_MS }, () => undefined).catch(() => undefined);
+  // File mounts: the stack's secrets go with it (one a task still holds stays for a later removal).
+  await pruneSwarmFileSecrets(swarmStackName(slug), new Set(), log).catch(() => undefined);
 }
 
 /** `docker service scale <svc>=<n>` (stop = 0, start = the service's replicas). */

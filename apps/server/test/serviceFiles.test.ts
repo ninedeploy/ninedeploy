@@ -106,8 +106,14 @@ describe('file mount routes', () => {
     await app.close();
   });
 
+  it('takes a Swarm service (ROADMAP item 10): its files become Swarm secrets', async () => {
+    const { app, put } = await setup({ orchestrator: 'swarm' });
+    expect((await put({ path: '/app/x.conf', content: 'x' })).statusCode).toBe(200);
+    await app.close();
+  });
+
   it('refuses a service whose container would not get the files', async () => {
-    for (const values of [{ serverId: null, type: 'compose', image: null }, { orchestrator: 'swarm' }]) {
+    for (const values of [{ serverId: null, type: 'compose', image: null }]) {
       const { app, put } = await setup(values);
       const res = await put({ path: '/app/x.conf', content: 'x' });
       expect(res.statusCode).toBe(400);
@@ -173,7 +179,8 @@ describe('deploy-time file mounts', () => {
     expect(await fileMountRefusal(db, svc)).toBeNull();
     // 0.16.5: a node's agent is checked by remoteVolumeRefusal instead.
     expect(await fileMountRefusal(db, { ...svc, serverId: 4 } as never)).toBeNull();
-    for (const shape of [{ orchestrator: 'swarm' }, { type: 'compose' }, { type: 'pm2' }]) {
+    expect(await fileMountRefusal(db, { ...svc, orchestrator: 'swarm' })).toBeNull();
+    for (const shape of [{ type: 'compose' }, { type: 'pm2' }]) {
       expect(await fileMountRefusal(db, { ...svc, ...shape })).toBe(FILE_MOUNTS_UNSUPPORTED);
     }
     await app.close();

@@ -28,6 +28,8 @@ import { unusedSwarmPreloadLabel } from './swarmPreload.js';
 import { verifySwarmTaskImages } from './swarmArtifact.js';
 import { SwarmRecoveryPending } from './swarmRecovery.js';
 import { pinSwarmImage } from './swarmImage.js';
+import { loadNodeServiceFiles } from '../lib/serviceFiles.js';
+import { ensureSwarmFileSecrets, pruneUnusedFileSecrets } from '../lib/swarmFileSecrets.js';
 
 /**
  * Swarm deploy flow (multi-node, design §7.4; owner decisions O4, O12): build
@@ -163,6 +165,8 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
       if (info.nodeId) await updateNodeLabel(info.nodeId, '--label-add', `${SWARM_MEMBER_LABEL}=1`);
       const constraints = [SWARM_MEMBER_CONSTRAINT, ...(image.local ? await preloadImage(db, ctx, image, deps, info.nodeId) : [])];
       const network = await ensureSwarmNetwork(slug, log);
+      // File mounts (ROADMAP item 10): each file as a Swarm secret, mounted read-only at its path.
+      const fileSecrets = await ensureSwarmFileSecrets(swarmStackName(slug), await loadNodeServiceFiles(db, service.id), log);
 
       // 0.16.1: a Swarm service spec carries none of the container options.
       if (ctx.service.runtimeOptions && Object.keys(ctx.service.runtimeOptions).length > 0) {
@@ -194,6 +198,7 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
             // 0.16.4: custom labels and the command healthcheck.
             ...(userDockerLabels(service.dockerLabels).length > 0 ? { containerLabels: Object.fromEntries(userDockerLabels(service.dockerLabels)) } : {}),
             ...(service.healthCheck === 'command' && service.healthCommand?.trim() ? { healthCommand: service.healthCommand.trim() } : {}),
+            ...(fileSecrets.length > 0 ? { fileSecrets } : {}),
           },
         ],
         networks: [{ name: network, driver: 'overlay', attachable: true }],
@@ -251,6 +256,7 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
         throw new Error(`Swarm deploy failed: ${error}`);
       }
       rollbackTarget = existed ? runtimeId : null;
+      await pruneUnusedFileSecrets(swarmStackName(slug), runtimeId, fileSecrets.map((f) => f.secretName), log);
       const imageDigest = image.imageId ?? await deployedImageRef(runtimeId);
       return {
         runtimeId,

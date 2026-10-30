@@ -98,19 +98,25 @@ describe('FileMountsCard', () => {
     renderWithProviders(<FileMountsCard serviceId={3} svc={{ type: 'docker', serverId: 4 }} />);
     expect(await screen.findByText(/On a node they need agent 0\.16\.5 or newer\./)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add file/ })).toBeInTheDocument();
-    expect(screen.queryByText(/not on Swarm/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/docker services only/)).not.toBeInTheDocument();
   });
 
-  it('on a Swarm or compose service: no Add button, and a warning that files block the deploy', async () => {
-    const { unmount } = renderWithProviders(<FileMountsCard serviceId={3} svc={{ type: 'docker', serverId: 4, orchestrator: 'swarm' }} />);
-    expect(await screen.findByText(/not on Swarm; this service will not deploy/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Add file/ })).not.toBeInTheDocument();
+  it('on Swarm: Add is offered, and the files are Swarm secrets', async () => {
+    renderWithProviders(<FileMountsCard serviceId={3} svc={{ type: 'docker', serverId: null, orchestrator: 'swarm' }} />);
+    expect(await screen.findByText(/each file is a Swarm secret/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add file/ })).toBeInTheDocument();
     expect(screen.queryByText(/agent 0\.16\.5/)).not.toBeInTheDocument();
+  });
+
+  it('on a compose service: no Add button, and a warning that files block the deploy', async () => {
+    const { unmount } = renderWithProviders(<FileMountsCard serviceId={3} svc={{ type: 'compose', serverId: null }} />);
+    expect(await screen.findByText(/this service will not deploy until they are removed/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add file/ })).not.toBeInTheDocument();
     unmount();
     mockOf(api.services.files.list).mockResolvedValue([] as never);
     renderWithProviders(<FileMountsCard serviceId={3} svc={{ type: 'compose', serverId: null }} />);
     expect(await screen.findByText('No files.')).toBeInTheDocument();
-    expect(screen.getByText(/not on Swarm\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/docker services only\.$/)).toBeInTheDocument();
   });
 
   it('stops offering Add at 20 files, and hides itself when the read fails (older panel)', async () => {

@@ -125,6 +125,12 @@ describe('SwarmOrchestrator', () => {
     expect([...h.files.values()].some(value => value.data?.includes('fixture-native-secret'))).toBe(false);
   });
 
+  it('refuses file mounts on a stack-file deploy: only the native apply carries them', async () => {
+    const fileSecrets = [{ secretId: 'a'.repeat(25), secretName: 'nd-demo-f1-0123456789ab', target: '/etc/app/a.conf' }];
+    await expect(newOrchestrator().deployStack(stack({ services: [svc({ fileSecrets })] }))).rejects.toThrow(/journalled native service apply/);
+    expect(calls('stack deploy')).toEqual([]);
+  });
+
   it('exposes the stable "swarm" name', () => {
     expect(newOrchestrator().name).toBe('swarm');
   });

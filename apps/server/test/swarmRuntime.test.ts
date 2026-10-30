@@ -266,6 +266,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'lib/webhookDispatch.ts': { exempt: 'PR previews never run on Swarm (a preview row has no orchestrator)' },
   'modules/ai.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
   'lib/alertInvestigation.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
+  'lib/swarmFileSecrets.ts': { exempt: 'Swarm only: reads the native service spec by its Swarm service name (`docker service inspect`) to keep the secrets it mounts' },
   'modules/containers.ts': { exempt: 'node container access; Swarm services are never node-pinned' },
   'modules/databases.ts': { exempt: 'node database networks; Swarm services cannot attach databases' },
   'modules/demo.ts': { exempt: 'the legacy demo rows' },

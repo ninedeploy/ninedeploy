@@ -1504,7 +1504,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
         .from(serviceVolumeAttachments)
         .where(eq(serviceVolumeAttachments.serviceId, service.id)),
       // 0.16.3: this deployment's copy of the service's files (none: []).
-      fileMounts: service.type === 'docker' && service.serverId == null ? await prepareFileMounts(db, service, deploymentId, log) : [],
+      // A Swarm service mounts them as Swarm secrets instead (engine/swarmDeploy.ts).
+      fileMounts: service.type === 'docker' && service.serverId == null && service.orchestrator !== 'swarm' ? await prepareFileMounts(db, service, deploymentId, log) : [],
       // 0.16.5: a node service's files travel to its node (remoteDocker → remoteRun).
       nodeFiles: service.serverId != null && fileMountsSupported(service) ? await loadNodeServiceFiles(db, service.id) : [],
       log,
