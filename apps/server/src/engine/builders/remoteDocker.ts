@@ -528,7 +528,7 @@ export function createRemoteDockerBuilder(
       }
       if (!service.healthCheck && !service.port && runService.port) requireDefaultProbe();
 
-      if (opts.prepareCapacity) {
+      if (opts.prepareCapacity && runService.port != null) {
         const runtime = await opts.prepareCapacity({ service: runService, deploymentId, image: target, env: runEnv,
           volumeAttachments: ctx.volumeAttachments ?? [], files: ctx.nodeFiles ?? [] });
         if (runtime.runtimeId !== name || runtime.port !== runService.port || !runtime.nodeDeploymentOwner ||
@@ -539,6 +539,7 @@ export function createRemoteDockerBuilder(
         return { ...runtime, ...(ctx.recordDockerArtifact && !service.image ? { artifactBuild: { builtWithNixpacks,
           builtStatic: opts.prebuiltImage?.builtStatic ?? false } } : {}) };
       }
+      if (opts.prepareCapacity && runService.port == null) log('Node autoscaling capacity needs a resolved container port; continuing with the existing deployment path.');
 
       // 0.16.6: container options travel on docker.runSpec when the agent
       // can apply them; otherwise runRemoteContainer warns, as 0.16.1 did.

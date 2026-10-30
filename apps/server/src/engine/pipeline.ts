@@ -1584,7 +1584,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     const scale = autoscaleConfig.safeParse(ctx.service.autoscale);
     if (remoteBuilderFor && remoteNodeCall && admission?.claimed && nodeAuthority && service.serverId != null &&
       service.type === 'docker' && service.orchestrator !== 'swarm' && !swarmRuntimeOf(service) &&
-      scale.success && scale.data.metric !== 'rps' && ctx.service.port != null && service.canary == null &&
+      scale.success && scale.data.metric !== 'rps' && service.canary == null &&
       service.publishedPort == null && !(service.portMappings?.length)) {
       const [activeRoutes, targets] = await Promise.all([
         db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, service.id), eq(domains.status, 'active'))).limit(1),
@@ -1626,6 +1626,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       }
     }
     runtime = await builder.buildAndRun(ctx, previous);
+    if (!runtime.nodeDeploymentOwner) orderedDatabaseCheck = undefined;
     if (artifact && runtime.imageDigest !== artifact.imageId) throw new Error('Runtime image identity does not match the recorded artifact');
     if (ctx.recordDockerArtifact && (service.pushRegistrySourceId != null || service.pushRepository) && (!runtime.artifactBuild || !runtime.imageDigest)) {
       throw new Error('Registry archival is required but the source image could not be recorded; the candidate will not receive traffic');
