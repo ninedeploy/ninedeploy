@@ -1002,6 +1002,16 @@ describe('services routes', () => {
     expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['update']));
   });
 
+  it.each([{ cpuLimitMilli: 0 }, { cpuLimitMilli: null }, { cpuShares: 0 }, { memLimitMb: 0 }])('defers a request that clears a limit: %j', async payload => {
+    const running = svcRow({ id: 1, status: 'running', runtimeId: 'web-3', cpuLimitMilli: 0, memLimitMb: 1024 });
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: running }, update: { services: [running] } }) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/limits', headers: asUser(), payload });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ liveApplied: false });
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['update']));
+  });
+
   it('skips the live docker update when the container is not running', async () => {
     const app = await buildTestApp({
       db: createFakeDb({

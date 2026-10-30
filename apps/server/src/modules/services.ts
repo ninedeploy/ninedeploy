@@ -1279,7 +1279,10 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     let liveApplied = false;
     // Node and Swarm services apply the saved limits on their next deploy.
     // A node runtime name must never be sent to the panel host's Docker daemon.
-    if (svc.type === 'docker' && svc.serverId == null && svc.status === 'running' && svc.runtimeId && !swarmRuntimeOf(svc)) {
+    // A cleared limit is omitted by the current Docker update path; avoid a
+    // partial update that would incorrectly report the whole request as live.
+    const clearsLimit = [input.cpuShares, input.cpuLimitMilli, input.memLimitMb].some(value => value === null || value === 0);
+    if (!clearsLimit && svc.type === 'docker' && svc.serverId == null && svc.status === 'running' && svc.runtimeId && !swarmRuntimeOf(svc)) {
       const argv = ['update'];
       if (svc.cpuShares > 0) argv.push('--cpu-shares', String(svc.cpuShares));
       if (svc.cpuLimitMilli > 0) argv.push('--cpus', String(svc.cpuLimitMilli / 1000));
