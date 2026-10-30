@@ -5,7 +5,8 @@ import {
   containerLimitsRequest, containerLimitsReply,
   containerStartSetRequest, containerStartSetReply,
   containerStopSetRequest, containerStopSetReply,
-  type RuntimeFenceRequest, type ContainerPrepareRequest, type ContainerNetworkSetRequest, type ContainerRetireSetRequest, type ContainerLimitsRequest, type ContainerStartSetRequest, type ContainerStopSetRequest, type MultiNodeCapability,
+  containerInventoryRequest, containerInventoryReply,
+  type RuntimeFenceRequest, type ContainerPrepareRequest, type ContainerNetworkSetRequest, type ContainerRetireSetRequest, type ContainerLimitsRequest, type ContainerStartSetRequest, type ContainerStopSetRequest, type ContainerInventoryRequest, type MultiNodeCapability,
 } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
@@ -54,6 +55,11 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
     fence(params: RuntimeFenceRequest) {
       const input = runtimeFenceRequest.parse(params);
       return exchange('docker.runtimeFence', 'ND-RUNTIME-FENCE ', input, value => runtimeFenceReply.parse(value), reply => reply.deploymentWatermark === input.deploymentWatermark);
+    },
+    inventory(params: ContainerInventoryRequest) {
+      const input = containerInventoryRequest.parse(params);
+      return exchange('docker.runtimeInventory', 'ND-RUNTIME-INVENTORY ', input, value => containerInventoryReply.parse(value),
+        reply => reply.deploymentWatermark === input.deploymentWatermark);
     },
     prepare(params: ContainerPrepareRequest) {
       const input = containerPrepareRequest.parse(params), serving = new Set(input.startNames ?? input.specs.map(spec => spec.name));

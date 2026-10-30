@@ -59,6 +59,7 @@ export const containerInventoryRequest = runtimeFenceRequest.extend({ expectedNa
 export const containerInventoryReply = runtimeFenceReply.extend({ items: z.array(target.extend({ running: z.boolean() })).max(30).refine(distinct, 'Duplicate inventory identity') });
 export const containerStopSetRequest = containerRetireSetRequest;
 export const containerStopSetReply = runtimeFenceReply.extend({ items: z.array(target.extend({ running: z.literal(false) })).max(30).refine(distinct, 'Duplicate Stop identity') });
+export type ContainerInventoryRequest = z.infer<typeof containerInventoryRequest>;
 export type ContainerInventoryReply = z.infer<typeof containerInventoryReply>;
 export type ContainerStopSetRequest = z.infer<typeof containerStopSetRequest>;
 export type ContainerStopSetReply = z.infer<typeof containerStopSetReply>;

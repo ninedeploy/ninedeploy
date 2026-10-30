@@ -9,6 +9,7 @@ const spare = { id: 'c'.repeat(64), name: 'web-10-r2', deploymentId: 10 };
 const spec = { name: target.name, serviceId: 7, deploymentId: 10, image: 'sha256:' + 'f'.repeat(64) };
 const requests = {
   fence: header,
+  inventory: { ...header, expectedNames: [target.name, spare.name], deploymentWatermark: 10 },
   prepare: { ...header, deploymentId: 10, specs: [spec, { ...spec, name: spare.name }], startNames: [target.name] },
   networks: { ...header, action: 'connect' as const, targets: [target, spare], networks: ['nd-dbnet-pg'] },
   retire: { ...header, targets: [target, spare], graceSeconds: 5 },
@@ -16,9 +17,9 @@ const requests = {
   start: { ...header, targets: [target, spare] },
   stop: { ...header, targets: [target, spare], graceSeconds: 5 },
 };
-const kinds = ['fence', 'prepare', 'networks', 'retire', 'limits', 'start', 'stop'] as const;
+const kinds = ['fence', 'inventory', 'prepare', 'networks', 'retire', 'limits', 'start', 'stop'] as const;
 type Kind = typeof kinds[number];
-const prefixes = { 'docker.runtimeFence': 'ND-RUNTIME-FENCE ', 'docker.prepare': 'ND-PREPARED ', 'docker.networkSet': 'ND-NETWORKS ', 'docker.retireSet': 'ND-RETIRED-SET ', 'docker.limits': 'ND-LIMITS ', 'docker.startSet': 'ND-STARTED-SET ', 'docker.stopSet': 'ND-STOPPED-SET ' };
+const prefixes = { 'docker.runtimeFence': 'ND-RUNTIME-FENCE ', 'docker.runtimeInventory': 'ND-RUNTIME-INVENTORY ', 'docker.prepare': 'ND-PREPARED ', 'docker.networkSet': 'ND-NETWORKS ', 'docker.retireSet': 'ND-RETIRED-SET ', 'docker.limits': 'ND-LIMITS ', 'docker.startSet': 'ND-STARTED-SET ', 'docker.stopSet': 'ND-STOPPED-SET ' };
 const db = {} as DB;
 let patch: Record<string, unknown>, caps: string[], version: string, mutate: (() => void) | undefined, now: number;
 const checkpoint = vi.fn(async () => undefined);
@@ -32,7 +33,8 @@ beforeEach(() => {
     if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version, caps })] };
     mutate?.();
     const common = { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true };
-    const reply = op === 'docker.runtimeFence' ? common : op === 'docker.prepare'
+    const reply = op === 'docker.runtimeFence' ? common : op === 'docker.runtimeInventory'
+      ? { ...common, deploymentWatermark: params.deploymentWatermark, items: [{ ...target, running: true }, { ...spare, running: false }] } : op === 'docker.prepare'
       ? { ...common, deploymentId: 10, items: [{ ...target, running: true }, { ...spare, running: false }] }
       : op === 'docker.networkSet' ? { ...common, action: params.action, networks: params.networks, items: params.targets.map((item: object) => ({ ...item, connected: params.action === 'connect' })) }
       : op === 'docker.limits' ? { ...common, items: params.targets }
@@ -81,6 +83,12 @@ describe('selected-node ordered runtime mutation client', () => {
   it('does not accept a fence that acknowledges a different deployment watermark', async () => {
     patch = { deploymentWatermark: 9 };
     await expect(invoke('fence', { ...requests.fence, deploymentWatermark: 10 })).rejects.toThrow(/identity|coverage/);
+  });
+  it('binds inventory to the fence watermark and reports absent names as absent', async () => {
+    patch = { items: [{ ...target, running: true }] };
+    await expect(invoke('inventory')).resolves.toMatchObject({ items: [{ ...target, running: true }] });
+    patch = { deploymentWatermark: 9 };
+    await expect(invoke('inventory')).rejects.toThrow(/identity|coverage/);
   });
   it.each(kinds)('rejects %s replies belonging to another owner or revision', async kind => {
     for (const change of [{ requestId: 'd'.repeat(32) }, { serviceId: 8 }, { revision: 9 }, { complete: false }]) {

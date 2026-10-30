@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, type ContainerInventoryReply, type ContainerStopSetReply, containerLifecycleRequest, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest,
+import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, type ContainerInventoryReply, type ContainerStopSetReply, containerLifecycleRequest, containerLifecycleReply, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest,
   runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply, type ContainerNetworkSetReply, type ContainerPrepareReply, type ContainerRetireSetReply, type RuntimeFenceReply } from '@ninedeploy/schemas';
 import { parseRunSpec, runSpecArgv, type RunSpec } from '../agentOps/runSpec.js';
 import { containerLimitsRequest, containerLimitsReply, type ContainerLimitsReply } from '@ninedeploy/schemas';
@@ -152,10 +152,21 @@ export function createNodeRuntimeMutation(root: string) {
         if (!recorded || Number(recorded.revision) !== input.revision || digest(String(recorded.intent)) !== recorded.request_hash) throw new Error('Runtime inventory fence is stale or unconfirmed');
         const intent = JSON.parse(String(recorded.intent)) as Record<string, unknown>;
         const { kind, ...stored } = intent;
-        const modern = kind === 'fence' && runtimeFenceRequest.safeParse({ ...stored, timeoutMs: 1 }).success;
+        const modern = kind === 'fence' ? runtimeFenceRequest.safeParse({ ...stored, timeoutMs: 1 }) : null;
         const legacy = containerLifecycleRequest.safeParse({ ...intent, timeoutMs: 1 });
-        if ((!modern && !(legacy.success && legacy.data.action === 'stop' && legacy.data.targets.length === 0)) ||
+        if ((!modern?.success && !(legacy.success && legacy.data.action === 'stop' && legacy.data.targets.length === 0)) ||
           intent.requestId !== input.requestId || intent.serviceId !== input.serviceId || intent.revision !== input.revision) throw new Error("Runtime inventory requires this command's completed fence");
+        if (recorded.receipt === null) throw new Error('Runtime inventory fence receipt is unavailable');
+        const receiptValue: unknown = JSON.parse(String(recorded.receipt));
+        if (modern?.success) {
+          const receipt = runtimeFenceReply.parse(receiptValue);
+          if (modern.data.deploymentWatermark !== input.deploymentWatermark || receipt.deploymentWatermark !== input.deploymentWatermark ||
+            receipt.requestId !== input.requestId || receipt.serviceId !== input.serviceId || receipt.revision !== input.revision) throw new Error('Runtime inventory fence watermark or receipt changed');
+        } else {
+          const receipt = containerLifecycleReply.parse(receiptValue);
+          if (input.deploymentWatermark !== undefined || !legacy.success || receipt.requestId !== input.requestId || receipt.serviceId !== input.serviceId ||
+            receipt.revision !== input.revision || receipt.action !== 'stop' || receipt.deploymentId !== legacy.data.deploymentId || receipt.items.length !== 0) throw new Error('Runtime inventory legacy fence receipt changed');
+        }
         const adopted = journal.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_protocol'").get();
         const mode = adopted ? journal.database.prepare("SELECT version FROM runtime_protocol WHERE id=1").get() : undefined;
         if (mode?.version !== 1) throw new Error('Runtime inventory protocol is unconfirmed');
@@ -173,7 +184,7 @@ export function createNodeRuntimeMutation(root: string) {
         };
         for (const id of listed) { const row = await io.inspect(id); if (row) capture(row); }
         for (const name of input.expectedNames ?? []) { const row = await io.inspect(name); if (row) capture(row); }
-        return containerInventoryReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision, complete: true,
+        return containerInventoryReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision, complete: true, ...(input.deploymentWatermark === undefined ? {} : { deploymentWatermark: input.deploymentWatermark }),
           items: items.sort((a,b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0) });
       }));
     },

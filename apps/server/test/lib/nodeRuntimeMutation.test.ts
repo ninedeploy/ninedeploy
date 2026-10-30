@@ -463,6 +463,22 @@ describe('fenced generation-independent inventory and Stop', () => {
     await expect(runtime().inventory({ ...fence(), requestId: nonce(99) })).rejects.toThrow(/fence/);
     expect(io.spawn).not.toHaveBeenCalled();
   });
+  it('requires the completed fence receipt and the same deployment watermark before inventory', async () => {
+    const request = { ...fence(), deploymentWatermark: 10 };
+    await runtime().fence(request);
+    expect(await runtime().inventory(request)).toMatchObject({ deploymentWatermark: 10, complete: true });
+    await expect(runtime().inventory({ ...request, deploymentWatermark: 11 })).rejects.toThrow(/fence|watermark/);
+    const db = new DatabaseSync(journalFile());
+    try {
+      db.prepare('UPDATE lifecycle_head SET receipt=?').run(JSON.stringify({ ...request, timeoutMs: undefined, complete: true, deploymentWatermark: 11 }));
+    } finally { db.close(); }
+    await expect(runtime().inventory(request)).rejects.toThrow(/fence|receipt/);
+    const missing = new DatabaseSync(journalFile());
+    try { missing.exec('UPDATE lifecycle_head SET receipt=NULL'); } finally { missing.close(); }
+    io.spawn.mockClear();
+    await expect(runtime().inventory(request)).rejects.toThrow(/fence|receipt/);
+    expect(io.spawn).not.toHaveBeenCalled();
+  });
   it('holds a foreign container occupying an expected pending name', async () => {
     rows.push({ id: 'f'.repeat(64), name: 'web-10', managed: 'service', serviceId: '8', deploymentId: '10', nonce: null, specHash: null, status: 'running', running: true, networks: {} });
     await runtime().fence(fence());
