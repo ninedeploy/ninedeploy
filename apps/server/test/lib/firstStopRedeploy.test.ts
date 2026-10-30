@@ -2,17 +2,18 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { createDb, runMigrations, services, servers, users, deployments, nodeLifecycleIntents, eq } from '@ninedeploy/db';
+import { createDb, runMigrations, services, servers, users, deployments, nodeDeploymentPreparations, nodeLifecycleIntents, eq } from '@ninedeploy/db';
 import { runOp } from '../../src/agent.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { executeNodeLifecycleIntent } from '../../src/lib/nodeLifecycleController.js';
 import { claimNodeDeploymentAttempt, createNodeDeploymentAuthority } from '../../src/lib/nodeDeploymentOwner.js';
 import { recoverCompletedInitialStop } from '../../src/lib/nodeLegacyStopRecovery.js';
+import { beginNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
 
 const docker = vi.hoisted(() => vi.fn());
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: docker }));
 
-it.each(['normal', 'lost-handoff-reply', 'wrong-fence-watermark', 'old-panel'] as const)('stops an initial deployment and fences old work before a later deployment: %s', async mode => {
+it.each(['normal', 'lost-handoff-reply', 'wrong-fence-watermark', 'old-panel', 'preparation', 'preparation-lost-handoff', 'preparation-old-agent'] as const)('stops an initial deployment and fences old work before a later deployment: %s', async mode => {
   const root = mkdtempSync(join(tmpdir(), 'nd-first-stop-flow-'));
   const cwd = vi.spyOn(process, 'cwd').mockReturnValue(root);
   const c = createDb({ url: 'file::memory:' });
@@ -26,13 +27,20 @@ it.each(['normal', 'lost-handoff-reply', 'wrong-fence-watermark', 'old-panel'] a
     await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
     await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', ownerUserId: 1, serverId: 4, runtimeId: null, status: 'deploying', port: 3000 });
     await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'deploying' });
+    if (mode === 'preparation' || mode === 'preparation-lost-handoff' || mode === 'preparation-old-agent') {
+      await c.db.update(deployments).set({ status: 'queued' }).where(eq(deployments.id, 10));
+      const admitted = await claimNodeDeploymentAttempt(c.db, 10, (await c.db.query.services.findFirst())!, '{}');
+      if (!admitted.claimed) throw Error('Missing deployment authority');
+      await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: `sha256:${'f'.repeat(64)}`, serving: 1, capacity: 2 });
+      await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+    }
     const service = (await c.db.query.services.findFirst())!;
     const intent = await acceptNodeLifecycleIntent(c.db, service, 'stop');
     let handoffAttempts = 0, fenceAttempts = 0;
     const deps = {
       sealed: async () => true, route: async () => {}, sleep: async () => {},
       agent: async (_server: number, op: string, params: Record<string, unknown>) => {
-        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.18.11', caps: ['docker.mutations', 'proxy.routingAck'] })] };
+        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'proxy.routingAck', ...(mode === 'preparation-old-agent' ? [] : ['docker.retireHandoff'])] })] };
         if (op === 'docker.runtimeLegacyHandoff' && mode === 'old-panel') return { exitCode: 0, lines: ['ND-RUNTIME-LEGACY ' + JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, deploymentWatermark: params.deploymentWatermark, complete: true })] };
         const lines: string[] = [];
         const exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });
@@ -40,17 +48,25 @@ it.each(['normal', 'lost-handoff-reply', 'wrong-fence-watermark', 'old-panel'] a
           const frame = JSON.parse(lines[0]!.slice('ND-RUNTIME-FENCE '.length));
           lines[0] = 'ND-RUNTIME-FENCE ' + JSON.stringify({ ...frame, deploymentWatermark: 1 });
         }
-        if (op === 'docker.runtimeLegacyHandoff' && ++handoffAttempts === 1 && mode === 'lost-handoff-reply') throw new Error('lost handoff reply');
+        if (op === 'docker.runtimeLegacyHandoff' && ++handoffAttempts === 1 && (mode === 'lost-handoff-reply' || mode === 'preparation-lost-handoff')) throw new Error('lost handoff reply');
         return { exitCode, lines };
       },
     };
     let outcome = await executeNodeLifecycleIntent(c.db, intent.id, deps);
-    if (mode === 'lost-handoff-reply' || mode === 'wrong-fence-watermark') {
+    if (mode === 'preparation-old-agent') {
       expect(outcome.state).toBe('held');
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
+      expect(docker).not.toHaveBeenCalled();
+      return;
+    }
+    if (mode === 'lost-handoff-reply' || mode === 'wrong-fence-watermark' || mode === 'preparation-lost-handoff') {
+      expect(outcome.state).toBe('held');
+      if (mode === 'preparation-lost-handoff') expect(await c.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
       await c.db.update(nodeLifecycleIntents).set({ nextAttemptAt: new Date(0) }).where(eq(nodeLifecycleIntents.id, intent.id));
       outcome = await executeNodeLifecycleIntent(c.db, intent.id, deps);
     }
     expect(outcome.state, (await c.db.query.nodeLifecycleIntents.findFirst())?.reason ?? '').toBe('completed');
+    if (mode === 'preparation' || mode === 'preparation-lost-handoff') expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
     await c.db.insert(deployments).values({ id: 11, serviceId: 1, status: 'queued' });
     const fresh = (await c.db.query.services.findFirst())!;
     const admission = await claimNodeDeploymentAttempt(c.db, 11, fresh, '{}');

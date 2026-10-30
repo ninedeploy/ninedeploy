@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { eq, nodeDeploymentPreparations, nodeLifecycleIntents, type DB, type Service } from '@ninedeploy/db';
-import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, runtimeFenceRequest, runtimeFenceReply, containerLifecycleReply, containerLifecycleRequest, containerLifecycleRetireRequest, containerLifecycleRetireReply, type ContainerReadinessRequest } from '@ninedeploy/schemas';
+import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, containerRetireSetReply, runtimeFenceRequest, runtimeFenceReply, containerLifecycleReply, containerLifecycleRequest, containerLifecycleRetireRequest, containerLifecycleRetireReply, type ContainerReadinessRequest } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import type { AgentOpResult } from './agentClient.js';
@@ -170,7 +170,10 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       } else {
         const request = containerStopSetRequest.parse({ requestId: intent.requestId, serviceId: intent.serviceId, revision: nodeLifecycleWireRevision(intent, 'effect'), timeoutMs: 30_000, graceSeconds: 5,
           targets: (intent.targets ?? []).filter(target => (target.serverId ?? intent.serverId) === participant.serverId).map(({ serverId: _server, ...target }) => target) });
-        const reply = machine(await call(participant.serverId, 'docker.stopSet', request, 35_000), 'ND-STOPPED-SET ', value => containerStopSetReply.parse(value), request);
+        const retire = intent.snapshot.retireUnselected === true;
+        const reply = retire
+          ? machine(await call(participant.serverId, 'docker.retireSet', request, 35_000), 'ND-RETIRED-SET ', value => containerRetireSetReply.parse(value), request)
+          : machine(await call(participant.serverId, 'docker.stopSet', request, 35_000), 'ND-STOPPED-SET ', value => containerStopSetReply.parse(value), request);
         if (reply.items.length !== request.targets.length || request.targets.some(target => !reply.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId))) throw new Error('Node Stop generation coverage changed');
         const watermark = intent.snapshot.creationFenceDeploymentId;
         if (!Number.isSafeInteger(watermark) || watermark! < 1 || request.targets.some(target => target.deploymentId > watermark!)) throw new Error('Node Stop creation watermark is unconfirmed');
@@ -256,7 +259,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
         if (op === 'agent.ping') ping = result;
         return result;
       }, `#${participant.serverId}`, sealed, {
-        cap: intent.snapshot.unselected ? ['docker.mutations', 'proxy.routingAck'] : ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck',
+        cap: intent.snapshot.unselected ? ['docker.mutations', 'proxy.routingAck', ...(intent.snapshot.retireUnselected ? ['docker.retireHandoff' as const] : [])] : ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck',
           ...(requiresCreationFence ? ['docker.lifecycle.creationFence' as const, 'docker.lifecycle.generations' as const, 'docker.lifecycle.retire' as const] : [])], feature: 'execute ordered node lifecycle commands', sealedRequired: true,
       });
       await checkpoint();
@@ -282,7 +285,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
           if (requiresCreationFence) await retireCandidates(participant);
         }
         intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'restart' ? 'starting' : intent.action === 'start' ? 'readiness' : 'completed',
-          requiresCreationFence ? { retiredCandidates: true } : {});
+          requiresCreationFence || intent.snapshot.retireUnselected ? { retiredCandidates: true } : {});
       } else if (intent.phase === 'starting') {
         for (const participant of participants()) await apply(participant, false, true);
         intent = await advanceNodeLifecycleIntent(db, intent, 'warming');

@@ -1937,6 +1937,8 @@ export interface NodeLifecycleSnapshot {
   fanout?: Array<{ targetId: number; serverId: number; runtimeId: string | null }>;
   /** Initial Stop discovers all physical generations after fencing each accepted node. */
   unselected?: { participants: Array<{ serverId: number; expectedNames: string[] }> };
+  /** Initial Stop must retire its candidates before handing creation to the legacy protocol. */
+  retireUnselected?: boolean;
   /** Deployments that might have created unselected generations before Stop took authority. */
   interruptedDeployments?: Array<{ id: number }>;
   /** Highest pre-Stop deployment ID, including cancelled work that had not started. */

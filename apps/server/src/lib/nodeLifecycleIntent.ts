@@ -114,7 +114,7 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
         mutationEpoch: authority.epoch, revisionEpoch: authority.epoch,
         ...(action === 'stop' ? { interruptedDeployments: interruptedIds.map(id => ({ id })), creationFenceDeploymentId,
           ...(candidateParticipants ? { candidateParticipants, candidateSlug: fresh.slug } : {}) } : {}),
-        ...(fresh.runtimeId === null ? { unselected: { participants: [
+        ...(fresh.runtimeId === null ? { ...(preparations.length ? { retireUnselected: true } : {}), unselected: { participants: [
           { serverId: fresh.serverId!, expectedNames: interruptedIds.flatMap(id => replicaNames(fresh.slug + '-' + id, MAX_REPLICAS)) },
           ...fanout.map(target => ({ serverId: target.serverId, expectedNames: interruptedIds.flatMap(id => replicaNames(fresh.slug + '-t' + target.serverId + '-' + id, MAX_REPLICAS)) })),
         ] } } : {}) } }).returning();
@@ -202,10 +202,13 @@ export async function advanceNodeLifecycleIntent(db: DB, intent: NodeLifecycleIn
     if (patch.serviceStatus) await tx.update(services).set({ status: patch.serviceStatus, asleepAt: null }).where(eq(services.id, fresh.serviceId));
     const done = phase === 'completed';
     if (patch.retiredCandidates) {
-      if (!done || fresh.action !== 'stop' || fresh.phase !== 'applying' || fresh.runtimeId === null || fresh.snapshot.unselected || fresh.targets === null) {
+      if (!done || fresh.action !== 'stop' || fresh.phase !== 'applying' || fresh.targets === null ||
+        (fresh.runtimeId === null ? !fresh.snapshot.unselected || fresh.snapshot.retireUnselected !== true : !!fresh.snapshot.unselected)) {
         throw new Error('Stop candidate retirement is unconfirmed');
       }
-      const candidates = fresh.snapshot.candidateParticipants?.find(item => item.serverId === fresh.serverId)?.targets;
+      const candidates = fresh.runtimeId === null
+        ? fresh.snapshot.unselected?.participants.find(item => item.serverId === fresh.serverId)?.expectedNames.map(name => ({ name }))
+        : fresh.snapshot.candidateParticipants?.find(item => item.serverId === fresh.serverId)?.targets;
       if (!candidates) throw new Error('Stop candidate retirement identities unavailable');
       const preparations = await tx.select().from(nodeDeploymentPreparations).where(eq(nodeDeploymentPreparations.serviceId, fresh.serviceId));
       for (const preparation of preparations) {
@@ -215,7 +218,7 @@ export async function advanceNodeLifecycleIntent(db: DB, intent: NodeLifecycleIn
         if (preparation.serverId !== fresh.serverId || !stamp || stamp.serviceId !== fresh.serviceId || stamp.serverId !== fresh.serverId ||
           stamp.epoch !== preparation.epoch || stamp.requestId !== preparation.requestId ||
           !(fresh.snapshot.interruptedDeployments ?? []).some(item => item.id === preparation.deploymentId) ||
-          !candidates.some(item => item.deploymentId === preparation.deploymentId && item.name === preparation.runtimeId)) {
+          !candidates.some(item => item.name === preparation.runtimeId && (!('deploymentId' in item) || item.deploymentId === preparation.deploymentId))) {
           throw new Error('Stop preparation retirement ownership changed');
         }
         await tx.delete(nodeDeploymentPreparations).where(eq(nodeDeploymentPreparations.deploymentId, preparation.deploymentId));
