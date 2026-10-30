@@ -50,18 +50,21 @@ export async function prepareNodeAutoscaleDeployment(input: {
   const fileMounts = await writeNodeFileMounts(call, service, owner.deploymentId, files, input.log);
   const envName = `${service.slug}-${owner.deploymentId}`;
   const envFile = confirmedNodeEnvFile(await call('file.writeEnv', { name: envName, env: envForAgent(input.env) }, () => undefined), envName);
+  let prepareStarted = false, prepareConfirmed = false;
   const guarded: CapacityClient = {
     fence: async request => { await input.checkpoint(); try { return await input.client.fence(request); } finally { await input.checkpoint(); } },
-    prepare: async request => { await input.checkpoint(); try { return await input.client.prepare(request); } finally { await input.checkpoint(); } },
+    prepare: async request => { await input.checkpoint(); prepareStarted = true; try { return await input.client.prepare(request); } finally { await input.checkpoint(); } },
   };
   let result: Awaited<ReturnType<typeof prepareNodeAutoscaleCapacity>>;
   try {
     result = await prepareNodeAutoscaleCapacity(guarded, { service, owner, imageId: match[1]!, envFile,
       creationWatermark: input.creationWatermark, attachments, files: fileMounts, runtimeOptions, extraNetworks: input.extraNetworks });
+    prepareConfirmed = true;
     await input.checkpoint();
   } finally {
-    // The next attempt can rewrite the same values; the agent verifies their digest.
-    await input.agent('file.deleteEnv', { name: envName }, () => undefined).then(result => {
+    // An unanswered prepare may still be using this file on the node.
+    if (prepareStarted && !prepareConfirmed) input.log('Node environment retained: preparation outcome is unconfirmed.');
+    else await input.agent('file.deleteEnv', { name: envName }, () => undefined).then(result => {
       if (result.exitCode !== 0) throw new Error('Node environment cleanup failed');
     }).catch(() => input.log('Node environment file cleanup is unconfirmed.'));
   }

@@ -44,10 +44,20 @@ it('refuses an older or unsealed agent before writing any environment file', asy
   calls = []; await expect(prepareNodeAutoscaleDeployment({ ...opts, sealed: false })).rejects.toThrow(/unencrypted|sealed/);
   expect(calls).toEqual([]);
 });
-it('cleans its temporary environment after an ambiguous prepare', async () => {
-  const opts = await options(); opts.client.prepare.mockRejectedValue(new Error('reply lost'));
+it('retains its temporary environment while an ambiguous preparation may still be running', async () => {
+  const opts = await options(), messages: string[] = []; opts.log = line => messages.push(line);
+  opts.client.prepare.mockRejectedValue(new Error('reply lost'));
   await expect(prepareNodeAutoscaleDeployment(opts)).rejects.toThrow('reply lost');
-  expect(calls).toContain('file.writeEnv'); expect(calls).toContain('file.deleteEnv');
+  expect(calls).toContain('file.writeEnv'); expect(calls).not.toContain('file.deleteEnv');
+  expect(messages).toContain('Node environment retained: preparation outcome is unconfirmed.');
+});
+it('retains the environment if ownership changes while preparation is in flight', async () => {
+  const opts = await options(); let current = true;
+  opts.checkpoint = async () => { if (!current) throw new Error('owner changed'); };
+  const prepare = opts.client.prepare.getMockImplementation()!;
+  opts.client.prepare.mockImplementation(async input => { const reply = await prepare(input); current = false; return reply; });
+  await expect(prepareNodeAutoscaleDeployment(opts)).rejects.toThrow('owner changed');
+  expect(calls).not.toContain('file.deleteEnv');
 });
 it('does not start preparation when ownership is lost during the fence request', async () => {
   const opts = await options(); let current = true;
