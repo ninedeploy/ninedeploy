@@ -5,23 +5,27 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inspectOwnedSmokeResource, removeOwnedSmokeResource } from './lib/owned-smoke-resources.mjs';
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image && /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
 const proof=resolve(process.argv.find(arg=>arg.startsWith('--proof='))?.slice(8) ?? '.temp_files/runtime-mutation-'+randomBytes(6).toString('hex'));
 mkdirSync(proof,{recursive:true});
 writeFileSync(proof+'/agent-request.mjs',readFileSync(fileURLToPath(new URL('./fixtures/runtime-mutation-agent-request.mjs',import.meta.url))));
-const owner='runtime-mutation-'+randomBytes(5).toString('hex'), daemon='nd-'+owner, volume=daemon+'-home', home='/var/lib/ninedeploy-agent';
-const runners=[], jobs=[], cases=[]; const wrapperImage='ninedeploy-proof:'+owner;
+const owner=randomBytes(16).toString('hex'), daemon='nd-runtime-mutation-'+owner, volume=daemon+'-home', home='/var/lib/ninedeploy-agent';
+const runners=[], jobs=[], cases=[]; const wrapperImage='ninedeploy-proof:runtime-mutation-'+owner;
 const docker='docker';
 const cli=args=>spawnSync(docker,args,{encoding:'utf8',windowsHide:true,timeout:90_000,maxBuffer:4<<20});
 const check=args=>{const r=cli(args);assert.equal(r.status,0,r.stderr||r.stdout);return r.stdout.trim();};
-const inner=args=>check(['exec',daemon,'docker',...args]);
+const owned=(kind,name)=>{const result=inspectOwnedSmokeResource(cli,kind,name,owner);assert.equal(result.status,'owned',`Unconfirmed ${kind} ownership: ${name}`);return result.id;};
+const probeOwned=(name,args)=>{const result=inspectOwnedSmokeResource(cli,'container',name,owner);assert.notEqual(result.status,'foreign',`Foreign runner: ${name}`);return result.status==='owned'&&cli(['exec',result.id,...args]).status===0;};
+let daemonId;
+const inner=args=>check(['exec',daemonId,'docker',...args]);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async(fn,message)=>{const end=Date.now()+30_000;while(!fn()){assert.ok(Date.now()<end,message);await pause(100);}};
 const report=name=>{cases.push({name,passed:true});writeFileSync(proof+'/cases.json',JSON.stringify({image,realDocker:true,realSqlite:true,sealedHttp:true,independentAgentProcesses:true,publicPanelIntegration:false,cases},null,2));console.log('PASS '+name);};
 function request(op,params,hold=false){
  const name=daemon+'-request-'+runners.length;runners.push(name);
- const args=['run','--rm','--name',name,'--label','ninedeploy.proof='+owner,'--network','container:'+daemon,'--user','0','--no-healthcheck','-v',volume+':'+home,'-w',home,
+ const args=['run','--rm','--name',name,'--label','ninedeploy.proof='+owner,'--network','container:'+daemonId,'--user','0','--no-healthcheck','-v',volume+':'+home,'-w',home,
  '--mount','type=bind,source='+proof+'/agent-request.mjs,target=/proof/request.mjs,readonly','-e','NODE_ENV=test','-e','NINEDEPLOY_DATA_DIR='+home+'/data','-e','DOCKER_HOST=tcp://127.0.0.1:2375','-e','PROOF_INPUT='+JSON.stringify({op,params})];
  if(hold)args.push('-e','PATH=/proof/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin','-e','PROOF_BARRIER='+home+'/start-barrier-'+params.serviceId);
  args.push('--entrypoint','node',hold?wrapperImage:image,'/proof/request.mjs');return{name,args};
@@ -48,9 +52,11 @@ try{
  writeFileSync(proof+'/wrapper/docker','#!/bin/sh\nset -eu\nif [ "$1" = start ]; then touch "$PROOF_BARRIER-entered"; until [ -f "$PROOF_BARRIER-release" ]; do sleep 0.05; done; fi\nexec /usr/bin/docker "$@"\n');
  check(['build','-t',wrapperImage,proof+'/wrapper']);
  check(['volume','create','--label','ninedeploy.proof='+owner,volume]);
+ owned('volume',volume);
  check(['run','-d','--name',daemon,'--label','ninedeploy.proof='+owner,'--privileged','--network','none','-e','DOCKER_TLS_CERTDIR=','docker:28-dind','dockerd','--host=unix:///var/run/docker.sock','--host=tcp://127.0.0.1:2375','--tls=false']);
- await until(()=>cli(['exec',daemon,'docker','info']).status===0,'Private Docker daemon readiness');
- check(['save','-o',proof+'/fixture.tar','busybox:1.36']);check(['cp',proof+'/fixture.tar',daemon+':/root/fixture.tar']);inner(['load','-i','/root/fixture.tar']);
+ daemonId=owned('container',daemon);
+ await until(()=>cli(['exec',daemonId,'docker','info']).status===0,'Private Docker daemon readiness');
+ check(['save','-o',proof+'/fixture.tar','busybox:1.36']);check(['cp',proof+'/fixture.tar',daemonId+':/root/fixture.tar']);inner(['load','-i','/root/fixture.tar']);
  for(const network of ['ninedeploy','nd-extra','nd-dbnet-proof'])inner(['network','create',network]);appImage=inner(['image','inspect','busybox:1.36','--format','{{.Id}}']);
  const first=batch(5,10);const prepared=receipt(run('docker.prepare',first),'ND-PREPARED ',first);
  assert.equal(prepared.items.length,3);assert.equal(new Set(prepared.items.map(x=>x.id)).size,3);
@@ -81,21 +87,21 @@ try{
  const selectedTargets=selected.items.map(({running,...t})=>t),net={...head(10),action:'connect',networks:['nd-dbnet-proof'],targets:selectedTargets};
  receipt(run('docker.networkSet',net),'ND-NETWORKS ',net);for(const t of selectedTargets)assert.ok(state(t.id).networks['nd-dbnet-proof']);assert.equal(state(selectedTargets[2].id).running,false);
  report('newer-deploy-still-works-and-database-membership-includes-stopped-capacity');
- const retired={...head(11),graceSeconds:1,targets};receipt(run('docker.retireSet',retired),'ND-RETIRED-SET ',retired);assert.ok(targets.every(t=>cli(['exec',daemon,'docker','inspect',t.id]).status!==0));
+ const retired={...head(11),graceSeconds:1,targets};receipt(run('docker.retireSet',retired),'ND-RETIRED-SET ',retired);assert.ok(targets.every(t=>cli(['exec',daemonId,'docker','inspect',t.id]).status!==0));
  const replacement=inner(['run','-d','--name',targets[0].name,'--network','ninedeploy','--label','ninedeploy.managed=service','--label','ninedeploy.service=7','--label','ninedeploy.deployment=99',appImage,'sleep','300']);
  receipt(run('docker.retireSet',retired),'ND-RETIRED-SET ',retired);assert.equal(state(replacement).running,true);
  refused(run('docker.networkSet',net),/stale|superseded/);refused(run('docker.rm',{name:selectedTargets[0].name}),/Unversioned.*fenced/);assert.equal(state(selectedTargets[0].id).running,true);
  report('retirement-retry-preserves-same-name-replacement-and-refuses-stale-network-and-legacy-cleanup');
  const interrupted=batch(5,20,8);const creating=launch('docker.prepare',interrupted,true);
- await until(()=>{assert.ok(!creating.done,creating.err);return cli(['exec',creating.name,'test','-f',home+'/start-barrier-8-entered']).status===0;},'Real Docker Start barrier');
+ await until(()=>{assert.ok(!creating.done,creating.err);return probeOwned(creating.name,['test','-f',home+'/start-barrier-8-entered']);},'Real Docker Start barrier');
  const retained=inner(['inspect',interrupted.specs[0].name,'--format','{{.Id}}']);assert.equal(state(retained).running,false);
- check(['kill',creating.name]);await creating.promise;const recovered=receipt(run('docker.prepare',interrupted),'ND-PREPARED ',interrupted);assert.equal(recovered.items[0].id,retained);assert.equal(state(retained).running,true);
+ check(['kill',owned('container',creating.name)]);await creating.promise;const recovered=receipt(run('docker.prepare',interrupted),'ND-PREPARED ',interrupted);assert.equal(recovered.items[0].id,retained);assert.equal(state(retained).running,true);
  report('hard-agent-crash-replays-only-the-nonce-bound-created-id');
  // Separate native processes contend for the same SQL journal while an actual Docker child is admitted.
  const ordered=batch(5,30,9);const pending=launch('docker.prepare',ordered,true);
- await until(()=>{assert.ok(!pending.done,pending.err);return cli(['exec',pending.name,'test','-f',home+'/start-barrier-9-entered']).status===0;},'Independent admitted creation');
+ await until(()=>{assert.ok(!pending.done,pending.err);return probeOwned(pending.name,['test','-f',home+'/start-barrier-9-entered']);},'Independent admitted creation');
  const newer=head(6,9),fencing=launch('docker.runtimeFence',newer,false);await pause(1200);assert.equal(fencing.done,false,'Fence overtook admitted Docker Start');
- check(['exec',pending.name,'touch',home+'/start-barrier-9-release']);receipt(parse(await pending.promise,pending.name),'ND-PREPARED ',ordered);receipt(parse(await fencing.promise,fencing.name),'ND-RUNTIME-FENCE ',newer);
+ check(['exec',owned('container',pending.name),'touch',home+'/start-barrier-9-release']);receipt(parse(await pending.promise,pending.name),'ND-PREPARED ',ordered);receipt(parse(await fencing.promise,fencing.name),'ND-RUNTIME-FENCE ',newer);
  refused(run('docker.prepare',ordered),/stale|superseded/);report('native-sqlite-fence-drains-admitted-start-across-separate-sealed-http-agents');
  // A first deployment has no selected generation: discover every physical generation after fencing.
  const initial=batch(5,40,10),initialPrepared=receipt(run('docker.prepare',initial),'ND-PREPARED ',initial);
@@ -121,10 +127,20 @@ try{
  refused(run('docker.stopSet',initialStop),/stale|superseded/);
  assert.ok(afterStop.items.slice(0,2).every(item=>state(item.id).running));
  report('newer-typed-deployment-survives-stale-generation-independent-stop');
+ const scaled=batch(5,60,14),capacity=receipt(run('docker.prepare',scaled),'ND-PREPARED ',scaled);
+ const {running: _running,...spare}=capacity.items[2];assert.equal(state(spare.id).running,false);
+ const start={...head(7,14),targets:[spare]};receipt(run('docker.startSet',start),'ND-STARTED-SET ',start);assert.equal(state(spare.id).running,true);
+ assert.deepEqual(receipt(run('docker.startSet',start),'ND-STARTED-SET ',start).items,[{...spare,running:true}]);
+ const stopFence=head(8,14);receipt(run('docker.runtimeFence',stopFence),'ND-RUNTIME-FENCE ',stopFence);
+ const stopSpare={...head(9,14),graceSeconds:1,targets:[spare]};receipt(run('docker.stopSet',stopSpare),'ND-STOPPED-SET ',stopSpare);
+ refused(run('docker.startSet',start),/stale|superseded/);assert.equal(state(spare.id).running,false);
+ inner(['rm',spare.id]);const replacementId=inner(['run','-d','--name',spare.name,'--label','ninedeploy.managed=service','--label','ninedeploy.service=14','--label','ninedeploy.deployment=61',appImage,'sleep','300']);
+ refused(run('docker.startSet',{...head(10,14),targets:[spare]}),/missing/);assert.equal(state(replacementId).running,true);
+ report('start-set-binds-spare-id-replays-and-yields-to-stop-without-following-replacement');
 }finally{
- for(const name of runners){const r=cli(['inspect',name,'--format','{{index .Config.Labels "ninedeploy.proof"}}']);if(r.status===0){assert.equal(r.stdout.trim(),owner);check(['rm','-fv',name]);}}
+ for(const name of runners){const result=removeOwnedSmokeResource(cli,'container',name,owner,{removeAnonymousVolumes:true});assert.notEqual(result,'foreign',`Foreign runner: ${name}`);}
  await Promise.allSettled(jobs);
- const d=cli(['inspect',daemon,'--format','{{index .Config.Labels "ninedeploy.proof"}}']);if(d.status===0){assert.equal(d.stdout.trim(),owner);check(['rm','-fv',daemon]);}
- const v=cli(['volume','inspect',volume,'--format','{{index .Labels "ninedeploy.proof"}}']);if(v.status===0){assert.equal(v.stdout.trim(),owner);check(['volume','rm',volume]);}
+ assert.notEqual(removeOwnedSmokeResource(cli,'container',daemon,owner,{removeAnonymousVolumes:true}),'foreign','Foreign daemon');
+ assert.notEqual(removeOwnedSmokeResource(cli,'volume',volume,owner),'foreign','Foreign volume');
  rmSync(proof+'/fixture.tar',{force:true});writeFileSync(proof+'/cleanup.json',JSON.stringify({owner,containers:check(['ps','-aq','--filter','label=ninedeploy.proof='+owner]),volumes:check(['volume','ls','-q','--filter','label=ninedeploy.proof='+owner])},null,2));
 }

@@ -5,6 +5,7 @@ import { containerInventoryRequest, containerInventoryReply, containerStopSetReq
   runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply, type ContainerNetworkSetReply, type ContainerPrepareReply, type ContainerRetireSetReply, type RuntimeFenceReply } from '@ninedeploy/schemas';
 import { parseRunSpec, runSpecArgv, type RunSpec } from '../agentOps/runSpec.js';
 import { containerLimitsRequest, containerLimitsReply, type ContainerLimitsReply } from '@ninedeploy/schemas';
+import { containerStartSetRequest, containerStartSetReply, type ContainerStartSetReply } from '@ninedeploy/schemas';
 import { assertFileMountsWritten } from '../agentOps/fileMounts.js';
 import { assertLegacyNodeMutationAllowed, withNodeServiceJournal, type NodeServiceJournal } from './nodeLifecycle.js';
 import { spawnValidated } from './spawnValidated.js';
@@ -189,6 +190,32 @@ export function createNodeRuntimeMutation(root: string) {
           for (const target of input.targets) { const row = await io.inspect(target.id); if (row) { owned(row, input.serviceId, target); if (row.running || !['created', 'exited', 'dead'].includes(row.status)) throw new Error('Managed Stop state is unconfirmed'); } }
           return containerStopSetReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision, complete: true,
             items: input.targets.map(target => ({ ...target, running: false })) });
+        });
+      });
+    },
+    async start(params: unknown, onLine: (line: string) => void = () => {}): Promise<ContainerStartSetReply> {
+      const input = containerStartSetRequest.parse(params), { timeoutMs: _timeout, ...intent } = input;
+      return withNodeServiceJournal(directory, input.serviceId, input.timeoutMs, async journal => {
+        const admitted = await claim(journal, input, { kind: 'startSet', ...intent });
+        return effect(journal, input, admitted.hash, value => containerStartSetReply.parse(value), async () => {
+          const io = dockerIO(journal, onLine), stopped: string[] = [];
+          for (const target of input.targets) {
+            const row = await io.inspect(target.id);
+            if (!row) throw new Error('Managed Start target is missing');
+            owned(row, input.serviceId, target);
+            if (row.running) { if (row.status !== 'running') throw new Error('Managed Start state is unconfirmed'); }
+            else if (row.status === 'created' || row.status === 'exited') stopped.push(row.id);
+            else throw new Error('Managed Start state is unconfirmed');
+          }
+          for (const id of stopped) if (await io.call(['start', id]) !== 0) throw new Error('Managed Start unconfirmed');
+          for (const target of input.targets) {
+            const row = await io.inspect(target.id);
+            if (!row) throw new Error('Managed Start target disappeared');
+            owned(row, input.serviceId, target);
+            if (!row.running || row.status !== 'running') throw new Error('Managed Start state is unconfirmed');
+          }
+          return containerStartSetReply.parse({ requestId: input.requestId, serviceId: input.serviceId, revision: input.revision,
+            complete: true, items: input.targets.map(target => ({ ...target, running: true })) });
         });
       });
     },

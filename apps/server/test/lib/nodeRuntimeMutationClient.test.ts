@@ -13,17 +13,18 @@ const requests = {
   networks: { ...header, action: 'connect' as const, targets: [target, spare], networks: ['nd-dbnet-pg'] },
   retire: { ...header, targets: [target, spare], graceSeconds: 5 },
   limits: { ...header, targets: [target, spare], memLimitMb: 64 },
+  start: { ...header, targets: [target, spare] },
 };
-const kinds = ['fence', 'prepare', 'networks', 'retire', 'limits'] as const;
+const kinds = ['fence', 'prepare', 'networks', 'retire', 'limits', 'start'] as const;
 type Kind = typeof kinds[number];
-const prefixes = { 'docker.runtimeFence': 'ND-RUNTIME-FENCE ', 'docker.prepare': 'ND-PREPARED ', 'docker.networkSet': 'ND-NETWORKS ', 'docker.retireSet': 'ND-RETIRED-SET ', 'docker.limits': 'ND-LIMITS ' };
+const prefixes = { 'docker.runtimeFence': 'ND-RUNTIME-FENCE ', 'docker.prepare': 'ND-PREPARED ', 'docker.networkSet': 'ND-NETWORKS ', 'docker.retireSet': 'ND-RETIRED-SET ', 'docker.limits': 'ND-LIMITS ', 'docker.startSet': 'ND-STARTED-SET ' };
 const db = {} as DB;
 let patch: Record<string, unknown>, caps: string[], version: string, mutate: (() => void) | undefined, now: number;
 const checkpoint = vi.fn(async () => undefined);
 const client = (signal?: AbortSignal) => createNodeRuntimeMutationClient(db, 2, { checkpoint, signal });
 const invoke = (kind: Kind, input: unknown = requests[kind], signal?: AbortSignal) => Promise.resolve().then(() => client(signal)[kind](input as never));
 beforeEach(() => {
-  patch = {}; caps = ['docker.mutations', 'docker.limits']; version = '0.19.0'; mutate = undefined; now = 1000;
+  patch = {}; caps = ['docker.mutations', 'docker.limits', 'docker.startSet']; version = '0.19.0'; mutate = undefined; now = 1000;
   vi.spyOn(performance, 'now').mockImplementation(() => now);
   checkpoint.mockReset().mockResolvedValue(undefined); io.sealed.mockReset().mockResolvedValue(true);
   io.op.mockReset().mockImplementation(async (_db, _server, op: keyof typeof prefixes | 'agent.ping', params) => {
@@ -34,6 +35,7 @@ beforeEach(() => {
       ? { ...common, deploymentId: 10, items: [{ ...target, running: true }, { ...spare, running: false }] }
       : op === 'docker.networkSet' ? { ...common, action: params.action, networks: params.networks, items: params.targets.map((item: object) => ({ ...item, connected: params.action === 'connect' })) }
       : op === 'docker.limits' ? { ...common, items: params.targets }
+      : op === 'docker.startSet' ? { ...common, items: params.targets.map((item: object) => ({ ...item, running: true })) }
       : { ...common, items: params.targets.map((item: object) => ({ ...item, removed: true })) };
     return { exitCode: 0, lines: [prefixes[op] + JSON.stringify({ ...reply, ...patch })] };
   });

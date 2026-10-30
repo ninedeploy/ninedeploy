@@ -88,6 +88,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.lifecycle.retire': 'retire stopped node candidates',
   'docker.mutations': 'prepare, fence and retire owned container sets',
   'docker.limits': 'update owned container resource limits',
+  'docker.startSet': 'start owned container replicas',
   'host.packages': 'read and change OS updates',
   'agent.rekey': 'rotate its agent key',
   'db.dump.extra': 'back up and restore clickhouse on a node',

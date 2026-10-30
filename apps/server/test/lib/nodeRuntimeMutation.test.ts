@@ -312,6 +312,34 @@ describe('persistent runtime request admission', () => {
     expect(rows.find(row => row.id === spare.id)?.running).toBe(false);
     expect(effects().filter(args => args[0] === 'start')).toEqual([]);
   });
+  it('starts a verified spare by immutable ID under a newer revision and replays the same receipt', async () => {
+    const specs = [spec(), spec(10, 'web-10-r2')];
+    const prepared = await runtime().prepare({ ...prepare(5, 10, specs), startNames: ['web-10'] });
+    const { running: _running, ...target } = prepared.items[1]!;
+    const request = { requestId: nonce(9), serviceId: 7, revision: 9, timeoutMs: 5000, targets: [target] };
+    io.spawn.mockClear();
+    const receipt = await runtime().start(request);
+    expect(receipt.items).toEqual([{ ...target, running: true }]);
+    expect(effects()).toEqual([['start', target.id]]);
+    io.spawn.mockClear(); expect(await runtime().start(request)).toEqual(receipt); expect(io.spawn).not.toHaveBeenCalled();
+    await runtime().fence(fence(10));
+    io.spawn.mockClear(); await expect(runtime().start(request)).rejects.toThrow(/stale/); expect(effects()).toEqual([]);
+  });
+  it('validates the complete immutable Start set before starting anything', async () => {
+    const specs = [spec(), spec(10, 'web-10-r2')];
+    const prepared = await runtime().prepare({ ...prepare(5, 10, specs), startNames: [] });
+    const targets = prepared.items.map(({ running: _running, ...target }) => target);
+    rows[1]!.serviceId = '8'; io.spawn.mockClear();
+    await expect(runtime().start({ requestId: nonce(9), serviceId: 7, revision: 9, timeoutMs: 5000, targets })).rejects.toThrow(/ownership/);
+    expect(effects()).toEqual([]); expect(rows.every(row => !row.running)).toBe(true);
+  });
+  it('never follows a reused name when the captured Start ID is gone', async () => {
+    const prepared = await runtime().prepare({ ...prepare(), startNames: [] });
+    const { running: _running, ...target } = prepared.items[0]!;
+    rows[0]!.id = 'e'.repeat(64); io.spawn.mockClear();
+    await expect(runtime().start({ requestId: nonce(9), serviceId: 7, revision: 9, timeoutMs: 5000, targets: [target] })).rejects.toThrow(/missing/);
+    expect(rows[0]!.running).toBe(false); expect(effects()).toEqual([]);
+  });
   it('prepares a completely stopped spare batch and joins its network without starting it', async () => {
     const prepared = await runtime().prepare({ ...prepare(), startNames: [] }); expect(prepared.items[0]!.running).toBe(false);
     const { running: _running, ...target } = prepared.items[0]!;

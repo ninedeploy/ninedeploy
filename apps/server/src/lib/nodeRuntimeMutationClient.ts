@@ -3,7 +3,8 @@ import {
   runtimeFenceRequest, runtimeFenceReply, containerPrepareRequest, containerPrepareReply,
   containerNetworkSetRequest, containerNetworkSetReply, containerRetireSetRequest, containerRetireSetReply,
   containerLimitsRequest, containerLimitsReply,
-  type RuntimeFenceRequest, type ContainerPrepareRequest, type ContainerNetworkSetRequest, type ContainerRetireSetRequest, type ContainerLimitsRequest, type MultiNodeCapability,
+  containerStartSetRequest, containerStartSetReply,
+  type RuntimeFenceRequest, type ContainerPrepareRequest, type ContainerNetworkSetRequest, type ContainerRetireSetRequest, type ContainerLimitsRequest, type ContainerStartSetRequest, type MultiNodeCapability,
 } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
@@ -72,6 +73,10 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
     limits(params: ContainerLimitsRequest) {
       const input = containerLimitsRequest.parse(params);
       return exchange('docker.limits', 'ND-LIMITS ', input, value => containerLimitsReply.parse(value), reply => sameTargets(input.targets, reply.items), 'docker.limits');
+    },
+    start(params: ContainerStartSetRequest) {
+      const input = containerStartSetRequest.parse(params);
+      return exchange('docker.startSet', 'ND-STARTED-SET ', input, value => containerStartSetReply.parse(value), reply => sameTargets(input.targets, reply.items), 'docker.startSet');
     },
   };
 }

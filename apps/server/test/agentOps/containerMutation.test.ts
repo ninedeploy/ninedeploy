@@ -7,7 +7,7 @@ import { advertisedCapabilities, runRegisteredOp } from '../../src/agentOps/inde
 import { capabilityRefusalFor } from '../../src/lib/agentCapabilities.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
-const ops = ['docker.runtimeInventory', 'docker.stopSet', 'docker.runtimeFence', 'docker.runtimeLegacyHandoff', 'docker.prepare', 'docker.networkSet', 'docker.retireSet', 'docker.limits'];
+const ops = ['docker.runtimeInventory', 'docker.stopSet', 'docker.startSet', 'docker.runtimeFence', 'docker.runtimeLegacyHandoff', 'docker.prepare', 'docker.networkSet', 'docker.retireSet', 'docker.limits'];
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'nd-mutation-op-')); vi.spyOn(process, 'cwd').mockReturnValue(root); io.spawn.mockReset(); });
 afterEach(async () => {
@@ -20,6 +20,13 @@ it('advertises the ordered mutation capability only while its owner permits it',
   expect(advertisedCapabilities({ NINEDEPLOY_AGENT_CONTAINER_MUTATIONS: 'off' })).not.toContain('docker.mutations');
   expect(advertisedCapabilities({})).toContain('docker.limits');
   expect(advertisedCapabilities({ NINEDEPLOY_AGENT_CONTAINER_MUTATIONS: 'off' })).not.toContain('docker.limits');
+  expect(advertisedCapabilities({})).toContain('docker.startSet');
+  expect(advertisedCapabilities({ NINEDEPLOY_AGENT_CONTAINER_MUTATIONS: 'off' })).not.toContain('docker.startSet');
+});
+it('requires an updated agent and respects the owner opt-out for Start sets', () => {
+  const option = { cap: 'docker.startSet' as const, feature: 'start node replicas' };
+  expect(capabilityRefusalFor({ version: '0.18.12', caps: new Set() }, '#7', option)).toMatchObject({ code: 'node_agent_outdated', message: expect.stringMatching(/v0\.19\.0/) });
+  expect(capabilityRefusalFor({ version: '0.19.0', caps: new Set() }, '#7', option)).toMatchObject({ code: 'node_feature_disabled' });
 });
 it('tells an older agent from an owner-disabled limits capability', () => {
   const option = { cap: 'docker.limits' as const, feature: 'update resource limits' };

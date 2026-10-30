@@ -69,6 +69,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'docker.lifecycle.retire',
       'docker.mutations',
       'docker.limits',
+      'docker.startSet',
       'host.packages',
       'agent.rekey',
       'db.dump.extra',

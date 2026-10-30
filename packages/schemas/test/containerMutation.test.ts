@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, containerPrepareReply, containerPrepareRequest, containerRetireSetReply, containerRetireSetRequest, runtimeFenceReply, runtimeFenceRequest, containerNetworkSetRequest, containerNetworkSetReply, containerLimitsRequest, containerLimitsReply } from '../src/containerMutation.js';
+import { containerStartSetRequest, containerStartSetReply } from '../src/containerMutation.js';
 const head = { requestId: 'a'.repeat(32), serviceId: 7, revision: 8, timeoutMs: 30_000 };
 const spec = { name: 'web-10', image: 'sha256:' + 'b'.repeat(64), serviceId: 7, deploymentId: 10 };
 const prepare = { ...head, deploymentId: 10, specs: [spec] };
@@ -7,6 +8,15 @@ const target = { id: 'c'.repeat(64), name: 'web-10', deploymentId: 10 };
 const retired = { ...head, graceSeconds: 5, targets: [target] };
 const replyHead = { requestId: head.requestId, serviceId: head.serviceId, revision: head.revision, complete: true };
 describe('ordered runtime mutation wire contracts', () => {
+  it('binds Start to unique immutable identities and running receipts', () => {
+    const input = { ...head, targets: [target] };
+    expect(containerStartSetRequest.parse(input)).toEqual(input);
+    expect(containerStartSetRequest.safeParse({ ...input, targets: [target, target] }).success).toBe(false);
+    expect(containerStartSetRequest.safeParse({ ...input, targets: [] }).success).toBe(false);
+    expect(containerStartSetRequest.safeParse({ ...input, targets: [{ ...target, id: 'name' }] }).success).toBe(false);
+    expect(containerStartSetReply.parse({ ...replyHead, items: [{ ...target, running: true }] }).items[0]!.id).toBe(target.id);
+    expect(containerStartSetReply.safeParse({ ...replyHead, items: [{ ...target, running: false }] }).success).toBe(false);
+  });
   it('accepts an empty-generation fence, immutable batch preparation and exact retirement identities', () => {
     expect(runtimeFenceRequest.parse(head)).toEqual(head);
     expect(runtimeFenceReply.parse(replyHead)).toEqual(replyHead);

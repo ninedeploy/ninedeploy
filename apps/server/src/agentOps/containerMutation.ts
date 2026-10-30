@@ -5,7 +5,7 @@ import type { AgentOpModule } from './index.js';
 const runtime = () => createNodeRuntimeMutation(join(process.cwd(), '.agent-work', '.lifecycle'));
 /** Shared per-service ownership for immutable preparation, fencing and retirement. */
 export const containerMutationOps: AgentOpModule = {
-  name: 'containerMutation', caps: ['docker.mutations', 'docker.limits'],
+  name: 'containerMutation', caps: ['docker.mutations', 'docker.limits', 'docker.startSet'],
   ops: {
     'docker.runtimeFence': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
       onLine('ND-RUNTIME-FENCE ' + JSON.stringify(await runtime().fence(params))); return 0;
@@ -15,6 +15,9 @@ export const containerMutationOps: AgentOpModule = {
     } },
     'docker.stopSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
       onLine('ND-STOPPED-SET ' + JSON.stringify(await runtime().stop(params, onLine))); return 0;
+    } },
+    'docker.startSet': { cap: 'docker.startSet', sealedOnly: true, async run(params, onLine) {
+      onLine('ND-STARTED-SET ' + JSON.stringify(await runtime().start(params, onLine))); return 0;
     } },
     'docker.runtimeLegacyHandoff': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
       onLine('ND-RUNTIME-LEGACY ' + JSON.stringify(await handoffStoppedNodeToLegacy(join(process.cwd(), '.agent-work', '.lifecycle'), params))); return 0;

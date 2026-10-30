@@ -62,6 +62,16 @@ export const containerStopSetReply = runtimeFenceReply.extend({ items: z.array(t
 export type ContainerInventoryReply = z.infer<typeof containerInventoryReply>;
 export type ContainerStopSetReply = z.infer<typeof containerStopSetReply>;
 
+/** Start existing, immutable managed replicas under a new runtime revision. */
+export const containerStartSetRequest = z.object({ requestId, serviceId: positive, revision: positive,
+  timeoutMs: z.number().int().min(1).max(60_000), targets: z.array(target).min(1).max(10).refine(distinct, 'Duplicate Start target'),
+}).strict();
+export const containerStartSetReply = z.object({ requestId, serviceId: positive, revision: positive, complete: z.literal(true),
+  items: z.array(target.extend({ running: z.literal(true) })).min(1).max(10).refine(distinct, 'Duplicate Start receipt identity'),
+}).strict();
+export type ContainerStartSetRequest = z.infer<typeof containerStartSetRequest>;
+export type ContainerStartSetReply = z.infer<typeof containerStartSetReply>;
+
 /** A revision-bound update for a complete set of immutable service replicas. */
 export const containerLimitsRequest = z.object({ requestId, serviceId: positive, revision: positive,
   timeoutMs: z.number().int().min(1).max(60_000), targets: z.array(target).min(1).max(10).refine(distinct, 'Duplicate limit target'),
