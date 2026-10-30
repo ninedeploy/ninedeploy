@@ -429,6 +429,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'docker.startSet': 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS',
   'docker.metrics': 'NINEDEPLOY_AGENT_CONTAINER_METRICS',
   'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
+  'proxy.orderedWrite': 'NINEDEPLOY_AGENT_ORDERED_PROXY',
   'docker.containerTools': 'NINEDEPLOY_AGENT_CONTAINER_TOOLS',
   'volume.files': 'NINEDEPLOY_AGENT_VOLUME_FILES',
   'db.client': 'NINEDEPLOY_AGENT_DATABASE_CLIENTS',

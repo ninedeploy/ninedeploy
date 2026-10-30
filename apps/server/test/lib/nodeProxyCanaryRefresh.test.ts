@@ -16,6 +16,7 @@ beforeEach(async () => {
   vi.resetAllMocks(); resetCanaryState(); caps = ['proxy.routingAck']; receipt = undefined;
   connection = await observabilityDb();
   await connection.db.insert(servers).values({ id: 2, name: 'Node', host: 'node.test', port: 4600, tokenEncrypted: 'fixture' });
+  await connection.db.insert(servers).values({ id: 3, name: 'Other', host: 'other.test', port: 4600, tokenEncrypted: 'fixture' });
   await connection.db.update(services).set({ serverId: 2, runtimeId: 'web-old', port: 3000 }).where(eq(services.id, 1));
   await connection.db.insert(domains).values({ serviceId: 1, hostname: 'canary.test', path: '/', status: 'active', ssl: false });
   io.sealed.mockResolvedValue(true);

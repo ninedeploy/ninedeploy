@@ -1,4 +1,4 @@
-import type { DB } from '@ninedeploy/db';
+import type { DB, NodeProxyWriteHead } from '@ninedeploy/db';
 import { createHash } from 'node:crypto';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
@@ -6,6 +6,11 @@ import { getAcmeEmail, getDnsConfig, renderDynamicConfig, renderStaticConfig, ty
 import { NODE_DYNAMIC_WARN_BYTES } from './customCertificates.js';
 import { withRoutingAck } from './proxyRoutingAck.js';
 import { nodeCanaryRoutingActive } from '../engine/canaryState.js';
+import { bindNodeProxyWrite, checkpointNodeProxyWrite, reserveNodeProxyWrite } from './nodeProxyAuthority.js';
+import { z } from 'zod';
+
+const orderedReceipt = z.object({ revision: z.number().int().positive(), requestId: z.string().regex(/^[a-f0-9]{32}$/),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/), complete: z.literal(true), changed: z.boolean() }).strict();
 
 /**
  * Keep a node's own reverse proxy in step with the panel's model of it.
@@ -54,23 +59,35 @@ export async function syncNodeProxy(
   db: DB,
   serverId: number,
   log: (line: string) => void = () => undefined,
-  opts: { ensureContainer?: boolean; confirmRouting?: boolean; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion } = {},
+  opts: { ensureContainer?: boolean; confirmRouting?: boolean; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion; adoptOrdered?: boolean } = {},
 ): Promise<NodeProxySyncResult> {
   let ensureStarted = false;
   let routingMayHaveChanged = false;
+  let authority: NodeProxyWriteHead | null = null;
   const confirmRouting = opts.confirmRouting === true || nodeCanaryRoutingActive(serverId);
   const call = async (op: string, params: Record<string, unknown>, sink: (line: string) => void) => {
     opts.signal?.throwIfAborted();
+    if (authority) await checkpointNodeProxyWrite(db, authority);
     const result = opts.signal || opts.timeoutMs != null
       ? await agentOp(db, serverId, op, params, sink, { signal: opts.signal, timeoutMs: opts.timeoutMs ?? 15_000 })
       : await agentOp(db, serverId, op, params, sink);
     opts.signal?.throwIfAborted();
+    if (authority) await checkpointNodeProxyWrite(db, authority);
     if (result.exitCode !== 0) throw new Error(`Node proxy operation ${op} failed`);
     return result;
   };
   try {
     opts.signal?.throwIfAborted();
     if (opts.autoscalePromotion && !confirmRouting) throw new Error('Autoscale promotion requires confirmed node routing');
+    const orderedCapability = async () => {
+      const sealed = await agentTransportSealed(db, serverId, opts.signal);
+      const refusal = await capabilityRefusal(call, `#${serverId}`, sealed,
+        { cap: 'proxy.orderedWrite', feature: 'order node proxy routing writes', sealedRequired: true });
+      if (refusal) throw new Error(refusal.message);
+    };
+    if (opts.adoptOrdered) await orderedCapability();
+    authority = await reserveNodeProxyWrite(db, serverId, { adopt: opts.adoptOrdered });
+    if (authority && !opts.adoptOrdered) await orderedCapability();
     if (confirmRouting) {
       const sealed = await agentTransportSealed(db, serverId);
       const refusal = await capabilityRefusal(call, `#${serverId}`, sealed,
@@ -81,6 +98,7 @@ export async function syncNodeProxy(
     const staticConfig = renderStaticConfig(acmeEmail, dns);
     const dynamicConfig = await renderDynamicConfig(db, { serverId, ...(opts.autoscalePromotion ? { autoscalePromotion: opts.autoscalePromotion } : {}) });
     const writtenDynamic = confirmRouting ? withRoutingAck(dynamicConfig) : dynamicConfig;
+    if (authority) authority = await bindNodeProxyWrite(db, authority, writtenDynamic);
 
     const sink = (line: string) => log(`  node proxy: ${line}`);
     // 0.14: uploaded certificates are inlined into the node's single dynamic
@@ -96,7 +114,14 @@ export async function syncNodeProxy(
       'proxy.writeConfig', { kind: 'static', content: staticConfig }, sink,
     );
     routingMayHaveChanged = true;
-    await call('proxy.writeConfig', { kind: 'dynamic', content: writtenDynamic }, sink);
+    if (authority) {
+      const result = await call('proxy.writeOrderedConfig', { revision: authority.revision, requestId: authority.requestId,
+        timeoutMs: Math.min(30_000, opts.timeoutMs ?? 15_000), content: writtenDynamic }, sink);
+      const frames = result.lines.filter(line => line.startsWith('ND-PROXY-WRITE '));
+      if (frames.length !== 1 || Buffer.byteLength(frames[0]!) > 65_536) throw new Error('Node proxy write receipt unavailable');
+      const receipt = orderedReceipt.parse(JSON.parse(frames[0]!.slice('ND-PROXY-WRITE '.length)));
+      if (receipt.revision !== authority.revision || receipt.requestId !== authority.requestId || receipt.contentHash !== authority.contentHash) throw new Error('Node proxy write receipt changed');
+    } else await call('proxy.writeConfig', { kind: 'dynamic', content: writtenDynamic }, sink);
 
     // Traefik reads the DYNAMIC file through a watcher but the STATIC one only
     // at start-up, so the container has to be recreated when the static config
@@ -181,6 +206,7 @@ export async function syncAllNodeProxies(
     // limit (120/min) during a mass domain change.
     results.push({ serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id,
       ...(opts.autoscalePromotion && opts.confirmNode === id ? { autoscalePromotion: opts.autoscalePromotion } : {}),
+      ...(opts.autoscalePromotion && opts.confirmNode === id ? { adoptOrdered: true } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.timeoutMs != null ? { timeoutMs: opts.timeoutMs } : {}) })) });
   }
   return results;

@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: h.agentOp, agentTransportSealed: h.agentTransportSealed }));
+vi.mock('../../src/lib/nodeProxyAuthority.js', () => ({ reserveNodeProxyWrite: vi.fn(async () => null),
+  checkpointNodeProxyWrite: vi.fn(), bindNodeProxyWrite: vi.fn() }));
 vi.mock('../../src/engine/proxy.js', () => ({
   getAcmeEmail: h.getAcmeEmail,
   getDnsConfig: h.getDnsConfig,

@@ -20,6 +20,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 const spawnMock = vi.hoisted(() => vi.fn(async (..._a: unknown[]) => 0));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: spawnMock }));
 vi.mock('../../src/lib/dockerPull.js', () => ({ pullDockerImage: vi.fn(async () => undefined) }));
+vi.mock('../../src/lib/nodeProxyAuthority.js', () => ({ reserveNodeProxyWrite: vi.fn(async () => null),
+  checkpointNodeProxyWrite: vi.fn(), bindNodeProxyWrite: vi.fn() }));
 
 const DYNAMIC = '# node routes\nhttp:\n  routers:\n    app_1:\n      rule: "Host(`app.example.com`)"\n      service: svc_app_1\n';
 
