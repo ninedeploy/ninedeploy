@@ -45,6 +45,25 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
 });
 describe('persistent runtime request admission', () => {
+  it('upgrades an interrupted old fence with its accepted watermark and refuses another owner', async () => {
+    const old = fence(8);
+    await runtime().fence(old);
+    await expect(runtime().fence({ ...old, deploymentWatermark: 10 })).resolves.toMatchObject({ requestId: old.requestId, serviceId: old.serviceId, revision: old.revision, deploymentWatermark: 10, complete: true });
+    await expect(runtime().fence({ ...old, requestId: nonce(80), deploymentWatermark: 10 })).rejects.toThrow(/conflict/);
+    await expect(runtime().fence({ ...old, deploymentWatermark: 11 })).rejects.toThrow(/conflict/);
+  });
+  it.each(['missing', 'forged'] as const)('handles an old fence receipt that is %s', async state => {
+    const old = fence(8);
+    await runtime().fence(old);
+    const db = new DatabaseSync(journalFile());
+    try {
+      if (state === 'missing') db.exec('UPDATE lifecycle_head SET receipt=NULL');
+      else db.prepare('UPDATE lifecycle_head SET receipt=?').run(JSON.stringify({ requestId: nonce(99), serviceId: 7, revision: 8, complete: true }));
+    } finally { db.close(); }
+    const pending = runtime().fence({ ...old, deploymentWatermark: 10 });
+    if (state === 'missing') await expect(pending).resolves.toMatchObject({ deploymentWatermark: 10, complete: true });
+    else await expect(pending).rejects.toThrow(/receipt is unconfirmed/);
+  });
   it('hands off a Stop only after every captured generation is stopped and covered by its watermark', async () => {
     const prepared = await runtime().prepare(prepare());
     const input = { ...fence(), graceSeconds: 5, targets: prepared.items.map(({ running: _running, ...target }) => target) };

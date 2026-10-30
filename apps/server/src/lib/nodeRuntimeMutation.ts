@@ -47,7 +47,21 @@ async function claim(journal: NodeServiceJournal, input: Header, intent: object,
     } else if (mode && mode.version !== 1) throw new Error('Unsupported runtime journal protocol; retained for review');
     if (previous && Number(previous.revision) > input.revision) throw new Error('Runtime request is stale; superseded by a newer command');
     if (previous && Number(previous.revision) === input.revision && previous.request_hash !== hash) {
-      const parsed = legacyFence ? containerLifecycleRequest.safeParse({ ...JSON.parse(String(previous.intent)), timeoutMs: 1 }) : null;
+      if (typeof previous.intent !== 'string' || digest(previous.intent) !== previous.request_hash) throw new Error('Runtime journal intent is unconfirmed');
+      const recorded = JSON.parse(previous.intent) as Record<string, unknown>;
+      const { kind, ...oldFence } = recorded;
+      const priorFence = legacyFence && kind === 'fence' ? runtimeFenceRequest.safeParse({ ...oldFence, timeoutMs: 1 }) : null;
+      const upgrade = !!priorFence?.success && priorFence.data.requestId === input.requestId && priorFence.data.serviceId === input.serviceId &&
+        priorFence.data.revision === input.revision && priorFence.data.deploymentWatermark === undefined && Number.isSafeInteger(deploymentWatermark) && deploymentWatermark! > 0;
+      if (upgrade) {
+        if (previous.receipt !== null) {
+          const receipt = runtimeFenceReply.parse(JSON.parse(String(previous.receipt)));
+          if (receipt.requestId !== input.requestId || receipt.serviceId !== input.serviceId || receipt.revision !== input.revision || receipt.deploymentWatermark !== undefined) throw new Error('Runtime fence receipt is unconfirmed');
+        }
+        journal.database.prepare('UPDATE lifecycle_head SET request_hash=?,intent=?,receipt=NULL WHERE id=1 AND revision=?').run(hash, payload, input.revision);
+        return;
+      }
+      const parsed = legacyFence ? containerLifecycleRequest.safeParse({ ...recorded, timeoutMs: 1 }) : null;
       compatible = !!parsed?.success && parsed.data.serviceId === input.serviceId && parsed.data.requestId === input.requestId &&
         parsed.data.revision === input.revision && parsed.data.action === 'stop' && parsed.data.targets.length === 0;
       if (!compatible) throw new Error('Runtime revision conflicts with a different intent');
