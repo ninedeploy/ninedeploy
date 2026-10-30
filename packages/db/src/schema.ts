@@ -1858,6 +1858,16 @@ export const serviceRuntimeOwners = sqliteTable('service_runtime_owners', {
 });
 export type ServiceRuntimeOwner = typeof serviceRuntimeOwners.$inferSelect;
 
+/** Node-wide proxy revisions survive server removal to avoid reusing an agent fence. */
+export const nodeProxyWriteHeads = sqliteTable('node_proxy_write_heads', {
+  serverId: integer('server_id').primaryKey(),
+  revision: integer('revision').notNull(),
+  requestId: text('request_id').notNull(),
+  contentHash: text('content_hash'),
+  updatedAt: tsUpdatable('updated_at'),
+});
+export type NodeProxyWriteHead = typeof nodeProxyWriteHeads.$inferSelect;
+
 /** A node scale decision survives panel restarts until a controller reconciles it. */
 export interface NodeAutoscalePlacement {
   serverId: number;

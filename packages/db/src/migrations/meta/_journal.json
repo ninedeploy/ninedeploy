@@ -764,6 +764,13 @@
       "when": 1793372058352,
       "tag": "0109_node_autoscale_inventory",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "6",
+      "when": 1793373012789,
+      "tag": "0110_node_proxy_write_heads",
+      "breakpoints": true
     }
   ]
 }

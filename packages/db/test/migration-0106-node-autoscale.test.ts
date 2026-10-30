@@ -36,10 +36,13 @@ it('upgrades without changing existing work and retains the unique scale decisio
     expect((await c.client!.execute('SELECT * FROM deployments')).rows).toEqual(before);
     expect((await c.client!.execute('SELECT * FROM node_autoscale_transitions')).rows).toEqual([]);
     await c.client!.execute({ sql: "INSERT INTO node_autoscale_transitions(service_id,owner_epoch,request_id,server_id,runtime_id,from_replicas,to_replicas,watermark,targets) VALUES(1,4,?,4,'web-9',1,2,9,'[]')", args: ['a'.repeat(32)] });
+    await c.client!.execute({ sql: 'INSERT INTO node_proxy_write_heads(server_id,revision,request_id) VALUES(4,7,?)', args: ['c'.repeat(32)] });
     await expect(c.client!.execute({ sql: "INSERT INTO node_autoscale_transitions(service_id,owner_epoch,request_id,server_id,runtime_id,from_replicas,to_replicas,watermark,targets) VALUES(1,5,?,4,'web-9',1,3,9,'[]')", args: ['b'.repeat(32)] })).rejects.toThrow();
     c.client!.close(); c = createDb({ url }); await c.ready;
     expect((await c.client!.execute('SELECT service_id,owner_epoch,request_id,from_replicas,to_replicas,phase FROM node_autoscale_transitions')).rows)
       .toEqual([{ service_id: 1, owner_epoch: 4, request_id: 'a'.repeat(32), from_replicas: 1, to_replicas: 2, phase: 'accepted' }]);
+    expect((await c.client!.execute('SELECT server_id,revision,request_id FROM node_proxy_write_heads')).rows)
+      .toEqual([{ server_id: 4, revision: 7, request_id: 'c'.repeat(32) }]);
     expect((await c.client!.execute('PRAGMA foreign_key_check')).rows).toEqual([]);
     await c.client!.execute('DELETE FROM services WHERE id=1');
     expect((await c.client!.execute('SELECT * FROM node_autoscale_transitions')).rows).toEqual([]);

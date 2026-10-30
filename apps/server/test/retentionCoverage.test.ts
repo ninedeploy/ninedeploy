@@ -25,6 +25,7 @@ type Retention = { swept: string } | { config: string };
 
 /** Every table added from 0.15 on, and how it stays bounded. */
 const RETENTION: Record<string, Retention> = {
+  node_proxy_write_heads: { config: 'one revision per historical node ID, retained after node deletion to prevent reusing agent fences; never age-evicted' },
   node_autoscale_transitions: { config: 'one unresolved scale decision per service, retained for reconciliation and cascading only with service deletion; never age-evicted' },
   deployment_runtime_owners: { config: 'one immutable authority per deployment; cascades only with deployment history or service deletion, never independently age-evicted because that could let an old attempt reserve authority again' },
   service_runtime_owners: { config: 'one monotonic authority per service, cascading only with service deletion; never expire with command history because that would reuse agent revisions' },
