@@ -1908,6 +1908,18 @@ export const deploymentRuntimeOwners = sqliteTable('deployment_runtime_owners', 
 }, t => ({ serviceEpoch: uniqueIndex('deployment_runtime_owner_epoch_idx').on(t.serviceId, t.epoch) }));
 export type DeploymentRuntimeOwner = typeof deploymentRuntimeOwners.$inferSelect;
 
+/** Non-secret recovery evidence recorded before ordered node capacity creation. */
+export const nodeDeploymentPreparations = sqliteTable('node_deployment_preparations', {
+  deploymentId: integer('deployment_id').primaryKey().references(() => deployments.id, { onDelete: 'cascade' }),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  serverId: integer('server_id').notNull(), epoch: integer('epoch').notNull(), requestId: text('request_id').notNull(),
+  runtimeId: text('runtime_id').notNull(), imageId: text('image_id').notNull(),
+  serving: integer('serving').notNull(), capacity: integer('capacity').notNull(),
+  phase: text('phase', { enum: ['preparing', 'prepared'] }).notNull().default('preparing'),
+  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>(),
+  createdAt: ts('created_at'), updatedAt: tsUpdatable('updated_at'),
+});
+
 export interface NodeLifecycleSnapshot {
   status: string;
   port: number | null;

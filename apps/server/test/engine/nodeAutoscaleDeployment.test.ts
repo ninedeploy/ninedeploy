@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createDb, eq, runMigrations, servers, services } from '@ninedeploy/db';
+import { createDb, deploymentRuntimeOwners, deployments, eq, nodeDeploymentPreparations, runMigrations, servers, services } from '@ninedeploy/db';
 import { prepareNodeAutoscaleDeployment } from '../../src/engine/builders/nodeAutoscaleDeployment.js';
+import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
+import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 
 let c: ReturnType<typeof createDb>, caps: string[], calls: string[];
 const owner = { serviceId: 1, serverId: 4, deploymentId: 9, epoch: 2, requestId: 'a'.repeat(32) };
@@ -46,6 +48,49 @@ it('preserves strict readiness settings in the candidate runtime', async () => {
   expect(result.runtime).toMatchObject({ port: 3000, healthCheck: 'http-strict', healthPath: '/ready' });
   expect(result.runtime.nodeTargets).toEqual(result.capacity.slice(0, result.replicas));
   expect(result.runtime.nodeCapacityTargets).not.toBe(result.capacity);
+});
+it('records intent before preparation and freezes the receipt before environment cleanup', async () => {
+  const opts = await options();
+  const journal = { begin: vi.fn(async () => { calls.push('journal.begin'); }), complete: vi.fn(async () => { calls.push('journal.complete'); }) };
+  const result = await prepareNodeAutoscaleDeployment({ ...opts, journal });
+  expect(journal.begin).toHaveBeenCalledWith({ runtimeId: 'web-9', imageId: result.imageId, serving: 1, capacity: 3 });
+  expect(journal.complete).toHaveBeenCalledWith(result.capacity);
+  expect(calls.indexOf('journal.begin')).toBeLessThan(calls.indexOf('file.writeEnv'));
+  expect(calls.indexOf('journal.complete')).toBeLessThan(calls.indexOf('file.deleteEnv'));
+});
+it('stores the preparation intent and receipt under the real SQLite deployment owner', async () => {
+  await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'deploying' });
+  const prior = await reserveServiceRuntimeOwner(c.db, 1, 'restart', null, 'b'.repeat(32));
+  await reserveServiceRuntimeOwner(c.db, 1, 'deploy', prior, owner.requestId);
+  await c.db.insert(deploymentRuntimeOwners).values(owner);
+  const opts = await options();
+  const journal = { begin: (spec: Parameters<typeof beginNodeDeploymentPreparation>[2]) => beginNodeDeploymentPreparation(c.db, owner, spec),
+    complete: (targets: Parameters<typeof completeNodeDeploymentPreparation>[2]) => completeNodeDeploymentPreparation(c.db, owner, targets) };
+  const result = await prepareNodeAutoscaleDeployment({ ...opts, journal });
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'prepared', runtimeId: 'web-9',
+    imageId: result.imageId, serving: 1, capacity: 3, targets: result.capacity });
+});
+it('reuses a persisted intent after an unconfirmed preparation attempt', async () => {
+  await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'deploying' });
+  const prior = await reserveServiceRuntimeOwner(c.db, 1, 'restart', null, 'b'.repeat(32));
+  await reserveServiceRuntimeOwner(c.db, 1, 'deploy', prior, owner.requestId);
+  await c.db.insert(deploymentRuntimeOwners).values(owner);
+  const opts = await options();
+  const journal = { begin: (spec: Parameters<typeof beginNodeDeploymentPreparation>[2]) => beginNodeDeploymentPreparation(c.db, owner, spec),
+    complete: (targets: Parameters<typeof completeNodeDeploymentPreparation>[2]) => completeNodeDeploymentPreparation(c.db, owner, targets) };
+  opts.client.prepare.mockRejectedValueOnce(new Error('reply lost')).mockRejectedValueOnce(new Error('reply lost'));
+  await expect(prepareNodeAutoscaleDeployment({ ...opts, journal })).rejects.toThrow('reply lost');
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'preparing', targets: null });
+  const resumed = await prepareNodeAutoscaleDeployment({ ...opts, journal });
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'prepared', targets: resumed.capacity });
+  expect(opts.client.prepare.mock.calls[0]![0].requestId).toBe(opts.client.prepare.mock.calls[2]![0].requestId);
+});
+it('retains the attempt environment if the receipt cannot be saved', async () => {
+  const opts = await options(), messages: string[] = []; opts.log = line => messages.push(line);
+  const journal = { begin: async () => {}, complete: async () => { throw new Error('journal unavailable'); } };
+  await expect(prepareNodeAutoscaleDeployment({ ...opts, journal })).rejects.toThrow('journal unavailable');
+  expect(calls).not.toContain('file.deleteEnv');
+  expect(messages).toContain('Node environment retained: preparation outcome is unconfirmed.');
 });
 it('refuses an older or unsealed agent before writing any environment file', async () => {
   const opts = await options(); caps = [];
