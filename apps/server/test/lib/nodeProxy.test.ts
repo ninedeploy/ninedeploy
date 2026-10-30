@@ -43,6 +43,12 @@ function agentSteady() {
  * generate its own, and the agent only writes them to a fixed path.
  */
 describe('syncNodeProxy', () => {
+  it('refuses an autoscale promotion without node routing confirmation before contacting the agent', async () => {
+    h.agentOp.mockReset();
+    const result = await syncNodeProxy(db, 4, undefined, { autoscalePromotion: { serviceId: 1, ownerEpoch: 1, requestId: 'a'.repeat(32), workerToken: 'b'.repeat(32) } });
+    expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/confirmed node routing/) });
+    expect(h.agentOp).not.toHaveBeenCalled();
+  });
   it('does not write config or recreate a proxy after cancellation during inspection', async () => {
     const abort = new AbortController();
     h.agentOp.mockReset();

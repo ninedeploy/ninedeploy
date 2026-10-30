@@ -3,7 +3,7 @@ import { certificatesForNode, readAcmeStorage, sharedCertificatesEnabled } from 
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { domains, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
+import { domains, nodeAutoscaleTransitions, serviceRuntimeOwners, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
 import { httpPath, redirectRegexProblem } from '@ninedeploy/schemas';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
@@ -877,6 +877,7 @@ export interface DynamicConfigOptions {
   confirmLocalRouting?: boolean;
   /** Service whose generated routes must be observed before retirement. */
   confirmServiceId?: number;
+  autoscalePromotion?: AutoscaleRoutePromotion;
   signal?: AbortSignal;
 }
 
@@ -888,6 +889,7 @@ export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Pro
 
 async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): Promise<void> {
   if (opts.signal?.aborted) throw new ProxyRoutingUnconfirmed();
+  if (opts.autoscalePromotion && (opts.requireNode == null || opts.confirmNodeRouting !== true)) throw new ProxyRoutingUnconfirmed('Autoscale promotion requires confirmed node routing');
   // The render refreshes the uploaded-certificate cache; the certificates
   // file is written from it FIRST, so a router that just switched to
   // `tls: {}` never appears before the certificate it relies on.
@@ -916,7 +918,7 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     }
   }
   if (confirm) await confirmProxyRouting(routes, { signal: opts.signal });
-  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal);
+  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion);
 }
 
 /**
@@ -980,7 +982,7 @@ const lastNodeSyncAuditAt = new Map<number, number>();
  * `routingFlipped` true and the pipeline stop the still-routed previous
  * container on the node — an outage reported as a successful deploy.
  */
-async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal): Promise<void> {
+async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion): Promise<void> {
   let results: Array<{ serverId: number; ok: boolean; reason?: string; routingUnconfirmed?: boolean }> = [];
   try {
     signal?.throwIfAborted();
@@ -993,8 +995,8 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
     }
     if (nodes.length === 0) return;
     const { syncAllNodeProxies } = await import('../lib/nodeProxy.js');
-    results = signal
-      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, signal, timeoutMs: 15_000 })
+    results = signal || autoscalePromotion
+      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, ...(signal ? { signal, timeoutMs: 15_000 } : {}), ...(autoscalePromotion ? { autoscalePromotion } : {}) })
       : confirmNode === undefined
       ? await syncAllNodeProxies(db, nodes.map((n) => n.id))
       : await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode });
@@ -1048,9 +1050,10 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
  * containers that live on another machine and answer 502 for each one, while
  * the node's own proxy did the same in reverse.
  */
+export type AutoscaleRoutePromotion = { serviceId: number; workerToken: string; ownerEpoch: number; requestId: string };
 export async function renderDynamicConfig(
   db: DB,
-  opts: { serverId: number | null } = { serverId: null },
+  opts: { serverId: number | null; autoscalePromotion?: AutoscaleRoutePromotion } = { serverId: null },
 ): Promise<string> {
   const forNode = opts.serverId != null;
   const all = await db.select().from(domains);
@@ -1071,6 +1074,23 @@ export async function renderDynamicConfig(
     overrides.errorPages.clear();
   }
   const allServices = await db.select().from(services);
+  const scaleTransitions = forNode ? await db.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serverId, opts.serverId!)) : [];
+  const scaleOwners = scaleTransitions.length ? await db.select().from(serviceRuntimeOwners) : [];
+  const scaleRouting = new Map(scaleTransitions.filter(transition => {
+    const owner = scaleOwners.find(value => value.serviceId === transition.serviceId);
+    return transition.phase === 'routing' && transition.toReplicas > transition.fromReplicas && owner?.kind === 'scale' &&
+      owner.epoch === transition.ownerEpoch && owner.requestId === transition.requestId;
+  }).map(transition => [transition.serviceId, transition]));
+  if (opts.autoscalePromotion) {
+    const requested = opts.autoscalePromotion, transition = scaleRouting.get(requested.serviceId);
+    const svc = allServices.find(value => value.id === requested.serviceId);
+    if (!forNode || !transition || !svc || svc.serverId !== opts.serverId || svc.runtimeId !== transition.runtimeId ||
+      svc.runtimeReplicas !== transition.toReplicas || !/^[a-f0-9]{32}$/.test(requested.workerToken) || requested.workerToken !== transition.workerToken ||
+      requested.ownerEpoch !== transition.ownerEpoch || requested.requestId !== transition.requestId || !transition.leaseUntil ||
+      !Number.isFinite(transition.leaseUntil.getTime()) || transition.leaseUntil.getTime() <= Date.now()) {
+      throw new Error('Node autoscale route promotion ownership changed');
+    }
+  }
   // G2.1: every compose stack's slug, to refuse a route whose container name is another stack's.
   const composeSlugs = allServices.filter((s) => s.type === 'compose').map((s) => s.slug);
   const servicesById = new Map(
@@ -1378,10 +1398,16 @@ export async function renderDynamicConfig(
       // that achieved it), never the desired count: a replica that failed
       // to start — or the window between saving a higher count and the
       // next deploy — must not linger as an unresolvable 502 backend.
+      const transition = scaleRouting.get(svc.id);
+      const requested = opts.autoscalePromotion;
+      const promoted = transition && requested && requested.serviceId === svc.id && requested.workerToken === transition.workerToken &&
+        requested.ownerEpoch === transition.ownerEpoch && requested.requestId === transition.requestId && transition.leaseUntil && transition.leaseUntil.getTime() > Date.now();
+      const visibleReplicas = transition && transition.serverId === svc.serverId && transition.runtimeId === svc.runtimeId &&
+        svc.runtimeReplicas === transition.toReplicas && !promoted ? transition.fromReplicas : svc.runtimeReplicas;
       const replicaCount =
         // Fan-out currently creates one container per target; primary replicas live on the primary node only.
         svc.type === 'docker' && !targetRuntimeByService.has(svc.id)
-          ? Math.max(1, Math.min(svc.runtimeReplicas ?? svc.replicas ?? 1, MAX_REPLICAS)) : 1;
+          ? Math.max(1, Math.min(visibleReplicas ?? svc.replicas ?? 1, MAX_REPLICAS)) : 1;
       // Health paths allow queries and percent encoding, unlike router paths.
       // Keep the API-validated endpoint intact; retain legacy sanitization
       // only for old rows that do not satisfy the current path contract.

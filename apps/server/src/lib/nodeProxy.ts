@@ -2,7 +2,7 @@ import type { DB } from '@ninedeploy/db';
 import { createHash } from 'node:crypto';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
-import { getAcmeEmail, getDnsConfig, renderDynamicConfig, renderStaticConfig } from '../engine/proxy.js';
+import { getAcmeEmail, getDnsConfig, renderDynamicConfig, renderStaticConfig, type AutoscaleRoutePromotion } from '../engine/proxy.js';
 import { NODE_DYNAMIC_WARN_BYTES } from './customCertificates.js';
 import { withRoutingAck } from './proxyRoutingAck.js';
 import { nodeCanaryRoutingActive } from '../engine/canaryState.js';
@@ -54,7 +54,7 @@ export async function syncNodeProxy(
   db: DB,
   serverId: number,
   log: (line: string) => void = () => undefined,
-  opts: { ensureContainer?: boolean; confirmRouting?: boolean; signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: { ensureContainer?: boolean; confirmRouting?: boolean; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion } = {},
 ): Promise<NodeProxySyncResult> {
   let ensureStarted = false;
   let routingMayHaveChanged = false;
@@ -70,6 +70,7 @@ export async function syncNodeProxy(
   };
   try {
     opts.signal?.throwIfAborted();
+    if (opts.autoscalePromotion && !confirmRouting) throw new Error('Autoscale promotion requires confirmed node routing');
     if (confirmRouting) {
       const sealed = await agentTransportSealed(db, serverId);
       const refusal = await capabilityRefusal(call, `#${serverId}`, sealed,
@@ -78,7 +79,7 @@ export async function syncNodeProxy(
     }
     const [acmeEmail, dns] = await Promise.all([getAcmeEmail(db), getDnsConfig(db)]);
     const staticConfig = renderStaticConfig(acmeEmail, dns);
-    const dynamicConfig = await renderDynamicConfig(db, { serverId });
+    const dynamicConfig = await renderDynamicConfig(db, { serverId, ...(opts.autoscalePromotion ? { autoscalePromotion: opts.autoscalePromotion } : {}) });
     const writtenDynamic = confirmRouting ? withRoutingAck(dynamicConfig) : dynamicConfig;
 
     const sink = (line: string) => log(`  node proxy: ${line}`);
@@ -167,7 +168,7 @@ export async function syncAllNodeProxies(
   db: DB,
   serverIds: number[],
   log: (line: string) => void = () => undefined,
-  opts: { confirmNode?: number; signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: { confirmNode?: number; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion } = {},
 ): Promise<Array<NodeProxySyncResult & { serverId: number }>> {
   const unique = [...new Set(serverIds.filter((id) => Number.isInteger(id) && id > 0))];
   // r521: per-node outcomes go back to the caller — writeDynamicConfig fails
@@ -179,6 +180,7 @@ export async function syncAllNodeProxies(
     // burst of parallel agent calls is a good way to trip an agent's rate
     // limit (120/min) during a mass domain change.
     results.push({ serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id,
+      ...(opts.autoscalePromotion && opts.confirmNode === id ? { autoscalePromotion: opts.autoscalePromotion } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.timeoutMs != null ? { timeoutMs: opts.timeoutMs } : {}) })) });
   }
   return results;
