@@ -455,6 +455,11 @@ jobs:
         timeout-minutes: 15
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --lifecycle-only --proof=.temp_files/release-node-smoke
 
+      - name: Initial node Stop and repeated deploy recovery
+        if: matrix.suite == 'public-lifecycle'
+        timeout-minutes: 15
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --initial-stop-only --proof=.temp_files/release-node-initial-stop
+
       - name: Node replica database SQL readiness, rollback and cancellation
         if: matrix.suite == 'replica-databases'
         timeout-minutes: 10
@@ -472,6 +477,9 @@ jobs:
             .temp_files/release-node-smoke/failure-state.json
             .temp_files/release-node-smoke/inner-containers.log
             .temp_files/release-node-smoke/runtime-cleanup.json
+            .temp_files/release-node-initial-stop/failure-state.json
+            .temp_files/release-node-initial-stop/inner-containers.log
+            .temp_files/release-node-initial-stop/runtime-cleanup.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7

@@ -11,7 +11,8 @@ import { smokeNodeReplicaDatabases } from './lib/smoke-node-replica-databases.mj
 import { nodeReplicaDatabaseApp } from './fixtures/node-replica-database-app.mjs';
 const lifecycleOnly=process.argv.includes('--lifecycle-only');
 const replicaDatabasesOnly=process.argv.includes('--replica-databases-only');
-assert.ok(!(lifecycleOnly&&replicaDatabasesOnly),'Select one focused smoke mode');
+const initialStopOnly=process.argv.includes('--initial-stop-only');
+assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image&&/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
 const proof=resolve(process.argv.find(arg=>arg.startsWith('--proof='))?.slice(8)??('.temp_files/node-canary-'+randomBytes(6).toString('hex')));
@@ -84,7 +85,30 @@ try{
    assert.ok(replicaDatabase.id);assert.equal(replicaDatabase.status,'running');
    await api(`/v1/services/${id}/attachments`,{method:'POST',body:{databaseId:replicaDatabase.id,envAlias:'DATABASE_URL'}});
  }
+ const readyEnv=initialStopOnly?await api('/v1/services/'+id+'/env',{method:'POST',body:{key:'NEEDS_READINESS',value:'1'}}):null;
  const first=(await api('/v1/services/'+id+'/deploys',{method:'POST',body:{}})).deploymentId;
+ if(initialStopOnly){
+   const slug=(await service(id)).slug;
+   async function stopUnready(dep){
+     const name=`${slug}-${dep}`;
+     await until(async()=>{const row=(await rows(id)).find(item=>item.id===dep);if(row?.status==='failed')throw Error(await log(id,dep));return inner(['inspect',name,'--format','{{.State.Running}}'],{allowFailure:true}).out==='true'&&(await log(id,dep)).includes('Running healthcheck');},`unready initial runtime ${dep}`,180000);
+     await api(`/v1/services/${id}/stop`,{method:'POST'});
+     await until(async()=>{const command=(await api(`/v1/services/${id}/lifecycle`)).command;if(command?.phase==='completed')return true;if(command?.reason)throw Error(`Initial Stop held: ${command.reason}`);return false;},`initial Stop ${dep}`,90000);
+     assert.equal((await rows(id)).find(item=>item.id===dep)?.status,'cancelled');
+     assert.equal(inner(['inspect',name,'--format','{{.State.Running}}'],{allowFailure:true}).out,'false');
+   }
+   await stopUnready(first);
+   const second=(await api(`/v1/services/${id}/deploys`,{method:'POST',body:{}})).deploymentId;
+   await stopUnready(second);
+   assert.ok(readyEnv?.id);
+   await api(`/v1/services/${id}/env/${readyEnv.id}`,{method:'PATCH',body:{key:'NEEDS_READINESS',value:'0'}});
+   const final=(await api(`/v1/services/${id}/deploys`,{method:'POST',body:{}})).deploymentId;
+   await success(id,final);
+   assert.equal((await service(id)).status,'running');
+   results.push({case:'initial-stop-redeploy-twice',first,second,final,passed:true});
+   writeFileSync(proof+'/runtime-result.json',JSON.stringify({realPublicApi:true,realWorker:true,standardBridgeAgent:true,initialStopOnly:true,cases:results,publicDnsTls:'NOT RUN',publication:false},null,2));
+   console.log(JSON.stringify(results[0]));
+ } else {
  if(replicaDatabasesOnly){
    const slug=(await service(id)).slug,names=[`${slug}-${first}`,`${slug}-${first}-r2`];
    await until(async()=>{const job=(await rows(id)).find(row=>row.id===first);if(job?.status==='failed')throw Error(await log(id,first));return names.every(name=>inner(['inspect',name,'--format','{{.State.Running}}'],{allowFailure:true}).out==='true')&&(await log(id,first)).includes('Running healthcheck');},'SQL fixture containers and completed bridge attachment',120_000);
@@ -261,6 +285,7 @@ try{
  }
  const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
  writeFileSync(proof+'/runtime-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ }
 }catch(e){
  try{
    if(serviceId&&baseUrl&&token){

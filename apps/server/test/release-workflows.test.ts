@@ -351,6 +351,11 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect(steps[nodeCanary]!.if).toBe("matrix.suite == 'public-canary'");
     expect(steps[nodeCanary]!['timeout-minutes']).toBeGreaterThan(0);
     expect((steps[nodeCanary] as Record<string, unknown>)['continue-on-error']).not.toBe(true);
+    const initialStop = steps.findIndex((s) => s.run?.includes('--initial-stop-only'));
+    expect(initialStop).toBeGreaterThan(nodeCanary);
+    expect(steps[initialStop]!.if).toBe("matrix.suite == 'public-lifecycle'");
+    expect(steps[initialStop]!['timeout-minutes']).toBeGreaterThan(0);
+    expect((steps[initialStop] as Record<string, unknown>)['continue-on-error']).not.toBe(true);
     expect(composeRestore).toBeGreaterThan(nodeOps);
     expect(steps[composeRestore]!.run).toBe('node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only');
     expect(steps[composeRestore]!.if).toBe("matrix.suite == 'upgrade-journey'");
