@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, exists, gt, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, exists, gt, isNull, lte, or, sql } from 'drizzle-orm';
 import { fanoutTransitions, services, serviceTargets, type DB, type FanoutTransition } from '@ninedeploy/db';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
 import { capabilityRefusal } from '../lib/agentCapabilities.js';
@@ -123,12 +123,13 @@ export async function reconcileFanoutTransitions(db: DB, opts: { serviceId?: num
     opts.serviceId == null ? undefined : eq(fanoutTransitions.serviceId, opts.serviceId),
   )).limit(10);
   let recovered = 0, heldCount = 0;
-  for (const entry of entries) {
+  for (const selected of entries) {
     if (opts.signal?.aborted) break;
     const token = randomUUID();
-    const [claimed] = await db.update(fanoutTransitions).set({ ownerToken: token, leaseUntil: new Date(Date.now() + LEASE_MS), attempts: entry.attempts + 1 })
-      .where(and(eq(fanoutTransitions.id, entry.id), or(isNull(fanoutTransitions.leaseUntil), lte(fanoutTransitions.leaseUntil, new Date())))).returning();
+    const [claimed] = await db.update(fanoutTransitions).set({ ownerToken: token, leaseUntil: new Date(Date.now() + LEASE_MS), attempts: sql`${fanoutTransitions.attempts} + 1` })
+      .where(and(eq(fanoutTransitions.id, selected.id), or(isNull(fanoutTransitions.leaseUntil), lte(fanoutTransitions.leaseUntil, new Date())))).returning();
     if (!claimed) continue;
+    const entry = claimed;
     const lease = recoveryLease(db, claimed, token);
     try {
       const check = async () => { if (opts.signal?.aborted) throw new Error('Recovery stopped; runtimes retained'); await lease.check(); };

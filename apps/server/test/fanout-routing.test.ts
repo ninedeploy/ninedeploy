@@ -311,6 +311,36 @@ describe('durable fan-out reconciliation', () => {
     await journal(); const a = recover(), b = recover(); await pump(Promise.all([a, b]));
     expect((await a).recovered + (await b).recovered).toBe(1); expect(stops()).toEqual([candidate]);
   });
+  it('uses the claimed transition when another owner commits retirement after the initial scan', async () => {
+    await journal({ healthCheck: 'http-strict' });
+    await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'running' });
+    const selected = gate(), resume = gate();
+    const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => args[2] === 'docker.probe'
+      ? { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: args[3].name !== 'b'.repeat(64), protocol: args[3].protocol, status: args[3].name !== 'b'.repeat(64) ? 200 : 503 })}`] }
+      : original(...args));
+    let first = true;
+    const db = new Proxy(f.db, { get(real, property, receiver) {
+      if (property !== 'select') return Reflect.get(real, property, receiver);
+      return (...args: Parameters<typeof real.select>) => {
+        const query = real.select(...args);
+        if (!first) return query;
+        first = false;
+        return { from: (table: typeof fanoutTransitions) => ({ where: (condition: Parameters<ReturnType<typeof query.from>['where']>[0]) => ({
+          limit: async (count: number) => { const rows = await query.from(table).where(condition).limit(count); selected.release(); await resume.promise; return rows; },
+        }) }) };
+      };
+    } }) as typeof f.db;
+    const run = reconcileFanoutTransitions(db, { serviceId: 1, force: true });
+    try {
+      await selected.promise;
+      await f.db.update(fanoutTransitions).set({ phase: 'retiring', desiredRuntimeId: candidate, attempts: 4 });
+    } finally { resume.release(); }
+    expect(await finish(run)).toEqual({ recovered: 0, held: 1 });
+    expect((await target())?.runtimeId).toBe(candidate);
+    expect(stops()).toEqual([]); expect(writes).toEqual([]);
+    expect((await pendingJournal())[0]).toMatchObject({ phase: 'retiring', desiredRuntimeId: candidate, attempts: 5 });
+  });
   it('does not delete by a reused container name when its original immutable ID disappeared', async () => {
     await journal(); const original = h.agent.getMockImplementation()!;
     h.agent.mockImplementation(async (...args) => args[2] === 'docker.identity' && args[3].name === 'a'.repeat(64)
