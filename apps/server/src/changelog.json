@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.18.11",
+    "date": "2026-10-30",
+    "title": "Safer initial node deploys and infrastructure tools",
+    "changes": [
+      "Recover safely when an initial node deployment is stopped: fence stale requests, settle the Stop before the next deploy, and recover older completed Stop journals.",
+      "Add database public access on nodes with an allow-listed TCP sidecar and durable cleanup of unconfirmed proxy removal.",
+      "Show service, project and workspace resource usage and estimated costs in Monitoring.",
+      "Create and enroll Vultr cloud instances from the Servers panel."
+    ]
+  },
+  {
     "version": "0.18.10",
     "date": "2026-10-29",
     "title": "Safer node deployments and fleet improvements",
