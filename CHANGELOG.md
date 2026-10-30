@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bare-metal installs on openSUSE, SLES and Arch now set up Node themselves (G4.1). On openSUSE and SLES it comes from NodeSource's RPM repository through zypper; every package signature is checked against NodeSource's key, as on dnf hosts. On Arch, Manjaro and EndeavourOS it comes from the distribution's LTS package of that line (`nodejs-lts-krypton` for Node 24) with `npm`, without upgrading anything else. A Node package of another line already installed on Arch must be removed first.
 - Container options on Swarm services (ROADMAP item 10). Init, the open-files limit, added capabilities and shared memory now apply to each Swarm task: the first three as Swarm's own task fields, shared memory as a sized tmpfs at `/dev/shm`. GPUs have no Swarm equivalent and stay off; the deploy log says so. A Swarm service with these options set ignored them before; its next deploy applies them. No migration.
 
 ## [0.18.13] - 2026-10-30
