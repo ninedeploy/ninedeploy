@@ -19,6 +19,7 @@ const expected = [
   command('smoke-node-canary', ' --lifecycle-only --proof=.temp_files/release-node-smoke'),
   command('smoke-node-canary', ' --initial-stop-only --proof=.temp_files/release-node-initial-stop'),
   command('smoke-node-canary', ' --mixed-agent-only --proof=.temp_files/release-node-mixed-agent'),
+  command('smoke-node-limits', ' --proof=.temp_files/release-node-limits'),
   command('smoke-node-canary', ' --replica-databases-only --proof=.temp_files/release-node-smoke'),
 ];
 describe('complete parallel release smoke gate', () => {

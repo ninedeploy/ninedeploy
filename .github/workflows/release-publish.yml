@@ -465,6 +465,11 @@ jobs:
         timeout-minutes: 15
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --mixed-agent-only --proof=.temp_files/release-node-mixed-agent
 
+      - name: Public resource-limit update across node replicas
+        if: matrix.suite == 'public-lifecycle'
+        timeout-minutes: 15
+        run: node scripts/smoke-node-limits.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-node-limits
+
       - name: Node replica database SQL readiness, rollback and cancellation
         if: matrix.suite == 'replica-databases'
         timeout-minutes: 10
@@ -488,6 +493,7 @@ jobs:
             .temp_files/release-node-mixed-agent/failure-state.json
             .temp_files/release-node-mixed-agent/inner-containers.log
             .temp_files/release-node-mixed-agent/runtime-cleanup.json
+            .temp_files/release-node-limits/fanout-cleanup.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
