@@ -329,7 +329,7 @@ export async function reconcileSwarmTransitions(db: DB, opts: { serviceId?: numb
   for (const row of rows) {
     if (opts.signal?.aborted) break;
     const token = randomUUID();
-    const [claimed] = await db.update(swarmTransitions).set({ ownerToken: token, leaseUntil: new Date(Date.now() + LEASE_MS), attempts: sql`${swarmTransitions.attempts} + 1` }).where(and(eq(swarmTransitions.id, row.id), or(isNull(swarmTransitions.leaseUntil), lte(swarmTransitions.leaseUntil, now)))).returning();
+    const [claimed] = await db.update(swarmTransitions).set({ ownerToken: token, leaseUntil: new Date(Date.now() + LEASE_MS), attempts: sql`${swarmTransitions.attempts} + 1` }).where(and(eq(swarmTransitions.id, row.id), or(isNull(swarmTransitions.leaseUntil), lte(swarmTransitions.leaseUntil, new Date())), opts.force ? undefined : lte(swarmTransitions.nextAttemptAt, new Date()))).returning();
     if (!claimed) continue;
     let controller: SwarmRecoveryLease | undefined;
     try { controller = lease(db, claimed, token, opts.signal); await controller.recover(); recovered++; }

@@ -436,4 +436,27 @@ describe('a queued deploy shortens the recovery backoff', () => {
     await sweep();
     expect((await rows())[0]!.attempts).toBe(1);
   });
+  it('rechecks eligibility when backoff changes after the scan', async () => {
+    await journal();
+    const selected = gate(), resume = gate(); let first = true;
+    const db = new Proxy(f.db, { get(real, property, receiver) {
+      if (property !== 'select') return Reflect.get(real, property, receiver);
+      return (...args: Parameters<typeof real.select>) => {
+        const query = real.select(...args);
+        if (!first || args.length) return query;
+        first = false;
+        return { from: (table: typeof primaryTransitions) => ({ where: (condition: Parameters<ReturnType<typeof query.from>['where']>[0]) => ({
+          limit: async (count: number) => { const found = await query.from(table).where(condition).limit(count); selected.release(); await resume.promise; return found; },
+        }) }) };
+      };
+    } }) as typeof f.db;
+    const run = reconcilePrimaryTransitions(db);
+    try {
+      await selected.promise;
+      await f.db.update(primaryTransitions).set({ nextAttemptAt: new Date(Date.now() + 60_000), updatedAt: new Date(), attempts: 4 });
+    } finally { resume.release(); }
+    expect(await finish(run)).toEqual({ recovered: 0, held: 0 });
+    expect(h.agent).not.toHaveBeenCalled();
+    expect((await rows())[0]).toMatchObject({ attempts: 4, ownerToken: null });
+  });
 });

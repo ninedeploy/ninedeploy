@@ -383,16 +383,18 @@ export async function reconcilePrimaryTransitions(db: DB, opts: { serviceId?: nu
   // The backoff grows to an hour, and the worker holds every queued deploy of
   // the service while its transition is pending — so a service with a queued
   // deploy is retried at most a minute after its last attempt instead.
-  const queuedRetry = and(lte(primaryTransitions.updatedAt, new Date(now.getTime() - QUEUED_RETRY_MS)),
-    exists(db.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, primaryTransitions.serviceId), eq(deployments.status, 'queued')))));
+  const eligible = (at: Date) => or(lte(primaryTransitions.nextAttemptAt, at),
+    and(lte(primaryTransitions.updatedAt, new Date(at.getTime() - QUEUED_RETRY_MS)),
+      exists(db.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, primaryTransitions.serviceId), eq(deployments.status, 'queued'))))));
   const rows = await db.select().from(primaryTransitions).where(and(or(isNull(primaryTransitions.leaseUntil), lte(primaryTransitions.leaseUntil, now)),
-    opts.force ? undefined : or(lte(primaryTransitions.nextAttemptAt, now), queuedRetry), opts.serviceId == null ? undefined : eq(primaryTransitions.serviceId, opts.serviceId))).limit(10);
+    opts.force ? undefined : eligible(now), opts.serviceId == null ? undefined : eq(primaryTransitions.serviceId, opts.serviceId))).limit(10);
   let recovered = 0, held = 0;
   for (const pending of rows) {
     if (opts.signal?.aborted) break;
     const token = randomUUID();
     const [claimed] = await db.update(primaryTransitions).set({ ownerToken: token, leaseUntil: new Date(Date.now() + LEASE_MS), attempts: sql`${primaryTransitions.attempts} + 1` })
-      .where(and(eq(primaryTransitions.id, pending.id), or(isNull(primaryTransitions.leaseUntil), lte(primaryTransitions.leaseUntil, new Date())))).returning();
+      .where(and(eq(primaryTransitions.id, pending.id), or(isNull(primaryTransitions.leaseUntil), lte(primaryTransitions.leaseUntil, new Date())),
+        opts.force ? undefined : eligible(new Date()))).returning();
     if (!claimed) continue;
     const entry = claimed;
     const features = { batchReadiness: false, retirementGrace: false };

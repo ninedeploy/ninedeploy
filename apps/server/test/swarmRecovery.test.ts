@@ -71,7 +71,33 @@ async function begin(port = 8080) {
 const job = () => f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) });
 const svc = () => f.db.query.services.findFirst({ where: eq(services.id, 1) });
 const mutations = () => h.http.mock.calls.filter(c => c[0] === 'POST');
+function gate() { let release!: () => void; const promise = new Promise<void>(r => { release = r; }); return { promise, release }; }
 describe('durable Swarm service transitions', () => {
+  it('rechecks backoff when it changes after the scheduled scan', async () => {
+    const controller = await begin(); await controller.release('retry later');
+    await f.db.update(swarmTransitions).set({ nextAttemptAt: new Date(0), attempts: 0 });
+    h.http.mockClear(); h.capture.mockClear(); h.run.mockClear();
+    const selected = gate(), resume = gate(); let first = true;
+    const db = new Proxy(f.db, { get(real, property, receiver) {
+      if (property !== 'select') return Reflect.get(real, property, receiver);
+      return (...args: Parameters<typeof real.select>) => {
+        const query = real.select(...args);
+        if (!first) return query;
+        first = false;
+        return { from: (table: typeof swarmTransitions) => ({ where: (condition: Parameters<ReturnType<typeof query.from>['where']>[0]) => ({
+          limit: async (count: number) => { const found = await query.from(table).where(condition).limit(count); selected.release(); await resume.promise; return found; },
+        }) }) };
+      };
+    } }) as typeof f.db;
+    const run = reconcileSwarmTransitions(db);
+    try {
+      await selected.promise;
+      await f.db.update(swarmTransitions).set({ nextAttemptAt: new Date(Date.now() + 60_000), attempts: 4 });
+    } finally { resume.release(); }
+    expect(await run).toEqual({ recovered: 0, held: 0 });
+    expect(h.http).not.toHaveBeenCalled(); expect(h.capture).not.toHaveBeenCalled(); expect(h.run).not.toHaveBeenCalled();
+    expect((await f.db.select().from(swarmTransitions))[0]).toMatchObject({ attempts: 4, ownerToken: null });
+  });
   describe('Docker → Swarm migration', () => {
     beforeEach(async () => {
       h.native = null;
