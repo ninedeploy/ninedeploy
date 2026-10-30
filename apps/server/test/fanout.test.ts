@@ -2,8 +2,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { deployToTargets as deployToTargetsNow, listFanoutCandidates, pullableReleaseRef, recordFanoutResults, teardownTargets } from '../src/engine/fanout.js';
 import { createFakeDb } from './helpers.js';
 
-const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn() }));
-vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp, agentTransportSealed: async () => true }));
+const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn(), sealed: vi.fn(async () => true) }));
+vi.mock('../src/lib/agentClient.js', () => ({ agentOp: agentMocks.agentOp, agentTransportSealed: agentMocks.sealed }));
 
 /** r660: what a current agent answers to the sealed agent.ping. */
 const PING_CURRENT = { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] };
@@ -51,7 +51,15 @@ async function deployToTargets(...args: Parameters<typeof deployToTargetsNow>) {
 describe('multi-server fan-out (phase 1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    agentMocks.sealed.mockResolvedValue(true);
     agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: [] });
+  });
+  it('keeps a host-port target when sealed readiness is unavailable', async () => {
+    agentMocks.sealed.mockResolvedValue(false);
+    const result = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never,
+      { service: { ...svc, healthCheck: null, publishedPort: 8080 }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(result[0]).toMatchObject({ ok: false, runtimeId: 'web-t5-8', error: expect.stringMatching(/unencrypted|sealed/i) });
+    expect(agentMocks.agentOp).not.toHaveBeenCalled();
   });
   it('does not promote a target missing its configured command healthcheck', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
@@ -482,7 +490,7 @@ describe('0.16 T4: fan-out runs what the primary runs (D1) and ships what it bui
       if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
       return { exitCode: 0, lines: [] };
     });
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); agentMocks.sealed.mockResolvedValue(true); });
   const ops = () => agentMocks.agentOp.mock.calls.map((c) => c[2] as string);
 
   it('D1: a command and an attachment reach the target through docker.runSpec (volume created first), never dropped', async () => {

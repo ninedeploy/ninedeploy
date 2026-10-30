@@ -2693,7 +2693,7 @@ describe('runDeployment on a remote-server target', () => {
     collectLogs(1);
     let pullSignal: AbortSignal | undefined;
     h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, _params: unknown, _sink: unknown, options?: { signal?: AbortSignal }) => {
-      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '9.9.9', caps: ['build-path-guard', 'op.cancel', 'docker.recovery'] })}`] };
+      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '9.9.9', caps: ['build-path-guard', 'op.cancel', 'docker.recovery', 'docker.probe'] })}`] };
       if (op === 'docker.pull') {
         pullSignal = options?.signal;
         if (!pullSignal) return { exitCode: 0, lines: [] };
@@ -2936,7 +2936,7 @@ describe('runDeployment on a remote-server target', () => {
       h.agentTransportSealed.mockResolvedValue(true);
       h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
         op === 'agent.ping'
-          ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.recovery'] })}`] }
+          ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.recovery', 'docker.probe'] })}`] }
           : op === 'docker.inspect'
             ? { exitCode: 0, lines: ['running|none|0|0'] }
             : { exitCode: 0, lines: [] },
@@ -3969,6 +3969,8 @@ describe('0.13 (T5): GitHub App repositories on nodes — pipeline wiring', () =
     h.agentOp.mockImplementation(async (...args: unknown[]) =>
       args[2] === 'docker.inspect'
         ? { exitCode: 0, lines: ['running|none|0|0'] }
+        : args[2] === 'docker.probe'
+          ? { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] }
         : args[2] === 'agent.ping'
           ? { exitCode: 0, lines: [CAPS] }
           : args[2] === 'file.writeEnv'
