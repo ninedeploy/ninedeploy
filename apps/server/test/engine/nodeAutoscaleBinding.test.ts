@@ -5,8 +5,9 @@ import { claimNodeDeploymentAttempt, createNodeDeploymentAuthority } from '../..
 const h = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn(async () => true) }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: h.agent, agentTransportSealed: h.sealed }));
 const { bindNodeAutoscalePreparation } = await import('../../src/engine/builders/nodeAutoscaleBinding.js');
+const { createRemoteDockerBuilder } = await import('../../src/engine/builders/remoteDocker.js');
 let c: ReturnType<typeof createDb>;
-const caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec'];
+const caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'docker.recovery', 'docker.probe', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec'];
 beforeEach(async () => {
   c = createDb({ url: 'file::memory:' }); await c.ready; await runMigrations(c.db);
   await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
@@ -55,4 +56,26 @@ it('rejects changed ownership before contacting a node', async () => {
   await c.db.update(services).set({ serverId: null }).where(eq(services.id, 1));
   await expect(prepare({ service, deploymentId: 9, image: 'fixture:latest', env: {}, volumeAttachments: [], files: [] })).rejects.toThrow(/authority changed/i);
   expect(agent).not.toHaveBeenCalled(); expect(h.agent).not.toHaveBeenCalled();
+});
+
+it('passes the builder image through the real bound preparation without legacy container creation', async () => {
+  const service = (await c.db.query.services.findFirst())!;
+  const admission = await claimNodeDeploymentAttempt(c.db, 9, service, '{}');
+  if (!admission.claimed) throw Error('Missing deployment owner');
+  const imageId = `sha256:${'f'.repeat(64)}`;
+  const agent = vi.fn(async (op: string, params: Record<string, unknown>) => {
+    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps })}`] };
+    if (op === 'docker.networkCreate') return { exitCode: 0, lines: [] };
+    if (op === 'docker.imageInspect') return { exitCode: 0, lines: [`${imageId}|42`] };
+    if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${params.name}.env`] };
+    if (op === 'file.deleteEnv') return { exitCode: 0, lines: [] };
+    throw Error(`Unexpected agent op ${op}`);
+  });
+  const prepareCapacity = bindNodeAutoscalePreparation({ db: c.db, owner: admission.owner, agent, sealed: async () => true, checkpoint: async () => {}, log: () => {} });
+  const builder = createRemoteDockerBuilder(agent, { prebuiltImage: { tag: imageId, imageId }, prepareCapacity, isSealed: async () => true });
+  const runtime = await builder.buildAndRun({ deploymentId: 9, service, workDir: '/unused', commitSha: '', env: {}, log: () => {} });
+  expect(runtime.nodeCapacityTargets).toHaveLength(2);
+  expect((await c.db.select().from(nodeDeploymentPreparations))[0]).toMatchObject({ phase: 'prepared', imageId, targets: runtime.nodeCapacityTargets });
+  expect(agent.mock.calls.map(call => call[0])).not.toContain('docker.runEnv');
+  expect(agent.mock.calls.map(call => call[0])).not.toContain('docker.runSpec');
 });

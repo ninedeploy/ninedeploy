@@ -29,6 +29,7 @@ export async function prepareNodeAutoscaleDeployment(input: {
   if (service.type !== 'docker' || service.orchestrator === 'swarm' || service.id !== owner.serviceId || service.serverId !== owner.serverId ||
     !Number.isSafeInteger(owner.deploymentId) || owner.deploymentId < 1 || !Number.isSafeInteger(input.creationWatermark) ||
     input.creationWatermark < owner.deploymentId || !scale.success) throw new Error('Node autoscale deployment authority or configuration is invalid');
+  if (scale.data.metric === 'rps') throw new Error('Node request-rate autoscaling is not available');
   const call: AgentCall = async (op, params, sink, options) => {
     await input.checkpoint();
     try { return await input.agent(op, params, sink, options); } finally { await input.checkpoint(); }

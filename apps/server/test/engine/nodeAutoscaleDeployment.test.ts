@@ -37,6 +37,12 @@ it('refuses to prepare a node generation without its durable journal before any 
   await expect(prepareNodeAutoscaleDeployment({ ...opts, journal: undefined } as never)).rejects.toThrow(/journal/i);
   expect(calls).toEqual([]); expect(opts.client.fence).not.toHaveBeenCalled(); expect(opts.client.prepare).not.toHaveBeenCalled();
 });
+it('refuses unsupported node request-rate autoscaling before any agent effects', async () => {
+  const opts = await options();
+  opts.service = { ...opts.service, autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'rps', target: 100, scaleUpSeconds: 60, scaleDownSeconds: 120 } };
+  await expect(prepareNodeAutoscaleDeployment(opts)).rejects.toThrow(/request.rate|rps/i);
+  expect(calls).toEqual([]); expect(opts.client.prepare).not.toHaveBeenCalled();
+});
 
 it('pins the inspected image and removes the environment only after confirmed preparation', async () => {
   const opts = await options(), result = await prepareNodeAutoscaleDeployment(opts);
