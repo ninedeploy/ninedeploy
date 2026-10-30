@@ -194,7 +194,7 @@ export async function reconcileFanoutTransitions(db: DB, opts: { serviceId?: num
       if (!await stillCurrent()) throw new Error('Target or service changed before routing recovery');
       await writeDynamicConfig(db, { requireNode: entry.serverId, confirmNodeRouting: true });
       if (!await stillCurrent()) throw new Error('Target or service changed during routing recovery');
-      if (target) await db.update(serviceTargets).set({ status: 'running', updatedAt: new Date() }).where(targetOwned(target.runtimeId));
+      if (target) await db.update(serviceTargets).set({ status: target.runtimeId ? 'running' : 'error', updatedAt: new Date() }).where(targetOwned(target.runtimeId));
       await new Promise(resolve => setTimeout(resolve, 2000));
       if (!await stillCurrent()) throw new Error('Target or service changed before retirement commitment');
       await lease.patch({ phase: 'retiring', desiredRuntimeId: target?.runtimeId ?? null });

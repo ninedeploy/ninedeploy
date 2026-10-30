@@ -212,6 +212,13 @@ async function journal(overrides: Partial<typeof fanoutTransitions.$inferInsert>
 const pendingJournal = () => f.db.select().from(fanoutTransitions);
 const recover = () => reconcileFanoutTransitions(f.db, { serviceId: 1, force: true });
 describe('durable fan-out reconciliation', () => {
+  it('does not mark an empty target as running after recovering an abandoned initial candidate', async () => {
+    await journal({ previousRuntimeId: null, previousContainerId: null });
+    await f.db.update(serviceTargets).set({ runtimeId: null, status: 'idle' });
+    expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
+    expect(await target()).toMatchObject({ runtimeId: null, status: 'error' });
+    expect(stops()).toEqual([candidate]);
+  });
   it('recovers an interrupted blocked creation only when the recorded ID and name still match', async () => {
     await journal({ phase: 'blocked', candidateContainerId: 'b'.repeat(64) });
     expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
