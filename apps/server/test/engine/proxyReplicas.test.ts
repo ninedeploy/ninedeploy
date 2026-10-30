@@ -108,6 +108,12 @@ describe('fan-out replica placement', () => {
       await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
       expect(await renderDynamicConfig(c.db, { serverId: 4 })).not.toContain('web-9-r2');
       await expect(renderDynamicConfig(c.db, { serverId: 4, autoscalePromotion: promotion })).rejects.toThrow(/ownership/);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(Date.now() + 60_000) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+      await reserveServiceRuntimeOwner(c.db, 1, 'deploy', owner, 'c'.repeat(32));
+      expect(await renderDynamicConfig(c.db, { serverId: 4 })).not.toContain('web-9-r2');
+      await expect(renderDynamicConfig(c.db, { serverId: 4, autoscalePromotion: promotion })).rejects.toThrow(/ownership/);
+      await c.db.update(services).set({ runtimeId: 'web-10' }).where(eq(services.id, 1));
+      expect(await renderDynamicConfig(c.db, { serverId: 4 })).toContain('web-10-r2');
     } finally { c.client?.close(); }
   });
   it.each([2, 10, null])('routes only the one container created on a target when primary runtimeReplicas=%s', async runtimeReplicas => {
