@@ -424,7 +424,7 @@ describe('primary recovery through SQLite and the real routing writer', () => {
     const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
     const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
     await f.db.insert(deploymentRuntimeOwners).values(owner);
-    const supported = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec'];
+    const supported = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec'];
     const prepareAgent = async (op: string, params: Record<string, unknown>) => {
       if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: supported })}`] };
       if (op === 'docker.imageInspect') return { exitCode: 0, lines: [`sha256:${'f'.repeat(64)}|123`] };
@@ -461,6 +461,39 @@ describe('primary recovery through SQLite and the real routing writer', () => {
       expect(await f.db.select().from(nodeDeploymentPreparations)).toEqual([]);
       expect(await f.db.select().from(nodeAutoscaleCapacity)).toMatchObject([{ deploymentId: 9, serviceId: 1, serverId: 5,
         runtimeId: candidate, imageId: prepared.imageId, targets: prepared.capacity }]);
+    } finally { await lease.release(); }
+  });
+  it('hands ordered ownership back after the prepared generation is selected and retirement is confirmed', async () => {
+    const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
+    const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
+    await f.db.insert(deploymentRuntimeOwners).values(owner);
+    const imageId = `sha256:${'f'.repeat(64)}`;
+    await beginNodeDeploymentPreparation(f.db, owner, { runtimeId: candidate, imageId, serving: 1, capacity: 1 });
+    await completeNodeDeploymentPreparation(f.db, owner, [{ id: candidateId, name: candidate }]);
+    caps.push('docker.mutations', 'docker.retireHandoff');
+    const original = h.agent.getMockImplementation()!;
+    let lostHandoff = true;
+    h.agent.mockImplementation(async (...args) => {
+      const p = args[3];
+      if (args[2] === 'docker.retireSet') return { exitCode: 0, lines: [`ND-RETIRED-SET ${JSON.stringify({ requestId: p.requestId, serviceId: p.serviceId, revision: p.revision, complete: true, items: [] })}`] };
+      if (args[2] === 'docker.runtimeLegacyHandoff') {
+        if (lostHandoff) { lostHandoff = false; throw Error('lost handoff reply'); }
+        return { exitCode: 0, lines: [`ND-RUNTIME-LEGACY ${JSON.stringify({ requestId: p.requestId, serviceId: p.serviceId, revision: p.revision, deploymentWatermark: p.deploymentWatermark, complete: true })}`] };
+      }
+      return original(...args);
+    });
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/', replicas: 1, nodeDeploymentOwner: owner,
+      nodeTargets: [{ id: candidateId, name: candidate }], nodeCapacityTargets: [{ id: candidateId, name: candidate }], imageDigest: imageId };
+    const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { runtimeId: old, port: 8080, healthPath: '/' }, null);
+    try {
+      await f.db.update(services).set({ runtimeId: candidate }).where(eq(services.id, 1));
+      containers.delete(oldId);
+      await expect(lease.completeIfSafe()).rejects.toThrow('lost handoff reply');
+      expect(await rows()).toHaveLength(1);
+      expect(await lease.completeIfSafe()).toBe(true);
+      const handoff = h.agent.mock.calls.find(call => call[2] === 'docker.runtimeLegacyHandoff');
+      expect(handoff?.[3]).toMatchObject({ serviceId: 1, deploymentWatermark: 9 });
+      expect(h.agent.mock.calls.find(call => call[2] === 'docker.retireSet')?.[3].targets).toEqual([]);
     } finally { await lease.release(); }
   });
   it('retains preparation evidence when the recovery lease, image or observed identity does not match', async () => {

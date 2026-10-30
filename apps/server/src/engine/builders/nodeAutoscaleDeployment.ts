@@ -35,7 +35,7 @@ export async function prepareNodeAutoscaleDeployment(input: {
     try { return await input.agent(op, params, sink, options); } finally { await input.checkpoint(); }
   };
   const checks = [
-    { cap: ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage'] as const, feature: 'prepare and safely scale node replicas' },
+    { cap: ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage'] as const, feature: 'prepare and safely scale node replicas' },
     { cap: nodeRunCapabilities(service, attachments), feature: 'run the complete node replica configuration' },
     ...nodeRunExtrasChecks(service), ...nodeFileMountChecks(files.length),
     ...(service.portMappings?.length ? [{ cap: ['docker.ports' as const], feature: 'publish node port mappings' }] : []),

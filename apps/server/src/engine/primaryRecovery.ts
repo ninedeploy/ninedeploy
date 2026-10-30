@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from '../config.js';
 import { and, eq, exists, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
-import { deployments, primaryTransitions, services, serviceTargets, type DB, type PrimaryRuntimeSnapshot, type PrimaryTransition, type Service } from '@ninedeploy/db';
+import { deployments, nodeAutoscaleCapacity, primaryTransitions, services, serviceTargets, type DB, type PrimaryRuntimeSnapshot, type PrimaryTransition, type Service } from '@ninedeploy/db';
 import { containerIdentityOps } from '../agentOps/containerIdentity.js';
 import { observabilityOps } from '../agentOps/observability.js';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
@@ -12,6 +12,7 @@ import { verifyNodeReadiness } from '../lib/nodeReadiness.js';
 import { createNodeDeploymentAuthority } from '../lib/nodeDeploymentOwner.js';
 import { createNodeRuntimeMutationClient } from '../lib/nodeRuntimeMutationClient.js';
 import { retireNodeDeploymentGeneration } from '../lib/nodeDeploymentRetirement.js';
+import { serviceRuntimeRevision } from '../lib/serviceRuntimeOwner.js';
 import { handoffNodeDeploymentPreparation } from '../lib/nodeDeploymentPreparation.js';
 import { capture, run, sleep } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
@@ -262,6 +263,30 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, feature
       for (const item of identities(group)) {
         if (!item.observed) return false;
         if (item.id ? await identity(db, row.serverId, item.id) : await identity(db, row.serverId, item.name)) return false;
+      }
+    }
+    if (row.orderedOwner && row.serverId != null) {
+      const capacity = await db.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, row.deploymentId) });
+      if (capacity) {
+        const owner = row.orderedOwner;
+        if (capacity.serviceId !== row.serviceId || capacity.serverId !== row.serverId || capacity.runtimeId !== row.candidate.runtimeId ||
+          capacity.imageId !== row.imageDigest || owner.deploymentId !== row.deploymentId || owner.serviceId !== row.serviceId || owner.serverId !== row.serverId ||
+          !Array.isArray(capacity.targets) || capacity.targets.length < row.candidate.replicas || capacity.targets.some((item, index) => {
+            const observed = identities(row.candidate)[index];
+            return !observed || !observed.observed || observed.name !== item.name || observed.id !== item.id;
+          })) throw new Error('Node autoscale handoff capacity is unconfirmed');
+        const checkpoint = async () => {
+          const currentService = await current();
+          if (currentService.runtimeId !== svc.runtimeId || row.routingTouched && (loaded !== currentService.runtimeId || loadedFingerprint !== fingerprint(currentService))) {
+            throw new Error('Node autoscale handoff routing changed');
+          }
+        };
+        const client = createNodeRuntimeMutationClient(db, row.serverId, { checkpoint });
+        const requestId = createHash('sha256').update(`${owner.requestId}:primary-handoff`).digest('hex').slice(0, 32);
+        const revision = serviceRuntimeRevision(owner.epoch, 3);
+        await client.retire({ requestId, serviceId: row.serviceId, revision, timeoutMs: 30_000, graceSeconds: 0, targets: [] });
+        await client.legacyHandoff({ requestId, serviceId: row.serviceId, revision, timeoutMs: 30_000, deploymentWatermark: row.deploymentId });
+        await checkpoint();
       }
     }
     clearInterval(heartbeat); await renewal; await check();

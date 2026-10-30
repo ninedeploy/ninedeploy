@@ -7,7 +7,7 @@ vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: h.agent, agentTranspor
 const { bindNodeAutoscalePreparation } = await import('../../src/engine/builders/nodeAutoscaleBinding.js');
 const { createRemoteDockerBuilder } = await import('../../src/engine/builders/remoteDocker.js');
 let c: ReturnType<typeof createDb>;
-const caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'docker.recovery', 'docker.probe', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec'];
+const caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff', 'docker.startSet', 'docker.readiness', 'docker.recovery', 'docker.probe', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec'];
 beforeEach(async () => {
   c = createDb({ url: 'file::memory:' }); await c.ready; await runMigrations(c.db);
   await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });

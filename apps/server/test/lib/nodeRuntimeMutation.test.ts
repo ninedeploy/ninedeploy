@@ -20,6 +20,7 @@ import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js'
 import { executeNodeLifecycleIntent } from '../../src/lib/nodeLifecycleController.js';
 import * as agentClient from '../../src/lib/agentClient.js';
 import { recoverPreparedNodeCandidate } from '../../src/lib/nodePreparationRecovery.js';
+import { beginPrimaryTransition } from '../../src/engine/primaryRecovery.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
 type Row = { id: string; name: string; managed: string | null; serviceId: string | null; deploymentId: string | null; composeProject?: string | null; nonce: string | null; specHash: string | null; running: boolean; status: string; networks: Record<string, object> };
@@ -57,6 +58,39 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
 });
 describe('persistent runtime request admission', () => {
+  it('hands a selected prepared deployment back to legacy creation through the real node journal', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId: null, status: 'idle', port: 3000 });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'queued' });
+      const admission = await claimNodeDeploymentAttempt(c.db, 10, (await c.db.query.services.findFirst())!, '{}');
+      if (!admission.claimed) throw Error('Missing deployment owner');
+      await beginNodeDeploymentPreparation(c.db, admission.owner, { runtimeId: 'web-10', imageId: image, serving: 1, capacity: 2 });
+      const prepared = await runtime().prepare({ ...prepare(5, 10, [spec(), spec(10, 'web-10-r2')]), startNames: ['web-10'] });
+      const targets = prepared.items.map(({ id, name }) => ({ id, name }));
+      await completeNodeDeploymentPreparation(c.db, admission.owner, targets);
+      vi.spyOn(agentClient, 'agentTransportSealed').mockResolvedValue(true);
+      let lost = true;
+      vi.spyOn(agentClient, 'agentOp').mockImplementation(async (_db, _server, op, params) => {
+        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.recovery","proxy.routingAck","docker.mutations","docker.retireHandoff"]}'] };
+        const lines: string[] = [], exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });
+        if (op === 'docker.runtimeLegacyHandoff' && lost) { lost = false; throw Error('lost primary handoff'); }
+        return { exitCode, lines };
+      });
+      const service = (await c.db.query.services.findFirst())!;
+      const lease = await beginPrimaryTransition(c.db, service, 10, { runtimeId: 'web-10', port: 3000, healthPath: '/', replicas: 1,
+        nodeDeploymentOwner: admission.owner, nodeTargets: targets.slice(0, 1), nodeCapacityTargets: targets, imageDigest: image }, undefined, null);
+      try {
+        await c.db.update(services).set({ runtimeId: 'web-10' }).where(eq(services.id, 7));
+        await expect(lease.completeIfSafe()).rejects.toThrow('lost primary handoff');
+        expect(await lease.completeIfSafe()).toBe(true);
+        expect(rows.map(row => [row.name, row.running])).toEqual([['web-10', true], ['web-10-r2', false]]);
+        await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
+      } finally { await lease.release(); }
+    } finally { c.client?.close(); }
+  });
   it.each(['retirement', 'handoff'] as const)('replays a lost prepared-candidate %s reply through the real node journal', async lost => {
     const c = createDb({ url: 'file::memory:' });
     try {

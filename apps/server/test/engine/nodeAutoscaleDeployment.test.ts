@@ -26,7 +26,7 @@ beforeEach(async () => {
   await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
   await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-8',
     autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
-  caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec']; calls = []; agent.mockClear();
+  caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec']; calls = []; agent.mockClear();
 });
 afterEach(() => c.client?.close());
 const options = async () => ({ service: await service(), owner, image: 'example:latest', creationWatermark: 9, env: { KEY: 'fixture' },
@@ -118,6 +118,11 @@ it('refuses an older or unsealed agent before writing any environment file', asy
 });
 it('requires isolated preparation environment support before writing secrets', async () => {
   const opts = await options(); caps = caps.filter(cap => cap !== 'docker.prepareAttemptEnv');
+  await expect(prepareNodeAutoscaleDeployment(opts)).rejects.toThrow(/agent/i);
+  expect(calls).not.toContain('file.writeEnv'); expect(opts.client.prepare).not.toHaveBeenCalled();
+});
+it('requires the recovery handoff capability before writing secrets or creating capacity', async () => {
+  const opts = await options(); caps = caps.filter(cap => cap !== 'docker.retireHandoff');
   await expect(prepareNodeAutoscaleDeployment(opts)).rejects.toThrow(/agent/i);
   expect(calls).not.toContain('file.writeEnv'); expect(opts.client.prepare).not.toHaveBeenCalled();
 });
