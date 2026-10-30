@@ -311,6 +311,30 @@ describe('durable fan-out reconciliation', () => {
     await journal(); const a = recover(), b = recover(); await pump(Promise.all([a, b]));
     expect((await a).recovered + (await b).recovered).toBe(1); expect(stops()).toEqual([candidate]);
   });
+  it('does not retry a transition whose backoff was extended after the scheduled scan', async () => {
+    await journal();
+    const selected = gate(), resume = gate(); let first = true;
+    const db = new Proxy(f.db, { get(real, property, receiver) {
+      if (property !== 'select') return Reflect.get(real, property, receiver);
+      return (...args: Parameters<typeof real.select>) => {
+        const query = real.select(...args);
+        if (!first) return query;
+        first = false;
+        return { from: (table: typeof fanoutTransitions) => ({ where: (condition: Parameters<ReturnType<typeof query.from>['where']>[0]) => ({
+          limit: async (count: number) => { const rows = await query.from(table).where(condition).limit(count); selected.release(); await resume.promise; return rows; },
+        }) }) };
+      };
+    } }) as typeof f.db;
+    const run = reconcileFanoutTransitions(db, { serviceId: 1 });
+    try {
+      await selected.promise;
+      await f.db.update(fanoutTransitions).set({ nextAttemptAt: new Date(Date.now() + 60_000), attempts: 4 });
+    } finally { resume.release(); }
+    expect(await finish(run)).toEqual({ recovered: 0, held: 0 });
+    expect(h.agent).not.toHaveBeenCalled();
+    expect((await pendingJournal())[0]).toMatchObject({ attempts: 4, ownerToken: null });
+    expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
+  });
   it('uses the claimed transition when another owner commits retirement after the initial scan', async () => {
     await journal({ healthCheck: 'http-strict' });
     await f.db.update(serviceTargets).set({ runtimeId: candidate, status: 'running' });

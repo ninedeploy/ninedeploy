@@ -127,7 +127,8 @@ export async function reconcileFanoutTransitions(db: DB, opts: { serviceId?: num
     if (opts.signal?.aborted) break;
     const token = randomUUID();
     const [claimed] = await db.update(fanoutTransitions).set({ ownerToken: token, leaseUntil: new Date(Date.now() + LEASE_MS), attempts: sql`${fanoutTransitions.attempts} + 1` })
-      .where(and(eq(fanoutTransitions.id, selected.id), or(isNull(fanoutTransitions.leaseUntil), lte(fanoutTransitions.leaseUntil, new Date())))).returning();
+      .where(and(eq(fanoutTransitions.id, selected.id), or(isNull(fanoutTransitions.leaseUntil), lte(fanoutTransitions.leaseUntil, new Date())),
+        opts.force ? undefined : lte(fanoutTransitions.nextAttemptAt, new Date()))).returning();
     if (!claimed) continue;
     const entry = claimed;
     const lease = recoveryLease(db, claimed, token);
