@@ -4070,7 +4070,7 @@ describe('0.13 (T5): GitHub App repositories on nodes — pipeline wiring', () =
 // ── 0.16 T4 build placement ──
 // D1 / D2 (design §0.2, §6.5): proofs written against the unfixed fan-out.
 describe('0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2)', () => {
-  const CAPS_015 = 'ND-AGENT {"version":"0.15.1","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host"]}';
+  const CAPS_015 = 'ND-AGENT {"version":"0.15.1","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host","docker.probe"]}';
   let egressEnv: string | undefined;
   beforeEach(() => {
     vi.clearAllMocks();
@@ -4085,6 +4085,8 @@ describe('0.16 T4: fan-out targets get the primary’s rules and never a differe
         ? { exitCode: 0, lines: [`wrote .agent-env/${String((args[3] as Record<string, unknown>).name)}.env`] }
         : args[2] === 'docker.inspect'
         ? { exitCode: 0, lines: ['running|none|0|0'] }
+        : args[2] === 'docker.probe'
+        ? { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] }
         : args[2] === 'agent.ping'
           ? { exitCode: 0, lines: [CAPS_015] }
           : { exitCode: 0, lines: [] },
@@ -4219,18 +4221,19 @@ describe('0.16 T4: fan-out targets get the primary’s rules and never a differe
     expect(targetRow(updates)).toMatchObject({ status: 'running' });
   });
 
-  it('control: a plain image service still fans out with docker.runEnv and nothing new is asked', async () => {
+  it('control: a plain image service fans out only after the target port responds', async () => {
     const { db, updates } = makeDb();
     baseSetup(db, { image: 'nginx:1.27' });
     withTarget(db);
     await runDeployment(db as never, 1);
-    expect(targetOps()).toEqual(['docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv', 'docker.inspect', 'docker.inspect', 'docker.inspect']);
+    expect(targetOps()).toEqual(['docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv', 'agent.ping',
+      'docker.inspect', 'docker.probe', 'docker.inspect', 'docker.inspect', 'docker.probe', 'docker.inspect', 'docker.inspect', 'docker.probe', 'docker.inspect']);
     expect(targetRow(updates)).toMatchObject({ status: 'running' });
   });
 });
 describe('0.16 T4: build placement in the pipeline (design §6.3)', () => {
   const IMG = `sha256:${'a'.repeat(64)}`;
-  const CAPS_ALL = 'ND-AGENT {"version":"0.15.2","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host","stream","docker.runSpec","volume.manage","image.manage","build.nixpacks","build.railpack","git.sshkey","db.manage","swarm"]}';
+  const CAPS_ALL = 'ND-AGENT {"version":"0.19.0","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host","stream","docker.runSpec","volume.manage","image.manage","build.nixpacks","build.railpack","git.sshkey","db.manage","swarm","docker.probe","docker.recovery"]}';
   let egressEnv: string | undefined;
   beforeEach(() => {
     vi.clearAllMocks();
@@ -4242,7 +4245,13 @@ describe('0.16 T4: build placement in the pipeline (design §6.3)', () => {
     h.writeDynamicConfig.mockImplementation(async () => undefined);
     h.agentOp.mockImplementation(async (...args: unknown[]) =>
       args[2] === 'docker.inspect'
-        ? { exitCode: 0, lines: ['running|none|0|0'] }
+        ? { exitCode: 0, lines: [(args[3] as Record<string, unknown>).format === 'image' ? IMG : 'running|none|0|0'] }
+        : args[2] === 'docker.runEnv' || args[2] === 'docker.runSpec'
+        ? { exitCode: 0, lines: ['a'.repeat(64)] }
+        : args[2] === 'docker.identity'
+        ? { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id: 'a'.repeat(64), name: 'web-1', managed: 'service', serviceId: '5', deploymentId: '1' })}`] }
+        : args[2] === 'docker.probe'
+        ? { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] }
         : args[2] === 'agent.ping'
           ? { exitCode: 0, lines: [CAPS_ALL] }
           : args[2] === 'docker.imageInspect'
@@ -4431,7 +4440,7 @@ describe('0.16 T4: build placement in the pipeline (design §6.3)', () => {
 // ── end 0.16 T4 ──
 // ── 0.16 T6 node databases ──
 describe('0.16 T6: attached databases are reachable from the service (D4, O7)', () => {
-  const CAPS_ALL_T6 = `ND-AGENT ${JSON.stringify({ version: '0.15.3', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'stream', 'docker.runSpec', 'volume.manage', 'image.manage', 'db.manage'] })}`;
+  const CAPS_ALL_T6 = `ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'stream', 'docker.runSpec', 'volume.manage', 'image.manage', 'db.manage', 'docker.probe', 'docker.recovery'] })}`;
 
   it('D4: a panel-host docker service gets its running panel-host databases on ctx.databaseContainers', async () => {
     const { db } = makeDb();
@@ -4462,6 +4471,12 @@ describe('0.16 T6: attached databases are reachable from the service (D4, O7)', 
     h.agentOp.mockReset().mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
       op === 'agent.ping'
         ? { exitCode: 0, lines: [CAPS_ALL_T6] }
+        : op === 'docker.runEnv'
+        ? { exitCode: 0, lines: ['a'.repeat(64)] }
+        : op === 'docker.identity'
+        ? { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id: 'a'.repeat(64), name: 'web-1', managed: 'service', serviceId: '5', deploymentId: '1' })}`] }
+        : op === 'docker.probe'
+        ? { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] }
         : op === 'docker.inspect'
           ? { exitCode: 0, lines: ['running|none|0|0'] }
           : { exitCode: 0, lines: op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env'] : [] },
