@@ -1921,6 +1921,15 @@ export const nodeDeploymentPreparations = sqliteTable('node_deployment_preparati
   createdAt: ts('created_at'), updatedAt: tsUpdatable('updated_at'),
 });
 
+/** Immutable capacity creation receipt retained after primary recovery handoff. */
+export const nodeAutoscaleCapacity = sqliteTable('node_autoscale_capacity', {
+  deploymentId: integer('deployment_id').primaryKey().references(() => deployments.id, { onDelete: 'cascade' }),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  serverId: integer('server_id').notNull(), runtimeId: text('runtime_id').notNull(), imageId: text('image_id').notNull(),
+  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>().notNull(),
+  createdAt: ts('created_at'),
+});
+
 export interface NodeLifecycleSnapshot {
   status: string;
   port: number | null;

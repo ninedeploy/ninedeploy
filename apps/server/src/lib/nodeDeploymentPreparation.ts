@@ -1,4 +1,4 @@
-import { eq, deploymentRuntimeOwners, deployments, nodeDeploymentPreparations, primaryTransitions, services, type DB, type DeploymentRuntimeOwner } from '@ninedeploy/db';
+import { eq, deploymentRuntimeOwners, deployments, nodeAutoscaleCapacity, nodeDeploymentPreparations, primaryTransitions, services, type DB, type DeploymentRuntimeOwner } from '@ninedeploy/db';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { readServiceRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 
@@ -113,6 +113,14 @@ export async function handoffNodeDeploymentPreparation(db: DB, owner: Deployment
       (service.runtimeId !== candidate.runtimeId && service.runtimeId !== transition.previous?.runtimeId && !(service.runtimeId == null && !transition.previous)) ||
       row.targets.some((target, index) => identities[index]?.id !== target.id || identities[index]?.name !== target.name || identities[index]?.observed !== true)) {
       throw new Error('Node preparation recovery handoff is unconfirmed');
+    }
+    await tx.insert(nodeAutoscaleCapacity).values({ deploymentId: owner.deploymentId, serviceId: owner.serviceId, serverId: owner.serverId,
+      runtimeId: row.runtimeId, imageId: row.imageId, targets: row.targets }).onConflictDoNothing();
+    const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, owner.deploymentId) });
+    if (!capacity || capacity.serviceId !== row.serviceId || capacity.serverId !== row.serverId || capacity.runtimeId !== row.runtimeId ||
+      capacity.imageId !== row.imageId || !validTargets(row.runtimeId, row.capacity, capacity.targets) ||
+      capacity.targets.some((target, index) => target.id !== row.targets?.[index]?.id || target.name !== row.targets?.[index]?.name)) {
+      throw new Error('Node autoscale capacity receipt changed');
     }
     const deleted = await tx.delete(nodeDeploymentPreparations).where(eq(nodeDeploymentPreparations.deploymentId, owner.deploymentId)).returning();
     if (deleted.length !== 1) throw new Error('Node preparation evidence disappeared');

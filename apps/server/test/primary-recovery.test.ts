@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { setImmediate as yieldIO } from 'node:timers';
 import { eq } from 'drizzle-orm';
-import { deploymentRuntimeOwners, deployments, domains, nodeDeploymentPreparations, primaryTransitions, servers, services, type PrimaryRuntimeSnapshot } from '@ninedeploy/db';
+import { deploymentRuntimeOwners, deployments, domains, nodeAutoscaleCapacity, nodeDeploymentPreparations, primaryTransitions, servers, services, type PrimaryRuntimeSnapshot } from '@ninedeploy/db';
 import { reserveServiceRuntimeOwner } from '../src/lib/serviceRuntimeOwner.js';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { observabilityDb } from './fixtures/observability.js';
@@ -459,6 +459,8 @@ describe('primary recovery through SQLite and the real routing writer', () => {
       ]);
       expect(stops()).toEqual([]);
       expect(await f.db.select().from(nodeDeploymentPreparations)).toEqual([]);
+      expect(await f.db.select().from(nodeAutoscaleCapacity)).toMatchObject([{ deploymentId: 9, serviceId: 1, serverId: 5,
+        runtimeId: candidate, imageId: prepared.imageId, targets: prepared.capacity }]);
     } finally { await lease.release(); }
   });
   it('retains preparation evidence when the recovery lease, image or observed identity does not match', async () => {
@@ -477,6 +479,11 @@ describe('primary recovery through SQLite and the real routing writer', () => {
     await f.db.update(primaryTransitions).set({ imageDigest: imageId, candidate: { ...group(candidate, candidateId),
       containers: [{ name: candidate, id: candidateId, observed: false }], spares: [] } });
     await expect(handoffNodeDeploymentPreparation(f.db, owner, token)).rejects.toThrow(/handoff/);
+    expect(await f.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
+    await f.db.update(primaryTransitions).set({ candidate: { ...group(candidate, candidateId), spares: [] } });
+    await f.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 9, serviceId: 1, serverId: 5, runtimeId: candidate, imageId,
+      targets: [{ name: candidate, id: 'e'.repeat(64) }] });
+    await expect(handoffNodeDeploymentPreparation(f.db, owner, token)).rejects.toThrow(/capacity receipt changed/);
     expect(await f.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
     expect(stops()).toEqual([]);
   });
