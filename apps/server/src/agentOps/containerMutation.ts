@@ -1,4 +1,6 @@
-import { join } from 'node:path';
+import { lstatSync, unlinkSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { containerPrepareRequest } from '@ninedeploy/schemas';
 import { createNodeRuntimeMutation } from '../lib/nodeRuntimeMutation.js';
 import { handoffStoppedNodeToLegacy } from '../lib/nodeLegacyHandoff.js';
 import type { AgentOpModule } from './index.js';
@@ -23,7 +25,19 @@ export const containerMutationOps: AgentOpModule = {
       onLine('ND-RUNTIME-LEGACY ' + JSON.stringify(await handoffStoppedNodeToLegacy(join(process.cwd(), '.agent-work', '.lifecycle'), params))); return 0;
     } },
     'docker.prepare': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
-      onLine('ND-PREPARED ' + JSON.stringify(await runtime().prepare(params, onLine))); return 0;
+      const receipt = await runtime().prepare(params, onLine);
+      const input = containerPrepareRequest.parse(params), prefix = `.agent-env/nd-prep-${input.requestId}-`;
+      const files = new Set(input.specs.map(spec => spec.envFile).filter((file): file is string =>
+        typeof file === 'string' && file.startsWith(prefix) && /^[a-f0-9]{32}\.env$/.test(file.slice(prefix.length))));
+      for (const file of files) {
+        try {
+          if (lstatSync(resolve('.agent-env')).isSymbolicLink() || lstatSync(resolve(file)).isSymbolicLink()) throw new Error('Invalid environment path');
+          unlinkSync(resolve(file));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') onLine('Node attempt environment cleanup is unconfirmed.');
+        }
+      }
+      onLine('ND-PREPARED ' + JSON.stringify(receipt)); return 0;
     } },
     'docker.networkSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
       onLine('ND-NETWORKS ' + JSON.stringify(await runtime().networks(params, onLine))); return 0;

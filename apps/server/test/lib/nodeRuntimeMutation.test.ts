@@ -216,6 +216,26 @@ describe('persistent runtime request admission', () => {
     await expect(runtime().prepare({ ...input, specs: [{ ...input.specs[0], envFile: retry }] })).rejects.toThrow(/conflict/);
     expect(effects()).toEqual([]);
   });
+  it('cleans only the completed attempt environment before returning its agent receipt', async () => {
+    mkdirSync(join(root, '.agent-env'));
+    const own = `.agent-env/nd-prep-${nonce(5)}-${'a'.repeat(32)}.env`;
+    const other = `.agent-env/nd-prep-${nonce(5)}-${'b'.repeat(32)}.env`;
+    writeFileSync(join(root, own), 'KEY=first'); writeFileSync(join(root, other), 'KEY=first');
+    const input = prepare(5, 10, [{ ...spec(), envFile: own }]), lines: string[] = [];
+    expect(await runOp('docker.prepare', input, line => lines.push(line), { sealed: true })).toBe(0);
+    expect(lines.some(line => line.startsWith('ND-PREPARED '))).toBe(true);
+    expect(existsSync(join(root, own))).toBe(false); expect(existsSync(join(root, other))).toBe(true);
+    io.spawn.mockClear(); expect(await runOp('docker.prepare', input, () => {}, { sealed: true })).toBe(0);
+    expect(effects()).toEqual([]);
+  });
+  it('retains the attempt environment when preparation fails before its receipt', async () => {
+    mkdirSync(join(root, '.agent-env'));
+    const file = `.agent-env/nd-prep-${nonce(5)}-${'a'.repeat(32)}.env`;
+    writeFileSync(join(root, file), 'KEY=first'); failNetwork = true;
+    const input = prepare(5, 10, [{ ...spec(), envFile: file, extraNetworks: ['nd-extra'] }]);
+    await expect(runOp('docker.prepare', input, () => {}, { sealed: true })).rejects.toThrow(/network attachment/);
+    expect(existsSync(join(root, file))).toBe(true);
+  });
   it('refuses a changed request shape after the environment file is removed', async () => {
     mkdirSync(join(root, '.agent-env')); const file = join(root, '.agent-env/web.env'); writeFileSync(file, 'KEY=first');
     const input = prepare(5, 10, [{ ...spec(), envFile: '.agent-env/web.env' }]);
