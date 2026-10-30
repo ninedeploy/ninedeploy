@@ -1848,7 +1848,7 @@ export const primaryTransitions = sqliteTable('primary_transitions', {
 export type PrimaryTransition = typeof primaryTransitions.$inferSelect;
 
 /** Monotonic authority shared by service mutations. Never age-evicted with command history. */
-export const runtimeMutationKinds = ['start', 'stop', 'restart', 'deploy', 'scale', 'sleep', 'wake', 'remove'] as const;
+export const runtimeMutationKinds = ['start', 'stop', 'restart', 'deploy', 'scale', 'sleep', 'wake', 'remove', 'limits'] as const;
 export const serviceRuntimeOwners = sqliteTable('service_runtime_owners', {
   serviceId: integer('service_id').primaryKey().references(() => services.id, { onDelete: 'cascade' }),
   epoch: integer('epoch').notNull(),
