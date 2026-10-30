@@ -3370,8 +3370,10 @@ describe('r353: source fan-out and Git credentials', () => {
         ? { exitCode: 0, lines: [`wrote .agent-env/${String((args[3] as Record<string, unknown>).name)}.env`] }
         : args[2] === 'docker.inspect'
         ? { exitCode: 0, lines: ['running|none|0|0'] }
+        : args[2] === 'docker.probe'
+        ? { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] }
         : args[2] === 'agent.ping'
-          ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] }
+          ? { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["build-path-guard","workspace.remove","docker.probe"]}'] }
           : { exitCode: 0, lines: [] },
     );
     // No DNS in unit tests: the clone egress gate is bypassed for the control
