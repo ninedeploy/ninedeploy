@@ -31,6 +31,8 @@ import { MAX_SKEW_MS, open as openSealed, seal as sealResponse } from './lib/age
 import { spawnValidated } from './lib/spawnValidated.js';
 import { abortDeployment, AGENT_CAP_OP_CANCEL, CANCELLABLE_AGENT_OPS, runInDeployScope } from './lib/deployAbort.js';
 import { runLegacyNodeLifecycle, runNodeCreation } from './lib/nodeLifecycle.js';
+import { legacyNodeProxyWrite } from './lib/nodeProxyJournal.js';
+import { nodeProxyDirectory, nodeProxyJournalDirectory, writeNodeProxyFile } from './lib/nodeProxyFiles.js';
 import { guardLegacyNodeTarget } from './lib/nodeLegacyMutation.js';
 
 /**
@@ -472,7 +474,6 @@ const OPS: Record<string, { exe: 'docker' | 'git'; build: Op }> = {
  * model) and ships the rendered text here; the agent only writes it to a fixed
  * location and runs the container. Nothing about the path is caller-supplied.
  */
-const PROXY_DIR = '.agent-proxy';
 const PROXY_CONTAINER = 'ninedeploy-proxy';
 const PROXY_IMAGE = NODE_PROXY_IMAGE;
 /** Refuse a config larger than this — the panel renders kilobytes, not megabytes. */
@@ -480,11 +481,7 @@ const MAX_PROXY_CONFIG_BYTES = 1024 * 1024;
 
 /** Absolute path of the node's proxy directory, creating it on first use. */
 async function proxyDir(): Promise<string> {
-  const { mkdirSync } = await import('node:fs');
-  const pathmod = await import('node:path');
-  const base = pathmod.resolve(process.cwd(), PROXY_DIR);
-  mkdirSync(pathmod.join(base, 'dynamic'), { recursive: true, mode: 0o700 });
-  return base;
+  return nodeProxyDirectory();
 }
 
 /**
@@ -492,32 +489,14 @@ async function proxyDir(): Promise<string> {
  * there is no filename operand a caller could steer.
  */
 async function writeProxyConfigOp(params: Params): Promise<{ path: string; changed: boolean }> {
-  const { existsSync, readFileSync, writeFileSync, renameSync } = await import('node:fs');
-  const pathmod = await import('node:path');
   const kind = str(params, 'kind');
   if (kind !== 'static' && kind !== 'dynamic') throw new Error('Invalid config kind');
   const content = str(params, 'content');
   if (content === undefined || content.includes('\u0000')) throw new Error('Invalid config content');
   if (Buffer.byteLength(content, 'utf8') > MAX_PROXY_CONFIG_BYTES) throw new Error('Config too large');
 
-  const base = await proxyDir();
-  const target = kind === 'static'
-    ? pathmod.join(base, 'traefik.yml')
-    : pathmod.join(base, 'dynamic', 'ninedeploy.yml');
-  // Atomic replace: Traefik watches the dynamic directory, and a half-written
-  // file is a config error that takes routing down until the next write.
-  // Whether the content CHANGED decides, on the caller's side, if the proxy
-  // has to be recreated. Traefik hot-reloads the dynamic file, but reads the
-  // static one only at start-up — and recreating on every routing change would
-  // turn each domain edit into a brief ingress outage.
-  const previous = existsSync(target) ? readFileSync(target, 'utf8') : null;
-  const changed = previous !== content;
-  if (changed) {
-    const tmp = `${target}.tmp`;
-    writeFileSync(tmp, content, { mode: 0o600 });
-    renameSync(tmp, target);
-  }
-  return { path: pathmod.relative(process.cwd(), target), changed };
+  if (kind === 'dynamic') return legacyNodeProxyWrite(nodeProxyJournalDirectory(), 30_000, async () => writeNodeProxyFile(kind, content));
+  return writeNodeProxyFile(kind, content);
 }
 
 /**

@@ -29,6 +29,7 @@ import { tunnelOps } from './tunnels.js';
 import { githubRunnerOps } from './githubRunners.js';
 import { publicAccessOps } from './publicAccess.js';
 import { pgbouncerOps } from './pgbouncer.js';
+import { proxyOrderedOps } from './proxyOrdered.js';
 
 /**
  * The multi-node op registry (design §1, §9 M8).
@@ -73,6 +74,7 @@ export interface AgentOpModule {
 }
 
 export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
+  proxyOrderedOps,
   containerMutationOps,
   containerLifecycleOps,
   containerMetricsOps,
@@ -132,6 +134,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
  * only socket mounts and is enforced in agentOps/runSpec.ts.
  */
 export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, readonly string[]>>> = {
+  'proxy.orderedWrite': ['NINEDEPLOY_AGENT_ORDERED_PROXY'],
   'docker.mutations': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'docker.limits': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'docker.startSet': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],

@@ -385,6 +385,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'docker.startSet': '0.19.0',
   'docker.logsSince': '0.17.0',
   'proxy.routingAck': '0.18.0',
+  'proxy.orderedWrite': '0.19.0',
   'docker.recovery': '0.18.0',
   'docker.containerTools': '0.18.0',
   'volume.files': '0.18.0',

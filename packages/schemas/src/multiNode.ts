@@ -78,6 +78,7 @@ export const MULTI_NODE_CAPABILITIES = [
   'db.publicAccess',
   // ROADMAP item 10: PgBouncer for a node database (a sidecar on the database's own bridge)
   'db.pgbouncer',
+  'proxy.orderedWrite',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;
