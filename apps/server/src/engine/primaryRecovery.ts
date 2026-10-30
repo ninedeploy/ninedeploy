@@ -92,8 +92,14 @@ async function mapFour<T>(values: T[], fn: (value: T) => Promise<void>) {
 }
 function snapshot(runtime: DeployRuntime, commitSha: string | null): PrimaryRuntimeSnapshot {
   const names = replicaNames(runtime.runtimeId, runtime.replicas ?? 1);
+  const targets = runtime.nodeTargets;
+  if (targets && (targets.length !== names.length || targets.some((target, index) => target.name !== names[index] || !/^[a-f0-9]{64}$/.test(target.id)) ||
+    new Set(targets.map(target => target.id)).size !== targets.length)) throw new Error('Invalid candidate creation identities');
+  if (runtime.nodeReadinessId && (!/^[a-f0-9]{64}$/.test(runtime.nodeReadinessId) || names.length !== 1 || targets && targets[0]?.id !== runtime.nodeReadinessId)) {
+    throw new Error('Invalid candidate creation identity');
+  }
   return { runtimeId: runtime.runtimeId, port: runtime.port, healthPath: runtime.healthPath, healthCheck: runtime.healthCheck ?? null,
-    replicas: names.length, commitSha, containers: names.map(name => ({ name, id: null, observed: false })),
+    replicas: names.length, commitSha, containers: names.map((name, index) => ({ name, id: targets?.[index]?.id ?? runtime.nodeReadinessId ?? null, observed: false })),
     spares: replicaNames(runtime.runtimeId, MAX_REPLICAS).slice(names.length).map(name => ({ name, id: null, observed: false })) };
 }
 const identities = (group: PrimaryRuntimeSnapshot) => [...group.containers, ...(group.spares ?? [])];
@@ -150,6 +156,7 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, feature
         if (item.observed) continue;
         const actual = await identity(db, row.serverId, item.name);
         const svc = await current();
+        if (item.id && actual?.id !== item.id) throw new Error('Container creation identity changed; retained');
         if (actual && actual.name !== item.name) throw new Error('Container generation changed; retained');
         if (actual && kind === 'candidate' && (actual.managed !== 'service' || actual.serviceId !== String(row.serviceId) || actual.deploymentId !== String(row.deploymentId))) throw new Error('Candidate ownership was not confirmed');
         if (actual && kind === 'previous' && svc.runtimeId !== group.runtimeId && (actual.managed !== 'service' || actual.serviceId !== String(row.serviceId))) throw new Error('Unobserved previous identity is not owned; review required');

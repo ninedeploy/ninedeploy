@@ -78,6 +78,23 @@ async function pump(run: Promise<unknown>, pending = false) {
 async function finish<T>(run: Promise<T>) { await pump(run); return run; }
 
 describe('primary recovery through SQLite and the real routing writer', () => {
+  it('does not adopt a replacement that reused the candidate name after creation', async () => {
+    const replacement = 'c'.repeat(64);
+    containers.delete(candidateId);
+    containers.set(replacement, { id: replacement, name: candidate, managed: 'service', serviceId: '1', deploymentId: '9' });
+    const runtime = { runtimeId: candidate, nodeReadinessId: candidateId, port: 8080, healthPath: '/' };
+    await expect(beginPrimaryTransition(f.db, (await service())!, 9, runtime, { runtimeId: old, port: 8080, healthPath: '/' }, null)).rejects.toThrow(/identit/i);
+    expect((await rows())[0]?.candidate.containers[0]).toMatchObject({ name: candidate, id: candidateId, observed: false });
+    expect(writes).toEqual([]); expect(stops()).toEqual([]);
+  });
+  it('checks each immutable creation receipt when capturing a replica set', async () => {
+    const secondId = 'd'.repeat(64), replacement = 'e'.repeat(64), second = `${candidate}-r2`;
+    containers.set(replacement, { id: replacement, name: second, managed: 'service', serviceId: '1', deploymentId: '9' });
+    const runtime = { runtimeId: candidate, replicas: 2, port: 8080, healthPath: '/', nodeTargets: [{ id: candidateId, name: candidate }, { id: secondId, name: second }] };
+    await expect(beginPrimaryTransition(f.db, (await service())!, 9, runtime, { runtimeId: old, port: 8080, healthPath: '/' }, null)).rejects.toThrow(/identit/i);
+    expect((await rows())[0]?.candidate.containers).toMatchObject([{ name: candidate, id: candidateId, observed: true }, { name: second, id: secondId, observed: false }]);
+    expect(writes).toEqual([]); expect(stops()).toEqual([]);
+  });
   it('uses the persisted deployment authority to retire an old node generation in one ordered batch', async () => {
     const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
     const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
