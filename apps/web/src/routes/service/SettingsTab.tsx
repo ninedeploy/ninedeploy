@@ -931,7 +931,8 @@ function LimitsCard({ svc }: { svc: Service }) {
       qc.invalidateQueries({ queryKey: ['service', svc.id] });
       qc.invalidateQueries({ queryKey: ['services'] });
       qc.invalidateQueries({ queryKey: ['live-stats-snapshot'] });
-      toast(res.liveApplied ? t('Limits saved and applied to the running container') : t('Limits saved — applied on next deploy'), 'success');
+      if (res.liveApplied) toast(t('Limits saved and applied to the running containers'), 'success');
+      else toast(t('Limits saved. Some changes may already be active; redeploy to apply all limits.'), 'info');
     },
     onError: () => toast(t('Could not save limits'), 'error'),
   });

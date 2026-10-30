@@ -855,8 +855,9 @@ export const TR: Readonly<Record<string, string>> = {
   'Fan out to {name}': '{name} düğümüne yay',
   'No additional nodes registered.': 'Kayıtlı ek düğüm yok.',
   'Save fan-out targets': 'Yayma hedeflerini kaydet',
-  'Limits saved and applied to the running container': 'Sınırlar kaydedildi ve çalışan konteynere uygulandı',
-  'Limits saved — applied on next deploy': 'Sınırlar kaydedildi — sonraki dağıtımda uygulanır',
+  'Limits saved and applied to the running containers': 'Sınırlar kaydedildi ve çalışan konteynerlere uygulandı',
+  'Limits saved. Some changes may already be active; redeploy to apply all limits.':
+    'Sınırlar kaydedildi. Bazı değişiklikler zaten uygulanmış olabilir; tüm sınırları uygulamak için yeniden dağıtın.',
   'Could not save limits': 'Sınırlar kaydedilemedi',
   'Resource limits': 'Kaynak sınırları',
   'A compose stack manages its own containers — set resource limits under the service\'s {block} block in the stack YAML.':

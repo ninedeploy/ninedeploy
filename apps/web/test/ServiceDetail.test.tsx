@@ -1276,12 +1276,15 @@ describe('ServiceDetail', () => {
     await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('build.buildArgs.0: must be a valid environment variable name', 'error'));
   });
 
-  it('saves resource limits from the settings tab', async () => {
+  it.each([
+    { liveApplied: false, message: 'Limits saved. Some changes may already be active; redeploy to apply all limits.', type: 'info' },
+    { liveApplied: true, message: 'Limits saved and applied to the running containers', type: 'success' },
+  ])('reports resource limit result when liveApplied is $liveApplied', async ({ liveApplied, message, type }) => {
     const user = userEvent.setup();
     // Fresh object per fetch so the post-save invalidation produces a new
     // reference (react-query structural sharing keeps identical objects).
     mockOf(api.services.get).mockImplementation(async () => ({ ...service }) as never);
-    mockOf(api.limits.setService).mockResolvedValue({ cpuShares: 2048, cpuLimitMilli: 0, memLimitMb: 1024, liveApplied: false } as never);
+    mockOf(api.limits.setService).mockResolvedValue({ cpuShares: 2048, cpuLimitMilli: 0, memLimitMb: 1024, liveApplied } as never);
     renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
     await openTab('Settings');
     const cpuInput = await screen.findByDisplayValue('1024');
@@ -1292,7 +1295,7 @@ describe('ServiceDetail', () => {
     await user.type(memInput, '1024');
     await user.click(screen.getByRole('button', { name: /Save limits/ }));
     await waitFor(() => expect(api.limits.setService).toHaveBeenCalledWith(1, { cpuShares: 2048, cpuLimitMilli: null, memLimitMb: 1024 }));
-    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith('Limits saved — applied on next deploy', 'success'));
+    await waitFor(() => expect(toastSpy.toast).toHaveBeenCalledWith(message, type));
   });
 
   it('saves PR preview environments settings and handles field changes', async () => {
