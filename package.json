@@ -42,6 +42,7 @@
     "smoke:node-lifecycle": "node scripts/smoke-node-lifecycle-controller.mjs",
     "smoke:node-lifecycle-fanout": "node scripts/smoke-node-lifecycle-fanout.mjs",
     "smoke:node-canary": "node scripts/smoke-node-canary.mjs",
+    "smoke:node-limits": "node scripts/smoke-node-limits.mjs",
     "smoke:volume-files": "node scripts/smoke-volume-file-helper.mjs",
     "smoke:database-clients": "node scripts/smoke-database-clients.mjs"
   },
