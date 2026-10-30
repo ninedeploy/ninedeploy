@@ -248,6 +248,7 @@ GET /v1/services/:id/logs viewer nd://scope/read/services
 GET /v1/services/:id/maintenance viewer nd://scope/read/services
 GET /v1/services/:id/metrics viewer nd://scope/read/services
 GET /v1/services/:id/move operator nd://scope/read/services
+GET /v1/services/:id/node-preparations viewer nd://scope/read/services
 GET /v1/services/:id/pending viewer nd://scope/read/services
 GET /v1/services/:id/placement viewer nd://scope/read/services
 GET /v1/services/:id/registry-hook member nd://scope/read/services
