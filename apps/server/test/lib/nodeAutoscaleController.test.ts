@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createDb, deployments, eq, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
+import { createDb, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
 import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
 import { createNodeAutoscaleDecider } from '../../src/lib/nodeAutoscaleDecision.js';
@@ -29,6 +29,8 @@ beforeEach(async () => {
   await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-9',
     autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
   await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'running' });
+  await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 9, serviceId: 1, serverId: 4, runtimeId: 'web-9', imageId: `sha256:${'f'.repeat(64)}`,
+    targets: ['web-9', 'web-9-r2', 'web-9-r3'].map((name, index) => ({ name, id: ['a', 'b', 'c'][index]!.repeat(64) })) });
   items[1]!.running = false; calls = []; readiness = true; routingFails = false;
 });
 afterEach(() => { endCanary(1); c.client?.close(); vi.restoreAllMocks(); });

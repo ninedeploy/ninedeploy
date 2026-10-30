@@ -9,7 +9,7 @@ import { handoffStoppedNodeToLegacy } from '../../src/lib/nodeLegacyHandoff.js';
 import { createNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
 import { runOp } from '../../src/agent.js';
 import { prepareNodeAutoscaleCapacity } from '../../src/engine/builders/nodeAutoscalePrepare.js';
-import { createDb, deployments, eq, nodeAutoscaleTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, runMigrations, servers, services, type Service } from '@ninedeploy/db';
+import { createDb, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, runMigrations, servers, services, type Service } from '@ninedeploy/db';
 import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
@@ -274,8 +274,9 @@ describe('persistent runtime request admission', () => {
       const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
       mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
       const agent = runtime();
-      await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
+      const prepared = await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
         { service: await service(), owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
+      await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 10, serviceId: 7, serverId: 4, runtimeId: 'web-10', imageId: image, targets: prepared.capacity });
       let lost = true, oldStart: Parameters<NodeAutoscaleControllerDeps['start']>[1] | undefined;
       const deps: NodeAutoscaleControllerDeps = {
         fence: (_node, input) => agent.fence(input), inventory: (_node, input) => agent.inventory(input),

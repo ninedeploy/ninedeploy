@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, inArray, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
-import { deployments, fanoutTransitions, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, serviceTargets, services,
+import { deployments, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, serviceTargets, services,
   type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { autoscaleConfig, containerInventoryReply } from '@ninedeploy/schemas';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
@@ -24,6 +24,14 @@ const snapshot = (s: Service) => JSON.stringify([s.type, s.orchestrator, s.slug,
   s.cpuShares, s.cpuLimitMilli, s.memLimitMb]);
 const placements = (db: Pick<DB, 'select'>, serviceId: number) => db.select({ serverId: serviceTargets.serverId, runtimeId: serviceTargets.runtimeId })
   .from(serviceTargets).where(eq(serviceTargets.serviceId, serviceId)).orderBy(serviceTargets.id);
+const validCapacity = (row: typeof nodeAutoscaleCapacity.$inferSelect | undefined, svc: Service, count: number) => {
+  const deploymentId = Number(/-([1-9]\d*)$/.exec(svc.runtimeId ?? '')?.[1]);
+  if (!row || row.deploymentId !== deploymentId || row.serviceId !== svc.id || row.serverId !== svc.serverId || row.runtimeId !== svc.runtimeId ||
+    !/^sha256:[a-f0-9]{64}$/.test(row.imageId) || !Array.isArray(row.targets) || row.targets.length < count || row.targets.length > MAX_REPLICAS) return false;
+  const names = replicaNames(row.runtimeId, row.targets.length);
+  return row.targets.every((target, index) => target && target.name === names[index] && typeof target.id === 'string' && /^[a-f0-9]{64}$/.test(target.id)) &&
+    new Set(row.targets.map(target => target.id)).size === names.length;
+};
 
 /** Reserve a scale owner only for the exact running generation observed by the controller. */
 export async function admitNodeAutoscale(db: DB, expected: Service, desiredReplicas: number, measurement?: NodeAutoscaleEvidence,
@@ -56,6 +64,10 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
       tx.select({ id: nodeAutoscaleTransitions.serviceId }).from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, fresh.id)).limit(1),
     ]);
     if (active.length || lifecycle.length || primary.length || fanout.length || priorTransition.length) return null;
+    const capacityDeploymentId = Number(/-([1-9]\d*)$/.exec(fresh.runtimeId!)?.[1]);
+    if (!Number.isSafeInteger(capacityDeploymentId) || capacityDeploymentId < 1) return null;
+    const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, capacityDeploymentId) });
+    if (!validCapacity(capacity, fresh, Math.max(fresh.runtimeReplicas, desiredReplicas))) return null;
     const targets = await placements(tx, fresh.id);
     if (targets.some(t => !t.runtimeId || t.serverId === fresh.serverId) || new Set(targets.map(t => t.serverId)).size !== targets.length) return null;
     const [sequence] = await tx.select({ id: sql<number>`COALESCE((SELECT seq FROM sqlite_sequence WHERE name='deployments'), 0)` })
@@ -96,6 +108,11 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
       transition.toReplicas !== admission.desiredReplicas || transition.watermark !== admission.watermark || transition.configuration !== snapshot(admission.service) ||
       JSON.stringify(transition.targets) !== JSON.stringify(admission.targets) ||
       JSON.stringify(transition.measurement) !== JSON.stringify(admission.measurement ?? null)) throw new Error('Node autoscale transition changed');
+    const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, Number(/-([1-9]\d*)$/.exec(fresh.runtimeId!)?.[1])) });
+    if (!validCapacity(capacity, fresh, Math.max(admission.service.runtimeReplicas, admission.desiredReplicas)) ||
+      transition.replicaInventory?.some(item => !capacity!.targets.some(target => target.name === item.name && target.id === item.id))) {
+      throw new Error('Node autoscale capacity identity changed');
+    }
     const [active, lifecycle, primary, fanout] = await Promise.all([
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, fresh.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
@@ -174,6 +191,10 @@ export async function freezeNodeAutoscaleInventory(db: DB, admission: NodeAutosc
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
     if (!transition) throw new Error('Node autoscale transition changed');
     if (transition.phase !== 'accepted') throw new Error('Node autoscale inventory phase changed');
+    const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, deploymentId) });
+    if (!validCapacity(capacity, admission.service, names.length) || selected.some(item => !capacity!.targets.some(target => target.name === item?.name && target.id === item?.id))) {
+      throw new Error('Node autoscale capacity identity changed');
+    }
     if (admission.measurement && (admission.measurement.sampledAt > Date.now() || Date.now() - admission.measurement.sampledAt > AUTOSCALE_STATS_MAX_AGE_MS)) {
       throw new Error('Node autoscale measurement expired before inventory freeze');
     }
