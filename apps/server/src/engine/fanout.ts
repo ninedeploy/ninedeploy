@@ -344,7 +344,7 @@ export async function deployToTargets(
         if (recoveryRefusal) throw new Error(recoveryRefusal.message);
         if (ctx.service.publishedPort) throw new Error('Routed fan-out cannot safely replace a container with a published host port; remove the published port before deploying this target');
       }
-      if (ctx.service.healthCheck === 'http-strict' || ctx.service.healthCheck === 'tcp') {
+      if (ctx.service.healthCheck === 'http-strict' || ctx.service.healthCheck === 'tcp' || !ctx.service.healthCheck && ctx.service.port) {
         if (!ctx.service.port) throw new Error('HTTP/TCP readiness needs a container port.');
         const refusal = await capabilityRefusal(agent, await nodeLabel(db, target.serverId), await agentTransportSealed(db, target.serverId),
           { cap: 'docker.probe', feature: 'probe application readiness', sealedRequired: true });

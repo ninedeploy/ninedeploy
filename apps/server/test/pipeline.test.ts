@@ -4242,7 +4242,7 @@ describe('0.16 T4: fan-out targets get the primary’s rules and never a differe
     baseSetup(db, { image: 'nginx:1.27' });
     withTarget(db);
     await runDeployment(db as never, 1);
-    expect(targetOps()).toEqual(['docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv', 'agent.ping',
+    expect(targetOps()).toEqual(['agent.ping', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv', 'agent.ping',
       'docker.inspect', 'docker.probe', 'docker.inspect', 'docker.inspect', 'docker.probe', 'docker.inspect', 'docker.inspect', 'docker.probe', 'docker.inspect']);
     expect(targetRow(updates)).toMatchObject({ status: 'running' });
   });

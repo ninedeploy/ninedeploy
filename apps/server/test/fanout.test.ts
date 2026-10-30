@@ -80,6 +80,17 @@ describe('multi-server fan-out (phase 1)', () => {
     expect(agentMocks.agentOp.mock.calls.some(call => call[2] === 'docker.probe')).toBe(true);
     expect(agentMocks.agentOp.mock.calls.some(call => call[2] === 'docker.rm' && call[3].name === 'web-t5-8')).toBe(false);
   });
+  it('does not retire a host-port target when the default probe is unsupported', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.16.0","caps":[]}'] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
+      return { exitCode: 0, lines: [] };
+    });
+    const result = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never,
+      { service: { ...svc, healthCheck: null, publishedPort: 8080 }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(result[0]).toMatchObject({ ok: false, runtimeId: 'web-t5-8', error: expect.stringMatching(/probe/i) });
+    expect(agentMocks.agentOp.mock.calls.some(call => ['docker.pull', 'file.writeEnv', 'docker.runEnv', 'docker.rm', 'docker.stop'].includes(call[2]))).toBe(false);
+  });
 
   it('does not start a fan-out candidate when the environment receipt names another file', async () => {
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string) => {

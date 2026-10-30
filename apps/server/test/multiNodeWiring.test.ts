@@ -22,6 +22,7 @@ const agentMocks = vi.hoisted(() => ({ agentOp: vi.fn() }));
 vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/agentClient.js')>()),
   agentOp: agentMocks.agentOp,
+  agentTransportSealed: async () => true,
 }));
 const blockerMocks = vi.hoisted(() => ({ serverDeleteBlockers: vi.fn(async (_db: unknown, _id: number) => [] as Array<{ code: string; message: string }>) }));
 vi.mock('../src/lib/serverDependents.js', () => blockerMocks);

@@ -434,7 +434,7 @@ describe('call sites', () => {
     const byServer = new Map(results.map((r) => [r.serverId, r]));
     expect(byServer.get(serverA)?.ok).toBe(true);
     expect(byServer.get(serverB)?.ok).toBe(false);
-    expect(byServer.get(serverB)?.error).toMatch(UPDATE);
+    expect(byServer.get(serverB)?.error).toMatch(/cannot probe application readiness/);
     expect(cloneTokenCalls()).toHaveLength(1);
     expect(revokedTokens()).toEqual(cloneTokens());
     expect(agents.get(serverB)!.git()).toHaveLength(0);
