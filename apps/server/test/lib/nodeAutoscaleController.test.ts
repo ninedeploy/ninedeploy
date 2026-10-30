@@ -67,6 +67,34 @@ it('finishes the ownership handoff even when a new deploy is queued during it', 
   expect((await service()).runtimeReplicas).toBe(2);
   expect(await transition()).toBeUndefined();
 });
+it('releases node ownership without scaling when a deploy is queued during fencing', async () => {
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const runtime = deps(), fence = runtime.fence; let queued = false;
+  runtime.fence = async (...args) => {
+    const result = await fence(...args);
+    if (!queued) { queued = true; await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' }); }
+    return result;
+  };
+  expect(await executeNodeAutoscale(c.db, admission, runtime)).toBe('aborted');
+  expect((await service()).runtimeReplicas).toBe(1);
+  expect(await transition()).toBeUndefined();
+  expect(calls).toEqual(['fence', 'fence', 'handoff-retire', 'handoff']);
+  expect(calls).not.toContain('start'); expect(calls).not.toContain('route');
+});
+it('releases node ownership without scaling when the measurement expires during fencing', async () => {
+  const now = Date.now();
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: now - 89_900, requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2, measurement))!;
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+  try {
+    const runtime = deps(), fence = runtime.fence;
+    runtime.fence = async (...args) => { const result = await fence(...args); clock.mockReturnValue(now + 200); return result; };
+    expect(await executeNodeAutoscale(c.db, admission, runtime)).toBe('aborted');
+    expect((await service()).runtimeReplicas).toBe(1); expect(await transition()).toBeUndefined();
+    expect(calls).not.toContain('start'); expect(calls).not.toContain('route');
+  } finally { clock.mockRestore(); }
+});
 it('connects an identity-bound measurement decision to durable admission and ordered scale-up', async () => {
   const now = Date.now(), svc = await service(), decider = createNodeAutoscaleDecider();
   const sample = (at: number, request: string, id = 'a'.repeat(64)) => ({ serverId: 4, serviceId: 1, deploymentId: 9,

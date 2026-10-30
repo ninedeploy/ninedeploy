@@ -52,8 +52,8 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
         if (!admission) return { state: 'held', reason: 'node autoscale ownership changed' };
         signal?.throwIfAborted();
         if (await deps.blocked(service.id)) return { state: 'pending', reason: 'node autoscale transition awaits recovery' };
-        await executeNodeAutoscale(db, admission, deps.runtime?.(admission, signal) ?? nodeAutoscaleRuntime(db, admission, { signal }));
-        return { state: 'completed' };
+        const result = await executeNodeAutoscale(db, admission, deps.runtime?.(admission, signal) ?? nodeAutoscaleRuntime(db, admission, { signal }));
+        return result === 'aborted' ? { state: 'held', reason: 'node autoscale decision was superseded' } : { state: 'completed' };
       } catch (error) { forget(service.id); throw error; }
       finally { busy.delete(service.id); }
     },

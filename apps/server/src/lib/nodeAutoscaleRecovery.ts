@@ -20,8 +20,8 @@ export async function reconcileNodeAutoscale(db: DB, options: { signal?: AbortSi
       const admission = await recoverNodeAutoscaleAdmission(db, item.serviceId);
       if (!admission) { results.push({ serviceId: item.serviceId, state: 'busy' }); continue; }
       if (await discardExpiredNodeAutoscale(db, admission)) { results.push({ serviceId: item.serviceId, state: 'discarded' }); continue; }
-      await executeNodeAutoscale(db, admission, options.runtime?.(admission) ?? nodeAutoscaleRuntime(db, admission, options));
-      results.push({ serviceId: item.serviceId, state: 'completed' });
+      const result = await executeNodeAutoscale(db, admission, options.runtime?.(admission) ?? nodeAutoscaleRuntime(db, admission, options));
+      results.push({ serviceId: item.serviceId, state: result === 'aborted' ? 'discarded' : 'completed' });
     } catch (error) {
       options.signal?.throwIfAborted();
       // A failed admission rolls its lease back. Defer that record without

@@ -3,7 +3,7 @@ import { eq, nodeAutoscaleTransitions, type DB, type Service } from '@ninedeploy
 import { containerInventoryReply, containerRetireSetReply, containerStartSetReply, containerStopSetReply, runtimeFenceReply } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { replicaNames } from '../engine/dockerNames.js';
-import { advanceNodeAutoscale, checkpointNodeAutoscale, freezeNodeAutoscaleInventory, nodeAutoscaleFence,
+import { abortUnstartedNodeAutoscale, advanceNodeAutoscale, checkpointNodeAutoscale, freezeNodeAutoscaleInventory, nodeAutoscaleFence,
   type NodeAutoscaleAdmission, type NodeAutoscalePhase } from './nodeAutoscaleAuthority.js';
 import { serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 
@@ -25,18 +25,32 @@ export interface NodeAutoscaleControllerDeps {
 }
 
 /** Execute a persisted scale decision; each externally visible effect is replayable under its stable revision. */
-export async function executeNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission, deps: NodeAutoscaleControllerDeps): Promise<void> {
+export async function executeNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission, deps: NodeAutoscaleControllerDeps): Promise<'completed' | 'aborted'> {
   const serverId = admission.service.serverId!, from = admission.service.runtimeReplicas, to = admission.desiredReplicas, up = to > from;
   const checkpoint = async (count: number) => { deps.signal?.throwIfAborted(); await checkpointNodeAutoscale(db, admission, count); deps.signal?.throwIfAborted(); };
   const effect = async <T>(count: number, fn: () => Promise<T>) => { await checkpoint(count); const result = await fn(); await checkpoint(count); return result; };
   const match = (reply: { requestId: string; serviceId: number; revision: number }, request: { requestId: string; serviceId: number; revision: number }) =>
     reply.requestId === request.requestId && reply.serviceId === request.serviceId && reply.revision === request.revision;
+  const handoffAll = async (count: number) => {
+    for (const node of [...admission.targets.map(target => target.serverId), serverId]) {
+      const request = { requestId: createHash('sha256').update(`${admission.owner.requestId}:scale-handoff:${node}`).digest('hex').slice(0, 32),
+        serviceId: admission.service.id, revision: serviceRuntimeRevision(admission.owner.epoch, 2), timeoutMs: 30_000, graceSeconds: 0, targets: [] };
+      const retired = containerRetireSetReply.parse(await effect(count, () => deps.retire(node, request)));
+      if (!match(retired, request) || retired.items.length !== 0) throw new Error('Node autoscale handoff retirement is unconfirmed');
+      const handoff = { requestId: request.requestId, serviceId: request.serviceId, revision: request.revision, timeoutMs: 30_000, deploymentWatermark: admission.watermark };
+      const reply = z.object({ requestId: z.string(), serviceId: z.number(), revision: z.number(), deploymentWatermark: z.number(), complete: z.literal(true) }).strict()
+        .parse(await effect(count, () => deps.handoff(node, handoff)));
+      if (!match(reply, handoff) || reply.deploymentWatermark !== handoff.deploymentWatermark) throw new Error('Node autoscale handoff is unconfirmed');
+    }
+  };
   for (;;) {
     const [row] = await db.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
     if (!row) throw new Error('Node autoscale transition disappeared');
     const phase = row.phase as NodeAutoscalePhase;
     const count = ['routing', 'draining', 'stopping', 'handoff'].includes(phase) ? to : from;
+    if (phase === 'accepted' && await abortUnstartedNodeAutoscale(db, admission)) continue;
     await checkpoint(count);
+    if (phase === 'fencing' && await abortUnstartedNodeAutoscale(db, admission)) continue;
     if (phase === 'accepted') {
       for (const node of [...admission.targets.map(target => target.serverId), serverId]) await effect(from, () => deps.preflight(node));
       await advanceNodeAutoscale(db, admission, 'accepted', 'fencing');
@@ -48,11 +62,27 @@ export async function executeNodeAutoscale(db: DB, admission: NodeAutoscaleAdmis
         const reply = runtimeFenceReply.parse(await effect(from, () => deps.fence(node, request)));
         if (!match(reply, request) || reply.deploymentWatermark !== request.deploymentWatermark) throw new Error('Node autoscale fence receipt changed');
       }
+      if (await abortUnstartedNodeAutoscale(db, admission)) continue;
       const request = nodeAutoscaleFence(admission);
       const evidence = await effect(from, () => deps.inventory(serverId, { ...request, expectedNames: replicaNames(admission.service.runtimeId!, Math.max(from, to)) }));
       await freezeNodeAutoscaleInventory(db, admission, evidence);
       await advanceNodeAutoscale(db, admission, 'fencing', 'prepared');
       continue;
+    }
+    if (phase === 'abort_fencing') {
+      for (const node of [...admission.targets.map(target => target.serverId), serverId]) await effect(from, () => deps.preflight(node));
+      for (const node of [...admission.targets.map(target => target.serverId), serverId]) {
+        const request = nodeAutoscaleFence(admission, node);
+        const reply = runtimeFenceReply.parse(await effect(from, () => deps.fence(node, request)));
+        if (!match(reply, request) || reply.deploymentWatermark !== request.deploymentWatermark) throw new Error('Node autoscale abort fence is unconfirmed');
+      }
+      await advanceNodeAutoscale(db, admission, 'abort_fencing', 'abort_handoff');
+      continue;
+    }
+    if (phase === 'abort_handoff') {
+      await handoffAll(from);
+      await advanceNodeAutoscale(db, admission, 'abort_handoff', 'completed');
+      return 'aborted';
     }
     const { timeoutMs: _timeout, ...fence } = nodeAutoscaleFence(admission);
     const inventory = containerInventoryReply.parse({ ...fence, complete: true, items: row.replicaInventory });
@@ -84,18 +114,9 @@ export async function executeNodeAutoscale(db: DB, admission: NodeAutoscaleAdmis
       if (!match(reply, mutation) || !sameTargets(reply.items)) throw new Error('Node autoscale Stop receipt changed');
       await advanceNodeAutoscale(db, admission, 'stopping', 'handoff');
     } else if (phase === 'handoff') {
-      for (const node of [...admission.targets.map(target => target.serverId), serverId]) {
-        const request = { requestId: createHash('sha256').update(`${admission.owner.requestId}:scale-handoff:${node}`).digest('hex').slice(0, 32),
-          serviceId: admission.service.id, revision: serviceRuntimeRevision(admission.owner.epoch, 2), timeoutMs: 30_000, graceSeconds: 0, targets: [] };
-        const retired = containerRetireSetReply.parse(await effect(to, () => deps.retire(node, request)));
-        if (!match(retired, request) || retired.items.length !== 0) throw new Error('Node autoscale handoff retirement is unconfirmed');
-        const handoff = { requestId: request.requestId, serviceId: request.serviceId, revision: request.revision, timeoutMs: 30_000, deploymentWatermark: admission.watermark };
-        const reply = z.object({ requestId: z.string(), serviceId: z.number(), revision: z.number(), deploymentWatermark: z.number(), complete: z.literal(true) }).strict()
-          .parse(await effect(to, () => deps.handoff(node, handoff)));
-        if (!match(reply, handoff) || reply.deploymentWatermark !== handoff.deploymentWatermark) throw new Error('Node autoscale handoff is unconfirmed');
-      }
+      await handoffAll(to);
       await advanceNodeAutoscale(db, admission, 'handoff', 'completed');
-      return;
+      return 'completed';
     } else throw new Error('Node autoscale phase is invalid');
   }
 }
