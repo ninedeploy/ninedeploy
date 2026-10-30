@@ -20,6 +20,7 @@ const svc = {
   image: 'nginx:1.25',
   port: 3000,
   healthPath: '/',
+  healthCheck: 'running',
   cpuShares: 0,
   cpuLimitMilli: 0,
   memLimitMb: 0,
@@ -51,6 +52,33 @@ describe('multi-server fan-out (phase 1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     agentMocks.agentOp.mockResolvedValue({ exitCode: 0, lines: [] });
+  });
+  it('does not promote a target missing its configured command healthcheck', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.runSpec","docker.healthCmd","docker.probe"]}'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      if (op === 'docker.probe') return { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
+      return { exitCode: 0, lines: [] };
+    });
+    const result = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never,
+      { service: { ...svc, healthCheck: 'command', healthCommand: 'check' }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(result[0]).toMatchObject({ ok: false, runtimeId: 'web-t5-8' });
+    expect(agentMocks.agentOp.mock.calls.some(call => call[2] === 'docker.rm' && call[3].name === 'web-t5-8')).toBe(false);
+  });
+  it('keeps the previous target when the default application port is not listening', async () => {
+    agentMocks.agentOp.mockImplementation(async (_db: unknown, _serverId: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.probe"]}'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      if (op === 'docker.probe') return { exitCode: 0, lines: ['ND-PROBE {"ready":false,"protocol":"tcp"}'] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
+      return { exitCode: 0, lines: [] };
+    });
+    const result = await deployToTargets(dbWithTargets([{ serverId: 5, runtimeId: 'web-t5-8' }]) as never,
+      { service: { ...svc, healthCheck: null, healthTimeoutSeconds: 1 }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null }, vi.fn());
+    expect(result[0]).toMatchObject({ ok: false, runtimeId: 'web-t5-8' });
+    expect(agentMocks.agentOp.mock.calls.some(call => call[2] === 'docker.probe')).toBe(true);
+    expect(agentMocks.agentOp.mock.calls.some(call => call[2] === 'docker.rm' && call[3].name === 'web-t5-8')).toBe(false);
   });
 
   it('does not start a fan-out candidate when the environment receipt names another file', async () => {
@@ -434,10 +462,10 @@ describe('multi-server fan-out (phase 1)', () => {
 describe('0.16 T4: fan-out runs what the primary runs (D1) and ships what it built (D2, design §6.5)', () => {
   const CAPS_ALL = 'ND-AGENT {"version":"0.15.2","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host","stream","docker.runSpec","volume.manage","image.manage"]}';
   const CAPS_015 = 'ND-AGENT {"version":"0.15.1","caps":["build-path-guard","workspace.remove","git.credential","terminal","terminal.host"]}';
-  const answer = (caps: string) =>
+  const answer = (caps: string, health = 'none') =>
     agentMocks.agentOp.mockImplementation(async (_db: unknown, _sid: number, op: string, params: Record<string, unknown>) => {
       if (op === 'agent.ping') return { exitCode: 0, lines: [caps] };
-      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: [`running|${health}|0|0`] };
       if (op === 'file.writeMount') return { exitCode: 0, lines: [`wrote .agent-files/${String(params.service)}/d${String(params.deploymentId)}/${String(params.id)}`] };
       if (op === 'docker.volumeInspect') throw new Error('agent docker.volumeInspect exited with 1');
       if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
@@ -492,7 +520,7 @@ describe('0.16 T4: fan-out runs what the primary runs (D1) and ships what it bui
     expect(ops()).toEqual(['agent.ping']);
 
     vi.clearAllMocks();
-    answer(CAPS_ALL.replace('"image.manage"', '"image.manage","docker.userLabels","docker.healthCmd"'));
+    answer(CAPS_ALL.replace('"image.manage"', '"image.manage","docker.userLabels","docker.healthCmd"'), 'healthy');
     const results = await deployToTargets(
       dbWithTargets([{ serverId: 5, runtimeId: null }]) as never,
       { service: { ...svc, ...shape }, deploymentId: 9, image: 'nginx:1.25', env: {}, primaryServerId: null },

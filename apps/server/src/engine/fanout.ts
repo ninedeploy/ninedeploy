@@ -102,7 +102,9 @@ async function waitRunning(
 ): Promise<boolean> {
   return createRemoteDockerBuilder(agent, { pollMs: HEALTH_POLL_MS }).isHealthy(
     { runtimeId: name, port: service.port, healthPath: service.healthPath ?? '/',
-      ...(service.healthCheck === 'http-strict' || service.healthCheck === 'tcp' ? { healthCheck: service.healthCheck } : {}),
+      ...(service.healthCheck === 'http-strict' || service.healthCheck === 'tcp' || service.healthCheck === 'running' || service.healthCheck === 'command'
+        ? { healthCheck: service.healthCheck } : {}),
+      ...(service.healthCheck === 'command' && service.healthCommand ? { healthCommand: service.healthCommand } : {}),
     },
     service.healthTimeoutSeconds != null ? service.healthTimeoutSeconds * 1000 : HEALTH_TIMEOUT_MS,
     undefined,
