@@ -4,13 +4,14 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { setImmediate as yieldIO } from 'node:timers';
 import { eq } from 'drizzle-orm';
-import { deploymentRuntimeOwners, deployments, domains, primaryTransitions, servers, services, type PrimaryRuntimeSnapshot } from '@ninedeploy/db';
+import { deploymentRuntimeOwners, deployments, domains, nodeDeploymentPreparations, primaryTransitions, servers, services, type PrimaryRuntimeSnapshot } from '@ninedeploy/db';
 import { reserveServiceRuntimeOwner } from '../src/lib/serviceRuntimeOwner.js';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { observabilityDb } from './fixtures/observability.js';
 import { createRemoteDockerBuilder } from '../src/engine/builders/remoteDocker.js';
 import { prepareNodeAutoscaleDeployment } from '../src/engine/builders/nodeAutoscaleDeployment.js';
 import { createNodeDeploymentAuthority } from '../src/lib/nodeDeploymentOwner.js';
+import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation, handoffNodeDeploymentPreparation } from '../src/lib/nodeDeploymentPreparation.js';
 
 const h = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn(async () => true), config: { paths: { dataDir: '', logsDir: '' }, acmeEmail: null } }));
 vi.mock('../src/config.js', () => ({ config: h.config }));
@@ -444,8 +445,11 @@ describe('primary recovery through SQLite and the real routing writer', () => {
       },
     };
     const svc = (await service())!;
+    const journal = { begin: (spec: Parameters<typeof beginNodeDeploymentPreparation>[2]) => beginNodeDeploymentPreparation(f.db, owner, spec),
+      complete: (targets: Parameters<typeof completeNodeDeploymentPreparation>[2]) => completeNodeDeploymentPreparation(f.db, owner, targets) };
     const prepared = await prepareNodeAutoscaleDeployment({ service: svc, owner, image: 'fixture:latest', creationWatermark: 9, env: {},
-      agent: prepareAgent, client, sealed: true, checkpoint: () => createNodeDeploymentAuthority(f.db, owner).check(), log: () => {} });
+      agent: prepareAgent, client, sealed: true, checkpoint: () => createNodeDeploymentAuthority(f.db, owner).check(), log: () => {}, journal });
+    expect(await f.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
     const lease = await beginPrimaryTransition(f.db, svc, 9, prepared.runtime, { runtimeId: old, port: 8080, healthPath: '/' }, null);
     try {
       expect(lease.row.orderedOwner).toMatchObject(owner);
@@ -454,7 +458,43 @@ describe('primary recovery through SQLite and the real routing writer', () => {
         { id: 'd'.repeat(64), name: candidate + '-r2', observed: true }, { id: 'e'.repeat(64), name: candidate + '-r3', observed: true },
       ]);
       expect(stops()).toEqual([]);
+      expect(await f.db.select().from(nodeDeploymentPreparations)).toEqual([]);
     } finally { await lease.release(); }
+  });
+  it('retains preparation evidence when the recovery lease, image or observed identity does not match', async () => {
+    const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
+    const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
+    const imageId = `sha256:${'f'.repeat(64)}`, token = 'recovery-owner';
+    await f.db.insert(deploymentRuntimeOwners).values(owner);
+    await beginNodeDeploymentPreparation(f.db, owner, { runtimeId: candidate, imageId, serving: 1, capacity: 1 });
+    await completeNodeDeploymentPreparation(f.db, owner, [{ name: candidate, id: candidateId }]);
+    await f.db.insert(primaryTransitions).values({ serviceId: 1, serverId: 5, deploymentId: 9, orderedOwner: owner,
+      previous: group(old, oldId), candidate: { ...group(candidate, candidateId), spares: [] }, imageDigest: imageId,
+      ownerToken: token, leaseUntil: new Date(Date.now() + 60_000) });
+    await expect(handoffNodeDeploymentPreparation(f.db, owner, 'wrong-owner')).rejects.toThrow(/handoff/);
+    await f.db.update(primaryTransitions).set({ imageDigest: `sha256:${'a'.repeat(64)}` });
+    await expect(handoffNodeDeploymentPreparation(f.db, owner, token)).rejects.toThrow(/handoff/);
+    await f.db.update(primaryTransitions).set({ imageDigest: imageId, candidate: { ...group(candidate, candidateId),
+      containers: [{ name: candidate, id: candidateId, observed: false }], spares: [] } });
+    await expect(handoffNodeDeploymentPreparation(f.db, owner, token)).rejects.toThrow(/handoff/);
+    expect(await f.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
+    expect(stops()).toEqual([]);
+  });
+  it('completes a preparation handoff after recovery claims an interrupted transition', async () => {
+    const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
+    const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
+    const imageId = `sha256:${'f'.repeat(64)}`;
+    await f.db.insert(deploymentRuntimeOwners).values(owner);
+    await beginNodeDeploymentPreparation(f.db, owner, { runtimeId: candidate, imageId, serving: 1, capacity: 1 });
+    await completeNodeDeploymentPreparation(f.db, owner, [{ name: candidate, id: candidateId }]);
+    await f.db.insert(primaryTransitions).values({ serviceId: 1, serverId: 5, deploymentId: 9, orderedOwner: owner,
+      previous: group(old, oldId), candidate: { ...group(candidate, candidateId),
+        containers: [{ name: candidate, id: candidateId, observed: false }], spares: [] }, imageDigest: imageId });
+    unready.add(oldId);
+    expect(await finish(recover())).toMatchObject({ recovered: 0, held: 1 });
+    expect(await f.db.select().from(nodeDeploymentPreparations)).toEqual([]);
+    expect((await rows())[0]?.candidate.containers[0]).toMatchObject({ id: candidateId, observed: true });
+    expect(stops()).toEqual([]);
   });
   it('refuses malformed capacity receipts before creating a recovery record', async () => {
     const svc = (await service())!, serving = { id: candidateId, name: candidate }, spare = { id: 'c'.repeat(64), name: candidate + '-r2' };

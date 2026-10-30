@@ -12,6 +12,7 @@ import { verifyNodeReadiness } from '../lib/nodeReadiness.js';
 import { createNodeDeploymentAuthority } from '../lib/nodeDeploymentOwner.js';
 import { createNodeRuntimeMutationClient } from '../lib/nodeRuntimeMutationClient.js';
 import { retireNodeDeploymentGeneration } from '../lib/nodeDeploymentRetirement.js';
+import { handoffNodeDeploymentPreparation } from '../lib/nodeDeploymentPreparation.js';
 import { capture, run, sleep } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
 import { portProxyDir, restrictedMappings } from '../lib/portProxy.js';
@@ -343,7 +344,11 @@ export async function beginPrimaryTransition(db: DB, service: Service, deploymen
   }).onConflictDoNothing().returning();
   if (!row) throw new Error('Primary runtime recovery is pending; resolve it before another deployment');
   const lease = primaryLease(db, row, token, features);
-  try { await lease.captureIdentities(); return lease; }
+  try {
+    await lease.captureIdentities();
+    if (candidate.nodeDeploymentOwner && candidate.nodeCapacityTargets) await handoffNodeDeploymentPreparation(db, candidate.nodeDeploymentOwner, token);
+    return lease;
+  }
   catch { await lease.release('Container identities could not be captured'); throw new PrimaryIdentityUnconfirmed(); }
 }
 
@@ -414,6 +419,7 @@ export async function reconcilePrimaryTransitions(db: DB, opts: { serviceId?: nu
       const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, entry.deploymentId) });
       if (!dep || dep.serviceId !== entry.serviceId) throw new Error('Deployment history unavailable; review retained generations');
       await lease.captureIdentities();
+      if (entry.orderedOwner) await handoffNodeDeploymentPreparation(db, entry.orderedOwner, token, false);
       endCanary(entry.serviceId);
       const interruptedActive = entry.interrupted && (ACTIVE as readonly string[]).includes(dep.status);
       let selected = svc.runtimeId === entry.candidate.runtimeId ? lease.row.candidate : lease.row.previous;

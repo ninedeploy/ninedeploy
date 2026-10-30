@@ -1,4 +1,4 @@
-import { eq, deploymentRuntimeOwners, deployments, nodeDeploymentPreparations, services, type DB, type DeploymentRuntimeOwner } from '@ninedeploy/db';
+import { eq, deploymentRuntimeOwners, deployments, nodeDeploymentPreparations, primaryTransitions, services, type DB, type DeploymentRuntimeOwner } from '@ninedeploy/db';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { readServiceRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 
@@ -87,5 +87,33 @@ export async function readNodeDeploymentPreparation(db: DB, owner: DeploymentRun
       throw new Error('Node preparation evidence is invalid');
     }
     return row;
+  });
+}
+
+/** Remove preparation evidence only after the leased recovery record owns the same observed identities. */
+export async function handoffNodeDeploymentPreparation(db: DB, owner: DeploymentRuntimeOwner, token: string, required = true) {
+  return db.transaction(async tx => {
+    const service = await assertOwner(tx, owner);
+    const row = await tx.query.nodeDeploymentPreparations.findFirst({ where: eq(nodeDeploymentPreparations.deploymentId, owner.deploymentId) });
+    if (!row && !required) return false;
+    if (!row || !validRecord(row, owner, service.slug) || row.phase !== 'prepared' || !row.targets) throw new Error('Prepared node evidence unavailable');
+    const transition = await tx.query.primaryTransitions.findFirst({ where: eq(primaryTransitions.serviceId, owner.serviceId) });
+    const ordered = transition?.orderedOwner;
+    const candidate = transition?.candidate;
+    const identities = candidate && Array.isArray(candidate.containers) && Array.isArray(candidate.spares)
+      ? [...candidate.containers, ...candidate.spares] : [];
+    if (!transition || transition.deploymentId !== owner.deploymentId || transition.serverId !== owner.serverId ||
+      !ordered || ordered.deploymentId !== owner.deploymentId || ordered.serviceId !== owner.serviceId || ordered.serverId !== owner.serverId ||
+      ordered.epoch !== owner.epoch || ordered.requestId !== owner.requestId || transition.ownerToken !== token ||
+      !transition.leaseUntil || transition.leaseUntil.getTime() <= Date.now() || transition.phase !== 'ready' || transition.routingTouched ||
+      transition.imageDigest !== row.imageId || candidate?.runtimeId !== row.runtimeId || candidate.replicas !== row.serving ||
+      !Array.isArray(candidate.containers) || candidate.containers.length !== row.serving || !Array.isArray(candidate.spares) ||
+      (service.runtimeId !== candidate.runtimeId && service.runtimeId !== transition.previous?.runtimeId && !(service.runtimeId == null && !transition.previous)) ||
+      row.targets.some((target, index) => identities[index]?.id !== target.id || identities[index]?.name !== target.name || identities[index]?.observed !== true)) {
+      throw new Error('Node preparation recovery handoff is unconfirmed');
+    }
+    const deleted = await tx.delete(nodeDeploymentPreparations).where(eq(nodeDeploymentPreparations.deploymentId, owner.deploymentId)).returning();
+    if (deleted.length !== 1) throw new Error('Node preparation evidence disappeared');
+    return true;
   });
 }
