@@ -196,6 +196,32 @@ describe('primary recovery through SQLite and the real routing writer', () => {
       expect(h.agent.mock.calls.filter(call => call[2] === 'docker.readiness')).toEqual([]);
     } finally { await lease.release(); }
   });
+  it('keeps the name and immutable identity paired on the legacy node readiness path', async () => {
+    const runtime = { runtimeId: candidate, nodeReadinessId: candidateId, port: 8080, healthPath: '/' };
+    const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { ...runtime, runtimeId: old, nodeReadinessId: oldId }, null);
+    const builder = { isHealthy: vi.fn(async () => true) };
+    try {
+      await finish(lease.verifyCandidate(builder as never, runtime, 10_000, () => undefined));
+      expect(builder.isHealthy.mock.calls[0]![0]).toMatchObject({ runtimeId: candidate, nodeReadinessId: candidateId });
+    } finally { await lease.release(); }
+  });
+  it.each([true, false])('rechecks the default node port before candidate promotion (listening=%s)', async listening => {
+    caps.push('docker.readiness'); const original = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => {
+      const request = args[3];
+      if (args[2] === 'docker.readiness') return { exitCode: 0, lines: [`ND-READINESS ${JSON.stringify({ requestId: request.requestId, complete: true,
+        items: request.targets.map((target: { id: string; name: string }) => ({ ...target, status: 'running', health: 'none', restarts: 0, failingStreak: 0, ready: listening })) })}`] };
+      return original(...args);
+    });
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/' };
+    const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { ...runtime, runtimeId: old }, null);
+    try {
+      const outcome = await finish(lease.verifyCandidate({ isHealthy: vi.fn() } as never, runtime, 10_000, () => undefined).then(() => null, error => error));
+      if (listening) expect(outcome).toBeNull(); else expect(outcome).toHaveProperty('message', expect.stringMatching(/readiness/));
+      const calls = h.agent.mock.calls.filter(call => call[2] === 'docker.readiness');
+      expect(calls).toHaveLength(listening ? 3 : 5); expect(calls.every(call => call[3].mode === 'tcp' && call[3].port === 8080)).toBe(true);
+    } finally { await lease.release(); }
+  });
   it('finishes an interrupted cutover only after fresh readiness and loaded routing acknowledgement', async () => {
     await journal(); const ack = gate(); confirm = () => ack.promise;
     const run = recover(); await pump(run, true);

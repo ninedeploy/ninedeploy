@@ -267,7 +267,7 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, feature
         const mode = runtime.healthCheck;
         const ready = await verifyNodeReadiness(caller(db, row.serverId), {
           targets: group.containers.map(item => ({ id: item.id!, name: item.name })),
-          mode: mode === 'http-strict' || mode === 'tcp' || mode === 'running' || mode === 'command' ? mode : 'auto',
+          mode: mode === 'http-strict' || mode === 'tcp' || mode === 'running' || mode === 'command' ? mode : runtime.port ? 'tcp' : 'auto',
           port: runtime.port, path: runtime.healthPath,
         }, timeoutMs, readinessCheckpoint, log);
         await readinessCheckpoint();
@@ -277,7 +277,8 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, feature
       await mapFour(row.candidate.containers, async item => {
         await readinessCheckpoint();
         if (!item.id) throw new Error(`Candidate ${item.name} is missing`);
-        const probe = { ...runtime, runtimeId: item.id };
+        const probe = row.serverId == null ? { ...runtime, runtimeId: item.id }
+          : { ...runtime, runtimeId: item.name, nodeReadinessId: item.id };
         const remaining = Math.max(1, deadline - Date.now());
         const healthy = row.serverId == null ? await builder.isHealthy(probe, remaining, 10_000, log)
           : await builder.isHealthy(probe, remaining, 10_000, log, { checkpoint: readinessCheckpoint });
