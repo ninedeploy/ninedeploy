@@ -30,6 +30,8 @@ export interface UsageFigures {
   cpuCoreHours: number;
   /** Memory held over time, in GiB-hours. */
   memoryGbHours: number;
+  /** The service's volumes over time, in GB-hours (sampled hourly). */
+  diskGbHours: number;
   /** Bytes answered through the proxy, in GB (10^9). Needs traffic analytics. */
   egressGb: number;
   requests: number;

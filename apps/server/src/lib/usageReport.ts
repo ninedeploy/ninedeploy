@@ -22,12 +22,15 @@ import {
   usageCostsInput,
 } from '@ninedeploy/schemas';
 import { readObservabilitySettings } from './observabilitySettings.js';
+import { DISK_SAMPLE_SECONDS } from './diskUsage.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 import { trafficAnalyticsEnabled } from './trafficAnalytics.js';
 
 /**
  * Usage and cost (ROADMAP item 9), read from what the panel already keeps:
  *
+ * - Disk from the hourly samples of each service's volumes (lib/diskUsage.ts),
+ *   through the same tables and tiers.
  * - CPU and memory from the collector's 30-second samples (`metrics`, about a
  *   day) and their summaries (`metric_rollups`, 5-minute through 7 days and
  *   hourly after that, as long as resource history is kept). The window is
@@ -69,6 +72,7 @@ export async function saveUsageCosts(db: DB, raw: UsageCostsInput): Promise<Usag
 interface Raw {
   cpu: number;
   mem: number;
+  disk: number;
   bytes: number;
   requests: number;
 }
@@ -80,15 +84,16 @@ async function sampleSums(db: DB, from: Date, now: Date, retentionDays: number):
     for (const r of rows) {
       const total = Number(r.total);
       if (!Number.isFinite(total)) continue;
-      const row = out.get(r.serviceId) ?? { cpu: 0, mem: 0, bytes: 0, requests: 0 };
+      const row = out.get(r.serviceId) ?? { cpu: 0, mem: 0, disk: 0, bytes: 0, requests: 0 };
       if (r.kind === 'cpu') row.cpu += total;
       else if (r.kind === 'memory') row.mem += total;
+      else if (r.kind === 'disk') row.disk += total;
       out.set(r.serviceId, row);
     }
   };
   const rawStart = floorTime(now.getTime() - DAY_MS, 300);
   const fineStart = floorTime(now.getTime() - 7 * DAY_MS, 3600);
-  const kinds = sql`${metrics.kind} in ('cpu', 'memory')`;
+  const kinds = sql`${metrics.kind} in ('cpu', 'memory', 'disk')`;
   add(
     await db
       .select({ serviceId: metrics.serviceId, kind: metrics.kind, total: sql<number>`sum(${metrics.value})` })
@@ -108,7 +113,7 @@ async function sampleSums(db: DB, from: Date, now: Date, retentionDays: number):
           .from(metricRollups)
           .where(
             and(
-              sql`${metricRollups.kind} in ('cpu', 'memory')`,
+              sql`${metricRollups.kind} in ('cpu', 'memory', 'disk')`,
               eq(metricRollups.bucketSeconds, tier.seconds),
               gte(metricRollups.ts, from > tier.start ? from : tier.start),
               lt(metricRollups.ts, tier.end),
@@ -132,18 +137,19 @@ async function trafficSums(db: DB, from: Date, into: Map<number, Raw>): Promise<
     .where(and(eq(trafficRollups.granularity, 3600), gte(trafficRollups.bucketStart, Math.floor(from.getTime() / 1000)), isNotNull(trafficRollups.serviceId)))
     .groupBy(trafficRollups.serviceId);
   for (const r of rows) {
-    const row = into.get(r.serviceId!) ?? { cpu: 0, mem: 0, bytes: 0, requests: 0 };
+    const row = into.get(r.serviceId!) ?? { cpu: 0, mem: 0, disk: 0, bytes: 0, requests: 0 };
     row.bytes += Number(r.bytes) || 0;
     row.requests += Number(r.requests) || 0;
     into.set(r.serviceId!, row);
   }
 }
 
-const zero = (): UsageFigures => ({ cpuCoreHours: 0, memoryGbHours: 0, egressGb: 0, requests: 0, cost: null });
+const zero = (): UsageFigures => ({ cpuCoreHours: 0, memoryGbHours: 0, diskGbHours: 0, egressGb: 0, requests: 0, cost: null });
 
 function addInto(target: UsageFigures, f: UsageFigures): void {
   target.cpuCoreHours += f.cpuCoreHours;
   target.memoryGbHours += f.memoryGbHours;
+  target.diskGbHours += f.diskGbHours;
   target.egressGb += f.egressGb;
   target.requests += f.requests;
   if (f.cost !== null) target.cost = (target.cost ?? 0) + f.cost;
@@ -153,6 +159,7 @@ const rounded = <T extends UsageFigures>(f: T): T => ({
   ...f,
   cpuCoreHours: round(f.cpuCoreHours, 4),
   memoryGbHours: round(f.memoryGbHours, 4),
+  diskGbHours: round(f.diskGbHours, 4),
   egressGb: round(f.egressGb, 4),
   cost: f.cost === null ? null : round(f.cost, 2),
 });
@@ -190,10 +197,12 @@ export async function buildUsageReport(db: DB, days: number, now = new Date()): 
   const hoursPerSample = USAGE_SAMPLE_SECONDS / 3600;
   const figures = new Map<number, UsageFigures>();
   for (const s of serviceRows) {
-    const r = sums.get(s.id) ?? { cpu: 0, mem: 0, bytes: 0, requests: 0 };
+    const r = sums.get(s.id) ?? { cpu: 0, mem: 0, disk: 0, bytes: 0, requests: 0 };
     figures.set(s.id, {
       cpuCoreHours: (r.cpu / 10_000) * hoursPerSample,
       memoryGbHours: (r.mem / 1024 ** 3) * hoursPerSample,
+      // Each disk sample stands for an hour.
+      diskGbHours: (r.disk / 1e9) * (DISK_SAMPLE_SECONDS / 3600),
       egressGb: r.bytes / 1e9,
       requests: r.requests,
       cost: null,

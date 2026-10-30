@@ -6002,4 +6002,7 @@ export const TR: Readonly<Record<string, string>> = {
   'File mounts work for docker services only; this service will not deploy until they are removed.':
     'Dosya bağlamaları yalnızca docker servislerinde çalışır; bunlar kaldırılana kadar bu servis dağıtılmaz.',
   'File mounts work for docker services only.': 'Dosya bağlamaları yalnızca docker servislerinde çalışır.',
+
+  // ── Usage disk ────────────────────────────────────────────────────────
+  'Disk (GB-hours)': 'Disk (GB-saat)',
 };

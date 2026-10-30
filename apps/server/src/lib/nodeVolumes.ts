@@ -143,6 +143,21 @@ async function nodeVolumeSize(serverId: number, name: string, op: NodeAgentOp): 
   }
 }
 
+/** A node volume's size in bytes for the usage report; null when the node cannot measure it (never a false 0). */
+export async function measureNodeVolume(db: DB, serverId: number, name: string, op: NodeAgentOp = defaultOp(db)): Promise<number | null> {
+  try {
+    const res = await op(serverId, 'docker.volumeSize', { name }, { tolerateExit: true });
+    if (res.exitCode !== 0) return null;
+    for (const line of res.lines) {
+      const n = Number(line.trim().split(/\s+/)[0]);
+      if (Number.isSafeInteger(n) && n >= 0) return n;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Owners of node volumes: only a service or database ON THIS NODE owns one
  * (the same rules as the panel host's `resolveVolumeOwner`; a node database

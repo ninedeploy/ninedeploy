@@ -111,6 +111,19 @@ describe('usage figures', () => {
     expect((await lib.buildUsageReport(db, 30, NOW)).historyDays).toBe(1);
   });
 
+  it('counts disk from the hourly samples: each one an hour of the bytes the service’s volumes held', async () => {
+    h.retention = 30;
+    // Two hourly samples in the raw day (2 GB, then 4 GB), and an older one in the 5-minute tier (1 GB).
+    await db.insert(metrics).values([
+      { serviceId: ids.a, kind: 'disk', value: 2e9, ts: new Date(NOW.getTime() - 2 * 3600_000) },
+      { serviceId: ids.a, kind: 'disk', value: 4e9, ts: new Date(NOW.getTime() - 3600_000) },
+    ]);
+    await rollup(ids.a, 'disk', 300, 3 * DAY, 1e9, 1);
+    const day = await lib.buildUsageReport(db, 1, NOW);
+    expect(day.services.find((s) => s.serviceId === ids.a)).toMatchObject({ diskGbHours: 6, cpuCoreHours: 0 });
+    expect((await lib.buildUsageReport(db, 7, NOW)).totals.diskGbHours).toBe(7);
+  });
+
   it('adds bandwidth and requests from the hourly traffic rows of the window', async () => {
     h.traffic = true;
     const sec = (ms: number) => Math.floor(ms / 1000);
@@ -136,8 +149,8 @@ describe('usage figures', () => {
     await raw(ids.a, 'cpu', 10_000, 120);
     await raw(ids.b, 'cpu', 20_000, 120);
     const report = await lib.buildUsageReport(db, 1, NOW);
-    expect(report.projects).toEqual([{ id: ids.project, name: 'Shop', services: 2, cpuCoreHours: 3, memoryGbHours: 0, egressGb: 0, requests: 0, cost: null }]);
-    expect(report.workspaces).toEqual([{ id: ids.workspace, name: 'Acme', services: 1, cpuCoreHours: 1, memoryGbHours: 0, egressGb: 0, requests: 0, cost: null }]);
+    expect(report.projects).toEqual([{ id: ids.project, name: 'Shop', services: 2, cpuCoreHours: 3, memoryGbHours: 0, diskGbHours: 0, egressGb: 0, requests: 0, cost: null }]);
+    expect(report.workspaces).toEqual([{ id: ids.workspace, name: 'Acme', services: 1, cpuCoreHours: 1, memoryGbHours: 0, diskGbHours: 0, egressGb: 0, requests: 0, cost: null }]);
     expect(report.totals).toMatchObject({ cpuCoreHours: 3, cost: null });
   });
 });

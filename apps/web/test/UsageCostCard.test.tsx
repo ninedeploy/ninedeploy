@@ -11,7 +11,7 @@ vi.mock('../src/lib/api.js', async () => {
   return createFakeApiModule();
 });
 
-const figures = (cpu: number, cost: number | null) => ({ cpuCoreHours: cpu, memoryGbHours: 2, egressGb: 0.5, requests: 1200, cost });
+const figures = (cpu: number, cost: number | null) => ({ cpuCoreHours: cpu, memoryGbHours: 2, diskGbHours: 7.5, egressGb: 0.5, requests: 1200, cost });
 const REPORT = {
   from: '2026-10-01T00:00:00.000Z',
   to: '2026-10-31T00:00:00.000Z',
@@ -43,6 +43,7 @@ describe('UsageCostCard (ROADMAP item 9)', () => {
     const api1 = (await screen.findByText('api')).closest('tr')!;
     expect(within(api1).getByText('Panel host')).toBeInTheDocument();
     expect(within(api1).getByText('18 EUR')).toBeInTheDocument();
+    expect(within(api1).getByText(/^7[.,]5$/)).toBeInTheDocument();
     expect(within((screen.getByText('edge')).closest('tr')!).getByText('—')).toBeInTheDocument();
     expect(within(screen.getByText('Total').closest('tr')!).getByText('18 EUR')).toBeInTheDocument();
     expect(screen.getByText('Not carried by any service: node-x 5 EUR')).toBeInTheDocument();

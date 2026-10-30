@@ -9,6 +9,8 @@ import { createNodeHealthWatch } from '../lib/nodeHealth.js';
 import { readCertificates } from '../engine/proxy.js';
 import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
 import { collectNodeMetrics, type NodeContainerStats, type NodeMetricSamples } from '../lib/nodeMetrics.js';
+import { DISK_SAMPLE_SECONDS, sampleServiceDisk } from '../lib/diskUsage.js';
+import { measureNodeVolume } from '../lib/nodeVolumes.js';
 
 const INTERVAL_MS = 30_000;
 
@@ -50,6 +52,8 @@ export default fp(
     let running = true;
     let timer: NodeJS.Timeout | undefined;
     let prevCpu: ReturnType<typeof cpus> | null = null;
+    /** When disk was last sampled (0: on the first cycle). */
+    let lastDiskSampleAt = 0;
     const nodeContainers: NodeContainerStats = new Map();
     const nodeSamples: NodeMetricSamples = new Map();
     const nodeAbort = new AbortController();
@@ -129,6 +133,15 @@ export default fp(
         }
 
         await evaluateAlerts(fastify.db, snapshots);
+
+        // Disk per service for the usage report, hourly (ROADMAP item 9). Not awaited: measuring
+        // many volumes must not delay the 30-second samples; the hour gap keeps runs from overlapping.
+        if (now.getTime() - lastDiskSampleAt >= DISK_SAMPLE_SECONDS * 1000) {
+          lastDiskSampleAt = now.getTime();
+          void sampleServiceDisk(fastify.db, { nodeSize: (serverId, volume) => measureNodeVolume(fastify.db, serverId, volume) }, now).catch((err: unknown) =>
+            fastify.log.warn({ err }, 'disk usage sampling failed'),
+          );
+        }
 
         await pruneServiceMetrics(fastify.db);
       } catch (err) {

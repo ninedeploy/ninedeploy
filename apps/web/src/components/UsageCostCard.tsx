@@ -89,6 +89,7 @@ function UsageTable({ report, view }: { report: UsageReport; view: View }) {
                 <th className="py-1 pr-3 font-medium">{t('Name')}</th>
                 <th className="py-1 pr-3 text-right font-medium">{t('CPU (core-hours)')}</th>
                 <th className="py-1 pr-3 text-right font-medium">{t('Memory (GiB-hours)')}</th>
+                <th className="py-1 pr-3 text-right font-medium">{t('Disk (GB-hours)')}</th>
                 <th className="py-1 pr-3 text-right font-medium">{t('Egress (GB)')}</th>
                 <th className="py-1 pr-3 text-right font-medium">{t('Requests')}</th>
                 <th className="py-1 text-right font-medium">{t('Cost')}</th>
@@ -102,6 +103,7 @@ function UsageTable({ report, view }: { report: UsageReport; view: View }) {
                   </td>
                   <td className="py-1.5 pr-3 text-right font-mono">{num(r.cpuCoreHours)}</td>
                   <td className="py-1.5 pr-3 text-right font-mono">{num(r.memoryGbHours)}</td>
+                  <td className="py-1.5 pr-3 text-right font-mono">{num(r.diskGbHours ?? 0)}</td>
                   <td className="py-1.5 pr-3 text-right font-mono">{num(r.egressGb, 3)}</td>
                   <td className="py-1.5 pr-3 text-right font-mono">{num(r.requests, 0)}</td>
                   <td className="py-1.5 text-right font-mono">{money(r.cost)}</td>
@@ -114,6 +116,7 @@ function UsageTable({ report, view }: { report: UsageReport; view: View }) {
                   <td className="py-1.5 pr-3 font-medium">{t('Total')}</td>
                   <td className="py-1.5 pr-3 text-right font-mono">{num(report.totals.cpuCoreHours)}</td>
                   <td className="py-1.5 pr-3 text-right font-mono">{num(report.totals.memoryGbHours)}</td>
+                  <td className="py-1.5 pr-3 text-right font-mono">{num(report.totals.diskGbHours ?? 0)}</td>
                   <td className="py-1.5 pr-3 text-right font-mono">{num(report.totals.egressGb, 3)}</td>
                   <td className="py-1.5 pr-3 text-right font-mono">{num(report.totals.requests, 0)}</td>
                   <td className="py-1.5 text-right font-mono">{money(report.totals.cost)}</td>
