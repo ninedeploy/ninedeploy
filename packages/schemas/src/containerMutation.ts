@@ -65,10 +65,10 @@ export type ContainerStopSetReply = z.infer<typeof containerStopSetReply>;
 /** A revision-bound update for a complete set of immutable service replicas. */
 export const containerLimitsRequest = z.object({ requestId, serviceId: positive, revision: positive,
   timeoutMs: z.number().int().min(1).max(60_000), targets: z.array(target).min(1).max(10).refine(distinct, 'Duplicate limit target'),
-  cpuShares: z.number().int().min(1).max(262_144).optional(),
-  cpuLimitMilli: z.number().int().min(1).max(512_000).optional(),
-  memLimitMb: z.number().int().min(1).max(Math.floor(Number.MAX_SAFE_INTEGER / 1_048_576)).optional(),
-}).strict().refine(input => input.cpuShares !== undefined || input.cpuLimitMilli !== undefined || input.memLimitMb !== undefined, 'At least one limit is required');
+  cpuShares: z.number().int().min(0).max(262_144).optional(),
+  cpuLimitMilli: z.number().int().min(0).max(512_000).optional(),
+  memLimitMb: z.number().int().min(0).max(Math.floor(Number.MAX_SAFE_INTEGER / 1_048_576)).optional(),
+}).strict().refine(input => (input.cpuShares ?? 0) > 0 || (input.cpuLimitMilli ?? 0) > 0 || (input.memLimitMb ?? 0) > 0, 'At least one positive limit is required');
 export const containerLimitsReply = z.object({ requestId, serviceId: positive, revision: positive, complete: z.literal(true),
   items: z.array(target).min(1).max(10).refine(distinct, 'Duplicate limit receipt identity'),
 }).strict();

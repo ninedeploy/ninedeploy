@@ -30,6 +30,7 @@ import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from '../lib/runtimeReplicaCounts.js';
 import { applyLocalLimits } from '../lib/localLimitUpdate.js';
+import { applyNodeLimits } from '../lib/nodeLimitUpdate.js';
 import { acceptNodeLifecycleIntent, retryNodeLifecycleIntent } from '../lib/nodeLifecycleIntent.js';
 import { assertNodeLifecycleAvailable, publicNodeLifecycle } from '../lib/nodeLifecycleRuntime.js';
 import { targetsForService, teardownTargets, type FanoutTarget } from '../engine/fanout.js';
@@ -1278,8 +1279,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const [svc] = await app.db.update(services).set(updateData).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
     let liveApplied = false;
-    // Node and Swarm services apply the saved limits on their next deploy.
-    // A node runtime name must never be sent to the panel host's Docker daemon.
+    // Swarm services apply saved limits on the next deploy. Node limits use
+    // the selected agents, never the panel host's Docker daemon.
     // A cleared limit is omitted by the current Docker update path; avoid a
     // partial update that would incorrectly report the whole request as live.
     const clearsLimit = [input.cpuShares, input.cpuLimitMilli, input.memLimitMb].some(value => value === null || value === 0);
@@ -1292,6 +1293,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
           current.cpuShares === svc.cpuShares && current.cpuLimitMilli === svc.cpuLimitMilli && current.memLimitMb === svc.memLimitMb &&
           (await targetsForService(app.db, svc.id)).length === 0;
       });
+    }
+    if (!clearsLimit && svc.type === 'docker' && svc.serverId != null && svc.status === 'running' && svc.runtimeId && !swarmRuntimeOf(svc)) {
+      liveApplied = await applyNodeLimits(app.db, svc);
     }
     void audit(app.db, req.user!.id, 'service.limits', `${svc.name}: cpu=${svc.cpuShares} cpus=${svc.cpuLimitMilli / 1000} mem=${svc.memLimitMb}MB`);
     return { cpuShares: svc.cpuShares, cpuLimitMilli: svc.cpuLimitMilli, memLimitMb: svc.memLimitMb, liveApplied };

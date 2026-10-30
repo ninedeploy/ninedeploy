@@ -51,7 +51,7 @@ it('dispatches an owned limit update and emits its exact receipt', async () => {
   const id = 'b'.repeat(64), target = { id, name: 'web-10', deploymentId: 10 };
   const input = { requestId: 'a'.repeat(32), serviceId: 7, revision: 8, timeoutMs: 5000, memLimitMb: 64, targets: [target] };
   const row = { id, name: '/web-10', managed: 'service', serviceId: '7', deploymentId: '10', status: 'running', running: true,
-    restarts: 0, cpuShares: 0, nanoCpus: 0, memory: 0, memorySwap: 0 };
+    restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 0, memorySwap: 0 };
   io.spawn.mockImplementation(async (_bin, args: string[], sink: (line: string) => void) => {
     if (args[0] === 'inspect') { sink(JSON.stringify(row)); return 0; }
     if (args[0] === 'update') { row.memory = 64 * 1_048_576; row.memorySwap = row.memory; return 0; }

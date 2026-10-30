@@ -51,7 +51,7 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
   return {
     fence(params: RuntimeFenceRequest) {
       const input = runtimeFenceRequest.parse(params);
-      return exchange('docker.runtimeFence', 'ND-RUNTIME-FENCE ', input, value => runtimeFenceReply.parse(value), () => true);
+      return exchange('docker.runtimeFence', 'ND-RUNTIME-FENCE ', input, value => runtimeFenceReply.parse(value), reply => reply.deploymentWatermark === input.deploymentWatermark);
     },
     prepare(params: ContainerPrepareRequest) {
       const input = containerPrepareRequest.parse(params), serving = new Set(input.startNames ?? input.specs.map(spec => spec.name));

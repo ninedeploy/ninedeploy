@@ -16,7 +16,7 @@ const runtime = () => createNodeRuntimeMutation(root);
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'nd-runtime-limits-')); ignoreUpdate = false;
   rows = ['a', 'b'].map((value, index) => ({ id: value.repeat(64), name: index ? '/web-10-r2' : '/web-10', managed: 'service',
-    serviceId: '7', deploymentId: '10', status: 'running', running: true, restarts: 0, cpuShares: 0, nanoCpus: 0, memory: 0, memorySwap: 0 }));
+    serviceId: '7', deploymentId: '10', status: 'running', running: true, restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 0, memorySwap: 0 }));
   io.spawn.mockReset().mockImplementation(async (_bin, args: string[], sink: (line: string) => void) => {
     if (args[0] === 'inspect') { const row = rows.find(item => item.id === args.at(-1)); if (!row) return 1; sink(JSON.stringify(row)); return 0; }
     if (args[0] === 'update') { if (!ignoreUpdate) for (const row of rows) { row.memory = 64 * 1_048_576; row.memorySwap = row.memory; } return 0; }
@@ -43,6 +43,11 @@ it('rejects a foreign replica before changing any container', async () => {
 it('refuses to confirm limits the daemon did not actually apply', async () => {
   ignoreUpdate = true;
   await expect(runtime().limits(request())).rejects.toThrow(/unconfirmed/);
+});
+it('checks unlimited fields before updating another resource', async () => {
+  rows[1]!.cpuQuota = 50_000;
+  await expect(runtime().limits({ ...request(), cpuLimitMilli: 0, cpuShares: 0 })).rejects.toThrow(/requires a deploy/);
+  expect(io.spawn.mock.calls.some(call => call[1][0] === 'update')).toBe(false);
 });
 it('rejects a delayed update after a newer service fence without Docker effects', async () => {
   await runtime().fence({ requestId: '2'.repeat(32), serviceId: 7, revision: 9, timeoutMs: 5000 });

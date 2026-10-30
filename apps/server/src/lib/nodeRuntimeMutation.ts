@@ -14,7 +14,7 @@ import { replayHandedOffStop } from './nodeLegacyHandoff.js';
 const MODE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_protocol (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)';
 const PREPARE_SHAPE_SCHEMA = 'CREATE TABLE IF NOT EXISTS runtime_prepare_shape (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, request_hash TEXT NOT NULL, shape_hash TEXT NOT NULL)';
 const INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"nonce":{{json (index .Config.Labels "ninedeploy.mutation")}},"specHash":{{json (index .Config.Labels "ninedeploy.spec")}},"status":{{json .State.Status}},"running":{{json .State.Running}},"networks":{{json .NetworkSettings.Networks}}}';
-const LIMIT_INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"status":{{json .State.Status}},"running":{{json .State.Running}},"restarts":{{json .RestartCount}},"cpuShares":{{json .HostConfig.CpuShares}},"nanoCpus":{{json .HostConfig.NanoCpus}},"memory":{{json .HostConfig.Memory}},"memorySwap":{{json .HostConfig.MemorySwap}}}';
+const LIMIT_INSPECT = '{"id":{{json .Id}},"name":{{json .Name}},"managed":{{json (index .Config.Labels "ninedeploy.managed")}},"serviceId":{{json (index .Config.Labels "ninedeploy.service")}},"deploymentId":{{json (index .Config.Labels "ninedeploy.deployment")}},"status":{{json .State.Status}},"running":{{json .State.Running}},"restarts":{{json .RestartCount}},"cpuShares":{{json .HostConfig.CpuShares}},"nanoCpus":{{json .HostConfig.NanoCpus}},"cpuQuota":{{json .HostConfig.CpuQuota}},"memory":{{json .HostConfig.Memory}},"memorySwap":{{json .HostConfig.MemorySwap}}}';
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
   : value !== null && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical((value as Record<string, unknown>)[key])])) : value;
@@ -339,15 +339,19 @@ export function createNodeRuntimeMutation(root: string) {
               row.managed !== 'service' || row.serviceId !== String(input.serviceId) || row.deploymentId !== String(target.deploymentId) ||
               !['running', 'created', 'exited'].includes(String(row.status)) || typeof row.running !== 'boolean' ||
               row.running !== (row.status === 'running') || !['restarts', 'cpuShares', 'nanoCpus', 'memory'].every(key => Number.isSafeInteger(row[key]) && Number(row[key]) >= 0) ||
-              !Number.isSafeInteger(row.memorySwap) || Number(row.memorySwap) < -1) throw new Error('Limit target ownership or state changed');
+              !Number.isSafeInteger(row.cpuQuota) || Number(row.cpuQuota) < -1 || !Number.isSafeInteger(row.memorySwap) || Number(row.memorySwap) < -1) throw new Error('Limit target ownership or state changed');
             return row;
           };
           const before = [];
           for (const target of input.targets) before.push(await read(target));
+          // Zero values are verified, not reset: Docker reset semantics require a separate path.
+          if (before.some(row => input.cpuShares === 0 && row.cpuShares !== 0 ||
+            input.cpuLimitMilli === 0 && (row.nanoCpus !== 0 || Number(row.cpuQuota) > 0) ||
+            input.memLimitMb === 0 && row.memory !== 0)) throw new Error('A cleared limit requires a deploy');
           const args = ['update'];
-          if (input.cpuShares !== undefined) args.push('--cpu-shares', String(input.cpuShares));
-          if (input.cpuLimitMilli !== undefined) args.push('--cpus', String(input.cpuLimitMilli / 1000));
-          if (input.memLimitMb !== undefined) args.push('--memory', `${input.memLimitMb}m`, '--memory-swap', `${input.memLimitMb}m`);
+          if ((input.cpuShares ?? 0) > 0) args.push('--cpu-shares', String(input.cpuShares));
+          if ((input.cpuLimitMilli ?? 0) > 0) args.push('--cpus', String(input.cpuLimitMilli! / 1000));
+          if ((input.memLimitMb ?? 0) > 0) args.push('--memory', `${input.memLimitMb}m`, '--memory-swap', `${input.memLimitMb}m`);
           journal.current();
           const code = await spawnValidated('docker', [...args, ...input.targets.map(target => target.id)], onLine, { timeoutMs: journal.remaining() });
           journal.current(); if (code !== 0) throw new Error('Limit update is unconfirmed');
@@ -355,8 +359,8 @@ export function createNodeRuntimeMutation(root: string) {
             const after = await read(target), first = before[index]!;
             if (after.status !== first.status || after.running !== first.running || after.restarts !== first.restarts ||
               input.cpuShares !== undefined && after.cpuShares !== input.cpuShares ||
-              input.cpuLimitMilli !== undefined && after.nanoCpus !== input.cpuLimitMilli * 1_000_000 ||
-              input.memLimitMb !== undefined && (after.memory !== input.memLimitMb * 1_048_576 || after.memorySwap !== after.memory)) {
+              input.cpuLimitMilli !== undefined && (input.cpuLimitMilli === 0 ? after.nanoCpus !== 0 || Number(after.cpuQuota) > 0 : after.nanoCpus !== input.cpuLimitMilli * 1_000_000) ||
+              input.memLimitMb !== undefined && (after.memory !== input.memLimitMb * 1_048_576 || input.memLimitMb > 0 && after.memorySwap !== after.memory)) {
               throw new Error('Updated limits or target state are unconfirmed');
             }
           }

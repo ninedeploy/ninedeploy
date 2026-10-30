@@ -74,6 +74,10 @@ describe('selected-node ordered runtime mutation client', () => {
       patch = { items }; await expect(invoke('limits')).rejects.toThrow();
     }
   });
+  it('does not accept a fence that acknowledges a different deployment watermark', async () => {
+    patch = { deploymentWatermark: 9 };
+    await expect(invoke('fence', { ...requests.fence, deploymentWatermark: 10 })).rejects.toThrow(/identity|coverage/);
+  });
   it.each(kinds)('rejects %s replies belonging to another owner or revision', async kind => {
     for (const change of [{ requestId: 'd'.repeat(32) }, { serviceId: 8 }, { revision: 9 }, { complete: false }]) {
       patch = change; await expect(invoke(kind)).rejects.toThrow();
