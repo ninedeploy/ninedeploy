@@ -1277,8 +1277,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const [svc] = await app.db.update(services).set(updateData).where(eq(services.id, id)).returning();
     if (!svc) throw notFound('Service not found');
     let liveApplied = false;
-    // 0.16 T7: a Swarm service takes new limits at its next deploy (the stack is redeployed), never by `docker update`.
-    if (svc.type === 'docker' && svc.status === 'running' && svc.runtimeId && !swarmRuntimeOf(svc)) {
+    // Node and Swarm services apply the saved limits on their next deploy.
+    // A node runtime name must never be sent to the panel host's Docker daemon.
+    if (svc.type === 'docker' && svc.serverId == null && svc.status === 'running' && svc.runtimeId && !swarmRuntimeOf(svc)) {
       const argv = ['update'];
       if (svc.cpuShares > 0) argv.push('--cpu-shares', String(svc.cpuShares));
       if (svc.cpuLimitMilli > 0) argv.push('--cpus', String(svc.cpuLimitMilli / 1000));

@@ -992,6 +992,16 @@ describe('services routes', () => {
     ]);
   });
 
+  it('never applies a node service limit to a same-named panel-host container', async () => {
+    const nodeService = svcRow({ id: 1, serverId: 4, status: 'running', runtimeId: 'web-3', memLimitMb: 1024 });
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: nodeService }, update: { services: [nodeService] } }) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { memLimitMb: 1024 } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ memLimitMb: 1024, liveApplied: false });
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['update']));
+  });
+
   it('skips the live docker update when the container is not running', async () => {
     const app = await buildTestApp({
       db: createFakeDb({
