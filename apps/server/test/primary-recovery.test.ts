@@ -9,6 +9,8 @@ import { reserveServiceRuntimeOwner } from '../src/lib/serviceRuntimeOwner.js';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { observabilityDb } from './fixtures/observability.js';
 import { createRemoteDockerBuilder } from '../src/engine/builders/remoteDocker.js';
+import { prepareNodeAutoscaleDeployment } from '../src/engine/builders/nodeAutoscaleDeployment.js';
+import { createNodeDeploymentAuthority } from '../src/lib/nodeDeploymentOwner.js';
 
 const h = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn(async () => true), config: { paths: { dataDir: '', logsDir: '' }, acmeEmail: null } }));
 vi.mock('../src/config.js', () => ({ config: h.config }));
@@ -414,6 +416,45 @@ describe('primary recovery through SQLite and the real routing writer', () => {
     const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { runtimeId: old, port: 8080, healthPath: '/' }, null);
     try { expect(lease.row.candidate.spares?.[0]).toEqual({ id: spareId, name: candidate + '-r2', observed: true }); }
     finally { await lease.release(); }
+  });
+  it('transfers prepared serving and spare receipts into ordered primary recovery', async () => {
+    await f.db.update(services).set({ runtimeReplicas: 1, autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70,
+      scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
+    const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
+    const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
+    await f.db.insert(deploymentRuntimeOwners).values(owner);
+    const supported = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec'];
+    const prepareAgent = async (op: string, params: Record<string, unknown>) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: supported })}`] };
+      if (op === 'docker.imageInspect') return { exitCode: 0, lines: [`sha256:${'f'.repeat(64)}|123`] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${params.name}.env`] };
+      if (op === 'file.deleteEnv') return { exitCode: 0, lines: [] };
+      throw new Error(`Unexpected preparation operation ${op}`);
+    };
+    const client = {
+      fence: async ({ timeoutMs: _timeout, ...input }: { requestId: string; serviceId: number; revision: number; timeoutMs: number; deploymentWatermark: number }) => ({ ...input, complete: true }),
+      prepare: async (input: Parameters<Parameters<typeof prepareNodeAutoscaleDeployment>[0]['client']['prepare']>[0]) => {
+        const ids = [candidateId, 'd'.repeat(64), 'e'.repeat(64)];
+        const items = input.specs.map((spec, index) => {
+          const item = { id: ids[index]!, name: spec.name, deploymentId: input.deploymentId, running: input.startNames!.includes(spec.name) };
+          containers.set(item.id, { id: item.id, name: item.name, managed: 'service', serviceId: '1', deploymentId: '9' });
+          return item;
+        });
+        return { requestId: input.requestId, serviceId: input.serviceId, deploymentId: input.deploymentId, revision: input.revision, complete: true, items };
+      },
+    };
+    const svc = (await service())!;
+    const prepared = await prepareNodeAutoscaleDeployment({ service: svc, owner, image: 'fixture:latest', creationWatermark: 9, env: {},
+      agent: prepareAgent, client, sealed: true, checkpoint: () => createNodeDeploymentAuthority(f.db, owner).check(), log: () => {} });
+    const lease = await beginPrimaryTransition(f.db, svc, 9, prepared.runtime, { runtimeId: old, port: 8080, healthPath: '/' }, null);
+    try {
+      expect(lease.row.orderedOwner).toMatchObject(owner);
+      expect(lease.row.candidate.containers[0]).toEqual({ id: candidateId, name: candidate, observed: true });
+      expect(lease.row.candidate.spares?.slice(0, 2)).toEqual([
+        { id: 'd'.repeat(64), name: candidate + '-r2', observed: true }, { id: 'e'.repeat(64), name: candidate + '-r3', observed: true },
+      ]);
+      expect(stops()).toEqual([]);
+    } finally { await lease.release(); }
   });
   it('refuses malformed capacity receipts before creating a recovery record', async () => {
     const svc = (await service())!, serving = { id: candidateId, name: candidate }, spare = { id: 'c'.repeat(64), name: candidate + '-r2' };
