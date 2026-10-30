@@ -124,7 +124,7 @@ describe('public ordered node lifecycle', () => {
     expect(again.json().lifecycle.id).toBe(response.json().lifecycle.id);
     expect(await reconcileNodeLifecycleIntents(c.db)).toEqual([{ id: response.json().lifecycle.id, state: 'held' }]);
     const stored = (await c.db.select().from(nodeLifecycleIntents))[0]!;
-    expect(stored.reason).toMatch(/0[.]19[.]0/); expect(stored.runtimeId).toBeNull(); expect(stored.targets).toBeNull();
+    expect(stored.reason).toMatch(/0[.]18[.]10/); expect(stored.runtimeId).toBeNull(); expect(stored.targets).toBeNull();
     expect((await c.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('cancelled');
     expect(effects).toEqual([]); expect(network.agentOp.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
   });
