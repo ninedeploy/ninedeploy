@@ -23,7 +23,8 @@ export function createNodeAutoscaleDecider() {
       if (measurement.value === null) return hold(measurement.holding ?? 'node metrics unavailable');
       const { serverId: _serverId, sampledAt, ...data } = sample as Record<string, unknown> & { sampledAt: number };
       const receipt = containerMetricsReply.parse(data);
-      const identities = receipt.items.map(item => [item.name, item.id]).sort((a, b) => a[0]!.localeCompare(b[0]!));
+      const identities = receipt.items.map(item => ({ name: item.name, id: item.id, restarts: item.restarts,
+        cpuLimitMilli: item.cpuLimitMilli, memLimitBytes: item.memLimitBytes })).sort((a, b) => a.name.localeCompare(b.name));
       const generation = JSON.stringify([service.serverId, service.runtimeId, service.runtimeReplicas, config.data, identities]);
       let state = states.get(service.id);
       if (!state || state.generation !== generation || now < state.observedAt || now - state.observedAt > AUTOSCALE_STATS_MAX_AGE_MS || sampledAt < state.sampledAt) {

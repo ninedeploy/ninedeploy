@@ -30,6 +30,13 @@ describe('node autoscale decisions', () => {
     expect(d.observe(service, sample(120_000, 'd', 'd'.repeat(64)), 120_000).to).toBeNull();
     expect(d.observe(service, sample(180_000, 'e', 'd'.repeat(64)), 180_000).to).toBe(4);
   });
+  it.each(['restarts', 'cpuLimitMilli', 'memLimitBytes'] as const)('restarts the decision window when observed %s changes', field => {
+    const d = createNodeAutoscaleDecider();
+    d.observe(service, sample(0, 'a'), 0);
+    const next = sample(60_000, 'b');
+    next.items[0]![field] = field === 'restarts' ? 1 : 800;
+    expect(d.observe(service, next, 60_000).to).toBeNull();
+  });
   it('fails closed on foreign, stale or incomplete samples and unsupported request metrics', () => {
     const d = createNodeAutoscaleDecider();
     d.observe(service, sample(0, 'a'), 0);
