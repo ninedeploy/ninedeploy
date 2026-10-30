@@ -75,7 +75,8 @@ try{
   await until(()=>inside2(['inspect',targetName,'--format','{{.State.Running}}'],true).out==='true','target replica',90000);
   await until(async()=>{const state=await api('/v1/services/'+id+'/targets');const recovery=await api('/v1/services/'+id+'/targets/recovery');
     return state.targets.some(target=>target.serverId===registration2.id&&target.runtimeId===targetName&&target.status==='running')&&recovery.entries.length===0;},'target promotion and recovery completion',90000);
-  const answer=await api('/v1/services/'+id+'/limits','PATCH',{memLimitMb:64});
+  // Match the panel form, which submits blank unlimited fields as null.
+  const answer=await api('/v1/services/'+id+'/limits','PATCH',{cpuShares:null,cpuLimitMilli:null,memLimitMb:64});
   assert.equal(answer.liveApplied,true,JSON.stringify(answer));
   for(const name of names)assert.equal(Number(inside(['inspect',name,'--format','{{.HostConfig.Memory}}']).out),64*1048576);
   assert.equal(Number(inside2(['inspect',targetName,'--format','{{.HostConfig.Memory}}']).out),64*1048576);

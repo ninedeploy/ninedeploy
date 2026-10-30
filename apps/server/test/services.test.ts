@@ -1024,6 +1024,18 @@ describe('services routes', () => {
     ]);
   });
 
+  it('live-applies a memory increase when unchanged unlimited CPU fields are submitted as null', async () => {
+    const id = 'a'.repeat(64);
+    const inspection = JSON.stringify({ id, name: '/web-3', managed: 'service', serviceId: '1', deploymentId: '3', status: 'running', restarts: 0, cpuShares: 0, nanoCpus: 0, cpuQuota: 0, memory: 1_073_741_824, memorySwap: 1_073_741_824 });
+    execMocks.capture.mockResolvedValueOnce(inspection).mockResolvedValueOnce('').mockResolvedValueOnce(inspection);
+    const running = svcRow({ id: 1, status: 'running', runtimeId: 'web-3', memLimitMb: 1024 });
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: running }, update: { services: [running] } }) });
+    await app.register(servicesRoutes);
+    const res = await app.inject({ method: 'PATCH', url: '/1/limits', headers: asUser(), payload: { cpuShares: null, cpuLimitMilli: null, memLimitMb: 1024 } });
+    expect(res.statusCode).toBe(200); expect(res.json()).toMatchObject({ liveApplied: true });
+    expect(execMocks.capture).toHaveBeenCalledWith('docker', ['update', '--memory', '1024m', '--memory-swap', '1024m', id]);
+  });
+
   it('never applies a node service limit to a same-named panel-host container', async () => {
     const nodeService = svcRow({ id: 1, serverId: 4, status: 'running', runtimeId: 'web-3', memLimitMb: 1024 });
     const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: nodeService }, update: { services: [nodeService] } }) });
@@ -1064,8 +1076,9 @@ describe('services routes', () => {
   });
 
   it.each([{ cpuLimitMilli: 0 }, { cpuLimitMilli: null }, { cpuShares: 0 }, { memLimitMb: 0 }])('defers a request that clears a limit: %j', async payload => {
-    const running = svcRow({ id: 1, status: 'running', runtimeId: 'web-3', cpuLimitMilli: 0, memLimitMb: 1024 });
-    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: running }, update: { services: [running] } }) });
+    const running = svcRow({ id: 1, status: 'running', runtimeId: 'web-3', cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 1024 });
+    const updated = { ...running, ...Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value ?? 0])) };
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: running }, update: { services: [updated] } }) });
     await app.register(servicesRoutes);
     const res = await app.inject({ method: 'PATCH', url: '/1/limits', headers: asUser(), payload });
     expect(res.statusCode).toBe(200);

@@ -30,6 +30,11 @@ export async function applyLocalLimits(service: Service, isCurrent: () => Promis
   };
   try {
     const before = await inspect(names);
+    // Docker update ignores zero-valued resource flags. Do not partially apply
+    // other fields when an earlier deferred reset has not reached this runtime.
+    if (before.some(row => service.cpuShares === 0 && row.cpuShares !== 0 ||
+      service.cpuLimitMilli === 0 && (row.nanoCpus !== 0 || row.cpuQuota > 0) ||
+      service.memLimitMb === 0 && row.memory !== 0)) return false;
     if (!await isCurrent()) return false;
     const argv = ['update'];
     if (service.cpuShares > 0) argv.push('--cpu-shares', String(service.cpuShares));

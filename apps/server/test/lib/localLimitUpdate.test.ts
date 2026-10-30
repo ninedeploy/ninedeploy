@@ -21,6 +21,13 @@ it('does not report success when the owner changes after the Docker update', asy
   expect(io.capture.mock.calls[1]![1]).toEqual(expect.arrayContaining(['update', 'a'.repeat(64), 'b'.repeat(64)]));
 });
 
+it('does not partially update memory when an earlier CPU reset remains unapplied', async () => {
+  const observed = rows(); observed[1]!.nanoCpus = 500_000_000;
+  io.capture.mockReset().mockResolvedValueOnce(observed.map(row => JSON.stringify(row)).join('\n'));
+  expect(await applyLocalLimits(service(), async () => true)).toBe(false);
+  expect(io.capture).toHaveBeenCalledTimes(1);
+});
+
 it.each([{ serverId: 4 }, { orchestrator: 'swarm' as const }, { type: 'compose' as const }])('does not inspect an unsupported placement: %j', async change => {
   io.capture.mockReset();
   expect(await applyLocalLimits({ ...service(), ...change }, async () => true)).toBe(false);

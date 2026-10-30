@@ -1283,7 +1283,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // the selected agents, never the panel host's Docker daemon.
     // A cleared limit is omitted by the current Docker update path; avoid a
     // partial update that would incorrectly report the whole request as live.
-    const clearsLimit = [input.cpuShares, input.cpuLimitMilli, input.memLimitMb].some(value => value === null || value === 0);
+    const clearsLimit = (input.cpuShares === null || input.cpuShares === 0) && limitTarget.cpuShares > 0 ||
+      (input.cpuLimitMilli === null || input.cpuLimitMilli === 0) && limitTarget.cpuLimitMilli > 0 ||
+      (input.memLimitMb === null || input.memLimitMb === 0) && limitTarget.memLimitMb > 0;
     if (!clearsLimit && svc.type === 'docker' && svc.serverId == null && svc.status === 'running' && svc.runtimeId && !swarmRuntimeOf(svc)) {
       liveApplied = await applyLocalLimits(svc, async () => {
         const current = await app.db.query.services.findFirst({ where: eq(services.id, svc.id) });
