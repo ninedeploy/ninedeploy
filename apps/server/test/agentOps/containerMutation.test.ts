@@ -18,6 +18,8 @@ afterEach(async () => {
 it('advertises the ordered mutation capability only while its owner permits it', () => {
   expect(advertisedCapabilities({})).toContain('docker.mutations');
   expect(advertisedCapabilities({ NINEDEPLOY_AGENT_CONTAINER_MUTATIONS: 'off' })).not.toContain('docker.mutations');
+  expect(advertisedCapabilities({})).toContain('docker.prepareAttemptEnv');
+  expect(advertisedCapabilities({ NINEDEPLOY_AGENT_CONTAINER_MUTATIONS: 'off' })).not.toContain('docker.prepareAttemptEnv');
   expect(advertisedCapabilities({})).toContain('docker.limits');
   expect(advertisedCapabilities({ NINEDEPLOY_AGENT_CONTAINER_MUTATIONS: 'off' })).not.toContain('docker.limits');
   expect(advertisedCapabilities({})).toContain('docker.startSet');

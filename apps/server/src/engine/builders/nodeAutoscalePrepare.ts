@@ -12,6 +12,8 @@ type PrepareClient = {
   fence(input: { requestId: string; serviceId: number; revision: number; timeoutMs: number; deploymentWatermark: number }): Promise<unknown>;
   prepare(input: ReturnType<typeof containerPrepareRequest.parse>): Promise<unknown>;
 };
+export const nodeAutoscalePrepareId = (owner: DeploymentRuntimeOwner, stage: 'fence' | 'prepare') =>
+  createHash('sha256').update(`${owner.requestId}:autoscale-capacity:${stage}`).digest('hex').slice(0, 32);
 /** Build one immutable node generation, with spare replicas created but not started. */
 export async function prepareNodeAutoscaleCapacity(client: PrepareClient, input: {
   service: Service; owner: DeploymentRuntimeOwner; imageId: string; envFile: string; creationWatermark: number;
@@ -24,7 +26,8 @@ export async function prepareNodeAutoscaleCapacity(client: PrepareClient, input:
     throw new Error('Node autoscale preparation authority or image is invalid');
   }
   const base = `${service.slug}-${owner.deploymentId}`;
-  if (input.envFile !== `.agent-env/${base}.env` || service.portMappings?.some(mapping => mapping.allowFrom?.length)) {
+  const attemptPrefix = `.agent-env/nd-prep-${nodeAutoscalePrepareId(owner, 'prepare')}-`;
+  if (!(input.envFile === `.agent-env/${base}.env` || input.envFile.startsWith(attemptPrefix) && /^[a-f0-9]{32}\.env$/.test(input.envFile.slice(attemptPrefix.length))) || service.portMappings?.some(mapping => mapping.allowFrom?.length)) {
     throw new Error('Node autoscale preparation environment or port mapping is invalid');
   }
   const servingCount = Math.max(cfg.minReplicas, Math.min(service.runtimeReplicas, cfg.maxReplicas));
@@ -40,10 +43,9 @@ export async function prepareNodeAutoscaleCapacity(client: PrepareClient, input:
     parseRunSpec(spec);
     return spec;
   });
-  const id = (stage: string) => createHash('sha256').update(`${owner.requestId}:autoscale-capacity:${stage}`).digest('hex').slice(0, 32);
-  const fence = { requestId: id('fence'), serviceId: service.id, revision: serviceRuntimeRevision(owner.epoch, 0), timeoutMs: 30_000,
+  const fence = { requestId: nodeAutoscalePrepareId(owner, 'fence'), serviceId: service.id, revision: serviceRuntimeRevision(owner.epoch, 0), timeoutMs: 30_000,
     deploymentWatermark: input.creationWatermark };
-  const preparation = containerPrepareRequest.parse({ requestId: id('prepare'), serviceId: service.id, revision: serviceRuntimeRevision(owner.epoch, 1),
+  const preparation = containerPrepareRequest.parse({ requestId: nodeAutoscalePrepareId(owner, 'prepare'), serviceId: service.id, revision: serviceRuntimeRevision(owner.epoch, 1),
     deploymentId: owner.deploymentId, timeoutMs: 300_000, specs, startNames: servingNames });
   const fenced = runtimeFenceReply.parse(await client.fence(fence));
   if (fenced.requestId !== fence.requestId || fenced.serviceId !== fence.serviceId || fenced.revision !== fence.revision || fenced.deploymentWatermark !== fence.deploymentWatermark) throw new Error('Node autoscale preparation fence is unconfirmed');

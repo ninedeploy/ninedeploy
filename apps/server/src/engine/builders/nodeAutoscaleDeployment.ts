@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { DeploymentRuntimeOwner, Service } from '@ninedeploy/db';
 import { autoscaleConfig } from '@ninedeploy/schemas';
 import type { AgentCall } from './remoteDocker.js';
@@ -8,7 +9,7 @@ import { ensureNodeVolumes, nodeFileMountChecks, nodeRunCapabilities, nodeRunExt
 import { writeNodeFileMounts, type NodeServiceFile } from '../../lib/serviceFiles.js';
 import { hasRuntimeOptions } from '../../lib/runtimeOptionArgs.js';
 import { envForAgent } from './remoteRun.js';
-import { prepareNodeAutoscaleCapacity } from './nodeAutoscalePrepare.js';
+import { nodeAutoscalePrepareId, prepareNodeAutoscaleCapacity } from './nodeAutoscalePrepare.js';
 
 type CapacityClient = Parameters<typeof prepareNodeAutoscaleCapacity>[0];
 /** Prepare dependencies and one ordered generation. The caller owns placement, cleanup and promotion. */
@@ -26,7 +27,7 @@ export async function prepareNodeAutoscaleDeployment(input: {
     try { return await input.agent(op, params, sink, options); } finally { await input.checkpoint(); }
   };
   const checks = [
-    { cap: ['docker.mutations', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage'] as const, feature: 'prepare and safely scale node replicas' },
+    { cap: ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage'] as const, feature: 'prepare and safely scale node replicas' },
     { cap: nodeRunCapabilities(service, attachments), feature: 'run the complete node replica configuration' },
     ...nodeRunExtrasChecks(service), ...nodeFileMountChecks(files.length),
     ...(service.portMappings?.length ? [{ cap: ['docker.ports' as const], feature: 'publish node port mappings' }] : []),
@@ -48,7 +49,7 @@ export async function prepareNodeAutoscaleDeployment(input: {
     if (missingDatabaseVolumes.length) throw new Error(`Node database volumes are unavailable: ${missingDatabaseVolumes.join(', ')}`);
   }
   const fileMounts = await writeNodeFileMounts(call, service, owner.deploymentId, files, input.log);
-  const envName = `${service.slug}-${owner.deploymentId}`;
+  const envName = `nd-prep-${nodeAutoscalePrepareId(owner, 'prepare')}-${randomBytes(16).toString('hex')}`;
   const envFile = confirmedNodeEnvFile(await call('file.writeEnv', { name: envName, env: envForAgent(input.env) }, () => undefined), envName);
   let prepareStarted = false, prepareConfirmed = false;
   const guarded: CapacityClient = {

@@ -24,7 +24,7 @@ beforeEach(async () => {
   await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
   await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-8',
     autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
-  caps = ['docker.mutations', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec']; calls = []; agent.mockClear();
+  caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec']; calls = []; agent.mockClear();
 });
 afterEach(() => c.client?.close());
 const options = async () => ({ service: await service(), owner, image: 'example:latest', creationWatermark: 9, env: { KEY: 'fixture' },
@@ -43,6 +43,37 @@ it('refuses an older or unsealed agent before writing any environment file', asy
   expect(calls).not.toContain('file.writeEnv'); expect(opts.client.fence).not.toHaveBeenCalled();
   calls = []; await expect(prepareNodeAutoscaleDeployment({ ...opts, sealed: false })).rejects.toThrow(/unencrypted|sealed/);
   expect(calls).toEqual([]);
+});
+it('requires isolated preparation environment support before writing secrets', async () => {
+  const opts = await options(); caps = caps.filter(cap => cap !== 'docker.prepareAttemptEnv');
+  await expect(prepareNodeAutoscaleDeployment(opts)).rejects.toThrow(/agent/i);
+  expect(calls).not.toContain('file.writeEnv'); expect(opts.client.prepare).not.toHaveBeenCalled();
+});
+it('uses a distinct request-bound environment for each attempt', async () => {
+  const opts = await options();
+  await prepareNodeAutoscaleDeployment(opts); await prepareNodeAutoscaleDeployment(opts);
+  const paths = opts.client.prepare.mock.calls.map(call => call[0].specs[0].envFile as string);
+  const requestIds = opts.client.prepare.mock.calls.map(call => call[0].requestId as string);
+  expect(requestIds[0]).toBe(requestIds[1]); expect(paths[0]).not.toBe(paths[1]);
+  for (const path of paths) expect(path).toMatch(new RegExp(`^\\.agent-env/nd-prep-${requestIds[0]}-[a-f0-9]{32}\\.env$`));
+});
+it('does not delete another concurrent attempt environment when its own preparation finishes', async () => {
+  const opts = await options(), prepare = opts.client.prepare.getMockImplementation()!;
+  let release!: () => void, entered!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  let count = 0;
+  opts.client.prepare.mockImplementation(async input => {
+    if (++count === 1) { entered(); await blocked; }
+    return prepare(input);
+  });
+  const first = prepareNodeAutoscaleDeployment(opts); await ready;
+  try {
+    await prepareNodeAutoscaleDeployment(opts);
+    const writes = agent.mock.calls.filter(call => call[0] === 'file.writeEnv').map(call => call[1].name);
+    const deletes = agent.mock.calls.filter(call => call[0] === 'file.deleteEnv').map(call => call[1].name);
+    expect(writes).toHaveLength(2); expect(writes[0]).not.toBe(writes[1]); expect(deletes).toEqual([writes[1]]);
+  } finally { release(); await first; }
 });
 it('retains its temporary environment while an ambiguous preparation may still be running', async () => {
   const opts = await options(), messages: string[] = []; opts.log = line => messages.push(line);

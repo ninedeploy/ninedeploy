@@ -136,6 +136,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
 export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, readonly string[]>>> = {
   'proxy.orderedWrite': ['NINEDEPLOY_AGENT_ORDERED_PROXY'],
   'docker.mutations': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
+  'docker.prepareAttemptEnv': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'docker.limits': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'docker.startSet': ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'docker.lifecycle': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],

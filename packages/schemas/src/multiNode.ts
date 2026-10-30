@@ -56,6 +56,7 @@ export const MULTI_NODE_CAPABILITIES = [
   'docker.lifecycle.creationFence',
   'docker.lifecycle.retire',
   'docker.mutations',
+  'docker.prepareAttemptEnv',
   'docker.limits',
   'docker.startSet',
   // G4.2: `host.packages` reads the host's pending OS updates and switches automatic security updates.
