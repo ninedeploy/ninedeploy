@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createDb, deployments, eq, fanoutTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
-import { admitNodeAutoscale, checkpointNodeAutoscale } from '../../src/lib/nodeAutoscaleAuthority.js';
+import { admitNodeAutoscale, checkpointNodeAutoscale, commitNodeAutoscaleReplicas } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 
@@ -63,4 +63,24 @@ it('stops at the checkpoint when a deployment is queued after admission', async 
   const admitted = (await admitNodeAutoscale(c.db, await service()))!;
   await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
   await expect(checkpointNodeAutoscale(c.db, admitted, 1)).rejects.toThrow(/active/);
+});
+it('commits a serving count under the same owner and rejects stale or out-of-capacity writes', async () => {
+  const admitted = (await admitNodeAutoscale(c.db, await service()))!;
+  await commitNodeAutoscaleReplicas(c.db, admitted, 1, 2);
+  expect((await service()).runtimeReplicas).toBe(2);
+  await expect(checkpointNodeAutoscale(c.db, admitted, 2)).resolves.toBeUndefined();
+  await expect(commitNodeAutoscaleReplicas(c.db, admitted, 1, 3)).rejects.toThrow(/runtime/);
+  await expect(commitNodeAutoscaleReplicas(c.db, admitted, 2, 4)).rejects.toThrow(/count/);
+  await expect(commitNodeAutoscaleReplicas(c.db, admitted, 2, 0)).rejects.toThrow(/count/);
+  expect((await service()).runtimeReplicas).toBe(2);
+});
+it('does not write a count after a new deployment or owner arrives', async () => {
+  const admitted = (await admitNodeAutoscale(c.db, await service()))!;
+  await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+  await expect(commitNodeAutoscaleReplicas(c.db, admitted, 1, 2)).rejects.toThrow(/active/);
+  expect((await service()).runtimeReplicas).toBe(1);
+  await c.db.update(deployments).set({ status: 'cancelled' }).where(eq(deployments.id, 10));
+  await reserveServiceRuntimeOwner(c.db, 1, 'deploy', admitted.owner, 'b'.repeat(32));
+  await expect(commitNodeAutoscaleReplicas(c.db, admitted, 1, 2)).rejects.toThrow(/ownership/);
+  expect((await service()).runtimeReplicas).toBe(1);
 });

@@ -43,9 +43,7 @@ export async function admitNodeAutoscale(db: DB, expected: Service): Promise<Nod
   });
 }
 
-/** Recheck ownership, placement and serving count around every awaited scale effect. */
-export async function checkpointNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission, expectedReplicas: number): Promise<void> {
-  await db.transaction(async tx => {
+async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAutoscaleAdmission, expectedReplicas: number): Promise<void> {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, admission.service.id) });
     if (!fresh || snapshot(fresh) !== snapshot(admission.service) || fresh.runtimeReplicas !== expectedReplicas ||
       !sameRuntimeOwner(await readServiceRuntimeOwner(tx, fresh.id), admission.owner) ||
@@ -57,5 +55,23 @@ export async function checkpointNodeAutoscale(db: DB, admission: NodeAutoscaleAd
       tx.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(eq(fanoutTransitions.serviceId, fresh.id)).limit(1),
     ]);
     if (active.length || lifecycle.length || primary.length || fanout.length) throw new Error('Node autoscale blocked by active runtime work');
+}
+
+/** Recheck ownership, placement and serving count around every awaited scale effect. */
+export async function checkpointNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission, expectedReplicas: number): Promise<void> {
+  await db.transaction(tx => assertCurrent(tx, admission, expectedReplicas));
+}
+
+/** Commit the count only with the same authority and observed generation in one transaction. */
+export async function commitNodeAutoscaleReplicas(db: DB, admission: NodeAutoscaleAdmission, expectedReplicas: number, nextReplicas: number): Promise<void> {
+  const config = autoscaleConfig.parse(admission.service.autoscale);
+  if (!Number.isSafeInteger(expectedReplicas) || !Number.isSafeInteger(nextReplicas) || expectedReplicas < 1 ||
+    nextReplicas < 1 || nextReplicas > config.maxReplicas) throw new Error('Invalid node autoscale replica count');
+  await db.transaction(async tx => {
+    await assertCurrent(tx, admission, expectedReplicas);
+    const updated = await tx.update(services).set({ runtimeReplicas: nextReplicas }).where(and(
+      eq(services.id, admission.service.id), eq(services.runtimeReplicas, expectedReplicas),
+    )).returning({ id: services.id });
+    if (updated.length !== 1) throw new Error('Node autoscale replica count changed');
   });
 }
