@@ -297,6 +297,35 @@ describe('holdReason, autoscaleOf, status', () => {
 });
 
 describe('createAutoscaler', () => {
+  it('runs recovery even without configured autoscaling services', async () => {
+    const { deps } = fakeDeps(), recover = vi.fn(async (_signal: AbortSignal) => undefined);
+    const scaler = createAutoscaler({ load: async () => [], inFlightDeploys: async () => new Set(), containers: () => new Map(),
+      analyticsOn: async () => false, canaryRunning: () => false, step: deps, recover });
+    expect(await scaler.tick()).toBe(0); expect(recover).toHaveBeenCalledOnce();
+    expect(recover.mock.calls[0]![0]).toBeInstanceOf(AbortSignal);
+    await scaler.stop();
+  });
+  it('cancels an in-flight recovery and waits for it before shutdown', async () => {
+    const { deps } = fakeDeps(); let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const recover = vi.fn((signal: AbortSignal) => new Promise<void>((_resolve, reject) => {
+      entered(); signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    const scaler = createAutoscaler({ load: async () => [], inFlightDeploys: async () => new Set(), containers: () => new Map(),
+      analyticsOn: async () => false, canaryRunning: () => false, step: deps, recover });
+    const tick = scaler.tick(); await started;
+    const stop = scaler.stop(); await expect(tick).resolves.toBe(0); await expect(stop).resolves.toBeUndefined();
+    expect(recover.mock.calls[0]![0].aborted).toBe(true); expect(await scaler.tick()).toBe(0);
+  });
+  it('reports recovery failure while continuing the ordinary autoscaler tick', async () => {
+    const { deps } = fakeDeps(), load = vi.fn(async () => []), errors: unknown[] = [];
+    const scaler = createAutoscaler({ load, inFlightDeploys: async () => new Set(), containers: () => new Map(),
+      analyticsOn: async () => false, canaryRunning: () => false, step: deps,
+      recover: async () => { throw new Error('recovery unavailable'); }, onError: error => errors.push(error) });
+    expect(await scaler.tick()).toBe(0); expect(load).toHaveBeenCalledOnce();
+    expect(errors).toHaveLength(1); expect(errors[0]).toHaveProperty('message', 'recovery unavailable');
+    await scaler.stop();
+  });
   it('looks at autoscaled services only, one step per service at a time', async () => {
     const svc = await row();
     let release: () => void = () => undefined;

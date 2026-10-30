@@ -9,13 +9,14 @@ import { AUTOSCALE_IN_FLIGHT, AUTOSCALE_PROBE_MS, AUTOSCALE_TICK_MS, type Autosc
 import { run, sleep } from '../lib/exec.js';
 import type { ContainerStat } from '../lib/stats.js';
 import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
+import { reconcileNodeAutoscale } from '../lib/nodeAutoscaleRecovery.js';
 
 /**
  * 0.16.10: runs lib/autoscaler.ts every 30 s over the services that have an
  * autoscale configuration, on the container stats the collector caches. A
  * service is never looked at twice at once (scaling up waits for the new
- * container's healthcheck). Nothing runs for a panel without autoscaled
- * services beyond one query per tick.
+ * container's healthcheck). Each tick also resumes expired node scale work,
+ * including when autoscaling was disabled after an interrupted operation.
  */
 export function createAutoscaler(deps: {
   load: () => Promise<Service[]>;
@@ -25,6 +26,7 @@ export function createAutoscaler(deps: {
   analyticsOn: () => Promise<boolean>;
   canaryRunning: (serviceId: number) => boolean;
   step: AutoscaleDeps;
+  recover?: (signal: AbortSignal) => Promise<unknown>;
   now?: () => number;
   onError?: (err: unknown) => void;
 }) {
@@ -37,6 +39,10 @@ export function createAutoscaler(deps: {
   const runTick = async (): Promise<number> => {
       let looked = 0;
       try {
+        if (deps.recover) {
+          try { await deps.recover(abort.signal); } catch (err) { if (!stopped) deps.onError?.(err); }
+          if (stopped) return 0;
+        }
         const list = (await deps.load()).filter((s) => autoscaleOf(s) !== null);
         if (stopped || list.length === 0) return 0;
         const inFlight = await deps.inFlightDeploys();
@@ -86,6 +92,7 @@ export function createAutoscaler(deps: {
 export default fp(
   async (fastify) => {
     const scaler = createAutoscaler({
+      recover: signal => reconcileNodeAutoscale(fastify.db, { signal, log: line => fastify.log.warn({ component: 'autoscaler' }, line) }),
       load: async () => {
         try {
           return await fastify.db.select().from(services).where(isNotNull(services.autoscale));
