@@ -253,13 +253,14 @@ describe('r662: moving and deleting remote services', () => {
         delete: {
           services: () => {
             cascaded = true;
-            return [];
+            return [{ id: 1 }];
           },
         },
       }),
     });
     await app.register(servicesRoutes);
-    await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
+    const response = await app.inject({ method: 'DELETE', url: '/1', headers: asUser() });
+    expect(response.statusCode).toBe(204);
     expect(ops()).toEqual(
       expect.arrayContaining([
         '6 docker.stop {"name":"web-t6-17"}',
