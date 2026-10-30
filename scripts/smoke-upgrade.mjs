@@ -164,7 +164,7 @@ const docker = (args, opts = {}) => {
   return (r.stdout ?? '').trim();
 };
 const ownedRun = args => spawnSync('docker', args, { encoding: 'utf8', timeout: 120_000 });
-const cleanup = (kind, name) => removeOwnedSmokeResource(ownedRun, kind, name, suffix);
+const cleanup = (kind, name) => removeOwnedSmokeResource(ownedRun, kind, name, suffix, { removeAnonymousVolumes: true });
 const requireOwned = (kind, name) => {
   const identity = inspectOwnedSmokeResource(ownedRun, kind, name, suffix);
   if (identity.status !== 'owned') throw new Error(`Smoke ${kind} ownership is unconfirmed`);

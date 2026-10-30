@@ -90,6 +90,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { inspectOwnedSmokeResource, removeOwnedSmokeResource } from './lib/owned-smoke-resources.mjs';
 
 // ── arguments ───────────────────────────────────────────────────────────────
 
@@ -128,7 +129,12 @@ const USAGE =
   'usage: node scripts/smoke-multinode.mjs --image=<candidate> [--version=X.Y.Z]\n' +
   '   or: --from=v0.15.1 --to=<candidate tag> --to-image=<local image>          (upgrade)\n' +
   '   or: --from=<candidate tag> --from-image=<local image> --to=v0.15.1        (rollback rehearsal)\n' +
-  '   plus: [--with-builds] [--no-swarm] [--panel-port=4643] [--node-operations-only] [--new-node-features]';
+  '   plus: [--with-builds] [--no-swarm] [--panel-port=4643] [--node-operations-only] [--new-node-features] [--swarm-only]';
+
+if ([flag('node-operations-only'), flag('new-node-features'), flag('swarm-only')].filter(Boolean).length > 1 || flag('swarm-only') && NO_SWARM) {
+  console.error('Select one focused smoke mode; --swarm-only cannot be combined with --no-swarm.');
+  process.exit(2);
+}
 
 let MODE;
 if (IMAGE && !FROM && !TO) MODE = 'fresh';
@@ -168,7 +174,7 @@ const candidateHas = (min) => !olderThan(CANDIDATE_VERSION, min);
 
 // ── names ───────────────────────────────────────────────────────────────────
 
-const suffix = randomBytes(4).toString('hex');
+const suffix = randomBytes(16).toString('hex');
 const NET = `nd-mn-net-${suffix}`;
 const DIND = `nd-mn-dind-${suffix}`;
 const PANEL = `nd-mn-panel-${suffix}`;
@@ -189,8 +195,7 @@ const VOLUMES = [DATA, AGENT_DATA, AGENT2_DATA, GIT_DATA];
 /** The first node and its agent; --with-builds adds a second (`node2`). */
 const NODE_1 = { node: NODE, agent: AGENT, data: AGENT_DATA };
 const NODE_2 = { node: NODE2, agent: AGENT2, data: AGENT2_DATA };
-/** Every name the run creates, and nothing else, may be removed. */
-const owned = (name) => name.startsWith('nd-mn-') && name.endsWith(suffix);
+const created = new Set();
 
 const AGENT_HOME = '/var/lib/ninedeploy-agent';
 const AGENT_PORT = 4600;
@@ -209,12 +214,20 @@ const MIGRATION_0072 = journal.entries.find((e) => e.tag.startsWith('0072_')) ??
 
 const docker = (args, opts = {}) => {
   const r = spawnSync('docker', args, { encoding: 'utf8', timeout: opts.timeout ?? 300_000, maxBuffer: 32 << 20 });
-  if (r.status !== 0 && !opts.allowFail) throw new Error(`docker ${args.join(' ')} -> ${r.status}: ${(r.stderr || r.error?.message || '').slice(0, 400)}`);
+  if (r.status !== 0 && !opts.allowFail) throw new Error(`docker ${args.slice(0, 2).join(' ')} -> ${r.status}: ${(r.stderr || r.error?.message || '').slice(0, 400)}`);
+  if (r.status === 0 && args[0] === 'run' && args.includes('--name')) created.add(args[args.indexOf('--name') + 1]);
   return (r.stdout ?? '').trim();
+};
+const ownedRun = args => spawnSync('docker', args, { encoding: 'utf8', timeout: 120_000 });
+const cleanupOwned = (kind, name) => removeOwnedSmokeResource(ownedRun, kind, name, suffix, { removeAnonymousVolumes: true });
+const requireOwned = (kind, name) => {
+  const identity = inspectOwnedSmokeResource(ownedRun, kind, name, suffix);
+  if (identity.status !== 'owned') throw new Error(`Smoke ${kind} ownership is unconfirmed`);
+  return identity.id;
 };
 /** A command against a DinD daemon: exit status, stdout, and stdout+stderr. */
 const daemonRun = (host, args, timeout = 180_000) => {
-  const r = spawnSync('docker', ['exec', host, 'docker', '-H', 'tcp://127.0.0.1:2375', ...args], { encoding: 'utf8', timeout, maxBuffer: 32 << 20 });
+  const r = spawnSync('docker', ['exec', requireOwned('container', host), 'docker', '-H', 'tcp://127.0.0.1:2375', ...args], { encoding: 'utf8', timeout, maxBuffer: 32 << 20 });
   return { status: r.status, stdout: (r.stdout ?? '').trim(), all: `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim() };
 };
 const panelDaemon = (args, timeout) => daemonRun(DIND, args, timeout);
@@ -222,7 +235,7 @@ const nodeDaemon = (args, timeout) => daemonRun(NODE, args, timeout);
 const node2Daemon = (args, timeout) => daemonRun(NODE2, args, timeout);
 /** A command inside a container on the HOST daemon (the panel, the agent). */
 const inContainer = (name, args, timeout = 120_000) => {
-  const r = spawnSync('docker', ['exec', name, ...args], { encoding: 'utf8', timeout, maxBuffer: 32 << 20 });
+  const r = spawnSync('docker', ['exec', requireOwned('container', name), ...args], { encoding: 'utf8', timeout, maxBuffer: 32 << 20 });
   return { status: r.status, stdout: (r.stdout ?? '').trim(), all: `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim() };
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -276,8 +289,9 @@ async function until(fn, { ms = 60_000, every = 1000 } = {}) {
 const waitFor = (pred, ms) => until(() => pred(), { ms, every: 100 });
 
 function startPanel(tag) {
-  docker(['rm', '-f', '-v', PANEL], { allowFail: true });
-  docker(['run', '-d', '--name', PANEL, '--network', NET, '-p', `127.0.0.1:${PANEL_PORT}:3000`,
+  if (cleanupOwned('container', PANEL) === 'foreign') throw new Error('Panel test name belongs to another container');
+  created.delete(PANEL);
+  docker(['run', '-d', '--name', PANEL, '--label', `ninedeploy.proof=${suffix}`, '--network', NET, '-p', `127.0.0.1:${PANEL_PORT}:3000`,
     '-v', `${DATA}:/data`,
     '-e', `NINEDEPLOY_JWT_SECRET=${JWT}`,
     // 0.16: the first admin needs the setup token (lib/setupToken.ts).
@@ -306,7 +320,7 @@ async function waitHealthy(wantVersion) {
 
 /** The address of a container on the smoke network. */
 function ipOn(container) {
-  const nets = JSON.parse(docker(['inspect', container, '--format', '{{json .NetworkSettings.Networks}}']) || '{}');
+  const nets = JSON.parse(docker(['inspect', requireOwned('container', container), '--format', '{{json .NetworkSettings.Networks}}']) || '{}');
   const ip = nets[NET]?.IPAddress;
   if (!ip) fail(`${container} has no address on ${NET}: ${JSON.stringify(nets).slice(0, 200)}`);
   return ip;
@@ -328,7 +342,7 @@ async function startDind(name, volumeMount, { containerdStore = false } = {}) {
   const cmd = containerdStore
     ? ['sh', '-c', `mkdir -p /etc/docker && printf '%s' '{"features":{"containerd-snapshotter":true}}' > /etc/docker/daemon.json && exec dockerd-entrypoint.sh dockerd --host=tcp://0.0.0.0:2375`]
     : ['dockerd', '--host=tcp://0.0.0.0:2375'];
-  docker(['run', '-d', '--name', name, '--network', NET, '--privileged', '-v', volumeMount, DIND_IMAGE, ...cmd]);
+  docker(['run', '-d', '--name', name, '--label', `ninedeploy.proof=${suffix}`, '--network', NET, '--privileged', '-v', volumeMount, DIND_IMAGE, ...cmd]);
   const ok = await until(() => daemonRun(name, ['version', '--format', '{{.Server.Version}}']).stdout, { ms: 60_000 });
   if (!ok) fail(`the DinD daemon ${name} never became reachable: ${docker(['logs', '--tail', '20', name], { allowFail: true })}`);
 }
@@ -429,7 +443,8 @@ async function routeServes(host, hostname, label, { ms = 60_000 } = {}) {
 
 /** (Re)start the node agent from `ref` with the token hash, the shared data dir and any extra env. */
 function startAgent(ref, tokenSha256, extraEnv = {}, host = NODE_1) {
-  docker(['rm', '-f', host.agent], { allowFail: true });
+  if (cleanupOwned('container', host.agent) === 'foreign') throw new Error('Agent test name belongs to another container');
+  created.delete(host.agent);
   const env = {
     NINEDEPLOY_AGENT: '1',
     NINEDEPLOY_AGENT_PORT: String(AGENT_PORT),
@@ -438,7 +453,7 @@ function startAgent(ref, tokenSha256, extraEnv = {}, host = NODE_1) {
     DOCKER_HOST: 'tcp://127.0.0.1:2375',
     ...extraEnv,
   };
-  docker(['run', '-d', '--name', host.agent, '--network', `container:${host.node}`, '--user', '0:0',
+  docker(['run', '-d', '--name', host.agent, '--label', `ninedeploy.proof=${suffix}`, '--network', `container:${requireOwned('container', host.node)}`, '--user', '0:0',
     '-v', `${host.data}:${AGENT_HOME}`, '-w', AGENT_HOME,
     ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
     ref, 'node', '/app/apps/server/dist/agent.js']);
@@ -541,12 +556,12 @@ async function startGitServer() {
     "cat > /srv/nginx.conf <<'ND_EOF'\nworker_processes 1;\nevents { worker_connections 64; }\nhttp {\n  server {\n    listen 80;\n    location / {\n      root /srv/repos;\n      auth_basic \"nd-mn\";\n      auth_basic_user_file /srv/htpasswd;\n    }\n  }\n}\nND_EOF",
     'chmod -R a+rX /srv',
   );
-  const init = spawnSync('docker', ['run', '--rm', '--name', GIT_INIT, '--user', '0:0', '-v', `${GIT_DATA}:/srv`, '--entrypoint', 'sh', CANDIDATE_IMAGE, '-c', lines.join('\n')], {
+  const init = spawnSync('docker', ['run', '--rm', '--name', GIT_INIT, '--label', `ninedeploy.proof=${suffix}`, '--user', '0:0', '-v', `${GIT_DATA}:/srv`, '--entrypoint', 'sh', CANDIDATE_IMAGE, '-c', lines.join('\n')], {
     encoding: 'utf8',
     timeout: 120_000,
   });
   if (init.status !== 0) fail(`writing the test repositories failed (${init.status}): ${(init.stderr || init.stdout || '').slice(0, 600)}`);
-  docker(['run', '-d', '--name', GIT, '--network', NET, '-v', `${GIT_DATA}:/srv:ro`, APP_IMAGE, 'nginx', '-c', '/srv/nginx.conf', '-g', 'daemon off;']);
+  docker(['run', '-d', '--name', GIT, '--label', `ninedeploy.proof=${suffix}`, '--network', NET, '-v', `${GIT_DATA}:/srv:ro`, APP_IMAGE, 'nginx', '-c', '/srv/nginx.conf', '-g', 'daemon off;']);
   return ipOn(GIT);
 }
 
@@ -570,7 +585,7 @@ async function checkGitServer(gitIp) {
 async function inspectDb(queries) {
   const dir = mkdtempSync(path.join(tmpdir(), 'nd-mn-'));
   const file = path.join(dir, 'ninedeploy.db');
-  docker(['cp', `${PANEL}:/data/ninedeploy.db`, file]);
+  docker(['cp', `${requireOwned('container', PANEL)}:/data/ninedeploy.db`, file]);
   const require = createRequire(new URL('../packages/db/package.json', import.meta.url));
   const { createClient } = require('@libsql/client');
   const client = createClient({ url: `file:${file.replace(/\\/g, '/')}` });
@@ -654,7 +669,7 @@ async function nodeOperationsChecks(ctx) {
   if (localStats.json.containers.some((c) => c.kind === 'service' && c.refId === ctx.imgId)) fail('the node workload leaked into the panel-host allocation view');
   step('node service memory was persisted and read back through the history API; the Local Host view correctly excludes it');
 
-  docker(['run', '-d', '--name', LOG_RECEIVER, '--network', NET, '--entrypoint', 'node', CANDIDATE_IMAGE, '-e',
+  docker(['run', '-d', '--name', LOG_RECEIVER, '--label', `ninedeploy.proof=${suffix}`, '--network', NET, '--entrypoint', 'node', CANDIDATE_IMAGE, '-e',
     "require('node:http').createServer((q,s)=>{let b='';q.on('data',c=>b+=c);q.on('end',()=>{console.log(b);s.writeHead(204);s.end()})}).listen(9898,'0.0.0.0')"]);
   const drain = await api('/v1/log-drains', { method: 'POST', body: { name: `node-logs-${suffix}`, type: 'http', url: `http://${LOG_RECEIVER}:9898/`, format: 'json', enabled: true, serviceId: ctx.imgId } });
   if (drain.status !== 200 && drain.status !== 201) fail(`node log drain create: ${short(drain)}`);
@@ -1578,8 +1593,8 @@ async function main() {
     if (ref.startsWith('ghcr.io/')) pullOrFail(ref, `${tag} is a published release`);
   }
 
-  docker(['network', 'create', NET]);
-  for (const v of VOLUMES) docker(['volume', 'create', v]);
+  docker(['network', 'create', '--label', `ninedeploy.proof=${suffix}`, NET]); created.add(NET);
+  for (const v of VOLUMES) { docker(['volume', 'create', '--label', `ninedeploy.proof=${suffix}`, v]); created.add(v); requireOwned('volume', v); }
   await startDind(DIND, `${DATA}:/data`);
   await startDind(NODE, `${AGENT_DATA}:${AGENT_HOME}`);
   const ctx = { panelDindIp: ipOn(DIND), nodeIp: ipOn(NODE) };
@@ -1599,6 +1614,11 @@ async function main() {
     await currentAgentView(ctx.serverId, { swarm: false });
     const img = await nodeImageService(ctx, 'fresh');
     ctx.imgId = img.id;
+    if (flag('swarm-only')) {
+      await swarmChecks(ctx);
+      console.log('\nPASS: Swarm routing, file-secret updates and node join/leave on isolated Docker daemons.');
+      return;
+    }
     if (flag('new-node-features')) {
       await newNodeFeatureChecks(ctx);
       console.log('\nPASS: node features on a real panel and agent (service and database tunnels, public access and PgBouncer for node databases, compose move with data, node deploy scan, a Dockerfile stage with build arguments).');
@@ -1616,7 +1636,7 @@ async function main() {
     const img = await nodeImageService(ctx, FROM);
     ctx.imgId = img.id;
     ctx.sourceId = await patSource('from');
-    docker(['stop', PANEL]);
+    docker(['stop', requireOwned('container', PANEL)]);
     const before = await inspectDb(migrationQueries);
     step(`${FROM} db: ${n(before.migrations)} migrations recorded`);
 
@@ -1646,7 +1666,7 @@ async function main() {
     const img = await nodeImageService(ctx, FROM);
     ctx.imgId = img.id;
     const seeded = await seedForRollback(ctx);
-    docker(['stop', PANEL]);
+    docker(['stop', requireOwned('container', PANEL)]);
 
     startPanel(TO);
     await waitHealthy(bare(TO));
@@ -1655,7 +1675,7 @@ async function main() {
     await rollbackChecks(ctx, seeded);
   }
 
-  docker(['stop', PANEL]);
+  docker(['stop', requireOwned('container', PANEL)]);
   const lastVersion = MODE === 'rollback' ? bare(TO) : CANDIDATE_VERSION;
   const post = await inspectDb({
     ...migrationQueries,
@@ -1681,9 +1701,13 @@ async function main() {
 }
 
 function cleanup() {
-  for (const c of CONTAINERS) if (owned(c)) docker(['rm', '-f', '-v', c], { allowFail: true });
-  for (const v of VOLUMES) if (owned(v)) docker(['volume', 'rm', v], { allowFail: true });
-  if (owned(NET)) docker(['network', 'rm', NET], { allowFail: true });
+  for (const [kind, name] of [...CONTAINERS.map(name => ['container', name]), ...VOLUMES.map(name => ['volume', name]), ['network', NET]]) {
+    const result = cleanupOwned(kind, name);
+    if (created.has(name) && result !== 'removed') {
+      console.error(`Smoke cleanup could not confirm removal of owned ${kind} ${name} (${result}); retained for review`);
+      process.exitCode = 1;
+    }
+  }
 }
 
 main()

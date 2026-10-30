@@ -12,9 +12,9 @@ export function inspectOwnedSmokeResource(run, kind, name, owner) {
   return { status: 'owned', id: pieces[0] };
 }
 
-export function removeOwnedSmokeResource(run, kind, name, owner) {
+export function removeOwnedSmokeResource(run, kind, name, owner, { removeAnonymousVolumes = false } = {}) {
   const identity = inspectOwnedSmokeResource(run, kind, name, owner);
   if (identity.status !== 'owned') return identity.status;
-  const removed = run(kind === 'container' ? ['rm', '-f', identity.id] : [kind, 'rm', identity.id]);
+  const removed = run(kind === 'container' ? ['rm', '-f', ...(removeAnonymousVolumes ? ['-v'] : []), identity.id] : [kind, 'rm', identity.id]);
   return removed.status === 0 ? 'removed' : 'unavailable';
 }

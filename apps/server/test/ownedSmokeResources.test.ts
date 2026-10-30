@@ -30,6 +30,11 @@ describe('upgrade smoke resource ownership', () => {
     const run = vi.fn().mockReturnValueOnce({ status: 0, stdout: id + '|' + owner }).mockReturnValueOnce({ status: 1 });
     expect(removeOwnedSmokeResource(run, 'container', 'nd-fixture', owner)).toBe('unavailable');
   });
+  it('can explicitly remove anonymous volumes only with its own container', () => {
+    const run = vi.fn().mockReturnValueOnce({ status: 0, stdout: id + '|' + owner }).mockReturnValueOnce({ status: 0 });
+    expect(removeOwnedSmokeResource(run, 'container', 'nd-fixture', owner, { removeAnonymousVolumes: true })).toBe('removed');
+    expect(run.mock.calls[1]![0]).toEqual(['rm', '-f', '-v', id]);
+  });
   it.each([['container', '--unsafe', owner], ['container', 'nd-fixture', 'bad'], ['image', 'nd-fixture', owner]])
     ('refuses invalid identity without invoking Docker', (kind, name, token) => {
       const run = vi.fn(); expect(() => removeOwnedSmokeResource(run, kind, name, token)).toThrow(/Invalid/); expect(run).not.toHaveBeenCalled();

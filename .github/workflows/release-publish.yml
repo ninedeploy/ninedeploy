@@ -319,7 +319,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases]
+        suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases, node-infrastructure]
     permissions:
       # releases API read (previous release) + pulling the GHCR images.
       contents: read
@@ -474,6 +474,16 @@ jobs:
         if: matrix.suite == 'replica-databases'
         timeout-minutes: 10
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --replica-databases-only --proof=.temp_files/release-node-smoke
+
+      - name: Node database pooling and infrastructure features
+        if: matrix.suite == 'node-infrastructure'
+        timeout-minutes: 20
+        run: node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --new-node-features --no-swarm
+
+      - name: Swarm routing and rolling file secrets
+        if: matrix.suite == 'node-infrastructure'
+        timeout-minutes: 20
+        run: node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --swarm-only
 
       # Only synthetic fixture summaries and container names: raw logs may
       # contain sensitive configuration and are deliberately not uploaded.

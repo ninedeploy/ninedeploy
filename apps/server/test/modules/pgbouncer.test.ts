@@ -241,13 +241,14 @@ describe('POST /:id/pgbouncer/enable', () => {
 
   it('skips the update when the override matches the existing port', async () => {
     currentRow = rowDbFixture({ pgbouncerPort: 7000 });
-    const { port } = await startApp();
-    const res = await fetch(`http://127.0.0.1:${port}/1/pgbouncer/enable`, {
+    const { app } = await startApp();
+    const res = await app.inject({
       method: 'POST',
-      headers: { ...asUser(1), 'content-type': 'application/json' },
-      body: JSON.stringify({ port: 7000 }),
+      url: '/1/pgbouncer/enable',
+      headers: asUser(1),
+      payload: { port: 7000 },
     });
-    expect(res.status).toBe(200);
+    expect(res.statusCode).toBe(200);
     expect(updates).toEqual([]);
   });
 

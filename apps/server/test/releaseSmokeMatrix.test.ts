@@ -5,7 +5,7 @@ type Step = { id?: string; run?: string; if?: string; 'continue-on-error'?: bool
 type Job = { needs?: string | string[]; if?: string; 'continue-on-error'?: boolean; permissions?: Record<string, string>;
   strategy?: { 'fail-fast'?: boolean; 'max-parallel'?: number; matrix?: { suite?: string[] } }; steps?: Step[] };
 const jobs = () => (load(readFileSync(new URL('../../../.github/workflows/release-publish.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
-const suites = ['upgrade-journey', 'agent-runtime', 'panel-lifecycle', 'public-canary', 'public-lifecycle', 'replica-databases'];
+const suites = ['upgrade-journey', 'agent-runtime', 'panel-lifecycle', 'public-canary', 'public-lifecycle', 'replica-databases', 'node-infrastructure'];
 // biome-ignore lint/suspicious/noTemplateCurlyInString: Literal GitHub shell variable in the actual smoke commands.
 const image = 'ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}';
 const command = (name: string, flags = '') => `node scripts/${name}.mjs --image="${image}"${flags}`;
@@ -21,9 +21,10 @@ const expected = [
   command('smoke-node-canary', ' --mixed-agent-only --proof=.temp_files/release-node-mixed-agent'),
   command('smoke-node-limits', ' --proof=.temp_files/release-node-limits'),
   command('smoke-node-canary', ' --replica-databases-only --proof=.temp_files/release-node-smoke'),
+  command('smoke-multinode', ' --new-node-features --no-swarm'), command('smoke-multinode', ' --swarm-only'),
 ];
 describe('complete parallel release smoke gate', () => {
-  it('keeps six mandatory cohorts bounded to three independent runners', () => {
+  it('keeps seven mandatory cohorts bounded to three independent runners', () => {
     const smoke = jobs()['smoke-published-image'];
     expect(smoke.strategy?.matrix?.suite).toEqual(suites);
     expect(smoke.strategy?.['max-parallel']).toBe(3);
