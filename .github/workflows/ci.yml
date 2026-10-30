@@ -206,15 +206,32 @@ jobs:
           echo "installer helper smoke test passed"
 
   docker-image:
-    name: Docker image build
+    name: Docker image build and node autoscaling
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
 
       # Verifies the release workflow's Dockerfile compiles; no push happens here.
       - name: Build the image
         run: docker build -t ninedeploy:ci .
+
+      - name: Verify public node autoscaling with real routing
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-only --proof=.temp_files/ci-node-autoscale
+
+      - name: Preserve node autoscale proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-node-autoscale-${{ github.run_id }}
+          path: .temp_files/ci-node-autoscale/
+          include-hidden-files: true
+          if-no-files-found: ignore
 
   # Publishes the panel image to GHCR on every push to main so an
   # `install.sh --docker` from the main channel never lands on a stale
@@ -239,7 +256,7 @@ jobs:
     # The image must never reach `:edge` (what --channel=main installs
     # pull) before the full suite and the integration tests are green —
     # an independent job would happily publish a broken commit.
-    needs: [verify, integration]
+    needs: [verify, integration, docker-image]
     # L-14: least privilege. `packages: write` is the only permission
     # this job needs; everything else stays at the workflow default
     # of `contents: read`.

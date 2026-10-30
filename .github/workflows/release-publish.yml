@@ -450,6 +450,11 @@ jobs:
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-node-smoke
 
+      - name: Public node autoscaling and continuous routing on the pushed image
+        if: matrix.suite == 'public-canary'
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --autoscale-only --proof=.temp_files/release-node-autoscale
+
       - name: Public ordered node Start, Stop, Restart and panel-crash recovery
         if: matrix.suite == 'public-lifecycle'
         timeout-minutes: 15
@@ -497,6 +502,7 @@ jobs:
             .temp_files/release-node-smoke/failure-state.json
             .temp_files/release-node-smoke/inner-containers.log
             .temp_files/release-node-smoke/runtime-cleanup.json
+            .temp_files/release-node-autoscale/
             .temp_files/release-node-initial-stop/failure-state.json
             .temp_files/release-node-initial-stop/inner-containers.log
             .temp_files/release-node-initial-stop/runtime-cleanup.json

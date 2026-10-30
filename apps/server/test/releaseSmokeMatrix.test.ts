@@ -16,6 +16,7 @@ const expected = [
   command('smoke-container-metrics'), command('smoke-container-lifecycle'), command('smoke-container-generation-stop'),
   command('smoke-agent-creation-drain'), command('smoke-node-lifecycle-controller'),
   command('smoke-node-lifecycle-fanout'), command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'),
+  command('smoke-node-canary', ' --autoscale-only --proof=.temp_files/release-node-autoscale'),
   command('smoke-node-canary', ' --lifecycle-only --proof=.temp_files/release-node-smoke'),
   command('smoke-node-canary', ' --initial-stop-only --proof=.temp_files/release-node-initial-stop'),
   command('smoke-node-canary', ' --mixed-agent-only --proof=.temp_files/release-node-mixed-agent'),
@@ -24,6 +25,14 @@ const expected = [
   command('smoke-multinode', ' --new-node-features --no-swarm'), command('smoke-multinode', ' --swarm-only'),
 ];
 describe('complete parallel release smoke gate', () => {
+  it('requires isolated node autoscale routing before the main image can be published', () => {
+    const ci = (load(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
+    const build = ci['docker-image'];
+    const step = build.steps!.find(item => item.run?.includes('--autoscale-only'));
+    expect(step?.run).toBe('node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-only --proof=.temp_files/ci-node-autoscale');
+    expect(step?.['continue-on-error']).not.toBe(true);
+    expect([ci['publish-image'].needs ?? []].flat()).toContain('docker-image');
+  });
   it('keeps seven mandatory cohorts bounded to three independent runners', () => {
     const smoke = jobs()['smoke-published-image'];
     expect(smoke.strategy?.matrix?.suite).toEqual(suites);
