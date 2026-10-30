@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { eq, nodeLifecycleIntents, type DB, type Service } from '@ninedeploy/db';
+import { eq, nodeDeploymentPreparations, nodeLifecycleIntents, type DB, type Service } from '@ninedeploy/db';
 import { containerInventoryRequest, containerInventoryReply, containerStopSetRequest, containerStopSetReply, runtimeFenceRequest, runtimeFenceReply, containerLifecycleReply, containerLifecycleRequest, containerLifecycleRetireRequest, containerLifecycleRetireReply, type ContainerReadinessRequest } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
@@ -82,12 +82,35 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
   };
   const capturedTargets = (participant: Participant) => (intent.targets ?? [])
     .filter(target => (target.serverId ?? intent.serverId) === participant.serverId).map(({ id, name }) => ({ id, name }));
+  const verifyPreparationIdentities = async (participant: Participant, targets: NonNullable<typeof intent.targets>) => {
+    if (intent.action !== 'stop' || participant.serverId !== intent.serverId) return;
+    const records = await db.select().from(nodeDeploymentPreparations).where(eq(nodeDeploymentPreparations.serviceId, intent.serviceId));
+    for (const record of records) {
+      if (record.serverId !== participant.serverId || !(intent.snapshot.interruptedDeployments ?? []).some(item => item.id === record.deploymentId)) {
+        throw new Error('Node preparation placement changed');
+      }
+      if (record.phase === 'preparing' && record.targets === null) continue;
+      const names = replicaNames(record.runtimeId, record.capacity);
+      if (record.phase !== 'prepared' || !Number.isSafeInteger(record.capacity) || record.capacity < 1 || record.capacity > MAX_REPLICAS ||
+        !Array.isArray(record.targets) || record.targets.length !== names.length ||
+        record.targets.some((target, index) => target.name !== names[index] || !/^[a-f0-9]{64}$/.test(target.id)) ||
+        new Set(record.targets.map(target => target.id)).size !== names.length) throw new Error('Node preparation receipt is invalid');
+      for (const target of targets) {
+        const expected = record.targets.find(item => item.name === target.name);
+        if (expected ? expected.id !== target.id || target.deploymentId !== record.deploymentId : target.deploymentId === record.deploymentId) {
+          throw new Error('Node preparation identity changed');
+        }
+      }
+    }
+  };
   const discover = async (participant: Participant) => {
     const targets: NonNullable<typeof intent.targets> = [];
     if (intent.snapshot.unselected) {
       const request = containerInventoryRequest.parse({ ...fenceRequest(participant), expectedNames: participant.expectedNames });
       const reply = machine(await call(participant.serverId, 'docker.runtimeInventory', request, 35_000), 'ND-RUNTIME-INVENTORY ', value => containerInventoryReply.parse(value), request);
-      return reply.items.map(({ running: _running, ...item }) => ({ ...item, ...(participant.serverId === intent.serverId ? {} : { serverId: participant.serverId }) }));
+      const found = reply.items.map(({ running: _running, ...item }) => ({ ...item, ...(participant.serverId === intent.serverId ? {} : { serverId: participant.serverId }) }));
+      await verifyPreparationIdentities(participant, found);
+      return found;
     }
     if ((participant.runtimeId === null || participant.deploymentId === null) && !requiresCreationFence) throw new Error('Missing selected generation');
     const selected = participant.runtimeId === null ? [] : replicaNames(participant.runtimeId, intent.action === 'start' ? participant.serving : MAX_REPLICAS)
@@ -111,6 +134,7 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       targets.push({ id: found.id, name, ...(requiresCreationFence ? { deploymentId } : {}), ...(participant.serverId !== intent.serverId ? { serverId: participant.serverId } : {}) });
     }
     if (new Set(targets.map(target => target.id)).size !== targets.length) throw new Error('Duplicate node lifecycle identity');
+    await verifyPreparationIdentities(participant, targets);
     return targets;
   };
   const servingTargets = (participant: Participant) => {
