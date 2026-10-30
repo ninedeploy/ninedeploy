@@ -419,6 +419,11 @@ export const TR: Readonly<Record<string, string>> = {
   'Recovery could not be checked; retained runtimes remain protected':
     'Kurtarma kontrol edilemedi; saklanan çalışma zamanları korunmaya devam ediyor',
   'Could not load primary runtime recovery': 'Birincil çalışma zamanı kurtarması yüklenemedi',
+  'Could not load node preparation status': 'Düğüm hazırlığı durumu yüklenemedi',
+  'Node deployment preparation': 'Düğüm dağıtımı hazırlığı',
+  'Deployment #{id} on node #{node}: {phase} ({status})': 'Düğüm #{node} üzerindeki #{id} dağıtımı: {phase} ({status})',
+  'A pending preparation can hold later deployments. If the deployment has stopped, use the service Stop action to settle its node candidates; this also stops the service.':
+    'Bekleyen bir hazırlık sonraki dağıtımları bekletebilir. Dağıtım durmuşsa düğüm adaylarını sonuçlandırmak için servisin Durdur işlemini kullanın; bu işlem servisi de durdurur.',
   'Primary runtime recovery': 'Birincil çalışma zamanı kurtarması',
   'Health and loaded routing are checked before older runtimes are retired. Previous Swarm services stay at zero replicas after their tasks drain. Interrupted deploys are checked automatically after a panel restart.':
     'Eski çalışma zamanları kaldırılmadan önce sağlık durumu ve yüklenen yönlendirme kontrol edilir. Önceki Swarm servisleri, görevleri boşaldıktan sonra sıfır kopyada kalır. Yarıda kalan dağıtımlar, panel yeniden başlatıldıktan sonra otomatik olarak kontrol edilir.',
@@ -1333,8 +1338,6 @@ export const TR: Readonly<Record<string, string>> = {
     'Yeniden dağıtım gerektirmeden, yüke göre en az ve en çok konteyner sayısı arasında çalışır. Her 30 sn\'de bir konteyner başına metriği hedefle karşılaştırır (hedefin %10\'u içinde hiçbir şey değişmez) ve ihtiyaç ölçek büyütme ya da küçültme penceresi boyunca sürdüğünde konteyner ekler veya kaldırır.',
   'It applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turned off, the containers serving now keep serving until the next deploy, which runs the Replicas count again.':
     'Yedek konteynerleri oluşturan sonraki dağıtımda tamamen uygulanır; o zamana kadar yalnızca küçültebilir. Kapatıldığında, şu an hizmet veren konteynerler, Kopyalar sayısını yeniden çalıştıran sonraki dağıtıma kadar hizmet vermeye devam eder.',
-  'This service runs on a node, so the autoscaler holds for it for now.':
-    'Bu servis bir düğümde çalışıyor, bu yüzden otomatik ölçekleyici şimdilik onun için bekliyor.',
   'Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.':
     'Düğümde otomatik ölçekleme doğrulanmış kopya kapasitesi gerektirir ve CPU veya belleği destekler; istek hızına göre ölçekleme henüz kullanılamıyor.',
   'This service runs on Swarm, which scales with its own replicas; the autoscaler holds for it.':

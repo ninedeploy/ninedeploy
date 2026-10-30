@@ -7,7 +7,7 @@ const auth = vi.hoisted(() => ({ operator: true }));
 vi.mock('../src/lib/api.js', async () => (await import('./apiMock.js')).createFakeApiModule());
 vi.mock('../src/lib/auth.js', async original => ({ ...await original<typeof import('../src/lib/auth.js')>(), useAuth: () => ({ user: { id: 1, isOperator: auth.operator }, loading: false }) }));
 const entry = { id: 1, serverId: null, desiredRuntimeId: 'web-9', interrupted: true, deploymentId: 9, phase: 'retained', previousRuntimeId: 'web-t5-8', candidateRuntimeId: 'web-t5-9', reason: 'Node routing could not be confirmed', busy: false, attempts: 2, nextAttemptAt: '2026-10-23T00:00:00Z', updatedAt: '2026-10-22T23:00:00Z' };
-beforeEach(() => { vi.clearAllMocks(); auth.operator = true; mockOf(api.services.retryRuntimeRecovery).mockReset(); mockOf(api.services.runtimeRecovery).mockReset().mockResolvedValue(entry as never); });
+beforeEach(() => { vi.clearAllMocks(); auth.operator = true; mockOf(api.services.nodePreparations).mockReset().mockResolvedValue([]); mockOf(api.services.retryRuntimeRecovery).mockReset(); mockOf(api.services.runtimeRecovery).mockReset().mockResolvedValue(entry as never); });
 it('renders a readable pending reason and lets an operator retry the actual recovery API', async () => {
   mockOf(api.services.retryRuntimeRecovery).mockResolvedValue({ recovered: 1, held: 0, entry: null });
   renderWithProviders(<PrimaryRecoveryCard serviceId={1} />);

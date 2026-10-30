@@ -104,6 +104,7 @@ export function createFakeApiModule() {
       retryLifecycle: vi.fn(),
       routing: vi.fn().mockResolvedValue({ live: true, liveNote: null, container: null, http: [], ports: [] }),
       runtimeRecovery: vi.fn().mockResolvedValue(null),
+      nodePreparations: vi.fn().mockResolvedValue([]),
       retryRuntimeRecovery: vi.fn(),
       swarmRecovery: vi.fn().mockResolvedValue(null),
       retrySwarmRecovery: vi.fn(),
