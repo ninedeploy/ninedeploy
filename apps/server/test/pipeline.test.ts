@@ -537,6 +537,19 @@ describe('artifact promotion pipeline', () => {
   const imageId = `sha256:${'a'.repeat(64)}`;
   const sha = 'c'.repeat(40);
   const artifact = { version: 1, imageId, repoUrl: service.repoUrl, commitSha: sha, originDeploymentId: 99, builtWithNixpacks: true, builtStatic: false };
+  const artifactAgent = () => {
+    const created = new Map<number, string>(), id = 'd'.repeat(64);
+    return async (_db: unknown, server: number, op: string, params: Record<string, unknown>) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["stream","image.manage","build-path-guard","docker.probe","docker.recovery"]}'] };
+      if (op === 'docker.imageInspect') return { exitCode: 0, lines: [`${imageId}|123`] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] };
+      if (op === 'docker.runEnv' || op === 'docker.runSpec') { created.set(server, String(params.name)); return { exitCode: 0, lines: [id] }; }
+      if (op === 'docker.identity') return { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id, name: created.get(server), managed: 'service', serviceId: '5', deploymentId: '1' })}`] };
+      if (op === 'docker.inspect') return { exitCode: 0, lines: [params.format === 'image' ? imageId : 'running|none|0|0'] };
+      if (op === 'docker.probe') return { exitCode: 0, lines: [`ND-PROBE ${JSON.stringify({ ready: true, protocol: params.protocol, ...(params.protocol === 'http' ? { status: 200 } : {}) })}`] };
+      return { exitCode: 0, lines: [] };
+    };
+  };
   beforeEach(() => { vi.clearAllMocks(); });
   function setup(over: Record<string, unknown> = {}) {
     const state = makeDb();
@@ -565,12 +578,7 @@ describe('artifact promotion pipeline', () => {
         const rows = table === serviceTargets ? [{ id: 9, serverId: 9, runtimeId: 'old-edge' }] : [];
         return Object.assign(Promise.resolve(rows), { where: () => Object.assign(Promise.resolve(rows), { limit: async () => rows }), leftJoin: async () => [], innerJoin: async () => [], orderBy: async () => [] });
       } }));
-      h.agentOp.mockImplementation(async (_db, _server, op, params) => ({ exitCode: 0, lines:
-        op === 'agent.ping' ? ['ND-AGENT {"version":"0.18.0","caps":["stream","image.manage","build-path-guard"]}']
-          : op === 'docker.imageInspect' ? [`${imageId}|123`]
-            : op === 'docker.inspect' ? [params.format === 'image' ? imageId : 'running|none|0|0']
-              : op === 'file.writeEnv' ? [`wrote .agent-env/${params.name}.env`] : [],
-      }));
+      h.agentOp.mockImplementation(artifactAgent());
       return state;
     }
     it.each([{ port: undefined, primary: null }, { port: '9182', primary: null }, { port: undefined, primary: 4 }])('runs the recorded image and target env on an extra node without Git (%j)', async ({ port, primary }) => {
@@ -603,11 +611,7 @@ describe('artifact promotion pipeline', () => {
     db.query.sources.findFirst.mockResolvedValue({ type: 'github', tokenEncrypted: 'panel-only', allowOnNodes: false });
     db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'static' });
     (db.query as unknown as Record<string, unknown>)['servers'] = { findFirst: vi.fn(async () => ({ id: 4, name: 'artifact-node' })) };
-    h.agentOp.mockImplementation(async (_db: unknown, _server: unknown, op: string, params: Record<string, unknown>) => ({ exitCode: 0,
-      lines: op === 'agent.ping' ? ['ND-AGENT {"version":"0.17.0","caps":["stream","image.manage","build-path-guard"]}']
-        : op === 'docker.imageInspect' ? [imageId + '|123'] : op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env']
-          : op === 'docker.inspect' ? [params.format === 'image' ? imageId : 'running|none|0|0'] : [],
-    }));
+    h.agentOp.mockImplementation(artifactAgent());
     await runDeployment(db as never, 1);
     expect(h.shipImageByStream).toHaveBeenCalledWith(db, expect.objectContaining({ source: null, target: 4, imageId }), expect.any(Function));
     expect(h.agentOp.mock.calls.find(call => call[2] === 'docker.runEnv')?.[3]).toMatchObject({ image: imageId });
@@ -685,15 +689,18 @@ describe('node-built artifact pipeline', () => {
     execMock.capture.mockReset().mockImplementation(originalCapture);
     h.shipImageByStream.mockReset().mockImplementation(originalShip);
   });
-  function sourceNode(caps = ['stream', 'image.manage', 'build-path-guard']) {
+  function sourceNode(caps = ['stream', 'image.manage', 'build-path-guard', 'docker.probe', 'docker.recovery']) {
     dnsFixture.publicGithub = true;
     const state = makeDb(); baseSetup(state.db, { serverId: 4 });
     h.checkoutCommit.mockResolvedValueOnce(sha);
     state.db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'dockerfile' });
     (state.db.query as unknown as Record<string, unknown>)['servers'] = { findFirst: vi.fn(async () => ({ id: 4, name: 'origin' })) };
     h.agentOp.mockImplementation(async (_db: unknown, _server: unknown, op: string, params: Record<string, unknown>) => ({ exitCode: 0,
-      lines: op === 'agent.ping' ? [`ND-AGENT ${JSON.stringify({ version: '0.17.0', caps })}`]
+      lines: op === 'agent.ping' ? [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps })}`]
         : op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env']
+          : op === 'docker.runEnv' || op === 'docker.runSpec' ? ['d'.repeat(64)]
+          : op === 'docker.identity' ? [`ND-CONTAINER ${JSON.stringify({ id: 'd'.repeat(64), name: 'web-1', managed: 'service', serviceId: '5', deploymentId: '1' })}`]
+          : op === 'docker.probe' ? ['ND-PROBE {"ready":true,"protocol":"tcp"}']
           : op === 'docker.inspect' ? [params.format === 'image' ? imageId : 'running|none|0|0'] : [],
     }));
     execMock.capture.mockRejectedValueOnce(new Error('not on panel'));
@@ -706,12 +713,12 @@ describe('node-built artifact pipeline', () => {
     expect(updates).toContainEqual({ table: deployments, values: { artifact: { version: 1, imageId, repoUrl: service.repoUrl, commitSha: sha, originDeploymentId: 1, originServerId: 4, builtWithNixpacks: false, builtStatic: false } } });
     expect(updates.some(update => update.table === deployments && update.values.status === 'running')).toBe(true);
   });
-  it('keeps legacy node deployment working without a restorable artifact on an older agent', async () => {
+  it('refuses readiness when an older agent cannot verify the node candidate', async () => {
     const { db, updates } = sourceNode(['build-path-guard']);
     await runDeployment(db as never, 1);
     expect(h.shipImageByStream).not.toHaveBeenCalled();
     expect(updates.some(update => update.table === deployments && update.values.artifact)).toBe(false);
-    expect(updates.some(update => update.table === deployments && update.values.status === 'running')).toBe(true);
+    expect(updates.some(update => update.table === deployments && update.values.status === 'failed')).toBe(true);
   });
   it.each([false, true])('does not publish a partial record if caching fails (registry=%s)', async registry => {
     const { db, updates } = sourceNode();
@@ -727,8 +734,10 @@ describe('node-built artifact pipeline', () => {
   it('refuses required archival if the running node image cannot be observed', async () => {
     const { db, updates } = sourceNode();
     db.query.services.findFirst.mockResolvedValue({ ...service, serverId: 4, runtimeId: 'old-serving', pushRegistrySourceId: 1, pushRepository: 'team/app' });
-    h.agentOp.mockImplementation(async (_db: unknown, _server: unknown, op: string) => ({ exitCode: 0,
-      lines: op === 'agent.ping' ? ['ND-AGENT {"version":"0.17.0","caps":["build-path-guard"]}'] : op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env'] : [],
+    h.agentOp.mockImplementation(async (_db: unknown, _server: unknown, op: string, params: Record<string, unknown>) => ({ exitCode: 0,
+      lines: op === 'agent.ping' ? ['ND-AGENT {"version":"0.19.0","caps":["build-path-guard","docker.probe","docker.recovery"]}']
+        : op === 'file.writeEnv' ? ['wrote .agent-env/web-1.env'] : op === 'docker.runEnv' ? ['d'.repeat(64)]
+          : op === 'docker.inspect' && params.format === 'health' ? ['running|none|0|0'] : [],
     }));
     await runDeployment(db as never, 1);
     expect(updates.some(update => update.table === deployments && update.values.artifact)).toBe(false);
