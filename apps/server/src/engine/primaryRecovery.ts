@@ -93,14 +93,20 @@ async function mapFour<T>(values: T[], fn: (value: T) => Promise<void>) {
 function snapshot(runtime: DeployRuntime, commitSha: string | null): PrimaryRuntimeSnapshot {
   const names = replicaNames(runtime.runtimeId, runtime.replicas ?? 1);
   const targets = runtime.nodeTargets;
+  const capacity = runtime.nodeCapacityTargets, allNames = replicaNames(runtime.runtimeId, MAX_REPLICAS);
   if (targets && (targets.length !== names.length || targets.some((target, index) => target.name !== names[index] || !/^[a-f0-9]{64}$/.test(target.id)) ||
     new Set(targets.map(target => target.id)).size !== targets.length)) throw new Error('Invalid candidate creation identities');
+  if (capacity && (capacity.length < names.length || capacity.length > MAX_REPLICAS || capacity.some((target, index) =>
+    target.name !== allNames[index] || !/^[a-f0-9]{64}$/.test(target.id)) || new Set(capacity.map(target => target.id)).size !== capacity.length ||
+    targets?.some((target, index) => target.id !== capacity[index]?.id) || runtime.nodeReadinessId && runtime.nodeReadinessId !== capacity[0]?.id)) {
+    throw new Error('Invalid candidate capacity creation identities');
+  }
   if (runtime.nodeReadinessId && (!/^[a-f0-9]{64}$/.test(runtime.nodeReadinessId) || names.length !== 1 || targets && targets[0]?.id !== runtime.nodeReadinessId)) {
     throw new Error('Invalid candidate creation identity');
   }
   return { runtimeId: runtime.runtimeId, port: runtime.port, healthPath: runtime.healthPath, healthCheck: runtime.healthCheck ?? null,
-    replicas: names.length, commitSha, containers: names.map((name, index) => ({ name, id: targets?.[index]?.id ?? runtime.nodeReadinessId ?? null, observed: false })),
-    spares: replicaNames(runtime.runtimeId, MAX_REPLICAS).slice(names.length).map(name => ({ name, id: null, observed: false })) };
+    replicas: names.length, commitSha, containers: names.map((name, index) => ({ name, id: targets?.[index]?.id ?? capacity?.[index]?.id ?? runtime.nodeReadinessId ?? null, observed: false })),
+    spares: allNames.slice(names.length).map((name, index) => ({ name, id: capacity?.[names.length + index]?.id ?? null, observed: false })) };
 }
 const identities = (group: PrimaryRuntimeSnapshot) => [...group.containers, ...(group.spares ?? [])];
 function validateSnapshot(value: PrimaryRuntimeSnapshot) {

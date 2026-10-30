@@ -392,6 +392,38 @@ describe('primary recovery through SQLite and the real routing writer', () => {
       expect(probe.mock.calls).toHaveLength(1);
     } finally { await lease.release(); }
   });
+  it('refuses a spare whose immutable creation receipt changed before recovery captures it', async () => {
+    const actualSpare = 'd'.repeat(64), expectedSpare = 'c'.repeat(64);
+    containers.set(actualSpare, { id: actualSpare, name: candidate + '-r2', managed: 'service', serviceId: '1', deploymentId: '9' });
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/', replicas: 1,
+      nodeTargets: [{ id: candidateId, name: candidate }], nodeCapacityTargets: [
+        { id: candidateId, name: candidate }, { id: expectedSpare, name: candidate + '-r2' },
+      ] };
+    await expect(beginPrimaryTransition(f.db, (await service())!, 9, runtime, { runtimeId: old, port: 8080, healthPath: '/' }, null))
+      .rejects.toThrow(/identit/i);
+    expect(stops()).toEqual([]);
+    expect((await rows())[0]?.candidate.spares?.[0]).toMatchObject({ id: expectedSpare, observed: false });
+  });
+  it('records unchanged creation receipts for serving and spare capacity', async () => {
+    const spareId = 'c'.repeat(64);
+    containers.set(spareId, { id: spareId, name: candidate + '-r2', managed: 'service', serviceId: '1', deploymentId: '9' });
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/', replicas: 1,
+      nodeTargets: [{ id: candidateId, name: candidate }], nodeCapacityTargets: [
+        { id: candidateId, name: candidate }, { id: spareId, name: candidate + '-r2' },
+      ] };
+    const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { runtimeId: old, port: 8080, healthPath: '/' }, null);
+    try { expect(lease.row.candidate.spares?.[0]).toEqual({ id: spareId, name: candidate + '-r2', observed: true }); }
+    finally { await lease.release(); }
+  });
+  it('refuses malformed capacity receipts before creating a recovery record', async () => {
+    const svc = (await service())!, serving = { id: candidateId, name: candidate }, spare = { id: 'c'.repeat(64), name: candidate + '-r2' };
+    for (const nodeCapacityTargets of [[], [serving, { ...spare, id: candidateId }], [serving, { ...spare, name: candidate + '-r3' }],
+      [{ ...serving, id: 'd'.repeat(64) }, spare]]) {
+      await expect(beginPrimaryTransition(f.db, svc, 9, { runtimeId: candidate, port: 8080, healthPath: '/', replicas: 1,
+        nodeTargets: [serving], nodeCapacityTargets }, { runtimeId: old, port: 8080, healthPath: '/' }, null)).rejects.toThrow(/capacity creation identities/);
+    }
+    expect(await rows()).toEqual([]); expect(stops()).toEqual([]);
+  });
   it('does not adopt an unrelated container occupying a possible spare name', async () => {
     containers.set('c'.repeat(64), { id: 'c'.repeat(64), name: candidate + '-r2', managed: 'service', serviceId: '999', deploymentId: '9' });
     await expect(beginPrimaryTransition(f.db, (await service())!, 9, { runtimeId: candidate, port: 8080, healthPath: '/', healthCheck: 'http-strict' }, { runtimeId: old, port: 8080, healthPath: '/' }, null)).rejects.toThrow('Container identity is unconfirmed');

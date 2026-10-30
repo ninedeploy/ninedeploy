@@ -133,6 +133,8 @@ export interface DeployRuntime {
   nodeDeploymentOwner?: DeploymentRuntimeOwner;
   /** Creation receipts bind multi-replica node readiness to immutable containers. */
   nodeTargets?: Array<{ id: string; name: string }>;
+  /** Immutable creation receipts for serving replicas and stopped spare capacity. */
+  nodeCapacityTargets?: Array<{ id: string; name: string }>;
   /** Buildpack conventions needed to run the same image in another environment. */
   artifactBuild?: { builtWithNixpacks: boolean; builtStatic: boolean };
   /** Resolved secret-bearing model; the pipeline encrypts it in its own table. */
