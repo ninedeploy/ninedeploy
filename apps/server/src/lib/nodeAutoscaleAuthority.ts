@@ -103,7 +103,7 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
   });
 }
 
-async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAutoscaleAdmission, expectedReplicas: number, allowQueued = false): Promise<void> {
+async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAutoscaleAdmission, expectedReplicas: number, allowQueued = false, allowUnpublishedNetworkChange = false): Promise<void> {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, admission.service.id) });
     const config = autoscaleConfig.safeParse(admission.service.autoscale);
     if (!config.success || !Number.isSafeInteger(admission.desiredReplicas) || admission.desiredReplicas < config.data.minReplicas ||
@@ -120,7 +120,9 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
       JSON.stringify(transition.targets) !== JSON.stringify(admission.targets) ||
       JSON.stringify(transition.measurement) !== JSON.stringify(admission.measurement ?? null)) throw new Error('Node autoscale transition changed');
     const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, Number(/-([1-9]\d*)$/.exec(fresh.runtimeId!)?.[1])) });
-    if (!validCapacity(capacity, fresh, Math.max(admission.service.runtimeReplicas, admission.desiredReplicas)) || !await validNodeAutoscaleDatabaseNetworks(tx, fresh, capacity!) ||
+    const canUnwindNetworks = transition.phase.startsWith('abort_') || allowUnpublishedNetworkChange && ['accepted', 'fencing', 'prepared', 'started', 'ready'].includes(transition.phase);
+    if (!validCapacity(capacity, fresh, Math.max(admission.service.runtimeReplicas, admission.desiredReplicas)) ||
+      !canUnwindNetworks && !await validNodeAutoscaleDatabaseNetworks(tx, fresh, capacity!) ||
       transition.replicaInventory?.some(item => !capacity!.targets.some(target => target.name === item.name && target.id === item.id))) {
       throw new Error('Node autoscale capacity identity changed');
     }
@@ -138,11 +140,12 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
 /** A queued deploy supersedes an unpublished scale decision, including an in-flight Start. */
 export async function abortQueuedPreparedNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission): Promise<boolean> {
   return db.transaction(async tx => {
-    await assertCurrent(tx, admission, admission.service.runtimeReplicas, true);
+    await assertCurrent(tx, admission, admission.service.runtimeReplicas, true, true);
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
     if (!transition || !['prepared', 'started', 'ready'].includes(transition.phase)) return false;
     const queued = await tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, admission.service.id), eq(deployments.status, 'queued'))).limit(1);
-    if (!queued.length) return false;
+    const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, Number(/-([1-9]\d*)$/.exec(admission.service.runtimeId!)?.[1])) });
+    if (!queued.length && capacity && await validNodeAutoscaleDatabaseNetworks(tx, admission.service, capacity)) return false;
     const next = admission.desiredReplicas > admission.service.runtimeReplicas ? 'abort_stopping' : 'abort_fencing';
     const updated = await tx.update(nodeAutoscaleTransitions).set({ phase: next }).where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id),
       eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), eq(nodeAutoscaleTransitions.phase, transition.phase))).returning({ id: nodeAutoscaleTransitions.serviceId });
@@ -154,12 +157,13 @@ export async function abortQueuedPreparedNodeAutoscale(db: DB, admission: NodeAu
 /** A queued deploy or stale sample cancels an unstarted decision but first releases all node fences. */
 export async function abortUnstartedNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission): Promise<boolean> {
   return db.transaction(async tx => {
-    await assertCurrent(tx, admission, admission.service.runtimeReplicas, true);
+    await assertCurrent(tx, admission, admission.service.runtimeReplicas, true, true);
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, admission.service.id)).limit(1);
     if (!transition || !['accepted', 'fencing'].includes(transition.phase)) return false;
     const queued = await tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, admission.service.id), eq(deployments.status, 'queued'))).limit(1);
     const stale = !!admission.measurement && (admission.measurement.sampledAt > Date.now() || Date.now() - admission.measurement.sampledAt > AUTOSCALE_STATS_MAX_AGE_MS);
-    if (!queued.length && !stale) return false;
+    const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, Number(/-([1-9]\d*)$/.exec(admission.service.runtimeId!)?.[1])) });
+    if (!queued.length && !stale && capacity && await validNodeAutoscaleDatabaseNetworks(tx, admission.service, capacity)) return false;
     const updated = await tx.update(nodeAutoscaleTransitions).set({ phase: 'abort_fencing' }).where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id),
       eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), eq(nodeAutoscaleTransitions.phase, transition.phase))).returning({ id: nodeAutoscaleTransitions.serviceId });
     if (updated.length !== 1) throw new Error('Node autoscale abort ownership changed');
@@ -182,7 +186,7 @@ export async function recoverNodeAutoscaleAdmission(db: DB, serviceId: number): 
     }
     const admission: NodeAutoscaleAdmission = { owner, service: { ...service, runtimeReplicas: transition.fromReplicas },
       targets: transition.targets, watermark: transition.watermark, desiredReplicas: transition.toReplicas, workerToken, measurement: transition.measurement };
-    await assertCurrent(tx, admission, service.runtimeReplicas, transition.phase === 'accepted');
+    await assertCurrent(tx, admission, service.runtimeReplicas, transition.phase === 'accepted', true);
     return admission;
   });
 }
@@ -205,7 +209,7 @@ export async function discardExpiredNodeAutoscale(db: DB, admission: NodeAutosca
     if (admission.measurement.sampledAt <= now && now - admission.measurement.sampledAt <= AUTOSCALE_STATS_MAX_AGE_MS) return false;
     const queued = await tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, admission.service.id), eq(deployments.status, 'queued'))).limit(1);
     if (queued.length) return false;
-    await assertCurrent(tx, admission, admission.service.runtimeReplicas);
+    await assertCurrent(tx, admission, admission.service.runtimeReplicas, false, true);
     const deleted = await tx.delete(nodeAutoscaleTransitions).where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id),
       eq(nodeAutoscaleTransitions.workerToken, admission.workerToken), eq(nodeAutoscaleTransitions.phase, 'accepted'))).returning({ id: nodeAutoscaleTransitions.serviceId });
     if (deleted.length !== 1) throw new Error('Node autoscale expired transition changed');

@@ -48,10 +48,9 @@ export async function executeNodeAutoscale(db: DB, admission: NodeAutoscaleAdmis
     if (!row) throw new Error('Node autoscale transition disappeared');
     const phase = row.phase as NodeAutoscalePhase;
     const count = ['routing', 'draining', 'stopping', 'handoff'].includes(phase) ? to : from;
-    if (phase === 'accepted' && await abortUnstartedNodeAutoscale(db, admission)) continue;
-    await checkpoint(count);
-    if (phase === 'fencing' && await abortUnstartedNodeAutoscale(db, admission)) continue;
+    if ((phase === 'accepted' || phase === 'fencing') && await abortUnstartedNodeAutoscale(db, admission)) continue;
     if (['prepared', 'started', 'ready'].includes(phase) && await abortQueuedPreparedNodeAutoscale(db, admission)) continue;
+    await checkpoint(count);
     if (phase === 'accepted') {
       for (const node of [...admission.targets.map(target => target.serverId), serverId]) await effect(from, () => deps.preflight(node));
       await advanceNodeAutoscale(db, admission, 'accepted', 'fencing');

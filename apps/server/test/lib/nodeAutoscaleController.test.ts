@@ -4,6 +4,7 @@ import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
 import { createNodeAutoscaleDecider } from '../../src/lib/nodeAutoscaleDecision.js';
 import { createNodeAutoscaleWorker } from '../../src/lib/nodeAutoscaleWorker.js';
+import { reconcileNodeAutoscale } from '../../src/lib/nodeAutoscaleRecovery.js';
 import { beginCanary, endCanary } from '../../src/engine/canaryState.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { autoscaleStatus, resetAutoscaleState } from '../../src/lib/autoscaler.js';
@@ -88,6 +89,50 @@ it('stops an in-flight scale before starting a spare if database attachments cha
   await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow(/capacity identity changed/);
   expect(calls).toEqual(['fence']);
   expect((await service()).runtimeReplicas).toBe(1);
+  await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  expect(await reconcileNodeAutoscale(c.db, { runtime: () => deps() })).toEqual([{ serviceId: 1, state: 'discarded' }]);
+  expect(await transition()).toBeUndefined();
+  expect((await service()).runtimeReplicas).toBe(1);
+  expect(calls).not.toContain('start');
+  expect(calls).not.toContain('route');
+});
+
+it('stops an already-started spare during recovery when database attachments change before routing', async () => {
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const runtime = deps(), start = runtime.start;
+  runtime.start = async (...args) => {
+    const reply = await start(...args);
+    await c.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running', serverId: 4, passwordEncrypted: 'fixture' });
+    await c.db.insert(databaseAttachments).values({ serviceId: 1, databaseId: 5, envAlias: 'DATABASE_URL' });
+    return reply;
+  };
+  await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow(/capacity identity changed/);
+  expect(calls).toContain('start'); expect(calls).not.toContain('route');
+  await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  const interrupted = deps();
+  interrupted.handoff = async () => { throw new Error('handoff response lost'); };
+  expect(await reconcileNodeAutoscale(c.db, { runtime: () => interrupted })).toEqual([{ serviceId: 1, state: 'failed' }]);
+  expect((await transition())?.phase).toBe('abort_started_handoff');
+  await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  expect(await reconcileNodeAutoscale(c.db, { runtime: () => deps() })).toEqual([{ serviceId: 1, state: 'discarded' }]);
+  expect(calls).toContain('stop'); expect(calls).not.toContain('route');
+  expect(calls.filter(call => call === 'stop')).toHaveLength(1);
+  expect(await transition()).toBeUndefined(); expect((await service()).runtimeReplicas).toBe(1);
+});
+
+it('retains a published transition for review if database attachments change during routing', async () => {
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const runtime = deps(), route = runtime.route;
+  runtime.route = async (...args) => {
+    await route(...args);
+    await c.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running', serverId: 4, passwordEncrypted: 'fixture' });
+    await c.db.insert(databaseAttachments).values({ serviceId: 1, databaseId: 5, envAlias: 'DATABASE_URL' });
+  };
+  await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow(/capacity identity changed/);
+  await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  expect(await reconcileNodeAutoscale(c.db, { runtime: () => deps() })).toEqual([{ serviceId: 1, state: 'failed' }]);
+  expect((await transition())?.phase).toBe('routing');
+  expect((await service()).runtimeReplicas).toBe(2); expect(calls).not.toContain('stop');
 });
 
 it('reports a verified node sample and expires its value and desired count', async () => {

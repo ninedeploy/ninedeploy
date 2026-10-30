@@ -9,7 +9,7 @@ import { handoffStoppedNodeToLegacy } from '../../src/lib/nodeLegacyHandoff.js';
 import { createNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
 import { runOp } from '../../src/agent.js';
 import { prepareNodeAutoscaleCapacity } from '../../src/engine/builders/nodeAutoscalePrepare.js';
-import { createDb, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, runMigrations, servers, services, type Service } from '@ninedeploy/db';
+import { createDb, databaseAttachments, databases, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, runMigrations, servers, services, type Service } from '@ninedeploy/db';
 import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
@@ -354,7 +354,7 @@ describe('persistent runtime request admission', () => {
       await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
     } finally { c.client?.close(); }
   });
-  it('releases a fenced scale decision after a queued deploy and a lost handoff reply', async () => {
+  it.each(['queued deploy', 'database change'])('releases a fenced scale decision after %s and a lost handoff reply', async trigger => {
     const c = createDb({ url: 'file::memory:' });
     try {
       await c.ready; await runMigrations(c.db);
@@ -373,14 +373,25 @@ describe('persistent runtime request admission', () => {
       let queued = false, lost = true;
       const deps: NodeAutoscaleControllerDeps = {
         preflight: async () => {},
-        fence: async (_node, input) => { const reply = await agent.fence(input); if (!queued) { queued = true; await c.db.insert(deployments).values({ id: 11, serviceId: 7, status: 'queued' }); } return reply; },
+        fence: async (_node, input) => { const reply = await agent.fence(input); if (!queued) {
+          queued = true;
+          if (trigger === 'queued deploy') await c.db.insert(deployments).values({ id: 11, serviceId: 7, status: 'queued' });
+          else {
+            await c.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running', serverId: 4, passwordEncrypted: 'fixture' });
+            await c.db.insert(databaseAttachments).values({ serviceId: 7, databaseId: 5, envAlias: 'DATABASE_URL' });
+          }
+        } return reply; },
         inventory: (_node, input) => agent.inventory(input), start: (_node, input) => agent.start(input), stop: (_node, input) => agent.stop(input),
         retire: (_node, input) => agent.retire(input), handoff: async (_node, input) => { const reply = await handoffStoppedNodeToLegacy(join(root, '.agent-work', '.lifecycle'), input);
           if (lost) { lost = false; throw Error('lost abort handoff'); } return reply; },
         ready: async () => true, route: async () => { throw Error('unexpected routing'); }, drain: async () => {},
       };
       const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
-      await expect(executeNodeAutoscale(c.db, admitted, deps)).rejects.toThrow('lost abort handoff');
+      if (trigger === 'database change') {
+        await expect(executeNodeAutoscale(c.db, admitted, deps)).rejects.toThrow(/capacity identity changed/);
+        await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+        await expect(executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).rejects.toThrow('lost abort handoff');
+      } else await expect(executeNodeAutoscale(c.db, admitted, deps)).rejects.toThrow('lost abort handoff');
       expect((await c.db.select().from(nodeAutoscaleTransitions))[0]?.phase).toBe('abort_handoff');
       expect(rows.map(row => row.running)).toEqual([true, false, false]);
       await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
