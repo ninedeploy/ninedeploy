@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
-import { deployments, fanoutTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
+import { deploymentRuntimeOwners, deployments, fanoutTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
 import { HttpError } from './errors.js';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
@@ -189,7 +189,7 @@ export async function checkpointNodeLifecycleIntent(db: DB, intent: NodeLifecycl
 }
 
 export async function advanceNodeLifecycleIntent(db: DB, intent: NodeLifecycleIntent, phase: NodeLifecycleIntent['phase'],
-  patch: { targets?: NodeLifecycleIntent['targets']; serviceStatus?: 'deploying' | 'running' } = {}, now = Date.now()): Promise<NodeLifecycleIntent> {
+  patch: { targets?: NodeLifecycleIntent['targets']; serviceStatus?: 'deploying' | 'running'; retiredCandidates?: true } = {}, now = Date.now()): Promise<NodeLifecycleIntent> {
   return db.transaction(async tx => {
     const { fresh } = await owned(tx, intent, now);
     if (fresh.phase !== intent.phase) throw changed();
@@ -201,6 +201,26 @@ export async function advanceNodeLifecycleIntent(db: DB, intent: NodeLifecycleIn
     if (patch.serviceStatus && (fresh.action === 'stop' || (phase === publication ? patch.serviceStatus !== 'deploying' : phase !== 'completed' || patch.serviceStatus !== 'running'))) throw new Error('Invalid node lifecycle publication phase');
     if (patch.serviceStatus) await tx.update(services).set({ status: patch.serviceStatus, asleepAt: null }).where(eq(services.id, fresh.serviceId));
     const done = phase === 'completed';
+    if (patch.retiredCandidates) {
+      if (!done || fresh.action !== 'stop' || fresh.phase !== 'applying' || fresh.runtimeId === null || fresh.snapshot.unselected || fresh.targets === null) {
+        throw new Error('Stop candidate retirement is unconfirmed');
+      }
+      const candidates = fresh.snapshot.candidateParticipants?.find(item => item.serverId === fresh.serverId)?.targets;
+      if (!candidates) throw new Error('Stop candidate retirement identities unavailable');
+      const preparations = await tx.select().from(nodeDeploymentPreparations).where(eq(nodeDeploymentPreparations.serviceId, fresh.serviceId));
+      for (const preparation of preparations) {
+        const stamp = await tx.query.deploymentRuntimeOwners.findFirst({ where: eq(deploymentRuntimeOwners.deploymentId, preparation.deploymentId) });
+        const recovery = await tx.query.primaryTransitions.findFirst({ where: eq(primaryTransitions.deploymentId, preparation.deploymentId) });
+        if (recovery) continue;
+        if (preparation.serverId !== fresh.serverId || !stamp || stamp.serviceId !== fresh.serviceId || stamp.serverId !== fresh.serverId ||
+          stamp.epoch !== preparation.epoch || stamp.requestId !== preparation.requestId ||
+          !(fresh.snapshot.interruptedDeployments ?? []).some(item => item.id === preparation.deploymentId) ||
+          !candidates.some(item => item.deploymentId === preparation.deploymentId && item.name === preparation.runtimeId)) {
+          throw new Error('Stop preparation retirement ownership changed');
+        }
+        await tx.delete(nodeDeploymentPreparations).where(eq(nodeDeploymentPreparations.deploymentId, preparation.deploymentId));
+      }
+    }
     if (done) {
       for (const target of fresh.snapshot.fanout ?? []) {
         if (target.runtimeId || fresh.action === 'stop') await tx.update(serviceTargets).set({ status: fresh.action === 'stop' ? 'idle' : 'running', updatedAt: new Date(now) })

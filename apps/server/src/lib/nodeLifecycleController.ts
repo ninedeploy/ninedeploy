@@ -281,7 +281,8 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
           await apply(participant, false);
           if (requiresCreationFence) await retireCandidates(participant);
         }
-        intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'restart' ? 'starting' : intent.action === 'start' ? 'readiness' : 'completed');
+        intent = await advanceNodeLifecycleIntent(db, intent, intent.action === 'restart' ? 'starting' : intent.action === 'start' ? 'readiness' : 'completed',
+          requiresCreationFence ? { retiredCandidates: true } : {});
       } else if (intent.phase === 'starting') {
         for (const participant of participants()) await apply(participant, false, true);
         intent = await advanceNodeLifecycleIntent(db, intent, 'warming');

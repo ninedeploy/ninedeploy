@@ -1,11 +1,11 @@
 import { expect, it } from 'vitest';
-import { createDb, runMigrations, services, servers, users, deployments, nodeLifecycleIntents, eq } from '@ninedeploy/db';
+import { createDb, runMigrations, services, servers, users, deployments, nodeDeploymentPreparations, nodeLifecycleIntents, eq } from '@ninedeploy/db';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { executeNodeLifecycleIntent, type NodeLifecycleControllerDeps } from '../../src/lib/nodeLifecycleController.js';
 import { claimNodeDeploymentAttempt } from '../../src/lib/nodeDeploymentOwner.js';
 import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
 
-it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt', 'failed-preparation', 'replaced-preparation', 'unexpected-preparation'] as const)('retires interrupted candidates after %s', async mode => {
+it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt', 'failed-preparation', 'preparation-lost-reply', 'replaced-preparation', 'unexpected-preparation'] as const)('retires interrupted candidates after %s', async mode => {
   const c = createDb({ url: 'file::memory:' });
   try {
     await c.ready; await runMigrations(c.db);
@@ -14,13 +14,13 @@ it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt', 'fai
     await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', ownerUserId: 1, serverId: 4,
       runtimeId: 'web-9', status: 'running', runtimeReplicas: 1, port: 3000 });
     await c.db.insert(deployments).values([{ id: 9, serviceId: 1, status: 'running' }, { id: 10, serviceId: 1, status: 'deploying' }]);
-    if (mode === 'failed-preparation' || mode === 'replaced-preparation' || mode === 'unexpected-preparation') {
+    if (mode === 'failed-preparation' || mode === 'preparation-lost-reply' || mode === 'replaced-preparation' || mode === 'unexpected-preparation') {
       await c.db.update(deployments).set({ status: 'queued' }).where(eq(deployments.id, 10));
       const service = (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
       const admitted = await claimNodeDeploymentAttempt(c.db, 10, service, '{}');
       if (!admitted.claimed) throw Error('Missing deployment authority');
       await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: `sha256:${'f'.repeat(64)}`, serving: 1, capacity: 2 });
-      if (mode !== 'failed-preparation') await completeNodeDeploymentPreparation(c.db, admitted.owner,
+      if (mode !== 'failed-preparation' && mode !== 'preparation-lost-reply') await completeNodeDeploymentPreparation(c.db, admitted.owner,
         [{ name: 'web-10', id: (mode === 'replaced-preparation' ? 'e' : 'b').repeat(64) }, { name: 'web-10-r2', id: 'c'.repeat(64) }]);
       await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
     }
@@ -71,7 +71,7 @@ it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt', 'fai
             const index = containers.findIndex(container => container.id === target.id && container.name === target.name && container.deploymentId === target.deploymentId);
             if (index >= 0) containers.splice(index, 1);
           }
-          if (mode === 'lost-reply' && retirementAttempts === 1) throw new Error('Controlled lost retirement reply');
+          if ((mode === 'lost-reply' || mode === 'preparation-lost-reply') && retirementAttempts === 1) throw new Error('Controlled lost retirement reply');
           return reply('ND-LIFECYCLE-RETIRED ', { requestId: params.requestId, serviceId: params.serviceId, revision: params.revision,
             complete: true, items: targets.map((target, index) => ({ ...target,
               ...(mode === 'invalid-receipt' && retirementAttempts === 1 && index === 0 ? { id: 'e'.repeat(64) } : {}), removed: true })) });
@@ -91,12 +91,19 @@ it.each(['normal', 'lost-reply', 'failed-before-effect', 'invalid-receipt', 'fai
     if (mode !== 'normal' && mode !== 'failed-preparation') {
       expect(result.state).toBe('held');
       expect((await c.db.query.nodeLifecycleIntents.findFirst())?.phase).toBe('applying');
+      if (mode === 'preparation-lost-reply') expect(await c.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
       await c.db.update(nodeLifecycleIntents).set({ nextAttemptAt: new Date(0) }).where(eq(nodeLifecycleIntents.id, intent.id));
       result = await executeNodeLifecycleIntent(c.db, intent.id, deps);
     }
     expect(result.state, (await c.db.query.nodeLifecycleIntents.findFirst())?.reason ?? '').toBe('completed');
+    if (mode === 'failed-preparation' || mode === 'preparation-lost-reply') expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
     expect(containers.filter(container => container.serviceId === 1 && container.running).map(container => container.name)).toEqual([]);
     expect(containers.filter(container => container.serviceId === 1).map(container => container.name)).toEqual(['web-9']);
     expect(containers.find(container => container.name === 'other-10')?.running).toBe(true);
+    if (mode === 'failed-preparation' || mode === 'preparation-lost-reply') {
+      await c.db.insert(deployments).values({ id: 11, serviceId: 1, status: 'queued' });
+      const current = (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
+      expect((await claimNodeDeploymentAttempt(c.db, 11, current, '{}')).claimed).toBe(true);
+    }
   } finally { c.client?.close(); }
 });
