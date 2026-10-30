@@ -14,10 +14,11 @@ const requests = {
   retire: { ...header, targets: [target, spare], graceSeconds: 5 },
   limits: { ...header, targets: [target, spare], memLimitMb: 64 },
   start: { ...header, targets: [target, spare] },
+  stop: { ...header, targets: [target, spare], graceSeconds: 5 },
 };
-const kinds = ['fence', 'prepare', 'networks', 'retire', 'limits', 'start'] as const;
+const kinds = ['fence', 'prepare', 'networks', 'retire', 'limits', 'start', 'stop'] as const;
 type Kind = typeof kinds[number];
-const prefixes = { 'docker.runtimeFence': 'ND-RUNTIME-FENCE ', 'docker.prepare': 'ND-PREPARED ', 'docker.networkSet': 'ND-NETWORKS ', 'docker.retireSet': 'ND-RETIRED-SET ', 'docker.limits': 'ND-LIMITS ', 'docker.startSet': 'ND-STARTED-SET ' };
+const prefixes = { 'docker.runtimeFence': 'ND-RUNTIME-FENCE ', 'docker.prepare': 'ND-PREPARED ', 'docker.networkSet': 'ND-NETWORKS ', 'docker.retireSet': 'ND-RETIRED-SET ', 'docker.limits': 'ND-LIMITS ', 'docker.startSet': 'ND-STARTED-SET ', 'docker.stopSet': 'ND-STOPPED-SET ' };
 const db = {} as DB;
 let patch: Record<string, unknown>, caps: string[], version: string, mutate: (() => void) | undefined, now: number;
 const checkpoint = vi.fn(async () => undefined);
@@ -36,6 +37,7 @@ beforeEach(() => {
       : op === 'docker.networkSet' ? { ...common, action: params.action, networks: params.networks, items: params.targets.map((item: object) => ({ ...item, connected: params.action === 'connect' })) }
       : op === 'docker.limits' ? { ...common, items: params.targets }
       : op === 'docker.startSet' ? { ...common, items: params.targets.map((item: object) => ({ ...item, running: true })) }
+      : op === 'docker.stopSet' ? { ...common, items: params.targets.map((item: object) => ({ ...item, running: false })) }
       : { ...common, items: params.targets.map((item: object) => ({ ...item, removed: true })) };
     return { exitCode: 0, lines: [prefixes[op] + JSON.stringify({ ...reply, ...patch })] };
   });
@@ -105,12 +107,20 @@ describe('selected-node ordered runtime mutation client', () => {
       patch = { items: changed }; await expect(invoke(kind)).rejects.toThrow();
     }
   });
+  it.each(['start', 'stop'] as const)('requires the complete %s set with the requested final state', async kind => {
+    const running = kind === 'start';
+    for (const changed of [[], [{ ...target, running }], [{ ...target, running }, { ...spare, id: 'e'.repeat(64), running }],
+      [{ ...target, running }, { ...spare, deploymentId: 11, running }], [{ ...target, running }, { ...spare, running: !running }]]) {
+      patch = { items: changed }; await expect(invoke(kind)).rejects.toThrow();
+    }
+  });
   it.each([{ networks: ['foreign'] }, { action: 'disconnect', items: [{ ...target, connected: false }, { ...spare, connected: false }] }])('requires the requested networks and action: %j', async changed => {
     patch = changed; await expect(invoke('networks')).rejects.toThrow(/identity|coverage/);
   });
   it('accepts disconnected membership and empty retirement receipts', async () => {
     await expect(invoke('networks', { ...requests.networks, action: 'disconnect' })).resolves.toMatchObject({ action: 'disconnect', items: [{ connected: false }, { connected: false }] });
     await expect(invoke('retire', { ...requests.retire, targets: [] })).resolves.toMatchObject({ items: [] });
+    await expect(invoke('stop', { ...requests.stop, targets: [] })).resolves.toMatchObject({ items: [] });
   });
   it.each(['missing', 'duplicate', 'malformed', 'oversized', 'failed'])('refuses unusable transport evidence: %s', async mode => {
     const normal = io.op.getMockImplementation()!;

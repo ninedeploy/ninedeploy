@@ -60,6 +60,7 @@ export const containerInventoryReply = runtimeFenceReply.extend({ items: z.array
 export const containerStopSetRequest = containerRetireSetRequest;
 export const containerStopSetReply = runtimeFenceReply.extend({ items: z.array(target.extend({ running: z.literal(false) })).max(30).refine(distinct, 'Duplicate Stop identity') });
 export type ContainerInventoryReply = z.infer<typeof containerInventoryReply>;
+export type ContainerStopSetRequest = z.infer<typeof containerStopSetRequest>;
 export type ContainerStopSetReply = z.infer<typeof containerStopSetReply>;
 
 /** Start existing, immutable managed replicas under a new runtime revision. */

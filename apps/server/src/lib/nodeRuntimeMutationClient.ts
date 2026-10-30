@@ -4,7 +4,8 @@ import {
   containerNetworkSetRequest, containerNetworkSetReply, containerRetireSetRequest, containerRetireSetReply,
   containerLimitsRequest, containerLimitsReply,
   containerStartSetRequest, containerStartSetReply,
-  type RuntimeFenceRequest, type ContainerPrepareRequest, type ContainerNetworkSetRequest, type ContainerRetireSetRequest, type ContainerLimitsRequest, type ContainerStartSetRequest, type MultiNodeCapability,
+  containerStopSetRequest, containerStopSetReply,
+  type RuntimeFenceRequest, type ContainerPrepareRequest, type ContainerNetworkSetRequest, type ContainerRetireSetRequest, type ContainerLimitsRequest, type ContainerStartSetRequest, type ContainerStopSetRequest, type MultiNodeCapability,
 } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
@@ -77,6 +78,10 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
     start(params: ContainerStartSetRequest) {
       const input = containerStartSetRequest.parse(params);
       return exchange('docker.startSet', 'ND-STARTED-SET ', input, value => containerStartSetReply.parse(value), reply => sameTargets(input.targets, reply.items), 'docker.startSet');
+    },
+    stop(params: ContainerStopSetRequest) {
+      const input = containerStopSetRequest.parse(params);
+      return exchange('docker.stopSet', 'ND-STOPPED-SET ', input, value => containerStopSetReply.parse(value), reply => sameTargets(input.targets, reply.items));
     },
   };
 }
