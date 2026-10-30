@@ -402,6 +402,10 @@ export const servicesSpecs: RouteSpecMap = {
     summary: 'Pending primary Docker runtime recovery', tag: 'services', floor: 'viewer',
     responseType: '{ entry: PrimaryRecoveryEntry | null }',
   },
+  'GET /v1/services/:id/node-preparations': {
+    summary: 'Pending node deployment preparations', tag: 'services', floor: 'viewer',
+    responseType: '{ entries: Array<{ deploymentId: number; serverId: number; phase: string; deploymentStatus: string }> }',
+  },
   'GET /v1/services/:id/routing': {
     summary: "Where a service's traffic goes: domains through Traefik, host ports through Docker", tag: 'services', floor: 'viewer',
     responseType: 'ServiceRoutingView',
