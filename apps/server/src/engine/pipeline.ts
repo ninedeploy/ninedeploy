@@ -269,7 +269,7 @@ type RuntimeEnvironment = {
   withheldFromPreview: string[];
   // ── 0.16 T6 node databases ──
   /** The running attached databases whose connection strings `values` carries, and where they run (D4, O7). */
-  attachedDatabases: Array<{ id: number; slug: string; serverId: number | null; container: string | null }>;
+  attachedDatabases: Array<{ id: number; slug: string; serverId: number | null; container: string | null; envAlias: string }>;
   // ── end 0.16 T6 ──
 };
 
@@ -461,7 +461,7 @@ export async function loadRuntimeEnv(
     const d = await db.query.databases.findFirst({ where: eq(databases.id, a.databaseId) });
     if (d && d.status === 'running') {
       readyAttachmentCount++;
-      attachedDatabases.push({ id: d.id, slug: d.slug, serverId: d.serverId ?? null, container: d.containerName ?? d.nodeContainerName ?? null });
+      attachedDatabases.push({ id: d.id, slug: d.slug, serverId: d.serverId ?? null, container: d.containerName ?? d.nodeContainerName ?? null, envAlias: a.envAlias });
       // Services created by an older or interrupted Hub flow may have a valid
       // attachment but a missing persisted mapping. Recover the trusted
       // built-in contract from the exact image/port/volume/database signature
@@ -1591,13 +1591,14 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
         db.select({ id: serviceTargets.id }).from(serviceTargets).where(eq(serviceTargets.serviceId, service.id)).limit(1),
       ]);
       if (activeRoutes.length && !targets.length) {
-        const readTopology = async () => (await db.select({ id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status })
+        const readTopology = async () => (await db.select({ attachmentId: databaseAttachments.id, id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status, envAlias: databaseAttachments.envAlias })
           .from(databaseAttachments).innerJoin(databases, eq(databases.id, databaseAttachments.databaseId))
           .where(eq(databaseAttachments.serviceId, service.id))).sort((a, b) => a.id - b.id);
         const topology = await readTopology();
-        const expected = runtimeEnvironment.attachedDatabases.map(item => ({ id: item.id, slug: item.slug, serverId: item.serverId, status: 'running' }))
+        const expected = runtimeEnvironment.attachedDatabases.map(item => ({ id: item.id, slug: item.slug, serverId: item.serverId, status: 'running', envAlias: item.envAlias }))
           .sort((a, b) => a.id - b.id);
-        const networksSupported = JSON.stringify(topology) === JSON.stringify(expected) && topology.length <= 8 && topology.every(item => item.serverId === service.serverId);
+        const networksSupported = JSON.stringify(topology.map(({ attachmentId: _attachmentId, ...database }) => database)) === JSON.stringify(expected) &&
+          topology.length <= 8 && topology.every(item => item.serverId === service.serverId);
         let ready = false;
         try {
           await candidateCheckpoint();
@@ -1614,7 +1615,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
         if (ready && networksSupported) {
           const { nodeDatabaseNetwork } = await import('../lib/nodeDatabase.js');
           orderedDatabaseNetworks = topology.map(item => nodeDatabaseNetwork(item.slug));
-          orderedDatabaseIdentities = topology.map(item => `${item.id}:${nodeDatabaseNetwork(item.slug)}`).sort();
+          orderedDatabaseIdentities = topology.map(item => `${item.attachmentId}:${item.id}:${nodeDatabaseNetwork(item.slug)}`).sort();
           orderedDatabaseCheck = async () => { if (JSON.stringify(await readTopology()) !== JSON.stringify(topology)) throw new Error('Node database attachments changed during deployment'); };
           await candidateCheckpoint();
           builder = remoteBuilderFor(currentRemoteImage, true);

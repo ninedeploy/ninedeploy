@@ -12,7 +12,7 @@ function validTargets(runtimeId: string, capacity: number, targets: unknown): ta
     typeof target.id === 'string' && /^[a-f0-9]{64}$/.test(target.id)) && new Set(targets.map(target => target.id)).size === names.length;
 }
 function validNetworks(networks: unknown): networks is string[] {
-  return Array.isArray(networks) && networks.length <= 8 && networks.every(value => typeof value === 'string' && /^[1-9]\d*:nd-dbnet-[a-z0-9][a-z0-9_.-]*$/.test(value)) &&
+  return Array.isArray(networks) && networks.length <= 8 && networks.every(value => typeof value === 'string' && /^(?:[1-9]\d*:)?[1-9]\d*:nd-dbnet-[a-z0-9][a-z0-9_.-]*$/.test(value)) &&
     new Set(networks).size === networks.length && networks.every((value, index) => index === 0 || networks[index - 1]! < value);
 }
 function validRecord(row: typeof nodeDeploymentPreparations.$inferSelect, owner: DeploymentRuntimeOwner, slug: string): boolean {
@@ -43,7 +43,8 @@ async function assertOwner(tx: Tx, owner: DeploymentRuntimeOwner) {
 export async function beginNodeDeploymentPreparation(db: DB, owner: DeploymentRuntimeOwner, spec: Spec) {
   const databaseNetworks = [...(spec.databaseNetworks ?? [])].sort();
   if (!/^sha256:[a-f0-9]{64}$/.test(spec.imageId) || !Number.isSafeInteger(spec.serving) || !Number.isSafeInteger(spec.capacity) ||
-    spec.serving < 1 || spec.capacity < spec.serving || spec.capacity > MAX_REPLICAS || !validNetworks(databaseNetworks)) throw new Error('Invalid node preparation intent');
+    spec.serving < 1 || spec.capacity < spec.serving || spec.capacity > MAX_REPLICAS || !validNetworks(databaseNetworks) ||
+    databaseNetworks.some(network => !/^[1-9]\d*:[1-9]\d*:/.test(network))) throw new Error('Invalid node preparation intent');
   return db.transaction(async tx => {
     const service = await assertOwner(tx, owner);
     const deployment = await tx.query.deployments.findFirst({ where: eq(deployments.id, owner.deploymentId) });

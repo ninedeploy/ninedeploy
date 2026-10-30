@@ -58,10 +58,22 @@ it('holds scaling when database attachments differ from the prepared capacity', 
   expect(await worker.step(svc)).toEqual({ state: 'held', reason: 'node autoscale database networks changed; redeploy to prepare capacity' });
   expect(await admitNodeAutoscale(c.db, svc, 2)).toBeNull();
   expect(sample).not.toHaveBeenCalled();
-  await c.db.update(nodeAutoscaleCapacity).set({ databaseNetworks: ['6:nd-dbnet-orders'] }).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
+  await c.db.update(nodeAutoscaleCapacity).set({ databaseNetworks: ['1:6:nd-dbnet-orders'] }).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
   expect(await admitNodeAutoscale(c.db, svc, 2)).toBeNull();
-  await c.db.update(nodeAutoscaleCapacity).set({ databaseNetworks: ['5:nd-dbnet-orders'] }).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
+  await c.db.update(nodeAutoscaleCapacity).set({ databaseNetworks: ['1:5:nd-dbnet-orders'] }).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
   expect(await admitNodeAutoscale(c.db, svc, 2)).not.toBeNull();
+});
+
+it('refuses old spare capacity after the same database is detached and reattached', async () => {
+  await c.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running', serverId: 4, passwordEncrypted: 'fixture' });
+  await c.db.insert(databaseAttachments).values({ id: 1, serviceId: 1, databaseId: 5, envAlias: 'DATABASE_URL' });
+  await c.db.update(nodeAutoscaleCapacity).set({ databaseNetworks: ['1:5:nd-dbnet-orders'] }).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
+  await c.db.delete(databaseAttachments).where(eq(databaseAttachments.id, 1));
+  await c.db.insert(databaseAttachments).values({ id: 2, serviceId: 1, databaseId: 5, envAlias: 'DATABASE_URL' });
+  const svc = await service(), sample = vi.fn();
+  expect(await createNodeAutoscaleWorker(c.db, { blocked: () => false, sample }).step(svc)).toMatchObject({ state: 'held', reason: expect.stringMatching(/networks changed/) });
+  expect(await admitNodeAutoscale(c.db, svc, 2)).toBeNull();
+  expect(sample).not.toHaveBeenCalled();
 });
 
 it('stops an in-flight scale before starting a spare if database attachments change', async () => {

@@ -335,7 +335,7 @@ describe('explicit Stop during primary readiness', () => {
   const originalBuild = h.builder.buildAndRun.getMockImplementation()!;
   const originalHealth = h.builder.isHealthy.getMockImplementation()!;
   afterEach(() => { h.builder.buildAndRun.mockReset().mockImplementation(originalBuild); h.builder.isHealthy.mockReset().mockImplementation(originalHealth); });
-  it.each([[true, false, false], [true, true, false], [false, false, false], [false, true, false], [true, true, true]])('node pipeline with capacity support %s, database %s and topology change %s', async (supported, withDatabase, topologyChange) => {
+  it.each([[true, false, false], [true, true, false], [false, false, false], [false, true, false], [true, true, true], [true, true, 'alias']])('node pipeline with capacity support %s, database %s and topology change %s', async (supported, withDatabase, topologyChange) => {
     const { observabilityDb } = await import('./fixtures/observability.js');
     const f = await observabilityDb(), originalAgent = h.agentOp.getMockImplementation()!;
     const targets = new Map<string, { id: string; name: string }>(), imageId = `sha256:${'f'.repeat(64)}`;
@@ -353,7 +353,8 @@ describe('explicit Stop during primary readiness', () => {
           const item = { id: String(index + 1).repeat(64), name: spec.name, deploymentId: params.deploymentId, running: params.startNames.includes(spec.name) };
           targets.set(item.name, item); return item;
         });
-        if (topologyChange) await f.db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, 5));
+        if (topologyChange === 'alias') await f.db.update(databaseAttachments).set({ envAlias: 'CHANGED_URL' }).where(eq(databaseAttachments.databaseId, 5));
+        else if (topologyChange) await f.db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, 5));
         return { exitCode: 0, lines: [`ND-PREPARED ${JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, deploymentId: params.deploymentId, revision: params.revision, complete: true, items })}`] };
       }
       if (op === 'docker.identity') {
@@ -388,7 +389,7 @@ describe('explicit Stop during primary readiness', () => {
       expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status, logs.join('\n')).toBe('running');
       const capacity = await f.db.select().from(nodeAutoscaleCapacity);
       if (supported) {
-        expect(capacity).toMatchObject([{ deploymentId: 9, runtimeId: 'web-9', imageId, databaseNetworks: withDatabase ? ['5:nd-dbnet-orders'] : [] }]);
+        expect(capacity).toMatchObject([{ deploymentId: 9, runtimeId: 'web-9', imageId, databaseNetworks: withDatabase ? ['1:5:nd-dbnet-orders'] : [] }]);
         expect(capacity[0]?.targets.map(target => target.name)).toEqual(['web-9', 'web-9-r2']);
       } else expect(capacity).toEqual([]);
       expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.prepare')).toBe(supported);

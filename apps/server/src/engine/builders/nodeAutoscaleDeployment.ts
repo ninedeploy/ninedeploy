@@ -23,8 +23,8 @@ export async function prepareNodeAutoscaleDeployment(input: {
 }) {
   const { service, owner } = input, label = `#${owner.serverId}`, attachments = input.attachments ?? [], files = input.files ?? [];
   const networks = [...(input.extraNetworks ?? [])].sort(), identities = [...(input.databaseNetworkIdentities ?? [])].sort();
-  if (identities.some(identity => !/^[1-9]\d*:nd-dbnet-[a-z0-9][a-z0-9_.-]*$/.test(identity)) ||
-    JSON.stringify(identities.map(identity => identity.slice(identity.indexOf(':') + 1)).sort()) !== JSON.stringify(networks)) {
+  if (identities.some(identity => !/^[1-9]\d*:[1-9]\d*:nd-dbnet-[a-z0-9][a-z0-9_.-]*$/.test(identity)) ||
+    JSON.stringify(identities.map(identity => identity.split(':')[2]).sort()) !== JSON.stringify(networks)) {
     throw new Error('Node autoscale database network identities are unconfirmed');
   }
   if (!input.journal || typeof input.journal.begin !== 'function' || typeof input.journal.complete !== 'function') {

@@ -37,10 +37,10 @@ const validCapacity = (row: typeof nodeAutoscaleCapacity.$inferSelect | undefine
 export async function validNodeAutoscaleDatabaseNetworks(db: Pick<DB, 'select'>, svc: Service, row: typeof nodeAutoscaleCapacity.$inferSelect): Promise<boolean> {
   if (!Array.isArray(row.databaseNetworks) || row.databaseNetworks.length > 8 || row.databaseNetworks.some(value => typeof value !== 'string') ||
     new Set(row.databaseNetworks).size !== row.databaseNetworks.length) return false;
-  const attached = await db.select({ id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status }).from(databaseAttachments)
+  const attached = await db.select({ attachmentId: databaseAttachments.id, id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status }).from(databaseAttachments)
     .innerJoin(databases, eq(databases.id, databaseAttachments.databaseId)).where(eq(databaseAttachments.serviceId, svc.id));
   if (attached.some(item => item.serverId !== svc.serverId || item.status !== 'running')) return false;
-  const expected = attached.map(item => `${item.id}:nd-dbnet-${item.slug}`).sort();
+  const expected = attached.map(item => `${item.attachmentId}:${item.id}:nd-dbnet-${item.slug}`).sort();
   return JSON.stringify(expected) === JSON.stringify(row.databaseNetworks);
 }
 

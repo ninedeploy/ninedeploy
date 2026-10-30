@@ -72,3 +72,10 @@ it('can retain an already-started creation receipt after cancellation', async ()
   await c.db.update(deployments).set({ status: 'cancelled' }).where(eq(deployments.id, 9));
   expect(await completeNodeDeploymentPreparation(c.db, owner, targets)).toMatchObject({ phase: 'prepared', targets });
 });
+it('keeps earlier network receipts readable for interrupted deployment recovery', async () => {
+  await beginNodeDeploymentPreparation(c.db, owner, spec);
+  await c.db.update(nodeDeploymentPreparations).set({ databaseNetworks: ['5:nd-dbnet-orders'] }).where(eq(nodeDeploymentPreparations.deploymentId, 9));
+  expect(await readNodeDeploymentPreparation(c.db, owner)).toMatchObject({ databaseNetworks: ['5:nd-dbnet-orders'], phase: 'preparing' });
+  expect(await completeNodeDeploymentPreparation(c.db, owner, targets)).toMatchObject({ phase: 'prepared', targets });
+  await expect(beginNodeDeploymentPreparation(c.db, owner, { ...spec, databaseNetworks: ['5:nd-dbnet-orders'] })).rejects.toThrow(/invalid node preparation intent/i);
+});
