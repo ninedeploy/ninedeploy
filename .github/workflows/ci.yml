@@ -216,6 +216,9 @@ jobs:
         with:
           node-version: 26.12.1
 
+      - name: Verify Node security baseline
+        run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
+
       # Verifies the release workflow's Dockerfile compiles; no push happens here.
       - name: Build the image
         run: docker build -t ninedeploy:ci .

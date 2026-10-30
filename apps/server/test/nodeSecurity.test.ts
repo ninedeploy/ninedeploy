@@ -49,10 +49,11 @@ describe('Node security baseline', () => {
         const check = steps.findIndex(s => s.name === 'Verify Node security baseline');
         expect(check).toBeGreaterThan(setup);
         expect(steps[check]!.run).toContain(`process.versions.node !== '${version}'`);
-        expect(steps.findIndex(s => s.name === 'Install dependencies')).toBeGreaterThan(check);
+        const install = steps.findIndex(s => s.name === 'Install dependencies');
+        if (install >= 0) expect(install).toBeGreaterThan(check);
       }
     }
-    expect(found).toBe(5);
+    expect(found).toBe(6);
   });
 });
 
