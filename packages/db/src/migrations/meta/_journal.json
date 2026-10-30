@@ -750,6 +750,13 @@
       "when": 1793371614032,
       "tag": "0107_node_autoscale_configuration",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "6",
+      "when": 1793371731527,
+      "tag": "0108_node_autoscale_worker_lease",
+      "breakpoints": true
     }
   ]
 }

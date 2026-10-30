@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import { deployments, fanoutTransitions, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, serviceTargets, services,
   type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { autoscaleConfig } from '@ninedeploy/schemas';
@@ -8,7 +8,8 @@ import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameR
 import { swarmRuntimeOf } from './swarm.js';
 
 type Placement = { serverId: number; runtimeId: string | null };
-export type NodeAutoscaleAdmission = { owner: ServiceRuntimeOwner; service: Service; targets: Placement[]; watermark: number; desiredReplicas: number };
+export type NodeAutoscaleAdmission = { owner: ServiceRuntimeOwner; service: Service; targets: Placement[]; watermark: number; desiredReplicas: number; workerToken: string };
+export const NODE_AUTOSCALE_LEASE_MS = 90_000;
 const snapshot = (s: Service) => JSON.stringify([s.type, s.orchestrator, s.slug, s.serverId, s.status, s.asleepAt,
   s.runtimeId, s.replicas, s.autoscale, s.port, s.healthCheck, s.healthPath, s.healthCommand, s.healthTimeoutSeconds,
   s.cpuShares, s.cpuLimitMilli, s.memLimitMb]);
@@ -44,10 +45,12 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
     if (!Number.isSafeInteger(watermark) || watermark < 1) return null;
     const prior = await readServiceRuntimeOwner(tx, fresh.id);
     const owner = await reserveServiceRuntimeOwnerInTransaction(tx, fresh.id, 'scale', randomBytes(16).toString('hex'), prior);
+    const workerToken = randomBytes(16).toString('hex');
     await tx.insert(nodeAutoscaleTransitions).values({ serviceId: fresh.id, ownerEpoch: owner.epoch, requestId: owner.requestId!,
       serverId: fresh.serverId!, runtimeId: fresh.runtimeId!, fromReplicas: fresh.runtimeReplicas, toReplicas: desiredReplicas,
-      watermark, configuration: snapshot(fresh), targets: targets.map(t => ({ serverId: t.serverId, runtimeId: t.runtimeId! })) });
-    return { owner, service: fresh, targets, watermark, desiredReplicas };
+      watermark, configuration: snapshot(fresh), workerToken, leaseUntil: new Date(Date.now() + NODE_AUTOSCALE_LEASE_MS),
+      targets: targets.map(t => ({ serverId: t.serverId, runtimeId: t.runtimeId! })) });
+    return { owner, service: fresh, targets, watermark, desiredReplicas, workerToken };
   });
 }
 
@@ -57,6 +60,8 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
       !sameRuntimeOwner(await readServiceRuntimeOwner(tx, fresh.id), admission.owner) ||
       JSON.stringify(await placements(tx, fresh.id)) !== JSON.stringify(admission.targets)) throw new Error('Node autoscale ownership, runtime or placement changed');
     const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, fresh.id)).limit(1);
+    if (transition && (!/^[a-f0-9]{32}$/.test(admission.workerToken) || transition.workerToken !== admission.workerToken ||
+      !transition.leaseUntil || transition.leaseUntil.getTime() <= Date.now())) throw new Error('Node autoscale worker lease changed or expired');
     if (!transition || transition.phase !== 'accepted' || transition.ownerEpoch !== admission.owner.epoch || transition.requestId !== admission.owner.requestId ||
       transition.serverId !== fresh.serverId || transition.runtimeId !== fresh.runtimeId || transition.fromReplicas !== admission.service.runtimeReplicas ||
       transition.toReplicas !== admission.desiredReplicas || transition.watermark !== admission.watermark || transition.configuration !== snapshot(admission.service) ||
@@ -73,7 +78,9 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
 /** Reconstruct a recorded decision only while its original runtime authority is still current. */
 export async function recoverNodeAutoscaleAdmission(db: DB, serviceId: number): Promise<NodeAutoscaleAdmission | null> {
   return db.transaction(async tx => {
-    const [transition] = await tx.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, serviceId)).limit(1);
+    const now = new Date(), workerToken = randomBytes(16).toString('hex');
+    const [transition] = await tx.update(nodeAutoscaleTransitions).set({ workerToken, leaseUntil: new Date(now.getTime() + NODE_AUTOSCALE_LEASE_MS) })
+      .where(and(eq(nodeAutoscaleTransitions.serviceId, serviceId), or(isNull(nodeAutoscaleTransitions.leaseUntil), lte(nodeAutoscaleTransitions.leaseUntil, now)))).returning();
     if (!transition) return null;
     const service = await tx.query.services.findFirst({ where: eq(services.id, serviceId) });
     const owner = await readServiceRuntimeOwner(tx, serviceId);
@@ -82,7 +89,7 @@ export async function recoverNodeAutoscaleAdmission(db: DB, serviceId: number): 
       throw new Error('Node autoscale recovery configuration or count changed');
     }
     const admission: NodeAutoscaleAdmission = { owner, service: { ...service, runtimeReplicas: transition.fromReplicas },
-      targets: transition.targets, watermark: transition.watermark, desiredReplicas: transition.toReplicas };
+      targets: transition.targets, watermark: transition.watermark, desiredReplicas: transition.toReplicas, workerToken };
     await assertCurrent(tx, admission, service.runtimeReplicas);
     return admission;
   });
@@ -90,7 +97,11 @@ export async function recoverNodeAutoscaleAdmission(db: DB, serviceId: number): 
 
 /** Recheck ownership, placement and serving count around every awaited scale effect. */
 export async function checkpointNodeAutoscale(db: DB, admission: NodeAutoscaleAdmission, expectedReplicas: number): Promise<void> {
-  await db.transaction(tx => assertCurrent(tx, admission, expectedReplicas));
+  await db.transaction(async tx => {
+    await assertCurrent(tx, admission, expectedReplicas);
+    await tx.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(Date.now() + NODE_AUTOSCALE_LEASE_MS) })
+      .where(and(eq(nodeAutoscaleTransitions.serviceId, admission.service.id), eq(nodeAutoscaleTransitions.workerToken, admission.workerToken)));
+  });
 }
 
 /** Commit the count only with the same authority and observed generation in one transaction. */

@@ -64,8 +64,8 @@ it('retains a pre-configuration scale decision while leaving its configuration u
     await c.client!.execute("INSERT INTO services(id,name,slug,type,server_id,status,runtime_id) VALUES(1,'Web','web','docker',4,'running','web-9')");
     await c.client!.execute({ sql: "INSERT INTO node_autoscale_transitions(service_id,owner_epoch,request_id,server_id,runtime_id,from_replicas,to_replicas,watermark,targets) VALUES(1,4,?,4,'web-9',1,2,9,'[]')", args: ['a'.repeat(32)] });
     await runMigrations(c.db);
-    expect((await c.client!.execute('SELECT service_id,request_id,configuration FROM node_autoscale_transitions')).rows)
-      .toEqual([{ service_id: 1, request_id: 'a'.repeat(32), configuration: '' }]);
+    expect((await c.client!.execute('SELECT service_id,request_id,configuration,worker_token,lease_until FROM node_autoscale_transitions')).rows)
+      .toEqual([{ service_id: 1, request_id: 'a'.repeat(32), configuration: '', worker_token: null, lease_until: null }]);
   } finally {
     c.client?.close();
     cleanupScratch(scratch);

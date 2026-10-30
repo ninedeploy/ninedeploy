@@ -1874,6 +1874,8 @@ export const nodeAutoscaleTransitions = sqliteTable('node_autoscale_transitions'
   watermark: integer('watermark').notNull(),
   targets: text('targets', { mode: 'json' }).$type<NodeAutoscalePlacement[]>().notNull(),
   configuration: text('configuration').notNull().default(''),
+  workerToken: text('worker_token'),
+  leaseUntil: integer('lease_until', { mode: 'timestamp' }),
   phase: text('phase', { enum: ['accepted', 'held'] }).notNull().default('accepted'),
   reason: text('reason'),
   createdAt: ts('created_at'),
