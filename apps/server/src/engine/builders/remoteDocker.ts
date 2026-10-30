@@ -402,8 +402,8 @@ export function createRemoteDockerBuilder(
     return {
       status,
       health,
-      failingStreak: Number(failingStreak),
-      restarts: restarts === '' ? Number.NaN : Number(restarts),
+      failingStreak: /^\d+$/.test(failingStreak) ? Number(failingStreak) : Number.NaN,
+      restarts: /^\d+$/.test(restarts) ? Number(restarts) : Number.NaN,
     };
   };
 
@@ -647,6 +647,7 @@ export function createRemoteDockerBuilder(
             'docker.inspect',
             { name: runtime.runtimeId, format: 'health' },
           );
+          if (res.exitCode !== 0 || res.lines.filter(line => line.trim()).length !== 1) throw new Error('Node health inspection is unconfirmed');
           const { status, health, failingStreak, restarts } = parseHealth(res.lines);
           if (TERMINAL_BAD.has(status)) {
             return failWithLogs(`${runtime.runtimeId} reached state "${status}" on the node`);
@@ -664,6 +665,9 @@ export function createRemoteDockerBuilder(
             }
           }
           if (status === 'running' && (health === 'none' || health === 'healthy')) {
+            if (!Number.isSafeInteger(restarts) || restarts < 0 || !Number.isSafeInteger(failingStreak) || failingStreak < 0) {
+              throw new Error('Node health counters are unconfirmed');
+            }
             if (readinessMode === 'http-strict' || readinessMode === 'tcp') {
               if (!runtime.port) return failWithLogs('HTTP/TCP readiness needs a container port.');
               const result = await healthCall('docker.probe', {

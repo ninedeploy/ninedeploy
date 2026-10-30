@@ -508,6 +508,29 @@ describe('remote docker builder — runtime shape', () => {
 describe('remote docker builder — health and teardown', () => {
   const runtime = { runtimeId: 'web-7', port: 3000, healthPath: '/', healthCheck: 'running' as const };
 
+  it('does not treat failed Docker inspection output as a healthy container', async () => {
+    vi.useFakeTimers();
+    try {
+      const { agent } = fakeAgent({ 'docker.inspect': { exitCode: 1, lines: ['running|none|0|0'] } });
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy(runtime, 300, 1000);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([
+    { lines: ['running|none|0|0', 'running|none|0|0'] },
+    { lines: ['running|none|0|unknown'] },
+    { lines: ['running|none|unknown|0'] },
+    { lines: ['running|none||0'] },
+  ])('does not accept ambiguous or malformed running-state evidence: $lines', async ({ lines }) => {
+    vi.useFakeTimers();
+    try {
+      const { agent } = fakeAgent({ 'docker.inspect': { exitCode: 0, lines } });
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy(runtime, 300, 1000);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
   it.each([
     { samples: ['running|none|0|0', null, 'running|none|0|0', null, 'running|none|0|0', 'exited|none|0|0'], healthy: false, inspects: 6 },
     { samples: ['running|none|0|0', null, 'running|none|0|0', 'running|none|0|0', 'running|none|0|0'], healthy: true, inspects: 5 },
