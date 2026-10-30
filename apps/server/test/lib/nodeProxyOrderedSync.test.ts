@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { domains, nodeProxyWriteHeads, servers, services, eq } from '@ninedeploy/db';
 import { observabilityDb } from '../fixtures/observability.js';
 import { reserveNodeProxyWrite } from '../../src/lib/nodeProxyAuthority.js';
-import { syncNodeProxy } from '../../src/lib/nodeProxy.js';
+import { syncAllNodeProxies, syncNodeProxy } from '../../src/lib/nodeProxy.js';
 import { runOp } from '../../src/agent.js';
 
 const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
@@ -25,6 +25,7 @@ beforeEach(async () => {
     if (op === 'proxy.writeOrderedConfig') return { exitCode: 0, lines: [`ND-PROXY-WRITE ${JSON.stringify({ revision: params.revision, requestId: params.requestId,
       contentHash: tamper ? 'f'.repeat(64) : createHash('sha256').update(params.content).digest('hex'), complete: true, changed: true })}`] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running'] };
+    if (op === 'proxy.confirmRouting') return { exitCode: 0, lines: [`ND-PROXY-ROUTING ${createHash('sha256').update(params.content).digest('hex')}`] };
     throw new Error(`Unexpected op ${op}`);
   });
 });
@@ -49,6 +50,12 @@ it('stops an older render when another refresh reserves a newer revision', async
   io.agent.mockClear(); supersede = true;
   await expect(syncNodeProxy(c.db, 2)).resolves.toMatchObject({ ok: false, reason: expect.stringMatching(/superseded/) });
   expect(io.agent.mock.calls.some(call => call[2] === 'proxy.writeOrderedConfig')).toBe(false);
+});
+it('adopts ordered routing for a confirmed scale-down without a scale-up override', async () => {
+  caps = ['proxy.orderedWrite', 'proxy.routingAck'];
+  await expect(syncAllNodeProxies(c.db, [2], undefined, { confirmNode: 2, adoptOrderedNode: 2 })).resolves.toEqual([{ serverId: 2, ok: true }]);
+  expect(io.agent.mock.calls.some(call => call[2] === 'proxy.writeOrderedConfig')).toBe(true);
+  expect(io.agent.mock.calls.some(call => call[2] === 'proxy.confirmRouting')).toBe(true);
 });
 it('keeps a newer routing file when an older panel request reaches the real agent late', async () => {
   const work = mkdtempSync(join(tmpdir(), 'nd-proxy-sync-agent-')), cwd = vi.spyOn(process, 'cwd').mockReturnValue(work);

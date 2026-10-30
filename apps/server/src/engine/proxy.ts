@@ -878,6 +878,8 @@ export interface DynamicConfigOptions {
   /** Service whose generated routes must be observed before retirement. */
   confirmServiceId?: number;
   autoscalePromotion?: AutoscaleRoutePromotion;
+  /** Require the selected node to adopt ordered dynamic writes before updating routes. */
+  requireOrderedNode?: boolean;
   signal?: AbortSignal;
 }
 
@@ -890,6 +892,7 @@ export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Pro
 async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): Promise<void> {
   if (opts.signal?.aborted) throw new ProxyRoutingUnconfirmed();
   if (opts.autoscalePromotion && (opts.requireNode == null || opts.confirmNodeRouting !== true)) throw new ProxyRoutingUnconfirmed('Autoscale promotion requires confirmed node routing');
+  if (opts.requireOrderedNode && (opts.requireNode == null || opts.confirmNodeRouting !== true)) throw new ProxyRoutingUnconfirmed('Ordered routing requires a confirmed node');
   // The render refreshes the uploaded-certificate cache; the certificates
   // file is written from it FIRST, so a router that just switched to
   // `tls: {}` never appears before the certificate it relies on.
@@ -918,7 +921,7 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     }
   }
   if (confirm) await confirmProxyRouting(routes, { signal: opts.signal });
-  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion);
+  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion, opts.requireOrderedNode);
 }
 
 /**
@@ -982,7 +985,7 @@ const lastNodeSyncAuditAt = new Map<number, number>();
  * `routingFlipped` true and the pipeline stop the still-routed previous
  * container on the node — an outage reported as a successful deploy.
  */
-async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion): Promise<void> {
+async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion, requireOrderedNode?: boolean): Promise<void> {
   let results: Array<{ serverId: number; ok: boolean; reason?: string; routingUnconfirmed?: boolean }> = [];
   try {
     signal?.throwIfAborted();
@@ -995,8 +998,8 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
     }
     if (nodes.length === 0) return;
     const { syncAllNodeProxies } = await import('../lib/nodeProxy.js');
-    results = signal || autoscalePromotion
-      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, ...(signal ? { signal, timeoutMs: 15_000 } : {}), ...(autoscalePromotion ? { autoscalePromotion } : {}) })
+    results = signal || autoscalePromotion || requireOrderedNode
+      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, ...(signal ? { signal, timeoutMs: 15_000 } : {}), ...(autoscalePromotion ? { autoscalePromotion } : {}), ...(requireOrderedNode ? { adoptOrderedNode: requireNode } : {}) })
       : confirmNode === undefined
       ? await syncAllNodeProxies(db, nodes.map((n) => n.id))
       : await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode });

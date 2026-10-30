@@ -193,7 +193,7 @@ export async function syncAllNodeProxies(
   db: DB,
   serverIds: number[],
   log: (line: string) => void = () => undefined,
-  opts: { confirmNode?: number; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion } = {},
+  opts: { confirmNode?: number; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion; adoptOrderedNode?: number } = {},
 ): Promise<Array<NodeProxySyncResult & { serverId: number }>> {
   const unique = [...new Set(serverIds.filter((id) => Number.isInteger(id) && id > 0))];
   // r521: per-node outcomes go back to the caller — writeDynamicConfig fails
@@ -206,7 +206,7 @@ export async function syncAllNodeProxies(
     // limit (120/min) during a mass domain change.
     results.push({ serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id,
       ...(opts.autoscalePromotion && opts.confirmNode === id ? { autoscalePromotion: opts.autoscalePromotion } : {}),
-      ...(opts.autoscalePromotion && opts.confirmNode === id ? { adoptOrdered: true } : {}),
+      ...(opts.confirmNode === id && (opts.autoscalePromotion || opts.adoptOrderedNode === id) ? { adoptOrdered: true } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.timeoutMs != null ? { timeoutMs: opts.timeoutMs } : {}) })) });
   }
   return results;
