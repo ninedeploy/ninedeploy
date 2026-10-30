@@ -1,4 +1,4 @@
-import type { BuildConfig, Service, ServiceVolumeAttachment } from '@ninedeploy/db';
+import type { BuildConfig, DeploymentRuntimeOwner, Service, ServiceVolumeAttachment } from '@ninedeploy/db';
 import type { NinedeployManifest } from '@ninedeploy/schemas';
 import type { IBuildCache, StackSpec } from '../kernel/types.js';
 import type { ComposeRelease } from '../lib/composeRelease.js';
@@ -127,6 +127,8 @@ export interface BuildContext {
 
 /** Identifies a running workload so the engine can stop/inspect it later. */
 export interface DeployRuntime {
+  /** Durable authority for a generation prepared by the ordered node protocol. */
+  nodeDeploymentOwner?: DeploymentRuntimeOwner;
   /** Creation receipts bind multi-replica node readiness to immutable containers. */
   nodeTargets?: Array<{ id: string; name: string }>;
   /** Buildpack conventions needed to run the same image in another environment. */

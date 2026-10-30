@@ -4,7 +4,8 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { setImmediate as yieldIO } from 'node:timers';
 import { eq } from 'drizzle-orm';
-import { deployments, domains, primaryTransitions, servers, services, type PrimaryRuntimeSnapshot } from '@ninedeploy/db';
+import { deploymentRuntimeOwners, deployments, domains, primaryTransitions, servers, services, type PrimaryRuntimeSnapshot } from '@ninedeploy/db';
+import { reserveServiceRuntimeOwner } from '../src/lib/serviceRuntimeOwner.js';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { observabilityDb } from './fixtures/observability.js';
 import { createRemoteDockerBuilder } from '../src/engine/builders/remoteDocker.js';
@@ -77,6 +78,72 @@ async function pump(run: Promise<unknown>, pending = false) {
 async function finish<T>(run: Promise<T>) { await pump(run); return run; }
 
 describe('primary recovery through SQLite and the real routing writer', () => {
+  it('uses the persisted deployment authority to retire an old node generation in one ordered batch', async () => {
+    const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
+    const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
+    await f.db.insert(deploymentRuntimeOwners).values(owner);
+    caps.push('docker.mutations');
+    const normal = h.agent.getMockImplementation()!;
+    h.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'docker.retireSet') {
+        const request = args[3]; for (const target of request.targets) containers.delete(target.id);
+        return { exitCode: 0, lines: [`ND-RETIRED-SET ${JSON.stringify({ requestId: request.requestId, serviceId: request.serviceId,
+          revision: request.revision, complete: true, items: request.targets.map((target: object) => ({ ...target, removed: true })) })}`] };
+      }
+      return normal(...args);
+    });
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/', nodeDeploymentOwner: owner };
+    const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { ...runtime, runtimeId: old }, null);
+    try {
+      await lease.intentCandidate(); await f.db.update(services).set({ runtimeId: candidate }).where(eq(services.id, 1));
+      await lease.confirm(); await lease.retire(old);
+      const calls = h.agent.mock.calls.filter(call => call[2] === 'docker.retireSet');
+      expect(calls).toHaveLength(1); expect(calls[0]![3].targets).toEqual([{ id: oldId, name: old, deploymentId: 7 }]);
+      expect(h.agent.mock.calls.filter(call => call[2] === 'docker.retire')).toEqual([]);
+      expect(containers.has(candidateId)).toBe(true); expect(containers.has(oldId)).toBe(false);
+    } finally { await lease.release(); }
+  });
+  it('replays the same ordered retirement after a lost receipt and recovery', async () => {
+    const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
+    const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
+    await f.db.insert(deploymentRuntimeOwners).values(owner); caps.push('docker.mutations');
+    const normal = h.agent.getMockImplementation()!; let lost = true;
+    h.agent.mockImplementation(async (...args) => {
+      if (args[2] === 'docker.retireSet') {
+        const request = args[3]; for (const target of request.targets) containers.delete(target.id);
+        if (lost) { lost = false; throw new Error('retirement reply lost'); }
+        return { exitCode: 0, lines: [`ND-RETIRED-SET ${JSON.stringify({ requestId: request.requestId, serviceId: request.serviceId,
+          revision: request.revision, complete: true, items: request.targets.map((target: object) => ({ ...target, removed: true })) })}`] };
+      }
+      return normal(...args);
+    });
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/', nodeDeploymentOwner: owner };
+    const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { ...runtime, runtimeId: old }, null);
+    await lease.intentCandidate(); await f.db.update(services).set({ runtimeId: candidate }).where(eq(services.id, 1)); await lease.confirm();
+    await expect(lease.retire(old)).rejects.toThrow('retirement reply lost');
+    expect((await rows())[0]?.orderedRetirement).toEqual({ runtimeId: old, graceSeconds: 5 });
+    await lease.release();
+    expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
+    const attempts = h.agent.mock.calls.filter(call => call[2] === 'docker.retireSet');
+    expect(attempts).toHaveLength(2);
+    const { timeoutMs: _firstTimeout, ...first } = attempts[0]![3], { timeoutMs: _secondTimeout, ...second } = attempts[1]![3];
+    expect(second).toEqual(first);
+    expect(containers.has(candidateId)).toBe(true); expect(await rows()).toEqual([]);
+  });
+  it('does not send ordered retirement after a newer lifecycle owner wins', async () => {
+    const authority = await reserveServiceRuntimeOwner(f.db, 1, 'deploy', null, 'c'.repeat(32));
+    const owner = { deploymentId: 9, serviceId: 1, serverId: 5, epoch: authority.epoch, requestId: authority.requestId! };
+    await f.db.insert(deploymentRuntimeOwners).values(owner); caps.push('docker.mutations');
+    const runtime = { runtimeId: candidate, port: 8080, healthPath: '/', nodeDeploymentOwner: owner };
+    const lease = await beginPrimaryTransition(f.db, (await service())!, 9, runtime, { ...runtime, runtimeId: old }, null);
+    try {
+      await lease.intentCandidate(); await f.db.update(services).set({ runtimeId: candidate }).where(eq(services.id, 1)); await lease.confirm();
+      await reserveServiceRuntimeOwner(f.db, 1, 'stop', authority, 'd'.repeat(32));
+      await expect(lease.retire(old)).rejects.toThrow(/ownership|authority/i);
+      expect(h.agent.mock.calls.filter(call => call[2] === 'docker.retireSet' || call[2] === 'docker.retire')).toEqual([]);
+      expect(containers.has(oldId)).toBe(true); expect(containers.has(candidateId)).toBe(true);
+    } finally { await lease.release(); }
+  });
   it.each([false, true])('honors the caller cancellation checkpoint before any candidate probe (batch=%s)', async batch => {
     if (batch) caps.push('docker.readiness');
     const runtime = { runtimeId: candidate, port: 8080, healthPath: '/' };

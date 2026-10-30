@@ -9,6 +9,9 @@ import { observabilityOps } from '../agentOps/observability.js';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
 import { agentVersionAtLeast, capabilityRefusal, parseAgentCapabilities } from '../lib/agentCapabilities.js';
 import { verifyNodeReadiness } from '../lib/nodeReadiness.js';
+import { createNodeDeploymentAuthority } from '../lib/nodeDeploymentOwner.js';
+import { createNodeRuntimeMutationClient } from '../lib/nodeRuntimeMutationClient.js';
+import { retireNodeDeploymentGeneration } from '../lib/nodeDeploymentRetirement.js';
 import { capture, run, sleep } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
 import { portProxyDir, restrictedMappings } from '../lib/portProxy.js';
@@ -108,10 +111,11 @@ function validateSnapshot(value: PrimaryRuntimeSnapshot) {
 
 function primaryLease(db: DB, initial: PrimaryTransition, token: string, features = { batchReadiness: false, retirementGrace: false }) {
   const row = { ...initial };
+  const orderedAuthority = row.orderedOwner ? createNodeDeploymentAuthority(db, row.orderedOwner) : undefined;
   let lost = false, stopped = false, completed = false, renewal: Promise<unknown> | undefined;
   let loaded: string | null | undefined;
   let loadedFingerprint: string | undefined;
-  const held = () => and(eq(primaryTransitions.id, row.id), eq(primaryTransitions.ownerToken, token), gt(primaryTransitions.leaseUntil, new Date()));
+  const held = () => and(eq(primaryTransitions.id, row.id), eq(primaryTransitions.ownerToken, token), gt(primaryTransitions.leaseUntil, new Date()), orderedAuthority?.fence());
   const patch = async (values: Partial<typeof primaryTransitions.$inferInsert>) => {
     const changed = await db.update(primaryTransitions).set({ ...values, updatedAt: new Date() }).where(held()).returning({ id: primaryTransitions.id });
     if (!changed.length) { lost = true; throw new PrimaryRecoveryOwnershipLost(); }
@@ -129,6 +133,7 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, feature
   const owner = () => and(eq(services.id, row.serviceId), eq(services.type, 'docker'), or(isNull(services.orchestrator), ne(services.orchestrator, 'swarm')), sameHost(services.serverId, row.serverId), noNewer());
   const current = async () => {
     await check();
+    await orderedAuthority?.check();
     const [svc] = await db.select().from(services).where(owner()).limit(1);
     if (!svc || (svc.runtimeId !== row.previous?.runtimeId && svc.runtimeId !== row.candidate.runtimeId && !(svc.runtimeId == null && !row.previous))) throw new Error('Service placement or runtime owner changed; retained for review');
     return svc;
@@ -189,6 +194,27 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, feature
       return;
     }
     const grace = Math.max(0, Math.min(300, Math.floor(opts?.graceSeconds ?? 5)));
+    if (row.orderedOwner) {
+      if (row.serverId == null || row.orderedOwner.serverId !== row.serverId || row.orderedOwner.serviceId !== row.serviceId ||
+        row.orderedOwner.deploymentId !== row.deploymentId) throw new Error('Node deployment recovery authority changed');
+      for (const item of identities(group)) {
+        await current();
+        if (!item.observed) throw new Error('Container identity is unknown; retained for review');
+        if (!item.id && await identity(db, row.serverId, item.name)) throw new Error('Container name was reused; retained for review');
+      }
+      const intent = { runtimeId: name, graceSeconds: grace };
+      if (row.orderedRetirement && JSON.stringify(row.orderedRetirement) !== JSON.stringify(intent)) throw new Error('Node deployment retirement intent changed');
+      if (!row.orderedRetirement) await patch({ orderedRetirement: intent });
+      const checkpoint = async () => {
+        const selected = await current();
+        if (selected.runtimeId !== svc.runtimeId || row.routingTouched && (loaded !== selected.runtimeId || loadedFingerprint !== fingerprint(selected))) {
+          throw new Error('Node deployment retirement routing changed');
+        }
+      };
+      const client = createNodeRuntimeMutationClient(db, row.serverId, { checkpoint });
+      await retireNodeDeploymentGeneration(client, { owner: row.orderedOwner, group, selectedRuntimeId: svc.runtimeId, graceSeconds: grace, checkpoint });
+      return;
+    }
     for (const item of identities(group)) {
       await current();
       if (!item.observed) throw new Error('Container identity is unknown; retained for review');
@@ -282,6 +308,10 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, feature
 export type PrimaryRecoveryLease = ReturnType<typeof primaryLease>;
 
 export async function beginPrimaryTransition(db: DB, service: Service, deploymentId: number, candidate: DeployRuntime, previous: DeployRuntime | undefined, commitSha: string | null) {
+  if (candidate.nodeDeploymentOwner) {
+    if (candidate.nodeDeploymentOwner.serviceId !== service.id || candidate.nodeDeploymentOwner.serverId !== service.serverId || candidate.nodeDeploymentOwner.deploymentId !== deploymentId) throw new Error('Node deployment recovery authority changed');
+    await createNodeDeploymentAuthority(db, candidate.nodeDeploymentOwner).check();
+  }
   const features = await requireCapabilities(db, service.serverId ?? null, candidate.healthCheck === 'http-strict' || candidate.healthCheck === 'tcp');
   const token = randomUUID();
   const prior = previous ? snapshot({ ...previous, replicas: service.runtimeReplicas ?? 1 }, service.commitSha) : null;
@@ -293,7 +323,7 @@ export async function beginPrimaryTransition(db: DB, service: Service, deploymen
     }
   }
   const [row] = await db.insert(primaryTransitions).values({ serviceId: service.id, serverId: service.serverId, deploymentId,
-    previous: prior,
+    previous: prior, orderedOwner: candidate.nodeDeploymentOwner ?? null,
     candidate: snapshot(candidate, commitSha), desiredRuntimeId: previous?.runtimeId ?? null, imageDigest: candidate.imageDigest ?? null,
     ownerToken: token, leaseUntil: new Date(Date.now() + LEASE_MS),
   }).onConflictDoNothing().returning();

@@ -1833,6 +1833,8 @@ export const primaryTransitions = sqliteTable('primary_transitions', {
   routingTouched: integer('routing_touched', { mode: 'boolean' }).notNull().default(false),
   interrupted: integer('interrupted', { mode: 'boolean' }).notNull().default(false),
   finalizeSnapshot: text('finalize_snapshot'),
+  orderedOwner: text('ordered_owner', { mode: 'json' }).$type<{ deploymentId: number; serviceId: number; serverId: number; epoch: number; requestId: string }>(),
+  orderedRetirement: text('ordered_retirement', { mode: 'json' }).$type<{ runtimeId: string; graceSeconds: number }>(),
   imageDigest: text('image_digest'),
   reason: text('reason'),
   ownerToken: text('owner_token'),

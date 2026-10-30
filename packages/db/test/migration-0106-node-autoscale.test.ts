@@ -28,12 +28,15 @@ it('upgrades without changing existing work and retains the unique scale decisio
     await c.client!.execute("INSERT INTO servers(id,name,host,token_encrypted) VALUES(4,'Node','node.test','fixture')");
     await c.client!.execute("INSERT INTO services(id,name,slug,type,server_id,status,runtime_id) VALUES(1,'Web','web','docker',4,'running','web-9')");
     await c.client!.execute("INSERT INTO deployments(id,service_id,status,config_snapshot) VALUES(9,1,'running','{\"build\":\"retained\"}')");
+    await c.client!.execute("INSERT INTO primary_transitions(service_id,server_id,deployment_id,candidate) VALUES(1,4,9,'{\"runtimeId\":\"web-9\"}')");
     const before = (await c.client!.execute('SELECT * FROM deployments')).rows;
     await runMigrations(c.db);
     const journalAfterUpgrade = (await c.client!.execute('SELECT * FROM __drizzle_migrations ORDER BY id')).rows;
     await runMigrations(c.db);
     expect((await c.client!.execute('SELECT * FROM __drizzle_migrations ORDER BY id')).rows).toEqual(journalAfterUpgrade);
     expect((await c.client!.execute('SELECT * FROM deployments')).rows).toEqual(before);
+    expect((await c.client!.execute('SELECT candidate,ordered_owner,ordered_retirement FROM primary_transitions')).rows)
+      .toEqual([{ candidate: '{"runtimeId":"web-9"}', ordered_owner: null, ordered_retirement: null }]);
     expect((await c.client!.execute('SELECT * FROM node_autoscale_transitions')).rows).toEqual([]);
     await c.client!.execute({ sql: "INSERT INTO node_autoscale_transitions(service_id,owner_epoch,request_id,server_id,runtime_id,from_replicas,to_replicas,watermark,targets) VALUES(1,4,?,4,'web-9',1,2,9,'[]')", args: ['a'.repeat(32)] });
     await c.client!.execute({ sql: 'INSERT INTO node_proxy_write_heads(server_id,revision,request_id) VALUES(4,7,?)', args: ['c'.repeat(32)] });
