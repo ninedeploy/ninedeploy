@@ -366,6 +366,21 @@ describe('remote docker builder — what it refuses', () => {
       expect(probes).toBe(3);
     } finally { vi.useRealTimers(); }
   });
+  it.each(['restarting|none|0|1', 'running|none|0|1', 'running|unhealthy|1|0', 'running|none||0'])
+  ('rejects a probe result if the container changes during that probe: %s', async after => {
+    vi.useFakeTimers();
+    try {
+      let inspections = 0;
+      const agent: AgentCall = async op => {
+        if (op === 'docker.inspect') return { exitCode: 0, lines: [++inspections === 1 ? 'running|none|0|0' : inspections === 2 ? after : 'restarting|none|0|1'] };
+        if (op === 'docker.probe') return { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] };
+        return { exitCode: 0, lines: [] };
+      };
+      const pending = createRemoteDockerBuilder(agent, { pollMs: 100 }).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/', healthCheck: 'tcp' }, 300, 0);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toBe(false); expect(inspections).toBeGreaterThan(1);
+    } finally { vi.useRealTimers(); }
+  });
 
   it('fails an always-unready application even while its container stays running', async () => {
     vi.useFakeTimers();

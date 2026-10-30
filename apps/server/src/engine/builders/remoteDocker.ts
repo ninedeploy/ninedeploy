@@ -680,6 +680,15 @@ export function createRemoteDockerBuilder(
                 await wait();
                 continue;
               }
+              const afterProbe = await healthCall('docker.inspect', { name: runtime.runtimeId, format: 'health' });
+              if (afterProbe.exitCode !== 0 || afterProbe.lines.filter(line => line.trim()).length !== 1) throw new Error('Node health inspection after probe is unconfirmed');
+              const observed = parseHealth(afterProbe.lines);
+              if (observed.status !== 'running' || !['none', 'healthy'].includes(observed.health) || observed.restarts !== restarts ||
+                !Number.isSafeInteger(observed.failingStreak) || observed.failingStreak < 0) {
+                stable = 0;
+                await wait();
+                continue;
+              }
             }
             stable += 1;
             if (stable >= needed) {
