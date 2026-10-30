@@ -2683,7 +2683,7 @@ describe('runDeployment on a remote-server target', () => {
     collectLogs(1);
     let pullSignal: AbortSignal | undefined;
     h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, _params: unknown, _sink: unknown, options?: { signal?: AbortSignal }) => {
-      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '9.9.9', caps: ['build-path-guard', 'op.cancel'] })}`] };
+      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '9.9.9', caps: ['build-path-guard', 'op.cancel', 'docker.recovery'] })}`] };
       if (op === 'docker.pull') {
         pullSignal = options?.signal;
         if (!pullSignal) return { exitCode: 0, lines: [] };
@@ -2799,7 +2799,7 @@ describe('runDeployment on a remote-server target', () => {
     logBus.removeAllListeners();
   });
 
-  it('0.16.5: a 0.16.5 agent writes each file on the node before the run, and docker.runSpec mounts it read-only', async () => {
+  it('an agent with file mounts and recovery writes each file before the run', async () => {
     const { db } = makeDb();
     baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4 });
     withNodeFile(db);
@@ -2807,11 +2807,17 @@ describe('runDeployment on a remote-server target', () => {
     h.agentTransportSealed.mockResolvedValue(true);
     h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string, params: Record<string, unknown>) =>
       op === 'agent.ping'
-        ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.16.5', caps: [...NODE_CAPS_0164, 'docker.fileMounts'] })}`] }
+        ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: [...NODE_CAPS_0164, 'docker.fileMounts', 'docker.recovery', 'docker.probe'] })}`] }
         : op === 'file.writeMount'
           ? { exitCode: 0, lines: [`wrote .agent-files/${params['service']}/d${params['deploymentId']}/${params['id']}`] }
           : op === 'file.writeEnv'
             ? { exitCode: 0, lines: [`wrote .agent-env/${String(params.name)}.env`] }
+            : op === 'docker.runSpec'
+            ? { exitCode: 0, lines: ['a'.repeat(64)] }
+            : op === 'docker.identity'
+            ? { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify({ id: 'a'.repeat(64), name: 'web-1', managed: 'service', serviceId: '5', deploymentId: '1' })}`] }
+            : op === 'docker.probe'
+            ? { exitCode: 0, lines: ['ND-PROBE {"ready":true,"protocol":"tcp"}'] }
             : op === 'docker.inspect'
             ? { exitCode: 0, lines: ['running|none|0|0'] }
             : { exitCode: 0, lines: [] },
@@ -2920,7 +2926,7 @@ describe('runDeployment on a remote-server target', () => {
       h.agentTransportSealed.mockResolvedValue(true);
       h.agentOp.mockImplementation(async (_db: unknown, _serverId: unknown, op: string) =>
         op === 'agent.ping'
-          ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.15.2', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage'] })}`] }
+          ? { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'docker.runSpec', 'volume.manage', 'docker.recovery'] })}`] }
           : op === 'docker.inspect'
             ? { exitCode: 0, lines: ['running|none|0|0'] }
             : { exitCode: 0, lines: [] },

@@ -298,17 +298,16 @@ describe('the stream channel refuses a 0.15 agent before anything but agent.ping
   });
 });
 
-describe('the regression baseline: an image deploy to a 0.15 agent is unchanged', () => {
-  it('uses only 0.15 ops and succeeds', async () => {
-    const OPS_015 = new Set(['docker.networkCreate', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv', 'docker.stop', 'docker.rm', 'docker.inspect']);
+describe('image deployments require immutable identity support', () => {
+  it('refuses a 0.15 agent before changing the runtime', async () => {
     const sent: string[] = [];
     // A 0.15 agent: every 0.15 op works; anything newer is `unknown_op`.
     const agent015 = async (op: string) => {
       sent.push(op);
-      if (!OPS_015.has(op)) throw new Error(`agent ${op} failed (400): unknown_op`);
-      return { exitCode: 0, lines: op === 'file.writeEnv' ? ['wrote .agent-env/web-7.env'] : op === 'docker.runEnv' ? ['a'.repeat(64)] : [] };
+      if (op === 'agent.ping') return { exitCode: 0, lines: [CAPS_015] };
+      throw new Error(`agent ${op} failed (400): unknown_op`);
     };
-    const runtime = await createRemoteDockerBuilder(agent015).buildAndRun({
+    await expect(createRemoteDockerBuilder(agent015).buildAndRun({
       deploymentId: 7,
       service: { id: 1, name: 'web', slug: 'web', type: 'docker', image: 'nginx:1.27', repoUrl: null, branch: 'main', port: 80, healthPath: '/', cpuShares: 0, cpuLimitMilli: 0, memLimitMb: 0, volumeMount: null, publishedPort: null, serverId },
       buildConfig: {},
@@ -316,9 +315,8 @@ describe('the regression baseline: an image deploy to a 0.15 agent is unchanged'
       commitSha: null,
       env: { A: '1' },
       log: () => undefined,
-    } as never);
-    expect(runtime).toMatchObject({ runtimeId: 'web-7' });
-    expect(sent).toEqual(['docker.networkCreate', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
+    } as never)).rejects.toThrow(/immutable deployment container/);
+    expect(sent).toEqual(['agent.ping']);
   });
 });
 
@@ -373,7 +371,7 @@ describe('T3: node builds and private clones against a 0.15 agent', () => {
     const sent: string[] = [];
     const agent015 = async (op: string) => {
       sent.push(op);
-      return { exitCode: 0, lines: op === 'agent.ping' ? [CAPS_015] : [] };
+      return { exitCode: 0, lines: op === 'agent.ping' ? [pingLine('0.15.1', [...CAPS_015_LIST, 'docker.recovery'])] : [] };
     };
     const err = await createRemoteDockerBuilder(agent015, { nodeLabel: '"edge-1" (#1)' })
       .buildAndRun({

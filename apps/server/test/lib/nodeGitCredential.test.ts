@@ -53,7 +53,7 @@ const PAT = 'ghp_staticPersonalAccessToken';
 const DEPLOY_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
 const REPO = 'https://github.com/acme/web.git';
 const UPDATE = /update the node agent to use GitHub App repositories on this node/i;
-const CAPS_NEW = 'ND-AGENT {"version":"0.13.0","caps":["build-path-guard","workspace.remove","git.credential","docker.probe"]}';
+const CAPS_NEW = 'ND-AGENT {"version":"0.13.0","caps":["build-path-guard","workspace.remove","git.credential","docker.probe","docker.recovery"]}';
 const CAPS_OLD = 'ND-AGENT {"version":"0.12.0","caps":["build-path-guard","workspace.remove"]}';
 
 type Agent = (op: string, params: Record<string, unknown>, sink: (l: string) => void) => Promise<{ exitCode: number; lines: string[] }>;
@@ -378,7 +378,7 @@ describe('call sites', () => {
     const a = fakeAgent(CAPS_OLD);
     await expect(
       createRemoteDockerBuilder(a.agent, { gitCredential: nodeGitCredentialSource(db, svc) }).buildAndRun(ctx(svc, () => undefined)),
-    ).rejects.toThrow(UPDATE);
+    ).rejects.toThrow(/immutable deployment container/);
     expect(tokenCalls()).toHaveLength(0);
     expect(a.git()).toHaveLength(0);
   });

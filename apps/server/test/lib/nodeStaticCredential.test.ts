@@ -47,7 +47,7 @@ const BASE = ['build-path-guard', 'workspace.remove', 'git.credential'];
 const AGENTS = {
   '0.13': ping('0.13.0', BASE),
   '0.15': ping('0.15.1', [...BASE, 'terminal', 'terminal.host']),
-  current: ping('0.15.2', [...BASE, 'terminal', 'terminal.host', 'stream', 'image.manage', 'build.nixpacks', 'build.railpack', 'git.sshkey']),
+  current: ping('0.15.2', [...BASE, 'terminal', 'terminal.host', 'stream', 'image.manage', 'build.nixpacks', 'build.railpack', 'git.sshkey', 'docker.recovery']),
   switchedOff: ping('0.15.2', [...BASE, 'terminal', 'terminal.host', 'stream', 'image.manage', 'build.nixpacks', 'build.railpack']),
 } as const;
 

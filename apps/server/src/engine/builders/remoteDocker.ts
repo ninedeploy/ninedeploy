@@ -426,6 +426,14 @@ export function createRemoteDockerBuilder(
         );
       }
 
+      let identityPing: Awaited<ReturnType<AgentCall>>;
+      try { identityPing = await agent('agent.ping', {}, () => undefined); }
+      catch { throw new RemoteDeployUnsupportedError(`Could not confirm immutable container support on node ${opts.nodeLabel ?? `#${service.serverId ?? '?'}`}. Update the node agent and try again.`); }
+      if (identityPing.exitCode !== 0) throw new RemoteDeployUnsupportedError('Node agent identity capability is unavailable.');
+      const identityRefusal = capabilityRefusalFor(parseAgentCapabilities(identityPing.lines), opts.nodeLabel ?? `#${service.serverId ?? '?'}`,
+        { cap: 'docker.recovery', feature: 'verify the immutable deployment container' });
+      if (identityRefusal) throw new RemoteDeployUnsupportedError(identityRefusal.message);
+
       // (The node workspace is the service slug: see buildSourceOnNode.)
       const name = `${service.slug}-${deploymentId}`;
       const sink = (line: string) => log(line);

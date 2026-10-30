@@ -317,6 +317,7 @@ function fakeAgent() {
   const calls: Array<{ op: string; params: Record<string, unknown> }> = [];
   const agent = async (op: string, params: Record<string, unknown>) => {
     calls.push({ op, params });
+    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.recovery","build-path-guard"]}'] };
     if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/web-7.env'] };
     if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['a'.repeat(64)] };
     return { exitCode: 0, lines: [] };
@@ -341,7 +342,7 @@ describe('remote builder hooks and the run-phase move (M6)', () => {
       prebuiltImage: { tag: 'ninedeploy/web:abc1234-b7', imageId: `sha256:${'b'.repeat(64)}` },
     }).buildAndRun(ctx({ log }));
     // Even a Nixpacks service (refused by an agent without build.nixpacks) runs: the build happened elsewhere.
-    expect(ops()).toEqual(['docker.networkCreate', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
+    expect(ops()).toEqual(['agent.ping', 'docker.networkCreate', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
     expect(calls.find((c) => c.op === 'docker.runEnv')!.params).toMatchObject({ name: 'web-7', image: 'ninedeploy/web:abc1234-b7' });
     expect(runtime).toMatchObject({ runtimeId: 'web-7', port: 3000, imageDigest: undefined });
     expect(log).toHaveBeenCalledWith(expect.stringContaining('built elsewhere and shipped to the node'));

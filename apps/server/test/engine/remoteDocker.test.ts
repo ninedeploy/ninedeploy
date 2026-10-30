@@ -38,7 +38,7 @@ function fakeAgent(overrides: Record<string, { exitCode: number; lines: string[]
     sink(`${op} ok`);
     if (overrides[op]) return overrides[op]!;
     // r660: a current agent names its capabilities in the sealed ping.
-    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.42","caps":["build-path-guard","workspace.remove"]}'] };
+    if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["build-path-guard","workspace.remove","docker.recovery","docker.probe"]}'] };
     if (op === 'file.writeEnv') return { exitCode: 0, lines: ['wrote .agent-env/web-7.env'] };
     if (op === 'docker.runEnv' || op === 'docker.runSpec') return { exitCode: 0, lines: ['a'.repeat(64)] };
     if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
@@ -170,8 +170,8 @@ describe('remote docker builder — image services', () => {
       ctx({ service: svc({ image: 'nginx:1.27' }) }),
     );
 
-    expect(ops()).toEqual(['docker.networkCreate', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
-    expect(calls[1]!.params).toMatchObject({ image: 'nginx:1.27' });
+    expect(ops()).toEqual(['agent.ping', 'docker.networkCreate', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
+    expect(calls.find(call => call.op === 'docker.pull')!.params).toMatchObject({ image: 'nginx:1.27' });
     expect(runtime).toMatchObject({ runtimeId: 'web-7', port: 3000 });
   });
 
@@ -180,7 +180,7 @@ describe('remote docker builder — image services', () => {
     await createRemoteDockerBuilder(agent).buildAndRun(
       ctx({ service: svc({ image: 'nginx:1.27' }), imageDigest: 'nginx@sha256:abc' }),
     );
-    expect(calls[1]!.params).toMatchObject({ image: 'nginx@sha256:abc' });
+    expect(calls.find(call => call.op === 'docker.pull')!.params).toMatchObject({ image: 'nginx@sha256:abc' });
   });
 
   it('r270: never records a mutable tag as the release digest', async () => {
@@ -251,9 +251,9 @@ describe('remote docker builder — image services', () => {
         registryAuth: { username: 'u', password: 'p', server: 'ghcr.io' },
       }),
     );
-    expect(ops().slice(1, 4)).toEqual(['docker.login', 'docker.pull', 'docker.logout']);
+    expect(ops().slice(2, 5)).toEqual(['docker.login', 'docker.pull', 'docker.logout']);
     // The password goes in params, and the agent hands it to stdin — never argv.
-    expect(calls[1]!.params).toMatchObject({ username: 'u', password: 'p', server: 'ghcr.io' });
+    expect(calls.find(call => call.op === 'docker.login')!.params).toMatchObject({ username: 'u', password: 'p', server: 'ghcr.io' });
   });
 
   it('logs out even when the pull fails, so no credential lingers on the node', async () => {
@@ -286,7 +286,7 @@ describe('remote docker builder — repository services', () => {
     );
 
     // r660: the agent is asked whether it can build safely BEFORE anything is cloned.
-    expect(ops().slice(1, 6)).toEqual(['agent.ping', 'git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
+    expect(ops().slice(2, 7)).toEqual(['agent.ping', 'git.ensure', 'git.fetch', 'git.checkout', 'git.reset']);
     // Every git op names the same per-service workspace: without one, a node
     // could hold exactly ONE checkout and two services would overwrite each
     // other's source tree.
@@ -328,8 +328,13 @@ describe('remote docker builder — repository services', () => {
 });
 
 describe('remote docker builder — what it refuses', () => {
+  it('refuses an agent without immutable identity support before changing node runtime', async () => {
+    const { agent, calls } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.16.0","caps":[]}'] } });
+    await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }))).rejects.toThrow(/agent|recovery/i);
+    expect(calls.some(call => ['docker.runEnv', 'docker.runSpec', 'docker.rm', 'docker.stop'].includes(call.op))).toBe(false);
+  });
   it('reports an unsupported default port probe without waiting for the readiness timeout', async () => {
-    const { agent, calls } = fakeAgent(); const logs: string[] = [];
+    const { agent, calls } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.16.0","caps":[]}'] } }); const logs: string[] = [];
     const result = await createRemoteDockerBuilder(agent).isHealthy({ runtimeId: 'web-7', port: 3000, healthPath: '/' }, 300, 10_000, line => logs.push(line));
     expect(result).toBe(false);
     expect(logs.join('\n')).toMatch(/agent|probe/i);
@@ -358,7 +363,7 @@ describe('remote docker builder — what it refuses', () => {
     } finally { vi.useRealTimers(); }
   });
   it('refuses opted-in readiness on an old agent before creating any runtime', async () => {
-    const { agent, ops } = fakeAgent();
+    const { agent, ops } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.16.0","caps":[]}'] } });
     await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1', healthCheck: 'http-strict' }) }))).rejects.toThrow(/Update the node agent/);
     expect(ops()).toEqual(['agent.ping']);
   });
@@ -768,8 +773,7 @@ describe('r660: source builds need an agent that guards build paths', () => {
     });
 
   it('refuses a source build to an agent that predates the guard, before anything is cloned', async () => {
-    // Older agents answer agent.ping with no lines at all.
-    const { agent, ops } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: [] } });
+    const { agent, ops } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: ['ND-AGENT {"version":"0.10.41","caps":["docker.recovery"]}'] } });
     const err = await createRemoteDockerBuilder(agent, { nodeLabel: '"edge-1" (#4)' }).buildAndRun(sourceCtx()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toContain('"edge-1" (#4)');
@@ -794,11 +798,10 @@ describe('r660: source builds need an agent that guards build paths', () => {
     expect(ops()).not.toContain('git.ensure');
   });
 
-  it('keeps deploying IMAGE releases to an old agent, without asking', async () => {
+  it('refuses IMAGE releases to an agent without immutable identity support', async () => {
     const { agent, ops } = fakeAgent({ 'agent.ping': { exitCode: 0, lines: [] } });
-    await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }));
-    expect(ops()).not.toContain('agent.ping');
-    expect(ops()).toContain('docker.runEnv');
+    await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }))).rejects.toThrow(/immutable deployment container/);
+    expect(ops()).toEqual(['agent.ping']);
   });
 });
 
@@ -820,7 +823,7 @@ describe('0.16: the shared ninedeploy network on the node', () => {
     const lines: string[] = [];
     const runtime = await createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1.27' }), log: (l) => lines.push(l) }));
     expect(runtime).toMatchObject({ runtimeId: 'web-7' });
-    expect(ops()).toEqual(['docker.networkCreate', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
+    expect(ops()).toEqual(['agent.ping', 'docker.networkCreate', 'docker.pull', 'file.writeEnv', 'docker.runEnv', 'file.deleteEnv']);
     expect(lines.join('\n')).not.toMatch(/Error response from daemon|already exists/);
   });
 

@@ -36,8 +36,8 @@ function repo(files: string[]): string {
 }
 
 const ping = (version: string, caps: string[]) => `ND-AGENT ${JSON.stringify({ version, caps })}`;
-const CAPS_015 = ping('0.15.1', ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'terminal.host']);
-const CAPS_NOW = ping('0.15.2', ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'terminal.host', 'build.nixpacks', 'build.railpack', 'git.sshkey']);
+const CAPS_015 = ping('0.15.1', ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'terminal.host', 'docker.recovery']);
+const CAPS_NOW = ping('0.15.2', ['build-path-guard', 'workspace.remove', 'git.credential', 'terminal', 'terminal.host', 'build.nixpacks', 'build.railpack', 'git.sshkey', 'docker.recovery']);
 
 function fakeAgent(caps: string) {
   const calls: Array<{ op: string; params: Record<string, unknown> }> = [];
@@ -161,7 +161,7 @@ describe('the node build', () => {
   it('a Dockerfile build asks the agent nothing new', async () => {
     const a = fakeAgent(CAPS_015);
     await createRemoteDockerBuilder(a.agent).buildAndRun(ctx(repo(['Dockerfile']), { buildPack: 'auto' }));
-    expect(a.ops().filter((op) => op === 'agent.ping')).toHaveLength(1); // r660's guard only
+    expect(a.ops().filter((op) => op === 'agent.ping')).toHaveLength(2); // identity and build-path guards
     expect(a.find('docker.build')!.params).toEqual({ workspace: 'web', tag: 'ninedeploy/web:deadbee', dockerfile: 'Dockerfile', context: '.' });
   });
 
@@ -174,7 +174,7 @@ describe('the node build', () => {
   });
 
   it('a current agent builds the stage with the build arguments through docker.buildWith', async () => {
-    const CAPS_OPTIONS = ping('0.18.10', ['build-path-guard', 'workspace.remove', 'git.credential', 'docker.buildOptions']);
+    const CAPS_OPTIONS = ping('0.18.10', ['build-path-guard', 'workspace.remove', 'git.credential', 'docker.buildOptions', 'docker.recovery']);
     const a = fakeAgent(CAPS_OPTIONS);
     const lines: string[] = [];
     await createRemoteDockerBuilder(a.agent).buildAndRun(
