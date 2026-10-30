@@ -425,7 +425,7 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect(pulls).toBeGreaterThan(-1);
     expect(script.indexOf("pullOrFail(TO, 'to')")).toBeGreaterThan(pulls);
     // Before anything is created.
-    expect(pulls).toBeLessThan(script.indexOf("docker(['network', 'create', NET])"));
+    expect(pulls).toBeLessThan(script.indexOf("docker(['network', 'create', '--label'"));
     expect(script).toContain('is a published release, so installed servers pin this image');
     // A FROM that already carries r541 cannot orphan a secret; the precondition
     // applies only to older releases, the post-upgrade check to all.

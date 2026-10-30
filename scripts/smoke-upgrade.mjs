@@ -115,6 +115,7 @@ import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { resolveSmokeImage } from './lib/smoke-image.mjs';
 import { expectedUpgradeSecretProviders } from './lib/upgrade-secret-providers.mjs';
+import { inspectOwnedSmokeResource, removeOwnedSmokeResource } from './lib/owned-smoke-resources.mjs';
 
 const repoVersion = /export const VERSION = '([^']*)';/.exec(
   readFileSync(new URL('../apps/server/src/version.ts', import.meta.url), 'utf8'),
@@ -135,11 +136,12 @@ const FROM_IMAGE = arg('from-image');
 const image = (role) => resolveSmokeImage(role, { from: FROM, to: TO, fromImage: FROM_IMAGE, toImage: TO_IMAGE });
 
 const PANEL_PORT = 4641;
-const suffix = randomBytes(4).toString('hex');
+const suffix = randomBytes(16).toString('hex');
 const NET = `nd-upgrade-${suffix}`;
 const DIND = `nd-upgrade-dind-${suffix}`;
 const PANEL = `nd-upgrade-panel-${suffix}`;
 const VOLUME = `nd-upgrade-data-${suffix}`;
+const created = { panel: false, dind: false, volume: false, network: false };
 const JWT = randomBytes(32).toString('hex');
 const MASTER = randomBytes(32).toString('hex');
 const journal = JSON.parse(readFileSync(new URL('../packages/db/src/migrations/meta/_journal.json', import.meta.url), 'utf8'));
@@ -158,10 +160,17 @@ const olderThan = (tag, [a, b, c]) => {
 
 const docker = (args, opts = {}) => {
   const r = spawnSync('docker', args, { encoding: 'utf8', timeout: opts.timeout ?? 300_000, maxBuffer: 8 << 20 });
-  if (r.status !== 0 && !opts.allowFail) throw new Error(`docker ${args.join(' ')} -> ${r.status}: ${(r.stderr ?? '').slice(0, 300)}`);
+  if (r.status !== 0 && !opts.allowFail) throw new Error(`docker ${args.slice(0, 2).join(' ')} -> ${r.status}: ${(r.stderr ?? '').slice(0, 300)}`);
   return (r.stdout ?? '').trim();
 };
-const dind = (args) => docker(['exec', DIND, 'docker', '-H', 'tcp://127.0.0.1:2375', ...args], { allowFail: true });
+const ownedRun = args => spawnSync('docker', args, { encoding: 'utf8', timeout: 120_000 });
+const cleanup = (kind, name) => removeOwnedSmokeResource(ownedRun, kind, name, suffix);
+const requireOwned = (kind, name) => {
+  const identity = inspectOwnedSmokeResource(ownedRun, kind, name, suffix);
+  if (identity.status !== 'owned') throw new Error(`Smoke ${kind} ownership is unconfirmed`);
+  return identity.id;
+};
+const dind = (args) => docker(['exec', requireOwned('container', DIND), 'docker', '-H', 'tcp://127.0.0.1:2375', ...args], { allowFail: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (msg) => { console.error(`\n✗ ${msg}`); process.exitCode = 1; throw new Error(msg); };
 const step = (s) => console.log(`  ${s}`);
@@ -184,8 +193,9 @@ async function api(p, { method = 'GET', token, body } = {}) {
 }
 
 function startPanel(role) {
-  docker(['rm', '-f', PANEL], { allowFail: true });
-  docker(['run', '-d', '--name', PANEL, '--network', NET, '-p', `127.0.0.1:${PANEL_PORT}:3000`,
+  if (cleanup('container', PANEL) === 'foreign') throw new Error('Panel test name belongs to another container');
+  created.panel = false;
+  docker(['run', '-d', '--name', PANEL, '--label', `ninedeploy.proof=${suffix}`, '--network', NET, '-p', `127.0.0.1:${PANEL_PORT}:3000`,
     '-v', `${VOLUME}:/data`,
     '-e', `NINEDEPLOY_JWT_SECRET=${JWT}`,
     // 0.16: the first admin needs the setup token (lib/setupToken.ts).
@@ -193,6 +203,7 @@ function startPanel(role) {
     '-e', `NINEDEPLOY_MASTER_KEY=${MASTER}`,
     '-e', `DOCKER_HOST=tcp://${DIND}:2375`,
     image(role)]);
+  created.panel = true;
 }
 
 async function waitHealthy(wantVersion) {
@@ -206,7 +217,7 @@ async function waitHealthy(wantVersion) {
     } catch { /* not up yet */ }
     await sleep(1000);
   }
-  try { console.log(docker(['logs', '--tail', '40', PANEL], { allowFail: true })); } catch { /* best effort */ }
+  try { console.log(docker(['logs', '--tail', '40', requireOwned('container', PANEL)], { allowFail: true })); } catch { /* best effort */ }
   return fail(`panel ${wantVersion} never answered /health ok`);
 }
 
@@ -241,7 +252,7 @@ async function waitDeploy(token, serviceId, pick, label) {
 async function inspectDb(label) {
   const dir = mkdtempSync(path.join(tmpdir(), 'nd-upgrade-'));
   const file = path.join(dir, 'ninedeploy.db');
-  docker(['cp', `${PANEL}:/data/ninedeploy.db`, file]);
+  docker(['cp', `${requireOwned('container', PANEL)}:/data/ninedeploy.db`, file]);
   const require = createRequire(new URL('../packages/db/package.json', import.meta.url));
   const { createClient } = require('@libsql/client');
   const client = createClient({ url: `file:${file.replace(/\\/g, '/')}` });
@@ -382,7 +393,7 @@ const HELLO_CONFIG = 'http:\n  middlewares:\n    custom-hello:\n      headers:\n
 
 /** A command against the DinD daemon: exit status, stdout, and stdout+stderr (container logs use both). */
 function dindRun(args) {
-  const r = spawnSync('docker', ['exec', DIND, 'docker', '-H', 'tcp://127.0.0.1:2375', ...args], { encoding: 'utf8', timeout: 120_000, maxBuffer: 32 << 20 });
+  const r = spawnSync('docker', ['exec', requireOwned('container', DIND), 'docker', '-H', 'tcp://127.0.0.1:2375', ...args], { encoding: 'utf8', timeout: 120_000, maxBuffer: 32 << 20 });
   return { status: r.status, stdout: (r.stdout ?? '').trim(), all: `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim() };
 }
 /** A file as the panel's Traefik container sees it under /etc/traefik ('' when it cannot be read). */
@@ -645,7 +656,7 @@ async function waitFor(pred, ms) {
 
 /** A command inside the panel container (it has curl and can reach DinD by name). */
 function panelRun(args) {
-  const r = spawnSync('docker', ['exec', PANEL, ...args], { encoding: 'utf8', timeout: 120_000, maxBuffer: 32 << 20 });
+  const r = spawnSync('docker', ['exec', requireOwned('container', PANEL), ...args], { encoding: 'utf8', timeout: 120_000, maxBuffer: 32 << 20 });
   return { status: r.status, stdout: (r.stdout ?? '').trim(), all: `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim() };
 }
 
@@ -1415,7 +1426,7 @@ async function rollbackOperationsChecks(seeded, { serviceId, hostname, traefikBe
   const planted = `nd-hostshell-smoke-${suffix}`;
   const run = dindRun(['run', '-d', '--name', planted, '--label', `${TERMINAL_HELPER_LABEL}=999999`, '--entrypoint', 'sleep', HELPER_IMAGE, '3600']);
   if (run.status !== 0) fail(`could not plant a labelled helper: ${run.all.slice(0, 200)}`);
-  const runbook = () => spawnSync('docker', ['exec', '-e', 'DOCKER_HOST=tcp://127.0.0.1:2375', DIND, 'sh', '-c', TERMINAL_HELPER_RUNBOOK], { encoding: 'utf8', timeout: 120_000 });
+  const runbook = () => spawnSync('docker', ['exec', '-e', 'DOCKER_HOST=tcp://127.0.0.1:2375', requireOwned('container', DIND), 'sh', '-c', TERMINAL_HELPER_RUNBOOK], { encoding: 'utf8', timeout: 120_000 });
   const first = runbook();
   if (first.status !== 0) fail(`the terminal-helper runbook command failed (${first.status}): ${(first.stderr || first.stdout || '').slice(0, 300)}`);
   const remaining = dindRun(['ps', '-aq', '--filter', `label=${TERMINAL_HELPER_LABEL}`]).stdout;
@@ -1445,7 +1456,7 @@ async function rollbackChecks({ sidecar }) {
   if (dindContainer(sidecar, { running: true }) !== sidecar) fail(`after the rollback ${sidecar} is not running (0.13 should not know about it)`);
   // The runbook command, verbatim, inside the DinD sidecar.
   const runbook = spawnSync('docker', [
-    'exec', '-e', 'DOCKER_HOST=tcp://127.0.0.1:2375', DIND, 'sh', '-c',
+    'exec', '-e', 'DOCKER_HOST=tcp://127.0.0.1:2375', requireOwned('container', DIND), 'sh', '-c',
     'docker rm -f $(docker ps -aq --filter label=ninedeploy.public-db)',
   ], { encoding: 'utf8', timeout: 120_000 });
   if (runbook.status !== 0) fail(`the runbook command failed (${runbook.status}): ${(runbook.stderr || runbook.stdout || '').slice(0, 300)}`);
@@ -1463,11 +1474,15 @@ async function main() {
   step(`pulled ${image('from')} and ${image('to')}`);
 
   // ── bring up DinD ───────────────────────────────────────────────────────
-  docker(['network', 'create', NET]);
-  docker(['volume', 'create', VOLUME]);
+  docker(['network', 'create', '--label', `ninedeploy.proof=${suffix}`, NET]);
+  created.network = true;
+  docker(['volume', 'create', '--label', `ninedeploy.proof=${suffix}`, VOLUME]);
+  created.volume = true;
+  requireOwned('volume', VOLUME);
   // The panel's data volume at the same path in the sidecar: the daemon then
   // resolves `-v /data/traefik:/etc/traefik` to the files the panel wrote.
-  docker(['run', '-d', '--name', DIND, '--network', NET, '--privileged', '-v', `${VOLUME}:/data`, 'docker:28-dind', 'dockerd', '--host=tcp://0.0.0.0:2375']);
+  docker(['run', '-d', '--name', DIND, '--label', `ninedeploy.proof=${suffix}`, '--network', NET, '--privileged', '-v', `${VOLUME}:/data`, 'docker:28-dind', 'dockerd', '--host=tcp://0.0.0.0:2375']);
+  created.dind = true;
   for (let i = 0; i < 45; i++) {
     if (dind(['version', '--format', '{{.Server.Version}}'])) break;
     await sleep(1000);
@@ -1581,7 +1596,7 @@ async function main() {
     else await sleep(500);
   }
   if (!interrupted) fail(`${FROM}: the slow deploy never reached building`);
-  docker(['kill', PANEL]);
+  docker(['kill', requireOwned('container', PANEL)]);
   step(`deploy #${interrupted.id} cut off mid-${interrupted.status} by a hard kill`);
   // O3: the panel's Traefik as FROM leaves it; the 0.15 block compares after the TO boot.
   const traefikBefore = { ...traefikState(), staticCfg: traefikFile('traefik.yml') };
@@ -1762,7 +1777,7 @@ async function main() {
   if (!olderThan(TO, FORKS_IN)) await forkPreviewChecks(token, serviceId);
   if (!olderThan(TO, AI_PROVIDERS_IN)) await aiProviderChecks(token);
 
-  docker(['stop', PANEL]);
+  docker(['stop', requireOwned('container', PANEL)]);
   const post = await inspectDb(TO);
   if (post.migrations !== journal.entries.length) fail(`${post.migrations} migrations recorded, journal has ${journal.entries.length}`);
   if (post.distinctMigrations !== post.migrations) fail('a migration was recorded twice');
@@ -1807,7 +1822,12 @@ async function main() {
 main()
   .catch((err) => { console.error(`\n✗ upgrade smoke aborted: ${err?.message ?? err}`); process.exitCode = 1; })
   .finally(() => {
-    for (const c of [PANEL, DIND]) docker(['rm', '-f', c], { allowFail: true });
-    docker(['volume', 'rm', VOLUME], { allowFail: true });
-    docker(['network', 'rm', NET], { allowFail: true });
+    for (const [kind, name, wasCreated] of [['container', PANEL, created.panel], ['container', DIND, created.dind],
+      ['volume', VOLUME, created.volume], ['network', NET, created.network]]) {
+      const result = cleanup(kind, name);
+      if (wasCreated && result !== 'removed') {
+        console.error(`Smoke cleanup could not confirm removal of owned ${kind} ${name} (${result}); retained for review`);
+        process.exitCode = 1;
+      }
+    }
   });
