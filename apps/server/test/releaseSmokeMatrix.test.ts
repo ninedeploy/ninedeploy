@@ -17,6 +17,7 @@ const expected = [
   command('smoke-agent-creation-drain'), command('smoke-node-lifecycle-controller'),
   command('smoke-node-lifecycle-fanout'), command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'),
   command('smoke-node-canary', ' --lifecycle-only --proof=.temp_files/release-node-smoke'),
+  command('smoke-node-canary', ' --initial-stop-only --proof=.temp_files/release-node-initial-stop'),
   command('smoke-node-canary', ' --replica-databases-only --proof=.temp_files/release-node-smoke'),
 ];
 describe('complete parallel release smoke gate', () => {

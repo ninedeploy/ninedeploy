@@ -21,6 +21,11 @@ describe('completed initial Stop recovery', () => {
   const dependencies = () => ({ check: vi.fn(async () => {}), sealed: vi.fn(async () => true),
     agent: vi.fn(async (_server: number, _op: string, params: Record<string, unknown>) => ({ exitCode: 0,
       lines: ['ND-RUNTIME-LEGACY ' + JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, deploymentWatermark: params.deploymentWatermark, complete: true })] })) });
+  it.each([{ orchestrator: 'swarm' as const }, { type: 'compose' as const }])('does not operate on an unsupported runtime: %j', async change => {
+    const deps = dependencies();
+    await recoverCompletedInitialStop(c.db, { ...await service(), ...change }, deps);
+    expect(deps.check).not.toHaveBeenCalled(); expect(deps.agent).not.toHaveBeenCalled();
+  });
   it('requires a sealed connection and validates the exact persisted watermark', async () => {
     const deps = dependencies(); await recoverCompletedInitialStop(c.db, await service(), deps);
     expect(deps.agent).toHaveBeenCalledOnce(); expect(deps.agent.mock.calls[0]![2]).toMatchObject({ serviceId: 1, deploymentWatermark: 10 });

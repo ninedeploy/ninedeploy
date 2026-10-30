@@ -256,6 +256,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'lib/nodeMetrics.ts': { exempt: 'node-only telemetry explicitly skips Swarm; Swarm services cannot be pinned to a node' },
   'lib/nodeDeploymentOwner.ts': { exempt: 'node deployment admission requires plain Docker placement; runtimeId only identifies an unfinished node Stop and is never used as a Swarm container' },
   'lib/nodeLifecycleIntent.ts': { exempt: 'acceptance and every ownership checkpoint require plain Docker on the captured node; lifecycle intent behavior tests refuse changed Swarm or Compose placement' },
+  'lib/nodeLegacyStopRecovery.ts': { exempt: 'initial Stop recovery explicitly excludes Swarm and requires a plain Docker node placement' },
   'lib/nodeLifecycleController.ts': { exempt: 'consumes durable plain-Docker intents and checks their current placement before and after every asynchronous boundary; Swarm cannot reach its container effects' },
   'lib/nodeLifecycleRuntime.ts': { exempt: 'dispatches captured plain-Docker intents; runtimeId is compared only for public status and retry eligibility, never used as a Swarm container name' },
   'lib/nodeLifecycleAlerts.ts': { exempt: 'notification-only identity comparisons; capability refusals skip Swarm and held-command warnings require current plain-Docker placement, covered by nodeLifecycleAlerts.test.ts' },

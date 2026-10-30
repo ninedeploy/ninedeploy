@@ -11,7 +11,7 @@ const confirmation = z.object({ requestId: z.string(), serviceId: z.number(), re
 
 /** Recover an initial Stop completed by an older panel before a successor creates containers. */
 export async function recoverCompletedInitialStop(db: DB, service: Service, deps: RecoveryDeps): Promise<void> {
-  if (service.runtimeId !== null || service.serverId === null) return;
+  if (service.type !== 'docker' || service.orchestrator === 'swarm' || service.runtimeId !== null || service.serverId === null) return;
   await deps.check();
   const command = await db.query.nodeLifecycleIntents.findFirst({ where: eq(nodeLifecycleIntents.serviceId, service.id), orderBy: desc(nodeLifecycleIntents.id) });
   if (!command || command.phase !== 'completed' || command.action !== 'stop' || command.runtimeId !== null || !command.snapshot.unselected) return;
