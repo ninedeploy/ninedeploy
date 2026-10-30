@@ -2,7 +2,7 @@ import { eq, deploymentRuntimeOwners, deployments, nodeAutoscaleCapacity, nodeDe
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { readServiceRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 
-type Spec = { runtimeId: string; imageId: string; serving: number; capacity: number };
+type Spec = { runtimeId: string; imageId: string; serving: number; capacity: number; databaseNetworks?: string[] };
 type Target = { id: string; name: string };
 type Tx = Parameters<Parameters<DB['transaction']>[0]>[0];
 
@@ -11,10 +11,14 @@ function validTargets(runtimeId: string, capacity: number, targets: unknown): ta
   return Array.isArray(targets) && targets.length === names.length && targets.every((target, index) => target && target.name === names[index] &&
     typeof target.id === 'string' && /^[a-f0-9]{64}$/.test(target.id)) && new Set(targets.map(target => target.id)).size === names.length;
 }
+function validNetworks(networks: unknown): networks is string[] {
+  return Array.isArray(networks) && networks.length <= 8 && networks.every(value => typeof value === 'string' && /^[1-9]\d*:nd-dbnet-[a-z0-9][a-z0-9_.-]*$/.test(value)) &&
+    new Set(networks).size === networks.length && networks.every((value, index) => index === 0 || networks[index - 1]! < value);
+}
 function validRecord(row: typeof nodeDeploymentPreparations.$inferSelect, owner: DeploymentRuntimeOwner, slug: string): boolean {
   return row.serviceId === owner.serviceId && row.serverId === owner.serverId && row.epoch === owner.epoch && row.requestId === owner.requestId &&
     row.runtimeId === `${slug}-${owner.deploymentId}` && /^sha256:[a-f0-9]{64}$/.test(row.imageId) &&
-    Number.isSafeInteger(row.serving) && Number.isSafeInteger(row.capacity) && row.serving >= 1 && row.capacity >= row.serving && row.capacity <= MAX_REPLICAS &&
+    Number.isSafeInteger(row.serving) && Number.isSafeInteger(row.capacity) && row.serving >= 1 && row.capacity >= row.serving && row.capacity <= MAX_REPLICAS && validNetworks(row.databaseNetworks) &&
     (row.phase === 'preparing' ? row.targets === null && row.recoveryWatermark === null :
       (row.phase === 'prepared' ? row.recoveryWatermark === null : (row.phase === 'fencing' || row.phase === 'retiring') &&
         Number.isSafeInteger(row.recoveryWatermark) && row.recoveryWatermark! >= owner.deploymentId) && validTargets(row.runtimeId, row.capacity, row.targets));
@@ -37,8 +41,9 @@ async function assertOwner(tx: Tx, owner: DeploymentRuntimeOwner) {
 
 /** Record immutable, non-secret preparation intent before sending any create request. */
 export async function beginNodeDeploymentPreparation(db: DB, owner: DeploymentRuntimeOwner, spec: Spec) {
+  const databaseNetworks = [...(spec.databaseNetworks ?? [])].sort();
   if (!/^sha256:[a-f0-9]{64}$/.test(spec.imageId) || !Number.isSafeInteger(spec.serving) || !Number.isSafeInteger(spec.capacity) ||
-    spec.serving < 1 || spec.capacity < spec.serving || spec.capacity > MAX_REPLICAS) throw new Error('Invalid node preparation intent');
+    spec.serving < 1 || spec.capacity < spec.serving || spec.capacity > MAX_REPLICAS || !validNetworks(databaseNetworks)) throw new Error('Invalid node preparation intent');
   return db.transaction(async tx => {
     const service = await assertOwner(tx, owner);
     const deployment = await tx.query.deployments.findFirst({ where: eq(deployments.id, owner.deploymentId) });
@@ -47,10 +52,10 @@ export async function beginNodeDeploymentPreparation(db: DB, owner: DeploymentRu
     }
     if (spec.runtimeId !== `${service.slug}-${owner.deploymentId}`) throw new Error('Invalid node preparation generation');
     await tx.insert(nodeDeploymentPreparations).values({ deploymentId: owner.deploymentId, serviceId: owner.serviceId, serverId: owner.serverId,
-      epoch: owner.epoch, requestId: owner.requestId, ...spec }).onConflictDoNothing();
+      epoch: owner.epoch, requestId: owner.requestId, ...spec, databaseNetworks }).onConflictDoNothing();
     const row = await tx.query.nodeDeploymentPreparations.findFirst({ where: eq(nodeDeploymentPreparations.deploymentId, owner.deploymentId) });
     if (!row || !validRecord(row, owner, service.slug) || row.phase === 'retiring' || row.phase === 'fencing' || row.runtimeId !== spec.runtimeId || row.imageId !== spec.imageId ||
-      row.serving !== spec.serving || row.capacity !== spec.capacity) {
+      row.serving !== spec.serving || row.capacity !== spec.capacity || JSON.stringify(row.databaseNetworks) !== JSON.stringify(databaseNetworks)) {
       throw new Error('Node preparation intent changed');
     }
     return row;
@@ -115,10 +120,10 @@ export async function handoffNodeDeploymentPreparation(db: DB, owner: Deployment
       throw new Error('Node preparation recovery handoff is unconfirmed');
     }
     await tx.insert(nodeAutoscaleCapacity).values({ deploymentId: owner.deploymentId, serviceId: owner.serviceId, serverId: owner.serverId,
-      runtimeId: row.runtimeId, imageId: row.imageId, targets: row.targets }).onConflictDoNothing();
+      runtimeId: row.runtimeId, imageId: row.imageId, targets: row.targets, databaseNetworks: row.databaseNetworks }).onConflictDoNothing();
     const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, owner.deploymentId) });
     if (!capacity || capacity.serviceId !== row.serviceId || capacity.serverId !== row.serverId || capacity.runtimeId !== row.runtimeId ||
-      capacity.imageId !== row.imageId || !validTargets(row.runtimeId, row.capacity, capacity.targets) ||
+      capacity.imageId !== row.imageId || JSON.stringify(capacity.databaseNetworks) !== JSON.stringify(row.databaseNetworks) || !validTargets(row.runtimeId, row.capacity, capacity.targets) ||
       capacity.targets.some((target, index) => target.id !== row.targets?.[index]?.id || target.name !== row.targets?.[index]?.name)) {
       throw new Error('Node autoscale capacity receipt changed');
     }

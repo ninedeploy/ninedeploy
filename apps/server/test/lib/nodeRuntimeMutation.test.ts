@@ -269,6 +269,8 @@ describe('persistent runtime request admission', () => {
       ['web-10', true, true], ['web-10-r2', false, true], ['web-10-r3', false, true],
     ]);
     expect(effects().filter(args => args[0] === 'start')).toEqual([['start', result.serving[0]!.id]]);
+    expect(effects().findIndex(args => args[0] === 'network' && args.at(-1) === result.serving[0]!.id))
+      .toBeLessThan(effects().findIndex(args => args[0] === 'start'));
     expect(readFileSync(journalFile()).includes(Buffer.from('KEY=fixture'))).toBe(false);
     await runtime().stop({ requestId: nonce(13), serviceId: 7, revision: 13, timeoutMs: 5000, graceSeconds: 0,
       targets: result.capacity.map(target => ({ ...target, deploymentId: 10 })) });
@@ -276,6 +278,18 @@ describe('persistent runtime request admission', () => {
     await expect(prepareNodeAutoscaleCapacity(client, { service, owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10,
       extraNetworks: ['nd-extra'] })).rejects.toThrow(/stale/);
     expect(rows.every(row => !row.running)).toBe(true); expect(effects()).toEqual([]);
+  });
+  it('does not start a prepared replica when its database network cannot be confirmed', async () => {
+    failNetwork = true;
+    const input = { ...prepare(5, 10, [{ ...spec(), extraNetworks: ['nd-dbnet-orders'] },
+      { ...spec(10, 'web-10-r2'), extraNetworks: ['nd-dbnet-orders'] }]), startNames: ['web-10'] };
+    await expect(runtime().prepare(input)).rejects.toThrow(/network attachment unconfirmed/);
+    expect(effects().filter(args => args[0] === 'start')).toEqual([]);
+    expect(rows.every(row => !row.running)).toBe(true);
+    failNetwork = false;
+    const receipt = await runtime().prepare(input);
+    expect(receipt.items.map(item => item.running)).toEqual([true, false]);
+    expect(rows.every(row => Object.hasOwn(row.networks, 'nd-dbnet-orders'))).toBe(true);
   });
   it('replays a lost autoscale preparation response without repeating container effects', async () => {
     mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');

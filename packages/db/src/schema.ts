@@ -1915,6 +1915,7 @@ export const nodeDeploymentPreparations = sqliteTable('node_deployment_preparati
   serverId: integer('server_id').notNull(), epoch: integer('epoch').notNull(), requestId: text('request_id').notNull(),
   runtimeId: text('runtime_id').notNull(), imageId: text('image_id').notNull(),
   serving: integer('serving').notNull(), capacity: integer('capacity').notNull(),
+  databaseNetworks: text('database_networks', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
   phase: text('phase', { enum: ['preparing', 'prepared', 'fencing', 'retiring'] }).notNull().default('preparing'),
   recoveryWatermark: integer('recovery_watermark'),
   targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>(),
@@ -1927,6 +1928,7 @@ export const nodeAutoscaleCapacity = sqliteTable('node_autoscale_capacity', {
   serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
   serverId: integer('server_id').notNull(), runtimeId: text('runtime_id').notNull(), imageId: text('image_id').notNull(),
   targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>().notNull(),
+  databaseNetworks: text('database_networks', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
   createdAt: ts('created_at'),
 });
 

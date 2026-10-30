@@ -16,12 +16,17 @@ type CapacityClient = Parameters<typeof prepareNodeAutoscaleCapacity>[0];
 /** Prepare dependencies and one ordered generation. The caller owns placement, cleanup and promotion. */
 export async function prepareNodeAutoscaleDeployment(input: {
   service: Service; owner: DeploymentRuntimeOwner; image: string; creationWatermark: number; env: Record<string, string>;
-  attachments?: readonly NodeVolumeAttachment[]; files?: readonly NodeServiceFile[]; extraNetworks?: readonly string[];
+  attachments?: readonly NodeVolumeAttachment[]; files?: readonly NodeServiceFile[]; extraNetworks?: readonly string[]; databaseNetworkIdentities?: readonly string[];
   agent: AgentCall; client: CapacityClient; sealed: boolean; checkpoint: () => Promise<void>; log: (line: string) => void;
-  journal: { begin: (spec: { runtimeId: string; imageId: string; serving: number; capacity: number }) => Promise<unknown>;
+  journal: { begin: (spec: { runtimeId: string; imageId: string; serving: number; capacity: number; databaseNetworks: string[] }) => Promise<unknown>;
     complete: (targets: Array<{ id: string; name: string }>) => Promise<unknown> };
 }) {
   const { service, owner } = input, label = `#${owner.serverId}`, attachments = input.attachments ?? [], files = input.files ?? [];
+  const networks = [...(input.extraNetworks ?? [])].sort(), identities = [...(input.databaseNetworkIdentities ?? [])].sort();
+  if (identities.some(identity => !/^[1-9]\d*:nd-dbnet-[a-z0-9][a-z0-9_.-]*$/.test(identity)) ||
+    JSON.stringify(identities.map(identity => identity.slice(identity.indexOf(':') + 1)).sort()) !== JSON.stringify(networks)) {
+    throw new Error('Node autoscale database network identities are unconfirmed');
+  }
   if (!input.journal || typeof input.journal.begin !== 'function' || typeof input.journal.complete !== 'function') {
     throw new Error('Node autoscale preparation requires a durable journal');
   }
@@ -53,7 +58,8 @@ export async function prepareNodeAutoscaleDeployment(input: {
   if (hasRuntimeOptions(service.runtimeOptions) && !runtimeOptions) throw new Error('Node autoscale container options are unavailable');
   await input.checkpoint();
   await input.journal.begin({ runtimeId: `${service.slug}-${owner.deploymentId}`, imageId: match[1]!,
-    serving: Math.max(scale.data.minReplicas, Math.min(service.runtimeReplicas, scale.data.maxReplicas)), capacity: scale.data.maxReplicas });
+    serving: Math.max(scale.data.minReplicas, Math.min(service.runtimeReplicas, scale.data.maxReplicas)), capacity: scale.data.maxReplicas,
+    databaseNetworks: identities });
   await input.checkpoint();
   const volumeNames = [...(service.volumeMount ? [`nd-svc-${service.slug}-data`] : []), ...attachments.map(item => item.volumeName)];
   if (volumeNames.length) {

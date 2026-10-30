@@ -8,7 +8,7 @@ import type { BuildContext } from '../types.js';
 
 /** Bind the ordered builder seam to its durable deployment owner and journal. */
 export function bindNodeAutoscalePreparation(input: { db: DB; owner: DeploymentRuntimeOwner; agent: AgentCall;
-  sealed: () => Promise<boolean>; checkpoint: () => Promise<void>; signal?: AbortSignal; log: (line: string) => void }) {
+  sealed: () => Promise<boolean>; checkpoint: () => Promise<void>; signal?: AbortSignal; log: (line: string) => void; extraNetworks?: readonly string[]; databaseNetworkIdentities?: readonly string[] }) {
   const owner = Object.freeze({ ...input.owner });
   const authority = createNodeDeploymentAuthority(input.db, owner);
   const checkpoint = async () => { input.signal?.throwIfAborted(); await authority.check(); await input.checkpoint();
@@ -27,7 +27,8 @@ export function bindNodeAutoscalePreparation(input: { db: DB; owner: DeploymentR
     const sealed = await input.sealed();
     await checkpoint();
     const result = await prepareNodeAutoscaleDeployment({ service: runtime.service, owner, image: runtime.image, creationWatermark: watermark,
-      env: runtime.env, attachments: runtime.volumeAttachments, files: runtime.files, agent: input.agent, client, sealed, checkpoint, log: input.log,
+      env: runtime.env, attachments: runtime.volumeAttachments, files: runtime.files, extraNetworks: input.extraNetworks, databaseNetworkIdentities: input.databaseNetworkIdentities,
+      agent: input.agent, client, sealed, checkpoint, log: input.log,
       journal: { begin: spec => beginNodeDeploymentPreparation(input.db, owner, spec), complete: targets => completeNodeDeploymentPreparation(input.db, owner, targets) } });
     return result.runtime;
   };

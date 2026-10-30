@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, inArray, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
-import { deployments, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, serviceTargets, services,
+import { databaseAttachments, databases, deployments, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, serviceTargets, services,
   type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { autoscaleConfig, containerInventoryReply } from '@ninedeploy/schemas';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
@@ -32,6 +32,17 @@ const validCapacity = (row: typeof nodeAutoscaleCapacity.$inferSelect | undefine
   return row.targets.every((target, index) => target && target.name === names[index] && typeof target.id === 'string' && /^[a-f0-9]{64}$/.test(target.id)) &&
     new Set(row.targets.map(target => target.id)).size === names.length;
 };
+
+/** A prepared spare is usable only while its recorded database bridges still describe the service. */
+export async function validNodeAutoscaleDatabaseNetworks(db: Pick<DB, 'select'>, svc: Service, row: typeof nodeAutoscaleCapacity.$inferSelect): Promise<boolean> {
+  if (!Array.isArray(row.databaseNetworks) || row.databaseNetworks.length > 8 || row.databaseNetworks.some(value => typeof value !== 'string') ||
+    new Set(row.databaseNetworks).size !== row.databaseNetworks.length) return false;
+  const attached = await db.select({ id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status }).from(databaseAttachments)
+    .innerJoin(databases, eq(databases.id, databaseAttachments.databaseId)).where(eq(databaseAttachments.serviceId, svc.id));
+  if (attached.some(item => item.serverId !== svc.serverId || item.status !== 'running')) return false;
+  const expected = attached.map(item => `${item.id}:nd-dbnet-${item.slug}`).sort();
+  return JSON.stringify(expected) === JSON.stringify(row.databaseNetworks);
+}
 
 /** Reserve a scale owner only for the exact running generation observed by the controller. */
 export async function admitNodeAutoscale(db: DB, expected: Service, desiredReplicas: number, measurement?: NodeAutoscaleEvidence,
@@ -67,7 +78,7 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
     const capacityDeploymentId = Number(/-([1-9]\d*)$/.exec(fresh.runtimeId!)?.[1]);
     if (!Number.isSafeInteger(capacityDeploymentId) || capacityDeploymentId < 1) return null;
     const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, capacityDeploymentId) });
-    if (!validCapacity(capacity, fresh, Math.max(fresh.runtimeReplicas, desiredReplicas))) return null;
+    if (!validCapacity(capacity, fresh, Math.max(fresh.runtimeReplicas, desiredReplicas)) || !await validNodeAutoscaleDatabaseNetworks(tx, fresh, capacity!)) return null;
     const targets = await placements(tx, fresh.id);
     if (targets.some(t => !t.runtimeId || t.serverId === fresh.serverId) || new Set(targets.map(t => t.serverId)).size !== targets.length) return null;
     const [sequence] = await tx.select({ id: sql<number>`COALESCE((SELECT seq FROM sqlite_sequence WHERE name='deployments'), 0)` })
@@ -109,7 +120,7 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
       JSON.stringify(transition.targets) !== JSON.stringify(admission.targets) ||
       JSON.stringify(transition.measurement) !== JSON.stringify(admission.measurement ?? null)) throw new Error('Node autoscale transition changed');
     const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, Number(/-([1-9]\d*)$/.exec(fresh.runtimeId!)?.[1])) });
-    if (!validCapacity(capacity, fresh, Math.max(admission.service.runtimeReplicas, admission.desiredReplicas)) ||
+    if (!validCapacity(capacity, fresh, Math.max(admission.service.runtimeReplicas, admission.desiredReplicas)) || !await validNodeAutoscaleDatabaseNetworks(tx, fresh, capacity!) ||
       transition.replicaInventory?.some(item => !capacity!.targets.some(target => target.name === item.name && target.id === item.id))) {
       throw new Error('Node autoscale capacity identity changed');
     }

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deploymentReleaseRecords, deploymentRuntimeOwners, deployments, domains, nodeAutoscaleCapacity, nodeDeploymentPreparations, nodeLifecycleIntents, servers, serviceFiles, serviceRuntimeOwners, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { auditLog, databaseAttachments, databases, deploymentReleaseRecords, deploymentRuntimeOwners, deployments, domains, nodeAutoscaleCapacity, nodeDeploymentPreparations, nodeLifecycleIntents, servers, serviceFiles, serviceRuntimeOwners, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { createComposeRelease } from '../src/lib/composeRelease.js';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
@@ -335,12 +335,12 @@ describe('explicit Stop during primary readiness', () => {
   const originalBuild = h.builder.buildAndRun.getMockImplementation()!;
   const originalHealth = h.builder.isHealthy.getMockImplementation()!;
   afterEach(() => { h.builder.buildAndRun.mockReset().mockImplementation(originalBuild); h.builder.isHealthy.mockReset().mockImplementation(originalHealth); });
-  it.each([true, false])('deploys through the node pipeline with capacity support: %s', async (supported) => {
+  it.each([[true, false, false], [true, true, false], [false, false, false], [false, true, false], [true, true, true]])('node pipeline with capacity support %s, database %s and topology change %s', async (supported, withDatabase, topologyChange) => {
     const { observabilityDb } = await import('./fixtures/observability.js');
     const f = await observabilityDb(), originalAgent = h.agentOp.getMockImplementation()!;
     const targets = new Map<string, { id: string; name: string }>(), imageId = `sha256:${'f'.repeat(64)}`;
     const caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff', 'docker.startSet', 'docker.readiness',
-      'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec', 'docker.recovery', 'docker.probe'];
+      'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec', 'docker.recovery', 'docker.probe', 'db.manage', 'stream', 'volume.manage'];
     h.agentOp.mockReset().mockImplementation(async (_db, _node, op, params) => {
       if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: supported ? caps : caps.filter(cap => cap !== 'docker.prepareAttemptEnv') })}`] };
       if (op === 'docker.imageInspect') return { exitCode: 0, lines: [`${imageId}|42`] };
@@ -353,6 +353,7 @@ describe('explicit Stop during primary readiness', () => {
           const item = { id: String(index + 1).repeat(64), name: spec.name, deploymentId: params.deploymentId, running: params.startNames.includes(spec.name) };
           targets.set(item.name, item); return item;
         });
+        if (topologyChange) await f.db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, 5));
         return { exitCode: 0, lines: [`ND-PREPARED ${JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, deploymentId: params.deploymentId, revision: params.revision, complete: true, items })}`] };
       }
       if (op === 'docker.identity') {
@@ -370,16 +371,33 @@ describe('explicit Stop during primary readiness', () => {
       await f.db.update(services).set({ serverId: 4, image: 'fixture:1', port: 8080, runtimeId: null, status: 'idle', healthCheck: 'running',
         autoscale: { minReplicas: 1, maxReplicas: 2, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
       await f.db.insert(domains).values({ serviceId: 1, hostname: 'app.test', status: 'active', ssl: false });
+      if (withDatabase) {
+        await f.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running',
+          serverId: 4, nodeContainerName: 'nd-db-orders', passwordEncrypted: 'fixture' });
+        await f.db.insert(databaseAttachments).values({ serviceId: 1, databaseId: 5, envAlias: 'DATABASE_URL' });
+      }
       await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+      const logs = collectLogs(9);
       await runDeployment(f.db, 9);
-      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).toBe('running');
+      if (topologyChange) {
+        expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).not.toBe('running');
+        expect(logs.join('\n')).toMatch(/database attachments changed/i);
+        expect(await f.db.select().from(nodeAutoscaleCapacity)).toEqual([]);
+        return;
+      }
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status, logs.join('\n')).toBe('running');
       const capacity = await f.db.select().from(nodeAutoscaleCapacity);
       if (supported) {
-        expect(capacity).toMatchObject([{ deploymentId: 9, runtimeId: 'web-9', imageId }]);
+        expect(capacity).toMatchObject([{ deploymentId: 9, runtimeId: 'web-9', imageId, databaseNetworks: withDatabase ? ['5:nd-dbnet-orders'] : [] }]);
         expect(capacity[0]?.targets.map(target => target.name)).toEqual(['web-9', 'web-9-r2']);
       } else expect(capacity).toEqual([]);
       expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.prepare')).toBe(supported);
       expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.runEnv' || call[2] === 'docker.runSpec')).toBe(!supported);
+      if (withDatabase && supported) {
+        const prepare = h.agentOp.mock.calls.find(call => call[2] === 'docker.prepare')?.[3];
+        expect(prepare.specs.map((spec: { extraNetworks: string[] }) => spec.extraNetworks)).toEqual([['nd-dbnet-orders'], ['nd-dbnet-orders']]);
+        expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.networkConnect')).toBe(false);
+      } else if (withDatabase) expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.networkConnect')).toBe(true);
     } finally { h.agentOp.mockReset().mockImplementation(originalAgent); f.close(); }
   });
   it('persists deployment authority before the first node operation', async () => {

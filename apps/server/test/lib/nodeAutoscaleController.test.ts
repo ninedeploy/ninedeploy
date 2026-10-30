@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createDb, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
+import { createDb, databaseAttachments, databases, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
 import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
 import { createNodeAutoscaleDecider } from '../../src/lib/nodeAutoscaleDecision.js';
@@ -48,6 +48,34 @@ it('holds without sampling when the active generation has no capacity receipt', 
   await c.db.update(services).set({ runtimeId: 'web-10' }).where(eq(services.id, 1));
   expect(autoscaleStatus(await service()).holding).not.toBe('node autoscale capacity is not confirmed');
   expect(sample).not.toHaveBeenCalled();
+});
+
+it('holds scaling when database attachments differ from the prepared capacity', async () => {
+  await c.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running', serverId: 4, passwordEncrypted: 'fixture' });
+  await c.db.insert(databaseAttachments).values({ serviceId: 1, databaseId: 5, envAlias: 'DATABASE_URL' });
+  const svc = await service(), sample = vi.fn();
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, sample });
+  expect(await worker.step(svc)).toEqual({ state: 'held', reason: 'node autoscale database networks changed; redeploy to prepare capacity' });
+  expect(await admitNodeAutoscale(c.db, svc, 2)).toBeNull();
+  expect(sample).not.toHaveBeenCalled();
+  await c.db.update(nodeAutoscaleCapacity).set({ databaseNetworks: ['6:nd-dbnet-orders'] }).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
+  expect(await admitNodeAutoscale(c.db, svc, 2)).toBeNull();
+  await c.db.update(nodeAutoscaleCapacity).set({ databaseNetworks: ['5:nd-dbnet-orders'] }).where(eq(nodeAutoscaleCapacity.deploymentId, 9));
+  expect(await admitNodeAutoscale(c.db, svc, 2)).not.toBeNull();
+});
+
+it('stops an in-flight scale before starting a spare if database attachments change', async () => {
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  const runtime = deps(), fence = runtime.fence;
+  runtime.fence = async (...args) => {
+    const reply = await fence(...args);
+    await c.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running', serverId: 4, passwordEncrypted: 'fixture' });
+    await c.db.insert(databaseAttachments).values({ serviceId: 1, databaseId: 5, envAlias: 'DATABASE_URL' });
+    return reply;
+  };
+  await expect(executeNodeAutoscale(c.db, admission, runtime)).rejects.toThrow(/capacity identity changed/);
+  expect(calls).toEqual(['fence']);
+  expect((await service()).runtimeReplicas).toBe(1);
 });
 
 it('reports a verified node sample and expires its value and desired count', async () => {

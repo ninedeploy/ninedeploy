@@ -1,6 +1,6 @@
 import { eq, nodeAutoscaleCapacity, type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { autoscaleConfig } from '@ninedeploy/schemas';
-import { admitNodeAutoscale, type NodeAutoscaleAdmission } from './nodeAutoscaleAuthority.js';
+import { admitNodeAutoscale, type NodeAutoscaleAdmission, validNodeAutoscaleDatabaseNetworks } from './nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from './nodeAutoscaleController.js';
 import { createNodeAutoscaleDecider } from './nodeAutoscaleDecision.js';
 import { nodeAutoscaleRuntime } from './nodeAutoscaleRuntime.js';
@@ -36,6 +36,9 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
           ? await db.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, deploymentId) }) : null;
         if (!capacity || capacity.serviceId !== service.id || capacity.serverId !== service.serverId || capacity.runtimeId !== service.runtimeId) {
           forget(service.id); return held('node autoscale capacity is not confirmed');
+        }
+        if (!await validNodeAutoscaleDatabaseNetworks(db, service, capacity)) {
+          forget(service.id); return held('node autoscale database networks changed; redeploy to prepare capacity');
         }
         const measuredOwner = await readServiceRuntimeOwner(db, service.id);
         if (owners.has(service.id) && !sameRuntimeOwner(owners.get(service.id)!, measuredOwner)) forget(service.id);

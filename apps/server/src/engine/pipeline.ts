@@ -980,6 +980,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   let remoteBuilderFor: ((prebuiltImage?: BuildContext['prebuiltImage'], orderedCapacity?: boolean) => Builder) | null = null;
   let currentRemoteImage: BuildContext['prebuiltImage'];
   let remoteNodeCall: AgentCall | undefined;
+  let orderedDatabaseCheck: (() => Promise<void>) | undefined;
+  let orderedDatabaseNetworks: string[] = [];
+  let orderedDatabaseIdentities: string[] = [];
   if (service.serverId != null) {
     const serverId = service.serverId;
     if (!remoteDeploySupported(service.type)) {
@@ -1066,9 +1069,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
           try { return await agentTransportSealed(db, serverId, deployAbortSignal()); } finally { await nodeAuthority?.check(); }
         }, ...(prebuiltImage ? { prebuiltImage } : {}), ...(orderedCapacity && admission?.claimed && nodeAuthority ? {
           prepareCapacity: bindNodeAutoscalePreparation({ db, owner: admission.owner, agent: call, signal: deployAbortSignal(), log,
-            sealed: () => agentTransportSealed(db, serverId, deployAbortSignal()), checkpoint: async () => {
-              await nodeAuthority.check(); if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
-            } }),
+            extraNetworks: orderedDatabaseNetworks, databaseNetworkIdentities: orderedDatabaseIdentities,
+            sealed: () => agentTransportSealed(db, serverId, deployAbortSignal()), checkpoint: candidateCheckpoint }),
         } : {}) });
     };
     builder = remoteBuilderFor();
@@ -1101,7 +1103,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   let runtime: DeployRuntime | undefined;
   let primaryRecovery: PrimaryRecoveryLease | undefined;
   let swarmRecovery: SwarmRecoveryLease | undefined;
-  const candidateCheckpoint = async () => { await nodeAuthority?.check(); if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled(); };
+  const candidateCheckpoint = async () => { await nodeAuthority?.check(); if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled(); await orderedDatabaseCheck?.(); };
   const runtimeFence = () => and(primaryRecovery?.fence(), swarmRecovery?.fence(), nodeAuthority?.fence());
   const ensurePrimaryRecovery = async () => {
     if (primaryRecovery || !builder || service.type !== 'docker' || service.orchestrator === 'swarm' || !runtime || runtime.port == null || runtime.runtimeId === previous?.runtimeId) return;
@@ -1584,12 +1586,18 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       service.type === 'docker' && service.orchestrator !== 'swarm' && !swarmRuntimeOf(service) &&
       scale.success && scale.data.metric !== 'rps' && ctx.service.port != null && service.canary == null &&
       service.publishedPort == null && !(service.portMappings?.length)) {
-      const [activeRoutes, targets, attached] = await Promise.all([
+      const [activeRoutes, targets] = await Promise.all([
         db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, service.id), eq(domains.status, 'active'))).limit(1),
         db.select({ id: serviceTargets.id }).from(serviceTargets).where(eq(serviceTargets.serviceId, service.id)).limit(1),
-        db.select({ id: databaseAttachments.databaseId }).from(databaseAttachments).where(eq(databaseAttachments.serviceId, service.id)).limit(1),
       ]);
-      if (activeRoutes.length && !targets.length && !attached.length) {
+      if (activeRoutes.length && !targets.length) {
+        const readTopology = async () => (await db.select({ id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status })
+          .from(databaseAttachments).innerJoin(databases, eq(databases.id, databaseAttachments.databaseId))
+          .where(eq(databaseAttachments.serviceId, service.id))).sort((a, b) => a.id - b.id);
+        const topology = await readTopology();
+        const expected = runtimeEnvironment.attachedDatabases.map(item => ({ id: item.id, slug: item.slug, serverId: item.serverId, status: 'running' }))
+          .sort((a, b) => a.id - b.id);
+        const networksSupported = JSON.stringify(topology) === JSON.stringify(expected) && topology.length <= 8 && topology.every(item => item.serverId === service.serverId);
         let ready = false;
         try {
           await candidateCheckpoint();
@@ -1603,8 +1611,17 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
         } catch {
           await candidateCheckpoint();
         }
-        if (ready) builder = remoteBuilderFor(currentRemoteImage, true);
-        else log('Node autoscaling capacity requires a sealed, up-to-date agent; continuing with the existing deployment path.');
+        if (ready && networksSupported) {
+          const { nodeDatabaseNetwork } = await import('../lib/nodeDatabase.js');
+          orderedDatabaseNetworks = topology.map(item => nodeDatabaseNetwork(item.slug));
+          orderedDatabaseIdentities = topology.map(item => `${item.id}:${nodeDatabaseNetwork(item.slug)}`).sort();
+          orderedDatabaseCheck = async () => { if (JSON.stringify(await readTopology()) !== JSON.stringify(topology)) throw new Error('Node database attachments changed during deployment'); };
+          await candidateCheckpoint();
+          builder = remoteBuilderFor(currentRemoteImage, true);
+        }
+        else log(networksSupported
+          ? 'Node autoscaling capacity requires a sealed, up-to-date agent; continuing with the existing deployment path.'
+          : 'Node autoscaling capacity does not support these database attachments; continuing with the existing deployment path.');
       }
     }
     runtime = await builder.buildAndRun(ctx, previous);
@@ -1636,7 +1653,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     // failure fails the deploy; the previous runtime keeps serving.
     if (service.serverId != null && runtime) {
       const onNode = runtimeEnvironment.attachedDatabases.filter((a) => a.serverId === service.serverId);
-      if (onNode.length > 0) {
+      if (onNode.length > 0 && !runtime.nodeDeploymentOwner) {
         const { connectServiceToNodeDatabases } = await import('../lib/nodeDatabase.js');
         await connectServiceToNodeDatabases(db, service.serverId, runtime.nodeTargets ?? runtime.runtimeId, onNode, log, { checkpoint: candidateCheckpoint });
       }

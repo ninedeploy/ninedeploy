@@ -65,7 +65,7 @@ it('records intent before preparation and freezes the receipt before environment
   const opts = await options();
   const journal = { begin: vi.fn(async () => { calls.push('journal.begin'); }), complete: vi.fn(async () => { calls.push('journal.complete'); }) };
   const result = await prepareNodeAutoscaleDeployment({ ...opts, journal });
-  expect(journal.begin).toHaveBeenCalledWith({ runtimeId: 'web-9', imageId: result.imageId, serving: 1, capacity: 3 });
+  expect(journal.begin).toHaveBeenCalledWith({ runtimeId: 'web-9', imageId: result.imageId, serving: 1, capacity: 3, databaseNetworks: [] });
   expect(journal.complete).toHaveBeenCalledWith(result.capacity);
   expect(calls.indexOf('journal.begin')).toBeLessThan(calls.indexOf('file.writeEnv'));
   expect(calls.indexOf('journal.complete')).toBeLessThan(calls.indexOf('file.deleteEnv'));
