@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createDb, deploymentRuntimeOwners, deployments, eq, nodeDeploymentPreparations, runMigrations, servers, services } from '@ninedeploy/db';
-import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
+import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation, readNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 
 let c: ReturnType<typeof createDb>;
@@ -22,7 +22,17 @@ it('records and replays the same intent and immutable receipt', async () => {
   expect(await beginNodeDeploymentPreparation(c.db, owner, spec)).toMatchObject({ phase: 'preparing' });
   expect(await completeNodeDeploymentPreparation(c.db, owner, targets)).toMatchObject({ phase: 'prepared', targets });
   expect(await completeNodeDeploymentPreparation(c.db, owner, targets)).toMatchObject({ phase: 'prepared', targets });
+  expect(await completeNodeDeploymentPreparation(c.db, owner, targets.map(({ id, name }) => ({ id, name })))).toMatchObject({ phase: 'prepared', targets });
+  expect(await readNodeDeploymentPreparation(c.db, owner)).toMatchObject({ phase: 'prepared', targets });
   expect((await c.db.select().from(nodeDeploymentPreparations))).toHaveLength(1);
+});
+it('fails closed when stored preparation evidence is malformed', async () => {
+  expect(await readNodeDeploymentPreparation(c.db, owner)).toBeNull();
+  await beginNodeDeploymentPreparation(c.db, owner, spec);
+  expect(await readNodeDeploymentPreparation(c.db, owner)).toMatchObject({ phase: 'preparing' });
+  await c.db.update(nodeDeploymentPreparations).set({ capacity: 11 }).where(eq(nodeDeploymentPreparations.deploymentId, 9));
+  await expect(readNodeDeploymentPreparation(c.db, owner)).rejects.toThrow(/evidence is invalid/);
+  await expect(completeNodeDeploymentPreparation(c.db, owner, targets)).rejects.toThrow(/intent unavailable/);
 });
 it('rejects changed intent and foreign generation without replacing the original', async () => {
   await beginNodeDeploymentPreparation(c.db, owner, spec);
@@ -45,6 +55,7 @@ it('refuses old-owner updates after a newer operation or node placement wins', a
   const previous = await c.db.query.serviceRuntimeOwners.findFirst({ where: (s, { eq: equals }) => equals(s.serviceId, 1) });
   await reserveServiceRuntimeOwner(c.db, 1, 'stop', previous!, 'b'.repeat(32));
   await expect(completeNodeDeploymentPreparation(c.db, owner, targets)).rejects.toThrow(/ownership/);
+  await expect(readNodeDeploymentPreparation(c.db, owner)).rejects.toThrow(/ownership/);
   expect((await c.db.select().from(nodeDeploymentPreparations))[0]?.phase).toBe('preparing');
   await c.db.update(services).set({ serverId: null }).where(eq(services.id, 1));
   await expect(beginNodeDeploymentPreparation(c.db, owner, spec)).rejects.toThrow(/ownership|placement/);
