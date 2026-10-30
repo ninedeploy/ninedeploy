@@ -9,11 +9,15 @@ import { handoffStoppedNodeToLegacy } from '../../src/lib/nodeLegacyHandoff.js';
 import { createNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
 import { runOp } from '../../src/agent.js';
 import { prepareNodeAutoscaleCapacity } from '../../src/engine/builders/nodeAutoscalePrepare.js';
-import { createDb, deployments, eq, nodeAutoscaleTransitions, runMigrations, servers, services, type Service } from '@ninedeploy/db';
+import { createDb, deployments, eq, nodeAutoscaleTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, runMigrations, servers, services, type Service } from '@ninedeploy/db';
 import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { retireNodeDeploymentGeneration } from '../../src/lib/nodeDeploymentRetirement.js';
+import { claimNodeDeploymentAttempt } from '../../src/lib/nodeDeploymentOwner.js';
+import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
+import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
+import { executeNodeLifecycleIntent } from '../../src/lib/nodeLifecycleController.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
 type Row = { id: string; name: string; managed: string | null; serviceId: string | null; deploymentId: string | null; composeProject?: string | null; nonce: string | null; specHash: string | null; running: boolean; status: string; networks: Record<string, object> };
@@ -51,6 +55,69 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
 });
 describe('persistent runtime request admission', () => {
+  it('retires a real journaled initial preparation and replays a lost handoff without touching another service', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId: null, status: 'idle' });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'queued' });
+      const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
+      const admitted = await claimNodeDeploymentAttempt(c.db, 10, await service(), '{}');
+      if (!admitted.claimed) throw Error('Missing deployment authority');
+      await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: image, serving: 1, capacity: 2 });
+      const receipt = await runtime().prepare({ ...prepare(5, 10, [spec(), spec(10, 'web-10-r2')]), startNames: ['web-10'] });
+      await completeNodeDeploymentPreparation(c.db, admitted.owner, receipt.items.map(({ id, name }) => ({ id, name })));
+      rows.push({ id: 'e'.repeat(64), name: 'other-10', managed: 'service', serviceId: '8', deploymentId: '10', nonce: null, specHash: null,
+        running: true, status: 'running', networks: { ninedeploy: {} } });
+      await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+      const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+      let handoffs = 0;
+      const deps = { sealed: async () => true, route: async () => {}, sleep: async () => {},
+        agent: async (_server: number, op: string, params: Record<string, unknown>) => {
+          if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'docker.retireHandoff', 'proxy.routingAck'] })] };
+          const lines: string[] = [];
+          const exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });
+          if (op === 'docker.runtimeLegacyHandoff' && ++handoffs === 1) throw Error('lost handoff reply');
+          return { exitCode, lines };
+        } };
+      expect((await executeNodeLifecycleIntent(c.db, intent.id, deps)).state).toBe('held');
+      expect(rows.map(row => row.name)).toEqual(['other-10']);
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
+      await c.db.update(nodeLifecycleIntents).set({ nextAttemptAt: new Date(0) }).where(eq(nodeLifecycleIntents.id, intent.id));
+      expect((await executeNodeLifecycleIntent(c.db, intent.id, deps)).state).toBe('completed');
+      expect(rows.map(row => [row.name, row.running])).toEqual([['other-10', true]]);
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
+      await c.db.insert(deployments).values({ id: 11, serviceId: 7, status: 'queued' });
+      expect((await claimNodeDeploymentAttempt(c.db, 11, await service(), '{}')).claimed).toBe(true);
+    } finally { c.client?.close(); }
+  });
+  it('holds initial retirement when inventory contains an unrecorded generation of the same service', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId: null, status: 'idle' });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'queued' });
+      const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
+      const admitted = await claimNodeDeploymentAttempt(c.db, 10, await service(), '{}');
+      if (!admitted.claimed) throw Error('Missing deployment authority');
+      await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: image, serving: 1, capacity: 1 });
+      rows.push({ id: 'd'.repeat(64), name: 'web-8', managed: 'service', serviceId: '7', deploymentId: '8', nonce: null, specHash: null,
+        running: true, status: 'running', networks: { ninedeploy: {} } });
+      await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+      const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+      const deps = { sealed: async () => true, route: async () => {}, sleep: async () => {},
+        agent: async (_server: number, op: string, params: Record<string, unknown>) => {
+          if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'docker.retireHandoff', 'proxy.routingAck'] })] };
+          const lines: string[] = [];
+          return { exitCode: await runOp(op, params, line => lines.push(line), { sealed: true }), lines };
+        } };
+      expect((await executeNodeLifecycleIntent(c.db, intent.id, deps)).state).toBe('held');
+      expect(rows.map(row => [row.name, row.running])).toEqual([['web-8', true]]);
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
+    } finally { c.client?.close(); }
+  });
   it('upgrades an interrupted old fence with its accepted watermark and refuses another owner', async () => {
     const old = fence(8);
     await runtime().fence(old);

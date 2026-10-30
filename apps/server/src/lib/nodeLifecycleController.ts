@@ -109,6 +109,11 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
       const request = containerInventoryRequest.parse({ ...fenceRequest(participant), expectedNames: participant.expectedNames });
       const reply = machine(await call(participant.serverId, 'docker.runtimeInventory', request, 35_000), 'ND-RUNTIME-INVENTORY ', value => containerInventoryReply.parse(value), request);
       const found = reply.items.map(({ running: _running, ...item }) => ({ ...item, ...(participant.serverId === intent.serverId ? {} : { serverId: participant.serverId }) }));
+      if (intent.snapshot.retireUnselected && found.some(item => !participant.expectedNames?.includes(item.name) ||
+        !(intent.snapshot.interruptedDeployments ?? []).some(deployment => deployment.id === item.deploymentId &&
+          (item.name.endsWith(`-${deployment.id}`) || Array.from({ length: MAX_REPLICAS - 1 }, (_, index) => `-${deployment.id}-r${index + 2}`).some(suffix => item.name.endsWith(suffix)))))) {
+        throw new Error('Initial Stop inventory contains an unrecorded generation; retained for review');
+      }
       await verifyPreparationIdentities(participant, found);
       return found;
     }
