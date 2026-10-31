@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { and, eq, like, lt } from 'drizzle-orm';
+import { and, eq, like, lt, sql } from 'drizzle-orm';
 import { apiTokens, settings, type DB } from '@ninedeploy/db';
 import { randomToken, secretEquals, sha256 } from './crypto.js';
+import { HttpError } from './errors.js';
 import { MCP_TOKEN_PREFIX } from './mcpAudience.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 
@@ -46,6 +47,18 @@ interface RefreshRow {
   clientId: string;
   userId: number;
   expiresAt: number;
+  /** Set when the token was exchanged. The row stays until it expires, so a replay is recognised. */
+  spentAt?: number;
+}
+
+/** Clients that hold a refresh token still usable: removing one of those would end a live grant. */
+async function clientsInUse(db: DB, now: number): Promise<Set<string>> {
+  const live = new Set<string>();
+  for (const r of await db.select().from(settings).where(like(settings.key, `${REFRESH_KEY}%`))) {
+    const row = storedValue<RefreshRow>(r.value);
+    if (row && row.spentAt == null && row.expiresAt >= now) live.add(row.clientId);
+  }
+  return live;
 }
 
 /** The address a client is sent back to: https, or http on the loopback (native apps, RFC 8252). */
@@ -65,13 +78,17 @@ export async function registerClient(db: DB, name: string, redirectUris: string[
   const rows = await db.select().from(settings).where(like(settings.key, `${CLIENT_KEY}%`));
   if (rows.length >= MAX_CLIENTS) {
     // Full: make room by dropping the oldest client that never completed a sign-in, so anonymous
-    // registrations cannot lock real clients out; clients in use are never dropped.
-    const unused = rows
-      .map((r) => ({ key: r.key, c: storedValue<OAuthClient>(r.value) }))
-      .filter((r) => !r.c || r.c.lastUsedAt === null)
-      .sort((a, b) => (a.c?.createdAt ?? 0) - (b.c?.createdAt ?? 0));
-    if (!unused[0]) throw new Error('too_many_clients');
-    await db.delete(settings).where(eq(settings.key, unused[0].key));
+    // registrations cannot lock real clients out; then the one unused longest among those whose
+    // grants have all ended. A client with a live refresh token is never dropped.
+    const live = await clientsInUse(db, now);
+    const all = rows.map((r) => ({ key: r.key, c: storedValue<OAuthClient>(r.value) }));
+    const never = all.filter((r) => !r.c || r.c.lastUsedAt === null).sort((a, b) => (a.c?.createdAt ?? 0) - (b.c?.createdAt ?? 0));
+    const ended = all
+      .filter((r) => r.c && r.c.lastUsedAt !== null && !live.has(r.key.slice(CLIENT_KEY.length)))
+      .sort((a, b) => (a.c?.lastUsedAt ?? 0) - (b.c?.lastUsedAt ?? 0));
+    const drop = never[0] ?? ended[0];
+    if (!drop) throw new Error('too_many_clients');
+    await db.delete(settings).where(eq(settings.key, drop.key));
   }
   const clientId = `ndc_${randomToken(16)}`;
   const client: OAuthClient = { name, redirectUris, createdAt: now, lastUsedAt: null };
@@ -96,10 +113,16 @@ interface CodeGrant {
   expiresAt: number;
 }
 const codes = new Map<string, CodeGrant>();
+const MAX_PENDING_PER_USER = 10;
 
 export function issueCode(grant: Omit<CodeGrant, 'expiresAt'>, now = Date.now()): string {
   for (const [k, v] of codes) if (v.expiresAt < now) codes.delete(k);
-  if (codes.size >= 1000) throw new Error('Too many pending authorizations; try again in a minute');
+  // Per user first, so one account approving in a loop cannot use up everyone's room.
+  let mine = 0;
+  for (const v of codes.values()) if (v.userId === grant.userId) mine++;
+  if (mine >= MAX_PENDING_PER_USER || codes.size >= 1000) {
+    throw new HttpError(429, 'rate_limited', 'Too many pending authorizations; try again in a minute');
+  }
   const code = randomToken(32);
   codes.set(sha256(code), { ...grant, expiresAt: now + CODE_TTL_MS });
   return code;
@@ -170,14 +193,31 @@ async function touchClient(db: DB, clientId: string, now: number): Promise<void>
  * Rotate a refresh token: the grant's row gets a new access token and expiry,
  * the old refresh token is spent. Null when the refresh token is unknown,
  * expired, another client's, or its grant was revoked (row deleted).
+ *
+ * A spent refresh token presented again means two parties hold it (OAuth 2.1
+ * §4.3.1, for public clients): the grant ends, so neither keeps a chain.
  */
 export async function refreshTokens(db: DB, refresh: string, clientId: string, now = Date.now()): Promise<TokenSet | null> {
   if (!refresh.startsWith(REFRESH_PREFIX)) return null;
   const key = `${REFRESH_KEY}${sha256(refresh)}`;
   const row = await getSettingJson<RefreshRow>(db, key, null);
   if (!row) return null;
-  // Spent either way: a refresh token is single use.
-  await db.delete(settings).where(eq(settings.key, key));
+  const endGrant = () => db.delete(apiTokens).where(and(eq(apiTokens.id, row.tokenId), eq(apiTokens.userId, row.userId)));
+  if (row.spentAt != null) {
+    await endGrant();
+    return null;
+  }
+  // Spent either way: a refresh token is single use. The claim is conditional,
+  // so of two requests racing with one token only one goes on; the loser is a replay.
+  const claimed = await db
+    .update(settings)
+    .set({ value: { ...row, spentAt: now } as never, updatedAt: new Date(now) })
+    .where(and(eq(settings.key, key), sql`json_extract(${settings.value}, '$.spentAt') is null`))
+    .returning({ key: settings.key });
+  if (!claimed.length) {
+    await endGrant();
+    return null;
+  }
   if (row.clientId !== clientId || row.expiresAt < now) return null;
   const grant = await db.query.apiTokens.findFirst({ where: and(eq(apiTokens.id, row.tokenId), eq(apiTokens.userId, row.userId)) });
   if (!grant) return null;
@@ -227,14 +267,18 @@ export async function sweepMcpOAuth(db: DB, now = Date.now()): Promise<number> {
     if (row && row.expiresAt >= now) continue;
     await db.delete(settings).where(eq(settings.key, r.key));
     removed++;
-    if (row) {
+    // A spent token's grant lives on through the token that replaced it.
+    if (row && row.spentAt == null) {
       const gone = await db.delete(apiTokens).where(and(eq(apiTokens.id, row.tokenId), lt(apiTokens.expiresAt, new Date(now)))).returning({ id: apiTokens.id });
       removed += gone.length;
     }
   }
+  const live = await clientsInUse(db, now);
   for (const r of await db.select().from(settings).where(like(settings.key, `${CLIENT_KEY}%`))) {
     const c = storedValue<OAuthClient>(r.value);
-    if (c && (c.lastUsedAt !== null || now - c.createdAt < UNUSED_CLIENT_MS)) continue;
+    // Kept: a client in its first day, or one with a grant alive or used within a refresh token's lifetime.
+    if (c && c.lastUsedAt === null && now - c.createdAt < UNUSED_CLIENT_MS) continue;
+    if (c && c.lastUsedAt !== null && (live.has(r.key.slice(CLIENT_KEY.length)) || now - c.lastUsedAt < REFRESH_TTL_MS)) continue;
     await db.delete(settings).where(eq(settings.key, r.key));
     removed++;
   }

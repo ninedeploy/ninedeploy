@@ -208,9 +208,33 @@ describe('remote MCP OAuth (R4)', () => {
     expect(next.access_token).not.toBe(body.access_token);
     expect((await mcp(body.access_token, listServices)).statusCode).toBe(401);
     expect((await mcp(next.access_token, listServices)).statusCode).toBe(200);
-    expect(JSON.parse((await token({ grant_type: 'refresh_token', refresh_token: body.refresh_token, client_id: clientId })).body).error).toBe('invalid_grant');
     // Same grant row, not a new one per refresh.
     expect(await db.select().from(apiTokens)).toHaveLength(1);
+    // Replaying the spent token means someone else holds it: the whole grant ends.
+    expect(JSON.parse((await token({ grant_type: 'refresh_token', refresh_token: body.refresh_token, client_id: clientId })).body).error).toBe('invalid_grant');
+    expect((await mcp(next.access_token, listServices)).statusCode).toBe(401);
+    expect(JSON.parse((await token({ grant_type: 'refresh_token', refresh_token: next.refresh_token, client_id: clientId })).body).error).toBe('invalid_grant');
+    expect(await db.select().from(apiTokens)).toHaveLength(0);
+  });
+
+  it('two refreshes racing with one token: at most one succeeds, and the grant ends', async () => {
+    const { clientId, body } = await fullGrant();
+    const both = await Promise.all([1, 2].map(() => token({ grant_type: 'refresh_token', refresh_token: body.refresh_token, client_id: clientId })));
+    expect(both.filter((r) => r.statusCode === 200).length).toBeLessThanOrEqual(1);
+    expect(await db.select().from(apiTokens)).toHaveLength(0);
+  });
+
+  it('one user cannot fill the pending consent codes for everyone', async () => {
+    const clientId = await register();
+    for (let i = 0; i < 10; i++) expect((await authorize(clientId, pkce().challenge)).searchParams.get('code')).toBeTruthy();
+    const request = { response_type: 'code', client_id: clientId, redirect_uri: REDIRECT, code_challenge: pkce().challenge, code_challenge_method: 'S256' };
+    const res = await app.inject({ method: 'POST', url: '/v1/oauth/authorize', headers: { authorization: `Bearer ${session}` }, payload: { request, approve: true } });
+    expect(res.statusCode).toBe(429);
+    // Another user still gets a code.
+    await db.insert(users).values({ id: 5, email: 'dev@example.com', passwordHash: 'x' } as never);
+    const other = (await issueSessionTokens(db, { id: 5, tokenVersion: 0 })).accessToken;
+    const ok = await app.inject({ method: 'POST', url: '/v1/oauth/authorize', headers: { authorization: `Bearer ${other}` }, payload: { request, approve: true } });
+    expect(ok.statusCode).toBe(200);
   });
 
   it('revocation (RFC 7009) and deleting the grant under API tokens both disconnect the client', async () => {
@@ -245,13 +269,32 @@ describe('remote MCP OAuth (R4)', () => {
     expect(keys).not.toContain('oauth_client:ndc_filler00000000');
   });
 
+  it('at the cap with every client used once, one whose grants all ended makes room; a live one stays', async () => {
+    const live = (await fullGrant()).clientId;
+    const filler = Array.from({ length: MAX_CLIENTS - 1 }, (_, i) => ({
+      key: `oauth_client:ndc_ended${String(i).padStart(10, '0')}`,
+      value: { name: 'x', redirectUris: [REDIRECT], createdAt: 1000 + i, lastUsedAt: 2000 + i } as never,
+    }));
+    await db.insert(settings).values(filler);
+    expect(await register()).toMatch(/^ndc_/);
+    const keys = (await db.select().from(settings).where(like(settings.key, 'oauth_client:%'))).map((r) => r.key);
+    expect(keys).toHaveLength(MAX_CLIENTS);
+    expect(keys).toContain(`oauth_client:${live}`);
+    expect(keys).not.toContain('oauth_client:ndc_ended0000000000');
+  });
+
   it('the sweep removes expired refresh tokens with their grants, and clients never used', async () => {
     const used = await fullGrant();
     await register();
     const later = Date.now() + 31 * 24 * 3600_000;
-    expect(await sweepMcpOAuth(db, later)).toBe(3); // the refresh row, its expired grant, the unused client
-    expect(await db.select().from(apiTokens)).toHaveLength(0);
-    const clients = await db.select().from(settings).where(like(settings.key, 'oauth_client:%'));
+    const day = Date.now() + 2 * 24 * 3600_000;
+    expect(await sweepMcpOAuth(db, day)).toBe(1); // the client never used; the one in use stays
+    let clients = await db.select().from(settings).where(like(settings.key, 'oauth_client:%'));
     expect(clients.map((c) => c.key)).toEqual([`oauth_client:${used.clientId}`]);
+    // The refresh row, its expired grant, and the client no live grant uses any more.
+    expect(await sweepMcpOAuth(db, later)).toBe(3);
+    expect(await db.select().from(apiTokens)).toHaveLength(0);
+    clients = await db.select().from(settings).where(like(settings.key, 'oauth_client:%'));
+    expect(clients).toHaveLength(0);
   });
 });

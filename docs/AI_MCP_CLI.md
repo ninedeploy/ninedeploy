@@ -48,16 +48,16 @@ claude mcp add --transport http ninedeploy https://your-ninedeploy-server.com/v1
 
 **Transport**
 - Stateless: no session id is handed out, each `POST` gets its own server instance, and responses are JSON, not an event stream. `GET` and `DELETE` answer 405.
-- A request with an `Origin` header from another origin is refused (DNS rebinding protection). MCP clients send none; browsers always do.
+- A request with an `Origin` header from another origin is refused. MCP clients send none; browsers always do. Against DNS rebinding, where the origins agree, the protection is the Bearer token, which a browser never sends on its own.
 - **Read-only tools only** in the same card narrows every caller to the `NINEDEPLOY_MCP_READONLY=1` allowlist, whatever their token allows.
 
 **OAuth (for clients that sign in instead of sending a header)**
 
 A client that knows only the URL gets a 401 whose `WWW-Authenticate` names `resource_metadata`, and follows the MCP authorization spec from there. All of this answers only while remote MCP is on:
 - Discovery: `/.well-known/oauth-protected-resource/v1/mcp` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414). The issuer and resource follow the address the client used.
-- Registration: `POST /v1/oauth/register` (RFC 7591), anonymous as the spec expects. Public clients only, with `https` redirect addresses or `http` on localhost. At most 500 clients are kept: when full, the oldest one that never completed a sign-in makes room, and such clients are removed after a day anyway. Clients in use are never removed this way.
+- Registration: `POST /v1/oauth/register` (RFC 7591), anonymous as the spec expects. Public clients only, with `https` redirect addresses or `http` on localhost. At most 500 clients are kept: when full, the oldest one that never completed a sign-in makes room, then the one unused longest among those whose grants have all ended. Never-used clients are removed after a day, and clients without a live grant 30 days after their last use. A client that holds a live refresh token is never removed.
 - Consent: the client opens the dashboard page `/oauth/authorize`. The signed-in user sees the name the client gave itself and the host it will return to, and chooses **read only** or **full** (everything the user can do). Only an interactive session can approve; an API token cannot. The page refuses to show its buttons inside a frame, and is served with `X-Frame-Options: DENY` (clickjacking).
-- Tokens: `POST /v1/oauth/token` with the authorization code and PKCE (S256 only), bound to the client, its redirect address and the `/v1/mcp` resource. The access token lasts an hour. The refresh token lasts 30 days and is rotated on every use.
+- Tokens: `POST /v1/oauth/token` with the authorization code and PKCE (S256 only), bound to the client, its redirect address and the `/v1/mcp` resource. The access token lasts an hour. The refresh token lasts 30 days and is rotated on every use. Presenting a refresh token that was already used ends the whole grant (OAuth 2.1 reuse detection): either a copy of it was stolen, or the client lost the answer to its last refresh, and it must sign in again. A user can have at most 10 approvals waiting to be exchanged at a time.
 - Revocation: `POST /v1/oauth/revoke` (RFC 7009). The grant also appears as an API token named `MCP: <client>` under **Settings → Security → API tokens**; deleting it there disconnects the client, refresh token included.
 - An access token from this flow (it starts with `ndmcp_`) works only on `/v1/mcp`. The REST API, WebSockets and tunnels refuse it.
 

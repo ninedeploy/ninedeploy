@@ -69,8 +69,10 @@ export const mcpEndpointRoutes: FastifyPluginAsync = async (app) => {
   const challenge = 'Bearer realm="ninedeploy-mcp"';
 
   app.post('/', async (req, reply) => {
-    // DNS rebinding: a browser page on another origin must not drive the endpoint.
-    // MCP clients send no Origin; a browser always does.
+    // A browser page on another origin must not drive the endpoint (the spec's
+    // Origin check). MCP clients send no Origin; a browser always does. After
+    // DNS rebinding the Origin and Host agree, so this does not stop that: the
+    // Bearer token does, since a browser never attaches one on its own.
     const origin = req.headers.origin;
     if (origin !== undefined) {
       let same = false;
