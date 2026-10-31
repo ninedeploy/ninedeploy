@@ -39,6 +39,7 @@ import { githubAppHookRoutes } from './githubAppHooks.js';
 import { serviceGithubRoutes } from './serviceGithub.js';
 import { insightsRoutes, serviceInsightsRoutes } from './insights.js';
 import { jobRoutes } from './jobs.js';
+import { ciRunnerAdminRoutes, ciRunnerProtocolRoutes, ciServiceRoutes } from './ci.js';
 import { serverRoutes } from './servers.js';
 import { nodeOsUpdateRoutes, osUpdateRoutes } from './osUpdates.js';
 import { cloudRoutes } from './cloud.js';
@@ -222,6 +223,10 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(mcpEndpointRoutes, { prefix: '/mcp' });
   await app.register(mcpOAuthServerRoutes, { prefix: '/oauth' });
   await app.register(mcpOAuthConsentRoutes, { prefix: '/oauth' });
+  // R5: CI jobs on enrolled runners.
+  await app.register(ciRunnerAdminRoutes, { prefix: '/ci/runners' });
+  await app.register(ciRunnerProtocolRoutes, { prefix: '/ci/runner' });
+  await app.register(ciServiceRoutes, { prefix: '/services' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
   // 0.16.1: the operator's Getting started checklist (Dashboard card).
   await app.register(onboardingRoutes, { prefix: '/onboarding' });

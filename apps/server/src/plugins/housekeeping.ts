@@ -30,6 +30,7 @@ import { pruneTrafficRollups } from '../lib/trafficAnalytics.js';
 import { pruneImageTransfers } from '../lib/imageTransferRetention.js';
 import { pruneUptime } from '../lib/uptime.js';
 import { sweepMcpOAuth } from '../lib/mcpOAuth.js';
+import { pruneCiJobs } from '../lib/ci.js';
 import { sweepOrphanPreviewCopies } from '../lib/previewDatabases.js';
 import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 import { pruneServiceMetrics } from '../lib/serviceMetricHistory.js';
@@ -533,6 +534,8 @@ export default fp(
         await step('error-events', () => pruneErrorEvents(fastify.db, now));
         // R4 remote MCP: expired OAuth refresh tokens, their grants, and clients never used.
         await step('mcp-oauth', () => sweepMcpOAuth(fastify.db, now));
+        // R5 CI: finished jobs (and their logs) after 30 days.
+        await step('ci-jobs', () => pruneCiJobs(fastify.db, 30, now));
         // 0.16.12 database copies whose preview was removed without its teardown.
         await step('preview-databases', () => sweepOrphanPreviewCopies(fastify.db, (line) => fastify.log.info({ component: 'housekeeping' }, line)));
         await step('dangling-images', () => pruneDanglingImages(fastify.db));

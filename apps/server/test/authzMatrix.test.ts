@@ -471,6 +471,12 @@ function paramValue(url: string, param: string, r: Res): string {
       return 'zz0000000000000000000000000000zz';
     case 'jobId':
       return String(r.job);
+    // R5 CI: no runner or attempt is seeded; callers below the floor must be refused before any lookup.
+    case 'runnerId':
+    case 'attemptId':
+      return '999999';
+    case 'number':
+      return '1';
     case 'attId':
       return String(url.includes('/volumes/') ? r.volAttachment : r.dbAttachment);
     case 'bid':
@@ -952,6 +958,25 @@ export const MATRIX: Record<string, Rule> = {
   'DELETE /v1/services/:id/jobs/:jobId': R('member'),
   'POST /v1/services/:id/jobs/:jobId/run': R('member'),
   'GET /v1/services/:id/jobs/:jobId/runs': R('viewer'),
+  // R5 CI: the pipeline names which service variables leave the panel (admin);
+  // no CI job is seeded, so job routes 404 at their floor (test/modules/ci.test.ts drives them).
+  'GET /v1/services/:id/ci': R('viewer'),
+  'PUT /v1/services/:id/ci': R('admin', { body: () => ({ image: 'alpine:3.20', script: 'true' }) }),
+  'DELETE /v1/services/:id/ci': R('admin'),
+  'GET /v1/services/:id/ci/jobs': R('viewer'),
+  'POST /v1/services/:id/ci/jobs': R('member', { body: () => ({}) }),
+  'GET /v1/services/:id/ci/jobs/:jobId': R('viewer', { allow404: 'no CI job is seeded' }),
+  'POST /v1/services/:id/ci/jobs/:jobId/approve': R('admin', { allow404: 'no CI job is seeded' }),
+  'POST /v1/services/:id/ci/jobs/:jobId/cancel': R('member', { allow404: 'no CI job is seeded' }),
+  'GET /v1/services/:id/ci/jobs/:jobId/attempts/:number/log': R('viewer', { allow404: 'no CI job is seeded' }),
+  'GET /v1/ci/runners': OP,
+  'POST /v1/ci/runners': R('operator', { body: (r) => ({ name: uniq(r, 'runner') }) }),
+  'DELETE /v1/ci/runners/:runnerId': OP,
+  'POST /v1/ci/runner/claim': R('token', { note: 'R5 runner token (ndrun_…), never a user credential; test/modules/ci.test.ts' }),
+  'POST /v1/ci/runner/attempts/:attemptId/heartbeat': R('token', { note: 'R5 runner token plus the attempt lease' }),
+  'POST /v1/ci/runner/attempts/:attemptId/log': R('token', { note: 'R5 runner token plus the attempt lease' }),
+  'POST /v1/ci/runner/attempts/:attemptId/finish': R('token', { note: 'R5 runner token plus the attempt lease' }),
+  'GET /v1/ci/runner/attempts/:attemptId/source': R('token', { note: 'R5 runner token plus the attempt lease' }),
   'POST /v1/ai/services/:id/deploys/:depId/diagnose': R('operator', {
     note: 'operator by default; the AI allowlist setting opens it to named workspaces',
   }),

@@ -58,3 +58,4 @@ export * from './serviceMove.js';
 export * from './commitStatus.js';
 export * from './instanceGitops.js';
 export * from './errorIngest.js';
+export * from './ci.js';

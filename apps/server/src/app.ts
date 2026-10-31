@@ -18,6 +18,7 @@ import authPlugin from './plugins/auth.js';
 import backupSchedulerPlugin from './plugins/backupScheduler.js';
 import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import githubRunnerSchedulerPlugin from './plugins/githubRunnerScheduler.js';
+import ciSchedulerPlugin from './plugins/ciScheduler.js';
 import cloudNodeSchedulerPlugin from './plugins/cloudNodeScheduler.js';
 import imageScanSchedulerPlugin from './plugins/imageScanScheduler.js';
 import { errorIngestPublicRoutes } from './modules/errorIngest.js';
@@ -194,6 +195,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(autoUpdateSchedulerPlugin);
   // Self-hosted GitHub Actions runners (G4.5): idle until an App turns them on
   await app.register(githubRunnerSchedulerPlugin);
+  // R5: CI lease sweep (lost runners requeue their jobs).
+  await app.register(ciSchedulerPlugin);
   // G4.3: finish the rekey of cloud nodes (idle without any)
   await app.register(cloudNodeSchedulerPlugin);
   // G5.1: rescan running images on the policy's interval (off by default)

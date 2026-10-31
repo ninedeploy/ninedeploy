@@ -2455,6 +2455,98 @@ export const jobRuns = sqliteTable(
   }),
 );
 
+// ─── R5: CI jobs on enrolled runners ──────────────────────────────────────
+export const ciJobStatus = ['awaiting_approval', 'queued', 'running', 'succeeded', 'failed', 'cancelled'] as const;
+export const ciAttemptStatus = ['running', 'succeeded', 'failed', 'lost', 'cancelled'] as const;
+
+/**
+ * A machine that runs CI jobs. It enrols with a one-time token whose hash is
+ * kept here and pulls work over HTTPS; the panel never connects to it.
+ */
+export const ciRunners = sqliteTable(
+  'ci_runners',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    labels: text('labels', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+    capacity: integer('capacity').notNull().default(1),
+    version: text('version'),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+    revokedAt: integer('revoked_at', { mode: 'timestamp' }),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+  },
+  (t) => ({ tokenIdx: uniqueIndex('ci_runners_token_idx').on(t.tokenHash) }),
+);
+
+/**
+ * One requested CI run of a service at a commit. The definition (image,
+ * script, labels, limits) is copied in when the job is created, so editing the
+ * service's pipeline never changes a job already queued.
+ */
+export const ciJobs = sqliteTable(
+  'ci_jobs',
+  {
+    id: id(),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    status: text('status', { enum: ciJobStatus }).notNull().default('queued'),
+    commitSha: text('commit_sha'),
+    ref: text('ref'),
+    image: text('image').notNull(),
+    script: text('script').notNull(),
+    labels: text('labels', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+    secretNames: text('secret_names', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+    timeoutSeconds: integer('timeout_seconds').notNull().default(1800),
+    maxAttempts: integer('max_attempts').notNull().default(2),
+    attempts: integer('attempts').notNull().default(0),
+    // The attempt whose result counts. A finish from any other attempt is refused.
+    currentAttemptId: integer('current_attempt_id'),
+    trigger: text('trigger').notNull().default('manual'),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    approvedBy: integer('approved_by').references(() => users.id, { onDelete: 'set null' }),
+    cancelledBy: integer('cancelled_by').references(() => users.id, { onDelete: 'set null' }),
+    error: text('error'),
+    createdAt: ts('created_at'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    finishedAt: integer('finished_at', { mode: 'timestamp' }),
+  },
+  (t) => ({
+    serviceIdx: index('ci_jobs_service_idx').on(t.serviceId, t.id),
+    statusIdx: index('ci_jobs_status_idx').on(t.status),
+  }),
+);
+
+/** One runner's try at a job. Its lease token's hash authorises every report. */
+export const ciAttempts = sqliteTable(
+  'ci_attempts',
+  {
+    id: id(),
+    jobId: integer('job_id')
+      .notNull()
+      .references(() => ciJobs.id, { onDelete: 'cascade' }),
+    runnerId: integer('runner_id').references(() => ciRunners.id, { onDelete: 'set null' }),
+    number: integer('number').notNull(),
+    status: text('status', { enum: ciAttemptStatus }).notNull().default('running'),
+    leaseHash: text('lease_hash').notNull(),
+    // Milliseconds since the epoch: leases are seconds long.
+    leaseExpiresAt: integer('lease_expires_at').notNull(),
+    logBytes: integer('log_bytes').notNull().default(0),
+    logSeq: integer('log_seq').notNull().default(0),
+    exitCode: integer('exit_code'),
+    error: text('error'),
+    startedAt: ts('started_at'),
+    finishedAt: integer('finished_at', { mode: 'timestamp' }),
+  },
+  (t) => ({
+    jobIdx: uniqueIndex('ci_attempts_job_number_idx').on(t.jobId, t.number),
+    leaseIdx: uniqueIndex('ci_attempts_lease_idx').on(t.leaseHash),
+    statusIdx: index('ci_attempts_status_idx').on(t.status),
+  }),
+);
+
 // ─── remote servers (agent-based multi-server) ────────────────────────────
 export const servers = sqliteTable(
   'servers',

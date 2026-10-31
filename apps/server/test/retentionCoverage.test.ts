@@ -58,6 +58,10 @@ const RETENTION: Record<string, Retention> = {
   uptime_monitors: { config: 'operator configuration: one row per monitor an operator created; checks and rollups cascade with it' },
   status_pages: { config: 'operator configuration: one row per status page an operator created (unique slug)' },
   user_recovery_codes: { config: 'bounded by users: one set of ten per account, replaced on regenerate, deleted with 2FA and cascading with the user' },
+  // R5 (migration 0117)
+  ci_jobs: { swept: 'ci-jobs' },
+  ci_attempts: { swept: 'ci-jobs' },
+  ci_runners: { config: 'operator configuration: one row per runner an operator enrolled; a revoked runner stays listed for its attempts' },
 };
 
 /** The tables of v0.14.0 (migrations through 0070), frozen. */

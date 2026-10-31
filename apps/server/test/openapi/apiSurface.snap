@@ -14,6 +14,7 @@ DELETE /v1/auth/sessions/:id self -
 DELETE /v1/auth/tokens/:id self -
 DELETE /v1/backup-destinations/:id operator nd://scope/write/backups
 DELETE /v1/backups/:bid admin nd://scope/write/backups
+DELETE /v1/ci/runners/:runnerId operator -
 DELETE /v1/cloud/digitalocean/servers/:serverId operator -
 DELETE /v1/cloud/digitalocean/token operator -
 DELETE /v1/cloud/hetzner/servers/:serverId operator -
@@ -51,6 +52,7 @@ DELETE /v1/servers/:serverId/volumes/:name/files operator -
 DELETE /v1/services/:id admin nd://scope/write/services
 DELETE /v1/services/:id/attachments/:attId member nd://scope/write/services
 DELETE /v1/services/:id/badge member nd://scope/write/services
+DELETE /v1/services/:id/ci admin nd://scope/write/services
 DELETE /v1/services/:id/deploy-hook member nd://scope/write/services
 DELETE /v1/services/:id/deploys/:depId admin nd://scope/write/deploys
 DELETE /v1/services/:id/domains/:domainId member nd://scope/write/domains
@@ -121,6 +123,8 @@ GET /v1/backups/:bid/download admin nd://scope/read/backups
 GET /v1/badges/:badge token -
 GET /v1/branding authed -
 GET /v1/build-cache/stats authed -
+GET /v1/ci/runner/attempts/:attemptId/source token -
+GET /v1/ci/runners operator -
 GET /v1/cloud/digitalocean operator -
 GET /v1/cloud/digitalocean/options operator -
 GET /v1/cloud/digitalocean/servers operator -
@@ -222,6 +226,10 @@ GET /v1/services/:id/attachments viewer nd://scope/read/services
 GET /v1/services/:id/autoscale viewer nd://scope/read/services
 GET /v1/services/:id/badge member nd://scope/read/services
 GET /v1/services/:id/canary viewer nd://scope/read/services
+GET /v1/services/:id/ci viewer nd://scope/read/services
+GET /v1/services/:id/ci/jobs viewer nd://scope/read/services
+GET /v1/services/:id/ci/jobs/:jobId viewer nd://scope/read/services
+GET /v1/services/:id/ci/jobs/:jobId/attempts/:number/log viewer nd://scope/read/services
 GET /v1/services/:id/commit-status member nd://scope/read/services
 GET /v1/services/:id/deploy-hook member nd://scope/read/services
 GET /v1/services/:id/deploys viewer nd://scope/read/deploys
@@ -400,6 +408,11 @@ POST /v1/auth/tokens self -
 POST /v1/backup-destinations operator nd://scope/write/backups
 POST /v1/backup-destinations/:id/test operator nd://scope/write/backups
 POST /v1/build-cache/store operator -
+POST /v1/ci/runner/attempts/:attemptId/finish token -
+POST /v1/ci/runner/attempts/:attemptId/heartbeat token -
+POST /v1/ci/runner/attempts/:attemptId/log token -
+POST /v1/ci/runner/claim token -
+POST /v1/ci/runners operator -
 POST /v1/cloud/digitalocean/servers operator -
 POST /v1/cloud/hetzner/servers operator -
 POST /v1/cloud/vultr/servers operator -
@@ -490,6 +503,9 @@ POST /v1/servers/ssh-test operator -
 POST /v1/services member nd://scope/write/services
 POST /v1/services/:id/attachments admin nd://scope/write/services
 POST /v1/services/:id/badge member nd://scope/write/services
+POST /v1/services/:id/ci/jobs member nd://scope/write/services
+POST /v1/services/:id/ci/jobs/:jobId/approve admin nd://scope/write/services
+POST /v1/services/:id/ci/jobs/:jobId/cancel member nd://scope/write/services
 POST /v1/services/:id/clone admin nd://scope/write/services
 POST /v1/services/:id/deploy-hook member nd://scope/write/services
 POST /v1/services/:id/deploys member nd://scope/write/deploys
@@ -600,6 +616,7 @@ PUT /v1/mcp/policy operator -
 PUT /v1/onboarding/dismissed operator -
 PUT /v1/servers/:serverId/containers/:container/files operator -
 PUT /v1/servers/:serverId/volumes/:name/files operator -
+PUT /v1/services/:id/ci admin nd://scope/write/services
 PUT /v1/services/:id/commit-status admin nd://scope/write/services
 PUT /v1/services/:id/error-pages member nd://scope/write/services
 PUT /v1/services/:id/files member nd://scope/write/services
