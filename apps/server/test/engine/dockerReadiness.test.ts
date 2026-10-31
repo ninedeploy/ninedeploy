@@ -13,6 +13,28 @@ const { dockerBuilder } = await import('../../src/engine/builders/docker.js');
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); spawn.mockReset(); capture.mockReset(); capture.mockResolvedValue('running|172.20.0.2'); });
 
 describe('local Docker readiness', () => {
+  it.each(['http-strict', 'tcp'] as const)('rejects %s if native health degrades during a successful probe', async healthCheck => {
+    vi.useFakeTimers();
+    let probed = false;
+    capture.mockImplementation(async () => `running|172.20.0.2|${probed ? 'unhealthy' : 'healthy'}`);
+    spawn.mockImplementation(async (_exe, args, line) => {
+      if ((args as string[])[0] === 'run') { probed = true; (line as (s: string) => void)('HTTP/1.1 200 OK'); }
+      return 0;
+    });
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 3000, healthPath: '/', healthCheck }, 2000)).toBe(false);
+  });
+
+  it.each(['http-strict', 'tcp'] as const)('holds %s while native health is unhealthy despite an accepting port', async healthCheck => {
+    vi.useFakeTimers();
+    capture.mockResolvedValue('running|172.20.0.2|unhealthy');
+    spawn.mockImplementation(async (_exe, args, line) => {
+      if ((args as string[])[0] === 'run') (line as (s: string) => void)('HTTP/1.1 200 OK');
+      return 0;
+    });
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 3000, healthPath: '/', healthCheck }, 2000)).toBe(false);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it('rejects a successful command completed after the readiness deadline', async () => {
     vi.useFakeTimers();
     capture.mockImplementation(async (_exe, args) => {

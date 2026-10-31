@@ -41,10 +41,10 @@ try {
     if (!unhealthy) await pause(250);
   }
   assert.ok(unhealthy, 'native health failure was not established');
-  const nativeProbe = `import {dockerBuilder} from '/app/apps/server/dist/engine/builders/docker.js';console.log(JSON.stringify(await dockerBuilder.isHealthy({runtimeId:${JSON.stringify(nativeName)},port:8080,healthPath:'/'},2000,10000)));`;
+  const nativeProbe = `import {dockerBuilder} from '/app/apps/server/dist/engine/builders/docker.js';const verdicts={};for(const mode of ['auto','http-strict','tcp'])verdicts[mode]=await dockerBuilder.isHealthy({runtimeId:${JSON.stringify(nativeName)},port:8080,healthPath:'/',...(mode==='auto'?{}:{healthCheck:mode})},2000,10000);console.log(JSON.stringify(verdicts));`;
   const nativeArgs = ['run', '--rm', '--user', '0', '--no-healthcheck', '-e', 'NODE_ENV=test',
     '-v', '/var/run/docker.sock:/var/run/docker.sock', '--entrypoint', 'node', image, '--input-type=module', '-e', nativeProbe];
-  assert.equal(JSON.parse(checked(nativeArgs).split('\n').at(-1)), false, 'HTTP 200 must not override failed native health');
+  assert.deepEqual(JSON.parse(checked(nativeArgs).split('\n').at(-1)), { auto: false, 'http-strict': false, tcp: false }, 'an accepting port must not override failed native health');
   checked(['exec', nativeName, 'touch', '/tmp/native-ready']);
   let healthy = false;
   for (let n = 0; n < 60 && !healthy; n++) {
@@ -52,7 +52,7 @@ try {
     if (!healthy) await pause(250);
   }
   assert.ok(healthy, 'native health recovery was not established');
-  assert.equal(JSON.parse(checked(nativeArgs).split('\n').at(-1)), true, 'healthy native state and HTTP 200 must permit readiness');
+  assert.deepEqual(JSON.parse(checked(nativeArgs).split('\n').at(-1)), { auto: true, 'http-strict': true, tcp: true }, 'healthy native state and an accepting port must permit readiness');
   console.log(JSON.stringify({ realDocker: true, panelBuilder: true, result }));
 } finally {
   docker(['rm', '-f', nativeName]);
