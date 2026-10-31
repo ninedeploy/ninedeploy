@@ -1,6 +1,27 @@
 import { expect, it } from 'vitest';
 import { createDb, runMigrations, services, servers, users, deployments, nodeLifecycleIntents, eq } from '@ninedeploy/db';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
+import { claimNodeDeploymentAttempt } from '../../src/lib/nodeDeploymentOwner.js';
+import { beginNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
+
+it.each(['web-9', null])('includes failed node preparation when stopping runtime %s', async runtimeId => {
+  const c = createDb({ url: 'file::memory:' });
+  try {
+    await c.ready; await runMigrations(c.db);
+    await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+    await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId, status: 'running' });
+    await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+    const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
+    const admitted = await claimNodeDeploymentAttempt(c.db, 10, await service(), '{}');
+    if (!admitted.claimed) throw Error('Missing deployment authority');
+    await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: `sha256:${'f'.repeat(64)}`, serving: 1, capacity: 2 });
+    await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+    const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+    expect(intent.snapshot.interruptedDeployments).toEqual([{ id: 10 }]);
+    if (runtimeId) expect(intent.snapshot.candidateParticipants?.[0]?.targets).toContainEqual({ name: 'web-10-r2', deploymentId: 10 });
+    else expect(intent.snapshot.unselected?.participants[0]?.expectedNames).toContain('web-10-r2');
+  } finally { c.client?.close(); }
+});
 
 it.each(['web-9', null])('records in-flight deployment identities for Stop with selected runtime %s', async runtimeId => {
   const c = createDb({ url: 'file::memory:' });

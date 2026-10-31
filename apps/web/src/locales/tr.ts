@@ -419,6 +419,11 @@ export const TR: Readonly<Record<string, string>> = {
   'Recovery could not be checked; retained runtimes remain protected':
     'Kurtarma kontrol edilemedi; saklanan çalışma zamanları korunmaya devam ediyor',
   'Could not load primary runtime recovery': 'Birincil çalışma zamanı kurtarması yüklenemedi',
+  'Could not load node preparation status': 'Düğüm hazırlığı durumu yüklenemedi',
+  'Node deployment preparation': 'Düğüm dağıtımı hazırlığı',
+  'Deployment #{id} on node #{node}: {phase} ({status})': 'Düğüm #{node} üzerindeki #{id} dağıtımı: {phase} ({status})',
+  'A pending preparation can hold later deployments. If the deployment has stopped, use the service Stop action to settle its node candidates; this also stops the service.':
+    'Bekleyen bir hazırlık sonraki dağıtımları bekletebilir. Dağıtım durmuşsa düğüm adaylarını sonuçlandırmak için servisin Durdur işlemini kullanın; bu işlem servisi de durdurur.',
   'Primary runtime recovery': 'Birincil çalışma zamanı kurtarması',
   'Health and loaded routing are checked before older runtimes are retired. Previous Swarm services stay at zero replicas after their tasks drain. Interrupted deploys are checked automatically after a panel restart.':
     'Eski çalışma zamanları kaldırılmadan önce sağlık durumu ve yüklenen yönlendirme kontrol edilir. Önceki Swarm servisleri, görevleri boşaldıktan sonra sıfır kopyada kalır. Yarıda kalan dağıtımlar, panel yeniden başlatıldıktan sonra otomatik olarak kontrol edilir.',
@@ -906,8 +911,8 @@ export const TR: Readonly<Record<string, string>> = {
     'Konteyner seçenekleri kaydedildi — sonraki dağıtımda uygulanır',
   'Could not save the container options': 'Konteyner seçenekleri kaydedilemedi',
   'Container options': 'Konteyner seçenekleri',
-  'GPUs, shared memory and extra capabilities for this service\'s container, applied on the next deploy on the panel host, or on a node whose agent is 0.16.6 or newer (not on Swarm).':
-    'Bu servisin konteyneri için GPU’lar, paylaşılan bellek ve ek yetkiler; sonraki dağıtımda panel sunucusunda ya da ajanı 0.16.6 veya daha yeni olan bir düğümde uygulanır (Swarm’da değil).',
+  'GPUs, shared memory and extra capabilities for this service\'s container, applied on the next deploy on the panel host, on a node whose agent is 0.16.6 or newer, or on Swarm (all but GPUs).':
+    'Bu servisin konteyneri için GPU’lar, paylaşılan bellek ve ek yetkiler; sonraki dağıtımda panel sunucusunda, ajanı 0.16.6 veya daha yeni olan bir düğümde ya da Swarm’da (GPU’lar hariç) uygulanır.',
   'Only operators can change them.': 'Bunları yalnızca operatörler değiştirebilir.',
   'Set by an operator.': 'Bir operatör tarafından ayarlanır.',
   'Docker defaults.': 'Docker varsayılanları.',
@@ -1333,8 +1338,8 @@ export const TR: Readonly<Record<string, string>> = {
     'Yeniden dağıtım gerektirmeden, yüke göre en az ve en çok konteyner sayısı arasında çalışır. Her 30 sn\'de bir konteyner başına metriği hedefle karşılaştırır (hedefin %10\'u içinde hiçbir şey değişmez) ve ihtiyaç ölçek büyütme ya da küçültme penceresi boyunca sürdüğünde konteyner ekler veya kaldırır.',
   'It applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turned off, the containers serving now keep serving until the next deploy, which runs the Replicas count again.':
     'Yedek konteynerleri oluşturan sonraki dağıtımda tamamen uygulanır; o zamana kadar yalnızca küçültebilir. Kapatıldığında, şu an hizmet veren konteynerler, Kopyalar sayısını yeniden çalıştıran sonraki dağıtıma kadar hizmet vermeye devam eder.',
-  'This service runs on a node, so the autoscaler holds for it for now.':
-    'Bu servis bir düğümde çalışıyor, bu yüzden otomatik ölçekleyici şimdilik onun için bekliyor.',
+  'Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.':
+    'Düğümde otomatik ölçekleme doğrulanmış kopya kapasitesi gerektirir ve CPU veya belleği destekler; istek hızına göre ölçekleme henüz kullanılamıyor.',
   'This service runs on Swarm, which scales with its own replicas; the autoscaler holds for it.':
     'Bu servis, kendi kopyalarıyla ölçeklenen Swarm üzerinde çalışıyor; otomatik ölçekleyici onun için bekliyor.',
   'Min containers': 'En az konteyner',
@@ -5493,8 +5498,8 @@ export const TR: Readonly<Record<string, string>> = {
   'Scan incomplete: {error}': 'Tarama tamamlanamadı: {error}',
   'On a node, the default check verifies container and Docker health only; it does not test HTTP. Select HTTP readiness to wait for the application response.':
     'Node üzerinde varsayılan kontrol yalnızca container ve Docker sağlık durumunu doğrular; HTTP yanıtını test etmez. Uygulama yanıtını beklemek için HTTP hazırlık kontrolünü seçin.',
-  'Trivy scans the image of every docker deploy before it gets traffic, on the panel host or by the node agent (0.18.7 or newer), and rescans running images on a schedule. Compose stacks on the panel host and Swarm services (their image, on the panel host) are scanned on the schedule and on request, without a deploy gate. It reads the image from docker save; it never gets the Docker socket.':
-    'Trivy, her docker dağıtımının imajını trafik almadan önce panel sunucusunda ya da node ajanıyla (0.18.7 veya daha yeni) tarar ve çalışan imajları düzenli olarak yeniden tarar. Panel sunucusundaki Compose yığınları ve Swarm servisleri (imajları, panel sunucusunda) zamanlamayla ve istek üzerine taranır; dağıtım kapısı uygulanmaz. İmajı docker save ile okur; Docker soketine hiç erişmez.',
+  'Trivy scans the image of every docker deploy before it gets traffic, on the panel host or by the node agent (0.18.7 or newer), and the images of a Compose deploy on the panel host before the running stack is replaced, and rescans running images on a schedule. Swarm services (their image, on the panel host) are scanned on the schedule and on request, without a deploy gate. It reads the image from docker save; it never gets the Docker socket.':
+    'Trivy, her docker dağıtımının imajını trafik almadan önce panel sunucusunda ya da node ajanıyla (0.18.7 veya daha yeni), panel sunucusundaki bir Compose dağıtımının imajlarını ise çalışan yığın değiştirilmeden önce tarar ve çalışan imajları düzenli olarak yeniden tarar. Swarm servisleri (imajları, panel sunucusunda) zamanlamayla ve istek üzerine taranır; dağıtım kapısı uygulanmaz. İmajı docker save ile okur; Docker soketine hiç erişmez.',
   'Trivy vulnerability scans & deploy gate': 'Trivy zafiyet taraması ve deploy kapısı',
   'Vulnerability': 'Zafiyet',
   'manual scan': 'elle tarama',
@@ -5578,8 +5583,8 @@ export const TR: Readonly<Record<string, string>> = {
   'Restart-loop limit saved': 'Yeniden başlatma döngüsü sınırı kaydedildi',
   'Restart-loop limit turned off': 'Yeniden başlatma döngüsü sınırı kapatıldı',
   'Restarts': 'Yeniden başlatmalar',
-  'Stops the service, as the Stop button does, when its containers restart this many times within the window, and notifies. A deploy in progress is left alone. Docker services on the panel host.':
-    'Container\'ları bu süre içinde bu kadar yeniden başlarsa servisi Durdur düğmesinin yaptığı gibi durdurur ve bildirim gönderir. Süren bir deploy\'a dokunulmaz. Panel sunucusundaki Docker servisleri için.',
+  'Stops the service, as the Stop button does, when its containers or PM2 processes restart this many times within the window, and notifies. A deploy in progress is left alone. Docker services on the panel host and PM2 services.':
+    'Container\'ları ya da PM2 süreçleri bu süre içinde bu kadar yeniden başlarsa servisi Durdur düğmesinin yaptığı gibi durdurur ve bildirim gönderir. Süren bir deploy\'a dokunulmaz. Panel sunucusundaki Docker servisleri ve PM2 servisleri için.',
   'Within (minutes)': 'Süre (dakika)',
   'last stopped by the limit {time}': 'sınır en son {time} tarihinde durdurdu',
   '{n} restarts in the window now': 'şu an pencerede {n} yeniden başlatma',
@@ -6016,4 +6021,24 @@ export const TR: Readonly<Record<string, string>> = {
   'Tailscale auth key': 'Tailscale auth key',
   'Tailnet hostname (optional)': 'Tailnet ana bilgisayar adı (isteğe bağlı)',
   'Headscale server (optional)': 'Headscale sunucusu (isteğe bağlı)',
+  // Remote MCP (R4)
+  'Remote MCP': 'Uzak MCP',
+  'Remote MCP saved': 'Uzak MCP kaydedildi',
+  'Could not load remote MCP': 'Uzak MCP yüklenemedi',
+  'Serve MCP over HTTP': 'MCP\'yi HTTP üzerinden sun',
+  'AI clients connect to the MCP tools over HTTP with an API token, instead of running the local MCP server. Each tool call runs as that token: its scopes and its owner\'s roles apply, and a revoked token stops working at once.': 'Yapay zekâ istemcileri, yerel MCP sunucusunu çalıştırmak yerine MCP araçlarına bir API token\'ıyla HTTP üzerinden bağlanır. Her araç çağrısı o token olarak çalışır: token\'ın kapsamları ve sahibinin rolleri geçerlidir; iptal edilen bir token hemen çalışmaz olur.',
+  'Send the token as an Authorization: Bearer header, for example:': 'Token\'ı Authorization: Bearer başlığıyla gönderin, örneğin:',
+  'Read-only tools only, for every caller': 'Herkes için yalnızca salt okunur araçlar',
+  // Remote MCP OAuth consent (R4)
+  'This authorization request cannot be used': 'Bu yetkilendirme isteği kullanılamaz',
+  'Connect an MCP client': 'Bir MCP istemcisi bağla',
+  '{client} wants to use NineDeploy as {user}.': '{client}, NineDeploy\'u {user} olarak kullanmak istiyor.',
+  'The client named itself; the panel cannot vouch for it. After you decide, you go back to:': 'İstemcinin adını kendisi verdi; panel buna kefil olamaz. Kararınızdan sonra şuraya dönersiniz:',
+  'Read only: it can look, but not change anything.': 'Salt okunur: bakabilir ama hiçbir şeyi değiştiremez.',
+  'Full: it can do what you can, including deploys and settings.': 'Tam: dağıtımlar ve ayarlar dahil sizin yapabildiğiniz her şeyi yapabilir.',
+  'The grant appears under Settings → Security → API tokens; deleting it there disconnects the client.': 'Bu izin Ayarlar → Güvenlik → API token\'ları altında görünür; oradan silmek istemcinin bağlantısını keser.',
+  'Deny': 'Reddet',
+  'Allow': 'İzin ver',
+  // Remote MCP OAuth consent, framed (R4)
+  'Open this page in its own browser tab to approve an MCP client.': 'Bir MCP istemcisini onaylamak için bu sayfayı ayrı bir tarayıcı sekmesinde açın.',
 };

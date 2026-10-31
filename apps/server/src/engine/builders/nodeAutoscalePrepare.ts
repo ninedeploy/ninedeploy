@@ -49,7 +49,13 @@ export async function prepareNodeAutoscaleCapacity(client: PrepareClient, input:
     deploymentId: owner.deploymentId, timeoutMs: 300_000, specs, startNames: servingNames });
   const fenced = runtimeFenceReply.parse(await client.fence(fence));
   if (fenced.requestId !== fence.requestId || fenced.serviceId !== fence.serviceId || fenced.revision !== fence.revision || fenced.deploymentWatermark !== fence.deploymentWatermark) throw new Error('Node autoscale preparation fence is unconfirmed');
-  const prepared = containerPrepareReply.parse(await client.prepare(preparation));
+  // The node journals this exact request before applying it. A lost response
+  // can be replayed without creating a second set; ownership is rechecked by
+  // the bound client on each call.
+  let response: unknown;
+  try { response = await client.prepare(preparation); }
+  catch { response = await client.prepare(preparation); }
+  const prepared = containerPrepareReply.parse(response);
   if (prepared.requestId !== preparation.requestId || prepared.serviceId !== service.id || prepared.revision !== preparation.revision || prepared.deploymentId !== owner.deploymentId ||
     prepared.items.length !== names.length || names.some((name, index) => !prepared.items.some(item => item.name === name && item.deploymentId === owner.deploymentId && item.running === (index < servingCount)))) {
     throw new Error('Node autoscale prepared capacity is unconfirmed');

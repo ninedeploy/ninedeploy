@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from '../config.js';
 import { and, eq, exists, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
-import { deployments, primaryTransitions, services, serviceTargets, type DB, type PrimaryRuntimeSnapshot, type PrimaryTransition, type Service } from '@ninedeploy/db';
+import { deployments, nodeAutoscaleCapacity, primaryTransitions, services, serviceTargets, type DB, type PrimaryRuntimeSnapshot, type PrimaryTransition, type Service } from '@ninedeploy/db';
 import { containerIdentityOps } from '../agentOps/containerIdentity.js';
 import { observabilityOps } from '../agentOps/observability.js';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
@@ -12,6 +12,8 @@ import { verifyNodeReadiness } from '../lib/nodeReadiness.js';
 import { createNodeDeploymentAuthority } from '../lib/nodeDeploymentOwner.js';
 import { createNodeRuntimeMutationClient } from '../lib/nodeRuntimeMutationClient.js';
 import { retireNodeDeploymentGeneration } from '../lib/nodeDeploymentRetirement.js';
+import { serviceRuntimeRevision } from '../lib/serviceRuntimeOwner.js';
+import { handoffNodeDeploymentPreparation } from '../lib/nodeDeploymentPreparation.js';
 import { capture, run, sleep } from '../lib/exec.js';
 import { audit } from '../lib/audit.js';
 import { portProxyDir, restrictedMappings } from '../lib/portProxy.js';
@@ -93,14 +95,20 @@ async function mapFour<T>(values: T[], fn: (value: T) => Promise<void>) {
 function snapshot(runtime: DeployRuntime, commitSha: string | null): PrimaryRuntimeSnapshot {
   const names = replicaNames(runtime.runtimeId, runtime.replicas ?? 1);
   const targets = runtime.nodeTargets;
+  const capacity = runtime.nodeCapacityTargets, allNames = replicaNames(runtime.runtimeId, MAX_REPLICAS);
   if (targets && (targets.length !== names.length || targets.some((target, index) => target.name !== names[index] || !/^[a-f0-9]{64}$/.test(target.id)) ||
     new Set(targets.map(target => target.id)).size !== targets.length)) throw new Error('Invalid candidate creation identities');
+  if (capacity && (capacity.length < names.length || capacity.length > MAX_REPLICAS || capacity.some((target, index) =>
+    target.name !== allNames[index] || !/^[a-f0-9]{64}$/.test(target.id)) || new Set(capacity.map(target => target.id)).size !== capacity.length ||
+    targets?.some((target, index) => target.id !== capacity[index]?.id) || runtime.nodeReadinessId && runtime.nodeReadinessId !== capacity[0]?.id)) {
+    throw new Error('Invalid candidate capacity creation identities');
+  }
   if (runtime.nodeReadinessId && (!/^[a-f0-9]{64}$/.test(runtime.nodeReadinessId) || names.length !== 1 || targets && targets[0]?.id !== runtime.nodeReadinessId)) {
     throw new Error('Invalid candidate creation identity');
   }
   return { runtimeId: runtime.runtimeId, port: runtime.port, healthPath: runtime.healthPath, healthCheck: runtime.healthCheck ?? null,
-    replicas: names.length, commitSha, containers: names.map((name, index) => ({ name, id: targets?.[index]?.id ?? runtime.nodeReadinessId ?? null, observed: false })),
-    spares: replicaNames(runtime.runtimeId, MAX_REPLICAS).slice(names.length).map(name => ({ name, id: null, observed: false })) };
+    replicas: names.length, commitSha, containers: names.map((name, index) => ({ name, id: targets?.[index]?.id ?? capacity?.[index]?.id ?? runtime.nodeReadinessId ?? null, observed: false })),
+    spares: allNames.slice(names.length).map((name, index) => ({ name, id: capacity?.[names.length + index]?.id ?? null, observed: false })) };
 }
 const identities = (group: PrimaryRuntimeSnapshot) => [...group.containers, ...(group.spares ?? [])];
 function validateSnapshot(value: PrimaryRuntimeSnapshot) {
@@ -257,6 +265,30 @@ function primaryLease(db: DB, initial: PrimaryTransition, token: string, feature
         if (item.id ? await identity(db, row.serverId, item.id) : await identity(db, row.serverId, item.name)) return false;
       }
     }
+    if (row.orderedOwner && row.serverId != null) {
+      const capacity = await db.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, row.deploymentId) });
+      if (capacity) {
+        const owner = row.orderedOwner;
+        if (capacity.serviceId !== row.serviceId || capacity.serverId !== row.serverId || capacity.runtimeId !== row.candidate.runtimeId ||
+          capacity.imageId !== row.imageDigest || owner.deploymentId !== row.deploymentId || owner.serviceId !== row.serviceId || owner.serverId !== row.serverId ||
+          !Array.isArray(capacity.targets) || capacity.targets.length < row.candidate.replicas || capacity.targets.some((item, index) => {
+            const observed = identities(row.candidate)[index];
+            return !observed || !observed.observed || observed.name !== item.name || observed.id !== item.id;
+          })) throw new Error('Node autoscale handoff capacity is unconfirmed');
+        const checkpoint = async () => {
+          const currentService = await current();
+          if (currentService.runtimeId !== svc.runtimeId || row.routingTouched && (loaded !== currentService.runtimeId || loadedFingerprint !== fingerprint(currentService))) {
+            throw new Error('Node autoscale handoff routing changed');
+          }
+        };
+        const client = createNodeRuntimeMutationClient(db, row.serverId, { checkpoint });
+        const requestId = createHash('sha256').update(`${owner.requestId}:primary-handoff`).digest('hex').slice(0, 32);
+        const revision = serviceRuntimeRevision(owner.epoch, 3);
+        await client.retire({ requestId, serviceId: row.serviceId, revision, timeoutMs: 30_000, graceSeconds: 0, targets: [] });
+        await client.legacyHandoff({ requestId, serviceId: row.serviceId, revision, timeoutMs: 30_000, deploymentWatermark: row.deploymentId });
+        await checkpoint();
+      }
+    }
     clearInterval(heartbeat); await renewal; await check();
     const removed = await db.delete(primaryTransitions).where(held()).returning({ id: primaryTransitions.id });
     if (!removed.length) { lost = true; throw new PrimaryRecoveryOwnershipLost(); }
@@ -337,7 +369,11 @@ export async function beginPrimaryTransition(db: DB, service: Service, deploymen
   }).onConflictDoNothing().returning();
   if (!row) throw new Error('Primary runtime recovery is pending; resolve it before another deployment');
   const lease = primaryLease(db, row, token, features);
-  try { await lease.captureIdentities(); return lease; }
+  try {
+    await lease.captureIdentities();
+    if (candidate.nodeDeploymentOwner && candidate.nodeCapacityTargets) await handoffNodeDeploymentPreparation(db, candidate.nodeDeploymentOwner, token);
+    return lease;
+  }
   catch { await lease.release('Container identities could not be captured'); throw new PrimaryIdentityUnconfirmed(); }
 }
 
@@ -408,6 +444,7 @@ export async function reconcilePrimaryTransitions(db: DB, opts: { serviceId?: nu
       const dep = await db.query.deployments.findFirst({ where: eq(deployments.id, entry.deploymentId) });
       if (!dep || dep.serviceId !== entry.serviceId) throw new Error('Deployment history unavailable; review retained generations');
       await lease.captureIdentities();
+      if (entry.orderedOwner) await handoffNodeDeploymentPreparation(db, entry.orderedOwner, token, false);
       endCanary(entry.serviceId);
       const interruptedActive = entry.interrupted && (ACTIVE as readonly string[]).includes(dep.status);
       let selected = svc.runtimeId === entry.candidate.runtimeId ? lease.row.candidate : lease.row.previous;

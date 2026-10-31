@@ -54,6 +54,15 @@ export async function managedSwarmServiceSpec(stack: StackSpec): Promise<Managed
       return { File: { Name: f.target, UID: '0', GID: '0', Mode: 0o444 }, SecretID: f.secretId, SecretName: f.secretName };
     });
   }
+  const options = service.containerOptions;
+  if (options?.init) container.Init = true;
+  if (options?.capAdd?.length) {
+    if (!options.capAdd.every((c) => /^CAP_[A-Z_]{2,32}$/.test(c))) throw new Error('Unsupported managed Swarm capability');
+    container.CapabilityAdd = [...options.capAdd];
+  }
+  if (options?.ulimitNofile) container.Ulimits = [{ Name: 'nofile', Soft: options.ulimitNofile, Hard: options.ulimitNofile }];
+  // Swarm has no --shm-size; a sized tmpfs over /dev/shm is the same thing to the app.
+  if (options?.shmSizeMb) container.Mounts = [{ Type: 'tmpfs', Target: '/dev/shm', TmpfsOptions: { SizeBytes: options.shmSizeMb * 1024 * 1024 } }];
   if (service.healthCommand) container.Healthcheck = { Test: ['CMD-SHELL', service.healthCommand], Interval: 5_000_000_000, Timeout: 10_000_000_000, Retries: 3 };
   const limits: Record<string, number> = {};
   if (service.cpuLimitMilli && service.cpuLimitMilli > 0) limits.NanoCPUs = service.cpuLimitMilli * 1_000_000;

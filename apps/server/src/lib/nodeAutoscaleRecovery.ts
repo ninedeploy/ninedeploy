@@ -1,6 +1,6 @@
 import { and, eq, isNull, lte, notInArray, or } from 'drizzle-orm';
 import { nodeAutoscaleTransitions, type DB } from '@ninedeploy/db';
-import { NODE_AUTOSCALE_LEASE_MS, recoverNodeAutoscaleAdmission, type NodeAutoscaleAdmission } from './nodeAutoscaleAuthority.js';
+import { discardExpiredNodeAutoscale, NODE_AUTOSCALE_LEASE_MS, recoverNodeAutoscaleAdmission, type NodeAutoscaleAdmission } from './nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from './nodeAutoscaleController.js';
 import { nodeAutoscaleRuntime } from './nodeAutoscaleRuntime.js';
 
@@ -13,14 +13,15 @@ export async function reconcileNodeAutoscale(db: DB, options: { signal?: AbortSi
     notInArray(nodeAutoscaleTransitions.phase, ['held']),
     or(isNull(nodeAutoscaleTransitions.leaseUntil), lte(nodeAutoscaleTransitions.leaseUntil, new Date())),
   )).orderBy(nodeAutoscaleTransitions.updatedAt, nodeAutoscaleTransitions.serviceId).limit(limit);
-  const results: Array<{ serviceId: number; state: 'completed' | 'busy' | 'failed' }> = [];
+  const results: Array<{ serviceId: number; state: 'completed' | 'discarded' | 'busy' | 'failed' }> = [];
   for (const item of due) {
     options.signal?.throwIfAborted();
     try {
       const admission = await recoverNodeAutoscaleAdmission(db, item.serviceId);
       if (!admission) { results.push({ serviceId: item.serviceId, state: 'busy' }); continue; }
-      await executeNodeAutoscale(db, admission, options.runtime?.(admission) ?? nodeAutoscaleRuntime(db, admission, options));
-      results.push({ serviceId: item.serviceId, state: 'completed' });
+      if (await discardExpiredNodeAutoscale(db, admission)) { results.push({ serviceId: item.serviceId, state: 'discarded' }); continue; }
+      const result = await executeNodeAutoscale(db, admission, options.runtime?.(admission) ?? nodeAutoscaleRuntime(db, admission, options));
+      results.push({ serviceId: item.serviceId, state: result === 'aborted' ? 'discarded' : 'completed' });
     } catch (error) {
       options.signal?.throwIfAborted();
       // A failed admission rolls its lease back. Defer that record without

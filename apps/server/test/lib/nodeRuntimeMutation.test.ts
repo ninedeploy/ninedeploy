@@ -9,11 +9,18 @@ import { handoffStoppedNodeToLegacy } from '../../src/lib/nodeLegacyHandoff.js';
 import { createNodeLifecycle } from '../../src/lib/nodeLifecycle.js';
 import { runOp } from '../../src/agent.js';
 import { prepareNodeAutoscaleCapacity } from '../../src/engine/builders/nodeAutoscalePrepare.js';
-import { createDb, deployments, eq, nodeAutoscaleTransitions, runMigrations, servers, services, type Service } from '@ninedeploy/db';
+import { createDb, databaseAttachments, databases, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, runMigrations, servers, services, type Service } from '@ninedeploy/db';
 import { admitNodeAutoscale, recoverNodeAutoscaleAdmission } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { retireNodeDeploymentGeneration } from '../../src/lib/nodeDeploymentRetirement.js';
+import { claimNodeDeploymentAttempt } from '../../src/lib/nodeDeploymentOwner.js';
+import { beginNodeDeploymentPreparation, completeNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
+import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
+import { executeNodeLifecycleIntent } from '../../src/lib/nodeLifecycleController.js';
+import * as agentClient from '../../src/lib/agentClient.js';
+import { recoverPreparedNodeCandidate } from '../../src/lib/nodePreparationRecovery.js';
+import { beginPrimaryTransition } from '../../src/engine/primaryRecovery.js';
 const io = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('../../src/lib/spawnValidated.js', () => ({ spawnValidated: io.spawn }));
 type Row = { id: string; name: string; managed: string | null; serviceId: string | null; deploymentId: string | null; composeProject?: string | null; nonce: string | null; specHash: string | null; running: boolean; status: string; networks: Record<string, object> };
@@ -51,6 +58,136 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
 });
 describe('persistent runtime request admission', () => {
+  it('hands a selected prepared deployment back to legacy creation through the real node journal', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId: null, status: 'idle', port: 3000 });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'queued' });
+      const admission = await claimNodeDeploymentAttempt(c.db, 10, (await c.db.query.services.findFirst())!, '{}');
+      if (!admission.claimed) throw Error('Missing deployment owner');
+      await beginNodeDeploymentPreparation(c.db, admission.owner, { runtimeId: 'web-10', imageId: image, serving: 1, capacity: 2 });
+      const prepared = await runtime().prepare({ ...prepare(5, 10, [spec(), spec(10, 'web-10-r2')]), startNames: ['web-10'] });
+      const targets = prepared.items.map(({ id, name }) => ({ id, name }));
+      await completeNodeDeploymentPreparation(c.db, admission.owner, targets);
+      vi.spyOn(agentClient, 'agentTransportSealed').mockResolvedValue(true);
+      let lost = true;
+      vi.spyOn(agentClient, 'agentOp').mockImplementation(async (_db, _server, op, params) => {
+        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.recovery","proxy.routingAck","docker.mutations","docker.retireHandoff"]}'] };
+        const lines: string[] = [], exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });
+        if (op === 'docker.runtimeLegacyHandoff' && lost) { lost = false; throw Error('lost primary handoff'); }
+        return { exitCode, lines };
+      });
+      const service = (await c.db.query.services.findFirst())!;
+      const lease = await beginPrimaryTransition(c.db, service, 10, { runtimeId: 'web-10', port: 3000, healthPath: '/', replicas: 1,
+        nodeDeploymentOwner: admission.owner, nodeTargets: targets.slice(0, 1), nodeCapacityTargets: targets, imageDigest: image }, undefined, null);
+      try {
+        await c.db.update(services).set({ runtimeId: 'web-10' }).where(eq(services.id, 7));
+        await expect(lease.completeIfSafe()).rejects.toThrow('lost primary handoff');
+        expect(await lease.completeIfSafe()).toBe(true);
+        expect(rows.map(row => [row.name, row.running])).toEqual([['web-10', true], ['web-10-r2', false]]);
+        await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
+      } finally { await lease.release(); }
+    } finally { c.client?.close(); }
+  });
+  it.each(['retirement', 'handoff'] as const)('replays a lost prepared-candidate %s reply through the real node journal', async lost => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId: 'web-8', status: 'running' });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'queued' });
+      const admission = await claimNodeDeploymentAttempt(c.db, 10, (await c.db.query.services.findFirst())!, '{}');
+      if (!admission.claimed) throw Error('Missing deployment authority');
+      await beginNodeDeploymentPreparation(c.db, admission.owner, { runtimeId: 'web-10', imageId: image, serving: 1, capacity: 2 });
+      const prepared = await runtime().prepare({ ...prepare(5, 10, [spec(), spec(10, 'web-10-r2')]), startNames: ['web-10'] });
+      await completeNodeDeploymentPreparation(c.db, admission.owner, prepared.items.map(({ id, name }) => ({ id, name })));
+      rows.push({ id: 'e'.repeat(64), name: 'web-8', managed: 'service', serviceId: '7', deploymentId: '8', nonce: null, specHash: null,
+        running: true, status: 'running', networks: { ninedeploy: {} } });
+      await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+      vi.spyOn(agentClient, 'agentTransportSealed').mockResolvedValue(true);
+      let lostCalls = 0;
+      vi.spyOn(agentClient, 'agentOp').mockImplementation(async (_db, _server, op, params) => {
+        if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":["docker.mutations","docker.retireHandoff"]}'] };
+        const lines: string[] = [], exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });
+        if (op === (lost === 'retirement' ? 'docker.retireSet' : 'docker.runtimeLegacyHandoff') && ++lostCalls === 1) throw Error('lost recovery reply');
+        return { exitCode, lines };
+      });
+      await expect(recoverPreparedNodeCandidate(c.db, admission.owner)).rejects.toThrow('lost recovery reply');
+      expect(rows.map(row => row.name)).toEqual(['web-8']);
+      expect((await c.db.select().from(nodeDeploymentPreparations))[0]?.phase).toBe('retiring');
+      const before = effects().filter(args => args[0] === 'rm').length;
+      expect(await recoverPreparedNodeCandidate(c.db, admission.owner)).toEqual({ deploymentId: 10, retired: 2 });
+      expect(effects().filter(args => args[0] === 'rm')).toHaveLength(before);
+      expect(rows.map(row => [row.name, row.running])).toEqual([['web-8', true]]);
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
+      await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
+    } finally { c.client?.close(); }
+  });
+  it('retires a real journaled initial preparation and replays a lost handoff without touching another service', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId: null, status: 'idle' });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'queued' });
+      const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
+      const admitted = await claimNodeDeploymentAttempt(c.db, 10, await service(), '{}');
+      if (!admitted.claimed) throw Error('Missing deployment authority');
+      await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: image, serving: 1, capacity: 2 });
+      const receipt = await runtime().prepare({ ...prepare(5, 10, [spec(), spec(10, 'web-10-r2')]), startNames: ['web-10'] });
+      await completeNodeDeploymentPreparation(c.db, admitted.owner, receipt.items.map(({ id, name }) => ({ id, name })));
+      rows.push({ id: 'e'.repeat(64), name: 'other-10', managed: 'service', serviceId: '8', deploymentId: '10', nonce: null, specHash: null,
+        running: true, status: 'running', networks: { ninedeploy: {} } });
+      await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+      const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+      let handoffs = 0;
+      const deps = { sealed: async () => true, route: async () => {}, sleep: async () => {},
+        agent: async (_server: number, op: string, params: Record<string, unknown>) => {
+          if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'docker.retireHandoff', 'proxy.routingAck'] })] };
+          const lines: string[] = [];
+          const exitCode = await runOp(op, params, line => lines.push(line), { sealed: true });
+          if (op === 'docker.runtimeLegacyHandoff' && ++handoffs === 1) throw Error('lost handoff reply');
+          return { exitCode, lines };
+        } };
+      expect((await executeNodeLifecycleIntent(c.db, intent.id, deps)).state).toBe('held');
+      expect(rows.map(row => row.name)).toEqual(['other-10']);
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
+      await c.db.update(nodeLifecycleIntents).set({ nextAttemptAt: new Date(0) }).where(eq(nodeLifecycleIntents.id, intent.id));
+      expect((await executeNodeLifecycleIntent(c.db, intent.id, deps)).state).toBe('completed');
+      expect(rows.map(row => [row.name, row.running])).toEqual([['other-10', true]]);
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toEqual([]);
+      await c.db.insert(deployments).values({ id: 11, serviceId: 7, status: 'queued' });
+      expect((await claimNodeDeploymentAttempt(c.db, 11, await service(), '{}')).claimed).toBe(true);
+    } finally { c.client?.close(); }
+  });
+  it('holds initial retirement when inventory contains an unrecorded generation of the same service', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, runtimeId: null, status: 'idle' });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'queued' });
+      const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
+      const admitted = await claimNodeDeploymentAttempt(c.db, 10, await service(), '{}');
+      if (!admitted.claimed) throw Error('Missing deployment authority');
+      await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: image, serving: 1, capacity: 1 });
+      rows.push({ id: 'd'.repeat(64), name: 'web-8', managed: 'service', serviceId: '7', deploymentId: '8', nonce: null, specHash: null,
+        running: true, status: 'running', networks: { ninedeploy: {} } });
+      await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+      const intent = await acceptNodeLifecycleIntent(c.db, await service(), 'stop');
+      const deps = { sealed: async () => true, route: async () => {}, sleep: async () => {},
+        agent: async (_server: number, op: string, params: Record<string, unknown>) => {
+          if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT ' + JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'docker.retireHandoff', 'proxy.routingAck'] })] };
+          const lines: string[] = [];
+          return { exitCode: await runOp(op, params, line => lines.push(line), { sealed: true }), lines };
+        } };
+      expect((await executeNodeLifecycleIntent(c.db, intent.id, deps)).state).toBe('held');
+      expect(rows.map(row => [row.name, row.running])).toEqual([['web-8', true]]);
+      expect(await c.db.select().from(nodeDeploymentPreparations)).toHaveLength(1);
+    } finally { c.client?.close(); }
+  });
   it('upgrades an interrupted old fence with its accepted watermark and refuses another owner', async () => {
     const old = fence(8);
     await runtime().fence(old);
@@ -132,6 +269,8 @@ describe('persistent runtime request admission', () => {
       ['web-10', true, true], ['web-10-r2', false, true], ['web-10-r3', false, true],
     ]);
     expect(effects().filter(args => args[0] === 'start')).toEqual([['start', result.serving[0]!.id]]);
+    expect(effects().findIndex(args => args[0] === 'network' && args.at(-1) === result.serving[0]!.id))
+      .toBeLessThan(effects().findIndex(args => args[0] === 'start'));
     expect(readFileSync(journalFile()).includes(Buffer.from('KEY=fixture'))).toBe(false);
     await runtime().stop({ requestId: nonce(13), serviceId: 7, revision: 13, timeoutMs: 5000, graceSeconds: 0,
       targets: result.capacity.map(target => ({ ...target, deploymentId: 10 })) });
@@ -139,6 +278,36 @@ describe('persistent runtime request admission', () => {
     await expect(prepareNodeAutoscaleCapacity(client, { service, owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10,
       extraNetworks: ['nd-extra'] })).rejects.toThrow(/stale/);
     expect(rows.every(row => !row.running)).toBe(true); expect(effects()).toEqual([]);
+  });
+  it('does not start a prepared replica when its database network cannot be confirmed', async () => {
+    failNetwork = true;
+    const input = { ...prepare(5, 10, [{ ...spec(), extraNetworks: ['nd-dbnet-orders'] },
+      { ...spec(10, 'web-10-r2'), extraNetworks: ['nd-dbnet-orders'] }]), startNames: ['web-10'] };
+    await expect(runtime().prepare(input)).rejects.toThrow(/network attachment unconfirmed/);
+    expect(effects().filter(args => args[0] === 'start')).toEqual([]);
+    expect(rows.every(row => !row.running)).toBe(true);
+    failNetwork = false;
+    const receipt = await runtime().prepare(input);
+    expect(receipt.items.map(item => item.running)).toEqual([true, false]);
+    expect(rows.every(row => Object.hasOwn(row.networks, 'nd-dbnet-orders'))).toBe(true);
+  });
+  it('replays a lost autoscale preparation response without repeating container effects', async () => {
+    mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
+    const service = { id: 7, serverId: 4, slug: 'web', type: 'docker', orchestrator: null, runtimeReplicas: 1, port: 3000,
+      autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } } as Service;
+    const owner = { serviceId: 7, serverId: 4, deploymentId: 10, epoch: 2, requestId: nonce(44) };
+    let attempts = 0;
+    const client = { fence: (input: Parameters<ReturnType<typeof runtime>['fence']>[0]) => runtime().fence(input),
+      prepare: async (input: Parameters<ReturnType<typeof runtime>['prepare']>[0]) => {
+        const receipt = await runtime().prepare(input);
+        if (++attempts === 1) throw new Error('response lost after preparation');
+        return receipt;
+      } };
+    const result = await prepareNodeAutoscaleCapacity(client, { service, owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
+    expect(attempts).toBe(2); expect(result.capacity).toHaveLength(3);
+    expect(effects().filter(args => args[0] === 'create')).toHaveLength(3);
+    expect(effects().filter(args => args[0] === 'start')).toHaveLength(1);
+    expect(rows.map(row => row.running)).toEqual([true, false, false]);
   });
   it('replays a lost scale-up receipt and safely scales down through the same agent journal', async () => {
     const c = createDb({ url: 'file::memory:' });
@@ -153,18 +322,26 @@ describe('persistent runtime request admission', () => {
       const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
       mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
       const agent = runtime();
-      await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
+      const prepared = await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
         { service: await service(), owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
-      let lost = true, oldStart: Parameters<NodeAutoscaleControllerDeps['start']>[1] | undefined;
+      await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 10, serviceId: 7, serverId: 4, runtimeId: 'web-10', imageId: image, targets: prepared.capacity });
+      let lost = true, lostHandoff = true, oldStart: Parameters<NodeAutoscaleControllerDeps['start']>[1] | undefined;
       const deps: NodeAutoscaleControllerDeps = {
+        preflight: async () => {},
         fence: (_node, input) => agent.fence(input), inventory: (_node, input) => agent.inventory(input),
         start: async (_node, input) => { oldStart = input; const receipt = await agent.start(input); if (lost) { lost = false; throw new Error('lost start receipt'); } return receipt; },
         stop: (_node, input) => agent.stop(input), ready: async (_svc, targets) => targets.every(target => rows.some(row => row.id === target.id && row.running)),
+        retire: (_node, input) => agent.retire(input),
+        handoff: async (_node, input) => { const reply = await handoffStoppedNodeToLegacy(join(root, '.agent-work', '.lifecycle'), input);
+          if (lostHandoff) { lostHandoff = false; throw Error('lost handoff receipt'); } return reply; },
         route: async () => {}, drain: async () => {},
       };
       const up = (await admitNodeAutoscale(c.db, await service(), 2))!;
       await expect(executeNodeAutoscale(c.db, up, deps)).rejects.toThrow('lost start receipt');
       expect((await service()).runtimeReplicas).toBe(1);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+      await expect(executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).rejects.toThrow('lost handoff receipt');
+      expect((await c.db.select().from(nodeAutoscaleTransitions))[0]?.phase).toBe('handoff');
       await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
       await executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps);
       expect((await service()).runtimeReplicas).toBe(2);
@@ -172,8 +349,92 @@ describe('persistent runtime request admission', () => {
       const down = (await admitNodeAutoscale(c.db, await service(), 1))!;
       await executeNodeAutoscale(c.db, down, deps);
       expect((await service()).runtimeReplicas).toBe(1); expect(rows.map(row => row.running)).toEqual([true, false, false]);
-      await expect(agent.start(oldStart!)).rejects.toThrow(/stale/);
+      await expect(agent.start(oldStart!)).rejects.toThrow(/stale|protocol/);
       expect(rows.map(row => row.running)).toEqual([true, false, false]);
+      await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
+    } finally { c.client?.close(); }
+  });
+  it.each(['queued deploy', 'database change'])('releases a fenced scale decision after %s and a lost handoff reply', async trigger => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-10', port: 3000,
+        autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'running' });
+      const deployOwner = await reserveServiceRuntimeOwner(c.db, 7, 'deploy', null, nonce(44));
+      const owner = { serviceId: 7, serverId: 4, deploymentId: 10, epoch: deployOwner.epoch, requestId: deployOwner.requestId! };
+      const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
+      mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
+      const agent = runtime();
+      const prepared = await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
+        { service: await service(), owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
+      await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 10, serviceId: 7, serverId: 4, runtimeId: 'web-10', imageId: image, targets: prepared.capacity });
+      let queued = false, lost = true;
+      const deps: NodeAutoscaleControllerDeps = {
+        preflight: async () => {},
+        fence: async (_node, input) => { const reply = await agent.fence(input); if (!queued) {
+          queued = true;
+          if (trigger === 'queued deploy') await c.db.insert(deployments).values({ id: 11, serviceId: 7, status: 'queued' });
+          else {
+            await c.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running', serverId: 4, passwordEncrypted: 'fixture' });
+            await c.db.insert(databaseAttachments).values({ serviceId: 7, databaseId: 5, envAlias: 'DATABASE_URL' });
+          }
+        } return reply; },
+        inventory: (_node, input) => agent.inventory(input), start: (_node, input) => agent.start(input), stop: (_node, input) => agent.stop(input),
+        retire: (_node, input) => agent.retire(input), handoff: async (_node, input) => { const reply = await handoffStoppedNodeToLegacy(join(root, '.agent-work', '.lifecycle'), input);
+          if (lost) { lost = false; throw Error('lost abort handoff'); } return reply; },
+        ready: async () => true, route: async () => { throw Error('unexpected routing'); }, drain: async () => {},
+      };
+      const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+      if (trigger === 'database change') {
+        await expect(executeNodeAutoscale(c.db, admitted, deps)).rejects.toThrow(/capacity identity changed/);
+        await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+        await expect(executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).rejects.toThrow('lost abort handoff');
+      } else await expect(executeNodeAutoscale(c.db, admitted, deps)).rejects.toThrow('lost abort handoff');
+      expect((await c.db.select().from(nodeAutoscaleTransitions))[0]?.phase).toBe('abort_handoff');
+      expect(rows.map(row => row.running)).toEqual([true, false, false]);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+      expect(await executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).toBe('aborted');
+      expect((await service()).runtimeReplicas).toBe(1);
+      await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
+    } finally { c.client?.close(); }
+  });
+  it('stops an unacknowledged scale-up before a queued deploy, even if the Stop reply is lost', async () => {
+    const c = createDb({ url: 'file::memory:' });
+    try {
+      await c.ready; await runMigrations(c.db);
+      await c.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await c.db.insert(services).values({ id: 7, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-10', port: 3000,
+        autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
+      await c.db.insert(deployments).values({ id: 10, serviceId: 7, status: 'running' });
+      const deployOwner = await reserveServiceRuntimeOwner(c.db, 7, 'deploy', null, nonce(44));
+      const owner = { serviceId: 7, serverId: 4, deploymentId: 10, epoch: deployOwner.epoch, requestId: deployOwner.requestId! };
+      const service = async () => (await c.db.query.services.findFirst({ where: eq(services.id, 7) }))!;
+      mkdirSync(join(root, '.agent-env')); writeFileSync(join(root, '.agent-env/web-10.env'), 'KEY=fixture');
+      const agent = runtime();
+      const prepared = await prepareNodeAutoscaleCapacity({ fence: input => agent.fence(input), prepare: input => agent.prepare(input) },
+        { service: await service(), owner, imageId: image, envFile: '.agent-env/web-10.env', creationWatermark: 10 });
+      await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 10, serviceId: 7, serverId: 4, runtimeId: 'web-10', imageId: image, targets: prepared.capacity });
+      let lostStop = true;
+      const deps: NodeAutoscaleControllerDeps = {
+        preflight: async () => {}, fence: (_node, input) => agent.fence(input), inventory: (_node, input) => agent.inventory(input),
+        start: async (_node, input) => { await agent.start(input); await c.db.insert(deployments).values({ id: 11, serviceId: 7, status: 'queued' }); throw Error('lost start reply'); },
+        stop: async (_node, input) => { const reply = await agent.stop(input); if (lostStop) { lostStop = false; throw Error('lost abort stop'); } return reply; },
+        retire: (_node, input) => agent.retire(input), handoff: (_node, input) => handoffStoppedNodeToLegacy(join(root, '.agent-work', '.lifecycle'), input),
+        ready: async () => { throw Error('unexpected readiness'); }, route: async () => { throw Error('unexpected routing'); }, drain: async () => {},
+      };
+      const admitted = (await admitNodeAutoscale(c.db, await service(), 2))!;
+      await expect(executeNodeAutoscale(c.db, admitted, deps)).rejects.toThrow('lost start reply');
+      expect(rows.map(row => row.running)).toEqual([true, true, false]);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+      await expect(executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).rejects.toThrow('lost abort stop');
+      expect((await c.db.select().from(nodeAutoscaleTransitions))[0]?.phase).toBe('abort_stopping');
+      expect(rows.map(row => row.running)).toEqual([true, false, false]);
+      await c.db.update(nodeAutoscaleTransitions).set({ leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 7));
+      expect(await executeNodeAutoscale(c.db, (await recoverNodeAutoscaleAdmission(c.db, 7))!, deps)).toBe('aborted');
+      expect((await service()).runtimeReplicas).toBe(1);
+      await expect(runOp('docker.runSpec', spec(11), () => {}, { sealed: true })).resolves.toBe(0);
     } finally { c.client?.close(); }
   });
   it('replays a completed creation receipt across a fresh journal instance without creating or starting a replacement', async () => {

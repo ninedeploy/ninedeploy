@@ -215,6 +215,7 @@ export interface ServicesApi {
     /** Where the service's traffic goes now: domains through Traefik, host ports through Docker. */
     routing: (id: number) => Promise<ServiceRoutingView>;
     runtimeRecovery: (id: number) => Promise<PrimaryRecoveryEntry | null>;
+    nodePreparations: (id: number) => Promise<Array<{ deploymentId: number; serverId: number; phase: 'preparing' | 'prepared' | 'fencing' | 'retiring'; deploymentStatus: string }>>;
     retryRuntimeRecovery: (id: number) => Promise<PrimaryRecoveryResult>;
     swarmRecovery: (id: number) => Promise<SwarmRecoveryEntry | null>;
     retrySwarmRecovery: (id: number) => Promise<SwarmRecoveryResult>;
@@ -424,6 +425,7 @@ export function servicesApi(t: Transport): ServicesApi {
       swarm: (id) => get<ServiceSwarmStatus>(`/v1/services/${id}/swarm`),
       routing: (id) => get<ServiceRoutingView>(`/v1/services/${id}/routing`),
       runtimeRecovery: async id => (await get<{ entry: PrimaryRecoveryEntry | null }>(`/v1/services/${id}/runtime-recovery`)).entry,
+      nodePreparations: async id => (await get<{ entries: Array<{ deploymentId: number; serverId: number; phase: 'preparing' | 'prepared' | 'fencing' | 'retiring'; deploymentStatus: string }> }>(`/v1/services/${id}/node-preparations`)).entries,
       retryRuntimeRecovery: id => request<PrimaryRecoveryResult>(`/v1/services/${id}/runtime-recovery`, { method: 'POST' }, 600_000),
       swarmRecovery: async id => (await get<{ entry: SwarmRecoveryEntry | null }>(`/v1/services/${id}/swarm/recovery`)).entry,
       retrySwarmRecovery: id => request<SwarmRecoveryResult>(`/v1/services/${id}/swarm/recovery`, { method: 'POST' }, 600_000),

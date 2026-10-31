@@ -36,6 +36,9 @@ export const AUTOSCALE_STATS_MAX_AGE_MS = 90_000;
 export const AUTOSCALE_IN_FLIGHT = ['queued', 'building', 'deploying'] as const;
 
 interface ServiceState {
+  generation: string | null;
+  lastObservedAt: number | null;
+  lastSampledAt: number | null;
   history: Array<{ at: number; desired: number }>;
   aboveSince: number | null;
   belowSince: number | null;
@@ -47,11 +50,23 @@ interface ServiceState {
 }
 
 const states = new Map<number, ServiceState>();
+const nodeHolds = new Map<number, { generation: string; reason: string | null; sample?: { value: number; desired: number; sampledAt: number } }>();
+
+const nodeStatusGeneration = (svc: Service) => JSON.stringify([svc.serverId, svc.orchestrator, svc.runtimeId, svc.runtimeReplicas, svc.status, svc.asleepAt, svc.autoscale]);
+
+/** Keep node observations bound to the service configuration and runtime that produced them. */
+export function recordNodeAutoscaleHolding(svc: Service, reason: string | null): void {
+  nodeHolds.set(svc.id, { generation: nodeStatusGeneration(svc), reason });
+}
+
+export function recordNodeAutoscaleSample(svc: Service, sample: { value: number; desired: number; sampledAt: number }): void {
+  nodeHolds.set(svc.id, { generation: nodeStatusGeneration(svc), reason: null, sample });
+}
 
 function stateOf(serviceId: number): ServiceState {
   let s = states.get(serviceId);
   if (!s) {
-    s = { history: [], aboveSince: null, belowSince: null, value: null, desired: null, holding: null, lastEvent: null, routingConfirmed: false };
+    s = { generation: null, lastObservedAt: null, lastSampledAt: null, history: [], aboveSince: null, belowSince: null, value: null, desired: null, holding: null, lastEvent: null, routingConfirmed: false };
     states.set(serviceId, s);
   }
   return s;
@@ -111,8 +126,8 @@ export function measure(
  * Feed one measurement; returns the count to scale to now, or null to hold.
  * Exported for tests; the plugin calls {@link autoscaleStep}.
  */
-export function decide(serviceId: number, current: number, value: number, cfg: AutoscaleConfig, now: number): { to: number; reason: string } | null {
-  const st = stateOf(serviceId);
+export function decideWithState(st: Pick<ServiceState, 'history' | 'aboveSince' | 'belowSince' | 'desired'>,
+  current: number, value: number, cfg: AutoscaleConfig, now: number): { to: number; reason: string } | null {
   const desired = desiredReplicas(current, value, cfg);
   st.desired = desired;
   st.history.push({ at: now, desired });
@@ -138,6 +153,10 @@ export function decide(serviceId: number, current: number, value: number, cfg: A
   st.aboveSince = null;
   st.belowSince = null;
   return null;
+}
+
+export function decide(serviceId: number, current: number, value: number, cfg: AutoscaleConfig, now: number): { to: number; reason: string } | null {
+  return decideWithState(stateOf(serviceId), current, value, cfg, now);
 }
 
 export interface AutoscaleDeps {
@@ -168,7 +187,7 @@ async function scalingSnapshotCurrent(db: Pick<DB, 'query' | 'select'>, svc: Ser
 }
 
 function resetWindow(st: ServiceState): void {
-  st.history = []; st.aboveSince = null; st.belowSince = null; st.desired = null;
+  st.history = []; st.aboveSince = null; st.belowSince = null; st.desired = null; st.lastObservedAt = null; st.lastSampledAt = null;
 }
 
 /**
@@ -290,6 +309,13 @@ export async function autoscaleStep(
 ): Promise<number> {
   const st = stateOf(svc.id);
   const current = servingReplicas(svc);
+  const generation = JSON.stringify([svc.runtimeId, svc.serverId, svc.orchestrator, cfg]);
+  if (st.generation !== generation) {
+    resetWindow(st);
+    st.value = null;
+    st.routingConfirmed = false;
+    st.generation = generation;
+  }
   const hold = holdReason(svc, ctx.inFlight, ctx.canaryRunning);
   st.holding = hold;
   if (hold) {
@@ -335,6 +361,13 @@ export async function autoscaleStep(
     return scaleService(deps, svc, current, bounded, why, ctx.now);
   }
   if (m.value == null) { resetWindow(st); return current; }
+  if (st.lastObservedAt !== null && (ctx.now < st.lastObservedAt || ctx.now - st.lastObservedAt > AUTOSCALE_STATS_MAX_AGE_MS)) resetWindow(st);
+  if (cfg.metric !== 'rps' && typeof ctx.sampledAt === 'number') {
+    if (st.lastSampledAt === ctx.sampledAt) return current;
+    if (st.lastSampledAt !== null && ctx.sampledAt < st.lastSampledAt) resetWindow(st);
+    st.lastSampledAt = ctx.sampledAt;
+  }
+  st.lastObservedAt = ctx.now;
   const d = decide(svc.id, current, m.value, eff, ctx.now);
   if (!d) return current;
   return scaleService(deps, svc, current, d.to, d.reason, ctx.now);
@@ -345,7 +378,13 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
   const cfg = autoscaleOf(svc);
   const replicas = servingReplicas(svc);
   if (!cfg) return { enabled: false, replicas };
-  const st = states.get(svc.id);
+  const node = svc.serverId != null && svc.orchestrator !== 'swarm';
+  const st = node ? undefined : states.get(svc.id);
+  const nodeHold = nodeHolds.get(svc.id);
+  const matchingNodeHold = nodeHold?.generation === nodeStatusGeneration(svc) ? nodeHold : undefined;
+  const nodeSample = matchingNodeHold?.sample;
+  const now = Date.now();
+  const freshNodeSample = nodeSample && now >= nodeSample.sampledAt && now - nodeSample.sampledAt <= AUTOSCALE_STATS_MAX_AGE_MS ? nodeSample : undefined;
   return {
     enabled: true,
     replicas,
@@ -353,9 +392,9 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
     maxReplicas: cfg.maxReplicas,
     metric: cfg.metric,
     target: cfg.target,
-    value: st?.value ?? null,
-    desired: st?.desired ?? null,
-    holding: st?.holding ?? null,
+    value: node ? freshNodeSample?.value ?? null : st?.value ?? null,
+    desired: node ? freshNodeSample?.desired ?? null : st?.desired ?? null,
+    holding: node ? (nodeSample && !freshNodeSample ? 'waiting for fresh node metrics' : matchingNodeHold ? matchingNodeHold.reason : 'waiting for node autoscale evaluation') : st?.holding ?? null,
     lastEvent: st?.lastEvent ?? null,
     scheduledFloor: (() => {
       const f = effectiveMinimum(cfg, Date.now());
@@ -366,6 +405,6 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
 
 /** Forget a service's windows (its configuration changed or it was redeployed). */
 export function resetAutoscaleState(serviceId?: number): void {
-  if (serviceId === undefined) states.clear();
-  else states.delete(serviceId);
+  if (serviceId === undefined) { states.clear(); nodeHolds.clear(); }
+  else { states.delete(serviceId); nodeHolds.delete(serviceId); }
 }

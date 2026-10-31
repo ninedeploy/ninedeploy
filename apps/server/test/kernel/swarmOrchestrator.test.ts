@@ -131,6 +131,11 @@ describe('SwarmOrchestrator', () => {
     expect(calls('stack deploy')).toEqual([]);
   });
 
+  it('refuses container options on a stack-file deploy: only the native apply carries them', async () => {
+    await expect(newOrchestrator().deployStack(stack({ services: [svc({ containerOptions: { init: true } })] }))).rejects.toThrow('Container options on Swarm need the journalled native service apply');
+    expect(calls('stack deploy')).toEqual([]);
+  });
+
   it('exposes the stable "swarm" name', () => {
     expect(newOrchestrator().name).toBe('swarm');
   });

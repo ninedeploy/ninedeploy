@@ -285,6 +285,9 @@ export class SwarmOrchestrator implements IOrchestrator {
     if (!opts.nativeApply && stack.services.some((s) => s.fileSecrets?.length)) {
       throw new Error('File mounts on Swarm need the journalled native service apply');
     }
+    if (!opts.nativeApply && stack.services.some((s) => s.containerOptions)) {
+      throw new Error('Container options on Swarm need the journalled native service apply');
+    }
     for (const n of stack.networks) await ensureNetwork(n.name, n.driver, n.attachable, log);
 
     const secretNames: Record<string, string> = {};

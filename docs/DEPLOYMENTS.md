@@ -271,17 +271,18 @@ A docker service that builds from source can use a Dockerfile pasted in the pane
 
 ### Restart-loop limit (G1.3)
 
-A docker service on the panel host can be stopped when its containers keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off.
+A docker service on the panel host, or a PM2 service (bare-metal mode), can be stopped when its containers or processes keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off.
 
 **How it works**
-- Once a minute the panel reads Docker's restart count for each of the service's containers.
+- Once a minute the panel reads Docker's restart count for each of the service's containers. For a PM2 service it reads PM2's restart count for each process, less the restarts the panel itself asked for (Start, Restart, bringing the service back after a panel restart), so only crashes count.
 - When the containers restart `maxRestarts` times within `windowMinutes`, the service is stopped as the Stop button would: it is marked stopped, then every replica is stopped.
 - Stopping it is audited as `service.restart_limit`, which notifies the channels that receive audit events. The card shows the restarts in the window and when the limit last tripped.
 - A deploy in progress is left alone, since it restarts containers on purpose. A new container starts counting from scratch.
-- Checked against a real container in a crash loop: the limit tripped after 3 restarts and the container stayed stopped.
+- Checked against a real container in a crash loop: the limit tripped after 3 restarts and the container stayed stopped. The PM2 side was checked the same way against PM2 7.0.4.
+- PM2's own `max_restarts` (10) still applies, but only to restarts that come within a second of starting; an app that crashes after a few seconds loops on forever without this limit.
 
 **Limits and storage**
-- Off by default, and only for docker services on the panel host, not on nodes or Swarm for now.
+- Off by default, and only for docker services on the panel host and PM2 services, not on nodes or Swarm for now.
 - No migration is needed: the limit is a settings row. The restart history is kept in memory, so a panel restart starts each window again.
 
 ### Healthcheck timeout (0.16.1)
@@ -321,7 +322,8 @@ When an HTTP answer does not prove the app is ready (a database, a worker that n
 
 - These are structured fields, not free-form flags: privileged mode, host mounts and the host network cannot be requested, and capabilities that lead out of the container (`SYS_ADMIN`, `SYS_MODULE`, …) are not offered.
 - Only an operator changes them; members see them and can redeploy. A member's clone and every PR preview start without them.
-- They apply on the panel host, and (0.16.6) on a node and each fan-out target whose agent is 0.16.6 or newer (capability `docker.runtimeOptions`). A node's owner can refuse them with `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off` on the agent. On an older agent, a switched-off one, or a Swarm service, the container starts without them, as before 0.16.6, and the deploy log says why; such a deploy is never refused for them. GPUs need the NVIDIA container toolkit on the node itself.
+- They apply on the panel host, and (0.16.6) on a node and each fan-out target whose agent is 0.16.6 or newer (capability `docker.runtimeOptions`). A node's owner can refuse them with `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off` on the agent. On an older agent or a switched-off one, the container starts without them, as before 0.16.6, and the deploy log says why; such a deploy is never refused for them. GPUs need the NVIDIA container toolkit on the node itself.
+- On a Swarm service every option but GPUs applies, carried in each task's spec: init, the open-files limit and the added capabilities as Swarm's own fields, and shared memory as a tmpfs of that size mounted at `/dev/shm` (Swarm has no `--shm-size`). Swarm has no equivalent of `--gpus`, so a GPU setting is left out and the deploy log says so. Capabilities and the open-files limit need Docker 20.10 or newer on the nodes that run the tasks. Before this release a Swarm service ignored all of them; its next deploy applies them.
 
 ### Port mappings: UDP, ranges and a dedicated IP (0.16.1)
 
@@ -626,7 +628,7 @@ No migration is needed: the freezes are stored in a single settings row.
 
 ### Image vulnerability scanning (G5.1)
 
-Trivy scans each Docker deploy's image on the panel host and rescans running images on a schedule. Panel-host Compose stacks and Docker services on nodes are scanned on request and on the schedule, after they start; their scans are report-only. It is off by default; an operator turns it on under Settings → Image scanning.
+Trivy scans each Docker deploy's image on the panel host, and each Compose deploy's images on the panel host before the running stack is replaced, and rescans running images on a schedule. It is off by default; an operator turns it on under Settings → Image scanning.
 
 **How the scan runs**
 - Trivy runs in a throwaway container that reads the image from `docker save` on its stdin. It never gets the Docker socket and needs no host path.
@@ -656,8 +658,15 @@ Trivy scans each Docker deploy's image on the panel host and rescans running ima
 - A docker deploy on a node is scanned by the node agent (0.18.7 or newer, capability `image.scan`) before it gets traffic, under the same gate. A node that cannot scan (an older agent, or `NINEDEPLOY_AGENT_IMAGE_SCAN=off`) records why and does not block the deploy.
 - Swarm services are scanned on the panel host from the image their spec runs, on the schedule and on request.
 
+**Compose stacks**
+- A Compose deploy on the panel host is scanned after its images are pulled and built and before the running stack is taken down. The gate is the same; when it counts findings, the deploy fails there and the previous stack keeps running unchanged.
+- Each image the stack will run is scanned: a service's `image`, or for a build-only service the image Compose names `<project>-<service>`. An image that is not local after the pull and build is built once more; if it is still missing, a blocking gate fails the deploy there (report only names it in the log and goes on).
+- With a blocking gate, `up` then runs with `--pull never --no-build`, so the stack starts exactly the local images that were scanned, whatever a service's `pull_policy` says. If the image list cannot be read at all, a blocking gate fails the deploy too.
+- If some images cannot be scanned, the gate counts the findings of the others and the log names the rest; if Trivy cannot run at all, the deploy is not blocked.
+- Checked with real Compose and Trivy: a stack with `alpine:3.14.0` was stopped at the gate with 4 fixable critical findings, before `down`.
+
 **What has no deploy gate**
-- Compose stacks (`compose up` replaces the stack at once, so there is no moment before traffic) and Swarm services. Both are scanned on the schedule and on request.
+- Swarm services. They are scanned on the schedule and on request.
 
 **API, SDK and storage**
 - API: `GET`/`PUT /v1/image-scanning` (operator), `GET /v1/services/:id/image-scan` (viewer) and `POST /v1/services/:id/image-scan` (admin, runs in the background).

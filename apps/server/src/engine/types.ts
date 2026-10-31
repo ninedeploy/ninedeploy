@@ -14,6 +14,13 @@ export interface BuildContext {
   prepareSwarmTransition?: (stack: StackSpec, runtime: DeployRuntime, registryAuth?: { username: string; password: string; server?: string }) => Promise<{ submit(): Promise<void> }>;
   /** Trusted encrypted release input, restored without pulling or rebuilding. */
   restoreComposeRelease?: ComposeRelease;
+  /**
+   * G5.1: scan a compose stack's images after pull/build and before the
+   * running stack is taken down (`null`: they could not be listed). Throws
+   * when the gate blocks; resolves true when scanning is on, and `up` must
+   * then run only those local images.
+   */
+  scanComposeImages?: (found: { images: Array<{ imageId: string; services: string[] }>; missing: string[] } | null) => Promise<boolean>;
   deploymentId: number;
   service: Service;
   buildConfig?: BuildConfig;
@@ -133,6 +140,8 @@ export interface DeployRuntime {
   nodeDeploymentOwner?: DeploymentRuntimeOwner;
   /** Creation receipts bind multi-replica node readiness to immutable containers. */
   nodeTargets?: Array<{ id: string; name: string }>;
+  /** Immutable creation receipts for serving replicas and stopped spare capacity. */
+  nodeCapacityTargets?: Array<{ id: string; name: string }>;
   /** Buildpack conventions needed to run the same image in another environment. */
   artifactBuild?: { builtWithNixpacks: boolean; builtStatic: boolean };
   /** Resolved secret-bearing model; the pipeline encrypts it in its own table. */

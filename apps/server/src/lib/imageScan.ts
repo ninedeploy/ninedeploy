@@ -363,7 +363,7 @@ export function scannableOnPanel(service: { type: string; serverId: number | nul
   return service.type === 'docker' && service.serverId == null && !onSwarm;
 }
 
-/** Compose stacks on the panel host are scanned on schedule and on request (report only: `up` starts the whole stack at once, so there is no point before traffic to gate). */
+/** Compose stacks on the panel host: scanned before `down`/`up` in a deploy (the gate), on schedule and on request. */
 export function composeScannableOnPanel(service: { type: string; serverId: number | null }): boolean {
   return service.type === 'compose' && service.serverId == null;
 }
@@ -501,6 +501,59 @@ export async function scanBeforeTraffic(
     );
   }
   return result;
+}
+
+/**
+ * Compose builder hook: scan the stack's images after pull/build and before
+ * the running stack is taken down. Throws (failing the deploy; the previous
+ * stack keeps serving) when the gate counts findings. With a blocking gate
+ * (`enabled`), the builder then runs `up` with `--pull never --no-build`, so
+ * only the scanned local images start; an image list that could not be read,
+ * or an image that is not local, blocks too, since `up` could not run it
+ * unscanned. A scan that cannot run (Trivy, its database) never blocks; the
+ * deploy log says so.
+ */
+export async function scanComposeBeforeUp(
+  db: DB,
+  input: { serviceId: number; deploymentId: number; found: { images: Array<{ imageId: string; services: string[] }>; missing: string[] } | null },
+  log: (line: string) => void,
+  deps: ScanDeps = {},
+): Promise<{ enabled: boolean; scanned: ImageScanResult | null }> {
+  const policy = await getImageScanPolicy(db);
+  if (!policy.enabled) return { enabled: false, scanned: null };
+  const gating = policy.gate !== 'off';
+  const notChanged = 'The running stack was not changed.';
+  if (!input.found) {
+    if (gating) throw new Error(`Image scan gate: the Compose images could not be listed, so they cannot be scanned before start. ${notChanged}`);
+    log('warning: the Compose images could not be listed, so they were not scanned');
+    return { enabled: false, scanned: null };
+  }
+  const { images, missing } = input.found;
+  if (missing.length) {
+    if (gating) throw new Error(`Image scan gate: no local image for ${missing.join(', ')}, so it cannot be scanned before start. ${notChanged}`);
+    log(`note: not scanned before start (no local image yet): ${missing.join(', ')}`);
+  }
+  if (images.length === 0) return { enabled: gating, scanned: null };
+  log(`▶ Scanning ${images.length} Compose image${images.length === 1 ? '' : 's'} for known vulnerabilities (Trivy) before the running stack is replaced …`);
+  const scanned = await scanComposeStack(db, input.serviceId, images, 'deploy', { deps });
+  const result: ImageScanResult = { ...scanned, deploymentId: input.deploymentId };
+  if (result.status === 'error') {
+    await setSettingJson(db, resultKey(input.serviceId), result);
+    log(`warning: the image scan could not run, so it does not block this deploy: ${result.error}`);
+    return { enabled: gating, scanned: result };
+  }
+  if (result.error) log(`warning: some Compose images could not be scanned: ${result.error}`);
+  log(`Image scan (${result.os}): ${summaryLine(result)}`);
+  const blocking = gateFindings(policy, result);
+  await setSettingJson(db, resultKey(input.serviceId), { ...result, blocked: blocking > 0 });
+  if (blocking > 0) {
+    const what = policy.gate === 'critical' ? 'critical' : 'critical or high';
+    throw new Error(
+      `Image scan gate: ${blocking} ${what}${policy.gateFixableOnly ? ' fixable' : ''} vulnerabilit${blocking === 1 ? 'y' : 'ies'} in the new Compose images. ` +
+        `${notChanged} Update the affected packages (the service page lists them), or change the gate under Settings → Image scanning.`,
+    );
+  }
+  return { enabled: gating, scanned: result };
 }
 
 // ── scheduled rescans ──────────────────────────────────────────────────────

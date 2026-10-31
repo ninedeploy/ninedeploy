@@ -220,7 +220,7 @@ describe('AutoscaleCard', () => {
 
   it('says the autoscaler holds for a service on a node or on Swarm', () => {
     renderCard(serviceWith({ serverId: 2 }));
-    expect(screen.getByText(/runs on a node, so the autoscaler holds for it/)).toBeInTheDocument();
+    expect(screen.getByText(/Node autoscaling requires confirmed replica capacity/)).toBeInTheDocument();
     cleanup();
     renderCard(serviceWith({ placement: { orchestrator: 'swarm' } }));
     expect(screen.getByText(/runs on Swarm, which scales with its own replicas/)).toBeInTheDocument();

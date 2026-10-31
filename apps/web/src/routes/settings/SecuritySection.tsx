@@ -11,6 +11,7 @@ import { AutoUrlCard } from './AutoUrlCard.js';
 import { HostIpsCard } from './HostIpsCard.js';
 import { EgressIpCard } from './EgressIpCard.js';
 import { ApiTokensCard } from './ApiTokensCard.js';
+import { McpRemoteCard } from './McpRemoteCard.js';
 
 /** Security: open registration, ACME, template source, DNS-01 and wildcard domain. */
 export function SecuritySection() {
@@ -91,6 +92,8 @@ export function SecuritySection() {
     <>
       {/* 0.16.3: every user's own tokens; the docs have pointed here since 0.10. */}
       <ApiTokensCard />
+      {/* R4: remote MCP over HTTP, with the tokens above. */}
+      {isOperator && <McpRemoteCard />}
       {instanceSettings.isError && !loaded && (
         <div className="mb-5">
           <ErrorCard title={t('Could not load the security settings')} error={instanceSettings.error} onRetry={() => void instanceSettings.refetch()} />

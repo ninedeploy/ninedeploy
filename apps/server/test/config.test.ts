@@ -22,9 +22,11 @@ afterAll(() => {
 describe('config', () => {
   it('resolves defaults and creates the data directories', async () => {
     for (const key of ['NINEDEPLOY_DATA_DIR', 'NINEDEPLOY_DB_PATH', 'NINEDEPLOY_HOST', 'NINEDEPLOY_PORT', 'NODE_ENV', 'NINEDEPLOY_PUBLIC_URL', 'NINEDEPLOY_WILDCARD_DOMAIN', 'NINEDEPLOY_JWT_SECRET']) {
-      delete process.env[key];
+      vi.stubEnv(key, undefined);
     }
-
+    const mkdir = vi.fn();
+    vi.doMock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), mkdirSync: mkdir }));
+    try {
     const config = await loadConfig();
     // The default data dir anchors to the MONOREPO ROOT (three levels up from
     // apps/server/{src,dist}), NOT the process cwd: a restart from a different
@@ -44,8 +46,9 @@ describe('config', () => {
     expect(config.wildcardDomain).toBe('');
 
     for (const dir of [config.paths.dataDir, config.paths.reposDir, config.paths.logsDir, config.paths.backupsDir]) {
-      expect(existsSync(dir)).toBe(true);
+      expect(mkdir).toHaveBeenCalledWith(dir, { recursive: true });
     }
+    } finally { vi.doUnmock('node:fs'); vi.resetModules(); }
   });
 
   it('honours custom env and flags production mode', async () => {

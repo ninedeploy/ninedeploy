@@ -86,7 +86,7 @@ export function ContainerOptionsCard({ svc }: { svc: Service }) {
           <SlidersHorizontal size={15} className="text-slate-500" /> {t('Container options')}
         </div>
         <p className="mb-4 text-xs text-slate-500">
-          {t("GPUs, shared memory and extra capabilities for this service's container, applied on the next deploy on the panel host, or on a node whose agent is 0.16.6 or newer (not on Swarm).")}{' '}
+          {t("GPUs, shared memory and extra capabilities for this service's container, applied on the next deploy on the panel host, on a node whose agent is 0.16.6 or newer, or on Swarm (all but GPUs).")}{' '}
           {operator ? t('Only operators can change them.') : t('Set by an operator.')}
         </p>
         {!operator ? (

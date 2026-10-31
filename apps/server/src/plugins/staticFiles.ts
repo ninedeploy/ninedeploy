@@ -55,6 +55,8 @@ export async function registerStaticFiles(fastify: FastifyInstance, root: string
 
   fastify.setNotFoundHandler((req: FastifyRequest, reply: FastifyReply) => {
     if (!isApiPath(req.url) && req.method === 'GET') {
+      // R4: the OAuth consent page is never shown inside another site's frame (clickjacking).
+      if (req.url.startsWith('/oauth/authorize')) reply.header('X-Frame-Options', 'DENY').header('Content-Security-Policy', "frame-ancestors 'none'");
       return reply.sendFile('index.html');
     }
     // Preserve Fastify's default not-found body for API paths and non-GET

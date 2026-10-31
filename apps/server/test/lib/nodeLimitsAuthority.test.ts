@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { createDb, deployments, eq, fanoutTransitions, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
+import { createDb, deployments, eq, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, runMigrations, servers, services, serviceTargets } from '@ninedeploy/db';
 import { admitNodeLimits, checkpointNodeLimits } from '../../src/lib/nodeLimitsAuthority.js';
 import { admitNodeAutoscale } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
@@ -57,6 +57,8 @@ it('does not admit a target whose active generation is unknown', async () => {
 });
 it('does not replace an unresolved autoscale transition with a limit update', async () => {
   await c.db.update(services).set({ autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
+  await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 9, serviceId: 1, serverId: 4, runtimeId: 'web-9', imageId: `sha256:${'f'.repeat(64)}`,
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }, { name: 'web-9-r2', id: 'b'.repeat(64) }] });
   const scale = await admitNodeAutoscale(c.db, await service(), 2);
   expect(scale).not.toBeNull();
   expect(await admitNodeLimits(c.db, await service())).toBeNull();

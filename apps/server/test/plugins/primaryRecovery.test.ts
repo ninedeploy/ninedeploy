@@ -1,9 +1,10 @@
 import Fastify from 'fastify';
 import { afterEach, expect, it, vi } from 'vitest';
-const recovery = vi.hoisted(() => ({ run: vi.fn() }));
+const recovery = vi.hoisted(() => ({ run: vi.fn(), preparation: vi.fn() }));
 vi.mock('../../src/engine/primaryRecovery.js', () => ({ reconcilePrimaryTransitions: recovery.run }));
+vi.mock('../../src/lib/nodePreparationRecovery.js', () => ({ createNodePreparationRecoveryRunner: () => recovery.preparation }));
 const { default: plugin } = await import('../../src/plugins/primaryRecovery.js');
-afterEach(() => { vi.useRealTimers(); recovery.run.mockReset(); });
+afterEach(() => { vi.useRealTimers(); recovery.run.mockReset(); recovery.preparation.mockReset(); });
 
 it('runs after boot, serializes cycles and aborts the active recovery before closing', async () => {
   vi.useFakeTimers();
@@ -30,5 +31,6 @@ it('continues the scheduled loop after a transient recovery error', async () => 
   try {
     await vi.advanceTimersByTimeAsync(1000); expect(recovery.run).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(60_000); expect(recovery.run).toHaveBeenCalledTimes(2);
+    expect(recovery.preparation).toHaveBeenCalledTimes(1);
   } finally { await app.close(); }
 });

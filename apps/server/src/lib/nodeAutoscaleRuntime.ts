@@ -20,10 +20,22 @@ export function nodeAutoscaleRuntime(db: DB, admission: NodeAutoscaleAdmission,
   };
   const client = (serverId: number) => createNodeRuntimeMutationClient(db, serverId, { checkpoint, signal: options.signal });
   return {
+    preflight: async serverId => {
+      await checkpoint();
+      const sealed = await agentTransportSealed(db, serverId, options.signal);
+      const refusal = await capabilityRefusal(async (op, params, sink) => {
+        await checkpoint();
+        const result = await agentOp(db, serverId, op, params, sink, { signal: options.signal, timeoutMs: 5000 });
+        await checkpoint(); return result;
+      }, `#${serverId}`, sealed, { cap: ['docker.mutations', 'docker.retireHandoff'], feature: 'safely complete node autoscaling', sealedRequired: true });
+      if (refusal) throw new Error(refusal.message);
+    },
     fence: (serverId, input) => client(serverId).fence(input),
     inventory: (serverId, input) => client(serverId).inventory(input),
     start: (serverId, input) => client(serverId).start(input),
     stop: (serverId, input) => client(serverId).stop(input),
+    retire: (serverId, input) => client(serverId).retire(input),
+    handoff: (serverId, input) => client(serverId).legacyHandoff(input),
     ready: async (service, targets) => {
       const serverId = admission.service.serverId!;
       await checkpoint();

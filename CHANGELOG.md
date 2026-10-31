@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Remote MCP over HTTP (R4, first part). The panel serves its MCP tools at `/v1/mcp` over the Streamable HTTP transport, for clients that send an API token as `Authorization: Bearer` (for example `claude mcp add --transport http`). Each tool call runs as that token through the API's own authorization, so scopes, roles and revocation apply per call. Off by default: Settings → Security → Remote MCP, or `PUT /v1/mcp/policy`; an optional switch limits every caller to read-only tools. Clients that sign in instead of sending a header use OAuth 2.1 as the MCP authorization spec describes: discovery documents, dynamic client registration, a consent page in the dashboard (read only or full access), PKCE, rotating refresh tokens and revocation. Each grant shows under Settings → Security → API tokens, where deleting it disconnects the client; its tokens work only on /v1/mcp. No migration.
+- The image scan deploy gate now covers Compose stacks on the panel host (G5.1). The stack's images are scanned after pull and build and before the running stack is taken down, so a blocked deploy leaves the previous stack serving. Build-only services are scanned by the image name Compose gives them. No migration.
+- The restart-loop limit now covers PM2 services too (G1.3, Service → Settings → Restart-loop limit). It counts PM2's restarts per process, leaving out the ones the panel asked for, and stops the service as the Stop button does. PM2's own `max_restarts` only catches crashes within a second of starting; an app that crashes later looped on until now. No migration.
+- Bare-metal installs on openSUSE, SLES and Arch now set up Node themselves (G4.1). On openSUSE and SLES it comes from NodeSource's RPM repository through zypper; every package signature is checked against NodeSource's key, as on dnf hosts. On Arch, Manjaro and EndeavourOS it comes from the distribution's LTS package of that line (`nodejs-lts-krypton` for Node 24) with `npm`, without upgrading anything else. A Node package of another line already installed on Arch must be removed first.
+- Container options on Swarm services (ROADMAP item 10). Init, the open-files limit, added capabilities and shared memory now apply to each Swarm task: the first three as Swarm's own task fields, shared memory as a sized tmpfs at `/dev/shm`. GPUs have no Swarm equivalent and stay off; the deploy log says so. A Swarm service with these options set ignored them before; its next deploy applies them. No migration.
+
 ## [0.18.13] - 2026-10-30
 
 ### Fixed

@@ -1,6 +1,7 @@
 import { and, eq, inArray, like } from 'drizzle-orm';
 import { deployments, services, settings, type DB, type Service } from '@ninedeploy/db';
 import { restartLimitConfig, type RestartLimitConfig, type RestartLimitView } from '@ninedeploy/schemas';
+import { pm2RestartCounts, pm2Stop } from '../engine/builders/pm2.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { capture } from './exec.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
@@ -9,10 +10,11 @@ import { getSettingJson, setSettingJson } from './settings.js';
 /**
  * G1.3 restart-loop limit. Opt-in per service (`restart_limit:<id>`): a
  * docker service on the panel host whose containers restart `maxRestarts`
- * times within `windowMinutes` is stopped — as the Stop button would — and
+ * times within `windowMinutes`, or a PM2 service whose processes do, is stopped — as the Stop button would — and
  * `service.restart_limit` is audited, which notifies. A deploy in progress
  * is left alone (it restarts containers on purpose). Docker's own
- * `RestartCount` is the signal; a new container (a deploy) starts afresh.
+ * `RestartCount` is the signal, or PM2's `restart_time` less the restarts the
+ * panel asked for; a new container or process (a deploy) starts afresh.
  *
  * No migration: the limits are settings rows; the restart history is kept
  * in memory (a panel restart starts each window again).
@@ -83,6 +85,9 @@ export interface RestartLimitDeps {
   /** `{containerId: RestartCount}` of a service's containers (default: docker inspect). */
   sample?: (names: string[]) => Promise<Map<string, number>>;
   stop?: (names: string[]) => Promise<void>;
+  /** The same for a PM2 service, by process name (default: pm2 describe / pm2 stop). */
+  samplePm2?: (runtimeId: string) => Promise<Map<string, number>>;
+  stopPm2?: (runtimeId: string) => Promise<void>;
   onTripped?: (svc: Service, limit: RestartLimitConfig, restarts: number) => void;
 }
 
@@ -118,19 +123,22 @@ export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, 
     const svc = await db.query.services.findFirst({ where: eq(services.id, id) });
     const limit = await getRestartLimit(db, id);
     if (!svc || !limit) continue;
-    // Panel-host docker services that run; a Swarm service has no containers of its name.
-    if (svc.type !== 'docker' || svc.serverId != null || svc.orchestrator === 'swarm' || !svc.runtimeId || svc.status !== 'running') {
+    // Panel-host docker services and PM2 services that run; a Swarm service has no containers of its name.
+    const pm2 = svc.type === 'pm2';
+    if ((!pm2 && svc.type !== 'docker') || svc.serverId != null || svc.orchestrator === 'swarm' || !svc.runtimeId || svc.status !== 'running') {
       history.delete(id);
       continue;
     }
     if (busy.has(id)) continue;
-    const names = replicaNames(svc.runtimeId, runtimeReplicaCounts(svc).capacity);
-    const sample = await (deps.sample ?? inspectRestarts)(names);
+    const runtimeId = svc.runtimeId;
+    const names = pm2 ? [runtimeId] : replicaNames(runtimeId, runtimeReplicaCounts(svc).capacity);
+    const sample = pm2 ? await (deps.samplePm2 ?? pm2RestartCounts)(runtimeId) : await (deps.sample ?? inspectRestarts)(names);
     if (!recordRestarts(id, sample, limit, now)) continue;
     const restarts = history.get(id)?.restarts.length ?? limit.maxRestarts;
     // As the Stop button: `stopped` first, so the runtime reconcile does not revive it.
     await db.update(services).set({ status: 'stopped', asleepAt: null }).where(eq(services.id, id));
-    await (deps.stop ?? (async (n: string[]) => void (await capture('docker', ['stop', '-t', '5', ...n]).catch(() => undefined))))(names);
+    if (pm2) await (deps.stopPm2 ?? pm2Stop)(runtimeId).catch(() => undefined);
+    else await (deps.stop ?? (async (n: string[]) => void (await capture('docker', ['stop', '-t', '5', ...n]).catch(() => undefined))))(names);
     await setSettingJson(db, key(id), { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes, trippedAt: new Date(now).toISOString() });
     history.delete(id);
     deps.onTripped?.(svc, { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes }, restarts);

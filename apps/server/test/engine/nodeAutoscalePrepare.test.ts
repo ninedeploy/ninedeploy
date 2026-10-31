@@ -40,3 +40,23 @@ it('rejects an incomplete receipt and invalid inputs before preparing containers
   agent.prepare.mockImplementation(async input => ({ ...await prepare(input), items: [] }));
   await expect(prepareNodeAutoscaleCapacity(agent, base)).rejects.toThrow();
 });
+it('replays the identical preparation after a response is lost', async () => {
+  const agent = client(), original = agent.prepare.getMockImplementation()!;
+  let lost = true;
+  agent.prepare.mockImplementation(async input => {
+    const receipt = await original(input);
+    if (lost) { lost = false; throw new Error('response lost'); }
+    return receipt;
+  });
+  const result = await prepareNodeAutoscaleCapacity(agent, { service: await service(), owner, imageId: `sha256:${'f'.repeat(64)}`,
+    envFile: '.agent-env/web-9.env', creationWatermark: 9 });
+  expect(result.capacity).toHaveLength(3);
+  expect(agent.prepare).toHaveBeenCalledTimes(2);
+  expect(agent.prepare.mock.calls[1]![0]).toEqual(agent.prepare.mock.calls[0]![0]);
+});
+it('stops after one retry if preparation remains unavailable', async () => {
+  const agent = client(); agent.prepare.mockRejectedValue(new Error('node offline'));
+  await expect(prepareNodeAutoscaleCapacity(agent, { service: await service(), owner, imageId: `sha256:${'f'.repeat(64)}`,
+    envFile: '.agent-env/web-9.env', creationWatermark: 9 })).rejects.toThrow('node offline');
+  expect(agent.prepare).toHaveBeenCalledTimes(2);
+});

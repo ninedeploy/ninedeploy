@@ -88,6 +88,13 @@ describe('registerStaticFiles', () => {
     const spa = await app.inject({ method: 'GET', url: '/services/42' });
     expect(spa.statusCode).toBe(200);
     expect(spa.body).toContain('dashboard-here');
+    expect(spa.headers['x-frame-options']).toBeUndefined();
+
+    // R4: the OAuth consent page refuses to be framed (clickjacking).
+    const consent = await app.inject({ method: 'GET', url: '/oauth/authorize?client_id=x' });
+    expect(consent.body).toContain('dashboard-here');
+    expect(consent.headers['x-frame-options']).toBe('DENY');
+    expect(consent.headers['content-security-policy']).toBe("frame-ancestors 'none'");
 
     // API paths never get the SPA entry — they keep Fastify's default 404 body.
     for (const url of ['/v1/nope', '/health/extra', '/hooks/x', '/events/y']) {

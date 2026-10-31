@@ -49,10 +49,11 @@ describe('Node security baseline', () => {
         const check = steps.findIndex(s => s.name === 'Verify Node security baseline');
         expect(check).toBeGreaterThan(setup);
         expect(steps[check]!.run).toContain(`process.versions.node !== '${version}'`);
-        expect(steps.findIndex(s => s.name === 'Install dependencies')).toBeGreaterThan(check);
+        const install = steps.findIndex(s => s.name === 'Install dependencies');
+        if (install >= 0) expect(install).toBeGreaterThan(check);
       }
     }
-    expect(found).toBe(5);
+    expect(found).toBe(6);
   });
 });
 
@@ -73,6 +74,9 @@ command() {
 }
 install_node() { printf 'install-attempted major=%s\\n' "\${1:-unset}"; task_node_version="$task_next_node"; return "$task_install_result"; }
 brew() { printf 'brew-attempted\\n'; task_node_version="$task_next_node"; return "$task_install_result"; }
+host_family() { printf '%s\\n' "$task_manager"; }
+install_node_zypper() { printf 'zypper-attempted major=%s\\n' "$1"; task_node_version="$task_next_node"; return "$task_install_result"; }
+install_node_pacman() { printf 'pacman-attempted major=%s\\n' "$1"; task_node_version="$task_next_node"; return "$task_install_result"; }
 ensure_node
 `, current, next, installCode, manager);
 
@@ -101,6 +105,16 @@ ensure_node
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('brew-attempted');
     expect(result.stdout).toContain('v24.22.1 meets the security baseline');
+  });
+
+  it.each([['suse', 'zypper'], ['arch', 'pacman']])('G4.1: installs Node on %s through %s and verifies it', (manager, tool) => {
+    const result = simulate('missing', 'v24.22.2', '0', manager);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`${tool}-attempted major=24`);
+    expect(result.stdout).toContain('v24.22.2 meets the security baseline');
+    const failed = simulate('missing', 'missing', '1', manager);
+    expect(failed.status).toBe(1);
+    expect(failed.stdout).toContain('Could not install a secure Node.js runtime');
   });
 
   it('refuses a stale mirror or PATH even after the package manager reports success', () => {

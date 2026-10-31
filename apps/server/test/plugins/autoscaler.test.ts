@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDb, deployments, runMigrations, services, users } from '@ninedeploy/db';
+import { createDb, deployments, runMigrations, servers, services, users } from '@ninedeploy/db';
 
 /**
  * 0.16.10: the autoscaler plugin's wiring — its loop, the queries it feeds
@@ -15,12 +15,15 @@ const h = vi.hoisted(() => ({
   writeDynamicConfig: vi.fn(async (..._a: unknown[]) => undefined),
   audit: vi.fn(async (..._a: unknown[]) => undefined),
   analytics: vi.fn(async () => false),
+  nodeStep: vi.fn(async (..._a: unknown[]) => ({ state: 'held' })),
+  nodeForget: vi.fn(),
 }));
 vi.mock('../../src/lib/exec.js', () => ({ run: h.run, sleep: async () => undefined }));
 vi.mock('../../src/engine/builders/docker.js', () => ({ dockerBuilder: { isHealthy: h.isHealthy } }));
 vi.mock('../../src/engine/proxy.js', () => ({ writeDynamicConfig: h.writeDynamicConfig }));
 vi.mock('../../src/lib/audit.js', () => ({ audit: h.audit }));
 vi.mock('../../src/lib/trafficAnalytics.js', () => ({ trafficAnalyticsEnabled: h.analytics }));
+vi.mock('../../src/lib/nodeAutoscaleWorker.js', () => ({ createNodeAutoscaleWorker: () => ({ step: h.nodeStep, forget: h.nodeForget }) }));
 
 const { default: autoscalerPlugin } = await import('../../src/plugins/autoscaler.js');
 const { resetAutoscaleState } = await import('../../src/lib/autoscaler.js');
@@ -61,6 +64,18 @@ async function boot(opts: { stats?: boolean; deploying?: boolean } = {}) {
 }
 
 describe('autoscaler plugin', () => {
+  it('dispatches node services to the node worker instead of the panel Docker path', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    h.nodeStep.mockClear(); h.run.mockClear();
+    const { app, db } = await boot();
+    await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+    await db.update(services).set({ serverId: 4 });
+    await vi.advanceTimersByTimeAsync(40_000);
+    await vi.waitFor(() => expect(h.nodeStep).toHaveBeenCalledOnce());
+    expect(h.nodeStep.mock.calls[0]?.[0]).toMatchObject({ id: 5, serverId: 4 });
+    expect(h.run).not.toHaveBeenCalled();
+    await app.close();
+  });
   it('scales a busy service up after its window: starts and probes the spare, routes it, audits', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const { app, db } = await boot();

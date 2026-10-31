@@ -427,6 +427,13 @@ export interface StackServiceSpec {
    * native (journalled) Swarm apply takes them.
    */
   fileSecrets?: Array<{ secretId: string; secretName: string; target: string }>;
+  /**
+   * The container options a Swarm task can carry (ROADMAP item 10): `--init`,
+   * `nofile`, added capabilities (`CAP_` names, as the Docker CLI sends them)
+   * and `/dev/shm` as a sized tmpfs. GPUs have no Swarm equivalent. Only the
+   * native (journalled) Swarm apply takes them.
+   */
+  containerOptions?: { init?: boolean; ulimitNofile?: number; capAdd?: string[]; shmSizeMb?: number };
 }
 
 export interface StackNetworkSpec {

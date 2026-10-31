@@ -1,8 +1,15 @@
 import { defineConfig } from 'vitest/config';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+// Each test invocation gets its own data root; tests must never touch a real installation.
+const testDataDir = mkdtempSync(path.join(tmpdir(), 'ninedeploy-vitest-'));
 
 export default defineConfig({
   test: {
     environment: 'node',
+    env: { NINEDEPLOY_DATA_DIR: testDataDir, NINEDEPLOY_DB_PATH: path.join(testDataDir, 'test.db') },
     fileParallelism: false,
     // Server tests boot a real Fastify kernel, apply Drizzle
     // migrations against an in-memory SQLite (PGlite) and wire

@@ -69,6 +69,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'docker.lifecycle.retire',
       'docker.mutations',
       'docker.prepareAttemptEnv',
+      'docker.retireHandoff',
       'docker.limits',
       'docker.startSet',
       'host.packages',
@@ -84,6 +85,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'proxy.orderedWrite',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
+    expect(multiNodeCapability.parse('docker.retireHandoff')).toBe('docker.retireHandoff');
     // A 0.15 capability is not one of them.
     expect(multiNodeCapability.safeParse('terminal').success).toBe(false);
   });

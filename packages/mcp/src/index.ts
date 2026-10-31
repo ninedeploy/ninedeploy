@@ -8,6 +8,8 @@ import { createClient } from '@ninedeploy/sdk';
 import { SPEC_READ_ONLY_TOOL_NAMES } from './generated/specTools.js';
 import { TOOLS } from './tools.js';
 export { TOOLS };
+// R4: the panel serves the same tools over Streamable HTTP at /v1/mcp.
+export { handleHttpRequest } from './http.js';
 
 /**
  * NineDeploy MCP server (stdio transport).

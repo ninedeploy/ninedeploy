@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createDb, eq, fanoutTransitions, nodeLifecycleIntents, runMigrations, runtimeMutationKinds, servers, services, serviceRuntimeOwners } from '@ninedeploy/db';
+import { createDb, deployments, eq, fanoutTransitions, nodeLifecycleIntents, runMigrations, runtimeMutationKinds, servers, services, serviceRuntimeOwners } from '@ninedeploy/db';
 import { acceptNodeLifecycleIntent, checkpointNodeLifecycleIntent, claimNodeLifecycleIntent, nodeLifecycleWireRevision, retryNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { publicNodeLifecycle } from '../../src/lib/nodeLifecycleRuntime.js';
 import { MAX_RUNTIME_EPOCH, readServiceRuntimeOwner, reserveServiceRuntimeOwner, sameRuntimeOwner, serviceRuntimeRevision } from '../../src/lib/serviceRuntimeOwner.js';
+import { beginNodeDeploymentPreparation } from '../../src/lib/nodeDeploymentPreparation.js';
+import { claimNodeDeploymentAttempt } from '../../src/lib/nodeDeploymentOwner.js';
 
 let c: ReturnType<typeof createDb>;
 const nonce = (n: number) => n.toString(16).padStart(32, '0');
@@ -16,6 +18,20 @@ beforeEach(async () => {
 afterEach(() => c.client?.close());
 
 describe('shared service runtime authority', () => {
+  it('does not let unrelated mutations supersede an unresolved node preparation', async () => {
+    await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+    const admitted = await claimNodeDeploymentAttempt(c.db, 10, await service(), '{}');
+    if (!admitted.claimed) throw Error('Missing deployment authority');
+    await beginNodeDeploymentPreparation(c.db, admitted.owner, { runtimeId: 'web-10', imageId: `sha256:${'f'.repeat(64)}`, serving: 1, capacity: 2 });
+    await c.db.update(deployments).set({ status: 'failed' }).where(eq(deployments.id, 10));
+    const owner = (await readServiceRuntimeOwner(c.db, 1))!;
+    for (const kind of runtimeMutationKinds.filter(value => value !== 'stop')) {
+      await expect(reserveServiceRuntimeOwner(c.db, 1, kind, owner, nonce(100))).rejects.toMatchObject({ code: 'node_preparation_pending' });
+    }
+    expect(await readServiceRuntimeOwner(c.db, 1)).toEqual(owner);
+    expect(await reserveServiceRuntimeOwner(c.db, 1, 'deploy', owner, owner.requestId!)).toEqual(owner);
+    expect(await reserveServiceRuntimeOwner(c.db, 2, 'scale', null, nonce(101))).toMatchObject({ kind: 'scale' });
+  });
   it.each(runtimeMutationKinds)('reserves the declared %s kind without changing service state', async kind => {
     const before = await service();
     expect(await reserveServiceRuntimeOwner(c.db, 1, kind, null, nonce(1))).toMatchObject({ kind, requestId: nonce(1) });

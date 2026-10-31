@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
-import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { deployments, services, users, type DB, type Service } from '@ninedeploy/db';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
@@ -31,6 +31,7 @@ import { localSwarmTaskFor, swarmRuntimeOf } from '../lib/swarm.js';
 import { abortDeployment } from '../lib/deployAbort.js';
 import { removeInterruptedCandidates } from '../engine/interruptedRuntime.js';
 import { primaryRecoveryPending } from '../engine/primaryRecovery.js';
+import { nodePreparationExists } from '../lib/nodePreparationRetention.js';
 
 /**
  * Statuses that mean the worker or the pipeline may still write to the row.
@@ -628,9 +629,9 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     // the worker.
     const removed = await app.db
       .delete(deployments)
-      .where(and(eq(deployments.id, depId), notInArray(deployments.status, [...UNDELETABLE_STATUSES])))
+      .where(and(eq(deployments.id, depId), notInArray(deployments.status, [...UNDELETABLE_STATUSES]), sql`NOT (${nodePreparationExists()})`))
       .returning({ id: deployments.id });
-    if (removed.length === 0) throw badRequest('Deployment changed state — reload and try again');
+    if (removed.length === 0) throw badRequest('Deployment changed state or has pending recovery — reload and try again');
     deleteLog(depId);
     const removedContainers = await removeDeployLeftovers(app.db, svc, [depId]);
     void audit(app.db, req.user!.id, 'deploy.delete', `${svc.name} #${depId}`, removedContainers.length > 0 ? { removedContainers } : undefined);
@@ -653,6 +654,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
       .where(and(
         eq(deployments.serviceId, id),
         notInArray(deployments.status, [...UNDELETABLE_STATUSES]),
+        sql`NOT (${nodePreparationExists()})`,
         input.ids ? inArray(deployments.id, input.ids) : undefined,
         input.statuses ? inArray(deployments.status, input.statuses) : undefined,
       ))
