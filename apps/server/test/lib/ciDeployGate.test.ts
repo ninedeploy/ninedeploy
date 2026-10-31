@@ -138,6 +138,52 @@ describe('R5 deploy gate', () => {
     const [job] = await jobsFor(dep);
     expect(job).toMatchObject({ serviceId: 2, status: 'awaiting_approval', commitSha: SHA_A });
   });
+
+  it('fails a fork preview deploy that names no commit, instead of asking an admin to approve a moving branch', async () => {
+    await setPipeline(db, 1, base);
+    const dep = await queue(2, null);
+    expect(await holdForRunnerCiIfNeeded(db, dep)).toBe(true);
+    const [job] = await jobsFor(dep);
+    expect(job!.status).toBe('failed');
+    const [t] = await settleRunnerCiGates(db);
+    expect(t).toMatchObject({ deploymentId: dep, status: 'failed' });
+    expect(t!.reason).toMatch(/only at a known commit/);
+    expect((await depRow(dep)).status).toBe('failed');
+  });
+
+  it('reaches a passed job behind more than a page of deploys whose jobs still run', async () => {
+    await setPipeline(db, 1, base);
+    const ids: number[] = [];
+    for (let i = 0; i < 55; i++) {
+      const dep = await queue(1, SHA_A);
+      await holdForRunnerCiIfNeeded(db, dep);
+      ids.push(dep);
+    }
+    const [last] = await jobsFor(ids.at(-1)!);
+    await finish(last!.id, 'succeeded', SHA_A);
+    const moved = await settleRunnerCiGates(db);
+    expect(moved.map((t) => t.deploymentId)).toEqual([ids.at(-1)]);
+    expect((await depRow(ids.at(-1)!)).status).toBe('queued');
+  });
+});
+
+describe('R5 deploy gate beside the GitHub workflow gate', () => {
+  it('keeps polling GitHub-gated deploys while runner-gated ones wait', async () => {
+    const { pollCiGates } = await import('../../src/lib/ciGate.js');
+    await setPipeline(db, 1, base);
+    for (let i = 0; i < 6; i++) await holdForRunnerCiIfNeeded(db, await queue(1, SHA_A));
+    const github = await queue(1, SHA_B);
+    const gate = {
+      version: 1, linkId: 1, installationRowId: 1, repoId: 1, repoFullName: 'acme/web', repoUrl: 'https://github.com/acme/web.git', branch: 'main',
+      ownerServiceId: 1, ownerRepoUrl: 'https://github.com/acme/web.git', preview: false, workflows: ['ci.yml'], headSha: null,
+      state: 'waiting', reason: 'Waiting', checkedAt: 0, nextCheckAt: 0, deadlineAt: 1,
+    } as never;
+    await db.update(deployments).set({ status: 'awaiting_ci', ciGate: gate }).where(eq(deployments.id, github));
+    // Its two-hour deadline (here: long past) is enforced only inside the poll, so the poll must reach it.
+    const [t] = await pollCiGates(db, { now: 10_000 });
+    expect(t).toMatchObject({ deploymentId: github, status: 'failed' });
+    expect((await depRow(github)).status).toBe('failed');
+  });
 });
 
 describe('R5 jobs on push', () => {

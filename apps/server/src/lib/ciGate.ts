@@ -222,7 +222,8 @@ export async function pollCiGates(db: DB, opts: { now?: number; signal?: AbortSi
   const now = opts.now ?? Date.now();
   const signal = opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000);
   const due = await db.query.deployments.findMany({
-    where: and(eq(deployments.status, 'awaiting_ci'), sql`coalesce(json_extract(${deployments.ciGate}, '$.nextCheckAt'), 0) <= ${now}`),
+    // Rows without a gate wait on a runner job (ciDeployGate.ts): they would sort first and fill every slot.
+    where: and(eq(deployments.status, 'awaiting_ci'), isNotNull(deployments.ciGate), sql`coalesce(json_extract(${deployments.ciGate}, '$.nextCheckAt'), 0) <= ${now}`),
     orderBy: [asc(sql`coalesce(json_extract(${deployments.ciGate}, '$.nextCheckAt'), 0)`), asc(deployments.id)], limit: 4,
   });
   const results = await Promise.allSettled(due.map((dep) => checkOne(db, dep, now, signal)));

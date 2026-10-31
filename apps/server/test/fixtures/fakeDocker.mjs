@@ -18,8 +18,15 @@ if (args[0] === 'ps') {
   process.exit(0);
 }
 if (args[0] === 'network' && args[1] === 'ls') {
-  // And its job network.
-  process.stdout.write('orphan-net-1\n');
+  // And its job network; any runner's job networks (the label without a value)
+  // add one left under an older token, one still in use and one just made.
+  process.stdout.write(args.at(-1) === 'label=ninedeploy.ci-runner' ? 'stale-net-2\nbusy-net-3\nfresh-net-4\n' : 'orphan-net-1\n');
+  process.exit(0);
+}
+if (args[0] === 'network' && args[1] === 'inspect') {
+  const old = '2026-01-01T00:00:00.123456789Z';
+  const info = { 'stale-net-2': `${old}|0`, 'busy-net-3': `${old}|1`, 'fresh-net-4': `${new Date().toISOString()}|0` };
+  process.stdout.write(`${info[args.at(-1)] ?? ''}\n`);
   process.exit(0);
 }
 if (args[0] !== 'run') process.exit(0);

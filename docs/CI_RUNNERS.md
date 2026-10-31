@@ -121,7 +121,7 @@ More rules:
 - Cancelling a waiting deploy, or replacing it with a newer one, cancels its job.
 - An approval given before the commit was known is cleared, as with the GitHub workflow gate.
 - When the service also requires GitHub workflows, the NineDeploy job runs first and the GitHub check then verifies the commit the job pinned.
-- **PR previews** of the service are gated by the same pipeline. Their jobs get none of the service's variables. A job for a pull request from a **fork** waits for a service admin to approve it before any runner sees fork code.
+- **PR previews** of the service are gated by the same pipeline. Their jobs get none of the service's variables. A job for a pull request from a **fork** waits for a service admin to approve it before any runner sees fork code. A fork preview deploy that names no commit fails instead: the approval would otherwise cover whatever the fork branch holds when a runner fetches it. Redeploy it from the pull request.
 - Removing the pipeline, or turning `gateDeploys` off, lets waiting deploys through at the next check.
 
 ## What a job sees, and what it doesn't
@@ -156,6 +156,8 @@ Each job runs on a Docker bridge network of its own (`nd-ci-net-<attempt>`), rem
 - it can still reach the internet, the runner machine itself (and ports published on it) and whatever the machine's network reaches.
 
 So use a dedicated machine for runners and keep production networks out of its reach. With `NINEDEPLOY_RUNNER_NETWORK=none`, jobs have no network at all.
+
+Each running job takes one of Docker's bridge address pools. A default Docker installation has about 30, shared with everything else on the machine, so keep a runner's capacity well below that or widen `default-address-pools` in the Docker daemon's configuration. When a runner starts, it removes the job networks it left behind. It also removes any job network that has been empty for more than ten minutes, including one left by a runner whose token has since changed.
 
 ## Recovery
 

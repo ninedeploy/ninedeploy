@@ -146,6 +146,10 @@ describe('R5 runner against the real CI routes (docker replaced by a stand-in)',
       const dockerCalls = readFileSync(calls, 'utf8');
       expect(dockerCalls).toContain('rm -f orphan-1');
       expect(dockerCalls).toContain('network rm orphan-net-1');
+      // An empty job network older than ten minutes goes, whoever left it; one in use or just made stays.
+      expect(dockerCalls).toContain('network rm stale-net-2');
+      expect(dockerCalls).not.toContain('network rm busy-net-3');
+      expect(dockerCalls).not.toContain('network rm fresh-net-4');
       // Each attempt ran on a bridge network of its own, removed afterwards.
       for (const net of dockerCalls.match(/network create --driver bridge --label ninedeploy\.ci-runner=[0-9a-f]{16} (nd-ci-net-\d+)/g) ?? []) {
         const name = net.split(' ').at(-1)!;

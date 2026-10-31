@@ -154,7 +154,11 @@ export default fp(
     const startCiMonitor = () => {
       ciTimer = setInterval(() => {
         if (!running || ciPoll) return;
-        ciPoll = Promise.all([pollCiGates(fastify.db, { signal: ciAbort.signal }), settleRunnerCiGates(fastify.db).catch((err: unknown) => {
+        // Each gate fails on its own: one's error must not drop the other's transitions.
+        ciPoll = Promise.all([pollCiGates(fastify.db, { signal: ciAbort.signal }).catch((err: unknown) => {
+          fastify.log.error({ err }, 'CI gate poll failed');
+          return [];
+        }), settleRunnerCiGates(fastify.db).catch((err: unknown) => {
           fastify.log.error({ err }, 'CI job gate check failed');
           return [];
         })])

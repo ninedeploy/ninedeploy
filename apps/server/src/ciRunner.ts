@@ -152,6 +152,14 @@ export async function removeOrphans(opts: RunnerOptions): Promise<number> {
   const ids = lines(await dockerOutput(opts, ['ps', '-aq', '--filter', filter]));
   for (const id of ids) await docker(opts, ['rm', '-f', id]);
   for (const net of lines(await dockerOutput(opts, ['network', 'ls', '-q', '--filter', filter]))) await docker(opts, ['network', 'rm', net]);
+  // A runner whose token changed no longer matches the label of what it left
+  // behind. Job networks are created just before their container runs, so one
+  // that is empty and older than ten minutes is left over, whoever made it.
+  for (const net of lines(await dockerOutput(opts, ['network', 'ls', '-q', '--filter', 'label=ninedeploy.ci-runner']))) {
+    const [created, attached] = (await dockerOutput(opts, ['network', 'inspect', '-f', '{{.Created}}|{{len .Containers}}', net])).trim().split('|');
+    const age = Date.now() - Date.parse(created ?? '');
+    if (attached === '0' && age > 10 * 60_000) await docker(opts, ['network', 'rm', net]);
+  }
   return ids.length;
 }
 
