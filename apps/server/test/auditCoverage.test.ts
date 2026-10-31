@@ -11,6 +11,9 @@ import { describe, expect, it } from 'vitest';
  * with the reason it is not a state change worth a trail.
  */
 const EXEMPT: Record<string, string> = {
+  'mcpHttp.ts POST /': 'the MCP transport; mapped API mutations audit their own changes',
+  'mcpHttp.ts DELETE /': 'refused with 405; the endpoint is stateless',
+  'mcpOAuth.ts POST /authorize': 'issues a one-time code; token exchange audits the resulting grant',
   'auth.ts POST /passkey/register/options': 'issues a WebAuthn challenge; the verify step is audited',
   'auth.ts POST /passkey/login/options': 'issues a WebAuthn challenge',
   'auth.ts POST /refresh': 'token rotation of an existing session',

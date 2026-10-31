@@ -7,7 +7,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiTokens, settings, users, type DB } from '@ninedeploy/db';
+import { apiTokens, auditLog, settings, users, type DB } from '@ninedeploy/db';
 import { like } from 'drizzle-orm';
 import authPlugin from '../../src/plugins/auth.js';
 import { issueSessionTokens } from '../../src/lib/sessions.js';
@@ -223,6 +223,12 @@ describe('remote MCP OAuth (R4)', () => {
     expect(JSON.parse((await token({ grant_type: 'refresh_token', refresh_token: b.body.refresh_token, client_id: b.clientId })).body).error).toBe('invalid_grant');
     // Unknown tokens are not an error.
     expect((await app.inject({ method: 'POST', url: '/v1/oauth/revoke', payload: { token: 'nonsense' } })).statusCode).toBe(200);
+    // The registrations, grants and the one real revocation left a trail (audit() is not awaited).
+    await vi.waitFor(async () => {
+      const actions = (await db.select().from(auditLog)).map((r) => `${r.action}:${r.userId}`);
+      expect(actions.filter((a) => a.startsWith('mcp.oauth.client_register:'))).toEqual(['mcp.oauth.client_register:null', 'mcp.oauth.client_register:null']);
+      expect(actions.filter((a) => a.startsWith('mcp.oauth.revoke:'))).toEqual(['mcp.oauth.revoke:4']);
+    });
   });
 
   it('at the registration cap, the oldest never-used client makes room; clients in use are kept', async () => {

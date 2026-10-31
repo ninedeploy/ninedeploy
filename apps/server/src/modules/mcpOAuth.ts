@@ -14,7 +14,7 @@ import {
   type McpAccess,
 } from '../lib/mcpOAuth.js';
 import { HttpError } from '../lib/errors.js';
-import { getMcpHttpPolicy } from './mcpHttp.js';
+import { getMcpHttpPolicy } from '../lib/mcpHttpPolicy.js';
 
 /**
  * R4 remote MCP: OAuth 2.1 for MCP clients that cannot send a fixed header
@@ -116,6 +116,11 @@ export const mcpOAuthServerRoutes: FastifyPluginAsync = async (app) => {
     try {
       const name = parsed.data.client_name ?? 'MCP client';
       const { clientId, client } = await registerClient(app.db, name, parsed.data.redirect_uris);
+      // Anonymous by design (dynamic registration); the trail shows who could be redirected where.
+      void audit(app.db, null, 'mcp.oauth.client_register', `MCP: ${name}`, {
+        clientId,
+        redirectHosts: [...new Set(client.redirectUris.map((u) => new URL(u).host))],
+      });
       return reply.code(201).header('Cache-Control', 'no-store').send({
         client_id: clientId,
         client_id_issued_at: Math.floor(client.createdAt / 1000),
@@ -159,7 +164,10 @@ export const mcpOAuthServerRoutes: FastifyPluginAsync = async (app) => {
   app.post('/revoke', { config: { rateLimit: LIMIT } }, async (req, reply) => {
     await requireOn(req);
     const token = (req.body as Record<string, unknown> | undefined)?.['token'];
-    if (typeof token === 'string' && token) await revokeToken(app.db, token);
+    if (typeof token === 'string' && token) {
+      const userId = await revokeToken(app.db, token);
+      if (userId !== null) void audit(app.db, userId, 'mcp.oauth.revoke', 'MCP token', {});
+    }
     return reply.code(200).header('Cache-Control', 'no-store').send({});
   });
 };
