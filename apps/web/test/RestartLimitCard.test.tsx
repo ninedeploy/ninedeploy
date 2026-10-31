@@ -21,9 +21,16 @@ describe('RestartLimitCard (G1.3)', () => {
     await waitFor(() => expect(api.services.restartLimit.set).toHaveBeenCalledWith(5, { maxRestarts: 5, windowMinutes: 10 }));
   });
 
-  it('is only for docker services', () => {
+  it('is only for docker and PM2 services', () => {
     const { container } = renderWithProviders(<RestartLimitCard svc={{ id: 6, type: 'compose' } as never} />);
     expect(container.textContent).toBe('');
+  });
+
+  it('offers the limit on a PM2 service', async () => {
+    mockOf(api.services.restartLimit.get).mockResolvedValue({ limit: null, recentRestarts: 0, trippedAt: null } as never);
+    renderWithProviders(<RestartLimitCard svc={{ id: 7, type: 'pm2' } as never} />);
+    expect(await screen.findByRole('switch', { name: 'Restart-loop limit' })).toBeInTheDocument();
+    expect(api.services.restartLimit.get).toHaveBeenCalledWith(7);
   });
 
   it('rejects invalid restart thresholds and saves a valid window', async () => {

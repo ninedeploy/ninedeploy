@@ -2,7 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { pm2Builder, pm2Logs, pm2Restart, pm2Start, pm2Status, pm2Stop } from '../../src/engine/builders/pm2.js';
+import { pm2Builder, pm2Logs, pm2Restart, pm2RestartCounts, pm2Start, pm2Status, pm2Stop } from '../../src/engine/builders/pm2.js';
 
 const h = vi.hoisted(() => {
   const pm2 = {
@@ -420,6 +420,22 @@ describe('pm2 lifecycle helpers', () => {
   it('pm2Restart restarts an existing process', async () => {
     await expect(pm2Restart('api-1')).resolves.toBeUndefined();
     expect(h.pm2.restart).toHaveBeenCalledWith('api-1', expect.any(Function));
+  });
+
+  it('G1.3: pm2RestartCounts counts crashes per process, not the restarts the panel asked for, and a redeploy starts afresh', async () => {
+    let restarts = 4;
+    h.pm2.describe.mockImplementation((_n: string, cb: (err: Error | null, desc?: unknown[]) => void) =>
+      cb(null, [{ name: 'loop-1', pm_id: 3, pm2_env: { restart_time: restarts, created_at: 1000 } }, { name: 'other', pm_id: 4, pm2_env: { restart_time: 9 } }, null]));
+    expect(await pm2RestartCounts('loop-1')).toEqual(new Map([['3@1000', 4]]));
+    await pm2Restart('loop-1');
+    await pm2Start('loop-1');
+    restarts = 7; // two of the three were the panel's
+    expect(await pm2RestartCounts('loop-1')).toEqual(new Map([['3@1000', 5]]));
+    await pm2Builder.buildAndRun(makeCtx({ service: { slug: 'loop', port: 4000, healthPath: '/' }, deploymentId: 1 }) as never);
+    restarts = 1;
+    expect(await pm2RestartCounts('loop-1')).toEqual(new Map([['3@1000', 1]]));
+    h.pm2.describe.mockImplementation((_n: string, cb: (err: Error | null, desc?: unknown[]) => void) => cb(new Error('daemon down')));
+    expect(await pm2RestartCounts('loop-1')).toEqual(new Map());
   });
 
   it('pm2Restart rejects when the daemon errors', async () => {

@@ -271,17 +271,18 @@ A docker service that builds from source can use a Dockerfile pasted in the pane
 
 ### Restart-loop limit (G1.3)
 
-A docker service on the panel host can be stopped when its containers keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off.
+A docker service on the panel host, or a PM2 service (bare-metal mode), can be stopped when its containers or processes keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off.
 
 **How it works**
-- Once a minute the panel reads Docker's restart count for each of the service's containers.
+- Once a minute the panel reads Docker's restart count for each of the service's containers. For a PM2 service it reads PM2's restart count for each process, less the restarts the panel itself asked for (Start, Restart, bringing the service back after a panel restart), so only crashes count.
 - When the containers restart `maxRestarts` times within `windowMinutes`, the service is stopped as the Stop button would: it is marked stopped, then every replica is stopped.
 - Stopping it is audited as `service.restart_limit`, which notifies the channels that receive audit events. The card shows the restarts in the window and when the limit last tripped.
 - A deploy in progress is left alone, since it restarts containers on purpose. A new container starts counting from scratch.
-- Checked against a real container in a crash loop: the limit tripped after 3 restarts and the container stayed stopped.
+- Checked against a real container in a crash loop: the limit tripped after 3 restarts and the container stayed stopped. The PM2 side was checked the same way against PM2 7.0.4.
+- PM2's own `max_restarts` (10) still applies, but only to restarts that come within a second of starting; an app that crashes after a few seconds loops on forever without this limit.
 
 **Limits and storage**
-- Off by default, and only for docker services on the panel host, not on nodes or Swarm for now.
+- Off by default, and only for docker services on the panel host and PM2 services, not on nodes or Swarm for now.
 - No migration is needed: the limit is a settings row. The restart history is kept in memory, so a panel restart starts each window again.
 
 ### Healthcheck timeout (0.16.1)

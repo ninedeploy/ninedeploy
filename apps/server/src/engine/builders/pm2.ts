@@ -139,6 +139,8 @@ export const pm2Builder: Builder = {
       await new Promise<void>((res, rej) =>
         pm2.start(startOpts, (err) => (err ? rej(err) : res())),
       );
+      // A new process: its restart counter starts at zero.
+      requestedRestarts.delete(name);
       await dumpProcessList();
     });
     return { runtimeId: name, port: service.port ?? null, healthPath: service.healthPath ?? '/' };
@@ -190,10 +192,19 @@ export async function pm2Stop(runtimeId: string): Promise<void> {
   });
 }
 
+/**
+ * G1.3: restarts the panel asked for (Start, Restart, the runtime reconcile),
+ * per process name. PM2's `restart_time` counts them too; the restart-loop
+ * limit takes them off so only crashes count.
+ */
+const requestedRestarts = new Map<string, number>();
+const noteRequestedRestart = (runtimeId: string) => requestedRestarts.set(runtimeId, (requestedRestarts.get(runtimeId) ?? 0) + 1);
+
 /** Start (resume) an existing PM2 process. Rejects when it was deleted. */
 export async function pm2Start(runtimeId: string): Promise<void> {
   await withPm2(async () => {
     await new Promise<void>((res, rej) => pm2.restart(runtimeId, (err) => (err ? rej(err) : res())));
+    noteRequestedRestart(runtimeId);
     await dumpProcessList();
   });
 }
@@ -202,8 +213,28 @@ export async function pm2Start(runtimeId: string): Promise<void> {
 export async function pm2Restart(runtimeId: string): Promise<void> {
   await withPm2(async () => {
     await new Promise<void>((res, rej) => pm2.restart(runtimeId, (err) => (err ? rej(err) : res())));
+    noteRequestedRestart(runtimeId);
     await dumpProcessList();
   });
+}
+
+/**
+ * G1.3: `{process: restarts}` of a PM2 service's processes, without the
+ * restarts the panel asked for. A process is keyed by its PM2 id and creation
+ * time, so a redeploy (a new process) starts its own baseline.
+ */
+export async function pm2RestartCounts(runtimeId: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const procs = await withPm2(
+    () => new Promise<ProcessDescription[]>((res, rej) => pm2.describe(runtimeId, (err, desc) => (err ? rej(err) : res(desc ?? [])))),
+  ).catch(() => [] as ProcessDescription[]);
+  const requested = requestedRestarts.get(runtimeId) ?? 0;
+  for (const p of procs) {
+    const env = p?.pm2_env as { restart_time?: number; created_at?: number } | undefined;
+    if (p?.name !== runtimeId || typeof env?.restart_time !== 'number') continue;
+    out.set(`${p.pm_id}@${env.created_at ?? 0}`, Math.max(0, env.restart_time - requested));
+  }
+  return out;
 }
 
 /**

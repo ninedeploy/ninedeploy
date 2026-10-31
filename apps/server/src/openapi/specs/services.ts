@@ -185,7 +185,7 @@ export const servicesSpecs: RouteSpecMap = {
     responseType: 'RestartLimitView',
   },
   'PUT /v1/services/:id/restart-limit': {
-    summary: 'Stop the service when its containers restart this often (null turns it off)',
+    summary: 'Stop the service when its containers or PM2 processes restart this often (null turns it off)',
     tag: 'services',
     floor: 'member',
     body: restartLimitInput,
