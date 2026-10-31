@@ -1,0 +1,60 @@
+# Installers for the NineDeploy desktop client. Built per platform on that
+# platform (see .github/workflows/desktop.yml); nothing here signs or publishes.
+appId: net.ninedeploy.desktop
+productName: NineDeploy
+copyright: NineDeploy contributors, MIT licence
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+# The bundle has no runtime dependencies (everything is a devDependency), so
+# the archive carries no node_modules.
+asar: true
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: true
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.developer-tools
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Development
+  maintainer: NineDeploy contributors
+deb:
+  # electron-builder's default list plus libgbm1 and libasound2: without them
+  # the binary does not start on a minimal Debian (found by installing the
+  # package on bookworm-slim). Ubuntu 24.04's libasound2t64 provides libasound2.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libgbm1
+    - libasound2

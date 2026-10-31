@@ -489,6 +489,7 @@ export function createFakeApiModule() {
     setToken: vi.fn(),
     setSessionTokens: vi.fn(),
     clearTokens: vi.fn(),
+    restoreDesktopSession: vi.fn(async () => false),
     deployLogsWsUrl: vi.fn(() => 'ws://localhost/v1/logs'),
     websocketAuthProtocols: vi.fn(() => ['nd-auth', 'test-token']),
     // Mirrors the real authedFetch: bearer header from getToken + plain fetch.

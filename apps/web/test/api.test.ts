@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './web-utils.js';
 
 const sdkMock = vi.hoisted(() => ({
@@ -25,6 +25,7 @@ import {
   execWsUrl,
   getToken,
   refreshAccessToken,
+  restoreDesktopSession,
   setSessionTokens,
   setToken,
   websocketAuthProtocols,
@@ -586,5 +587,78 @@ describe('deployLogsWsUrl', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe('desktop credential bridge (R6)', () => {
+  const refresh = api.auth.refresh as unknown as ReturnType<typeof vi.fn>;
+  const bridge = {
+    version: 1,
+    loadRefreshToken: vi.fn(async (): Promise<string | null> => null),
+    saveRefreshToken: vi.fn(async () => true),
+    clearRefreshToken: vi.fn(async () => undefined),
+  };
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    refresh.mockReset();
+    bridge.loadRefreshToken.mockReset().mockResolvedValue(null);
+    bridge.saveRefreshToken.mockClear();
+    bridge.clearRefreshToken.mockClear();
+    vi.stubGlobal('ninedeployDesktop', bridge);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('mirrors every refresh-token change into the OS store, and clears it on sign-out', () => {
+    setSessionTokens('acc', REFRESH_1);
+    expect(bridge.saveRefreshToken).toHaveBeenLastCalledWith(REFRESH_1);
+    clearTokens();
+    expect(bridge.clearRefreshToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores a session from the kept refresh token and stores the rotated one', async () => {
+    bridge.loadRefreshToken.mockResolvedValue(REFRESH_1);
+    refresh.mockResolvedValue({ tokens: { accessToken: FRESH_ACC, refreshToken: REFRESH_2 } });
+    await expect(restoreDesktopSession()).resolves.toBe(true);
+    expect(refresh).toHaveBeenCalledWith({ refreshToken: REFRESH_1 });
+    expect(getToken()).toBe(FRESH_ACC);
+    expect(sessionStorage.getItem(REFRESH_KEY)).toBe(REFRESH_2);
+    expect(bridge.saveRefreshToken).toHaveBeenLastCalledWith(REFRESH_2);
+  });
+
+  it('forgets a kept token the panel rejects', async () => {
+    bridge.loadRefreshToken.mockResolvedValue(REFRESH_1);
+    refresh.mockRejectedValue(Object.assign(new Error('Invalid refresh token'), { status: 401 }));
+    await expect(restoreDesktopSession()).resolves.toBe(false);
+    expect(getToken()).toBeNull();
+    expect(bridge.clearRefreshToken).toHaveBeenCalled();
+  });
+
+  it('keeps the token when the panel is unreachable', async () => {
+    bridge.loadRefreshToken.mockResolvedValue(REFRESH_1);
+    refresh.mockRejectedValue(new TypeError('fetch failed'));
+    await expect(restoreDesktopSession()).resolves.toBe(false);
+    expect(bridge.clearRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it('does nothing in a browser, or when a session already exists', async () => {
+    setToken('live');
+    await expect(restoreDesktopSession()).resolves.toBe(true);
+    expect(bridge.loadRefreshToken).not.toHaveBeenCalled();
+    setToken(null);
+    vi.stubGlobal('ninedeployDesktop', undefined);
+    await expect(restoreDesktopSession()).resolves.toBe(false);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('ignores a look-alike object that is not the bridge', async () => {
+    vi.stubGlobal('ninedeployDesktop', { version: 2, loadRefreshToken: bridge.loadRefreshToken });
+    setSessionTokens('acc', REFRESH_1);
+    await expect(restoreDesktopSession()).resolves.toBe(true);
+    expect(bridge.loadRefreshToken).not.toHaveBeenCalled();
+    expect(bridge.saveRefreshToken).not.toHaveBeenCalled();
   });
 });

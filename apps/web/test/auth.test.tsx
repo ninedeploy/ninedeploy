@@ -19,6 +19,7 @@ const apiMock = vi.hoisted(() => ({
   getToken: vi.fn(),
   setSessionTokens: vi.fn(),
   clearTokens: vi.fn(),
+  restoreDesktopSession: vi.fn(),
 }));
 
 const webauthnMock = vi.hoisted(() => ({ startAuthentication: vi.fn() }));
@@ -194,6 +195,37 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('loading')).toHaveTextContent('false');
     expect(screen.getByTestId('email')).toHaveTextContent('none');
     expect(apiMock.api.auth.me).not.toHaveBeenCalled();
+    expect(apiMock.restoreDesktopSession).not.toHaveBeenCalled();
+  });
+
+  it('R6: in the desktop app, restores the kept sign-in before deciding there is none', async () => {
+    vi.stubGlobal('ninedeployDesktop', { version: 1, loadRefreshToken: vi.fn(), saveRefreshToken: vi.fn(), clearRefreshToken: vi.fn() });
+    try {
+      apiMock.restoreDesktopSession.mockImplementation(async () => {
+        apiMock.getToken.mockReturnValue('restored');
+        return true;
+      });
+      renderAuth();
+      expect(screen.getByTestId('loading')).toHaveTextContent('true');
+      await waitFor(() => expect(screen.getByTestId('email')).toHaveTextContent('a@b.c'));
+      expect(apiMock.restoreDesktopSession).toHaveBeenCalled();
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('R6: shows the sign-in page when the desktop app has nothing to restore', async () => {
+    vi.stubGlobal('ninedeployDesktop', { version: 1, loadRefreshToken: vi.fn(), saveRefreshToken: vi.fn(), clearRefreshToken: vi.fn() });
+    try {
+      apiMock.restoreDesktopSession.mockResolvedValue(false);
+      renderAuth();
+      await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
+      expect(screen.getByTestId('email')).toHaveTextContent('none');
+      expect(apiMock.api.auth.me).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('loads the current user when a token exists', async () => {

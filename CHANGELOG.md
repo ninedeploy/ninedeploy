@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A desktop client (R6, [docs/DESKTOP.md](docs/DESKTOP.md)). `desktop/` builds unsigned installers for Windows (NSIS), Debian (deb), Linux (AppImage) and macOS (dmg).
+  - You add a panel by its address, which must answer `/health`, and open it in a sandboxed window with its own storage partition.
+  - The panel keeps its refresh token in the OS credential store (DPAPI, Keychain, libsecret), so a sign-in survives closing the window. Without a real store nothing is written.
+  - Other sites open in the system browser, apart from an SSO sign-in started on the panel.
+  - Removing an instance revokes only that computer's session on the panel.
+  - The panel's web UI picks the bridge up by itself; in a browser nothing changes.
+  - The project keeps its own lockfile, so Electron stays out of the panel's dependency tree. A new Desktop workflow tests, packages and launches it on all three platforms.
 - Remote MCP over HTTP (R4, first part). The panel serves its MCP tools at `/v1/mcp` over the Streamable HTTP transport, for clients that send an API token as `Authorization: Bearer` (for example `claude mcp add --transport http`). Each tool call runs as that token through the API's own authorization, so scopes, roles and revocation apply per call. Off by default: Settings → Security → Remote MCP, or `PUT /v1/mcp/policy`; an optional switch limits every caller to read-only tools. Clients that sign in instead of sending a header use OAuth 2.1 as the MCP authorization spec describes: discovery documents, dynamic client registration, a consent page in the dashboard (read only or full access), PKCE, rotating refresh tokens and revocation. Each grant shows under Settings → Security → API tokens, where deleting it disconnects the client; its tokens work only on /v1/mcp. No migration.
 - The image scan deploy gate now covers Compose stacks on the panel host (G5.1). The stack's images are scanned after pull and build and before the running stack is taken down, so a blocked deploy leaves the previous stack serving. Build-only services are scanned by the image name Compose gives them. No migration.
 - The restart-loop limit now covers PM2 services too (G1.3, Service → Settings → Restart-loop limit). It counts PM2's restarts per process, leaving out the ones the panel asked for, and stops the service as the Stop button does. PM2's own `max_restarts` only catches crashes within a second of starting; an app that crashes later looped on until now. No migration.

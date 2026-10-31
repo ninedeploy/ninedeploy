@@ -1,0 +1,15 @@
+# This project is NOT part of the panel's pnpm workspace (the root
+# pnpm-workspace.yaml globs apps/* and packages/* only). It keeps its own
+# lockfile so Electron and its packaging toolchain never enter the dependency
+# tree of the panel image or the published npm packages.
+packages:
+  - "."
+
+# Electron downloads its runtime in postinstall; electron-builder's Squirrel
+# helper is not used (Windows builds use NSIS) and stays blocked.
+allowBuilds:
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+
+minimumReleaseAge: 20160

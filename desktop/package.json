@@ -1,0 +1,29 @@
+{
+  "name": "ninedeploy-desktop",
+  "productName": "NineDeploy",
+  "version": "0.18.13",
+  "description": "NineDeploy desktop client: the panel of a chosen instance in a locked-down window, with the sign-in kept in the OS credential store",
+  "license": "MIT",
+  "private": true,
+  "author": "NineDeploy",
+  "homepage": "https://github.com/ninedeploy/ninedeploy",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "packageManager": "pnpm@11.23.0",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dist": "node build.mjs && electron-builder --config electron-builder.yml --publish never",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "electron": "44.9.0",
+    "electron-builder": "26.17.0",
+    "esbuild": "0.25.12",
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
+  }
+}

@@ -14,4 +14,6 @@ export const PACKAGE_JSONS = [
   'packages/plugin-sdk/package.json',
   'packages/schemas/package.json',
   'packages/sdk/package.json',
+  // R6: not a workspace package (own lockfile), but its installers carry this version.
+  'desktop/package.json',
 ];

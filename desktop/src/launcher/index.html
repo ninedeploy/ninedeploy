@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NineDeploy</title>
+    <link rel="stylesheet" href="launcher.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>NineDeploy</h1>
+        <p data-i18n="intro" class="muted">Choose the NineDeploy panel to open.</p>
+      </header>
+
+      <section aria-labelledby="list-title">
+        <h2 id="list-title" data-i18n="instances">Instances</h2>
+        <p id="empty" class="muted" data-i18n="empty" hidden>No instances yet.</p>
+        <ul id="list"></ul>
+      </section>
+
+      <section aria-labelledby="add-title">
+        <h2 id="add-title" data-i18n="add">Add an instance</h2>
+        <form id="add-form" novalidate>
+          <label>
+            <span data-i18n="address">Panel address</span>
+            <input id="address" name="address" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://panel.example.com" required />
+          </label>
+          <label>
+            <span data-i18n="name">Name (optional)</span>
+            <input id="name" name="name" type="text" autocomplete="off" maxlength="80" />
+          </label>
+          <p id="insecure" class="warn" data-i18n="insecure" hidden>This address uses plain http.</p>
+          <p id="error" class="error" role="alert" hidden></p>
+          <button id="add-button" type="submit" data-i18n="addButton">Check and add</button>
+        </form>
+      </section>
+
+      <footer>
+        <p id="storage" class="muted"></p>
+      </footer>
+    </main>
+    <script src="launcher.js"></script>
+  </body>
+</html>

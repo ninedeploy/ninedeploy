@@ -175,7 +175,8 @@ describe('release delivery invariants', () => {
     const list = readFileSync(listUrl, 'utf8');
     const listed = [...list.matchAll(/'([^']*package\.json)'/g)].map((m) => m[1]);
     expect(listed.length).toBeGreaterThanOrEqual(9);
-    const workspaces = ['.', 'apps/cli', 'apps/server', 'apps/web', 'packages/db', 'packages/mcp', 'packages/plugin-sdk', 'packages/schemas', 'packages/sdk'];
+    // R6: desktop/ is outside the pnpm workspace but its installers are versioned with the release.
+    const workspaces = ['.', 'apps/cli', 'apps/server', 'apps/web', 'packages/db', 'packages/mcp', 'packages/plugin-sdk', 'packages/schemas', 'packages/sdk', 'desktop'];
     const expected = workspaces.map((w) => (w === '.' ? 'package.json' : `${w}/package.json`));
     for (const rel of expected) expect(listed, `missing ${rel}`).toContain(rel);
     // And both scripts import the shared module instead of a private copy.
@@ -221,7 +222,7 @@ describe('r573: release publishing and version bumping', () => {
     const PACKAGES = [
       'package.json', 'apps/cli/package.json', 'apps/server/package.json', 'apps/web/package.json',
       'packages/db/package.json', 'packages/mcp/package.json', 'packages/plugin-sdk/package.json',
-      'packages/schemas/package.json', 'packages/sdk/package.json',
+      'packages/schemas/package.json', 'packages/sdk/package.json', 'desktop/package.json',
     ];
 
     /** A miniature repo carrying every file the script rewrites, at 0.0.1. */

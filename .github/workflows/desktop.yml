@@ -1,0 +1,92 @@
+name: Desktop
+
+# R6: the desktop client lives in desktop/ with its own lockfile, outside the
+# panel's pnpm workspace, so the main CI never installs Electron. This
+# workflow tests it, builds the installers on each platform and launches the
+# packaged app once. Installers are unsigned build artifacts, not releases.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'apps/web/src/lib/desktop.ts'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'apps/web/src/lib/desktop.ts'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Test · package · launch (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: desktop/package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build installers
+        run: pnpm dist
+        env:
+          # No signing identity on CI: build unsigned instead of searching the keychain.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Allow the Chromium sandbox (Ubuntu 24.04 restricts user namespaces)
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Launch the packaged app
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm smoke
+
+      - name: Launch the packaged app
+        if: runner.os != 'Linux'
+        run: pnpm smoke
+
+      - name: Upload installers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ninedeploy-desktop-${{ runner.os }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.dmg
+            desktop/release/*.AppImage
+            desktop/release/*.deb

@@ -1,7 +1,8 @@
 import { type ReactNode, createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { PublicUser } from '@ninedeploy/sdk';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, clearTokens, getToken, setSessionTokens } from './api.js';
+import { api, clearTokens, getToken, restoreDesktopSession, setSessionTokens } from './api.js';
+import { desktopBridge } from './desktop.js';
 import { clearSsoFragmentResult, takeSsoFragment, type SsoFragmentResult } from './sso.js';
 
 interface AuthContextValue {
@@ -40,25 +41,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (sso.kind === 'accepted') queryClient.clear();
     clearSsoFragmentResult();
 
-    const token = getToken();
-    if (!token) {
-      setLoading(false);
-      return;
+    const loadUser = () => {
+      if (!getToken()) {
+        setLoading(false);
+        return;
+      }
+      api.auth
+        .me()
+        .then((currentUser) => {
+          if (active && revision === sessionRevision.current) setUser(currentUser);
+        })
+        .catch((err: unknown) => {
+          if (!active || revision !== sessionRevision.current) return;
+          // Only an explicit 401 means the credential is dead. A network blip
+          // (fetch failed, 502 from a restarting proxy) must NOT wipe the
+          // stored tokens — that logged the user out because the server blinked.
+          const status = (err as { status?: number } | null)?.status;
+          if (status === 401 || status === 403) clearTokens();
+        })
+        .finally(() => { if (active) setLoading(false); });
+    };
+    // R6: a desktop window starts without a tab session, but the desktop app
+    // may hold a sign-in from an earlier window.
+    if (!getToken() && desktopBridge()) {
+      void restoreDesktopSession().then(() => {
+        if (!active) return;
+        if (revision === sessionRevision.current) loadUser();
+        else setLoading(false);
+      });
+    } else {
+      loadUser();
     }
-    api.auth
-      .me()
-      .then((currentUser) => {
-        if (active && revision === sessionRevision.current) setUser(currentUser);
-      })
-      .catch((err: unknown) => {
-        if (!active || revision !== sessionRevision.current) return;
-        // Only an explicit 401 means the credential is dead. A network blip
-        // (fetch failed, 502 from a restarting proxy) must NOT wipe the
-        // stored tokens — that logged the user out because the server blinked.
-        const status = (err as { status?: number } | null)?.status;
-        if (status === 401 || status === 403) clearTokens();
-      })
-      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [queryClient, sso]);
 

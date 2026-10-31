@@ -1,6 +1,7 @@
 import { createClient, type NineDeployClient } from '@ninedeploy/sdk';
 import { installStaging } from './pendingStaging.js';
 import { apiUrl } from './apiUrl.js';
+import { loadDesktopRefreshToken, persistDesktopRefreshToken } from './desktop.js';
 
 const TOKEN_KEY = 'ninedeploy.token';
 const REFRESH_KEY = 'ninedeploy.refreshToken';
@@ -56,6 +57,8 @@ function setRefreshToken(token: string | null): void {
   } catch {
     /* ignore */
   }
+  // R6: in the desktop app the refresh token also outlives the window.
+  persistDesktopRefreshToken(token);
 }
 
 /** Persist both tokens of a session (access + refresh). */
@@ -105,6 +108,28 @@ async function doRefresh(): Promise<boolean> {
     // authenticated layout on its `user` state, so without this event the
     // SPA keeps rendering as logged-in behind a wall of 401 error cards.
     window.dispatchEvent(new Event('ninedeploy:session-expired'));
+    return false;
+  }
+}
+
+/**
+ * R6: a desktop window opens with an empty sessionStorage. When the desktop
+ * app kept a refresh token from an earlier window, trade it for a session.
+ * A rejected token is cleared (by the refresh path); an unreachable panel
+ * keeps it for the next attempt and shows the sign-in page meanwhile.
+ */
+export async function restoreDesktopSession(): Promise<boolean> {
+  if (getToken()) return true;
+  const kept = await loadDesktopRefreshToken();
+  if (!kept || getToken()) return Boolean(getToken());
+  try {
+    storage()?.setItem(REFRESH_KEY, kept);
+  } catch {
+    return false;
+  }
+  try {
+    return await refreshAccessToken();
+  } catch {
     return false;
   }
 }
