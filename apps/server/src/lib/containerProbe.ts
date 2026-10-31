@@ -8,7 +8,11 @@ const PROBE_IMAGE = 'busybox:1.36';
 // An EOF on nc's stdin closes the connection before an asynchronous handler
 // answers. Keep a bidirectional socket until its status line arrives. nc -e
 // owns stdin/stdout; stderr still feeds the bounded probe output parser.
-const HTTP_PROBE = String.raw`exec nc -w 3 127.0.0.1 "$2" -e sh -c 'printf "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" "$1"; IFS= read -r -t 3 status && printf "%s\n" "$status" >&2' probe "$1"`;
+// Inspect the shared namespace's non-loopback interface locally. Loopback-only
+// listeners cannot receive proxy traffic and must not pass routed readiness.
+// This reads interface metadata; it sends no discovery traffic.
+const PROBE_ADDRESS = String.raw`address="$(ip -4 addr show | awk '$1 == "inet" && $2 !~ /^127\./ {split($2,a,"/"); print a[1]; exit}')"; [ -n "$address" ] || exit 1; `;
+const HTTP_PROBE = PROBE_ADDRESS + String.raw`exec nc -w 3 "$address" "$2" -e sh -c 'printf "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" "$1"; IFS= read -r -t 3 status && printf "%s\n" "$status" >&2' probe "$1"`;
 
 /** A fixed, bounded probe inside a workload network namespace. */
 export async function probeContainer(params: Params, onLine: (line: string) => void, options: { timeoutMs?: number } = {}): Promise<number> {
@@ -30,7 +34,7 @@ export async function probeContainer(params: Params, onLine: (line: string) => v
       PROBE_IMAGE,
       ...(protocol === 'http'
         ? ['sh', '-c', HTTP_PROBE, 'probe', path, String(port)]
-        : ['sh', '-c', 'nc -w 3 127.0.0.1 "$1" </dev/null', 'probe', String(port)]),
+        : ['sh', '-c', PROBE_ADDRESS + 'exec nc -w 3 "$address" "$1" </dev/null', 'probe', String(port)]),
     ], (line) => {
       const match = /^HTTP\/1\.[01] (\d{3})(?:\s|$)/.exec(line);
       if (match && status === undefined) status = Number(match[1]);
