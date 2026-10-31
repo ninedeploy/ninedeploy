@@ -13,6 +13,32 @@ const { dockerBuilder } = await import('../../src/engine/builders/docker.js');
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); spawn.mockReset(); capture.mockReset(); capture.mockResolvedValue('running|172.20.0.2'); });
 
 describe('local Docker readiness', () => {
+  it.each(['command'] as const)('requires the configured port after %s readiness succeeds', async healthCheck => {
+    vi.useFakeTimers();
+    capture.mockImplementation(async (_exe, args) => {
+      const format = (args as string[]).at(-1) ?? '';
+      if (format.includes('NetworkSettings')) return 'running|172.20.0.2|none';
+      if (format.includes('RestartCount')) return 'running 0';
+      return 'running';
+    });
+    spawn.mockImplementation(async (_exe, args) => (args as string[])[0] === 'run' ? 1 : 0);
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 3000, healthPath: '/', healthCheck, healthCommand: 'true' }, 15000)).toBe(false);
+    expect(spawn.mock.calls.some(call => (call[1] as string[])[0] === 'run')).toBe(true);
+  });
+
+  it.each(['command'] as const)('accepts %s only after the configured port opens', async healthCheck => {
+    vi.useFakeTimers();
+    capture.mockImplementation(async (_exe, args) => {
+      const format = (args as string[]).at(-1) ?? '';
+      if (format.includes('NetworkSettings')) return 'running|172.20.0.2|none';
+      if (format.includes('RestartCount')) return 'running 0';
+      return 'running';
+    });
+    spawn.mockResolvedValue(0);
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 3000, healthPath: '/', healthCheck, healthCommand: 'true' }, 15000)).toBe(true);
+    expect(spawn.mock.calls.some(call => (call[1] as string[])[0] === 'run')).toBe(true);
+  });
+
   it.each(['http-strict', 'tcp'] as const)('rejects %s if native health degrades during a successful probe', async healthCheck => {
     vi.useFakeTimers();
     let probed = false;

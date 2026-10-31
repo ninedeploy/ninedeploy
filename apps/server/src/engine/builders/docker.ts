@@ -1711,7 +1711,13 @@ export const dockerBuilder: Builder = {
     // 0.16.3: the service's own readiness command, inside the container.
     if (runtime.healthCheck === 'command' && runtime.healthCommand) {
       log(`Healthcheck: running "${runtime.healthCommand}" in ${runtime.runtimeId} until it exits 0`);
-      return commandSucceeds(runtime.runtimeId, runtime.healthCommand, timeoutMs, log);
+      const deadline = Date.now() + timeoutMs;
+      const succeeded = await commandSucceeds(runtime.runtimeId, runtime.healthCommand, timeoutMs, log);
+      if (!succeeded || !runtime.port) return succeeded;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0 || deployAborted()) return false;
+      log('Healthcheck command succeeded; waiting for the configured application port before routing');
+      return dockerBuilder.isHealthy({ ...runtime, healthCheck: 'tcp' }, remaining, 0, log, options);
     }
     const healthPath = safeProbePath(runtime.healthPath);
     const deadline = Date.now() + timeoutMs;
