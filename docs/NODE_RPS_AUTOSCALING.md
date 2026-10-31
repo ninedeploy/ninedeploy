@@ -2,6 +2,8 @@
 
 Status: implementation pending. Memory autoscaling has real single-node and PostgreSQL acceptance; those results do not accept request-rate autoscaling.
 
+Contract checkpoint: `servingTrafficOpen` and `servingTrafficSnapshot` now model ordinary serving generations separately from canary steps. Validation rejects missing/duplicate/wrong-generation replicas, unsupported fields, invalid source/counter shapes and incomplete coverage declared complete. The complete schema suite passed 780 tests at 100% statement, branch, function and line coverage; schema typecheck and lint passed (lint reported informational suggestions). No agent operation, advertised capability, panel observation or RPS scaling is enabled by this schema increment. Step 1 remains incomplete until the agent capability and observation path are implemented.
+
 ## Confirmed boundaries
 
 - `engine/builders/nodeAutoscaleDeployment.ts` refuses RPS capacity preparation.
