@@ -146,8 +146,11 @@ jobs:
           security create-keychain -p "$password" "$keychain"
           security set-keychain-settings -lut 3600 "$keychain"
           security unlock-keychain -p "$password" "$keychain"
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # Only this keychain: a lookup that misses it would go on to the
+          # locked login keychain and fail there with the same error.
+          security list-keychains -d user -s "$keychain"
           security default-keychain -d user -s "$keychain"
+          security list-keychains -d user
 
       - name: Launch the packaged app
         if: runner.os != 'Linux'
