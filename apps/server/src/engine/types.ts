@@ -14,6 +14,11 @@ export interface BuildContext {
   prepareSwarmTransition?: (stack: StackSpec, runtime: DeployRuntime, registryAuth?: { username: string; password: string; server?: string }) => Promise<{ submit(): Promise<void> }>;
   /** Trusted encrypted release input, restored without pulling or rebuilding. */
   restoreComposeRelease?: ComposeRelease;
+  /**
+   * G5.1: scan a compose stack's images after pull/build and before the
+   * running stack is taken down. Throws when the gate counts findings.
+   */
+  scanComposeImages?: (images: Array<{ imageId: string; services: string[] }>) => Promise<void>;
   deploymentId: number;
   service: Service;
   buildConfig?: BuildConfig;

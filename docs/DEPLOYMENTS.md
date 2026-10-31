@@ -628,7 +628,7 @@ No migration is needed: the freezes are stored in a single settings row.
 
 ### Image vulnerability scanning (G5.1)
 
-Trivy scans each Docker deploy's image on the panel host and rescans running images on a schedule. Panel-host Compose stacks and Docker services on nodes are scanned on request and on the schedule, after they start; their scans are report-only. It is off by default; an operator turns it on under Settings → Image scanning.
+Trivy scans each Docker deploy's image on the panel host, and each Compose deploy's images on the panel host before the running stack is replaced, and rescans running images on a schedule. It is off by default; an operator turns it on under Settings → Image scanning.
 
 **How the scan runs**
 - Trivy runs in a throwaway container that reads the image from `docker save` on its stdin. It never gets the Docker socket and needs no host path.
@@ -658,8 +658,14 @@ Trivy scans each Docker deploy's image on the panel host and rescans running ima
 - A docker deploy on a node is scanned by the node agent (0.18.7 or newer, capability `image.scan`) before it gets traffic, under the same gate. A node that cannot scan (an older agent, or `NINEDEPLOY_AGENT_IMAGE_SCAN=off`) records why and does not block the deploy.
 - Swarm services are scanned on the panel host from the image their spec runs, on the schedule and on request.
 
+**Compose stacks**
+- A Compose deploy on the panel host is scanned after its images are pulled and built and before the running stack is taken down. The gate is the same; when it counts findings, the deploy fails there and the previous stack keeps running unchanged.
+- Each image the stack will run is scanned: a service's `image`, or for a build-only service the image Compose names `<project>-<service>`. A service whose image is not local yet is named in the deploy log and not scanned.
+- If some images cannot be scanned, the gate counts the findings of the others and the log names the rest; if none can, the deploy is not blocked.
+- Checked with real Compose and Trivy: a stack with `alpine:3.14.0` was stopped at the gate with 4 fixable critical findings, before `down`.
+
 **What has no deploy gate**
-- Compose stacks (`compose up` replaces the stack at once, so there is no moment before traffic) and Swarm services. Both are scanned on the schedule and on request.
+- Swarm services. They are scanned on the schedule and on request.
 
 **API, SDK and storage**
 - API: `GET`/`PUT /v1/image-scanning` (operator), `GET /v1/services/:id/image-scan` (viewer) and `POST /v1/services/:id/image-scan` (admin, runs in the background).

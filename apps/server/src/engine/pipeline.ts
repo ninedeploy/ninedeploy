@@ -7,7 +7,7 @@ import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { assertCiGateForBuild } from '../lib/ciGate.js';
-import { scanBeforeTraffic, scannableOnNode, scannableOnPanel } from '../lib/imageScan.js';
+import { composeScannableOnPanel, scanBeforeTraffic, scanComposeBeforeUp, scannableOnNode, scannableOnPanel } from '../lib/imageScan.js';
 import { archiveDockerArtifact, artifactRuntimeService, assertArtifactAvailable, assertArtifactImage, assertArtifactTarget, cacheNodeDockerArtifact, parseDockerArtifact, prepareArtifactImage, supportsDockerArtifact } from '../lib/dockerArtifact.js';
 import { withReleaseImageLock } from '../lib/releaseImageRetention.js';
 import { GithubAppError } from '../lib/githubApp.js';
@@ -1496,6 +1496,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       ...(artifact ? { prebuiltImage: { tag: artifact.imageId, imageId: artifact.imageId, builtWithNixpacks: artifact.builtWithNixpacks, builtStatic: artifact.builtStatic } } : {}),
       ...(artifact && onSwarm ? { requireSwarmMembers: true } : {}),
       ...(restore ? { restoreComposeRelease: restore } : {}),
+      // G5.1: the compose gate, before `down` (the running stack keeps serving when it blocks).
+      ...(composeScannableOnPanel(service) ? { scanComposeImages: async (images: Array<{ imageId: string; services: string[] }>) => {
+        if (await scanComposeBeforeUp(db, { serviceId: service.id, deploymentId, images }, log)) await candidateCheckpoint();
+      } } : {}),
       deploymentId,
       service: serviceForBuild,
       buildConfig: effectiveBuildConfig ?? undefined,

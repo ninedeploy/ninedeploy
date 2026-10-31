@@ -2690,6 +2690,15 @@ describe('runDeployment with an inline compose stack', () => {
     expect(h.builder.buildAndRun).toHaveBeenCalled();
   });
 
+  it('G5.1: hands the compose builder the image scan gate on the panel host', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { type: 'compose', repoUrl: null, image: null, composeContent: stack, composeService: 'app' });
+    collectLogs(1);
+    h.builder.buildAndRun.mockClear();
+    await runDeployment(db as never, 1);
+    expect(typeof h.builder.buildAndRun.mock.calls.at(-1)![0].scanComposeImages).toBe('function');
+  });
+
   it('repairs a workspace whose compose file was deleted between deploys', async () => {
     const { db } = makeDb();
     baseSetup(db, { type: 'compose', repoUrl: null, image: null, composeContent: stack, composeService: 'app' });

@@ -120,6 +120,54 @@ describe('the deploy hook', () => {
     expect(l.lines.join('\n')).toContain('could not run, so it does not block this deploy');
   });
 
+  describe('the Compose gate (before the running stack is replaced)', () => {
+    const images = [{ imageId: IMG, services: ['web'] }, { imageId: IMG2, services: ['db', 'worker'] }];
+    const composeScan = (trivy: (id: string) => Promise<string>, l = log(), imgs = images) =>
+      lib.scanComposeBeforeUp(db, { serviceId: 6, deploymentId: 11, images: imgs }, l.fn, { trivy });
+
+    it('does nothing while scanning is off', async () => {
+      const trivy = vi.fn();
+      expect(await composeScan(trivy as never)).toBeNull();
+      expect(trivy).not.toHaveBeenCalled();
+    });
+
+    it('scans every image, records the deploy and passes under the gate', async () => {
+      await lib.setImageScanPolicy(db, { enabled: true, gate: 'critical' });
+      const l = log();
+      const r = await composeScan(async (id) => report(id === IMG ? [vuln('CVE-4', 'HIGH', '1.2')] : []), l);
+      expect(r).toMatchObject({ status: 'ok', deploymentId: 11, blocked: false, os: '2 images' });
+      expect(l.lines.join('\n')).toContain('Scanning 2 Compose images');
+      expect(await lib.getImageScanResult(db, 6)).toMatchObject({ trigger: 'deploy', deploymentId: 11, blocked: false, imageId: lib.composeImageSetId(images) });
+    });
+
+    it('fails the deploy on a gated finding in any image and marks the result blocked', async () => {
+      await lib.setImageScanPolicy(db, { enabled: true, gate: 'critical' });
+      await expect(composeScan(async (id) => report(id === IMG2 ? [vuln('CVE-3', 'CRITICAL', '3.0.15-1')] : []))).rejects.toThrow(
+        /Image scan gate: 1 critical fixable vulnerability in the new Compose images\. The running stack was not changed\./,
+      );
+      expect(await lib.getImageScanResult(db, 6)).toMatchObject({ blocked: true, deploymentId: 11 });
+      expect((await lib.getImageScanResult(db, 6))?.findings[0]?.target).toMatch(/^db, worker: /);
+    });
+
+    it('never blocks when no image could be scanned or none was found, and says when some were left out', async () => {
+      await lib.setImageScanPolicy(db, { enabled: true, gate: 'critical' });
+      const l = log();
+      expect(await composeScan(async () => { throw new Error('Trivy failed'); }, l)).toMatchObject({ status: 'error' });
+      expect(l.lines.join('\n')).toContain('could not run, so it does not block this deploy');
+      expect(await composeScan(async () => report([]), l, [])).toBeNull();
+      expect(l.lines.join('\n')).toContain('no Compose images to scan were found');
+      const partial = log();
+      const r = await composeScan(async (id) => { if (id === IMG2) throw new Error('save failed'); return report([]); }, partial);
+      expect(r).toMatchObject({ status: 'ok', blocked: false });
+      expect(partial.lines.join('\n')).toContain('some Compose images could not be scanned: db, worker: save failed');
+    });
+
+    it('covers compose stacks on the panel host', () => {
+      expect(lib.composeScannableOnPanel({ type: 'compose', serverId: null })).toBe(true);
+      expect(lib.composeScannableOnPanel({ type: 'compose', serverId: 3 })).toBe(false);
+    });
+  });
+
   it('covers docker services on the panel host only', () => {
     expect(lib.scannableOnPanel({ type: 'docker', serverId: null }, false)).toBe(true);
     expect(lib.scannableOnPanel({ type: 'docker', serverId: 3 }, false)).toBe(false);

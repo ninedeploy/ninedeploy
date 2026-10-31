@@ -179,6 +179,40 @@ export async function composeBuildFingerprint(
   }
 }
 
+/**
+ * G5.1: the local images `up` is about to run, with the compose services of
+ * each: the service's `image`, or `<project>-<service>` for a build-only one
+ * (Compose's own name for it). Images that are not present are left out and
+ * named in `missing`.
+ */
+export async function composeUpImages(
+  stackArgs: string[],
+  project: string,
+  opts: { cwd: string; env: Record<string, string> },
+): Promise<{ images: Array<{ imageId: string; services: string[] }>; missing: string[] }> {
+  const model = JSON.parse(await capture('docker', [...stackArgs, 'config', '--format', 'json'], { ...opts, timeoutMs: 120_000 })) as {
+    services?: Record<string, { image?: string }>;
+  };
+  const byImage = new Map<string, Set<string>>();
+  const missing: string[] = [];
+  for (const [name, svc] of Object.entries(model.services ?? {})) {
+    const ref = svc.image || `${project}-${name}`;
+    let id = '';
+    try {
+      id = (await capture('docker', ['image', 'inspect', '--format', '{{.Id}}', ref], { timeoutMs: 30_000 })).trim();
+    } catch {
+      /* not present */
+    }
+    if (!/^sha256:[a-f0-9]{64}$/.test(id)) {
+      missing.push(name);
+      continue;
+    }
+    byImage.set(id, (byImage.get(id) ?? new Set<string>()).add(name));
+  }
+  const images = [...byImage.entries()].map(([imageId, services]) => ({ imageId, services: [...services].sort() })).sort((a, b) => a.imageId.localeCompare(b.imageId));
+  return { images, missing: missing.sort() };
+}
+
 export function readComposeFingerprint(slug: string): string | null {
   try {
     return readFileSync(fingerprintFile(slug), 'utf8').trim() || null;
@@ -348,6 +382,20 @@ export const composeBuilder: Builder = {
         );
         if (fingerprint) writeComposeFingerprint(service.slug, fingerprint);
       }
+      }
+
+      // G5.1: the image scan gate, while the previous revision still serves.
+      if (ctx.scanComposeImages) {
+        let found: Awaited<ReturnType<typeof composeUpImages>> | null = null;
+        try {
+          found = await composeUpImages(stackArgs, project, gateOpts);
+        } catch (err) {
+          log(`warning: image scan skipped: the Compose images could not be listed (${err instanceof Error ? err.message : err})`);
+        }
+        if (found) {
+          if (found.missing.length) log(`note: not scanned before start (no local image yet): ${found.missing.join(', ')}`);
+          await ctx.scanComposeImages(found.images);
+        }
       }
 
       // Stop the previous project revision — no blue-green for compose. Kept
