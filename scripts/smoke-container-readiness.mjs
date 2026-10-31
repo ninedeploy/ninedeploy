@@ -19,12 +19,14 @@ try {
     scenarios.push({ nativeHealth, mode: 'http-strict', responseDelayMs: 0, status: 503, port: 8080, expected: false });
     scenarios.push({ nativeHealth, mode: 'tcp', responseDelayMs: 0, status: 200, port: 8081, expected: false });
   }
+  for (const mode of ['http-strict', 'tcp']) scenarios.push({ nativeHealth: false, mode, responseDelayMs: 0,
+    status: 200, port: 8080, expected: false, bind: '127.0.0.1' });
   for (const [index, scenario] of scenarios.entries()) {
     const { nativeHealth, mode, responseDelayMs, status, port, expected } = scenario;
     const name = `nd-${owner}-${index}`; names.push(name);
     checked(['run', '-d', '--name', name, '--label', `ninedeploy.proof=${owner}`,
       ...(nativeHealth ? ['--health-cmd', 'exit 0', '--health-interval', '1s', '--health-timeout', '1s', '--health-start-period', '0s'] : ['--no-healthcheck']),
-      '--entrypoint', 'node', image, '-e', `require('node:http').createServer((q,s)=>{s.statusCode=${status};${responseDelayMs ? `setTimeout(()=>s.end('ready'),${responseDelayMs})` : "s.end('ready')"}}).listen(8080,'0.0.0.0')`]);
+      '--entrypoint', 'node', image, '-e', `require('node:http').createServer((q,s)=>{s.statusCode=${status};${responseDelayMs ? `setTimeout(()=>s.end('ready'),${responseDelayMs})` : "s.end('ready')"}}).listen(8080,${JSON.stringify(scenario.bind ?? '0.0.0.0')})`]);
     const id = checked(['inspect', name, '--format', '{{.Id}}']);
     const deadline = Date.now() + 20_000;
     let running = false;
