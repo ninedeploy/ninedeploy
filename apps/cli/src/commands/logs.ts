@@ -33,7 +33,7 @@ const TERMINAL_CONTROL = new RegExp(
   'g',
 );
 const SGR_ONLY = new RegExp(`^${ESC}\\[[0-9;]*m$`);
-const terminalSafe = (s: string): string => s.replace(TERMINAL_CONTROL, (m) => (SGR_ONLY.test(m) ? m : ''));
+export const terminalSafe = (s: string): string => s.replace(TERMINAL_CONTROL, (m) => (SGR_ONLY.test(m) ? m : ''));
 
 export async function logsSearch(
   client: NineDeployClient,

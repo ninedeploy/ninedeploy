@@ -4,7 +4,17 @@ NineDeploy can run a service's tests or build steps on machines you enrol as **r
 
 The panel keeps every job and every attempt in its database. Runners pull work over HTTPS with their own token; the panel never connects to them.
 
-In the panel, a service's **CI** tab holds its pipeline, its jobs and each attempt's log, and **Settings → CI runners** enrols runners. The SDK exposes the same through `client.ci`.
+In the panel, a service's **CI** tab holds its pipeline, its jobs and each attempt's log, and **Settings → CI runners** enrols runners. The SDK exposes the same through `client.ci`, and the CLI through `ninedeploy ci`:
+
+```sh
+ninedeploy ci runners add builder-1 --labels linux,x64 --capacity 2   # prints the token once
+ninedeploy ci runners list
+ninedeploy ci set web pipeline.json          # the JSON body shown below
+ninedeploy ci run web --ref main --follow    # exits non-zero unless the job succeeds
+ninedeploy ci jobs web
+ninedeploy ci log web 12 --follow
+ninedeploy ci approve web 12                 # or: cancel
+```
 
 ## Enrolling a runner
 

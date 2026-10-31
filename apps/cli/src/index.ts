@@ -152,6 +152,7 @@ import { autoscaleOff, autoscaleSet, autoscaleShow, type AutoscaleSetOptions } f
 import { sleepNow, sleepOff, sleepSet, sleepShow, sleepWake } from './commands/sleep.js';
 import { previewsDatabaseCopies, previewsForks, previewsShow } from './commands/previews.js';
 import { approvalsDecide, approvalsList, lanesList, lanesSwitch } from './commands/approvals.js';
+import { ciDecide, ciJobsList, ciLog, ciPipelineSet, ciPipelineShow, ciRun, ciRunnersAdd, ciRunnersList, ciRunnersRevoke } from './commands/ci.js';
 import { logsAnalyze } from './commands/aiLogs.js';
 import { deploysDiagnose } from './commands/aiDiagnose.js';
 
@@ -1388,6 +1389,51 @@ approvalsCmd.command('reject <service>')
   .description('Turn a waiting deploy down; it will not run')
   .option('--deployment <id>', "The deployment (default: the service's oldest waiting deploy)")
   .action((service: string, opts: { deployment?: string }) => approvalsDecide(getClient(), 'reject', service, opts));
+/* v8 ignore stop */
+
+// ── R5: CI jobs on enrolled runners ──────────────────────────────────────
+const ciCmd = program.command('ci').description('CI pipelines, jobs and runners');
+/* v8 ignore start -- exercised by test/ci.test.ts. */
+const ciRunnersCmd = ciCmd.command('runners').description('Machines that run CI jobs (operator)');
+ciRunnersCmd.command('list')
+  .description('Runners with their state, labels and load')
+  .option('--json', 'Print raw JSON')
+  .action((opts: { json?: boolean }) => ciRunnersList(getClient(), opts));
+ciRunnersCmd.command('add <name>')
+  .description('Enrol a runner and print its token (shown once)')
+  .option('--labels <labels>', 'Comma-separated labels, e.g. linux,x64')
+  .option('--capacity <n>', 'Jobs it runs at the same time (default 1)')
+  .action((name: string, opts: { labels?: string; capacity?: string }) => ciRunnersAdd(getClient(), name, opts));
+ciRunnersCmd.command('revoke <id>')
+  .description('Stop a runner: its token stops working and its jobs are requeued')
+  .action((id: string) => ciRunnersRevoke(getClient(), id));
+ciCmd.command('pipeline <service>')
+  .description("Show the service's pipeline")
+  .option('--json', 'Print raw JSON')
+  .action((service: string, opts: { json?: boolean }) => ciPipelineShow(getClient(), service, opts));
+ciCmd.command('set <service> <file>')
+  .description('Set the pipeline from a JSON file (service admin)')
+  .action((service: string, file: string) => ciPipelineSet(getClient(), service, file));
+ciCmd.command('jobs <service>')
+  .description("The service's latest jobs")
+  .option('--json', 'Print raw JSON')
+  .action((service: string, opts: { json?: boolean }) => ciJobsList(getClient(), service, opts));
+ciCmd.command('run <service>')
+  .description('Run the pipeline now')
+  .option('--ref <ref>', 'A branch or commit (default: the service branch)')
+  .option('--follow', "Print the job's log until it ends; exit non-zero unless it succeeds")
+  .action((service: string, opts: { ref?: string; follow?: boolean }) => ciRun(getClient(), service, opts));
+ciCmd.command('log <service> <job>')
+  .description("A job's log (its last attempt unless --attempt)")
+  .option('--attempt <n>', 'The attempt number')
+  .option('--follow', 'Keep printing until the job ends')
+  .action((service: string, job: string, opts: { attempt?: string; follow?: boolean }) => ciLog(getClient(), service, job, opts));
+ciCmd.command('approve <service> <job>')
+  .description('Let a job that waits for approval run (service admin)')
+  .action((service: string, job: string) => ciDecide(getClient(), 'approve', service, job));
+ciCmd.command('cancel <service> <job>')
+  .description('Cancel a job; a running attempt is killed')
+  .action((service: string, job: string) => ciDecide(getClient(), 'cancel', service, job));
 /* v8 ignore stop */
 
 deploys.command('watch <serviceId> <deployId>').description('Stream a deployment\'s build logs live').action((svcId: string, depId: string) => deploysWatch(svcId, depId));
