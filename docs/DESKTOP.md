@@ -11,7 +11,7 @@ The code is in [`desktop/`](../desktop). It has its own lockfile and is not part
 | Windows 10/11 x64 | `NineDeploy Setup <version>.exe` (NSIS, per user, no admin rights) | Yes. Silent install, sign-in, restart, uninstall. |
 | Debian/Ubuntu x64 | `ninedeploy-desktop_<version>_amd64.deb` | Yes. Installed with apt on a clean Debian 12, then run with and without a keyring. |
 | Linux x64 | `NineDeploy-<version>.AppImage` | Built on CI; the unpacked app was launched under Xvfb. The AppImage itself has not been run. |
-| macOS (Intel and Apple silicon) | `NineDeploy-<version>.dmg`, `NineDeploy-<version>-arm64.dmg` | Built and launched on CI only. On the workflow's macOS 26 Apple-silicon runner, the packaged app opened and rendered the instance list with its bridge and without Node (run 41229314336, 2026-10-31). Sign-in, the Keychain and the installer itself have not been tried on a Mac. |
+| macOS (Intel and Apple silicon) | `NineDeploy-<version>.dmg`, `NineDeploy-<version>-arm64.dmg` | Built and launched on CI only. On the workflow's macOS 26 Apple-silicon runner, the packaged app opened and rendered the instance list with its bridge and without Node (run 41229314336, 2026-10-31). On the same runner, a sign-in was sealed and never written in plain text, but the Keychain refused the unsigned app (`errSecAuthFailed`), so it did not survive a restart. Keeping a sign-in through the Keychain, and the installer itself, have not been verified on a Mac. |
 
 The installers built so far are **unsigned**:
 
@@ -68,7 +68,7 @@ If there is no real OS store, the app writes nothing to disk and you sign in eac
 
 A token sealed under another account or keyring cannot be opened, so it is dropped and you sign in again.
 
-On macOS the key behind the sealed token lives in your login keychain. If the app cannot read it, because the keychain is locked or access was denied, Chromium seals with a key it does not keep. The token on disk is still unreadable, but it cannot be opened after the app restarts either, so you sign in again. The Desktop workflow found this on a CI runner, whose login keychain is locked (`errSecAuthFailed`). It runs its check with an unlocked keychain, as a signed-in Mac user has.
+On macOS the key behind the sealed token lives in your login keychain. If the app cannot read it, because the keychain is locked or access was denied, Chromium seals with a key it does not keep. The token on disk is still unreadable, but it cannot be opened after the app restarts either, so you sign in again. The Desktop workflow sees this on its macOS runner. The unsigned app's Keychain lookup fails there with `errSecAuthFailed`, even with an unlocked keychain of its own as the only one searched. So the workflow checks the fallback on macOS: the token is sealed, never written in plain text, and does not come back after a restart. **Keeping a sign-in through the Keychain has not been verified.** That needs a real Mac, or a signed build on the runner.
 
 On the Windows test machine, killing the app by force right after the very first sign-in meant the next start asked for a sign-in again. A normal quit kept it. The likely cause is that Chromium writes the DPAPI-wrapped key behind the sealed token to its `Local State` file on shutdown.
 

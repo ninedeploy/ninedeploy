@@ -131,14 +131,21 @@ try {
   await evaluate(again.webSocketDebuggerUrl, `window.launcher.open(${JSON.stringify(id)})`);
   const reopened = await panelPage('the stand-in panel after a restart');
   const loaded = await evaluate(reopened.webSocketDebuggerUrl, 'window.ninedeployDesktop.loadRefreshToken()');
-  if (status.persist ? loaded !== token : loaded !== null) throw new Error(`after a restart loadRefreshToken answered ${JSON.stringify(loaded)}`);
+  // ND_SMOKE_KEYCHAIN_UNREACHABLE: a store that seals but cannot keep its key
+  // (the macOS runner's Keychain refuses the unsigned app). The sealed token
+  // must then come back as nothing, never as garbage or the token itself.
+  const unreachable = process.env.ND_SMOKE_KEYCHAIN_UNREACHABLE === '1';
+  const expected = status.persist && !unreachable ? token : null;
+  if (loaded !== expected) throw new Error(`after a restart loadRefreshToken answered ${JSON.stringify(loaded)}`);
 
   // Removing the instance deletes its sealed token.
   const removed = await evaluate(again.webSocketDebuggerUrl, `window.launcher.remove(${JSON.stringify(id)})`);
   const after = existsSync(credentialsFile) ? readFileSync(credentialsFile, 'utf8') : '';
   if (!removed?.ok || after.includes(id)) throw new Error('removing the instance left its sealed token behind');
   console.log(
-    status.persist
+    status.persist && unreachable
+      ? `desktop sign-in fallback ok: ${status.store} was unreachable, the token was sealed (never plain text), did not come back after a restart and was deleted with its instance; keeping a sign-in through it is NOT verified here`
+      : status.persist
       ? `desktop sign-in ok: a refresh token was sealed with ${status.store}, survived a restart and was deleted with its instance`
       : `desktop sign-in ok: without an OS credential store (${status.store}) nothing was written and nothing came back after a restart`,
   );
