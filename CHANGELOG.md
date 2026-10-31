@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `gateDeploys` holds every deploy of the service and of its PR previews in `awaiting_ci` until a job at the deploy's commit passes. The deploy then builds the commit the job pinned; a failed or cancelled job fails it. A job for a pull request from a fork waits for an admin. Migration 0118 links a job to its deploy.
   - The panel has a **CI** tab on each service (pipeline, jobs, attempts, followed logs) and **Settings → CI runners**. The SDK has `client.ci`.
   - The attempt log route now answers JSON (`{ data, size, done }`) instead of text with headers.
+  - Each job runs on a bridge network of its own, so it cannot reach other containers on the runner machine or another job. `NINEDEPLOY_RUNNER_NETWORK=none` takes the network away entirely.
 - A desktop client (R6, [docs/DESKTOP.md](docs/DESKTOP.md)). `desktop/` builds unsigned installers for Windows (NSIS), Debian (deb), Linux (AppImage) and macOS (dmg).
   - You add a panel by its address, which must answer `/health`, and open it in a sandboxed window with its own storage partition.
   - The panel keeps its refresh token in the OS credential store (DPAPI, Keychain, libsecret), so a sign-in survives closing the window. Without a real store nothing is written.

@@ -36,6 +36,7 @@ docker run -d --name ninedeploy-ci-runner --restart unless-stopped \
 | `NINEDEPLOY_RUNNER_CPUS` | `2` | CPU limit of each job container. |
 | `NINEDEPLOY_RUNNER_PIDS` | 1024 | Process limit of each job container. |
 | `NINEDEPLOY_RUNNER_WORKDIR` | the system temp directory | Where job workspaces are created. |
+| `NINEDEPLOY_RUNNER_NETWORK` | `isolated` | `isolated`: each job gets a bridge network of its own. `none`: jobs get no network at all (no package downloads either). |
 
 `DELETE /v1/ci/runners/:id` revokes a runner:
 
@@ -139,7 +140,12 @@ Some names would change the runner's own Docker client rather than the job, so t
 
 The panel and the runner drop such a name again before a job starts.
 
-Job containers use Docker's default bridge network, so they can reach the internet and whatever else the runner machine can reach. Use a dedicated machine for runners and keep production networks out of its reach.
+Each job runs on a Docker bridge network of its own (`nd-ci-net-<attempt>`), removed with the job:
+
+- it cannot reach other containers on the runner machine by their address, nor another job;
+- it can still reach the internet, the runner machine itself (and ports published on it) and whatever the machine's network reaches.
+
+So use a dedicated machine for runners and keep production networks out of its reach. With `NINEDEPLOY_RUNNER_NETWORK=none`, jobs have no network at all.
 
 ## Recovery
 
@@ -164,3 +170,9 @@ On Docker 28 in an isolated dind, with a public repository as the source:
 - **Cancel during a run:** the container was gone 13 s later.
 - **Runner killed with SIGKILL:** its container kept running. 61 s later the lease lapsed and the job was requeued. The restarted runner removed the orphaned container and finished attempt 2. Attempt 1 stayed lost.
 - **Panel down for 70 s, longer than a lease, during a job:** after the restart, attempt 1 finished with its whole log in order.
+
+Job networks, on Docker 28 with a listener in a container on the default bridge:
+
+- a container on the default bridge (where jobs ran before) reached it;
+- a container on a job network could not, yet reached the internet;
+- with `none`, a container could not even resolve a name.

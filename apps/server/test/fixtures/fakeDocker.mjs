@@ -1,14 +1,25 @@
 // A stand-in for the docker CLI in the R5 runner test. It records each call in
-// FAKE_DOCKER_LOG and, for `run`, prints what the job container would see.
+// the file named by a leading `--log <file>` (the runner gives `docker run` an
+// environment of its own, so an environment variable would not reach it) and,
+// for `run`, prints what the job container would see.
 import { appendFileSync, readFileSync } from 'node:fs';
 
-const args = process.argv.slice(2);
-const log = process.env['FAKE_DOCKER_LOG'];
+let args = process.argv.slice(2);
+let log;
+if (args[0] === '--log') {
+  log = args[1];
+  args = args.slice(2);
+}
 if (log) appendFileSync(log, `${args[0]} ${args.slice(1).join(' ')}\n`);
 
 if (args[0] === 'ps') {
   // One container left by an earlier run of this runner.
   process.stdout.write('orphan-1\n');
+  process.exit(0);
+}
+if (args[0] === 'network' && args[1] === 'ls') {
+  // And its job network.
+  process.stdout.write('orphan-net-1\n');
   process.exit(0);
 }
 if (args[0] !== 'run') process.exit(0);

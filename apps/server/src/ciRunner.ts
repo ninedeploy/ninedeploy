@@ -33,9 +33,18 @@ export interface RunnerOptions {
   dockerPrefix?: string[];
   /** Where job workspaces live. In a container, mount it at the same path on the host: the job's bind mounts are resolved by the host's Docker. */
   workDir: string;
+  /**
+   * `isolated` (the default): each job gets a bridge network of its own, so it
+   * cannot reach other containers on this machine, nor another job. `none`:
+   * no network at all.
+   */
+  network?: 'isolated' | 'none';
   version: string;
   log: (line: string) => void;
 }
+
+/** The per-job network of an attempt (`network: isolated`). */
+export const jobNetwork = (attemptId: number): string => `nd-ci-net-${attemptId}`;
 
 const LOG_FLUSH_MS = 1000;
 const LOG_CHUNK_BYTES = 64 * 1024;
@@ -62,6 +71,8 @@ export function jobRunArgs(opts: RunnerOptions, claim: CiClaimResponse, dirs: { 
     `ninedeploy.ci-attempt=${claim.attemptId}`,
     '--security-opt',
     'no-new-privileges',
+    '--network',
+    opts.network === 'none' ? 'none' : jobNetwork(claim.attemptId),
     '--pids-limit',
     String(opts.pidsLimit),
     '--memory',
@@ -129,13 +140,18 @@ function dockerOutput(opts: RunnerOptions, args: string[]): Promise<string> {
   });
 }
 
-/** Containers this runner left behind when it last stopped (crash, kill, reboot). */
-export async function removeOrphans(opts: RunnerOptions): Promise<number> {
-  const ids = (await dockerOutput(opts, ['ps', '-aq', '--filter', `label=ninedeploy.ci-runner=${runnerLabel(opts.token)}`]))
+const lines = (s: string) =>
+  s
     .split('\n')
-    .map((s) => s.trim())
+    .map((l) => l.trim())
     .filter(Boolean);
+
+/** Containers (and their job networks) this runner left behind when it last stopped (crash, kill, reboot). */
+export async function removeOrphans(opts: RunnerOptions): Promise<number> {
+  const filter = `label=ninedeploy.ci-runner=${runnerLabel(opts.token)}`;
+  const ids = lines(await dockerOutput(opts, ['ps', '-aq', '--filter', filter]));
   for (const id of ids) await docker(opts, ['rm', '-f', id]);
+  for (const net of lines(await dockerOutput(opts, ['network', 'ls', '-q', '--filter', filter]))) await docker(opts, ['network', 'rm', net]);
   return ids.length;
 }
 
@@ -230,6 +246,11 @@ async function runAttempt(opts: RunnerOptions, panel: Panel, claim: CiClaimRespo
       if (commit && /^[0-9a-f]{40}$/i.test(commit)) claim.commitSha = commit;
       write(`▸ Source at ${commit?.slice(0, 12) ?? 'the uploaded archive'}\n`);
     }
+    if (opts.network !== 'none') {
+      const net = jobNetwork(claim.attemptId);
+      const made = await docker(opts, ['network', 'create', '--driver', 'bridge', '--label', `ninedeploy.ci-runner=${runnerLabel(opts.token)}`, net]);
+      if (made !== 0) throw new Error(`could not create the job network ${net}`);
+    }
     write(`▸ Running in ${claim.image} (attempt ${claim.number})\n`);
     // The docker client runs with the job's variables in its environment (values stay off the command line).
     // Names that would steer the client itself are dropped (the panel refuses them too), and the runner's
@@ -260,6 +281,7 @@ async function runAttempt(opts: RunnerOptions, panel: Panel, claim: CiClaimRespo
   if (pending) ship(pending);
   await shipping;
   await docker(opts, ['rm', '-f', `nd-ci-${claim.attemptId}`]);
+  if (opts.network !== 'none') await docker(opts, ['network', 'rm', jobNetwork(claim.attemptId)]);
   rmSync(root, { recursive: true, force: true });
 
   // A cancelled or superseded attempt reports nothing: its result does not count.
@@ -330,6 +352,7 @@ function fromEnv(): RunnerOptions {
     pidsLimit: Number(process.env['NINEDEPLOY_RUNNER_PIDS'] ?? 1024) || 1024,
     docker: process.env['NINEDEPLOY_RUNNER_DOCKER'] ?? 'docker',
     workDir: process.env['NINEDEPLOY_RUNNER_WORKDIR'] ?? os.tmpdir(),
+    network: process.env['NINEDEPLOY_RUNNER_NETWORK'] === 'none' ? 'none' : 'isolated',
     version: process.env['npm_package_version'] ?? 'dev',
     log: (line) => console.log(`[${new Date().toISOString()}] ${line}`),
   };

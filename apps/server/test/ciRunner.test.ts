@@ -69,6 +69,13 @@ describe('R5 runner: the job container', () => {
     expect(args).toEqual(expect.arrayContaining(['-e', 'API_KEY', '-e', `NINEDEPLOY_CI_COMMIT=${'a'.repeat(40)}`]));
   });
 
+  it('puts the job on a network of its own, or on none', () => {
+    expect(args).toEqual(expect.arrayContaining(['--network', 'nd-ci-net-12']));
+    const offline = jobRunArgs({ ...opts, network: 'none' }, claim, { source: '/w/src', script: '/w/script.sh' });
+    expect(offline).toEqual(expect.arrayContaining(['--network', 'none']));
+    expect(offline.join(' ')).not.toContain('nd-ci-net-');
+  });
+
   it("labels the container with this runner's id (not its token) for orphan cleanup", () => {
     expect(runnerLabel('ndrun_abc')).toMatch(/^[0-9a-f]{16}$/);
     expect(args).toEqual(expect.arrayContaining(['--label', `ninedeploy.ci-runner=${runnerLabel('ndrun_abc')}`, '--name', 'nd-ci-12']));
@@ -95,7 +102,6 @@ describe('R5 runner against the real CI routes (docker replaced by a stand-in)',
     const db = await migratedDb();
     const work = mkdtempSync(path.join(os.tmpdir(), 'nd-runner-test-'));
     const calls = path.join(work, 'docker.log');
-    process.env['FAKE_DOCKER_LOG'] = calls;
     await db.insert(users).values({ id: 1, email: 'ops@example.com', passwordHash: 'x', isInstanceOperator: true } as never);
     await db.insert(services).values({ id: 1, name: 'img', slug: 'img', type: 'docker', image: 'nginx:1.27', ownerUserId: 1 } as never);
     await db.insert(envVars).values({ serviceId: 1, key: 'API_KEY', valueEncrypted: encrypt(SECRET), isSecret: true } as never);
@@ -118,7 +124,7 @@ describe('R5 runner against the real CI routes (docker replaced by a stand-in)',
         capacity: 2,
         pollMs: 100,
         docker: process.execPath,
-        dockerPrefix: [fileURLToPath(new URL('./fixtures/fakeDocker.mjs', import.meta.url))],
+        dockerPrefix: [fileURLToPath(new URL('./fixtures/fakeDocker.mjs', import.meta.url)), '--log', calls],
         workDir: work,
         log: (l) => lines.push(l),
       },
@@ -139,13 +145,22 @@ describe('R5 runner against the real CI routes (docker replaced by a stand-in)',
       expect(lines[0]).toBe('removed 1 container(s) left by an earlier run');
       const dockerCalls = readFileSync(calls, 'utf8');
       expect(dockerCalls).toContain('rm -f orphan-1');
+      expect(dockerCalls).toContain('network rm orphan-net-1');
+      // Each attempt ran on a bridge network of its own, removed afterwards.
+      for (const net of dockerCalls.match(/network create --driver bridge --label ninedeploy\.ci-runner=[0-9a-f]{16} (nd-ci-net-\d+)/g) ?? []) {
+        const name = net.split(' ').at(-1)!;
+        expect(dockerCalls).toContain(`--network ${name}`);
+        expect(dockerCalls).toContain(`network rm ${name}`);
+      }
+      expect(dockerCalls.match(/network create /g)).toHaveLength(2);
+      // The job runs were recorded, and the secret value is on none of their command lines.
+      expect(dockerCalls.match(/^run --rm /gm)).toHaveLength(2);
       expect(dockerCalls).not.toContain(SECRET);
     } finally {
       controller.abort();
       await running;
       await app.close();
       closeMigratedDb(db);
-      delete process.env['FAKE_DOCKER_LOG'];
       rmSync(work, { recursive: true, force: true });
     }
   }, 30_000);
