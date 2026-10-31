@@ -240,6 +240,10 @@ jobs:
           [[ "$previous" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           docker pull "ghcr.io/ninedeploy/ninedeploy:$previous"
           candidate="$(node --input-type=module -e "import {readFileSync} from 'node:fs';const text=readFileSync('apps/server/src/version.ts','utf8');const match=/export const VERSION = '([^']+)'/.exec(text);if(!match)process.exit(1);process.stdout.write('v'+match[1])")"
+          docker image inspect "ghcr.io/ninedeploy/ninedeploy:$previous" --format '{{json .}}' | jq '{Id, RepoDigests}' > .temp_files/ci-candidate-upgrade/from-image.json
+          docker image inspect ninedeploy:ci --format '{{json .}}' | jq '{Id, RepoDigests}' > .temp_files/ci-candidate-upgrade/to-image.json
+          jq -n --arg source "$GITHUB_SHA" --arg from "$previous" --arg to "$candidate" --arg run "$GITHUB_RUN_ID" \
+            '{sourceCommit: $source, fromVersion: $from, toVersion: $to, runId: $run}' > .temp_files/ci-candidate-upgrade/run.json
           node scripts/smoke-upgrade.mjs --from="$previous" --to="$candidate" --to-image=ninedeploy:ci 2>&1 | tee .temp_files/ci-candidate-upgrade/upgrade.log
 
       - name: Preserve candidate upgrade evidence
