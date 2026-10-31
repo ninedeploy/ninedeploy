@@ -13,6 +13,25 @@ const { dockerBuilder } = await import('../../src/engine/builders/docker.js');
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); spawn.mockReset(); capture.mockReset(); capture.mockResolvedValue('running|172.20.0.2'); });
 
 describe('local Docker readiness', () => {
+  it('rejects a successful command completed after the readiness deadline', async () => {
+    vi.useFakeTimers();
+    capture.mockImplementation(async (_exe, args) => {
+      if ((args as string[])[0] === 'exec') { vi.setSystemTime(Date.now() + 2001); return ''; }
+      return 'running';
+    });
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 3000, healthPath: '/', healthCheck: 'command', healthCommand: 'test -f /ready' }, 2000)).toBe(false);
+  });
+
+  it('rejects the final running sample when its inspection exceeds the deadline', async () => {
+    vi.useFakeTimers();
+    let count = 0;
+    capture.mockImplementation(async () => {
+      if (++count === 10) vi.setSystemTime(Date.now() + 1001);
+      return 'running 0';
+    });
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: null, healthPath: '/', healthCheck: 'running' }, 10000)).toBe(false);
+  });
+
   it('waits for native health to become healthy before accepting HTTP', async () => {
     vi.useFakeTimers();
     let inspections = 0;

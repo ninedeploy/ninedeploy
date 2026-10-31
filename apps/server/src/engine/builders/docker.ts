@@ -562,11 +562,12 @@ export async function holdsRunning(runtimeId: string, timeoutMs: number, log: (l
     let status = '';
     let count = '';
     try {
-      const raw = await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}} {{.RestartCount}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS });
+      const raw = await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}} {{.RestartCount}}'], { timeoutMs: Math.min(DOCKER_READ_TIMEOUT_MS, Math.max(1, deadline - Date.now())) });
       [status = '', count = ''] = raw.trim().split(/\s+/);
     } catch {
       /* still being created */
     }
+    if (Date.now() >= deadline || deployAborted()) break;
     if (status === 'exited' || status === 'dead') {
       await logContainerDiagnostic(runtimeId, log);
       return false;
@@ -604,10 +605,11 @@ export async function commandSucceeds(runtimeId: string, command: string, timeou
   while (Date.now() < deadline && !deployAborted()) {
     let status = '';
     try {
-      status = (await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS })).trim();
+      status = (await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}}'], { timeoutMs: Math.min(DOCKER_READ_TIMEOUT_MS, Math.max(1, deadline - Date.now())) })).trim();
     } catch {
       /* still being created */
     }
+    if (Date.now() >= deadline || deployAborted()) break;
     if (status === 'exited' || status === 'dead') {
       await logContainerDiagnostic(runtimeId, log);
       return false;
@@ -615,6 +617,7 @@ export async function commandSucceeds(runtimeId: string, command: string, timeou
     if (status === 'running') {
       try {
         await capture('docker', ['exec', runtimeId, 'sh', '-c', command], { timeoutMs: Math.min(COMMAND_HEALTH_ATTEMPT_TIMEOUT_MS, Math.max(1, deadline - Date.now())) });
+        if (Date.now() >= deadline || deployAborted()) break;
         log('Healthcheck command exited 0');
         return true;
       } catch (err) {
