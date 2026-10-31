@@ -144,6 +144,46 @@ jobs:
           # that fallback instead: sealed, never plain text, gone after a restart.
           ND_SMOKE_KEYCHAIN_UNREACHABLE: ${{ runner.os == 'macOS' && '1' || '' }}
 
+      # The same check against what a user actually installs: the app as the
+      # installer lays it down, not the unpacked build directory.
+      - name: Install and launch the installers (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends ./release/ninedeploy-desktop_*_amd64.deb
+          xvfb-run -a pnpm smoke /opt/NineDeploy/ninedeploy-desktop
+          sudo apt-get remove -y ninedeploy-desktop
+          test ! -e /opt/NineDeploy/ninedeploy-desktop
+          # The runner has no FUSE for mounting the AppImage; its runtime then
+          # extracts itself and runs from there.
+          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a pnpm smoke "$(ls release/NineDeploy-*.AppImage)"
+
+      - name: Install and launch the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem 'release/NineDeploy Setup *.exe').FullName
+          Start-Process -FilePath $setup -ArgumentList '/S' -Wait
+          # A per-user install: under %LOCALAPPDATA%\Programs, no admin rights.
+          $exe = (Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter NineDeploy.exe | Select-Object -First 1).FullName
+          if (-not $exe) { throw 'the installer laid down no NineDeploy.exe under LOCALAPPDATA\Programs' }
+          Write-Output "installed at $exe"
+          pnpm smoke $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Start-Process -FilePath (Join-Path (Split-Path $exe) 'Uninstall NineDeploy.exe') -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $exe) { throw 'the uninstaller left the app behind' }
+
+      - name: Install and launch the disk image (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if [ "$(uname -m)" = arm64 ]; then dmg=$(ls release/NineDeploy-*-arm64.dmg); else dmg=$(ls release/NineDeploy-*.dmg | grep -v -- -arm64.dmg); fi
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/nd-dmg" "$dmg"
+          ditto "$RUNNER_TEMP/nd-dmg/NineDeploy.app" "$RUNNER_TEMP/Applications/NineDeploy.app"
+          hdiutil detach "$RUNNER_TEMP/nd-dmg"
+          pnpm smoke "$RUNNER_TEMP/Applications/NineDeploy.app/Contents/MacOS/NineDeploy"
+        env:
+          ND_SMOKE_KEYCHAIN_UNREACHABLE: '1'
+
       - name: Upload installers
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

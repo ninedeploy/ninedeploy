@@ -10,7 +10,7 @@ The code is in [`desktop/`](../desktop). It has its own lockfile and is not part
 | --- | --- | --- |
 | Windows 10/11 x64 | `NineDeploy Setup <version>.exe` (NSIS, per user, no admin rights) | Yes. Silent install, sign-in, restart, uninstall. |
 | Debian/Ubuntu x64 | `ninedeploy-desktop_<version>_amd64.deb` | Yes. Installed with apt on a clean Debian 12, then run with and without a keyring. |
-| Linux x64 | `NineDeploy-<version>.AppImage` | Built on CI; the unpacked app was launched under Xvfb. The AppImage itself has not been run. |
+| Linux x64 | `NineDeploy-<version>.AppImage` | Built and run on CI under Xvfb, extracted rather than FUSE-mounted. |
 | macOS (Intel and Apple silicon) | `NineDeploy-<version>.dmg`, `NineDeploy-<version>-arm64.dmg` | Built and launched on CI only. On the workflow's macOS 26 Apple-silicon runner, the packaged app opened and rendered the instance list with its bridge and without Node (run 41229314336, 2026-10-31). On the same runner, a sign-in was sealed and never written in plain text, but the Keychain refused the unsigned app (`errSecAuthFailed`), so it did not survive a restart. Keeping a sign-in through the Keychain, and the installer itself, have not been verified on a Mac. |
 
 The installers built so far are **unsigned**:
@@ -31,6 +31,12 @@ Without them, nothing changes: the build is unsigned and the last step says so. 
 The [Desktop workflow](../.github/workflows/desktop.yml) builds all of them on each platform's own runner and uploads them as build artifacts. Release publishing is not wired yet.
 
 On each runner it also launches the packaged app and keeps a sign-in across a restart. A stand-in panel on the loopback is added and opened, and its page saves a refresh token through the bridge. Then the token must not be on disk in plain text, must come back after the app quits and starts again, and must be gone once the instance is removed. Where there is no OS credential store (the Linux runner has no keyring), nothing may be written.
+
+It runs the same check again on the app as each installer lays it down:
+
+- **Windows:** a silent per-user install of the setup `.exe`, then its silent uninstall, which must remove the app.
+- **Linux:** the `.deb` installed with apt and removed again, and the AppImage itself, which extracts itself because the runner has no FUSE.
+- **macOS:** the app copied out of the mounted `.dmg`.
 
 To build one yourself, on the platform you want it for:
 
