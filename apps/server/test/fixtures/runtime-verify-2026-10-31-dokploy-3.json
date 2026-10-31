@@ -1,0 +1,73 @@
+{
+  "generatedAt": "2026-10-31T19:50:04.065Z",
+  "registryVersion": 2,
+  "results": [
+    {
+      "id": "dokploy-9router",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 72
+    },
+    {
+      "id": "dokploy-dolibarr",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 117
+    },
+    {
+      "id": "dokploy-graylog",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 259
+    },
+    {
+      "id": "dokploy-kimai",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 92
+    },
+    {
+      "id": "dokploy-meilisearch",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 20
+    },
+    {
+      "id": "dokploy-miniflux",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 29
+    },
+    {
+      "id": "dokploy-openobserve",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 24
+    },
+    {
+      "id": "dokploy-ponos",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 29
+    },
+    {
+      "id": "dokploy-privatepaste",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 18
+    },
+    {
+      "id": "dokploy-typesense",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 31
+    },
+    {
+      "id": "dokploy-yourls",
+      "profile": "compose",
+      "ok": false,
+      "seconds": 68,
+      "error": "withdrawn after review: /admin/install.php answers without a login and the stack is unusable until someone runs it (the admin login comes from the env, so it is not a takeover); mysql:5.7 is end-of-life (the stack itself started)"
+    }
+  ]
+}

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 10 more Dokploy blueprints in the bundled Hub (G4.7): 9Router, Dolibarr, Graylog, Kimai, Meilisearch, Miniflux, OpenObserve, Ponos, PrivatePaste and Typesense. Each started in an isolated smoke run and was then asked, without credentials, for its admin pages, APIs, install and sign-up pages; each set its admin login or API key from a generated value. YOURLS started too but stays out (its install page needs a manual step without a login).
+
 - CI jobs on your own runners (R5; [docs/CI_RUNNERS.md](docs/CI_RUNNERS.md)).
   - A service's pipeline is an image and a script. Operators enrol runners, which pull jobs over HTTPS with their own token (`node apps/server/dist/ciRunner.js` in the panel image).
   - Each job runs in a throwaway container with the source the panel checked out (no `.git`, so no credential) and only the service variables the pipeline names. The container gets no Docker socket and no runner or lease token.
