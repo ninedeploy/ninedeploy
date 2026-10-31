@@ -260,7 +260,7 @@ export function createFakeApiModule() {
     },
     // null = no checklist rendered; Dashboard/GettingStarted tests stub it.
     onboarding: { get: vi.fn().mockResolvedValue(null), setDismissed: vi.fn() },
-    mcpRemote: { policy: vi.fn().mockResolvedValue({ policy: { enabled: false, readOnly: false }, path: '/v1/mcp' }), setPolicy: vi.fn() },
+    mcpRemote: { policy: vi.fn().mockResolvedValue({ policy: { enabled: false, readOnly: false }, path: '/v1/mcp' }), setPolicy: vi.fn(), checkAuthorization: vi.fn(), decideAuthorization: vi.fn() },
     about: { get: vi.fn() },
     branding: {
       get: vi.fn().mockResolvedValue({ logoUrl: null, primaryColor: null, supportEmail: null, footerHtml: null }),

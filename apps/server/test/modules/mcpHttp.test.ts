@@ -146,7 +146,7 @@ describe('remote MCP over Streamable HTTP (R4)', () => {
     for (const token of [null, 'nope']) {
       const res = await rpc(token, INIT);
       expect(res.statusCode).toBe(401);
-      expect(res.headers['www-authenticate']).toBe('Bearer realm="ninedeploy-mcp"');
+      expect(res.headers['www-authenticate']).toBe('Bearer realm="ninedeploy-mcp", resource_metadata="http://localhost:80/.well-known/oauth-protected-resource/v1/mcp"');
     }
     expect((await rpc(FULL, INIT)).statusCode).toBe(200);
     await db.update(apiTokens).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(apiTokens.hash, sha256(READ)));

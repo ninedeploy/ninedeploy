@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { ABOUT } from './version.js';
 import { apiRoutes } from './modules/api.js';
 import { scimRoutes } from './modules/scim.js';
+import { mcpOAuthWellKnownRoutes } from './modules/mcpOAuth.js';
 import { publicStatusHtmlRoutes } from './modules/uptime.js';
 import { eventRoutes } from './modules/events.js';
 import { healthRoutes } from './modules/health.js';
@@ -154,6 +155,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(forwardAuthVerifyRoutes);
   // G5.4: Sentry SDKs post to /api/<project>/envelope/ of the DSN's host
   await app.register(errorIngestPublicRoutes);
+  // R4: OAuth discovery for remote MCP clients sits at the origin root (RFC 8414, RFC 9728).
+  await app.register(mcpOAuthWellKnownRoutes);
   // SCIM 2.0 lives OUTSIDE /v1: IdPs hardcode the RFC path `${base}/scim/v2`.
   await app.register(scimRoutes, { prefix: '/scim/v2' });
   // Background deploy worker

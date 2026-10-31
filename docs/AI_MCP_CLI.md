@@ -51,7 +51,22 @@ claude mcp add --transport http ninedeploy https://your-ninedeploy-server.com/v1
 - A request with an `Origin` header from another origin is refused (DNS rebinding protection). MCP clients send none; browsers always do.
 - **Read-only tools only** in the same card narrows every caller to the `NINEDEPLOY_MCP_READONLY=1` allowlist, whatever their token allows.
 
-**Not yet:** OAuth. A client that can only sign in with OAuth (and not send a header) cannot connect yet. No migration is needed: the policy is the settings row `mcp_http`.
+**OAuth (for clients that sign in instead of sending a header)**
+
+A client that knows only the URL gets a 401 whose `WWW-Authenticate` names `resource_metadata`, and follows the MCP authorization spec from there. All of this answers only while remote MCP is on:
+- Discovery: `/.well-known/oauth-protected-resource/v1/mcp` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414). The issuer and resource follow the address the client used.
+- Registration: `POST /v1/oauth/register` (RFC 7591), anonymous as the spec expects. Public clients only, with `https` redirect addresses or `http` on localhost. At most 500 clients are kept: when full, the oldest one that never completed a sign-in makes room, and such clients are removed after a day anyway. Clients in use are never removed this way.
+- Consent: the client opens the dashboard page `/oauth/authorize`. The signed-in user sees the name the client gave itself and the host it will return to, and chooses **read only** or **full** (everything the user can do). Only an interactive session can approve; an API token cannot. The page refuses to show its buttons inside a frame, and is served with `X-Frame-Options: DENY` (clickjacking).
+- Tokens: `POST /v1/oauth/token` with the authorization code and PKCE (S256 only), bound to the client, its redirect address and the `/v1/mcp` resource. The access token lasts an hour. The refresh token lasts 30 days and is rotated on every use.
+- Revocation: `POST /v1/oauth/revoke` (RFC 7009). The grant also appears as an API token named `MCP: <client>` under **Settings → Security → API tokens**; deleting it there disconnects the client, refresh token included.
+- An access token from this flow (it starts with `ndmcp_`) works only on `/v1/mcp`. The REST API, WebSockets and tunnels refuse it.
+
+Checked with the official client's own OAuth flow (`@modelcontextprotocol/sdk` 1.32.1 with an `authProvider`). The steps:
+- It read the metadata named in the 401 and registered itself.
+- After consent it exchanged the code with PKCE.
+- It listed 63 tools and called `list_services`.
+
+No migration is needed. The policy is the settings row `mcp_http`, registered clients are `oauth_client:*` rows and refresh tokens are `oauth_refresh:*` rows; the hourly sweep removes expired ones. Authorization codes live in memory for a minute, so a panel restart in the middle of a sign-in means signing in again.
 
 Checked with the official MCP client (`@modelcontextprotocol/sdk` 1.32.1) over real HTTP: it initialized, listed 63 tools, called `list_services`, and was refused with 401 once its token was deleted.
 

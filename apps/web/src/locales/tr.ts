@@ -6029,4 +6029,16 @@ export const TR: Readonly<Record<string, string>> = {
   'AI clients connect to the MCP tools over HTTP with an API token, instead of running the local MCP server. Each tool call runs as that token: its scopes and its owner\'s roles apply, and a revoked token stops working at once.': 'Yapay zekâ istemcileri, yerel MCP sunucusunu çalıştırmak yerine MCP araçlarına bir API token\'ıyla HTTP üzerinden bağlanır. Her araç çağrısı o token olarak çalışır: token\'ın kapsamları ve sahibinin rolleri geçerlidir; iptal edilen bir token hemen çalışmaz olur.',
   'Send the token as an Authorization: Bearer header, for example:': 'Token\'ı Authorization: Bearer başlığıyla gönderin, örneğin:',
   'Read-only tools only, for every caller': 'Herkes için yalnızca salt okunur araçlar',
+  // Remote MCP OAuth consent (R4)
+  'This authorization request cannot be used': 'Bu yetkilendirme isteği kullanılamaz',
+  'Connect an MCP client': 'Bir MCP istemcisi bağla',
+  '{client} wants to use NineDeploy as {user}.': '{client}, NineDeploy\'u {user} olarak kullanmak istiyor.',
+  'The client named itself; the panel cannot vouch for it. After you decide, you go back to:': 'İstemcinin adını kendisi verdi; panel buna kefil olamaz. Kararınızdan sonra şuraya dönersiniz:',
+  'Read only: it can look, but not change anything.': 'Salt okunur: bakabilir ama hiçbir şeyi değiştiremez.',
+  'Full: it can do what you can, including deploys and settings.': 'Tam: dağıtımlar ve ayarlar dahil sizin yapabildiğiniz her şeyi yapabilir.',
+  'The grant appears under Settings → Security → API tokens; deleting it there disconnects the client.': 'Bu izin Ayarlar → Güvenlik → API token\'ları altında görünür; oradan silmek istemcinin bağlantısını keser.',
+  'Deny': 'Reddet',
+  'Allow': 'İzin ver',
+  // Remote MCP OAuth consent, framed (R4)
+  'Open this page in its own browser tab to approve an MCP client.': 'Bir MCP istemcisini onaylamak için bu sayfayı ayrı bir tarayıcı sekmesinde açın.',
 };

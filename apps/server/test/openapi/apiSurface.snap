@@ -86,6 +86,9 @@ DELETE /v1/workspaces/:id owner -
 DELETE /v1/workspaces/:id/invitations/:inviteId admin -
 DELETE /v1/workspaces/:id/members/:memberId admin -
 DELETE /v1/workspaces/:wid/email-templates/:name admin -
+GET /.well-known/oauth-authorization-server public -
+GET /.well-known/oauth-protected-resource public -
+GET /.well-known/oauth-protected-resource/v1/mcp public -
 GET /health public -
 GET /scim/v2/Schemas public -
 GET /scim/v2/ServiceProviderConfig public -
@@ -190,6 +193,7 @@ GET /v1/networks operator -
 GET /v1/networks/:name/members operator -
 GET /v1/notifications/channels operator nd://scope/read/notifications
 GET /v1/notifications/log operator nd://scope/read/notifications
+GET /v1/oauth/authorize authed -
 GET /v1/onboarding operator -
 GET /v1/openapi.json authed -
 GET /v1/orchestrators operator nd://scope/read/orchestrators
@@ -456,6 +460,10 @@ POST /v1/networks/attach operator -
 POST /v1/networks/detach operator -
 POST /v1/notifications/channels operator nd://scope/write/notifications
 POST /v1/notifications/channels/:id/test operator nd://scope/write/notifications
+POST /v1/oauth/authorize authed -
+POST /v1/oauth/register public -
+POST /v1/oauth/revoke public -
+POST /v1/oauth/token public -
 POST /v1/os-updates/auto operator -
 POST /v1/plugins/:id/disable operator -
 POST /v1/plugins/:id/enable operator -

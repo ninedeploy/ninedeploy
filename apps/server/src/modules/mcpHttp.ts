@@ -4,6 +4,8 @@ import { buildServer, handleHttpRequest } from '@ninedeploy/mcp';
 import { createClient } from '@ninedeploy/sdk';
 import { audit } from '../lib/audit.js';
 import { resolveUser } from '../lib/auth.js';
+import { mcpInternalHeaders } from '../lib/mcpAudience.js';
+import { protectedResourceMetadataUrl } from './mcpOAuth.js';
 import { forbidden, HttpError, notFound, unauthorized } from '../lib/errors.js';
 import { getSettingJson, setSettingJson } from '../lib/settings.js';
 
@@ -52,7 +54,7 @@ export function injectFetch(app: FastifyInstance, req: FastifyRequest) {
     const res = await app.inject({
       method: (init.method ?? 'GET') as 'GET',
       url: `${url.pathname}${url.search}`,
-      headers: { ...init.headers, ...(req.headers['user-agent'] ? { 'user-agent': String(req.headers['user-agent']) } : {}) },
+      headers: { ...init.headers, ...(req.headers['user-agent'] ? { 'user-agent': String(req.headers['user-agent']) } : {}), ...mcpInternalHeaders() },
       remoteAddress: req.ip,
       ...(init.body !== undefined ? { payload: init.body } : {}),
     });
@@ -90,9 +92,10 @@ export const mcpEndpointRoutes: FastifyPluginAsync = async (app) => {
     }
     const header = req.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
-    const user = token ? await resolveUser(app.db, token) : null;
+    const user = token ? await resolveUser(app.db, token, { audience: 'mcp' }) : null;
     if (!user) {
-      reply.header('WWW-Authenticate', challenge);
+      // R4: the challenge names the resource metadata, where an OAuth client starts.
+      reply.header('WWW-Authenticate', `${challenge}, resource_metadata="${protectedResourceMetadataUrl(req)}"`);
       throw unauthorized();
     }
     if (user.twoFactorPending) throw new HttpError(403, 'two_factor_required', 'A workspace you belong to requires two-factor authentication.');
