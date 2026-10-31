@@ -13,12 +13,24 @@ The code is in [`desktop/`](../desktop). It has its own lockfile and is not part
 | Linux x64 | `NineDeploy-<version>.AppImage` | Built on CI; the unpacked app was launched under Xvfb. The AppImage itself has not been run. |
 | macOS (Intel and Apple silicon) | `NineDeploy-<version>.dmg`, `NineDeploy-<version>-arm64.dmg` | Built and launched on CI only. On the workflow's macOS 26 Apple-silicon runner, the packaged app opened and rendered the instance list with its bridge and without Node (run 41229314336, 2026-10-31). Sign-in, the Keychain and the installer itself have not been tried on a Mac. |
 
-The installers are **unsigned**:
+The installers built so far are **unsigned**:
 
 - Windows SmartScreen warns about an unknown publisher.
 - macOS Gatekeeper refuses to open the app until you allow it under System Settings → Privacy & Security.
 
+The workflow signs them once the repository has the certificates as secrets. Pull request runs never sign, because their code would run with the certificates.
+
+| Secret | Use |
+| --- | --- |
+| `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | A Windows code-signing certificate (`.pfx`, base64) and its password. The workflow checks every signed `.exe` with `Get-AuthenticodeSignature`. |
+| `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` | A *Developer ID Application* certificate (`.p12`, base64) and its password. The workflow checks the app with `codesign --verify --deep --strict`. |
+| `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` | An App Store Connect API key (the `.p8` file's text, its id and issuer) for notarization. The workflow then also checks the app with `spctl` and `stapler validate`. |
+
+Without them, nothing changes: the build is unsigned and the last step says so. Signing has not run yet; no certificate exists.
+
 The [Desktop workflow](../.github/workflows/desktop.yml) builds all of them on each platform's own runner and uploads them as build artifacts. Release publishing is not wired yet.
+
+On each runner it also launches the packaged app and keeps a sign-in across a restart. A stand-in panel on the loopback is added and opened, and its page saves a refresh token through the bridge. Then the token must not be on disk in plain text, must come back after the app quits and starts again, and must be gone once the instance is removed. Where there is no OS credential store (the Linux runner has no keyring), nothing may be written.
 
 To build one yourself, on the platform you want it for:
 
@@ -26,7 +38,7 @@ To build one yourself, on the platform you want it for:
 cd desktop
 pnpm install --frozen-lockfile
 pnpm test && pnpm dist      # installers in desktop/release/
-pnpm smoke                  # launch the packaged app once
+pnpm smoke                  # launch it, keep a sign-in across a restart
 ```
 
 ## Choosing an instance

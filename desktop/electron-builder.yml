@@ -1,5 +1,6 @@
 # Installers for the NineDeploy desktop client. Built per platform on that
-# platform (see .github/workflows/desktop.yml); nothing here signs or publishes.
+# platform (see .github/workflows/desktop.yml). Nothing here signs: the workflow
+# signs only when its certificate secrets are set. Nothing here publishes.
 appId: net.ninedeploy.desktop
 productName: NineDeploy
 copyright: NineDeploy contributors, MIT licence

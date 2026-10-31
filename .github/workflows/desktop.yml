@@ -2,8 +2,10 @@ name: Desktop
 
 # R6: the desktop client lives in desktop/ with its own lockfile, outside the
 # panel's pnpm workspace, so the main CI never installs Electron. This
-# workflow tests it, builds the installers on each platform and launches the
-# packaged app once. Installers are unsigned build artifacts, not releases.
+# workflow tests it, builds the installers on each platform, launches the
+# packaged app and keeps a sign-in across a restart through the OS credential
+# store. Installers are build artifacts, not releases; they are signed only
+# when the signing secrets below are set.
 on:
   push:
     branches: [main]
@@ -61,11 +63,67 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # Signing is opt-in through repository secrets, and never on a pull
+      # request (its code would run with the certificates). Without them the
+      # installers are built unsigned, as before. electron-builder takes an
+      # empty CSC_LINK as set, so a variable is exported only when its secret is.
+      #   Windows: WIN_CSC_LINK (base64 .pfx) and WIN_CSC_KEY_PASSWORD.
+      #   macOS:   MAC_CSC_LINK (base64 .p12, Developer ID Application) and
+      #            MAC_CSC_KEY_PASSWORD; notarization with APPLE_API_KEY_P8
+      #            (the .p8 key's text), APPLE_API_KEY_ID and APPLE_API_ISSUER.
+      - name: Signing credentials
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          WIN_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_PASS: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_PASS: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$WIN_LINK" ]; then
+            { echo "WIN_CSC_LINK=$WIN_LINK"; echo "WIN_CSC_KEY_PASSWORD=$WIN_PASS"; echo "ND_SIGNED=1"; } >> "$GITHUB_ENV"
+          fi
+          if [ "$RUNNER_OS" = macOS ] && [ -n "$MAC_LINK" ]; then
+            { echo "CSC_LINK=$MAC_LINK"; echo "CSC_KEY_PASSWORD=$MAC_PASS"; echo "ND_SIGNED=1"; } >> "$GITHUB_ENV"
+            if [ -n "$APPLE_P8" ]; then
+              printf '%s\n' "$APPLE_P8" > "$RUNNER_TEMP/apple-api-key.p8"
+              { echo "APPLE_API_KEY=$RUNNER_TEMP/apple-api-key.p8"; echo "APPLE_API_KEY_ID=$APPLE_KEY_ID"; echo "APPLE_API_ISSUER=$APPLE_ISSUER"; echo "ND_NOTARIZED=1"; } >> "$GITHUB_ENV"
+            fi
+          fi
+
       - name: Build installers
         run: pnpm dist
         env:
-          # No signing identity on CI: build unsigned instead of searching the keychain.
+          # Never search the runner's keychain: sign only with the certificate above, if any.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Check the signature (Windows)
+        if: runner.os == 'Windows' && env.ND_SIGNED == '1'
+        shell: pwsh
+        run: |
+          foreach ($file in @('release/win-unpacked/NineDeploy.exe') + (Get-ChildItem release/*.exe).FullName) {
+            $sig = Get-AuthenticodeSignature $file
+            if ($sig.Status -ne 'Valid') { throw "$file is not validly signed: $($sig.Status) $($sig.StatusMessage)" }
+            Write-Output "$file signed by $($sig.SignerCertificate.Subject)"
+          }
+
+      - name: Check the signature (macOS)
+        if: runner.os == 'macOS' && env.ND_SIGNED == '1'
+        run: |
+          for app in release/mac*/NineDeploy.app; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            if [ "$ND_NOTARIZED" = 1 ]; then
+              spctl --assess --type execute --verbose=4 "$app"
+              xcrun stapler validate "$app"
+            fi
+          done
+
+      - name: Signing state
+        shell: bash
+        run: echo "installers ${ND_SIGNED:+signed}${ND_SIGNED:-unsigned}${ND_NOTARIZED:+ and notarized} on $RUNNER_OS"
 
       - name: Allow the Chromium sandbox (Ubuntu 24.04 restricts user namespaces)
         if: runner.os == 'Linux'
