@@ -20,6 +20,7 @@ import { pluginsApi, type PluginsApi } from './resources/plugins.js';
 import { logsApi, type LogsApi } from './resources/logs.js';
 import { terminalsApi, type TerminalsApi } from './resources/terminals.js';
 import { uptimeApi, type UptimeApi } from './resources/uptime.js';
+import { ciApi, type CiApi } from './resources/ci.js';
 
 export interface NineDeployClient
   extends AuthApi,
@@ -39,7 +40,8 @@ export interface NineDeployClient
     PluginsApi,
     LogsApi,
     TerminalsApi,
-    UptimeApi {}
+    UptimeApi,
+    CiApi {}
 
 /**
  * Create a typed NineDeploy API client. Used by both the web dashboard and the CLI.
@@ -69,5 +71,6 @@ export function createClient(opts: NineDeployClientOptions): NineDeployClient {
     ...logsApi(t),
     ...terminalsApi(t),
     ...uptimeApi(t),
+    ...ciApi(t),
   };
 }

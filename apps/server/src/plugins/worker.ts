@@ -9,6 +9,7 @@ import { removeInterruptedCandidates, startStoppedGeneration } from '../engine/i
 import { audit } from '../lib/audit.js';
 import { dropStaleApprovals, holdForApprovalIfNeeded } from '../lib/protectedLanes.js';
 import { holdForCiIfNeeded, pollCiGates } from '../lib/ciGate.js';
+import { holdForRunnerCiIfNeeded, settleRunnerCiGates } from '../lib/ciDeployGate.js';
 import { anyDeployFreeze, freezeHolding, freezeLogLine } from '../lib/deployFreeze.js';
 import { AGENT_LONG_OP_TIMEOUT_MS } from '../lib/agentClient.js';
 import { createBuildSlots } from '../engine/buildSlots.js';
@@ -153,8 +154,12 @@ export default fp(
     const startCiMonitor = () => {
       ciTimer = setInterval(() => {
         if (!running || ciPoll) return;
-        ciPoll = pollCiGates(fastify.db, { signal: ciAbort.signal })
-          .then(async (transitions) => {
+        ciPoll = Promise.all([pollCiGates(fastify.db, { signal: ciAbort.signal }), settleRunnerCiGates(fastify.db).catch((err: unknown) => {
+          fastify.log.error({ err }, 'CI job gate check failed');
+          return [];
+        })])
+          .then(async ([github, runner]) => {
+            const transitions = [...github, ...runner];
             for (const event of transitions) {
               logBus.publish(event.deploymentId, `${event.status === 'queued' ? '✓' : '⏹'} ${event.reason}`);
               if (event.status !== 'queued') logBus.end(event.deploymentId);
@@ -460,6 +465,19 @@ export default fp(
             }
             continue;
           }
+        }
+        // R5: a pipeline with `gateDeploys` runs its job first; the GitHub
+        // workflow gate (when also set) checks the commit that job pinned.
+        if (await holdForRunnerCiIfNeeded(fastify.db, row.id)) {
+          const held = await fastify.db.query.deployments.findFirst({ where: eq(deployments.id, row.id) });
+          if (held?.status === 'awaiting_ci') {
+            logBus.publish(row.id, '⏸ Waiting for the CI job before approval and build');
+            for (const staleId of await dropStaleApprovals(fastify.db, row.serviceId, row.id)) {
+              logBus.publish(staleId, `⏹ Replaced by a newer deploy (#${row.id}) waiting for CI`);
+              logBus.end(staleId);
+            }
+          }
+          continue;
         }
         if (await holdForCiIfNeeded(fastify.db, row.id)) {
           const held = await fastify.db.query.deployments.findFirst({ where: eq(deployments.id, row.id) });

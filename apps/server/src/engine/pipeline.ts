@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { assertCiGateForBuild } from '../lib/ciGate.js';
+import { assertRunnerCiForBuild } from '../lib/ciDeployGate.js';
 import { composeScannableOnPanel, scanBeforeTraffic, scanComposeBeforeUp, scannableOnNode, scannableOnPanel } from '../lib/imageScan.js';
 import { archiveDockerArtifact, artifactRuntimeService, assertArtifactAvailable, assertArtifactImage, assertArtifactTarget, cacheNodeDockerArtifact, parseDockerArtifact, prepareArtifactImage, supportsDockerArtifact } from '../lib/dockerArtifact.js';
 import { withReleaseImageLock } from '../lib/releaseImageRetention.js';
@@ -795,6 +796,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   if (await swarmRecoveryPending(db, service.id)) throw new SwarmRecoveryPending();
   const restore = dep.restoredFromDeploymentId != null ? await readReleaseRecord(db, deploymentId).catch(() => null) : null;
   await assertCiGateForBuild(db, dep, service);
+  await assertRunnerCiForBuild(db, dep, service);
   const artifact = dep.promotionSourceDeploymentId != null ? parseDockerArtifact(dep.artifact) : null;
   if (artifact) {
     if (artifact.commitSha !== dep.commitSha) throw new Error('Artifact commit does not match the queued candidate');

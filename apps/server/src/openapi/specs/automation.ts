@@ -143,12 +143,12 @@ export const automationSpecs: RouteSpecMap = {
     floor: 'member',
   },
   'GET /v1/services/:id/ci/jobs/:jobId/attempts/:number/log': {
-    summary: "An attempt's log as text, from `offset` bytes (x-nd-log-size, x-nd-log-done headers); admins only on a protected lane",
+    summary: "An attempt's log from `offset` bytes; `size` is the next offset and `done` says the attempt is over. Admins only on a protected lane",
     tag: 'ci',
     floor: 'viewer',
     queryType: '{ offset?: string }',
     validation: 'handler',
-    responseType: 'string',
+    responseType: '{ data: string; size: number; done: boolean }',
   },
   'GET /v1/ci/runners': {
     summary: 'CI runners: labels, capacity, online state and running attempts',

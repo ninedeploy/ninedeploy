@@ -28,6 +28,7 @@ import { getServiceTags, replaceServiceTags } from '../modules/serviceTags.js';
 import { DEFAULT_PREVIEW_DOMAIN_PATTERN, previewHostSkipReason, renderPreviewHost } from './previewDomain.js';
 import { ownZoneClaimRefusal } from './domainVerification.js';
 import { previewDestroyedFeedback } from './githubFeedback.js';
+import { runCiOnPush } from './ciDeployGate.js';
 
 /**
  * Webhook dispatch shared by the per-service receiver (`modules/hooks.ts`,
@@ -484,6 +485,10 @@ export async function handlePush(
     return { ok: 'skipped', reason: 'skip_marker' };
   }
 
+  // R5: a pipeline with `runOnPush` tests every push to the branch, deployed
+  // or not. A CI problem never blocks the deploy below.
+  const ciJobId = await runCiOnPush(db, serviceId, push).catch(() => null);
+
   // Watch paths (monorepos): when the webhook defines globs, deploy only if
   // at least one changed file matches. Payloads without file lists (rare)
   // still deploy — never silently block an unverifiable push.
@@ -494,7 +499,7 @@ export async function handlePush(
   const patterns = parseWatchPaths(opts.watchPaths);
   if (patterns.length > 0 && push.changedFiles.length > 0 && push.commitsListed < COMMIT_LIST_CAP) {
     const hit = push.changedFiles.some((f) => matchesAny(f, patterns));
-    if (!hit) return { ok: 'skipped', reason: 'watch_paths', patterns: patterns.length };
+    if (!hit) return { ok: 'skipped', reason: 'watch_paths', patterns: patterns.length, ...(ciJobId ? { ciJobId } : {}) };
   }
 
   // Same privilege gate as a manual redeploy: a verified push event must not
@@ -558,5 +563,5 @@ export async function handlePush(
     .update(services)
     .set({ branch: push.branch.replace(/^refs\/heads\//, '') })
     .where(eq(services.id, serviceId));
-  return { ok: true, provider: opts.provider, deploymentId: dep!.id };
+  return { ok: true, provider: opts.provider, deploymentId: dep!.id, ...(ciJobId ? { ciJobId } : {}) };
 }

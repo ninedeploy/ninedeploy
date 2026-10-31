@@ -120,3 +120,4 @@ export type { AutoUrlMode, AutoUrlEffective, AutoUrlSettings, OnboardingStatus, 
 export type { RegistryHookView, SourceUpload } from './resources/services.js';
 export type { HostIpEntry } from './resources/network.js';
 export type { MonitorCheckNowResult } from './resources/uptime.js';
+export type { CiLogSlice } from './resources/ci.js';

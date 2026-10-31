@@ -38,6 +38,13 @@ export const ciPipeline = z
     maxAttempts: z.number().int().min(1).max(5).default(2),
     /** Jobs wait for a service admin to approve them before any runner sees them. */
     requireApproval: z.boolean().default(false),
+    /** A push to the service branch runs a job (skip markers apply). */
+    runOnPush: z.boolean().default(false),
+    /**
+     * Every deploy of the service, and of its PR previews, waits for a job at
+     * the deploy's commit and builds only the commit that job passed.
+     */
+    gateDeploys: z.boolean().default(false),
   })
   .strict();
 export type CiPipeline = z.infer<typeof ciPipeline>;
@@ -85,6 +92,8 @@ export interface CiJobView {
   labels: string[];
   secretNames: string[];
   trigger: string;
+  /** The deployment this job gates, for a pipeline with `gateDeploys`. */
+  deploymentId: number | null;
   attempts: number;
   maxAttempts: number;
   timeoutSeconds: number;

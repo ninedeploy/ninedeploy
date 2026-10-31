@@ -138,7 +138,7 @@ export const ciServiceRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Logs can echo the variables the job was given: a protected lane keeps them for its admins.
-  app.get('/:id/ci/jobs/:jobId/attempts/:number/log', async (req, reply) => {
+  app.get('/:id/ci/jobs/:jobId/attempts/:number/log', async (req) => {
     const svc = await service(req);
     if (!(await maySeeLaneSecrets(app.db, svc, req.user!))) throw new HttpError(403, 'forbidden', 'Job logs on a protected lane are for its admins');
     const job = await jobOf(svc.id, req);
@@ -147,8 +147,8 @@ export const ciServiceRoutes: FastifyPluginAsync = async (app) => {
     if (!attempt) throw notFound('Attempt not found');
     const offset = Math.max(0, Number((req.query as { offset?: string }).offset ?? 0) || 0);
     const text = Buffer.from(readLog(job.id, number));
-    reply.header('x-nd-log-size', String(text.length)).header('x-nd-log-done', attempt.status === 'running' ? '0' : '1');
-    return reply.type('text/plain; charset=utf-8').send(text.subarray(offset).toString());
+    // `size` is the next offset: chunks are appended whole, so it never splits a character.
+    return { data: text.subarray(offset).toString(), size: text.length, done: attempt.status !== 'running' };
   });
 };
 

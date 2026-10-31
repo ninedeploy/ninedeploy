@@ -92,6 +92,26 @@ describe('required CI in the real deploy worker', () => {
     expect(h.pipeline.mock.calls[0]?.[1]).toBe(1);
   }, 25_000);
 
+  it('R5: holds a deploy for its NineDeploy CI job and builds the commit the job passed', async () => {
+    const { setPipeline } = await import('../../src/lib/ci.js');
+    const { ciJobs } = await import('@ninedeploy/db');
+    await db.insert(services).values({ id: 3, name: 'gated', slug: 'gated', type: 'docker', repoUrl: 'https://github.com/acme/gated.git', branch: 'main' });
+    await setPipeline(db, 3, {
+      image: 'node:24-alpine', script: 'npm test', labels: [], secrets: [], timeoutMinutes: 10, maxAttempts: 1,
+      requireApproval: false, runOnPush: false, gateDeploys: true,
+    });
+    await db.insert(deployments).values({ id: 3, serviceId: 3, trigger: 'webhook' });
+    const gated = () => db.query.deployments.findFirst({ where: eq(deployments.id, 3) });
+    await boot();
+    await until(async () => (await gated())?.status === 'awaiting_ci');
+    const job = await db.query.ciJobs.findFirst({ where: eq(ciJobs.deploymentId, 3) });
+    expect(job).toMatchObject({ status: 'queued', trigger: 'deploy' });
+    expect(h.pipeline.mock.calls.some((call) => call[1] === 3)).toBe(false);
+    await db.update(ciJobs).set({ status: 'succeeded', commitSha: SHA, finishedAt: new Date() }).where(eq(ciJobs.id, job!.id));
+    await until(async () => h.pipeline.mock.calls.some((call) => call[1] === 3));
+    expect(await gated()).toMatchObject({ commitSha: SHA });
+  }, 25_000);
+
   it('aborts a pending GitHub request on stop and leaves a resumable wait', async () => {
     let requestStarted = false;
     const http = gh.handler;

@@ -146,14 +146,15 @@ export async function createJob(
   db: DB,
   service: Pick<Service, 'id'>,
   pipeline: CiPipeline,
-  opts: { ref?: string; trigger: string; userId: number | null },
+  opts: { ref?: string; trigger: string; userId: number | null; deploymentId?: number; requireApproval?: boolean },
 ): Promise<Job> {
   const ref = opts.ref ?? null;
   const [job] = await db
     .insert(ciJobs)
     .values({
       serviceId: service.id,
-      status: pipeline.requireApproval ? 'awaiting_approval' : 'queued',
+      status: pipeline.requireApproval || opts.requireApproval ? 'awaiting_approval' : 'queued',
+      deploymentId: opts.deploymentId ?? null,
       ref,
       commitSha: ref && SHA_RE.test(ref) ? ref.toLowerCase() : null,
       image: pipeline.image,
@@ -207,6 +208,7 @@ export function jobView(j: Job) {
     labels: j.labels,
     secretNames: j.secretNames,
     trigger: j.trigger,
+    deploymentId: j.deploymentId,
     attempts: j.attempts,
     maxAttempts: j.maxAttempts,
     timeoutSeconds: j.timeoutSeconds,

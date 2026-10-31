@@ -399,6 +399,21 @@ export function createFakeApiModule() {
     osUpdates: { get: vi.fn(), setAuto: vi.fn() },
     cloud: { digitalocean: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() }, hetzner: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() }, vultr: { status: vi.fn(), setToken: vi.fn(), deleteToken: vi.fn(), options: vi.fn(), servers: vi.fn().mockResolvedValue([]), createServer: vi.fn(), deleteServer: vi.fn() } },
     deployFreezes: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), lift: vi.fn() },
+    // R5: CI runners (Settings) and a service's pipeline and jobs (Service → CI).
+    ci: {
+      runners: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), revoke: vi.fn() },
+      pipeline: vi.fn().mockResolvedValue({ pipeline: null }),
+      setPipeline: vi.fn(),
+      deletePipeline: vi.fn(),
+      jobs: {
+        list: vi.fn().mockResolvedValue([]),
+        get: vi.fn(),
+        create: vi.fn(),
+        approve: vi.fn(),
+        cancel: vi.fn(),
+        log: vi.fn().mockResolvedValue({ data: '', size: 0, done: true }),
+      },
+    },
     imageScans: { policy: vi.fn(), setPolicy: vi.fn(), get: vi.fn().mockResolvedValue({ result: null, scanning: false }), scan: vi.fn() },
     traefik: {
       sharedCertificates: { get: vi.fn().mockResolvedValue({ enabled: false }), set: vi.fn() },

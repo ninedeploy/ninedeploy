@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { ServiceLifecycleView } from '@ninedeploy/sdk';
 import {
-  Activity, ArrowLeft, Boxes, Copy, Download, ExternalLink, FileCode2, FileStack, FolderTree, GitBranch, Globe, HardDrive, KeyRound, LayoutDashboard, Network, Play, Rocket, RotateCcw, Settings, ShieldAlert, Square, Terminal,
+  Activity, ArrowLeft, Boxes, Copy, Download, ExternalLink, FileCode2, FileStack, FolderTree, GitBranch, Globe, HardDrive, KeyRound, LayoutDashboard, Network, Play, Rocket, RotateCcw, Settings, ShieldAlert, Square, Terminal, Workflow,
 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api, authedFetch } from '../../lib/api.js';
@@ -26,6 +26,7 @@ import { VolumesTab } from './VolumesTab.js';
 import { SettingsTab } from './SettingsTab.js';
 import { FrameworkTab } from './FrameworkTab.js';
 import { ActivityTab } from './ActivityTab.js';
+import { CiTab } from './CiTab.js';
 import { DangerZone } from './DangerZone.js';
 import { CanaryPanel } from './CanaryPanel.js';
 import { ServiceStatusBadge, SleepActions } from './SleepState.js';
@@ -35,7 +36,7 @@ import { ContainerFileBrowser } from '../../components/ContainerFileBrowser.js';
 import { ServiceDomainLauncher } from '../../components/ServiceDomainLauncher.js';
 import { fill, msg, useT } from '../../lib/i18n.js';
 
-type TabId = 'overview' | 'terminal' | 'architecture' | 'manifest' | 'compose' | 'deploys' | 'environment' | 'network' | 'volumes' | 'files' | 'framework' | 'settings' | 'activity' | 'danger';
+type TabId = 'overview' | 'terminal' | 'architecture' | 'manifest' | 'compose' | 'deploys' | 'ci' | 'environment' | 'network' | 'volumes' | 'files' | 'framework' | 'settings' | 'activity' | 'danger';
 
 const SERVICE_TABS: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'overview', label: msg('Overview'), icon: LayoutDashboard },
@@ -45,6 +46,7 @@ const SERVICE_TABS: Array<{ id: TabId; label: string; icon: typeof LayoutDashboa
   // Inline compose stacks only — see `visibleTabs`.
   { id: 'compose', label: msg('Compose File'), icon: FileStack },
   { id: 'deploys', label: msg('Deploys'), icon: Rocket },
+  { id: 'ci', label: msg('CI'), icon: Workflow },
   { id: 'environment', label: msg('Environment'), icon: KeyRound },
   { id: 'network', label: msg('Network & Domains'), icon: Globe },
   { id: 'volumes', label: msg('Volumes & Storage'), icon: HardDrive },
@@ -477,6 +479,7 @@ export function ServiceDetail() {
               onSelect={setActiveDeploy}
             />
           )}
+          {tab === 'ci' && <CiTab key={id} serviceId={id} isPreview={svc.previewParentServiceId != null} />}
           {tab === 'environment' && <EnvironmentTab serviceId={id} svc={svc} />}
           {tab === 'network' && <NetworkTab key={id} serviceId={id} svc={svc} />}
           {tab === 'volumes' && <VolumesTab key={id} serviceId={id} svc={svc} />}

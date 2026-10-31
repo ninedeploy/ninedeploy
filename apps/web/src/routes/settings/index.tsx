@@ -23,6 +23,7 @@ import {
   User,
   X,
   GitMerge,
+  Workflow,
 } from 'lucide-react';
 import { AccountSection } from './AccountSection.js';
 import { AiSection } from './AiSection.js';
@@ -41,6 +42,7 @@ import { FirewallSection } from './FirewallSection.js';
 import { PanelBackupSection } from './PanelBackupSection.js';
 import { SwarmSection } from './SwarmSection.js';
 import { DeployFreezeSection } from './DeployFreezeSection.js';
+import { CiRunnersSection } from './CiRunnersSection.js';
 import { ImageScanSection } from './ImageScanSection.js';
 import { GitopsSection } from './GitopsSection.js';
 import { AutofillRejectingInput, PageHeader, Select, cn } from '../../components/ui.js';
@@ -58,6 +60,7 @@ type SectionId =
   | 'firewall'
   | 'swarm'
   | 'deploy-freeze'
+  | 'ci-runners'
   | 'image-scanning'
   | 'gitops'
   | 'config'
@@ -108,6 +111,7 @@ const SETTING_GROUPS: SectionCategory[] = [
       { id: 'storage', label: msg('Storage & Prune'), desc: msg('Disks, Docker prune & logs'), icon: <HardDrive size={16} />, operatorOnly: true },
       { id: 'swarm', label: msg('Swarm'), desc: msg('Multi-node orchestration & cluster'), icon: <Network size={16} />, operatorOnly: true },
       { id: 'deploy-freeze', label: msg('Deploy freeze'), desc: msg('Hold deploys during releases & incidents'), icon: <Snowflake size={16} />, operatorOnly: true },
+      { id: 'ci-runners', label: msg('CI runners'), desc: msg('Machines that run CI jobs'), icon: <Workflow size={16} />, operatorOnly: true },
       { id: 'image-scanning', label: msg('Image scanning'), desc: msg('Trivy vulnerability scans & deploy gate'), icon: <ScanSearch size={16} />, operatorOnly: true },
       { id: 'gitops', label: msg('GitOps'), desc: msg('The instance as a file in a repository'), icon: <GitMerge size={16} />, operatorOnly: true },
       { id: 'config', label: msg('Config Center'), desc: msg('Global key-value configuration'), icon: <Sliders size={16} />, operatorOnly: true },
@@ -295,6 +299,7 @@ export function Settings() {
             {section === 'storage' && <StorageSection />}
             {section === 'swarm' && <SwarmSection />}
             {section === 'deploy-freeze' && <DeployFreezeSection />}
+          {section === 'ci-runners' && <CiRunnersSection />}
             {section === 'image-scanning' && <ImageScanSection />}
             {section === 'gitops' && <GitopsSection />}
             {section === 'config' && <ConfigCenterSection />}

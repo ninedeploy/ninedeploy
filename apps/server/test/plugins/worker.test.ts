@@ -12,6 +12,10 @@ vi.mock('../../src/engine/pipeline.js', () => pipelineMock);
 vi.mock('../../src/lib/ciGate.js', () => ({
   holdForCiIfNeeded: vi.fn(async () => false), pollCiGates: vi.fn(async () => []),
 }));
+// R5 job gates: real DB and worker in workerCi.test.ts.
+vi.mock('../../src/lib/ciDeployGate.js', () => ({
+  holdForRunnerCiIfNeeded: vi.fn(async () => false), settleRunnerCiGates: vi.fn(async () => []),
+}));
 // Deploy freezes (G5.5) are covered with the real DB and worker in workerFreeze.test.ts.
 vi.mock('../../src/lib/deployFreeze.js', () => ({
   anyDeployFreeze: vi.fn(async () => false), freezeHolding: vi.fn(async () => null), freezeLogLine: vi.fn(() => ''),

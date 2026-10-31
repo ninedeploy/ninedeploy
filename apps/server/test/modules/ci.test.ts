@@ -116,8 +116,7 @@ describe('R5 CI', () => {
     expect((await post(token, c.attemptId, c.leaseToken, 'log', { seq: 3, data: 'gap' })).statusCode).toBe(409);
     expect((await post(token, c.attemptId, c.leaseToken, 'log', { seq: 2, data: 'world\n' })).statusCode).toBe(200);
     const log = await app.inject({ method: 'GET', url: `/v1/services/7/ci/jobs/${jobId}/attempts/1/log?offset=6`, headers: user() });
-    expect(log.body).toBe('world\n');
-    expect(log.headers['x-nd-log-size']).toBe('12');
+    expect(log.json()).toEqual({ data: 'world\n', size: 12, done: false });
 
     expect((await post(token, c.attemptId, c.leaseToken, 'heartbeat')).json()).toEqual({ action: 'continue' });
     expect((await post(token, c.attemptId, 'ndlease_wrong', 'heartbeat')).statusCode).toBe(401);

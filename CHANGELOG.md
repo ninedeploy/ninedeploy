@@ -11,12 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- CI jobs on your own runners (R5, first part; [docs/CI_RUNNERS.md](docs/CI_RUNNERS.md)).
+- CI jobs on your own runners (R5; [docs/CI_RUNNERS.md](docs/CI_RUNNERS.md)).
   - A service's pipeline is an image and a script. Operators enrol runners, which pull jobs over HTTPS with their own token (`node apps/server/dist/ciRunner.js` in the panel image).
   - Each job runs in a throwaway container with the source the panel checked out (no `.git`, so no credential) and only the service variables the pipeline names. The container gets no Docker socket and no runner or lease token.
   - Jobs and attempts are kept in the database (migration 0117). A lease decides which attempt counts: a lost runner's job is requeued, its late result is refused, and its leftover containers are removed when it starts again. A panel restart renews live leases.
   - Approval, runner labels and capacity are supported. Logs arrive as numbered chunks and are kept for 30 days.
-  - Next: the panel UI, triggers on push and gating deploys on a job.
+  - `runOnPush` runs a job for every push to the service branch (skip markers apply; one job per commit).
+  - `gateDeploys` holds every deploy of the service and of its PR previews in `awaiting_ci` until a job at the deploy's commit passes. The deploy then builds the commit the job pinned; a failed or cancelled job fails it. A job for a pull request from a fork waits for an admin. Migration 0118 links a job to its deploy.
+  - The panel has a **CI** tab on each service (pipeline, jobs, attempts, followed logs) and **Settings → CI runners**. The SDK has `client.ci`.
+  - The attempt log route now answers JSON (`{ data, size, done }`) instead of text with headers.
 - A desktop client (R6, [docs/DESKTOP.md](docs/DESKTOP.md)). `desktop/` builds unsigned installers for Windows (NSIS), Debian (deb), Linux (AppImage) and macOS (dmg).
   - You add a panel by its address, which must answer `/health`, and open it in a sandboxed window with its own storage partition.
   - The panel keeps its refresh token in the OS credential store (DPAPI, Keychain, libsecret), so a sign-in survives closing the window. Without a real store nothing is written.

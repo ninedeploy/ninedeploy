@@ -2505,6 +2505,9 @@ export const ciJobs = sqliteTable(
     // The attempt whose result counts. A finish from any other attempt is refused.
     currentAttemptId: integer('current_attempt_id'),
     trigger: text('trigger').notNull().default('manual'),
+    // The deployment this job gates (a pipeline with `gateDeploys`). No FK:
+    // deployments are pruned on their own schedule.
+    deploymentId: integer('deployment_id'),
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     approvedBy: integer('approved_by').references(() => users.id, { onDelete: 'set null' }),
     cancelledBy: integer('cancelled_by').references(() => users.id, { onDelete: 'set null' }),
@@ -2516,6 +2519,7 @@ export const ciJobs = sqliteTable(
   (t) => ({
     serviceIdx: index('ci_jobs_service_idx').on(t.serviceId, t.id),
     statusIdx: index('ci_jobs_status_idx').on(t.status),
+    deploymentIdx: index('ci_jobs_deployment_idx').on(t.deploymentId),
   }),
 );
 

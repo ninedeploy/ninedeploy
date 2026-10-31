@@ -4,11 +4,11 @@ NineDeploy can run a service's tests or build steps on machines you enrol as **r
 
 The panel keeps every job and every attempt in its database. Runners pull work over HTTPS with their own token; the panel never connects to them.
 
-This is the first part of R5: the API, the runner and the recovery rules. The panel UI, triggers on push and gating deploys on a job come next.
+In the panel, a service's **CI** tab holds its pipeline, its jobs and each attempt's log, and **Settings → CI runners** enrols runners. The SDK exposes the same through `client.ci`.
 
 ## Enrolling a runner
 
-An operator creates the runner and receives its token once (`ndrun_…`). Only the token's hash is stored.
+An operator creates the runner in **Settings → CI runners**, or with the API, and receives its token once (`ndrun_…`). Only the token's hash is stored.
 
 ```sh
 curl -X POST https://panel.example.com/v1/ci/runners \
@@ -57,7 +57,9 @@ A service admin sets the pipeline (`PUT /v1/services/:id/ci`):
   "secrets": ["NPM_TOKEN"],
   "timeoutMinutes": 30,
   "maxAttempts": 2,
-  "requireApproval": false
+  "requireApproval": false,
+  "runOnPush": true,
+  "gateDeploys": false
 }
 ```
 
@@ -68,6 +70,8 @@ A service admin sets the pipeline (`PUT /v1/services/:id/ci`):
 | `secrets` | Names of **service variables** the job receives as environment. Nothing else from the service reaches it, and a PR preview receives none. Setting the pipeline is admin-only for this reason. |
 | `maxAttempts` | Total tries when a runner is **lost** mid-job. A script that fails is not retried. |
 | `requireApproval` | Holds every job until a service admin approves it (`POST …/ci/jobs/:jobId/approve`). Runners see nothing before that. |
+| `runOnPush` | A push to the service branch runs a job at the pushed commit (see below). |
+| `gateDeploys` | Every deploy waits for a job at its commit and builds only what the job passed (see below). |
 
 Members run the pipeline with `POST /v1/services/:id/ci/jobs` and an optional `{ "ref": "<branch or commit>" }`; the service branch is used by default. A job copies the pipeline when it is created, so later edits never change it.
 
@@ -75,11 +79,39 @@ Members run the pipeline with `POST /v1/services/:id/ci/jobs` and an optional `{
 
 `GET …/attempts/:number/log?offset=<bytes>` reads the log from that byte on:
 
-- `x-nd-log-size` gives the current size and `x-nd-log-done` says when the attempt is over;
+- it answers `{ "data": "…", "size": 1234, "done": false }`: ask again with `offset=size` for what came after, until `done` is true (the panel's CI tab follows a log this way);
 - the log is capped at 8 MiB per attempt;
 - on a protected lane, only the lane's admins can read it.
 
 Finished jobs and their logs are removed after 30 days.
+
+## Jobs on push
+
+With `runOnPush`, a verified push webhook for the service branch runs a job at the pushed commit:
+
+- a `[skip ci]` or `[skip cd]` marker in the head commit skips the job as it skips the deploy;
+- a job runs even when watch paths skip the deploy;
+- a replayed delivery for a commit that already has a push job adds none;
+- the webhook's answer names the job (`ciJobId`).
+
+When the pipeline also has `gateDeploys`, the push adds no job of its own: the deploy it queues runs one.
+
+## Deploys gated on CI
+
+With `gateDeploys`, every deploy of the service waits in **`awaiting_ci`** until a job passes, whatever queued it: a push, the UI, the API, a schedule or a rollback.
+
+1. When the deploy reaches the front of the queue, the panel creates a job at the deploy's commit (or at the branch head when the deploy names none). The job is linked to the deploy, and the deploy holds no build slot while it waits.
+2. The job checks out the source and pins the commit it tested.
+3. When the job passes, the deploy gets that commit and is queued again. The build checks out exactly that commit, and the pipeline refuses to build any other.
+4. When the job fails or is cancelled, the deploy fails with the job's error.
+
+More rules:
+
+- Cancelling a waiting deploy, or replacing it with a newer one, cancels its job.
+- An approval given before the commit was known is cleared, as with the GitHub workflow gate.
+- When the service also requires GitHub workflows, the NineDeploy job runs first and the GitHub check then verifies the commit the job pinned.
+- **PR previews** of the service are gated by the same pipeline. Their jobs get none of the service's variables. A job for a pull request from a **fork** waits for a service admin to approve it before any runner sees fork code.
+- Removing the pipeline, or turning `gateDeploys` off, lets waiting deploys through at the next check.
 
 ## What a job sees, and what it doesn't
 
