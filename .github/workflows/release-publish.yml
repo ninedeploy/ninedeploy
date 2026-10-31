@@ -455,6 +455,20 @@ jobs:
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --autoscale-only --proof=.temp_files/release-node-autoscale
 
+      - name: Public node autoscaling with PostgreSQL on the pushed image
+        if: matrix.suite == 'replica-databases'
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --autoscale-database-only --proof=.temp_files/release-node-autoscale-database
+
+      - name: Preserve PostgreSQL autoscale acceptance evidence
+        if: always() && matrix.suite == 'replica-databases'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-node-autoscale-database
+          path: .temp_files/release-node-autoscale-database/
+          include-hidden-files: true
+          if-no-files-found: warn
+
       - name: Public ordered node Start, Stop, Restart and panel-crash recovery
         if: matrix.suite == 'public-lifecycle'
         timeout-minutes: 15
