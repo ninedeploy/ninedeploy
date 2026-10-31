@@ -1675,8 +1675,14 @@ export const dockerBuilder: Builder = {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline && !deployAborted()) {
         await options.checkpoint?.();
+        const eligible = await containerIp(runtime.runtimeId);
+        await options.checkpoint?.();
         const remaining = deadline - Date.now();
         if (remaining <= 0 || deployAborted()) break;
+        if (!eligible) {
+          await sleep(Math.min(1000, remaining));
+          continue;
+        }
         let ready = false;
         try {
           const protocol = runtime.healthCheck === 'tcp' ? 'tcp' : 'http';
@@ -1684,6 +1690,7 @@ export const dockerBuilder: Builder = {
           const exitCode = await probeContainer({ name: runtime.runtimeId, port: runtime.port,
             protocol, path: runtime.healthPath }, line => lines.push(line), { timeoutMs: remaining });
           ready = confirmedNodeProbe(lines, exitCode, protocol);
+          if (ready && Date.now() < deadline && !deployAborted()) ready = await containerIp(runtime.runtimeId) !== null;
         } catch { /* retry until the readiness deadline */ }
         await options.checkpoint?.();
         if (Date.now() >= deadline || deployAborted()) break;
