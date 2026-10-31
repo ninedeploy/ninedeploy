@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { CiClaimResponse } from '@ninedeploy/schemas';
+import { CI_RESERVED_ENV, type CiClaimResponse } from '@ninedeploy/schemas';
 
 export interface RunnerOptions {
   url: string;
@@ -42,6 +42,11 @@ const LOG_CHUNK_BYTES = 64 * 1024;
 
 export function runnerLabel(token: string): string {
   return createHash('sha256').update(token).digest('hex').slice(0, 16);
+}
+
+/** The job's variables without any name that would change the docker client rather than the job. */
+export function jobEnv(env: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && !CI_RESERVED_ENV.test(k)));
 }
 
 /** The `docker run` arguments of one job. Pure, so the isolation it promises can be tested. */
@@ -70,7 +75,7 @@ export function jobRunArgs(opts: RunnerOptions, claim: CiClaimResponse, dirs: { 
     '-v',
     `${dirs.script}:/nd-ci/script.sh:ro`,
     // Values travel in the docker client's environment, never on its command line.
-    ...Object.keys(claim.env).flatMap((k) => ['-e', k]),
+    ...Object.keys(jobEnv(claim.env)).flatMap((k) => ['-e', k]),
     '-e',
     'CI=true',
     '-e',
@@ -226,7 +231,10 @@ async function runAttempt(opts: RunnerOptions, panel: Panel, claim: CiClaimRespo
       write(`▸ Source at ${commit?.slice(0, 12) ?? 'the uploaded archive'}\n`);
     }
     write(`▸ Running in ${claim.image} (attempt ${claim.number})\n`);
-    const env: NodeJS.ProcessEnv = { PATH: process.env['PATH'], HOME: process.env['HOME'], DOCKER_HOST: process.env['DOCKER_HOST'], ...claim.env };
+    // The docker client runs with the job's variables in its environment (values stay off the command line).
+    // Names that would steer the client itself are dropped (the panel refuses them too), and the runner's
+    // own settings are written last so nothing can replace them.
+    const env: NodeJS.ProcessEnv = { ...jobEnv(claim.env), PATH: process.env['PATH'], HOME: process.env['HOME'], DOCKER_HOST: process.env['DOCKER_HOST'] };
     if (process.platform === 'win32') Object.assign(env, { SystemRoot: process.env['SystemRoot'], USERPROFILE: process.env['USERPROFILE'] });
     const child = spawn(opts.docker, [...(opts.dockerPrefix ?? []), ...jobRunArgs(opts, claim, { source, script })], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.on('data', (d: Buffer) => write(d.toString()));

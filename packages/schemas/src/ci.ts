@@ -5,7 +5,19 @@ import { z } from 'zod';
 // one run of it at a commit; runners pull jobs over HTTPS with their own token.
 
 const label = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,39}$/, 'Labels use lowercase letters, digits, dot, dash and underscore');
-const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/, 'Not a variable name');
+/**
+ * Job variables travel in the docker client's environment on the runner (so
+ * values never appear on a command line). Names that steer that client, the
+ * dynamic loader or the shell are refused, or a service admin could point the
+ * runner's Docker client at another daemon or preload code into it.
+ */
+export const CI_RESERVED_ENV =
+  /^(PATH|HOME|USER|SHELL|TMPDIR|TEMP|TMP|IFS|ENV|BASH_ENV|BASH_FUNC_.*|GCONV_PATH|LOCALPATH|SYSTEMROOT|WINDIR|COMSPEC|PATHEXT|USERPROFILE|APPDATA|LOCALAPPDATA|PROGRAMDATA|LD_.*|DYLD_.*|DOCKER_.*|BUILDKIT_.*|NODE_.*|NPM_CONFIG_.*|SSL_CERT_.*|CURL_CA_BUNDLE|(HTTP|HTTPS|ALL|NO|FTP)_PROXY|CI|NINEDEPLOY_.*)$/i;
+
+const envName = z
+  .string()
+  .regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/, 'Not a variable name')
+  .refine((n) => !CI_RESERVED_ENV.test(n), 'This name is reserved: it would change the runner, not only the job');
 /** A Docker image reference: no whitespace, no option-looking leading dash. */
 const imageRef = z
   .string()

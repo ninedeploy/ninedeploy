@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import { eq } from 'drizzle-orm';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { ciJobs, envVars, services, users } from '@ninedeploy/db';
-import { jobRunArgs, type RunnerOptions, runnerLabel, runRunner } from '../src/ciRunner.js';
+import { jobEnv, jobRunArgs, type RunnerOptions, runnerLabel, runRunner } from '../src/ciRunner.js';
 import * as ci from '../src/lib/ci.js';
 import { encrypt } from '../src/lib/crypto.js';
 import { ciRunnerProtocolRoutes } from '../src/modules/ci.js';
@@ -72,6 +72,21 @@ describe('R5 runner: the job container', () => {
   it("labels the container with this runner's id (not its token) for orphan cleanup", () => {
     expect(runnerLabel('ndrun_abc')).toMatch(/^[0-9a-f]{16}$/);
     expect(args).toEqual(expect.arrayContaining(['--label', `ninedeploy.ci-runner=${runnerLabel('ndrun_abc')}`, '--name', 'nd-ci-12']));
+  });
+});
+
+describe('R5 runner: job variables never steer the docker client', () => {
+  it('drops reserved names from both the -e list and the client environment, and the schema refuses them', async () => {
+    const { ciPipeline } = await import('@ninedeploy/schemas');
+    const hostile = { DOCKER_HOST: 'tcp://evil:2375', LD_PRELOAD: '/tmp/x.so', PATH: '/evil', NODE_OPTIONS: '--require x', docker_config: '/x', HTTPS_PROXY: 'http://evil', API_KEY: SECRET };
+    expect(jobEnv(hostile)).toEqual({ API_KEY: SECRET });
+    const args = jobRunArgs(opts, { ...claim, env: hostile }, { source: '/w/src', script: '/w/s.sh' });
+    // Variables passed by name (the shell's own `-e /nd-ci/script.sh` aside).
+    expect(args.filter((a, i) => args[i - 1] === '-e' && !a.includes('=') && !a.startsWith('/'))).toEqual(['API_KEY']);
+    for (const name of ['DOCKER_HOST', 'LD_PRELOAD', 'PATH', 'NODE_OPTIONS', 'docker_tls_verify', 'BASH_ENV', 'NINEDEPLOY_RUNNER_TOKEN', 'CI']) {
+      expect(ciPipeline.safeParse({ image: 'alpine:3.20', script: 'true', secrets: [name] }).success, name).toBe(false);
+    }
+    expect(ciPipeline.safeParse({ image: 'alpine:3.20', script: 'true', secrets: ['NPM_TOKEN', 'DATABASE_URL'] }).success).toBe(true);
   });
 });
 

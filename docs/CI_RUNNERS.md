@@ -99,6 +99,14 @@ The job container:
 
 Variable values reach Docker through the client's environment, not its command line.
 
+Some names would change the runner's own Docker client rather than the job, so the pipeline refuses them as `secrets`:
+- `PATH`, `HOME`, `LD_*`, `DYLD_*`
+- `DOCKER_*`, `BUILDKIT_*`, `NODE_*`
+- the proxy and CA variables
+- `BASH_ENV`, `ENV`, `IFS`, `CI`, `NINEDEPLOY_*` and similar
+
+The panel and the runner drop such a name again before a job starts.
+
 Job containers use Docker's default bridge network, so they can reach the internet and whatever else the runner machine can reach. Use a dedicated machine for runners and keep production networks out of its reach.
 
 ## Recovery

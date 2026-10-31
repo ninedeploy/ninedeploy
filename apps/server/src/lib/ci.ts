@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:
 import path from 'node:path';
 import { and, asc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { ciAttempts, ciJobs, ciRunners, type DB, envVars, type services } from '@ninedeploy/db';
-import { type CiClaimResponse, type CiPipeline, ciPipeline } from '@ninedeploy/schemas';
+import { CI_RESERVED_ENV, type CiClaimResponse, type CiPipeline, ciPipeline } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { decrypt } from './crypto.js';
 import { getSettingJson, setSettingJson } from './settings.js';
@@ -251,7 +251,8 @@ async function jobEnv(db: DB, job: Job): Promise<Record<string, string>> {
   const rows = await db.query.envVars.findMany({
     where: and(eq(envVars.serviceId, job.serviceId), inArray(envVars.key, job.secretNames)),
   });
-  for (const r of rows) env[r.key] = decrypt(r.valueEncrypted);
+  // A pipeline stored before a name became reserved still never hands it out.
+  for (const r of rows) if (!CI_RESERVED_ENV.test(r.key)) env[r.key] = decrypt(r.valueEncrypted);
   return env;
 }
 
