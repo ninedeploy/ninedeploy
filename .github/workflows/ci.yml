@@ -241,6 +241,19 @@ jobs:
         timeout-minutes: 10
         run: node scripts/smoke-container-readiness.mjs --image=ninedeploy:ci
 
+      - name: Verify normal panel deploys across healthcheck modes with continuous traffic
+        timeout-minutes: 15
+        run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --health-modes-only --proof=.temp_files/ci-panel-health-modes
+
+      - name: Preserve panel healthcheck traffic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-panel-health-modes-${{ github.run_id }}
+          path: .temp_files/ci-panel-health-modes/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       - name: Preserve node autoscale proof
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
