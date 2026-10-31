@@ -25,6 +25,21 @@ function render() {
 }
 
 describe('OAuthAuthorize (R4)', () => {
+  it('keeps reduced access after a failed approval and allows a retry without redirecting early', async () => {
+    mockOf(api.mcpRemote.checkAuthorization).mockResolvedValue({ client: { name: 'Client', redirectHost: '127.0.0.1:9' }, requestedAccess: 'full' } as never);
+    mockOf(api.mcpRemote.decideAuthorization).mockRejectedValueOnce(new Error('Grant expired')).mockResolvedValueOnce({ redirect: 'http://127.0.0.1:9/cb?code=retry' } as never);
+    render();
+    await userEvent.click(await screen.findByRole('radio', { name: /Read only/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(await screen.findByText('Grant expired')).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
+    expect(screen.getByRole('radio', { name: /Read only/ })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('http://127.0.0.1:9/cb?code=retry'));
+    expect(api.mcpRemote.decideAuthorization).toHaveBeenLastCalledWith(expect.objectContaining({ approve: true, access: 'read' }));
+  });
+
   it('names the client and its return host, and approves with the chosen access', async () => {
     mockOf(api.mcpRemote.checkAuthorization).mockResolvedValue({ client: { name: 'Claude', redirectHost: '127.0.0.1:9' }, requestedAccess: 'read' } as never);
     mockOf(api.mcpRemote.decideAuthorization).mockResolvedValue({ redirect: 'http://127.0.0.1:9/cb?code=c&state=s1' } as never);
