@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { DEFAULT_MCP_HTTP_POLICY, mcpHttpPolicy, mcpHttpPolicyPatch, type McpHttpPolicy } from '@ninedeploy/schemas';
+import { mcpHttpPolicy, mcpHttpPolicyPatch, type McpHttpPolicy } from '@ninedeploy/schemas';
 import { buildServer, handleHttpRequest } from '@ninedeploy/mcp';
 import { createClient } from '@ninedeploy/sdk';
 import { audit } from '../lib/audit.js';
@@ -7,7 +7,7 @@ import { resolveUser } from '../lib/auth.js';
 import { mcpInternalHeaders } from '../lib/mcpAudience.js';
 import { protectedResourceMetadataUrl } from './mcpOAuth.js';
 import { forbidden, HttpError, notFound, unauthorized } from '../lib/errors.js';
-import { getSettingJson, setSettingJson } from '../lib/settings.js';
+import { getMcpHttpPolicy, setMcpHttpPolicy } from '../lib/mcpHttpPolicy.js';
 
 /**
  * R4 remote MCP over Streamable HTTP.
@@ -23,13 +23,6 @@ import { getSettingJson, setSettingJson } from '../lib/settings.js';
  * token may do is decided per tool call, by the route the tool calls.
  */
 
-const KEY = 'mcp_http';
-
-export async function getMcpHttpPolicy(db: FastifyInstance['db']): Promise<McpHttpPolicy> {
-  const parsed = mcpHttpPolicy.safeParse(await getSettingJson(db, KEY, null));
-  return parsed.success ? parsed.data : DEFAULT_MCP_HTTP_POLICY;
-}
-
 const view = (policy: McpHttpPolicy) => ({ policy, path: '/v1/mcp' as const });
 
 export const mcpPolicyRoutes: FastifyPluginAsync = async (app) => {
@@ -41,7 +34,7 @@ export const mcpPolicyRoutes: FastifyPluginAsync = async (app) => {
   app.put('/', async (req) => {
     const patch = mcpHttpPolicyPatch.parse(req.body ?? {});
     const policy = mcpHttpPolicy.parse({ ...(await getMcpHttpPolicy(app.db)), ...patch });
-    await setSettingJson(app.db, KEY, policy);
+    await setMcpHttpPolicy(app.db, policy);
     void audit(app.db, req.user!.id, 'mcp.policy', 'mcp', { ...policy });
     return view(policy);
   });

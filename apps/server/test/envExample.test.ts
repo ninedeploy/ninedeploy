@@ -66,6 +66,9 @@ describe('.env.example', () => {
     read.delete('PATH');
     read.delete('LANG');
     read.delete('TZ');
+    // The CI runner hands its own home directory to the docker client it runs (R5).
+    read.delete('HOME');
+    read.delete('USERPROFILE');
     const documented = envVarsDocumented();
     expect([...read].filter((v) => !documented.has(v)).sort()).toEqual([]);
   });

@@ -112,6 +112,17 @@ export const SPEC_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'list_ci_jobs',
+    description: 'CI jobs of a service (R5): status, ref, commit, attempts and timing. No logs or variable values.',
+    input: z.object({ serviceId: z.number().int().positive() }),
+    // GET /v1/services/:id/ci/jobs
+    requiredScopes: ['nd://scope/read/services'],
+    handler: (c, input) => {
+      const i = input as { serviceId: number };
+      return c.api.get(`/v1/services/${i.serviceId}/ci/jobs`);
+    },
+  },
+  {
     name: 'list_environments',
     description: 'List deployment environments (lanes) across the workspaces the caller belongs to, with live service counts.',
     input: z.object({}),
@@ -228,6 +239,7 @@ export const SPEC_READ_ONLY_TOOL_NAMES: readonly string[] = [
   'instance_traffic_summary',
   'list_access_grants',
   'list_backups',
+  'list_ci_jobs',
   'list_environments',
   'list_image_transfers',
   'list_jobs',

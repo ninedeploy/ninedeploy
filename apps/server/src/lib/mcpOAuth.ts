@@ -190,16 +190,19 @@ export async function refreshTokens(db: DB, refresh: string, clientId: string, n
 }
 
 /** RFC 7009: end the grant behind an access or refresh token. Unknown tokens are not an error. */
-export async function revokeToken(db: DB, token: string): Promise<void> {
+/** Revoke an access or refresh token. Answers whose grant it was, or null when it was unknown. */
+export async function revokeToken(db: DB, token: string): Promise<number | null> {
   if (token.startsWith(MCP_TOKEN_PREFIX)) {
-    await db.delete(apiTokens).where(eq(apiTokens.hash, sha256(token)));
-    return;
+    const gone = await db.delete(apiTokens).where(eq(apiTokens.hash, sha256(token))).returning({ userId: apiTokens.userId });
+    return gone[0]?.userId ?? null;
   }
-  if (!token.startsWith(REFRESH_PREFIX)) return;
+  if (!token.startsWith(REFRESH_PREFIX)) return null;
   const key = `${REFRESH_KEY}${sha256(token)}`;
   const row = await getSettingJson<RefreshRow>(db, key, null);
   await db.delete(settings).where(eq(settings.key, key));
-  if (row) await db.delete(apiTokens).where(and(eq(apiTokens.id, row.tokenId), eq(apiTokens.userId, row.userId)));
+  if (!row) return null;
+  await db.delete(apiTokens).where(and(eq(apiTokens.id, row.tokenId), eq(apiTokens.userId, row.userId)));
+  return row.userId;
 }
 
 /** A settings value as stored (json mode) or as text; null when it cannot be read. */

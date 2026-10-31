@@ -87,6 +87,13 @@ const EXEMPT: Record<string, string> = {
   // ── end 0.16 T6 ──
   // ── 0.16 T7 swarm ──
   // ── end 0.16 T7 ──
+  // R4 remote MCP
+  'mcpHttp.ts POST /': 'the MCP transport; each tool runs through the API route it maps to, which audits its own change',
+  'mcpHttp.ts DELETE /': 'refused (405): sessions are stateless',
+  'mcpOAuth.ts POST /authorize': 'issues a one-time code; the grant is audited as mcp.oauth.grant when the code is exchanged',
+  // R5 runner protocol
+  'ci.ts POST /attempts/:attemptId/heartbeat': 'renews a lease every 15 s; the attempt start and result are audited',
+  'ci.ts POST /attempts/:attemptId/log': 'appends a log chunk; the attempt start and result are audited',
 };
 
 // importSystemArchive (lib/systemArchive.ts) audits `system.import`; the panel
