@@ -1189,6 +1189,13 @@ export const MATRIX: Record<string, Rule> = {
   'DELETE /v1/deploy-freezes/:id': OP,
   'GET /v1/image-scanning': OP,
   'PUT /v1/image-scanning': R('operator', { body: () => ({ rescanHours: 24 }) }),
+  // R4 remote MCP: the policy is the operator's; the endpoint checks the caller's own
+  // credential (outside `authenticate`) and answers 404 while the policy is off.
+  'GET /v1/mcp/policy': OP,
+  'PUT /v1/mcp/policy': R('operator', { body: () => ({ readOnly: false }) }),
+  'POST /v1/mcp': R('authed', { note: 'off by default (404 to any caller); test/modules/mcpHttp.test.ts drives it on with real tokens' }),
+  'GET /v1/mcp': R('public', { note: 'stateless endpoint: 405 with Allow: POST, before any credential check' }),
+  'DELETE /v1/mcp': R('public', { note: 'stateless endpoint: 405 with Allow: POST, before any credential check' }),
   'GET /v1/os-updates': OP,
   'POST /v1/os-updates/auto': OP,
   'GET /v1/servers/:serverId/os-updates': OP,

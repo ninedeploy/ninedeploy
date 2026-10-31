@@ -23,6 +23,7 @@
     "@fastify/static": "^10.1.4",
     "@fastify/websocket": "^11.3.1",
     "@ninedeploy/db": "workspace:*",
+    "@ninedeploy/mcp": "workspace:*",
     "@ninedeploy/schemas": "workspace:*",
     "@ninedeploy/sdk": "workspace:*",
     "@node-rs/argon2": "^2.1.0",

@@ -6021,4 +6021,12 @@ export const TR: Readonly<Record<string, string>> = {
   'Tailscale auth key': 'Tailscale auth key',
   'Tailnet hostname (optional)': 'Tailnet ana bilgisayar adı (isteğe bağlı)',
   'Headscale server (optional)': 'Headscale sunucusu (isteğe bağlı)',
+  // Remote MCP (R4)
+  'Remote MCP': 'Uzak MCP',
+  'Remote MCP saved': 'Uzak MCP kaydedildi',
+  'Could not load remote MCP': 'Uzak MCP yüklenemedi',
+  'Serve MCP over HTTP': 'MCP\'yi HTTP üzerinden sun',
+  'AI clients connect to the MCP tools over HTTP with an API token, instead of running the local MCP server. Each tool call runs as that token: its scopes and its owner\'s roles apply, and a revoked token stops working at once.': 'Yapay zekâ istemcileri, yerel MCP sunucusunu çalıştırmak yerine MCP araçlarına bir API token\'ıyla HTTP üzerinden bağlanır. Her araç çağrısı o token olarak çalışır: token\'ın kapsamları ve sahibinin rolleri geçerlidir; iptal edilen bir token hemen çalışmaz olur.',
+  'Send the token as an Authorization: Bearer header, for example:': 'Token\'ı Authorization: Bearer başlığıyla gönderin, örneğin:',
+  'Read-only tools only, for every caller': 'Herkes için yalnızca salt okunur araçlar',
 };

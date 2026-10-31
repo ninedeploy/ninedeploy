@@ -107,6 +107,9 @@ importers:
       '@ninedeploy/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ninedeploy/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@ninedeploy/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas

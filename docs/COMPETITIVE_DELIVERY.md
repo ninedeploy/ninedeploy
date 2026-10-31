@@ -241,7 +241,7 @@ Across the multi-release program, one of six feature packages has implementation
 | Public node canary (R1) | Published in 0.18.2 | 0.18.2 | Accepted; retain the canary regression suite |
 | Remaining runtime support (R2) | In progress; node metrics, manual replicas/SQL readiness and settled multi-node lifecycle verified | 0.19.0 target | Stop during generation handoff, shared deploy/scale/wake ordering, node autoscale/sleep, remaining Swarm and mixed-agent acceptance |
 | Recovery (R3) | Pending | 0.20.0 target | Isolated real restore/query/RTO and PostgreSQL PITR |
-| Remote MCP (R4) | Pending | 0.21.0 target | HTTP transport, OAuth, revocation and resource authorization with real clients |
+| Remote MCP (R4) | In progress | 0.21.0 target | Streamable HTTP with API-token Bearer auth, per-call authorization and immediate revocation are implemented and checked with the official client (see [AI_MCP_CLI.md](AI_MCP_CLI.md#remote-mcp-over-http-r4)); OAuth remains |
 | CI/runners (R5) | Pending | 0.22.0 target | Durable execution, enrollment/isolation, secrets, approvals and recovery |
 | Packaged desktop (R6) | Pending | 0.23.0 target | Secure credentials/IPC/navigation and platform installers |
 | Release certification (R7) | Complete for 0.18.2; repeated per release | Every release | Repeat full certification for the next release |

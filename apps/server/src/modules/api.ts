@@ -49,6 +49,7 @@ import { databaseTunnelRoutes } from './databaseTunnel.js';
 import { serviceTunnelRoutes } from './serviceTunnel.js';
 import { pendingChangeRoutes } from './pendingChanges.js';
 import { restartLimitRoutes } from './restartLimit.js';
+import { mcpEndpointRoutes, mcpPolicyRoutes } from './mcpHttp.js';
 import { serviceMaintenanceRoutes } from './maintenance.js';
 import { inlineDockerfileRoutes } from './inlineDockerfile.js';
 import { serviceMoveRoutes } from './serviceMoveWithData.js';
@@ -215,6 +216,9 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(deployFreezeRoutes, { prefix: '/deploy-freezes' });
   await app.register(usageRoutes, { prefix: '/usage' });
   await app.register(imageScanPolicyRoutes, { prefix: '/image-scanning' });
+  // R4: remote MCP over Streamable HTTP, and its operator policy.
+  await app.register(mcpPolicyRoutes, { prefix: '/mcp/policy' });
+  await app.register(mcpEndpointRoutes, { prefix: '/mcp' });
   await app.register(dashboardRoutes, { prefix: '/dashboard' });
   // 0.16.1: the operator's Getting started checklist (Dashboard card).
   await app.register(onboardingRoutes, { prefix: '/onboarding' });

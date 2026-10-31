@@ -31,6 +31,30 @@ container inspection, compose, and file tools. Omit it only when the agent is
 explicitly trusted to operate the instance. HTTP API role checks still apply to
 every MCP call through the configured token.
 
+### Remote MCP over HTTP (R4)
+
+The panel can serve the same tools itself, over MCP's Streamable HTTP transport, so a client connects to a URL instead of running `@ninedeploy/mcp` locally. It is off by default. An operator turns it on under **Settings → Security → Remote MCP**, or with `PUT /v1/mcp/policy` and `{ "enabled": true }` (SDK: `mcpRemote.setPolicy`).
+
+```bash
+claude mcp add --transport http ninedeploy https://your-ninedeploy-server.com/v1/mcp \
+  --header "Authorization: Bearer nd_tok_xxxxxxxxxxxx"
+```
+
+**How a request is authorized**
+- The client sends an API token (or a session access token) as `Authorization: Bearer`. Without a valid one the endpoint answers 401 with a `WWW-Authenticate: Bearer` challenge.
+- The tool list is filtered by the token's scopes, as with stdio. A read-only or resource-scoped token is accepted on the endpoint itself: what it may do is decided per tool call.
+- Each tool call runs as an in-process request to the API with that same token. The route's own role check, the token's scopes, two-factor policy and the caller's IP address apply exactly as on a direct API call.
+- A revoked, deleted or expired token fails on its next request. Nothing about the caller is cached between requests.
+
+**Transport**
+- Stateless: no session id is handed out, each `POST` gets its own server instance, and responses are JSON, not an event stream. `GET` and `DELETE` answer 405.
+- A request with an `Origin` header from another origin is refused (DNS rebinding protection). MCP clients send none; browsers always do.
+- **Read-only tools only** in the same card narrows every caller to the `NINEDEPLOY_MCP_READONLY=1` allowlist, whatever their token allows.
+
+**Not yet:** OAuth. A client that can only sign in with OAuth (and not send a header) cannot connect yet. No migration is needed: the policy is the settings row `mcp_http`.
+
+Checked with the official MCP client (`@modelcontextprotocol/sdk` 1.32.1) over real HTTP: it initialized, listed 63 tools, called `list_services`, and was refused with 401 once its token was deleted.
+
 ### Available MCP Tools (Sample):
 - `list_services`, `get_service`, `deploy_service`, `rollback_deploy`, `service_logs`
 - `list_databases`, `list_domains`, `list_projects`, `list_workspaces`
