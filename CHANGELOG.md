@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.14] - 2026-11-01
+
+### Fixed
+
+- Respect native Docker health before default HTTP, strict HTTP and TCP readiness can admit a replacement. Probe a non-loopback container address so a localhost-only listener cannot pass routed readiness. Reject command and running verdicts completed after their original deadline.
+- After a command healthcheck succeeds, also wait for the configured TCP application port before switching traffic. Portless workers retain command-only readiness. Running mode retains its explicitly selected policy, including UDP workloads. The isolated delayed-listener panel/Traefik acceptance passed all five modes; this is not a guarantee for every production failure timing.
+- Keep panel session updates usable if the desktop credential bridge throws synchronously.
+
+### Runtime scope
+
+- Prepare immutable node serving and spare replicas, collect fresh node autoscaling metrics and fence scaling against deployment, lifecycle and database topology changes. Public memory autoscaling with PostgreSQL passed its isolated 1→2→1 acceptance. RPS scaling, node sleep/wake, broader fan-out and the full R2 runtime acceptance remain unfinished; this release does not complete R2 or claim 0.19.0 readiness.
+- Rehearse upgrades from the latest published image in CI and require continuous normal-deploy traffic across five healthcheck modes in the published-image release matrix.
+
 ### Added
 
 - 10 more Dokploy blueprints in the bundled Hub (G4.7): 9Router, Dolibarr, Graylog, Kimai, Meilisearch, Miniflux, OpenObserve, Ponos, PrivatePaste and Typesense. Each started in an isolated smoke run and was then asked, without credentials, for its admin pages, APIs, install and sign-up pages; each set its admin login or API key from a generated value. YOURLS started too but stays out (its install page needs a manual step without a login).

@@ -1,7 +1,7 @@
 {
   "name": "ninedeploy-desktop",
   "productName": "NineDeploy",
-  "version": "0.18.13",
+  "version": "0.18.14",
   "description": "NineDeploy desktop client: the panel of a chosen instance in a locked-down window, with the sign-in kept in the OS credential store",
   "license": "MIT",
   "private": true,
