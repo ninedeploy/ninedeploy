@@ -237,6 +237,10 @@ jobs:
         timeout-minutes: 5
         run: node scripts/smoke-local-docker-readiness.mjs --image=ninedeploy:ci
 
+      - name: Verify node readiness modes and failure controls
+        timeout-minutes: 10
+        run: node scripts/smoke-container-readiness.mjs --image=ninedeploy:ci
+
       - name: Preserve node autoscale proof
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
