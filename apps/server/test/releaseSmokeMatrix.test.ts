@@ -18,6 +18,7 @@ const expected = [
   command('smoke-node-lifecycle-fanout'), command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'),
   command('smoke-node-canary', ' --autoscale-only --proof=.temp_files/release-node-autoscale'),
   command('smoke-node-canary', ' --autoscale-database-only --proof=.temp_files/release-node-autoscale-database'),
+  command('smoke-node-canary', ' --health-modes-only --proof=.temp_files/release-panel-health-modes'),
   command('smoke-node-canary', ' --lifecycle-only --proof=.temp_files/release-node-smoke'),
   command('smoke-node-canary', ' --initial-stop-only --proof=.temp_files/release-node-initial-stop'),
   command('smoke-node-canary', ' --mixed-agent-only --proof=.temp_files/release-node-mixed-agent'),
