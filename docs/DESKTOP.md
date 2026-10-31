@@ -77,7 +77,7 @@ On the Windows test machine, killing the app by force right after the very first
 **Navigation**
 
 - The window stays on the instance's origin.
-- Links to other `http(s)` addresses open in the system browser.
+- Links to other `http(s)` addresses open in the system browser. A window opens at most one such link a second, so a page cannot open a burst of tabs.
 - `file:`, `javascript:`, `data:` and custom schemes go nowhere.
 - `window.open` never creates an app window.
 - There is one exception: an SSO sign-in started on the panel (`/v1/auth/…`) may visit the identity provider over https until it returns to the panel. After ten minutes, foreign pages go to the browser again. During the sign-in, a panel page still can't send the window elsewhere: the panel leaves only through a server redirect, and after that the provider's own pages navigate.

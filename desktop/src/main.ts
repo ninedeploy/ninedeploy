@@ -151,12 +151,20 @@ function openPanel(instance: Instance): void {
   const id = contents.id;
   panels.set(id, { instance, window });
   const guard = new NavigationGuard(instance.origin);
+  // The system browser gets the parsed address, and a page cannot open a burst of tabs.
+  let lastExternal = 0;
+  const openExternal = (url: string): void => {
+    const now = Date.now();
+    if (now - lastExternal < 1000) return;
+    lastExternal = now;
+    void shell.openExternal(new URL(url).href);
+  };
 
   const apply = (event: { preventDefault(): void }, url: string, kind: 'navigate' | 'redirect'): void => {
     const decision = guard.decide(url, kind, contents.getURL());
     if (decision === 'allow') return;
     event.preventDefault();
-    if (decision === 'external') void shell.openExternal(url);
+    if (decision === 'external') openExternal(url);
   };
   contents.on('will-navigate', (event) => {
     if (event.isMainFrame) apply(event, event.url, 'navigate');
@@ -171,7 +179,7 @@ function openPanel(instance: Instance): void {
   });
   contents.on('page-title-updated', (event) => event.preventDefault());
   contents.setWindowOpenHandler(({ url }) => {
-    if (windowOpenDecision(url) === 'external') void shell.openExternal(url);
+    if (windowOpenDecision(url) === 'external') openExternal(url);
     return { action: 'deny' };
   });
   window.once('ready-to-show', () => window.show());
