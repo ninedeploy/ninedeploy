@@ -1,5 +1,4 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { EventEmitter } from 'node:events';
 import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { and, asc, eq, inArray, lt, sql } from 'drizzle-orm';
@@ -52,10 +51,6 @@ export class CiError extends Error {
 export const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex');
 const newToken = (prefix: string): string => `${prefix}${randomBytes(32).toString('base64url')}`;
 const affected = (r: unknown): number => (r as { rowsAffected?: number } | undefined)?.rowsAffected ?? 0;
-
-/** Live log lines for the WebSocket tail, keyed by attempt id. */
-export const ciLogBus = new EventEmitter();
-ciLogBus.setMaxListeners(0);
 
 // ── pipeline definition (one settings row per service) ─────────────────────
 
@@ -366,7 +361,6 @@ export async function appendLog(db: DB, attempt: Attempt, seq: number, data: str
     const file = logFile(attempt.jobId, attempt.number);
     mkdirSync(path.dirname(file), { recursive: true });
     appendFileSync(file, chunk);
-    ciLogBus.emit(String(attempt.id), chunk);
   }
   return { stored: true };
 }
@@ -402,7 +396,6 @@ export async function finishAttempt(
     .update(ciJobs)
     .set({ status: result.status, finishedAt: at, error: result.status === 'failed' ? (result.error ?? `Exited with ${result.exitCode}`) : null })
     .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), eq(ciJobs.currentAttemptId, attempt.id)));
-  ciLogBus.emit(`${attempt.id}:end`);
 }
 
 /** Mark an attempt lost and give its job another attempt, or fail it when none are left. */
@@ -412,7 +405,6 @@ async function loseAttempt(db: DB, attempt: Attempt, reason: string): Promise<vo
     .set({ status: 'lost', error: reason, finishedAt: new Date() })
     .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running')));
   if (affected(lost) !== 1) return;
-  ciLogBus.emit(`${attempt.id}:end`);
   const job = await db.query.ciJobs.findFirst({ where: eq(ciJobs.id, attempt.jobId) });
   if (!job || job.status !== 'running' || job.currentAttemptId !== attempt.id) return;
   if (job.attempts < job.maxAttempts) {
