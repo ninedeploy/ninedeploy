@@ -1,0 +1,1 @@
+ALTER TABLE `node_autoscale_transitions` ADD `measurement` text;

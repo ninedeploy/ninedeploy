@@ -778,6 +778,41 @@
       "when": 1793374448100,
       "tag": "0111_primary_ordered_retirement",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "6",
+      "when": 1793386189679,
+      "tag": "0112_node_autoscale_measurement",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "6",
+      "when": 1793388561087,
+      "tag": "0113_node_deployment_preparations",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "6",
+      "when": 1793391170505,
+      "tag": "0114_shallow_groot",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "6",
+      "when": 1793391346085,
+      "tag": "0115_real_jigsaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "6",
+      "when": 1793393769407,
+      "tag": "0116_brainy_carmella_unuscione",
+      "breakpoints": true
     }
   ]
 }

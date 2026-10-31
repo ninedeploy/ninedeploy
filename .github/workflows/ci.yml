@@ -206,15 +206,75 @@ jobs:
           echo "installer helper smoke test passed"
 
   docker-image:
-    name: Docker image build
+    name: Docker image build and node autoscaling
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+
+      - name: Verify Node security baseline
+        run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       # Verifies the release workflow's Dockerfile compiles; no push happens here.
       - name: Build the image
         run: docker build -t ninedeploy:ci .
+
+      - name: Verify public node autoscaling with real routing
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-only --proof=.temp_files/ci-node-autoscale
+
+      - name: Verify local Docker readiness and native health gates
+        timeout-minutes: 5
+        run: node scripts/smoke-local-docker-readiness.mjs --image=ninedeploy:ci
+
+      - name: Verify node readiness modes and failure controls
+        timeout-minutes: 10
+        run: node scripts/smoke-container-readiness.mjs --image=ninedeploy:ci
+
+      - name: Verify normal panel deploys across healthcheck modes with continuous traffic
+        timeout-minutes: 15
+        run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --health-modes-only --proof=.temp_files/ci-panel-health-modes
+
+      - name: Preserve panel healthcheck traffic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-panel-health-modes-${{ github.run_id }}
+          path: .temp_files/ci-panel-health-modes/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+      - name: Preserve node autoscale proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-node-autoscale-${{ github.run_id }}
+          path: .temp_files/ci-node-autoscale/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+      - name: Verify node autoscaling with PostgreSQL and real routing
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-database-only --proof=.temp_files/ci-node-autoscale-database
+
+      - name: Preserve database autoscale proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-node-autoscale-database-${{ github.run_id }}
+          path: .temp_files/ci-node-autoscale-database/
+          include-hidden-files: true
+          if-no-files-found: ignore
 
   # Publishes the panel image to GHCR on every push to main so an
   # `install.sh --docker` from the main channel never lands on a stale
@@ -239,7 +299,7 @@ jobs:
     # The image must never reach `:edge` (what --channel=main installs
     # pull) before the full suite and the integration tests are green —
     # an independent job would happily publish a broken commit.
-    needs: [verify, integration]
+    needs: [verify, integration, docker-image]
     # L-14: least privilege. `packages: write` is the only permission
     # this job needs; everything else stays at the workflow default
     # of `contents: read`.

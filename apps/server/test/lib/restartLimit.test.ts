@@ -68,6 +68,29 @@ describe('enforceRestartLimits', () => {
     expect(onTripped).toHaveBeenCalledTimes(1);
   });
 
+  it('stops a crash-looping PM2 service through PM2, never through docker', async () => {
+    await db.insert(services).values({ id: 7, name: 'api', slug: 'api', type: 'pm2', branch: 'main', ownerUserId: 1, runtimeId: 'api-4', status: 'running' } as never);
+    await lib.setRestartLimit(db, 7, limit);
+    let count = 0;
+    const samplePm2 = vi.fn(async (runtimeId: string) => {
+      expect(runtimeId).toBe('api-4');
+      return new Map([['3@1000', count]]);
+    });
+    const stopPm2 = vi.fn(async () => undefined);
+    const sample = vi.fn(async () => new Map<string, number>());
+    const stop = vi.fn(async () => undefined);
+    const onTripped = vi.fn();
+    const deps = { sample, stop, samplePm2, stopPm2, onTripped };
+    expect(await lib.enforceRestartLimits(db, deps, 0)).toEqual([]);
+    count = 3;
+    expect(await lib.enforceRestartLimits(db, deps, 1 * MIN)).toEqual([7]);
+    expect(stopPm2).toHaveBeenCalledWith('api-4');
+    expect(sample).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect((await db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, 7) }))?.status).toBe('stopped');
+    expect(onTripped).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), limit, 3);
+  });
+
   it('leaves a service alone while it deploys, and does nothing without a limit', async () => {
     const sample = vi.fn(async () => new Map([['x', 100]]));
     expect(await lib.enforceRestartLimits(db, { sample })).toEqual([]);

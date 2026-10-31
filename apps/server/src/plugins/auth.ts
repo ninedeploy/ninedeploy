@@ -3,6 +3,7 @@ import { apiTokens } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { narrowScopes, resolveUser } from '../lib/auth.js';
 import { sha256 } from '../lib/crypto.js';
+import { isMcpInternal } from '../lib/mcpAudience.js';
 import { forbidden, HttpError, unauthorized } from '../lib/errors.js';
 import { isEnrolmentRoute } from '../lib/twoFactorPolicy.js';
 
@@ -191,7 +192,8 @@ export default fp(
       const header = req.headers.authorization;
       if (!header?.startsWith('Bearer ')) throw unauthorized();
       const token = header.slice('Bearer '.length).trim();
-      const user = await resolveUser(fastify.db, token);
+      // R4: a remote-MCP OAuth token reaches the API only through the MCP endpoint's own tool calls.
+      const user = await resolveUser(fastify.db, token, isMcpInternal(req.headers) ? { audience: 'mcp' } : {});
       if (!user) throw unauthorized();
       if (user.twoFactorPending && !isEnrolmentRoute(req.method, req.url, user.twoFactorEnrolled === true)) {
         throw new HttpError(403, 'two_factor_required', user.twoFactorEnrolled ? 'A workspace you belong to requires two-factor authentication. Sign in again with your authenticator app or passkey.' : 'A workspace you belong to requires two-factor authentication. Set up an authenticator app or a passkey to continue.');

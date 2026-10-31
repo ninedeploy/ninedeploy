@@ -50,3 +50,32 @@ export const proxyTrafficSnapshot = snapshotFields.pipe(z.custom<z.infer<typeof 
   }
 }));
 export type ProxyTrafficSnapshot = z.infer<typeof proxyTrafficSnapshot>;
+
+/** Ordinary serving-generation observations are distinct from canary steps. */
+export const servingTrafficOpen = z.object({
+  purpose: z.literal('autoscale'), requestId: opaque, nodeId: id, serviceId: id, deploymentId: id,
+  slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,127}$/),
+  durationMs: z.number().int().min(1000).max(60_000),
+  routingConfig: z.string().min(1).max(1024 * 1024),
+  serving: z.array(target).min(1).max(10),
+}).strict().superRefine((value, ctx) => {
+  const names = new Set(value.serving.map(item => item.name));
+  const expected = value.serving.map((_, index) => `${value.slug}-${value.deploymentId}${index === 0 ? '' : `-r${index + 1}`}`);
+  if (new Set(value.serving.map(item => item.id)).size !== value.serving.length || expected.some(name => !names.has(name))) {
+    ctx.addIssue({ code: 'custom', message: 'Serving targets must identify one complete immutable generation' });
+  }
+});
+export type ServingTrafficOpen = z.infer<typeof servingTrafficOpen>;
+
+const servingSnapshotFields = snapshotFields.omit({ step: true, stable: true, canary: true }).extend({
+  purpose: z.literal('autoscale'), serving: canaryReleaseStats,
+}).strict();
+export const servingTrafficSnapshot = servingSnapshotFields.pipe(z.custom<z.infer<typeof servingSnapshotFields>>().superRefine((value, ctx) => {
+  const expected = value.endCounter === null ? null : BigInt(value.endCounter) - BigInt(value.startCounter) - 1n;
+  if ((expected !== null && (expected < 0n || expected !== BigInt(value.expected ?? -1) || BigInt(value.observed) > expected)) ||
+    (value.endCounter === null && value.expected !== null) || value.serving.requests > value.observed ||
+    (value.complete && (!value.endCounter || value.expected === null || value.expected !== value.observed))) {
+    ctx.addIssue({ code: 'custom', message: 'Serving windows require contiguous sequence coverage' });
+  }
+}));
+export type ServingTrafficSnapshot = z.infer<typeof servingTrafficSnapshot>;

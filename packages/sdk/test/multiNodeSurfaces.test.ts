@@ -99,6 +99,12 @@ describe('0.16 T8 route mapping', () => {
       expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([30_000, 600_000]);
     } finally { timeout.mockRestore(); }
   });
+  it('reads node preparation status through the service-scoped route', async () => {
+    const entries = [{ deploymentId: 9, serverId: 4, phase: 'prepared', deploymentStatus: 'failed' }];
+    const { api, calls } = client(() => ({ status: 200, body: { entries } }));
+    expect(await api.services.nodePreparations(4)).toEqual(entries);
+    expect(calls.map(({ url, method }) => ({ url, method }))).toEqual([{ method: 'GET', url: '/v1/services/4/node-preparations' }]);
+  });
   it('reads and retries durable fan-out recovery through the service target routes', async () => {
     const entry = { id: 1, serverId: 5, deploymentId: 9, phase: 'retained', reason: 'Routing not confirmed', busy: false, previousRuntimeId: 'web-8', candidateRuntimeId: 'web-9', attempts: 1, nextAttemptAt: '2026-10-23T00:00:00Z', updatedAt: '2026-10-22T23:00:00Z' };
     const { api, calls } = client(() => ({ status: 200, body: { entries: [entry], recovered: 0, held: 1 } }));

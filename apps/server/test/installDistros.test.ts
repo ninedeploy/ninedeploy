@@ -153,6 +153,19 @@ describe('install.sh package-manager branches (G4.1)', () => {
     expect(fn('install_docker_apk')).toContain('rc-update add docker default');
   });
 
+  it('takes Node from NodeSource through zypper (package signatures checked) and from Arch LTS packages', () => {
+    const zypper = fn('install_node_zypper');
+    expect(zypper).toContain('sudo rpm --import https://rpm.nodesource.com/gpgkey/ns-operations-public.key');
+    // NodeSource signs packages, not the index: the same trust as dnf's gpgcheck=1.
+    expect(zypper).toContain("'gpgcheck=1' 'repo_gpgcheck=0' 'pkg_gpgcheck=1'");
+    expect(zypper).toContain('/etc/zypp/repos.d/nodesource-nodejs.repo');
+    expect(zypper).toContain('baseurl=https://rpm.nodesource.com/pub_${major}.x/nodistro/nodejs/${arch}');
+    const pacman = fn('install_node_pacman');
+    expect(pacman).toContain('22) pkg=nodejs-lts-jod ;;');
+    expect(pacman).toContain('24) pkg=nodejs-lts-krypton ;;');
+    expect(pacman).toContain('pkg_install "$pkg" npm');
+  });
+
   it('sends a host without systemd to the Docker mode, and refuses bare-metal there when asked for', () => {
     expect(installer).toContain('The bare-metal mode needs systemd, which this host does not have. Install with --docker instead.');
     expect(installer).toContain('This host has no systemd: installing in Docker mode');

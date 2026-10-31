@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import {
   buildConfigs,
   databaseAttachments,
   deployments,
+  nodeDeploymentPreparations,
   domains,
   environments,
   envVars,
@@ -29,6 +30,7 @@ const setTargets = z.object({ serverIds: z.array(z.number().int().positive()).ma
 import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from '../lib/runtimeReplicaCounts.js';
+import { nodePreparationForServiceExists } from '../lib/nodePreparationRetention.js';
 import { applyLocalLimits } from '../lib/localLimitUpdate.js';
 import { applyNodeLimits } from '../lib/nodeLimitUpdate.js';
 import { acceptNodeLifecycleIntent, retryNodeLifecycleIntent } from '../lib/nodeLifecycleIntent.js';
@@ -1184,7 +1186,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // Row first (a single DELETE is atomic; FK cascade removes the build
     // config, env vars, domains and deployments) — a failed delete must never
     // leave a live row whose runtime has already been destroyed.
-    await app.db.delete(services).where(eq(services.id, id));
+    const removed = await app.db.delete(services).where(and(eq(services.id, id), sql`NOT (${nodePreparationForServiceExists()})`)).returning({ id: services.id });
+    if (!removed.length) throw conflict('Service has pending node preparation recovery or changed state — resolve it before deleting');
     for (const row of orphanLogs) deleteLog(row.id);
     // 0.16.1: the allow-list port proxy goes with it (nothing when it never had one).
     if (existsSync(portProxyDir(svc.slug))) {
@@ -1423,6 +1426,16 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const id = num((req.params as { id: string }).id);
     await loadServiceForUser(app.db, id, req.user!);
     return { entry: await listPrimaryRecovery(app.db, id) };
+  });
+
+  app.get('/:id/node-preparations', async req => {
+    const id = num((req.params as { id: string }).id);
+    await loadServiceForUser(app.db, id, req.user!);
+    const entries = await app.db.select({ deploymentId: nodeDeploymentPreparations.deploymentId, serverId: nodeDeploymentPreparations.serverId,
+      phase: nodeDeploymentPreparations.phase, deploymentStatus: deployments.status }).from(nodeDeploymentPreparations)
+      .innerJoin(deployments, and(eq(deployments.id, nodeDeploymentPreparations.deploymentId), eq(deployments.serviceId, nodeDeploymentPreparations.serviceId)))
+      .where(eq(nodeDeploymentPreparations.serviceId, id));
+    return { entries };
   });
 
   // Where the service's traffic goes right now: each domain through the router

@@ -15,6 +15,8 @@ import type {
   AzureProviderPut,
   OnePasswordProviderPut,
   ExecProviderPut,
+  McpHttpPolicyPatch,
+  McpHttpPolicyView,
 } from '@ninedeploy/schemas';
 import type { VaultAllowlistView, VaultSettings, EmailTemplateName, EmailTemplateEntry, EmailTemplateRender } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -237,6 +239,18 @@ export interface SettingsApi {
     get: () => Promise<OnboardingStatus>;
     setDismissed: (dismissed: boolean) => Promise<{ ok: boolean; dismissed: boolean }>;
   };
+  /** R4 (operator): remote MCP over Streamable HTTP at `/v1/mcp`, off by default. */
+  mcpRemote: {
+    policy: () => Promise<McpHttpPolicyView>;
+    setPolicy: (patch: McpHttpPolicyPatch) => Promise<McpHttpPolicyView>;
+    /**
+     * The OAuth consent page (signed-in session): check an authorization
+     * request (the `/oauth/authorize` query as given), then approve or deny
+     * it; the answer is where to send the browser.
+     */
+    checkAuthorization: (request: Record<string, string>) => Promise<{ client: { name: string; redirectHost: string }; requestedAccess: 'read' | 'full' }>;
+    decideAuthorization: (input: { request: Record<string, string>; approve: boolean; access?: 'read' | 'full' }) => Promise<{ redirect: string }>;
+  };
 }
 
 export function settingsApi(t: Transport): SettingsApi {
@@ -373,6 +387,15 @@ export function settingsApi(t: Transport): SettingsApi {
     onboarding: {
       get: () => get<OnboardingStatus>('/v1/onboarding'),
       setDismissed: (dismissed) => send<{ ok: boolean; dismissed: boolean }>('PUT', '/v1/onboarding/dismissed', { dismissed }),
+    },
+    mcpRemote: {
+      policy: () => get<McpHttpPolicyView>('/v1/mcp/policy'),
+      setPolicy: (patch) => send<McpHttpPolicyView>('PUT', '/v1/mcp/policy', patch),
+      checkAuthorization: (request) =>
+        get<{ client: { name: string; redirectHost: string }; requestedAccess: 'read' | 'full' }>(
+          `/v1/oauth/authorize?${Object.entries(request).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')}`,
+        ),
+      decideAuthorization: (input) => send<{ redirect: string }>('POST', '/v1/oauth/authorize', input),
     },
   };
 }

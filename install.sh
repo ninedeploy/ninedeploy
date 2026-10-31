@@ -250,6 +250,10 @@ ensure_node() {
     install_node "$major" || fail "Could not install a secure Node.js runtime. Install $required manually: https://nodejs.org/"
   elif command -v dnf &>/dev/null; then
     install_node_rpm "$major" || fail "Could not install a secure Node.js runtime from NodeSource's RPM repository. Install $required manually: https://nodejs.org/"
+  elif [ "$(host_family)" = "suse" ]; then
+    install_node_zypper "$major" || fail "Could not install a secure Node.js runtime from NodeSource's RPM repository. Install $required manually: https://nodejs.org/"
+  elif [ "$(host_family)" = "arch" ]; then
+    install_node_pacman "$major" || fail "Could not install a secure Node.js runtime from Arch's repository. Install $required manually: https://nodejs.org/"
   elif command -v brew &>/dev/null; then
     brew upgrade "node@$major" 2>/dev/null || brew install "node@$major"
   else
@@ -307,6 +311,37 @@ install_node_rpm() {
     'module_hotfixes=1' \
     | sudo tee /etc/yum.repos.d/nodesource-nodejs.repo >/dev/null || return 1
   run_quiet_step "dnf install nodejs" sudo dnf -y install nodejs
+}
+
+# G4.1: the same NodeSource RPMs through zypper (openSUSE, SLES). Their
+# repository index is unsigned, as it is for dnf above; every package is
+# signed and zypper checks it against the key imported here first.
+install_node_zypper() {
+  local major="$1" arch
+  arch="$(uname -m)"
+  case "$arch" in x86_64|aarch64) ;; *) return 1 ;; esac
+  sudo rpm --import https://rpm.nodesource.com/gpgkey/ns-operations-public.key || return 1
+  printf '%s\n' \
+    '[nodesource-nodejs]' \
+    "name=Node.js Packages for Linux RPM based distros - ${arch}" \
+    "baseurl=https://rpm.nodesource.com/pub_${major}.x/nodistro/nodejs/${arch}" \
+    'enabled=1' 'autorefresh=1' 'priority=9' \
+    'gpgcheck=1' 'repo_gpgcheck=0' 'pkg_gpgcheck=1' \
+    'gpgkey=https://rpm.nodesource.com/gpgkey/ns-operations-public.key' \
+    | sudo tee /etc/zypp/repos.d/nodesource-nodejs.repo >/dev/null || return 1
+  pkg_install nodejs
+}
+
+# G4.1: Node from Arch's own repository: the LTS package of that line, or
+# `nodejs` for the current one. npm comes separately; Arch ships no corepack.
+install_node_pacman() {
+  local pkg
+  case "$1" in
+    22) pkg=nodejs-lts-jod ;;
+    24) pkg=nodejs-lts-krypton ;;
+    *) pkg=nodejs ;;
+  esac
+  pkg_install "$pkg" npm || { warn "pacman could not install $pkg: update the system first (sudo pacman -Syu), remove a Node package of another line if one is installed, and re-run."; return 1; }
 }
 
 # Docker from Docker Inc.'s signed RPM repository (RHEL, CentOS, Rocky, Alma, Fedora).

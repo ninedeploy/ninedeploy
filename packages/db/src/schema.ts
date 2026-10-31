@@ -1889,7 +1889,8 @@ export const nodeAutoscaleTransitions = sqliteTable('node_autoscale_transitions'
   workerToken: text('worker_token'),
   leaseUntil: integer('lease_until', { mode: 'timestamp' }),
   replicaInventory: text('replica_inventory', { mode: 'json' }).$type<Array<{ id: string; name: string; deploymentId: number; running: boolean }>>(),
-  phase: text('phase', { enum: ['accepted', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping', 'held'] }).notNull().default('accepted'),
+  measurement: text('measurement', { mode: 'json' }).$type<{ serverId: number; serviceId: number; deploymentId: number; sampledAt: number; requestId: string; targets: Array<{ name: string; id: string }> }>(),
+  phase: text('phase', { enum: ['accepted', 'fencing', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping', 'handoff', 'abort_fencing', 'abort_handoff', 'abort_stopping', 'abort_started_handoff', 'held'] }).notNull().default('accepted'),
   reason: text('reason'),
   createdAt: ts('created_at'),
   updatedAt: tsUpdatable('updated_at'),
@@ -1906,6 +1907,30 @@ export const deploymentRuntimeOwners = sqliteTable('deployment_runtime_owners', 
   requestId: text('request_id').notNull(),
 }, t => ({ serviceEpoch: uniqueIndex('deployment_runtime_owner_epoch_idx').on(t.serviceId, t.epoch) }));
 export type DeploymentRuntimeOwner = typeof deploymentRuntimeOwners.$inferSelect;
+
+/** Non-secret recovery evidence recorded before ordered node capacity creation. */
+export const nodeDeploymentPreparations = sqliteTable('node_deployment_preparations', {
+  deploymentId: integer('deployment_id').primaryKey().references(() => deployments.id, { onDelete: 'cascade' }),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  serverId: integer('server_id').notNull(), epoch: integer('epoch').notNull(), requestId: text('request_id').notNull(),
+  runtimeId: text('runtime_id').notNull(), imageId: text('image_id').notNull(),
+  serving: integer('serving').notNull(), capacity: integer('capacity').notNull(),
+  databaseNetworks: text('database_networks', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+  phase: text('phase', { enum: ['preparing', 'prepared', 'fencing', 'retiring'] }).notNull().default('preparing'),
+  recoveryWatermark: integer('recovery_watermark'),
+  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>(),
+  createdAt: ts('created_at'), updatedAt: tsUpdatable('updated_at'),
+});
+
+/** Immutable capacity creation receipt retained after primary recovery handoff. */
+export const nodeAutoscaleCapacity = sqliteTable('node_autoscale_capacity', {
+  deploymentId: integer('deployment_id').primaryKey().references(() => deployments.id, { onDelete: 'cascade' }),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  serverId: integer('server_id').notNull(), runtimeId: text('runtime_id').notNull(), imageId: text('image_id').notNull(),
+  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string }>>().notNull(),
+  databaseNetworks: text('database_networks', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+  createdAt: ts('created_at'),
+});
 
 export interface NodeLifecycleSnapshot {
   status: string;
@@ -1924,6 +1949,8 @@ export interface NodeLifecycleSnapshot {
   fanout?: Array<{ targetId: number; serverId: number; runtimeId: string | null }>;
   /** Initial Stop discovers all physical generations after fencing each accepted node. */
   unselected?: { participants: Array<{ serverId: number; expectedNames: string[] }> };
+  /** Initial Stop must retire its candidates before handing creation to the legacy protocol. */
+  retireUnselected?: boolean;
   /** Deployments that might have created unselected generations before Stop took authority. */
   interruptedDeployments?: Array<{ id: number }>;
   /** Highest pre-Stop deployment ID, including cancelled work that had not started. */

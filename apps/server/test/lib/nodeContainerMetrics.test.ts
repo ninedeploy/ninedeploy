@@ -60,9 +60,39 @@ describe('selected-node resource evidence', () => {
   it('preserves cancellation before and during collection', async () => {
     const abort = new AbortController(); mutate = () => abort.abort(new Error('Cancelled'));
     await expect(readNodeContainerMetrics(db, 2, spec, { ...options(), signal: abort.signal })).rejects.toThrow('Cancelled');
-    expect(io.op.mock.calls.every(call => call[5].signal === abort.signal)).toBe(true);
+    expect(io.op.mock.calls.every(call => call[5].signal.aborted && call[5].signal.reason === abort.signal.reason)).toBe(true);
     io.op.mockClear();
     await expect(readNodeContainerMetrics(db, 2, spec, { ...options(), signal: abort.signal })).rejects.toThrow('Cancelled');
+    expect(io.op).not.toHaveBeenCalled();
+  });
+  it('passes cancellation to the sealed transport discovery', async () => {
+    const abort = new AbortController();
+    await readNodeContainerMetrics(db, 2, spec, { ...options(), signal: abort.signal });
+    expect(io.sealed).toHaveBeenCalledWith(db, 2, expect.any(AbortSignal));
+    expect(io.op.mock.calls.every(call => call[5].signal === io.sealed.mock.calls[0]![2])).toBe(true);
+  });
+  it('stops before agent operations when transport discovery is cancelled', async () => {
+    const abort = new AbortController();
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    io.sealed.mockImplementation(async (_db, _server, signal: AbortSignal) => {
+      entered();
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    });
+    const result = readNodeContainerMetrics(db, 2, spec, { ...options(), signal: abort.signal });
+    await started;
+    abort.abort(new Error('Discovery cancelled'));
+    await expect(result).rejects.toThrow('Discovery cancelled');
+    expect(io.op).not.toHaveBeenCalled();
+  });
+  it('enforces the metric deadline during transport discovery', async () => {
+    const abort = new AbortController();
+    io.sealed.mockImplementation(async (_db, _server, signal: AbortSignal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    const result = readNodeContainerMetrics(db, 2, spec, { ...options(), signal: abort.signal, timeoutMs: 40 });
+    const outcome = Promise.race([result.then(() => 'resolved', () => 'rejected'), new Promise<string>(resolve => setTimeout(() => resolve('hung'), 400))]);
+    try { expect(await outcome).toBe('rejected'); } finally { abort.abort(); await result.catch(() => undefined); }
     expect(io.op).not.toHaveBeenCalled();
   });
   it.each([

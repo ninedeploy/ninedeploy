@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { DeploymentRuntimeOwner, Service } from '@ninedeploy/db';
 import { autoscaleConfig } from '@ninedeploy/schemas';
 import type { AgentCall } from './remoteDocker.js';
+import type { DeployRuntime } from '../types.js';
 import { capabilityRefusal } from '../../lib/agentCapabilities.js';
 import { confirmedNodeEnvFile } from '../../lib/nodeEnvReceipt.js';
 import { ensureNodeVolumes, nodeFileMountChecks, nodeRunCapabilities, nodeRunExtrasChecks, nodeRuntimeOptions, nodeVolumeLabels,
@@ -15,19 +16,31 @@ type CapacityClient = Parameters<typeof prepareNodeAutoscaleCapacity>[0];
 /** Prepare dependencies and one ordered generation. The caller owns placement, cleanup and promotion. */
 export async function prepareNodeAutoscaleDeployment(input: {
   service: Service; owner: DeploymentRuntimeOwner; image: string; creationWatermark: number; env: Record<string, string>;
-  attachments?: readonly NodeVolumeAttachment[]; files?: readonly NodeServiceFile[]; extraNetworks?: readonly string[];
+  attachments?: readonly NodeVolumeAttachment[]; files?: readonly NodeServiceFile[]; extraNetworks?: readonly string[]; databaseNetworkIdentities?: readonly string[];
   agent: AgentCall; client: CapacityClient; sealed: boolean; checkpoint: () => Promise<void>; log: (line: string) => void;
+  journal: { begin: (spec: { runtimeId: string; imageId: string; serving: number; capacity: number; databaseNetworks: string[] }) => Promise<unknown>;
+    complete: (targets: Array<{ id: string; name: string }>) => Promise<unknown> };
 }) {
   const { service, owner } = input, label = `#${owner.serverId}`, attachments = input.attachments ?? [], files = input.files ?? [];
+  const networks = [...(input.extraNetworks ?? [])].sort(), identities = [...(input.databaseNetworkIdentities ?? [])].sort();
+  if (identities.some(identity => !/^[1-9]\d*:[1-9]\d*:nd-dbnet-[a-z0-9][a-z0-9_.-]*$/.test(identity)) ||
+    JSON.stringify(identities.map(identity => identity.split(':')[2]).sort()) !== JSON.stringify(networks)) {
+    throw new Error('Node autoscale database network identities are unconfirmed');
+  }
+  if (!input.journal || typeof input.journal.begin !== 'function' || typeof input.journal.complete !== 'function') {
+    throw new Error('Node autoscale preparation requires a durable journal');
+  }
+  const scale = autoscaleConfig.safeParse(service.autoscale);
   if (service.type !== 'docker' || service.orchestrator === 'swarm' || service.id !== owner.serviceId || service.serverId !== owner.serverId ||
     !Number.isSafeInteger(owner.deploymentId) || owner.deploymentId < 1 || !Number.isSafeInteger(input.creationWatermark) ||
-    input.creationWatermark < owner.deploymentId || !autoscaleConfig.safeParse(service.autoscale).success) throw new Error('Node autoscale deployment authority or configuration is invalid');
+    input.creationWatermark < owner.deploymentId || !scale.success) throw new Error('Node autoscale deployment authority or configuration is invalid');
+  if (scale.data.metric === 'rps') throw new Error('Node request-rate autoscaling is not available');
   const call: AgentCall = async (op, params, sink, options) => {
     await input.checkpoint();
     try { return await input.agent(op, params, sink, options); } finally { await input.checkpoint(); }
   };
   const checks = [
-    { cap: ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage'] as const, feature: 'prepare and safely scale node replicas' },
+    { cap: ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage'] as const, feature: 'prepare and safely scale node replicas' },
     { cap: nodeRunCapabilities(service, attachments), feature: 'run the complete node replica configuration' },
     ...nodeRunExtrasChecks(service), ...nodeFileMountChecks(files.length),
     ...(service.portMappings?.length ? [{ cap: ['docker.ports' as const], feature: 'publish node port mappings' }] : []),
@@ -43,6 +56,11 @@ export async function prepareNodeAutoscaleDeployment(input: {
   if (image.exitCode !== 0 || !match) throw new Error('Node autoscale immutable image is unconfirmed');
   const runtimeOptions = await nodeRuntimeOptions(call, label, input.sealed, service, input.log);
   if (hasRuntimeOptions(service.runtimeOptions) && !runtimeOptions) throw new Error('Node autoscale container options are unavailable');
+  await input.checkpoint();
+  await input.journal.begin({ runtimeId: `${service.slug}-${owner.deploymentId}`, imageId: match[1]!,
+    serving: Math.max(scale.data.minReplicas, Math.min(service.runtimeReplicas, scale.data.maxReplicas)), capacity: scale.data.maxReplicas,
+    databaseNetworks: identities });
+  await input.checkpoint();
   const volumeNames = [...(service.volumeMount ? [`nd-svc-${service.slug}-data`] : []), ...attachments.map(item => item.volumeName)];
   if (volumeNames.length) {
     const { missingDatabaseVolumes } = await ensureNodeVolumes(call, volumeNames, nodeVolumeLabels({ serviceId: service.id, userId: service.ownerUserId }), input.log);
@@ -60,15 +78,23 @@ export async function prepareNodeAutoscaleDeployment(input: {
   try {
     result = await prepareNodeAutoscaleCapacity(guarded, { service, owner, imageId: match[1]!, envFile,
       creationWatermark: input.creationWatermark, attachments, files: fileMounts, runtimeOptions, extraNetworks: input.extraNetworks });
-    prepareConfirmed = true;
     await input.checkpoint();
+    await input.journal.complete(result.capacity); await input.checkpoint();
+    prepareConfirmed = true;
   } finally {
     // An unanswered prepare may still be using this file on the node.
-    if (prepareStarted && !prepareConfirmed) input.log('Node environment retained: preparation outcome is unconfirmed.');
+    if (prepareStarted && !prepareConfirmed) input.log('Node environment cleanup deferred: preparation outcome is unconfirmed.');
     else await input.agent('file.deleteEnv', { name: envName }, () => undefined).then(result => {
       if (result.exitCode !== 0) throw new Error('Node environment cleanup failed');
     }).catch(() => input.log('Node environment file cleanup is unconfirmed.'));
   }
   await input.checkpoint();
-  return { ...result, imageId: match[1]! };
+  const health = service.healthCheck;
+  const runtime: DeployRuntime = { runtimeId: `${service.slug}-${owner.deploymentId}`, replicas: result.replicas,
+    nodeDeploymentOwner: { ...owner }, nodeTargets: result.serving.map(target => ({ ...target })),
+    nodeCapacityTargets: result.capacity.map(target => ({ ...target })), port: service.port ?? null, healthPath: service.healthPath ?? '/',
+    ...(health === 'running' || health === 'http-strict' || health === 'tcp' ? { healthCheck: health } : {}),
+    ...(health === 'command' && service.healthCommand ? { healthCheck: 'command' as const, healthCommand: service.healthCommand } : {}),
+    imageDigest: match[1]! };
+  return { ...result, imageId: match[1]!, runtime };
 }

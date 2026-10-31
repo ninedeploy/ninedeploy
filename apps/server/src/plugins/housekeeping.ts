@@ -1,4 +1,5 @@
 import { pruneErrorEvents } from '../lib/errorIngest.js';
+import { nodePreparationExists } from '../lib/nodePreparationRetention.js';
 import { tmpdir } from 'node:os';
 import { readdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
@@ -28,6 +29,7 @@ import { pruneTerminalSessions } from '../lib/terminalSessions.js';
 import { pruneTrafficRollups } from '../lib/trafficAnalytics.js';
 import { pruneImageTransfers } from '../lib/imageTransferRetention.js';
 import { pruneUptime } from '../lib/uptime.js';
+import { sweepMcpOAuth } from '../lib/mcpOAuth.js';
 import { sweepOrphanPreviewCopies } from '../lib/previewDatabases.js';
 import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 import { pruneServiceMetrics } from '../lib/serviceMetricHistory.js';
@@ -264,7 +266,7 @@ async function pruneOldDeployments(db: import('@ninedeploy/db').DB, maxAgeMs: nu
  * the build log of the deploy currently serving traffic was deleted.
  */
 function recoveryProtectsHistory() {
-  return sql`EXISTS (SELECT 1 FROM swarm_transitions WHERE swarm_transitions.service_id = ${deployments.serviceId}) OR EXISTS (SELECT 1 FROM primary_transitions WHERE primary_transitions.service_id = ${deployments.serviceId})`;
+  return sql`EXISTS (SELECT 1 FROM swarm_transitions WHERE swarm_transitions.service_id = ${deployments.serviceId}) OR EXISTS (SELECT 1 FROM primary_transitions WHERE primary_transitions.service_id = ${deployments.serviceId}) OR ${nodePreparationExists()}`;
 }
 
 export async function unsweepableDeploymentIds(db: import('@ninedeploy/db').DB): Promise<Set<number>> {
@@ -529,6 +531,8 @@ export default fp(
         await step('uptime', () => pruneUptime(fastify.db, now));
         // G5.4 error events (30 days) and issues not seen for 90 days.
         await step('error-events', () => pruneErrorEvents(fastify.db, now));
+        // R4 remote MCP: expired OAuth refresh tokens, their grants, and clients never used.
+        await step('mcp-oauth', () => sweepMcpOAuth(fastify.db, now));
         // 0.16.12 database copies whose preview was removed without its teardown.
         await step('preview-databases', () => sweepOrphanPreviewCopies(fastify.db, (line) => fastify.log.info({ component: 'housekeeping' }, line)));
         await step('dangling-images', () => pruneDanglingImages(fastify.db));

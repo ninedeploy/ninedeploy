@@ -390,6 +390,9 @@ export function createRemoteDockerBuilder(
      * on the node). No caller sets it yet.
      */
     prebuiltImage?: PrebuiltImage;
+    /** Pipeline-owned, durable preparation for an ordered node generation. */
+    prepareCapacity?: (input: { service: BuildContext['service']; deploymentId: number; image: string; env: Record<string, string>;
+      volumeAttachments: NonNullable<BuildContext['volumeAttachments']>; files: NonNullable<BuildContext['nodeFiles']> }) => Promise<DeployRuntime>;
   } = {},
 ): Builder {
   const pollMs = opts.pollMs ?? 2000;
@@ -524,6 +527,19 @@ export function createRemoteDockerBuilder(
         if (builtWithNixpacks && env['PORT'] === undefined) runEnv = { ...env, PORT: String(port) };
       }
       if (!service.healthCheck && !service.port && runService.port) requireDefaultProbe();
+
+      if (opts.prepareCapacity && runService.port != null) {
+        const runtime = await opts.prepareCapacity({ service: runService, deploymentId, image: target, env: runEnv,
+          volumeAttachments: ctx.volumeAttachments ?? [], files: ctx.nodeFiles ?? [] });
+        if (runtime.runtimeId !== name || runtime.port !== runService.port || !runtime.nodeDeploymentOwner ||
+          runtime.nodeDeploymentOwner.deploymentId !== deploymentId || runtime.nodeDeploymentOwner.serviceId !== service.id ||
+          runtime.nodeDeploymentOwner.serverId !== service.serverId || !runtime.nodeTargets?.length || !runtime.nodeCapacityTargets?.length ||
+          !runtime.imageDigest || !/^sha256:[a-f0-9]{64}$/.test(runtime.imageDigest) ||
+          opts.prebuiltImage && runtime.imageDigest !== opts.prebuiltImage.imageId) throw new Error('Ordered node preparation receipt is unconfirmed');
+        return { ...runtime, ...(ctx.recordDockerArtifact && !service.image ? { artifactBuild: { builtWithNixpacks,
+          builtStatic: opts.prebuiltImage?.builtStatic ?? false } } : {}) };
+      }
+      if (opts.prepareCapacity && runService.port == null) log('Node autoscaling capacity needs a resolved container port; continuing with the existing deployment path.');
 
       // 0.16.6: container options travel on docker.runSpec when the agent
       // can apply them; otherwise runRemoteContainer warns, as 0.16.1 did.

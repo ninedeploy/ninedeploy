@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createDb, deployments, eq, runMigrations, servers, services } from '@ninedeploy/db';
+import { createDb, deployments, eq, nodeAutoscaleCapacity, runMigrations, servers, services } from '@ninedeploy/db';
 import { admitNodeAutoscale } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { nodeAutoscaleRuntime } from '../../src/lib/nodeAutoscaleRuntime.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
@@ -20,6 +20,8 @@ beforeEach(async () => {
     healthCheck: 'http-strict', healthPath: '/ready', healthTimeoutSeconds: 30,
     autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
   await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'running' });
+  await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 9, serviceId: 1, serverId: 4, runtimeId: 'web-9', imageId: `sha256:${'f'.repeat(64)}`,
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }, { name: 'web-9-r2', id: 'b'.repeat(64) }] });
 });
 afterEach(() => c.client?.close());
 
@@ -57,6 +59,14 @@ it('refuses readiness if the agent lacks its sealed capability', async () => {
   io.refusal.mockResolvedValue({ message: 'readiness unavailable' });
   await expect(nodeAutoscaleRuntime(c.db, admission).ready(admission.service, [{ id: 'a'.repeat(64), name: 'web-9-r2', deploymentId: 9 }])).rejects.toThrow('readiness unavailable');
   expect(io.ready).not.toHaveBeenCalled();
+});
+it('refuses autoscaling before fencing when retirement handoff is unavailable', async () => {
+  const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;
+  io.refusal.mockResolvedValue({ message: 'handoff unavailable' });
+  await expect(nodeAutoscaleRuntime(c.db, admission).preflight(4)).rejects.toThrow('handoff unavailable');
+  expect(io.refusal).toHaveBeenCalledWith(expect.any(Function), '#4', true,
+    expect.objectContaining({ cap: ['docker.mutations', 'docker.retireHandoff'], sealedRequired: true }));
+  expect(io.client).not.toHaveBeenCalled();
 });
 it('gives each mutation client a checkpoint that rejects a superseded owner', async () => {
   const admission = (await admitNodeAutoscale(c.db, await service(), 2))!;

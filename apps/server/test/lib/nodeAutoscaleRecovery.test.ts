@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { createDb, deployments, eq, nodeAutoscaleTransitions, runMigrations, servers, services } from '@ninedeploy/db';
+import { createDb, deployments, eq, nodeAutoscaleCapacity, nodeAutoscaleTransitions, runMigrations, servers, services } from '@ninedeploy/db';
 import { admitNodeAutoscale, checkpointNodeAutoscale } from '../../src/lib/nodeAutoscaleAuthority.js';
 import { reconcileNodeAutoscale } from '../../src/lib/nodeAutoscaleRecovery.js';
 import type { NodeAutoscaleControllerDeps } from '../../src/lib/nodeAutoscaleController.js';
@@ -10,10 +10,13 @@ const service = async () => (await c.db.query.services.findFirst({ where: eq(ser
 const items = [{ id: 'a'.repeat(64), name: 'web-9', deploymentId: 9, running: true }, { id: 'b'.repeat(64), name: 'web-9-r2', deploymentId: 9, running: false }];
 const withoutTimeout = <T extends { timeoutMs: number }>(input: T) => { const { timeoutMs: _timeout, ...reply } = input; return reply; };
 const runtime = (): NodeAutoscaleControllerDeps => ({
+  preflight: async () => {},
   fence: async (_node, input) => ({ ...withoutTimeout(input), complete: true }),
   inventory: async (_node, input) => { const { expectedNames: _names, ...request } = input; return { ...withoutTimeout(request), complete: true, items }; },
   start: async (_node, input) => { calls.push('start'); const { targets, ...request } = input; return { ...withoutTimeout(request), complete: true, items: targets.map(target => ({ ...target, running: true })) }; },
   stop: async () => { throw new Error('unexpected stop'); },
+  retire: async (_node, input) => { const { targets: _targets, graceSeconds: _grace, ...request } = input; return { ...withoutTimeout(request), complete: true, items: [] }; },
+  handoff: async (_node, input) => ({ ...withoutTimeout(input), complete: true }),
   ready: async () => { calls.push('ready'); return ready; }, route: async () => { calls.push('route'); }, drain: async () => {},
 });
 beforeEach(async () => {
@@ -22,6 +25,8 @@ beforeEach(async () => {
   await c.db.insert(services).values({ id: 1, name: 'Web', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-9',
     autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } });
   await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'running' });
+  await c.db.insert(nodeAutoscaleCapacity).values({ deploymentId: 9, serviceId: 1, serverId: 4, runtimeId: 'web-9', imageId: `sha256:${'f'.repeat(64)}`,
+    targets: items.map(({ id, name }) => ({ id, name })) });
 });
 afterEach(() => c.client?.close());
 
@@ -63,4 +68,36 @@ it('defers an unclaimable stale owner without reviving its expired worker', asyn
   expect(row.workerToken).toBeNull(); expect(row.leaseUntil!.getTime()).toBeGreaterThan(Date.now());
   expect(await reconcileNodeAutoscale(c.db, { runtime })).toEqual([]);
   await expect(checkpointNodeAutoscale(c.db, first, 1)).rejects.toThrow();
+});
+it('discards an expired accepted measurement before effects and permits a fresh decision', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  expect(await admitNodeAutoscale(c.db, await service(), 2, measurement)).not.toBeNull();
+  await c.db.update(nodeAutoscaleTransitions).set({ measurement: { ...measurement, sampledAt: Date.now() - 100_000 }, leaseUntil: new Date(0) })
+    .where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  expect(await reconcileNodeAutoscale(c.db, { runtime })).toEqual([{ serviceId: 1, state: 'discarded' }]);
+  expect(calls).toEqual([]);
+  expect((await service()).runtimeReplicas).toBe(1);
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
+  expect(await admitNodeAutoscale(c.db, await service(), 2, { ...measurement, sampledAt: Date.now() })).not.toBeNull();
+});
+it('releases a stale accepted decision when a deploy is queued', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  expect(await admitNodeAutoscale(c.db, await service(), 2, measurement)).not.toBeNull();
+  await c.db.update(nodeAutoscaleTransitions).set({ measurement: { ...measurement, sampledAt: Date.now() - 100_000 }, leaseUntil: new Date(0) });
+  await c.db.insert(deployments).values({ id: 10, serviceId: 1, status: 'queued' });
+  expect(await reconcileNodeAutoscale(c.db, { runtime })).toEqual([{ serviceId: 1, state: 'discarded' }]);
+  expect(await c.db.select().from(nodeAutoscaleTransitions)).toEqual([]);
+  expect((await service()).runtimeReplicas).toBe(1); expect(calls).toEqual([]);
+});
+it('continues a started transition even if its original sample is now old', async () => {
+  const measurement = { serverId: 4, serviceId: 1, deploymentId: 9, sampledAt: Date.now(), requestId: 'd'.repeat(32),
+    targets: [{ name: 'web-9', id: 'a'.repeat(64) }] };
+  await admitNodeAutoscale(c.db, await service(), 2, measurement);
+  await c.db.update(nodeAutoscaleTransitions).set({ measurement: { ...measurement, sampledAt: Date.now() - 100_000 }, phase: 'started',
+    replicaInventory: items, leaseUntil: new Date(0) }).where(eq(nodeAutoscaleTransitions.serviceId, 1));
+  expect(await reconcileNodeAutoscale(c.db, { runtime })).toEqual([{ serviceId: 1, state: 'completed' }]);
+  expect(calls).toEqual(['ready', 'ready', 'route']);
+  expect((await service()).runtimeReplicas).toBe(2);
 });

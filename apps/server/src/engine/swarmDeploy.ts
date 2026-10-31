@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
-import { type DB, databaseAttachments, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { type DB, databaseAttachments, type ServiceRuntimeOptions, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { MAX_REPLICAS, TRAEFIK_CONTAINER } from './dockerNames.js';
 import { SwarmOrchestrator, STACK_DEPLOY_TIMEOUT_MS } from '../kernel/drivers/swarmOrchestrator.js';
-import type { StackSpec } from '../kernel/types.js';
+import type { StackServiceSpec, StackSpec } from '../kernel/types.js';
 import { capture, run, sleep } from '../lib/exec.js';
 import { buildTag, panelImageInfo, resolvePushTarget, shipImageByStream } from '../lib/imageTransfer.js';
 import { safeProbePath } from '../lib/probeUrl.js';
@@ -54,6 +54,17 @@ import { ensureSwarmFileSecrets, pruneUnusedFileSecrets } from '../lib/swarmFile
 /** Does this service deploy through Swarm? Never for a preview: a preview of a Swarm service runs as a local container (design §7.1). */
 export function isSwarmService(service: { orchestrator?: string | null; isEphemeralPreview?: boolean | null }): boolean {
   return service.orchestrator === 'swarm' && service.isEphemeralPreview !== true;
+}
+
+/** The service's container options a Swarm task can carry; null when none of them is set. GPUs are left out. */
+export function swarmContainerOptions(options: ServiceRuntimeOptions | null | undefined): StackServiceSpec['containerOptions'] | null {
+  if (!options) return null;
+  const out: NonNullable<StackServiceSpec['containerOptions']> = {};
+  if (options.init) out.init = true;
+  if (options.ulimitNofile) out.ulimitNofile = options.ulimitNofile;
+  if (options.capAdd?.length) out.capAdd = options.capAdd.map((c) => `CAP_${c}`);
+  if (options.shmSizeMb) out.shmSizeMb = options.shmSizeMb;
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 type SwarmCandidate = {
@@ -168,9 +179,10 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
       // File mounts (ROADMAP item 10): each file as a Swarm secret, mounted read-only at its path.
       const fileSecrets = await ensureSwarmFileSecrets(swarmStackName(slug), await loadNodeServiceFiles(db, service.id), log);
 
-      // 0.16.1: a Swarm service spec carries none of the container options.
-      if (ctx.service.runtimeOptions && Object.keys(ctx.service.runtimeOptions).length > 0) {
-        ctx.log('⚠ Container options (GPUs, shared memory, init, ulimit, capabilities) are not applied to a Swarm service.');
+      // ROADMAP item 10: init, nofile, capabilities and shared memory ride in the task spec; GPUs cannot.
+      const containerOptions = swarmContainerOptions(ctx.service.runtimeOptions);
+      if (ctx.service.runtimeOptions?.gpus != null) {
+        ctx.log('⚠ GPUs are not applied to a Swarm service: Swarm has no equivalent of --gpus. The other container options apply.');
       }
       const spec: StackSpec = {
         name: swarmStackName(slug),
@@ -199,6 +211,7 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
             ...(userDockerLabels(service.dockerLabels).length > 0 ? { containerLabels: Object.fromEntries(userDockerLabels(service.dockerLabels)) } : {}),
             ...(service.healthCheck === 'command' && service.healthCommand?.trim() ? { healthCommand: service.healthCommand.trim() } : {}),
             ...(fileSecrets.length > 0 ? { fileSecrets } : {}),
+            ...(containerOptions ? { containerOptions } : {}),
           },
         ],
         networks: [{ name: network, driver: 'overlay', attachable: true }],

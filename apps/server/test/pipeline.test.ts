@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auditLog, deploymentReleaseRecords, deploymentRuntimeOwners, deployments, domains, nodeLifecycleIntents, servers, serviceFiles, serviceRuntimeOwners, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
+import { auditLog, buildConfigs, databaseAttachments, databases, deploymentReleaseRecords, deploymentRuntimeOwners, deployments, domains, nodeAutoscaleCapacity, nodeDeploymentPreparations, nodeLifecycleIntents, servers, serviceFiles, serviceRuntimeOwners, services, serviceTargets, serviceVolumeAttachments } from '@ninedeploy/db';
 import { createComposeRelease } from '../src/lib/composeRelease.js';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
@@ -297,7 +297,7 @@ function makeDb(): { db: FakeDb; updates: { table: unknown; values: Record<strin
   db.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
     ...db,
     select: () => ({ from: (table: unknown) => {
-      const rows = table === serviceRuntimeOwners ? owner ? [owner] : [] : table === deploymentRuntimeOwners ? stamp ? [stamp] : [] : [{ epoch: 0 }];
+      const rows = table === serviceRuntimeOwners ? owner ? [owner] : [] : table === deploymentRuntimeOwners ? stamp ? [stamp] : [] : table === nodeDeploymentPreparations ? [] : [{ epoch: 0 }];
       const query = { where: () => query, limit: async () => rows,
         // biome-ignore lint/suspicious/noThenProperty: mirrors an awaitable SQL query.
         then: (resolve: (value: unknown) => unknown) => Promise.resolve(rows).then(resolve) };
@@ -335,6 +335,80 @@ describe('explicit Stop during primary readiness', () => {
   const originalBuild = h.builder.buildAndRun.getMockImplementation()!;
   const originalHealth = h.builder.isHealthy.getMockImplementation()!;
   afterEach(() => { h.builder.buildAndRun.mockReset().mockImplementation(originalBuild); h.builder.isHealthy.mockReset().mockImplementation(originalHealth); });
+  it.each([[true, false, false, 'configured'], [true, true, false, 'configured'], [false, false, false, 'configured'], [false, true, false, 'configured'], [true, true, true, 'configured'], [true, true, 'alias', 'configured'], [true, false, false, 'nixpacks'], [true, false, false, 'portless']])('node pipeline with capacity support %s, database %s, topology change %s and port %s', async (supported, withDatabase, topologyChange, portMode) => {
+    const { observabilityDb } = await import('./fixtures/observability.js');
+    const f = await observabilityDb(), originalAgent = h.agentOp.getMockImplementation()!;
+    const targets = new Map<string, { id: string; name: string }>(), imageId = `sha256:${'f'.repeat(64)}`;
+    const caps = ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff', 'docker.startSet', 'docker.readiness',
+      'proxy.routingAck', 'proxy.orderedWrite', 'image.manage', 'docker.runSpec', 'docker.recovery', 'docker.probe', 'db.manage', 'stream', 'volume.manage', 'build.nixpacks', 'build-path-guard', 'workspace.remove'];
+    h.agentOp.mockReset().mockImplementation(async (_db, _node, op, params) => {
+      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: supported ? caps : caps.filter(cap => cap !== 'docker.prepareAttemptEnv') })}`] };
+      if (op === 'docker.imageInspect') return { exitCode: 0, lines: [`${imageId}|42`] };
+      if (op === 'file.writeEnv') return { exitCode: 0, lines: [`wrote .agent-env/${params.name}.env`] };
+      if (op === 'docker.runEnv' || op === 'docker.runSpec') { const item = { id: '1'.repeat(64), name: String(params.name) }; targets.set(item.name, item); return { exitCode: 0, lines: [item.id] }; }
+      if (op === 'docker.inspect') return { exitCode: 0, lines: ['running|none|0|0'] };
+      if (op === 'docker.runtimeFence') return { exitCode: 0, lines: [`ND-RUNTIME-FENCE ${JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, deploymentWatermark: params.deploymentWatermark, complete: true })}`] };
+      if (op === 'docker.prepare') {
+        const items = params.specs.map((spec: { name: string }, index: number) => {
+          const item = { id: String(index + 1).repeat(64), name: spec.name, deploymentId: params.deploymentId, running: params.startNames.includes(spec.name) };
+          targets.set(item.name, item); return item;
+        });
+        if (topologyChange === 'alias') await f.db.update(databaseAttachments).set({ envAlias: 'CHANGED_URL' }).where(eq(databaseAttachments.databaseId, 5));
+        else if (topologyChange) await f.db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, 5));
+        return { exitCode: 0, lines: [`ND-PREPARED ${JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, deploymentId: params.deploymentId, revision: params.revision, complete: true, items })}`] };
+      }
+      if (op === 'docker.identity') {
+        const item = targets.get(String(params.name)) ?? [...targets.values()].find(value => value.id === params.name);
+        return { exitCode: 0, lines: [`ND-CONTAINER ${JSON.stringify(item ? { ...item, managed: 'service', serviceId: '1', deploymentId: '9' } : null)}`] };
+      }
+      if (op === 'docker.readiness') return { exitCode: 0, lines: [`ND-READINESS ${JSON.stringify({ requestId: params.requestId, complete: true,
+        items: params.targets.map((item: object) => ({ ...item, status: 'running', health: 'none', ready: true, restarts: 0, failingStreak: 0 })) })}`] };
+      if (op === 'docker.retireSet') return { exitCode: 0, lines: [`ND-RETIRED-SET ${JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, complete: true, items: [] })}`] };
+      if (op === 'docker.runtimeLegacyHandoff') return { exitCode: 0, lines: [`ND-RUNTIME-LEGACY ${JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, revision: params.revision, deploymentWatermark: params.deploymentWatermark, complete: true })}`] };
+      return { exitCode: 0, lines: [] };
+    });
+    try {
+      await f.db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+      await f.db.update(services).set({ serverId: 4, image: portMode === 'nixpacks' ? null : 'fixture:1', repoUrl: portMode === 'nixpacks' ? 'https://github.com/fixture/project.git' : null,
+        port: portMode === 'configured' ? 8080 : null, runtimeId: null, status: 'idle', healthCheck: portMode === 'nixpacks' ? null : 'running',
+        autoscale: { minReplicas: 1, maxReplicas: 2, metric: 'cpu', target: 70, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 1));
+      if (portMode === 'nixpacks') await f.db.insert(buildConfigs).values({ serviceId: 1, buildPack: 'nixpacks' });
+      await f.db.insert(domains).values({ serviceId: 1, hostname: 'app.test', status: 'active', ssl: false });
+      if (withDatabase) {
+        await f.db.insert(databases).values({ id: 5, name: 'Orders', slug: 'orders', engine: 'postgres', status: 'running',
+          serverId: 4, nodeContainerName: 'nd-db-orders', passwordEncrypted: 'fixture' });
+        await f.db.insert(databaseAttachments).values({ serviceId: 1, databaseId: 5, envAlias: 'DATABASE_URL' });
+      }
+      await f.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'queued' });
+      const logs = collectLogs(9);
+      await runDeployment(f.db, 9);
+      if (topologyChange) {
+        expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status).not.toBe('running');
+        expect(logs.join('\n')).toMatch(/database attachments changed/i);
+        expect(await f.db.select().from(nodeAutoscaleCapacity)).toEqual([]);
+        return;
+      }
+      expect((await f.db.query.deployments.findFirst({ where: eq(deployments.id, 9) }))?.status, logs.join('\n')).toBe('running');
+      const capacity = await f.db.select().from(nodeAutoscaleCapacity);
+      const preparesCapacity = supported && portMode !== 'portless';
+      if (preparesCapacity) {
+        expect(capacity).toMatchObject([{ deploymentId: 9, runtimeId: 'web-9', imageId, databaseNetworks: withDatabase ? ['1:5:nd-dbnet-orders'] : [] }]);
+        expect(capacity[0]?.targets.map(target => target.name)).toEqual(['web-9', 'web-9-r2']);
+      } else expect(capacity).toEqual([]);
+      expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.prepare')).toBe(preparesCapacity);
+      expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.runEnv' || call[2] === 'docker.runSpec')).toBe(!preparesCapacity);
+      if (portMode === 'nixpacks') {
+        expect((await f.db.query.services.findFirst({ where: eq(services.id, 1) }))?.port).toBe(3000);
+        expect(h.agentOp.mock.calls.some(call => call[2] === 'file.writeEnv' && call[3].env?.PORT === '3000')).toBe(true);
+        expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.readiness' && call[3].mode === 'tcp' && call[3].port === 3000)).toBe(true);
+      }
+      if (withDatabase && supported) {
+        const prepare = h.agentOp.mock.calls.find(call => call[2] === 'docker.prepare')?.[3];
+        expect(prepare.specs.map((spec: { extraNetworks: string[] }) => spec.extraNetworks)).toEqual([['nd-dbnet-orders'], ['nd-dbnet-orders']]);
+        expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.networkConnect')).toBe(false);
+      } else if (withDatabase) expect(h.agentOp.mock.calls.some(call => call[2] === 'docker.networkConnect')).toBe(true);
+    } finally { h.agentOp.mockReset().mockImplementation(originalAgent); f.close(); }
+  });
   it('persists deployment authority before the first node operation', async () => {
     const { observabilityDb } = await import('./fixtures/observability.js');
     const { readServiceRuntimeOwner } = await import('../src/lib/serviceRuntimeOwner.js');
@@ -2614,6 +2688,15 @@ describe('runDeployment with an inline compose stack', () => {
     const written = readFileSync(path.join(reposDir, '5', 'docker-compose.yml'), 'utf8');
     expect(written).toBe(stack);
     expect(h.builder.buildAndRun).toHaveBeenCalled();
+  });
+
+  it('G5.1: hands the compose builder the image scan gate on the panel host', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { type: 'compose', repoUrl: null, image: null, composeContent: stack, composeService: 'app' });
+    collectLogs(1);
+    h.builder.buildAndRun.mockClear();
+    await runDeployment(db as never, 1);
+    expect(typeof h.builder.buildAndRun.mock.calls.at(-1)![0].scanComposeImages).toBe('function');
   });
 
   it('repairs a workspace whose compose file was deleted between deploys', async () => {

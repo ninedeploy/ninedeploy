@@ -3,6 +3,7 @@ import type { DB } from '@ninedeploy/db';
 import { apiTokens, sessions, users } from '@ninedeploy/db';
 import type { AuthUser } from '../plugins/auth.js';
 import { sha256 } from './crypto.js';
+import { MCP_TOKEN_PREFIX } from './mcpAudience.js';
 import { verifyJwt, type AppJwtPayload } from './jwt.js';
 import { sessionAuthMethod } from './sessionMethod.js';
 import { bindAuthCredential } from './authCredential.js';
@@ -50,7 +51,10 @@ export function narrowScopes(user: { isOperator: boolean; tokenScopes?: string[]
  * Shared by the HTTP `authenticate` pre-handler and the WebSocket log stream
  * (which cannot easily set Authorization headers).
  */
-export async function resolveUser(db: DB, token: string): Promise<AuthUser | null> {
+export async function resolveUser(db: DB, token: string, opts: { audience?: 'api' | 'mcp' } = {}): Promise<AuthUser | null> {
+  // R4: an OAuth access token issued for remote MCP is good for the MCP
+  // endpoint and the tool calls it makes, nowhere else (its audience).
+  if (token.startsWith(MCP_TOKEN_PREFIX) && opts.audience !== 'mcp') return null;
   // JWT access token (three dot-separated segments).
   if (token.split('.').length === 3) {
     let payload: AppJwtPayload;

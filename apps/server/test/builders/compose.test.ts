@@ -410,6 +410,69 @@ describe('composeBuilder redeploy safety gates', () => {
     expect(upArgs).not.toContain('--build');
   });
 
+  describe('G5.1: the image scan gate', () => {
+    const A = `sha256:${'a'.repeat(64)}`;
+    const B = `sha256:${'b'.repeat(64)}`;
+    const captureFor = (present: Record<string, string>) => async (_cmd: string, raw: unknown[]) => {
+      const args = raw as string[];
+      if (args.includes('--format') && args.includes('json') && args.includes('config')) {
+        return JSON.stringify({ services: { api: {}, db: { image: 'postgres:17' }, cache: { image: 'redis:7' }, extra: { image: 'gone:1' } } });
+      }
+      if (args[0] === 'image' && args[1] === 'inspect') {
+        const id = present[args[args.length - 1]!];
+        if (!id) throw new Error('No such image');
+        return `${id}\n`;
+      }
+      return 'running';
+    };
+
+    const upCall = () => h.run.mock.calls.find((c) => (c[1] as string[])[5] === 'up')![1] as string[];
+
+    it('scans the images `up` will run after build and before `down`, then runs exactly those (no pull, no build)', async () => {
+      const present: Record<string, string> = { 'ndcmp-stack-api': A, 'postgres:17': B, 'redis:7': B };
+      h.capture.mockImplementation(captureFor(present) as never);
+      const order: string[] = [];
+      h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
+        order.push((args as string[])[5]!);
+        // The second build (for the image that is not local) produces it.
+        if ((args as string[])[5] === 'build' && order.filter((c) => c === 'build').length === 2) present['gone:1'] = A;
+      });
+      const scanComposeImages = vi.fn(async () => (order.push('scan'), true));
+      const ctx = makeCtx({ scanComposeImages });
+      await composeBuilder.buildAndRun(ctx as never);
+      expect(scanComposeImages).toHaveBeenCalledWith({ images: [{ imageId: A, services: ['api', 'extra'] }, { imageId: B, services: ['cache', 'db'] }], missing: [] });
+      expect(order.filter((c) => ['build', 'scan', 'down', 'up'].includes(c))).toEqual(['build', 'build', 'scan', 'down', 'up']);
+      expect((ctx.log as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('\n')).toContain('Building the images that are not local yet (extra)');
+      expect(upCall()).toEqual(expect.arrayContaining(['--pull', 'never', '--no-build']));
+    });
+
+    it('report only: `up` is not restricted', async () => {
+      h.capture.mockImplementation(captureFor({ 'ndcmp-stack-api': A, 'postgres:17': B, 'redis:7': B, 'gone:1': B }) as never);
+      await composeBuilder.buildAndRun(makeCtx({ scanComposeImages: vi.fn(async () => false) }) as never);
+      expect(upCall()).not.toContain('--no-build');
+    });
+
+    it('a blocking scan fails the deploy and leaves the running stack alone (no down, no up)', async () => {
+      h.capture.mockImplementation(captureFor({ 'ndcmp-stack-api': A }) as never);
+      const scanComposeImages = vi.fn(async () => {
+        throw new Error('Image scan gate: 1 critical vulnerability in the new Compose images.');
+      });
+      await expect(composeBuilder.buildAndRun(makeCtx({ scanComposeImages }) as never)).rejects.toThrow('Image scan gate');
+      expect(h.run.mock.calls.some((c) => (c[1] as string[])[5] === 'down')).toBe(false);
+      expect(h.run.mock.calls.some((c) => (c[1] as string[])[5] === 'up')).toBe(false);
+    });
+
+    it('an image list that cannot be read is handed to the gate as null, which decides', async () => {
+      const scanComposeImages = vi.fn(async () => {
+        throw new Error('Image scan gate: the Compose images could not be listed');
+      });
+      const ctx = makeCtx({ scanComposeImages });
+      await expect(composeBuilder.buildAndRun(ctx as never)).rejects.toThrow('could not be listed');
+      expect(scanComposeImages).toHaveBeenCalledWith(null);
+      expect(h.run.mock.calls.some((c) => (c[1] as string[])[5] === 'down')).toBe(false);
+    });
+  });
+
   it('r590: a failed build fails the deploy and leaves the previous stack running (no down, no up)', async () => {
     h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
       if ((args as string[])[5] === 'build') throw new Error('failed to solve: Dockerfile:3 RUN npm ci');

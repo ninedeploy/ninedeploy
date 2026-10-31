@@ -1,0 +1,2 @@
+ALTER TABLE `node_autoscale_capacity` ADD `database_networks` text DEFAULT '[]' NOT NULL;--> statement-breakpoint
+ALTER TABLE `node_deployment_preparations` ADD `database_networks` text DEFAULT '[]' NOT NULL;

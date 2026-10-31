@@ -1,0 +1,1 @@
+ALTER TABLE `node_deployment_preparations` ADD `recovery_watermark` integer;

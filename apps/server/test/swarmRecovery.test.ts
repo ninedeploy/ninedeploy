@@ -22,6 +22,10 @@ beforeEach(async () => {
   h.proxy.mockReset().mockResolvedValue(undefined);
   h.docker = new Map(); h.run.mockReset().mockResolvedValue(undefined);
   h.spawn.mockReset().mockImplementation(async (_cmd, args, sink) => {
+    if (args[0] === 'run' && args.includes('--network')) {
+      const network = args[args.indexOf('--network') + 1];
+      return [...h.docker.values()].some(c => network === `container:${c.id}` || network === `container:${c.name}`) ? 0 : 1;
+    }
     const row = [...h.docker.values()].find(c => c.name === args.at(-1) || c.id === args.at(-1));
     if (!row) { sink(`Error: No such object: ${args.at(-1)}`); return 1; }
     if (args[0] === 'rm') { h.docker.delete(row.id); return 0; }
@@ -33,6 +37,10 @@ beforeEach(async () => {
   h.capture.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
     if (args[0] === 'info') return JSON.stringify({ LocalNodeState: 'active', ControlAvailable: true, NodeID: h.manager });
     if (args[0] === 'network') return 'net0000000000000000000001';
+    if (args[0] === 'inspect' && args.at(-1)?.includes('NetworkSettings')) {
+      if (![...h.docker.values()].some(c => c.id === args[1] || c.name === args[1])) throw Error('Unknown Docker generation');
+      return 'running|172.20.0.2|healthy';
+    }
     if (args.includes('{{.State.Status}}')) return 'running';
     if (args.includes(SWARM_IMAGE_SERVICE_FORMAT)) return JSON.stringify({ id: h.native.ID, version: h.native.Version.Index, image: ref(), service: h.native.Spec.Labels['ninedeploy.service'], deployment: h.native.Spec.Labels['ninedeploy.deployment'] });
     if (args[0] === 'service' && args[1] === 'ps') return TASK;

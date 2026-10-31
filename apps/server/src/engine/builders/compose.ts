@@ -179,6 +179,40 @@ export async function composeBuildFingerprint(
   }
 }
 
+/**
+ * G5.1: the local images `up` is about to run, with the compose services of
+ * each: the service's `image`, or `<project>-<service>` for a build-only one
+ * (Compose's own name for it). Images that are not present are left out and
+ * named in `missing`.
+ */
+export async function composeUpImages(
+  stackArgs: string[],
+  project: string,
+  opts: { cwd: string; env: Record<string, string> },
+): Promise<{ images: Array<{ imageId: string; services: string[] }>; missing: string[] }> {
+  const model = JSON.parse(await capture('docker', [...stackArgs, 'config', '--format', 'json'], { ...opts, timeoutMs: 120_000 })) as {
+    services?: Record<string, { image?: string }>;
+  };
+  const byImage = new Map<string, Set<string>>();
+  const missing: string[] = [];
+  for (const [name, svc] of Object.entries(model.services ?? {})) {
+    const ref = svc.image || `${project}-${name}`;
+    let id = '';
+    try {
+      id = (await capture('docker', ['image', 'inspect', '--format', '{{.Id}}', ref], { timeoutMs: 30_000 })).trim();
+    } catch {
+      /* not present */
+    }
+    if (!/^sha256:[a-f0-9]{64}$/.test(id)) {
+      missing.push(name);
+      continue;
+    }
+    byImage.set(id, (byImage.get(id) ?? new Set<string>()).add(name));
+  }
+  const images = [...byImage.entries()].map(([imageId, services]) => ({ imageId, services: [...services].sort() })).sort((a, b) => a.imageId.localeCompare(b.imageId));
+  return { images, missing: missing.sort() };
+}
+
 export function readComposeFingerprint(slug: string): string | null {
   try {
     return readFileSync(fingerprintFile(slug), 'utf8').trim() || null;
@@ -350,6 +384,24 @@ export const composeBuilder: Builder = {
       }
       }
 
+      // G5.1: the image scan gate, while the previous revision still serves.
+      // When it is on, `up` runs only the local images it scanned (below).
+      let scanGated = false;
+      if (ctx.scanComposeImages) {
+        const list = () => composeUpImages(stackArgs, project, gateOpts).catch((err: unknown) => {
+          log(`warning: the Compose images could not be listed (${err instanceof Error ? err.message : err})`);
+          return null;
+        });
+        let found = await list();
+        // A build skipped as unchanged (G2.4) whose image is gone is built now, so it can be scanned.
+        if (found?.missing.length && !ctx.restoreComposeRelease) {
+          log(`Building the images that are not local yet (${found.missing.join(', ')}) so they can be scanned`);
+          await run('docker', [...stackArgs, 'build'], { ...gateOpts, timeoutMs: 1_200_000, heartbeatLabel: `Building images for ${project} (the previous revision keeps serving)` }, log);
+          found = await list();
+        }
+        scanGated = await ctx.scanComposeImages(found);
+      }
+
       // Stop the previous project revision — no blue-green for compose. Kept
       // as it always was (only its position moved): existing stacks get the
       // same teardown — containers, orphans and the project network — so `up`
@@ -367,7 +419,9 @@ export const composeBuilder: Builder = {
       // r590: no `--build` — every image was built above, so the gap between
       // `down` and a serving stack is container start time only.
       const upArgs = [...stackArgs, 'up', '-d', '--remove-orphans'];
-      if (ctx.restoreComposeRelease) upArgs.push('--pull', 'never', '--no-build');
+      // A restore runs its recorded images; a scanned deploy runs exactly the images it scanned
+      // (no `pull_policy: always` re-pull, no rebuild at `up`).
+      if (ctx.restoreComposeRelease || scanGated) upArgs.push('--pull', 'never', '--no-build');
       await run(
         'docker',
         upArgs,

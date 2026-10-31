@@ -239,6 +239,25 @@ describe('the Swarm builder (design §7.4)', () => {
     expect(h.docker).toContainEqual(['service', 'inspect', '--format', '{{json .UpdateStatus}}', 'nd-web_web']);
   });
 
+  it('ROADMAP item 10: init, nofile, capabilities and shared memory ride in the task spec; only GPUs are left out, and the log says so', async () => {
+    const svc = await svcRow({ runtimeOptions: { gpus: 'all', shmSizeMb: 512, init: true, ulimitNofile: 65536, capAdd: ['NET_ADMIN', 'SYS_PTRACE'] } });
+    const { driver, specs } = fakeDriver();
+    const ctx = ctxFor(svc);
+    await createSwarmBuilder(db, 'web', { driver }).buildAndRun(ctx);
+    expect(specs[0]!.services[0]!.containerOptions).toEqual({ init: true, ulimitNofile: 65536, capAdd: ['CAP_NET_ADMIN', 'CAP_SYS_PTRACE'], shmSizeMb: 512 });
+    expect(lines(ctx)).toContain('GPUs are not applied to a Swarm service');
+    expect(lines(ctx)).not.toContain('Container options (GPUs');
+  });
+
+  it('a service whose container options are all off sends none and logs nothing about them', async () => {
+    const plain = await svcRow({ runtimeOptions: { init: false, capAdd: [] } });
+    const quiet = ctxFor(plain);
+    const second = fakeDriver();
+    await createSwarmBuilder(db, 'web', { driver: second.driver }).buildAndRun(quiet);
+    expect(second.specs[0]!.services[0]).not.toHaveProperty('containerOptions');
+    expect(lines(quiet)).not.toContain('GPUs');
+  });
+
   it('M4: two deploys never share a client config; a service without registry auth logs in nowhere and forwards nothing', async () => {
     const svc = await svcRow();
     const { driver, opts, configJson } = fakeDriver();

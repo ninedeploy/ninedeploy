@@ -513,10 +513,10 @@ export async function containerIp(name: string): Promise<string | null> {
     // child behind every dashboard poll). Past the bound it reads "not running".
     const out = await capture('docker', [
       'inspect', name,
-      '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}',
+      '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',
     ], { timeoutMs: CONTAINER_IP_TIMEOUT_MS });
-    const [status, ip] = out.trim().split('|');
-    return status === 'running' && ip ? ip : null;
+    const [status, ip, health] = out.trim().split('|');
+    return status === 'running' && ip && (health === undefined || health === 'none' || health === 'healthy') ? ip : null;
   } catch {
     return null;
   }
@@ -562,11 +562,12 @@ export async function holdsRunning(runtimeId: string, timeoutMs: number, log: (l
     let status = '';
     let count = '';
     try {
-      const raw = await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}} {{.RestartCount}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS });
+      const raw = await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}} {{.RestartCount}}'], { timeoutMs: Math.min(DOCKER_READ_TIMEOUT_MS, Math.max(1, deadline - Date.now())) });
       [status = '', count = ''] = raw.trim().split(/\s+/);
     } catch {
       /* still being created */
     }
+    if (Date.now() >= deadline || deployAborted()) break;
     if (status === 'exited' || status === 'dead') {
       await logContainerDiagnostic(runtimeId, log);
       return false;
@@ -604,10 +605,11 @@ export async function commandSucceeds(runtimeId: string, command: string, timeou
   while (Date.now() < deadline && !deployAborted()) {
     let status = '';
     try {
-      status = (await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}}'], { timeoutMs: DOCKER_READ_TIMEOUT_MS })).trim();
+      status = (await capture('docker', ['inspect', runtimeId, '--format', '{{.State.Status}}'], { timeoutMs: Math.min(DOCKER_READ_TIMEOUT_MS, Math.max(1, deadline - Date.now())) })).trim();
     } catch {
       /* still being created */
     }
+    if (Date.now() >= deadline || deployAborted()) break;
     if (status === 'exited' || status === 'dead') {
       await logContainerDiagnostic(runtimeId, log);
       return false;
@@ -615,6 +617,7 @@ export async function commandSucceeds(runtimeId: string, command: string, timeou
     if (status === 'running') {
       try {
         await capture('docker', ['exec', runtimeId, 'sh', '-c', command], { timeoutMs: Math.min(COMMAND_HEALTH_ATTEMPT_TIMEOUT_MS, Math.max(1, deadline - Date.now())) });
+        if (Date.now() >= deadline || deployAborted()) break;
         log('Healthcheck command exited 0');
         return true;
       } catch (err) {
@@ -1672,8 +1675,14 @@ export const dockerBuilder: Builder = {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline && !deployAborted()) {
         await options.checkpoint?.();
+        const eligible = await containerIp(runtime.runtimeId);
+        await options.checkpoint?.();
         const remaining = deadline - Date.now();
         if (remaining <= 0 || deployAborted()) break;
+        if (!eligible) {
+          await sleep(Math.min(1000, remaining));
+          continue;
+        }
         let ready = false;
         try {
           const protocol = runtime.healthCheck === 'tcp' ? 'tcp' : 'http';
@@ -1681,6 +1690,7 @@ export const dockerBuilder: Builder = {
           const exitCode = await probeContainer({ name: runtime.runtimeId, port: runtime.port,
             protocol, path: runtime.healthPath }, line => lines.push(line), { timeoutMs: remaining });
           ready = confirmedNodeProbe(lines, exitCode, protocol);
+          if (ready && Date.now() < deadline && !deployAborted()) ready = await containerIp(runtime.runtimeId) !== null;
         } catch { /* retry until the readiness deadline */ }
         await options.checkpoint?.();
         if (Date.now() >= deadline || deployAborted()) break;
@@ -1701,7 +1711,13 @@ export const dockerBuilder: Builder = {
     // 0.16.3: the service's own readiness command, inside the container.
     if (runtime.healthCheck === 'command' && runtime.healthCommand) {
       log(`Healthcheck: running "${runtime.healthCommand}" in ${runtime.runtimeId} until it exits 0`);
-      return commandSucceeds(runtime.runtimeId, runtime.healthCommand, timeoutMs, log);
+      const deadline = Date.now() + timeoutMs;
+      const succeeded = await commandSucceeds(runtime.runtimeId, runtime.healthCommand, timeoutMs, log);
+      if (!succeeded || !runtime.port) return succeeded;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0 || deployAborted()) return false;
+      log('Healthcheck command succeeded; waiting for the configured application port before routing');
+      return dockerBuilder.isHealthy({ ...runtime, healthCheck: 'tcp' }, remaining, 0, log, options);
     }
     const healthPath = safeProbePath(runtime.healthPath);
     const deadline = Date.now() + timeoutMs;

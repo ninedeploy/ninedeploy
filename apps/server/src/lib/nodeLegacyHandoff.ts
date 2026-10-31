@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { containerLifecycleReply, containerLifecycleRequest, containerStopSetReply, containerStopSetRequest, type ContainerStopSetReply } from '@ninedeploy/schemas';
+import { containerLifecycleReply, containerLifecycleRequest, containerRetireSetReply, containerRetireSetRequest, containerStopSetReply, containerStopSetRequest, type ContainerRetireSetReply, type ContainerStopSetReply } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { withNodeServiceJournal } from './nodeLifecycle.js';
 
@@ -48,13 +48,14 @@ export async function handoffStoppedNodeToLegacy(root: string, params: unknown) 
     }
     const parsed = JSON.parse(head.intent) as Record<string, unknown>;
     const { kind, ...recorded } = parsed;
-    if (kind !== 'stop') throw new Error('Modern Stop ownership is stale or unconfirmed');
+    if (kind !== 'stop' && kind !== 'retire') throw new Error('Modern Stop ownership is stale or unconfirmed');
     const stop = containerStopSetRequest.parse({ ...recorded, timeoutMs: 1 });
-    const receipt = containerStopSetReply.parse(JSON.parse(head.receipt));
+    const receipt = kind === 'stop' ? containerStopSetReply.parse(JSON.parse(head.receipt)) : containerRetireSetReply.parse(JSON.parse(head.receipt));
     if (stop.serviceId !== input.serviceId || stop.requestId !== input.requestId || stop.revision !== input.revision ||
       receipt.serviceId !== stop.serviceId || receipt.requestId !== stop.requestId || receipt.revision !== stop.revision ||
       receipt.items.length !== stop.targets.length || stop.targets.some(target => target.deploymentId > input.deploymentWatermark ||
-        !receipt.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId && !item.running))) {
+        !receipt.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId &&
+          ('running' in item ? item.running === false : item.removed === true)))) {
       throw new Error('Modern Stop receipt or watermark is unconfirmed');
     }
     const legacy = containerLifecycleRequest.parse({ requestId: input.requestId, serviceId: input.serviceId,
@@ -72,6 +73,30 @@ export async function handoffStoppedNodeToLegacy(root: string, params: unknown) 
   }));
   return { requestId: input.requestId, serviceId: input.serviceId, revision: input.revision,
     deploymentWatermark: input.deploymentWatermark, complete: true as const };
+}
+
+/** Replay a retirement receipt after its ownership has been handed back to legacy creation. */
+export async function replayHandedOffRetirement(root: string, input: z.infer<typeof containerRetireSetRequest>): Promise<ContainerRetireSetReply | null> {
+  return withNodeServiceJournal(root, input.serviceId, input.timeoutMs, journal => journal.write(async () => {
+    const db = journal.database;
+    const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_protocol'").get();
+    const mode = table ? db.prepare('SELECT version FROM runtime_protocol WHERE id=1').get() : undefined;
+    if (mode?.version !== 2) return null;
+    const saved = db.prepare('SELECT request_id,revision,stop_intent,stop_receipt FROM legacy_runtime_handoff WHERE id=1').get();
+    const current = db.prepare('SELECT revision FROM lifecycle_head WHERE id=1').get();
+    const { timeoutMs: _timeout, ...intent } = input;
+    if (!saved || saved.request_id !== input.requestId || saved.revision !== input.revision || current?.revision !== input.revision ||
+      saved.stop_intent !== JSON.stringify({ kind: 'retire', ...intent }) || typeof saved.stop_receipt !== 'string') {
+      throw new Error('Handed-off retirement is stale or its request changed');
+    }
+    const receipt = containerRetireSetReply.parse(JSON.parse(saved.stop_receipt));
+    if (receipt.requestId !== input.requestId || receipt.serviceId !== input.serviceId || receipt.revision !== input.revision ||
+      receipt.items.length !== input.targets.length || input.targets.some(target => !receipt.items.some(item =>
+        item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId && item.removed))) {
+      throw new Error('Handed-off retirement receipt changed');
+    }
+    return receipt;
+  }));
 }
 
 /** A lost handoff reply must not make the recorded Stop unrecoverable. */

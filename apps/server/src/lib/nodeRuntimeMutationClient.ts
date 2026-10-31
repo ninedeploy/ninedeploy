@@ -10,6 +10,7 @@ import {
 } from '@ninedeploy/schemas';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
+import { z } from 'zod';
 
 type Header = { requestId: string; serviceId: number; revision: number };
 type Target = { id: string; name: string; deploymentId: number };
@@ -24,24 +25,25 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
     op: string, prefix: string, input: Request, parse: (value: unknown) => Reply, matches: (reply: Reply) => boolean, cap: MultiNodeCapability = 'docker.mutations',
   ): Promise<Reply> {
     const deadline = performance.now() + input.timeoutMs;
+    const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(input.timeoutMs)]);
     const remaining = () => Math.max(0, Math.floor(deadline - performance.now()));
     const current = async () => {
-      options.signal?.throwIfAborted(); await options.checkpoint(); options.signal?.throwIfAborted();
+      signal.throwIfAborted(); await options.checkpoint(); signal.throwIfAborted();
       if (remaining() < 1) throw new Error('Runtime mutation deadline exceeded');
     };
     await current();
-    const sealed = await agentTransportSealed(db, serverId, options.signal);
+    const sealed = await agentTransportSealed(db, serverId, signal);
     await current();
     const refusal = await capabilityRefusal(async (operation, params, sink) => {
       await current();
-      const result = await agentOp(db, serverId, operation, params, sink, { signal: options.signal, timeoutMs: Math.min(5000, remaining()) });
+      const result = await agentOp(db, serverId, operation, params, sink, { signal, timeoutMs: Math.min(5000, remaining()) });
       await current(); return result;
     }, '#' + serverId, sealed, { cap, feature: 'order immutable runtime mutations', sealedRequired: true });
     if (refusal) throw new Error(refusal.message);
     await current();
     const budget = remaining();
     const result = await agentOp(db, serverId, op, { ...input, timeoutMs: budget }, options.onLine ?? (() => undefined),
-      { signal: options.signal, timeoutMs: budget });
+      { signal, timeoutMs: budget });
     await current();
     const frames = result.lines.filter(line => line.startsWith(prefix));
     if (result.exitCode !== 0 || frames.length !== 1 || Buffer.byteLength(frames[0]!) > 65_536) throw new Error('Runtime mutation receipt unavailable');
@@ -52,6 +54,13 @@ export function createNodeRuntimeMutationClient(db: DB, serverId: number,
     return reply;
   }
   return {
+    legacyHandoff(params: { requestId: string; serviceId: number; revision: number; timeoutMs: number; deploymentWatermark: number }) {
+      const input = z.object({ requestId: z.string().regex(/^[a-f0-9]{32}$/), serviceId: z.number().int().positive().safe(), revision: z.number().int().positive().safe(),
+        timeoutMs: z.number().int().positive().max(595_000), deploymentWatermark: z.number().int().positive().safe() }).strict().parse(params);
+      return exchange('docker.runtimeLegacyHandoff', 'ND-RUNTIME-LEGACY ', input,
+        value => z.object({ requestId: z.string(), serviceId: z.number(), revision: z.number(), deploymentWatermark: z.number(), complete: z.literal(true) }).strict().parse(value),
+        reply => reply.deploymentWatermark === input.deploymentWatermark, 'docker.retireHandoff');
+    },
     fence(params: RuntimeFenceRequest) {
       const input = runtimeFenceRequest.parse(params);
       return exchange('docker.runtimeFence', 'ND-RUNTIME-FENCE ', input, value => runtimeFenceReply.parse(value), reply => reply.deploymentWatermark === input.deploymentWatermark);

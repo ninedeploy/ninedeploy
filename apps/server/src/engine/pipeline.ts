@@ -2,12 +2,12 @@ import path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { and, desc, eq, exists, inArray, isNotNull, lt, ne, type SQL } from 'drizzle-orm';
-import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, previewEnvVars, primaryTransitions, swarmTransitions, projects, services, serviceProjects, serviceVolumeAttachments, workspaceMembers } from '@ninedeploy/db';
+import { buildConfigs, databaseAttachments, databases, type DB, deployments, domains, envVars, previewEnvVars, primaryTransitions, swarmTransitions, projects, services, serviceProjects, serviceTargets, serviceVolumeAttachments, workspaceMembers } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { decrypt } from '../lib/crypto.js';
 import { checkoutCommit, type CloneCreds } from '../lib/git.js';
 import { assertCiGateForBuild } from '../lib/ciGate.js';
-import { scanBeforeTraffic, scannableOnNode, scannableOnPanel } from '../lib/imageScan.js';
+import { composeScannableOnPanel, scanBeforeTraffic, scanComposeBeforeUp, scannableOnNode, scannableOnPanel } from '../lib/imageScan.js';
 import { archiveDockerArtifact, artifactRuntimeService, assertArtifactAvailable, assertArtifactImage, assertArtifactTarget, cacheNodeDockerArtifact, parseDockerArtifact, prepareArtifactImage, supportsDockerArtifact } from '../lib/dockerArtifact.js';
 import { withReleaseImageLock } from '../lib/releaseImageRetention.js';
 import { GithubAppError } from '../lib/githubApp.js';
@@ -25,7 +25,8 @@ import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
 import { recoverCompletedInitialStop } from '../lib/nodeLegacyStopRecovery.js';
 import { nodeLabel, parseAgentCapabilities } from '../lib/agentCapabilities.js';
-import { createRemoteDockerBuilder } from './builders/remoteDocker.js';
+import { createRemoteDockerBuilder, type AgentCall } from './builders/remoteDocker.js';
+import { bindNodeAutoscalePreparation } from './builders/nodeAutoscaleBinding.js';
 import { deployToTargets, type FanoutContext, pullableReleaseRef, recordFanoutResults, targetsForService } from './fanout.js';
 import { createRemoteComposeBuilder } from './builders/remoteCompose.js';
 import {
@@ -68,7 +69,7 @@ import { getAcmeEmail, writeDynamicConfig } from './proxy.js';
 import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
 import { beginPrimaryTransition, primaryRecoveryPending, PrimaryIdentityUnconfirmed, PrimaryRecoveryOwnershipLost, PrimaryRecoveryPending, type PrimaryRecoveryLease } from './primaryRecovery.js';
 import { beginSwarmTransition, swarmRecoveryPending, SwarmRecoveryPending, SwarmRecoveryOwnershipLost, type SwarmRecoveryLease } from './swarmRecovery.js';
-import { canaryConfig } from '@ninedeploy/schemas';
+import { autoscaleConfig, canaryConfig } from '@ninedeploy/schemas';
 import { canarySkipReason, runCanary } from './canary.js';
 import { ensurePreviewDatabaseCopies } from '../lib/previewDatabases.js';
 import { canaryActive, canaryOwnedBy, endCanary } from './canaryState.js';
@@ -268,7 +269,7 @@ type RuntimeEnvironment = {
   withheldFromPreview: string[];
   // ── 0.16 T6 node databases ──
   /** The running attached databases whose connection strings `values` carries, and where they run (D4, O7). */
-  attachedDatabases: Array<{ id: number; slug: string; serverId: number | null; container: string | null }>;
+  attachedDatabases: Array<{ id: number; slug: string; serverId: number | null; container: string | null; envAlias: string }>;
   // ── end 0.16 T6 ──
 };
 
@@ -460,7 +461,7 @@ export async function loadRuntimeEnv(
     const d = await db.query.databases.findFirst({ where: eq(databases.id, a.databaseId) });
     if (d && d.status === 'running') {
       readyAttachmentCount++;
-      attachedDatabases.push({ id: d.id, slug: d.slug, serverId: d.serverId ?? null, container: d.containerName ?? d.nodeContainerName ?? null });
+      attachedDatabases.push({ id: d.id, slug: d.slug, serverId: d.serverId ?? null, container: d.containerName ?? d.nodeContainerName ?? null, envAlias: a.envAlias });
       // Services created by an older or interrupted Hub flow may have a valid
       // attachment but a missing persisted mapping. Recover the trusted
       // built-in contract from the exact image/port/volume/database signature
@@ -976,7 +977,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   let builder = builders[service.type];
   // 0.16 T4: lifted so a build placed elsewhere can rebind the node builder
   // with the shipped image.
-  let remoteBuilderFor: ((prebuiltImage?: BuildContext['prebuiltImage']) => Builder) | null = null;
+  let remoteBuilderFor: ((prebuiltImage?: BuildContext['prebuiltImage'], orderedCapacity?: boolean) => Builder) | null = null;
+  let currentRemoteImage: BuildContext['prebuiltImage'];
+  let remoteNodeCall: AgentCall | undefined;
+  let orderedDatabaseCheck: (() => Promise<void>) | undefined;
+  let orderedDatabaseNetworks: string[] = [];
+  let orderedDatabaseIdentities: string[] = [];
   if (service.serverId != null) {
     const serverId = service.serverId;
     if (!remoteDeploySupported(service.type)) {
@@ -1048,18 +1054,25 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       }
       return invoke(op, params, sink, options);
     };
+    remoteNodeCall = call;
     // r660: the node's name goes into the "update this agent" refusal.
     const label = await nodeLabel(db, serverId);
     // 0.13 (T5): a GitHub App repository is checked out on the node with a
     // per-job token (minted, sent sealed, revoked by the builder).
     const gitCredential = nodeGitCredentialSource(db, service);
-    remoteBuilderFor = (prebuiltImage) =>
-      service.type === 'compose'
+    remoteBuilderFor = (prebuiltImage, orderedCapacity = false) => {
+      currentRemoteImage = prebuiltImage;
+      return service.type === 'compose'
         ? createRemoteComposeBuilder(call, { nodeLabel: label, gitCredential })
         : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential, isSealed: async () => {
           await nodeAuthority?.check();
           try { return await agentTransportSealed(db, serverId, deployAbortSignal()); } finally { await nodeAuthority?.check(); }
-        }, ...(prebuiltImage ? { prebuiltImage } : {}) });
+        }, ...(prebuiltImage ? { prebuiltImage } : {}), ...(orderedCapacity && admission?.claimed && nodeAuthority ? {
+          prepareCapacity: bindNodeAutoscalePreparation({ db, owner: admission.owner, agent: call, signal: deployAbortSignal(), log,
+            extraNetworks: orderedDatabaseNetworks, databaseNetworkIdentities: orderedDatabaseIdentities,
+            sealed: () => agentTransportSealed(db, serverId, deployAbortSignal()), checkpoint: candidateCheckpoint }),
+        } : {}) });
+    };
     builder = remoteBuilderFor();
   }
   // ── 0.16 T7 swarm: the builder (design §7.4, §7.5) ──
@@ -1090,7 +1103,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   let runtime: DeployRuntime | undefined;
   let primaryRecovery: PrimaryRecoveryLease | undefined;
   let swarmRecovery: SwarmRecoveryLease | undefined;
-  const candidateCheckpoint = async () => { await nodeAuthority?.check(); if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled(); };
+  const candidateCheckpoint = async () => { await nodeAuthority?.check(); if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled(); await orderedDatabaseCheck?.(); };
   const runtimeFence = () => and(primaryRecovery?.fence(), swarmRecovery?.fence(), nodeAuthority?.fence());
   const ensurePrimaryRecovery = async () => {
     if (primaryRecovery || !builder || service.type !== 'docker' || service.orchestrator === 'swarm' || !runtime || runtime.port == null || runtime.runtimeId === previous?.runtimeId) return;
@@ -1483,6 +1496,12 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       ...(artifact ? { prebuiltImage: { tag: artifact.imageId, imageId: artifact.imageId, builtWithNixpacks: artifact.builtWithNixpacks, builtStatic: artifact.builtStatic } } : {}),
       ...(artifact && onSwarm ? { requireSwarmMembers: true } : {}),
       ...(restore ? { restoreComposeRelease: restore } : {}),
+      // G5.1: the compose gate, before `down` (the running stack keeps serving when it blocks).
+      ...(composeScannableOnPanel(service) ? { scanComposeImages: async (found: Parameters<NonNullable<BuildContext['scanComposeImages']>>[0]) => {
+        const gate = await scanComposeBeforeUp(db, { serviceId: service.id, deploymentId, found }, log);
+        if (gate.scanned) await candidateCheckpoint();
+        return gate.enabled;
+      } } : {}),
       deploymentId,
       service: serviceForBuild,
       buildConfig: effectiveBuildConfig ?? undefined,
@@ -1568,7 +1587,52 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       }
     }
     // ── end 0.16 T4 ──
+    const scale = autoscaleConfig.safeParse(ctx.service.autoscale);
+    if (remoteBuilderFor && remoteNodeCall && admission?.claimed && nodeAuthority && service.serverId != null &&
+      service.type === 'docker' && service.orchestrator !== 'swarm' && !swarmRuntimeOf(service) &&
+      scale.success && scale.data.metric !== 'rps' && service.canary == null &&
+      service.publishedPort == null && !(service.portMappings?.length)) {
+      const [activeRoutes, targets] = await Promise.all([
+        db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, service.id), eq(domains.status, 'active'))).limit(1),
+        db.select({ id: serviceTargets.id }).from(serviceTargets).where(eq(serviceTargets.serviceId, service.id)).limit(1),
+      ]);
+      if (activeRoutes.length && !targets.length) {
+        const readTopology = async () => (await db.select({ attachmentId: databaseAttachments.id, id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status, envAlias: databaseAttachments.envAlias })
+          .from(databaseAttachments).innerJoin(databases, eq(databases.id, databaseAttachments.databaseId))
+          .where(eq(databaseAttachments.serviceId, service.id))).sort((a, b) => a.id - b.id);
+        const topology = await readTopology();
+        const expected = runtimeEnvironment.attachedDatabases.map(item => ({ id: item.id, slug: item.slug, serverId: item.serverId, status: 'running', envAlias: item.envAlias }))
+          .sort((a, b) => a.id - b.id);
+        const networksSupported = JSON.stringify(topology.map(({ attachmentId: _attachmentId, ...database }) => database)) === JSON.stringify(expected) &&
+          topology.length <= 8 && topology.every(item => item.serverId === service.serverId);
+        let ready = false;
+        try {
+          await candidateCheckpoint();
+          const sealed = await agentTransportSealed(db, service.serverId, deployAbortSignal());
+          const ping = await remoteNodeCall('agent.ping', {}, () => undefined);
+          await candidateCheckpoint();
+          const caps = parseAgentCapabilities(ping.lines).caps;
+          ready = sealed && ping.exitCode === 0 && ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff',
+            'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage',
+            'docker.runSpec', 'docker.recovery'].every(cap => caps.has(cap));
+        } catch {
+          await candidateCheckpoint();
+        }
+        if (ready && networksSupported) {
+          const { nodeDatabaseNetwork } = await import('../lib/nodeDatabase.js');
+          orderedDatabaseNetworks = topology.map(item => nodeDatabaseNetwork(item.slug));
+          orderedDatabaseIdentities = topology.map(item => `${item.attachmentId}:${item.id}:${nodeDatabaseNetwork(item.slug)}`).sort();
+          orderedDatabaseCheck = async () => { if (JSON.stringify(await readTopology()) !== JSON.stringify(topology)) throw new Error('Node database attachments changed during deployment'); };
+          await candidateCheckpoint();
+          builder = remoteBuilderFor(currentRemoteImage, true);
+        }
+        else log(networksSupported
+          ? 'Node autoscaling capacity requires a sealed, up-to-date agent; continuing with the existing deployment path.'
+          : 'Node autoscaling capacity does not support these database attachments; continuing with the existing deployment path.');
+      }
+    }
     runtime = await builder.buildAndRun(ctx, previous);
+    if (!runtime.nodeDeploymentOwner) orderedDatabaseCheck = undefined;
     if (artifact && runtime.imageDigest !== artifact.imageId) throw new Error('Runtime image identity does not match the recorded artifact');
     if (ctx.recordDockerArtifact && (service.pushRegistrySourceId != null || service.pushRepository) && (!runtime.artifactBuild || !runtime.imageDigest)) {
       throw new Error('Registry archival is required but the source image could not be recorded; the candidate will not receive traffic');
@@ -1597,7 +1661,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     // failure fails the deploy; the previous runtime keeps serving.
     if (service.serverId != null && runtime) {
       const onNode = runtimeEnvironment.attachedDatabases.filter((a) => a.serverId === service.serverId);
-      if (onNode.length > 0) {
+      if (onNode.length > 0 && !runtime.nodeDeploymentOwner) {
         const { connectServiceToNodeDatabases } = await import('../lib/nodeDatabase.js');
         await connectServiceToNodeDatabases(db, service.serverId, runtime.nodeTargets ?? runtime.runtimeId, onNode, log, { checkpoint: candidateCheckpoint });
       }

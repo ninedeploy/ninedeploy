@@ -78,6 +78,27 @@ const ctx = (over: Partial<BuildContext> = {}): BuildContext =>
   }) as BuildContext;
 
 describe('remote docker builder — image services', () => {
+  it('passes the built image and resolved runtime inputs to ordered capacity preparation without starting a legacy container', async () => {
+    const imageId = `sha256:${'a'.repeat(64)}`, node = fakeAgent({ 'docker.inspect': { exitCode: 0, lines: [`sha256:${'a'.repeat(64)}`] } });
+    const prepareCapacity = vi.fn(async ({ service }: { service: { port: number } }) => ({ runtimeId: 'web-7', port: service.port,
+      healthPath: '/', imageDigest: imageId, nodeDeploymentOwner: { serviceId: 1, serverId: 4, deploymentId: 7, epoch: 1, requestId: 'b'.repeat(32) },
+      nodeTargets: [{ id: 'c'.repeat(64), name: 'web-7' }], nodeCapacityTargets: [{ id: 'c'.repeat(64), name: 'web-7' }], replicas: 1 }));
+    const options = { prebuiltImage: { tag: imageId, imageId, builtWithNixpacks: true }, prepareCapacity };
+    const runtime = await createRemoteDockerBuilder(node.agent, options).buildAndRun(ctx({ service: svc({ port: null, repoUrl: 'https://example.test/repo.git' }) }));
+    expect(prepareCapacity).toHaveBeenCalledWith(expect.objectContaining({ image: imageId, service: expect.objectContaining({ port: 3000 }), env: { FOO: 'bar', PORT: '3000' } }));
+    expect(runtime).toMatchObject({ runtimeId: 'web-7', imageDigest: imageId, port: 3000 });
+    expect(node.ops()).not.toContain('docker.runEnv'); expect(node.ops()).not.toContain('docker.runSpec');
+  });
+  it.each(['owner', 'image'] as const)('rejects a prepared runtime with a mismatched %s without falling back to legacy creation', async mismatch => {
+    const imageId = `sha256:${'a'.repeat(64)}`, node = fakeAgent();
+    const prepareCapacity = async () => ({ runtimeId: 'web-7', port: 3000, healthPath: '/',
+      imageDigest: `sha256:${(mismatch === 'image' ? 'b' : 'a').repeat(64)}`,
+      nodeDeploymentOwner: { serviceId: mismatch === 'owner' ? 2 : 1, serverId: 4, deploymentId: 7, epoch: 1, requestId: 'b'.repeat(32) },
+      nodeTargets: [{ id: 'c'.repeat(64), name: 'web-7' }], nodeCapacityTargets: [{ id: 'c'.repeat(64), name: 'web-7' }], replicas: 1 });
+    await expect(createRemoteDockerBuilder(node.agent, { prebuiltImage: { tag: imageId, imageId }, prepareCapacity }).buildAndRun(ctx())).rejects.toThrow(/receipt is unconfirmed/);
+    expect(node.ops()).not.toContain('docker.runEnv'); expect(node.ops()).not.toContain('docker.runSpec');
+    expect(node.ops()).not.toContain('docker.rm');
+  });
   it.each([{ lines: [] }, { lines: ['a'.repeat(64), 'b'.repeat(64)] }, { lines: ['not-a-container-id'] }])('does not accept an unconfirmed single-container creation identity: $lines', async ({ lines }) => {
     const { agent, calls } = fakeAgent({ 'docker.runEnv': { exitCode: 0, lines } });
     await expect(createRemoteDockerBuilder(agent).buildAndRun(ctx({ service: svc({ image: 'nginx:1' }) }))).rejects.toThrow(/creation identity.*unconfirmed/i);

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, runtimeMutationKinds, serviceRuntimeOwners, services, sql, type DB, type ServiceRuntimeOwner } from '@ninedeploy/db';
+import { and, eq, nodeDeploymentPreparations, runtimeMutationKinds, serviceRuntimeOwners, services, sql, type DB, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { isNull } from 'drizzle-orm';
 import { HttpError } from './errors.js';
 
@@ -46,6 +46,10 @@ export async function reserveServiceRuntimeOwnerInTransaction(db: RuntimeOwnerDB
     return current;
   }
   if (expected !== 'supersede' && !sameRuntimeOwner(current, expected)) throw changed();
+  if (kind !== 'stop' && (await db.select({ deploymentId: nodeDeploymentPreparations.deploymentId }).from(nodeDeploymentPreparations)
+    .where(eq(nodeDeploymentPreparations.serviceId, serviceId)).limit(1)).length) {
+    throw new HttpError(409, 'node_preparation_pending', 'Node deployment preparation must be recovered before changing runtime ownership');
+  }
   // The legacy journal's AUTOINCREMENT high-water mark survives deleted history.
   const [seed] = await db.select({ epoch: sql<number>`COALESCE((SELECT seq FROM sqlite_sequence WHERE name='node_lifecycle_intents'), 0)` })
     .from(services).where(eq(services.id, serviceId)).limit(1);
