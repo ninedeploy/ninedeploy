@@ -1497,8 +1497,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       ...(artifact && onSwarm ? { requireSwarmMembers: true } : {}),
       ...(restore ? { restoreComposeRelease: restore } : {}),
       // G5.1: the compose gate, before `down` (the running stack keeps serving when it blocks).
-      ...(composeScannableOnPanel(service) ? { scanComposeImages: async (images: Array<{ imageId: string; services: string[] }>) => {
-        if (await scanComposeBeforeUp(db, { serviceId: service.id, deploymentId, images }, log)) await candidateCheckpoint();
+      ...(composeScannableOnPanel(service) ? { scanComposeImages: async (found: Parameters<NonNullable<BuildContext['scanComposeImages']>>[0]) => {
+        const gate = await scanComposeBeforeUp(db, { serviceId: service.id, deploymentId, found }, log);
+        if (gate.scanned) await candidateCheckpoint();
+        return gate.enabled;
       } } : {}),
       deploymentId,
       service: serviceForBuild,

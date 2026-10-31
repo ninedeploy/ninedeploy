@@ -385,17 +385,21 @@ export const composeBuilder: Builder = {
       }
 
       // G5.1: the image scan gate, while the previous revision still serves.
+      // When it is on, `up` runs only the local images it scanned (below).
+      let scanGated = false;
       if (ctx.scanComposeImages) {
-        let found: Awaited<ReturnType<typeof composeUpImages>> | null = null;
-        try {
-          found = await composeUpImages(stackArgs, project, gateOpts);
-        } catch (err) {
-          log(`warning: image scan skipped: the Compose images could not be listed (${err instanceof Error ? err.message : err})`);
+        const list = () => composeUpImages(stackArgs, project, gateOpts).catch((err: unknown) => {
+          log(`warning: the Compose images could not be listed (${err instanceof Error ? err.message : err})`);
+          return null;
+        });
+        let found = await list();
+        // A build skipped as unchanged (G2.4) whose image is gone is built now, so it can be scanned.
+        if (found?.missing.length && !ctx.restoreComposeRelease) {
+          log(`Building the images that are not local yet (${found.missing.join(', ')}) so they can be scanned`);
+          await run('docker', [...stackArgs, 'build'], { ...gateOpts, timeoutMs: 1_200_000, heartbeatLabel: `Building images for ${project} (the previous revision keeps serving)` }, log);
+          found = await list();
         }
-        if (found) {
-          if (found.missing.length) log(`note: not scanned before start (no local image yet): ${found.missing.join(', ')}`);
-          await ctx.scanComposeImages(found.images);
-        }
+        scanGated = await ctx.scanComposeImages(found);
       }
 
       // Stop the previous project revision — no blue-green for compose. Kept
@@ -415,7 +419,9 @@ export const composeBuilder: Builder = {
       // r590: no `--build` — every image was built above, so the gap between
       // `down` and a serving stack is container start time only.
       const upArgs = [...stackArgs, 'up', '-d', '--remove-orphans'];
-      if (ctx.restoreComposeRelease) upArgs.push('--pull', 'never', '--no-build');
+      // A restore runs its recorded images; a scanned deploy runs exactly the images it scanned
+      // (no `pull_policy: always` re-pull, no rebuild at `up`).
+      if (ctx.restoreComposeRelease || scanGated) upArgs.push('--pull', 'never', '--no-build');
       await run(
         'docker',
         upArgs,

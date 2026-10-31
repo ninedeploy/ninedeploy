@@ -122,20 +122,22 @@ describe('the deploy hook', () => {
 
   describe('the Compose gate (before the running stack is replaced)', () => {
     const images = [{ imageId: IMG, services: ['web'] }, { imageId: IMG2, services: ['db', 'worker'] }];
-    const composeScan = (trivy: (id: string) => Promise<string>, l = log(), imgs = images) =>
-      lib.scanComposeBeforeUp(db, { serviceId: 6, deploymentId: 11, images: imgs }, l.fn, { trivy });
+    type Found = { images: typeof images; missing: string[] } | null;
+    const composeScan = (trivy: (id: string) => Promise<string>, l = log(), found: Found = { images, missing: [] }) =>
+      lib.scanComposeBeforeUp(db, { serviceId: 6, deploymentId: 11, found }, l.fn, { trivy });
 
-    it('does nothing while scanning is off', async () => {
+    it('does nothing while scanning is off, and does not restrict `up`', async () => {
       const trivy = vi.fn();
-      expect(await composeScan(trivy as never)).toBeNull();
+      expect(await composeScan(trivy as never, log(), null)).toEqual({ enabled: false, scanned: null });
       expect(trivy).not.toHaveBeenCalled();
     });
 
-    it('scans every image, records the deploy and passes under the gate', async () => {
+    it('scans every image, records the deploy, passes under the gate and restricts `up` to them', async () => {
       await lib.setImageScanPolicy(db, { enabled: true, gate: 'critical' });
       const l = log();
       const r = await composeScan(async (id) => report(id === IMG ? [vuln('CVE-4', 'HIGH', '1.2')] : []), l);
-      expect(r).toMatchObject({ status: 'ok', deploymentId: 11, blocked: false, os: '2 images' });
+      expect(r.enabled).toBe(true);
+      expect(r.scanned).toMatchObject({ status: 'ok', deploymentId: 11, blocked: false, os: '2 images' });
       expect(l.lines.join('\n')).toContain('Scanning 2 Compose images');
       expect(await lib.getImageScanResult(db, 6)).toMatchObject({ trigger: 'deploy', deploymentId: 11, blocked: false, imageId: lib.composeImageSetId(images) });
     });
@@ -149,16 +151,31 @@ describe('the deploy hook', () => {
       expect((await lib.getImageScanResult(db, 6))?.findings[0]?.target).toMatch(/^db, worker: /);
     });
 
-    it('never blocks when no image could be scanned or none was found, and says when some were left out', async () => {
+    it('with a blocking gate, an image that is not local or a list that cannot be read blocks: `up` would run it unscanned', async () => {
+      await lib.setImageScanPolicy(db, { enabled: true, gate: 'critical' });
+      const trivy = vi.fn(async () => report([]));
+      await expect(composeScan(trivy, log(), { images, missing: ['cache'] })).rejects.toThrow('Image scan gate: no local image for cache, so it cannot be scanned before start. The running stack was not changed.');
+      await expect(composeScan(trivy, log(), null)).rejects.toThrow('Image scan gate: the Compose images could not be listed');
+      expect(trivy).not.toHaveBeenCalled();
+    });
+
+    it('report only: scans what is local, notes the rest, never blocks and leaves `up` alone', async () => {
+      await lib.setImageScanPolicy(db, { enabled: true, gate: 'off' });
+      const l = log();
+      const r = await composeScan(async () => report([vuln('CVE-3', 'CRITICAL', '3.0.15-1')]), l, { images, missing: ['cache'] });
+      expect(r).toMatchObject({ enabled: false, scanned: { status: 'ok', blocked: false } });
+      expect(l.lines.join('\n')).toContain('not scanned before start (no local image yet): cache');
+      expect(await composeScan(vi.fn() as never, log(), null)).toEqual({ enabled: false, scanned: null });
+    });
+
+    it('never blocks when Trivy cannot run, and says when some images were left out', async () => {
       await lib.setImageScanPolicy(db, { enabled: true, gate: 'critical' });
       const l = log();
-      expect(await composeScan(async () => { throw new Error('Trivy failed'); }, l)).toMatchObject({ status: 'error' });
+      expect((await composeScan(async () => { throw new Error('Trivy failed'); }, l)).scanned).toMatchObject({ status: 'error' });
       expect(l.lines.join('\n')).toContain('could not run, so it does not block this deploy');
-      expect(await composeScan(async () => report([]), l, [])).toBeNull();
-      expect(l.lines.join('\n')).toContain('no Compose images to scan were found');
       const partial = log();
       const r = await composeScan(async (id) => { if (id === IMG2) throw new Error('save failed'); return report([]); }, partial);
-      expect(r).toMatchObject({ status: 'ok', blocked: false });
+      expect(r.scanned).toMatchObject({ status: 'ok', blocked: false });
       expect(partial.lines.join('\n')).toContain('some Compose images could not be scanned: db, worker: save failed');
     });
 

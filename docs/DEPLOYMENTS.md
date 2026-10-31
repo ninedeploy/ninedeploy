@@ -660,8 +660,9 @@ Trivy scans each Docker deploy's image on the panel host, and each Compose deplo
 
 **Compose stacks**
 - A Compose deploy on the panel host is scanned after its images are pulled and built and before the running stack is taken down. The gate is the same; when it counts findings, the deploy fails there and the previous stack keeps running unchanged.
-- Each image the stack will run is scanned: a service's `image`, or for a build-only service the image Compose names `<project>-<service>`. A service whose image is not local yet is named in the deploy log and not scanned.
-- If some images cannot be scanned, the gate counts the findings of the others and the log names the rest; if none can, the deploy is not blocked.
+- Each image the stack will run is scanned: a service's `image`, or for a build-only service the image Compose names `<project>-<service>`. An image that is not local after the pull and build is built once more; if it is still missing, a blocking gate fails the deploy there (report only names it in the log and goes on).
+- With a blocking gate, `up` then runs with `--pull never --no-build`, so the stack starts exactly the local images that were scanned, whatever a service's `pull_policy` says. If the image list cannot be read at all, a blocking gate fails the deploy too.
+- If some images cannot be scanned, the gate counts the findings of the others and the log names the rest; if Trivy cannot run at all, the deploy is not blocked.
 - Checked with real Compose and Trivy: a stack with `alpine:3.14.0` was stopped at the gate with 4 fixable critical findings, before `down`.
 
 **What has no deploy gate**

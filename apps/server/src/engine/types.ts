@@ -16,9 +16,11 @@ export interface BuildContext {
   restoreComposeRelease?: ComposeRelease;
   /**
    * G5.1: scan a compose stack's images after pull/build and before the
-   * running stack is taken down. Throws when the gate counts findings.
+   * running stack is taken down (`null`: they could not be listed). Throws
+   * when the gate blocks; resolves true when scanning is on, and `up` must
+   * then run only those local images.
    */
-  scanComposeImages?: (images: Array<{ imageId: string; services: string[] }>) => Promise<void>;
+  scanComposeImages?: (found: { images: Array<{ imageId: string; services: string[] }>; missing: string[] } | null) => Promise<boolean>;
   deploymentId: number;
   service: Service;
   buildConfig?: BuildConfig;

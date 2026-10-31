@@ -426,16 +426,30 @@ describe('composeBuilder redeploy safety gates', () => {
       return 'running';
     };
 
-    it('scans the images `up` will run after build and before `down`, naming the build-only one by project', async () => {
-      h.capture.mockImplementation(captureFor({ 'ndcmp-stack-api': A, 'postgres:17': B, 'redis:7': B }) as never);
+    const upCall = () => h.run.mock.calls.find((c) => (c[1] as string[])[5] === 'up')![1] as string[];
+
+    it('scans the images `up` will run after build and before `down`, then runs exactly those (no pull, no build)', async () => {
+      const present: Record<string, string> = { 'ndcmp-stack-api': A, 'postgres:17': B, 'redis:7': B };
+      h.capture.mockImplementation(captureFor(present) as never);
       const order: string[] = [];
-      h.run.mockImplementation(async (_cmd: string, args: unknown[]) => void order.push((args as string[])[5]!));
-      const scanComposeImages = vi.fn(async () => void order.push('scan'));
+      h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
+        order.push((args as string[])[5]!);
+        // The second build (for the image that is not local) produces it.
+        if ((args as string[])[5] === 'build' && order.filter((c) => c === 'build').length === 2) present['gone:1'] = A;
+      });
+      const scanComposeImages = vi.fn(async () => (order.push('scan'), true));
       const ctx = makeCtx({ scanComposeImages });
       await composeBuilder.buildAndRun(ctx as never);
-      expect(scanComposeImages).toHaveBeenCalledWith([{ imageId: A, services: ['api'] }, { imageId: B, services: ['cache', 'db'] }]);
-      expect(order.filter((c) => ['build', 'scan', 'down', 'up'].includes(c))).toEqual(['build', 'scan', 'down', 'up']);
-      expect((ctx.log as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('\n')).toContain('not scanned before start (no local image yet): extra');
+      expect(scanComposeImages).toHaveBeenCalledWith({ images: [{ imageId: A, services: ['api', 'extra'] }, { imageId: B, services: ['cache', 'db'] }], missing: [] });
+      expect(order.filter((c) => ['build', 'scan', 'down', 'up'].includes(c))).toEqual(['build', 'build', 'scan', 'down', 'up']);
+      expect((ctx.log as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('\n')).toContain('Building the images that are not local yet (extra)');
+      expect(upCall()).toEqual(expect.arrayContaining(['--pull', 'never', '--no-build']));
+    });
+
+    it('report only: `up` is not restricted', async () => {
+      h.capture.mockImplementation(captureFor({ 'ndcmp-stack-api': A, 'postgres:17': B, 'redis:7': B, 'gone:1': B }) as never);
+      await composeBuilder.buildAndRun(makeCtx({ scanComposeImages: vi.fn(async () => false) }) as never);
+      expect(upCall()).not.toContain('--no-build');
     });
 
     it('a blocking scan fails the deploy and leaves the running stack alone (no down, no up)', async () => {
@@ -448,13 +462,14 @@ describe('composeBuilder redeploy safety gates', () => {
       expect(h.run.mock.calls.some((c) => (c[1] as string[])[5] === 'up')).toBe(false);
     });
 
-    it('an image list that cannot be read skips the scan with a note and deploys', async () => {
-      const scanComposeImages = vi.fn();
+    it('an image list that cannot be read is handed to the gate as null, which decides', async () => {
+      const scanComposeImages = vi.fn(async () => {
+        throw new Error('Image scan gate: the Compose images could not be listed');
+      });
       const ctx = makeCtx({ scanComposeImages });
-      await composeBuilder.buildAndRun(ctx as never);
-      expect(scanComposeImages).not.toHaveBeenCalled();
-      expect((ctx.log as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('\n')).toContain('image scan skipped: the Compose images could not be listed');
-      expect(h.run.mock.calls.some((c) => (c[1] as string[])[5] === 'up')).toBe(true);
+      await expect(composeBuilder.buildAndRun(ctx as never)).rejects.toThrow('could not be listed');
+      expect(scanComposeImages).toHaveBeenCalledWith(null);
+      expect(h.run.mock.calls.some((c) => (c[1] as string[])[5] === 'down')).toBe(false);
     });
   });
 
