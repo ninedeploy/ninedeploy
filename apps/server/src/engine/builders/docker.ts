@@ -513,10 +513,10 @@ export async function containerIp(name: string): Promise<string | null> {
     // child behind every dashboard poll). Past the bound it reads "not running".
     const out = await capture('docker', [
       'inspect', name,
-      '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}',
+      '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',
     ], { timeoutMs: CONTAINER_IP_TIMEOUT_MS });
-    const [status, ip] = out.trim().split('|');
-    return status === 'running' && ip ? ip : null;
+    const [status, ip, health] = out.trim().split('|');
+    return status === 'running' && ip && (health === undefined || health === 'none' || health === 'healthy') ? ip : null;
   } catch {
     return null;
   }

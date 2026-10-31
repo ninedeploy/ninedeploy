@@ -776,7 +776,7 @@ describe('dockerBuilder.isHealthy', () => {
     ).resolves.toBe(true);
     expect(h.capture).toHaveBeenCalledWith('docker', [
       'inspect', 'r',
-      '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}',
+      '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',
     ], { timeoutMs: 10_000 }); // F870: containerIp is bounded
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -792,7 +792,7 @@ describe('dockerBuilder.isHealthy', () => {
   it('fails an exited container early and includes redacted runtime logs', async () => {
     h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
       const format = args.at(-1);
-      if (format === '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}') return 'exited|';
+      if (format?.startsWith('{{.State.Status}}|')) return 'exited||none';
       if (format === '{{json .State}}') return JSON.stringify({ Status: 'exited', ExitCode: 1, OOMKilled: false, Error: '' });
       return '';
     });

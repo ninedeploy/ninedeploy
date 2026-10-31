@@ -13,6 +13,33 @@ const { dockerBuilder } = await import('../../src/engine/builders/docker.js');
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); spawn.mockReset(); capture.mockReset(); capture.mockResolvedValue('running|172.20.0.2'); });
 
 describe('local Docker readiness', () => {
+  it('waits for native health to become healthy before accepting HTTP', async () => {
+    vi.useFakeTimers();
+    let inspections = 0;
+    capture.mockImplementation(async (_exe, args) => {
+      if ((args as string[]).at(-1) === '{{json .State}}') return JSON.stringify({ Status: 'running' });
+      return `running|172.20.0.2|${++inspections === 1 ? 'starting' : 'healthy'}`;
+    });
+    const fetch = vi.fn(async () => ({ status: 200, body: null }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 3000, healthPath: '/ready' }, 3000, 10000)).toBe(true);
+    expect(inspections).toBe(2);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['starting', 'unhealthy'])('does not publish default HTTP readiness while native health is %s', async health => {
+    vi.useFakeTimers();
+    capture.mockImplementation(async (_exe, args) => {
+      const format = (args as string[]).at(-1) ?? '';
+      if (format === '{{json .State}}') return JSON.stringify({ Status: 'running', Health: { Status: health } });
+      return `running|172.20.0.2${format.includes('.State.Health') ? `|${health}` : ''}`;
+    });
+    const fetch = vi.fn(async () => ({ status: 200, body: null }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 3000, healthPath: '/ready' }, 2000, 10000)).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('does not fall back to a TCP-open verdict when HTTP returns 503', async () => {
     vi.useFakeTimers();
     spawn.mockImplementation(async (_exe, args, line) => {
