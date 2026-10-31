@@ -18,6 +18,16 @@ After v0.18.11, initial Stop and completed-Stop recovery preflight every partici
 
 The v0.18.0 tag and image remain available as an unpublished candidate. The hosted smoke caught a setup race: readiness was changed during primary retirement, so the safety journal retained both generations and held the next deployment. The corrected smoke waits for settlement before the next readiness case. The 0.18.1 tag was also withheld after a repeated real canary smoke exposed agent operation capacity exhaustion; its workflow was cancelled before producing a registry image. Commit d8615abc separates bounded operation capacity from the invalid-request rejection budget. Published 0.18.2 preserves both earlier Git tags and the v0.18.0 image.
 
+## Normal panel deploy healthcheck traffic acceptance — 2026-10-31
+
+The isolated public-API normal Docker deploy smoke reproduced 189 HTTP 502 responses in command mode on `8fe77f4f7b551f55d0a550566efcc9691a3bc94b` ([run 41207708389](https://github.com/ninedeploy/ninedeploy/actions/runs/41207708389)). A command returning zero admitted the candidate before its application port opened. HTTP, HTTP strict, TCP and running controls passed that same delayed-start fixture.
+
+On `3a24af190a685e4e16f85436e9c24253e96ef011`, command readiness also waits for the configured application port within the original deadline. The unchanged real panel, Docker and Traefik smoke passed all five modes ([run 41210193261](https://github.com/ninedeploy/ninedeploy/actions/runs/41210193261)). Independently counted traffic: HTTP 501, HTTP strict 342, TCP 363, running 382, command 330; all 1,918 requests returned HTTP 200. The fixture delays application listening by 15 seconds for each replacement. Evidence: `ci-panel-health-modes-41210193261`, local copy `.temp_files/gh-panel-health-modes-41210193261/`; owned-runner cleanup was recorded. The same Docker job passed native-health controls, loopback-only refusal and node autoscaling. Production traffic, DNS/TLS and every possible failure timing remain separate acceptance work.
+
+The comprehensive CI job on that commit failed MCP audit/import-cycle checks and two Swarm recovery tests. These failures remain explicit blockers to full certification. The published-image release matrix now requires the normal panel health-mode traffic smoke and retains its traces; that added release gate has not yet run on a new published candidate.
+
+The two Swarm failures subsequently reproduced in a focused run (29 passed, two failed). Its Docker fixture lacked the newly required native-health/network inspection and TCP helper response. After modelling those boundaries only for known immutable Docker identities, all 31 Swarm recovery tests and 65 covering release/recovery checks passed. This focused correction does not replace full CI; the MCP audit/import-cycle failures remain open.
+
 ## Node autoscaling with PostgreSQL acceptance — 2026-10-31
 
 Subsequent verification: all three mandatory jobs of run 41141188617 completed successfully on `9cb09bae2d341f689b378deb61f059622df1e1df`, including the comprehensive test job. The published-image release matrix now requires the same PostgreSQL autoscaling smoke before release promotion and retains its evidence on both success and failure. This workflow addition still needs validation on a future release candidate.

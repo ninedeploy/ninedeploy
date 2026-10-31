@@ -474,6 +474,20 @@ jobs:
         timeout-minutes: 15
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --lifecycle-only --proof=.temp_files/release-node-smoke
 
+      - name: Normal panel healthcheck modes preserve continuous traffic
+        if: matrix.suite == 'panel-lifecycle'
+        timeout-minutes: 15
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --health-modes-only --proof=.temp_files/release-panel-health-modes
+
+      - name: Preserve panel healthcheck traffic acceptance
+        if: always() && matrix.suite == 'panel-lifecycle'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-panel-health-modes
+          path: .temp_files/release-panel-health-modes/
+          include-hidden-files: true
+          if-no-files-found: warn
+
       - name: Initial node Stop and repeated deploy recovery
         if: matrix.suite == 'public-lifecycle'
         timeout-minutes: 15
