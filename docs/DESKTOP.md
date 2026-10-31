@@ -68,6 +68,8 @@ If there is no real OS store, the app writes nothing to disk and you sign in eac
 
 A token sealed under another account or keyring cannot be opened, so it is dropped and you sign in again.
 
+On macOS the key behind the sealed token lives in your login keychain. If the app cannot read it, because the keychain is locked or access was denied, Chromium seals with a key it does not keep. The token on disk is still unreadable, but it cannot be opened after the app restarts either, so you sign in again. The Desktop workflow found this on a CI runner, whose login keychain is locked (`errSecAuthFailed`). It runs its check with an unlocked keychain, as a signed-in Mac user has.
+
 On the Windows test machine, killing the app by force right after the very first sign-in meant the next start asked for a sign-in again. A normal quit kept it. The likely cause is that Chromium writes the DPAPI-wrapped key behind the sealed token to its `Local State` file on shutdown.
 
 ## Signing out and removing an instance

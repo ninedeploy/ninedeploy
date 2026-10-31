@@ -133,6 +133,22 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm smoke
 
+      # The runner's login keychain is locked in a non-interactive session:
+      # Chromium's Keychain lookup fails (errSecAuthFailed) and it seals with a
+      # key it never stores, so nothing survives a restart. Give the app what a
+      # signed-in Mac user has: an unlocked default keychain. After the build,
+      # so it cannot interfere with the signing keychain.
+      - name: Use an unlocked keychain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          keychain="$RUNNER_TEMP/nd-smoke.keychain-db"
+          password="$(openssl rand -hex 16)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -d user -s "$keychain"
+
       - name: Launch the packaged app
         if: runner.os != 'Linux'
         run: pnpm smoke
