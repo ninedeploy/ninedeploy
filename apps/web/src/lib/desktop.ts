@@ -30,8 +30,12 @@ export function desktopBridge(): DesktopBridge | null {
 export function persistDesktopRefreshToken(token: string | null): void {
   const bridge = desktopBridge();
   if (!bridge) return;
-  const done = token ? bridge.saveRefreshToken(token) : bridge.clearRefreshToken();
-  void Promise.resolve(done).catch(() => undefined);
+  try {
+    const done = token ? bridge.saveRefreshToken(token) : bridge.clearRefreshToken();
+    void Promise.resolve(done).catch(() => undefined);
+  } catch {
+    // A disconnected native bridge must not interrupt the tab's session.
+  }
 }
 
 /** The refresh token the desktop app kept from an earlier window, if any. */
