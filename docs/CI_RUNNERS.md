@@ -181,6 +181,14 @@ On Docker 28 in an isolated dind, with a public repository as the source:
 - **Runner killed with SIGKILL:** its container kept running. 61 s later the lease lapsed and the job was requeued. The restarted runner removed the orphaned container and finished attempt 2. Attempt 1 stayed lost.
 - **Panel down for 70 s, longer than a lease, during a job:** after the restart, attempt 1 finished with its whole log in order.
 
+The deploy gate, with the same runner in dind and the gate functions the worker calls:
+
+- a deploy queued without a commit waited in `awaiting_ci`, and the build guard refused it;
+- when its job passed, the deploy was queued again at the job's commit (`7fd1a60b01f9`), the guard accepted it and no second job ran;
+- the job ran on its own network (default route via 172.19.0.1, not the default bridge's 172.17.0.1);
+- a job exiting 4 failed its deploy with "CI job #2 failed: Exited with 4";
+- cancelling a waiting deploy cancelled its job: the container was gone 14 s later, and no job network was left.
+
 Job networks, on Docker 28 with a listener in a container on the default bridge:
 
 - a container on the default bridge (where jobs ran before) reached it;
