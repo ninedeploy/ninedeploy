@@ -20,6 +20,12 @@ The v0.18.0 tag and image remain available as an unpublished candidate. The host
 
 ## Normal panel deploy healthcheck traffic acceptance — 2026-10-31
 
+### Full source checkpoint — 2026-11-01
+
+Source `de1b512dcc2c6fd085e56c669cb27ce85f07b137` passed uncached Windows `release:check`: all 12 tasks, 17,764 passed tests in 1,122 files, two platform skips, and unchanged coverage floors. Vitest ran with two workers after an earlier parallel run exhausted memory. Server coverage: 93.70% statements, 88.54% branches, 92.19% functions and 96.58% lines. Log: `.temp_files/release-check-de1b512d.log`. Its [exact-commit hosted CI](https://github.com/ninedeploy/ninedeploy/actions/runs/41231495381) also passed every job and published the development image under `main-de1b512dcc2c6fd085e56c669cb27ce85f07b137`. This is not a new numbered release and does not certify subsequent desktop workflow changes or the entire roadmap.
+
+Candidate CI now additionally rehearses an in-place upgrade from the latest published release to the freshly built image, retaining the upgrade log. Source versions may match during development; the actual image contents differ. This new gate is pending its first hosted result and does not substitute for the final versioned-candidate release matrix, promotion/rollback or signed-artifact checks.
+
 The isolated public-API normal Docker deploy smoke reproduced 189 HTTP 502 responses in command mode on `8fe77f4f7b551f55d0a550566efcc9691a3bc94b` ([run 41207708389](https://github.com/ninedeploy/ninedeploy/actions/runs/41207708389)). A command returning zero admitted the candidate before its application port opened. HTTP, HTTP strict, TCP and running controls passed that same delayed-start fixture.
 
 On `3a24af190a685e4e16f85436e9c24253e96ef011`, command readiness also waits for the configured application port within the original deadline. The unchanged real panel, Docker and Traefik smoke passed all five modes ([run 41210193261](https://github.com/ninedeploy/ninedeploy/actions/runs/41210193261)). Independently counted traffic: HTTP 501, HTTP strict 342, TCP 363, running 382, command 330; all 1,918 requests returned HTTP 200. The fixture delays application listening by 15 seconds for each replacement. Evidence: `ci-panel-health-modes-41210193261`, local copy `.temp_files/gh-panel-health-modes-41210193261/`; owned-runner cleanup was recorded. The same Docker job passed native-health controls, loopback-only refusal and node autoscaling. Production traffic, DNS/TLS and every possible failure timing remain separate acceptance work.

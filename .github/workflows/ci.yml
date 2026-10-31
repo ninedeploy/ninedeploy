@@ -208,7 +208,7 @@ jobs:
   docker-image:
     name: Docker image build and node autoscaling
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -228,6 +228,28 @@ jobs:
       # Verifies the release workflow's Dockerfile compiles; no push happens here.
       - name: Build the image
         run: docker build -t ninedeploy:ci .
+
+      - name: Verify in-place upgrade from the latest published release
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .temp_files/ci-candidate-upgrade
+          previous="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
+          [[ "$previous" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          docker pull "ghcr.io/ninedeploy/ninedeploy:$previous"
+          candidate="$(node --input-type=module -e "import {readFileSync} from 'node:fs';const text=readFileSync('apps/server/src/version.ts','utf8');const match=/export const VERSION = '([^']+)'/.exec(text);if(!match)process.exit(1);process.stdout.write('v'+match[1])")"
+          node scripts/smoke-upgrade.mjs --from="$previous" --to="$candidate" --to-image=ninedeploy:ci 2>&1 | tee .temp_files/ci-candidate-upgrade/upgrade.log
+
+      - name: Preserve candidate upgrade evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-candidate-upgrade-${{ github.run_id }}
+          path: .temp_files/ci-candidate-upgrade/
+          include-hidden-files: true
+          if-no-files-found: ignore
 
       - name: Verify public node autoscaling with real routing
         timeout-minutes: 20
