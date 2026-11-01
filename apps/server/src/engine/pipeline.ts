@@ -19,7 +19,7 @@ import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { renderComposeRelease } from '../lib/composeRelease.js';
 import { assertReleaseTarget, readReleaseRecord, storeReleaseRecord } from '../lib/releaseRecords.js';
 import { extractSourceUpload, isUploadSourced, listSourceUploads, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
-import { getInlineDockerfile, inlineDockerfileSha, prepareEmptyContext, writeInlineDockerfile } from '../lib/inlineDockerfile.js';
+import { getInlineDockerfile, INLINE_DOCKERFILE_PANEL_BUILD, inlineDockerfileSha, prepareEmptyContext, writeInlineDockerfile } from '../lib/inlineDockerfile.js';
 import { composeRouteEnv } from '../lib/composeRoutes.js';
 import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
@@ -964,6 +964,14 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     await nodeAuthority?.check();
     await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
     await auditOutcome(db, service, deploymentId, 'failed', GIT_LFS_PANEL_ONLY);
+    return;
+  }
+  // G1.1: the inline Dockerfile is written into the panel's checkout only.
+  if (!buildsOnPanel && service.type === 'docker' && !service.image && !restore && (await getInlineDockerfile(db, service.id))) {
+    log(`✗ ${INLINE_DOCKERFILE_PANEL_BUILD}`);
+    await nodeAuthority?.check();
+    await safeFail(db, deploymentId, service.id, service.runtimeId, nodeAuthority?.fence());
+    await auditOutcome(db, service, deploymentId, 'failed', INLINE_DOCKERFILE_PANEL_BUILD);
     return;
   }
   // 0.16.7: no node or build server can fetch an uploaded archive.

@@ -263,7 +263,7 @@ A docker service that builds from source can use a Dockerfile pasted in the pane
 - On the next deploy the text is written into the base directory as `.ninedeploy.Dockerfile`. That deploy builds with the `dockerfile` pack and that file, even when the repository has a Dockerfile of its own.
 - The build arguments, the build target and the other build settings still apply.
 - **Dockerfile only:** a docker service with neither a repository nor an image builds the Dockerfile from an uploaded source if there is one, otherwise from an empty context. The deployment's commit is then the hash of the Dockerfile.
-- It works with the panel builder and with build placement on nodes, since both read the same build config. Checked with a real `docker build` from an empty context.
+- It builds on the panel host: for a panel-host service, or a node service with **Build on: panel**, whose image is then shipped to the node. A build on a node or a build server clones the repository again and would not have the file, so that deploy is refused with this reason. Checked with a real `docker build` from an empty context.
 
 **Limits and storage**
 - At most 64 KiB, and the text must start with `FROM` (or `ARG` before `FROM`).

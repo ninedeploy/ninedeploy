@@ -94,6 +94,11 @@ vi.mock('../src/lib/gitLfs.js', async (importOriginal) => ({
 const uploadMock = vi.hoisted(() => ({
   extractSourceUpload: vi.fn(async (..._args: unknown[]) => ({ sha: 'c0ffee'.padEnd(40, '0'), files: 3, strippedFolder: 'myapp' as string | null })),
 }));
+const inlineDockerfileMock = vi.hoisted(() => ({ content: null as string | null }));
+vi.mock('../src/lib/inlineDockerfile.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/inlineDockerfile.js')>()),
+  getInlineDockerfile: vi.fn(async () => inlineDockerfileMock.content),
+}));
 vi.mock('../src/lib/sourceUpload.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/sourceUpload.js')>()),
   extractSourceUpload: uploadMock.extractSourceUpload,
@@ -2957,6 +2962,24 @@ describe('runDeployment on a remote-server target', () => {
     expect(h.builder.buildAndRun).not.toHaveBeenCalled();
     expect(lines.join(' ')).toMatch(/Git LFS files are fetched for builds on the panel host only/);
     logBus.removeAllListeners();
+  });
+
+  it('G1.1: an inline Dockerfile on a service built on its node is refused before anything is cloned there', async () => {
+    inlineDockerfileMock.content = 'FROM node:22-alpine';
+    try {
+      const { db } = makeDb();
+      baseSetup(db, { ownerUserId: 42, serverId: 4, buildOn: 'target' });
+      const lines = collectLogs(1);
+      h.agentOp.mockClear();
+      h.builder.buildAndRun.mockClear();
+      await runDeployment(db as never, 1);
+      expect(h.agentOp).not.toHaveBeenCalled();
+      expect(h.builder.buildAndRun).not.toHaveBeenCalled();
+      expect(lines.join(' ')).toMatch(/An inline Dockerfile is written into the checkout on the panel host/);
+      logBus.removeAllListeners();
+    } finally {
+      inlineDockerfileMock.content = null;
+    }
   });
 
   it('0.16.4: a node service with custom labels or the command healthcheck is refused for an agent that predates them, naming the update', async () => {

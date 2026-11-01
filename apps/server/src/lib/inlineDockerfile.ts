@@ -14,13 +14,18 @@ import { getSettingString, setSettingString } from './settings.js';
  *
  * At deploy time it is written into the build context (the base directory) as
  * `.ninedeploy.Dockerfile` and the build runs with the `dockerfile` pack and
- * that path, for one deployment: the panel builder and the node builders read
- * the same build config. A docker service with neither a repository nor an
- * image ("Dockerfile only") builds it from an empty context.
+ * that path, for one deployment. The file is written into the PANEL's
+ * checkout: a build on a node or a build server clones again and would not
+ * have it, so the pipeline refuses one (INLINE_DOCKERFILE_PANEL_BUILD). A
+ * docker service with neither a repository nor an image ("Dockerfile only")
+ * builds it from an empty context.
  */
 
 const key = (serviceId: number) => `inline_dockerfile:${serviceId}`;
 export const INLINE_DOCKERFILE_NAME = '.ninedeploy.Dockerfile';
+
+export const INLINE_DOCKERFILE_PANEL_BUILD =
+  'An inline Dockerfile is written into the checkout on the panel host; a build on a node or a build server clones the repository again and would not have it. Build on the panel (Service → Settings → Build on: panel) or remove the inline Dockerfile.';
 
 export async function getInlineDockerfile(db: DB, serviceId: number): Promise<string | null> {
   const text = await getSettingString(db, key(serviceId), null);
