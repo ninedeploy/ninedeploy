@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { spawnValidated } from './spawnValidated.js';
 import { intOperand, RE_NAME, str, validated, type Params } from '../agentOps/operands.js';
 
@@ -12,16 +13,22 @@ const PROBE_IMAGE = 'busybox:1.36';
 // listeners cannot receive proxy traffic and must not pass routed readiness.
 // This reads interface metadata; it sends no discovery traffic.
 const PROBE_ADDRESS = String.raw`address="$(ip -4 addr show | awk '$1 == "inet" && $2 !~ /^127\./ {split($2,a,"/"); print a[1]; exit}')"; [ -n "$address" ] || exit 1; `;
-const HTTP_PROBE = PROBE_ADDRESS + String.raw`exec nc -w 3 "$address" "$2" -e sh -c 'printf "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" "$1"; IFS= read -r -t 3 status && printf "%s\n" "$status" >&2' probe "$1"`;
+const HTTP_PROBE = String.raw`exec nc -w 3 "$address" "$2" -e sh -c 'printf "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" "$1"; IFS= read -r -t 3 status && printf "%s\n" "$status" >&2' probe "$1"`;
 
 /** A fixed, bounded probe inside a workload network namespace. */
-export async function probeContainer(params: Params, onLine: (line: string) => void, options: { timeoutMs?: number } = {}): Promise<number> {
+export async function probeContainer(params: Params, onLine: (line: string) => void, options: { timeoutMs?: number; address?: string } = {}): Promise<number> {
   const name = validated(str(params, 'name'), RE_NAME, 'container name');
   if (name.length > 128) throw new Error('Invalid container name');
   const port = intOperand(params['port'], 1, 65535, 'probe port');
   const protocol = validated(str(params, 'protocol'), /^(http|tcp)$/, 'probe protocol');
   const path = str(params, 'path') ?? '/';
   if (path.length > 2048 || !path.startsWith('/') || path.includes('\\') || [...path].some((c) => c.charCodeAt(0) <= 32 || c.charCodeAt(0) === 127)) throw new Error('Invalid probe path');
+  const address = options.address;
+  if (address !== undefined && (isIP(address) !== 4 || address.startsWith('127.') || address === '0.0.0.0')) throw new Error('Invalid probe address');
+  // The local builder already knows the primary endpoint; keep that exact
+  // address rather than independently choosing a different network interface.
+  // This is an internal option, not an additional agent RPC operand.
+  const addressScript = address === undefined ? PROBE_ADDRESS : protocol === 'http' ? 'address="$3"; ' : 'address="$2"; ';
   const helper = `nd-probe-${randomUUID()}`;
   let status: number | undefined;
   let exit = 1;
@@ -33,8 +40,8 @@ export async function probeContainer(params: Params, onLine: (line: string) => v
       '--pids-limit', '16', '--memory', '32m', '--cpus', '0.1', '--user', '65534:65534',
       PROBE_IMAGE,
       ...(protocol === 'http'
-        ? ['sh', '-c', HTTP_PROBE, 'probe', path, String(port)]
-        : ['sh', '-c', PROBE_ADDRESS + 'exec nc -w 3 "$address" "$1" </dev/null', 'probe', String(port)]),
+        ? ['sh', '-c', addressScript + HTTP_PROBE, 'probe', path, String(port), ...(address === undefined ? [] : [address])]
+        : ['sh', '-c', `${addressScript}exec nc -w 3 "$address" "$1" </dev/null`, 'probe', String(port), ...(address === undefined ? [] : [address])]),
     ], (line) => {
       const match = /^HTTP\/1\.[01] (\d{3})(?:\s|$)/.exec(line);
       if (match && status === undefined) status = Number(match[1]);

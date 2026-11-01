@@ -8,11 +8,37 @@ vi.mock('../../src/lib/exec.js', async (original) => ({
   capture,
   sleep: async (ms: number) => { vi.setSystemTime(Date.now() + ms); },
 }));
-const { dockerBuilder } = await import('../../src/engine/builders/docker.js');
+const { containerIp, dockerBuilder } = await import('../../src/engine/builders/docker.js');
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); spawn.mockReset(); capture.mockReset(); capture.mockResolvedValue('running|172.20.0.2'); });
 
 describe('local Docker readiness', () => {
+  it.each(['http-strict', 'tcp'] as const)('passes the inspected primary address to the %s probe', async healthCheck => {
+    capture.mockResolvedValue('running|172.22.0.2|healthy');
+    spawn.mockImplementation(async (_cmd, args, sink) => {
+      if ((args as string[])[0] === 'run' && healthCheck === 'http-strict') (sink as (line: string) => void)('HTTP/1.1 200 OK');
+      return 0;
+    });
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 8080, healthPath: '/', healthCheck }, 2000)).toBe(true);
+    expect(spawn.mock.calls.find(call => (call[1] as string[])[0] === 'run')![1]).toContain('172.22.0.2');
+  });
+
+  it('refuses a successful probe when the primary address changed during it', async () => {
+    vi.useFakeTimers();
+    let probed = false;
+    capture.mockImplementation(async () => `running|172.22.0.${probed ? 3 : 2}|healthy`);
+    spawn.mockImplementation(async (_cmd, args) => {
+      if ((args as string[])[0] !== 'run') return 0;
+      const first = !probed; probed = true; return first ? 0 : 1;
+    });
+    expect(await dockerBuilder.isHealthy({ runtimeId: 'app-7', port: 8080, healthPath: '/', healthCheck: 'tcp' }, 2000)).toBe(false);
+  });
+
+  it.each(['172.19.0.2172.22.0.2', 'not-an-address', '127.0.0.1', '0.0.0.0'])('refuses an invalid or non-routable inspected address: %s', async ip => {
+    capture.mockResolvedValue(`running|${ip}|healthy`);
+    expect(await containerIp('app-7')).toBeNull();
+  });
+
   it.each(['command'] as const)('requires the configured port after %s readiness succeeds', async healthCheck => {
     vi.useFakeTimers();
     capture.mockImplementation(async (_exe, args) => {

@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import path from 'node:path';
 import type { BuildContext, Builder } from '../types.js';
 import type { BuildConfig, ServicePortMapping, ServiceRuntimeOptions } from '@ninedeploy/db';
@@ -463,6 +464,13 @@ const swallowErr = (): void => undefined;
 /** F870: per-call bound for containerIp's `docker inspect` (a local metadata read). */
 const CONTAINER_IP_TIMEOUT_MS = 10_000;
 
+// A service's initial bridge is the route contract, not the alphabetical first
+// network. Docker may store that bridge as a name or an immutable network ID;
+// its legacy "default" mode names the built-in "bridge" endpoint. Do not fall
+// back to a database/private network when the primary endpoint is detached.
+const PRIMARY_NETWORK_IP_FORMAT = '{{$mode := .HostConfig.NetworkMode}}{{if eq $mode "default"}}{{$mode = "bridge"}}{{end}}' +
+  '{{range $name, $net := .NetworkSettings.Networks}}{{if or (eq $name $mode) (eq $net.NetworkID $mode)}}{{$net.IPAddress}}{{end}}{{end}}';
+
 /** F871/F936/F937: the same bound for the other local reads on the deploy and
  * health path (`docker inspect`, `docker logs --tail`). capture()/run() default
  * to 30 minutes, so one call on a wedged daemon outlived isHealthy's deadline. */
@@ -500,8 +508,9 @@ async function probeSiblingHttp(ip: string, port: number, healthPath: string): P
 }
 
 /**
- * Resolve a container's IP address on the shared Docker network, or null when
- * the container is not running. The host can route to bridge-network IPs
+ * Resolve a container's primary-network IPv4 address, or null when that
+ * endpoint is unavailable or the container is not running. The host can route
+ * to bridge-network IPs
  * directly, which lets us healthcheck a container WITHOUT publishing any host
  * port — so blue-green never fights over `127.0.0.1:<port>` and rollback probes
  * always resolve the current address fresh from the runtime id.
@@ -513,10 +522,11 @@ export async function containerIp(name: string): Promise<string | null> {
     // child behind every dashboard poll). Past the bound it reads "not running".
     const out = await capture('docker', [
       'inspect', name,
-      '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',
+      '--format', `{{.State.Status}}|${PRIMARY_NETWORK_IP_FORMAT}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}`,
     ], { timeoutMs: CONTAINER_IP_TIMEOUT_MS });
     const [status, ip, health] = out.trim().split('|');
-    return status === 'running' && ip && (health === undefined || health === 'none' || health === 'healthy') ? ip : null;
+    return status === 'running' && ip && isIP(ip) === 4 && !ip.startsWith('127.') && ip !== '0.0.0.0' &&
+      (health === undefined || health === 'none' || health === 'healthy') ? ip : null;
   } catch {
     return null;
   }
@@ -1688,9 +1698,9 @@ export const dockerBuilder: Builder = {
           const protocol = runtime.healthCheck === 'tcp' ? 'tcp' : 'http';
           const lines: string[] = [];
           const exitCode = await probeContainer({ name: runtime.runtimeId, port: runtime.port,
-            protocol, path: runtime.healthPath }, line => lines.push(line), { timeoutMs: remaining });
+            protocol, path: runtime.healthPath }, line => lines.push(line), { timeoutMs: remaining, address: eligible });
           ready = confirmedNodeProbe(lines, exitCode, protocol);
-          if (ready && Date.now() < deadline && !deployAborted()) ready = await containerIp(runtime.runtimeId) !== null;
+          if (ready && Date.now() < deadline && !deployAborted()) ready = await containerIp(runtime.runtimeId) === eligible;
         } catch { /* retry until the readiness deadline */ }
         await options.checkpoint?.();
         if (Date.now() >= deadline || deployAborted()) break;
