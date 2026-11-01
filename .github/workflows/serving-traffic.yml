@@ -10,6 +10,7 @@ on:
       - 'apps/server/src/lib/agentCapabilities.ts'
       - 'apps/server/src/agentOps/servingTraffic.ts'
       - 'apps/server/src/agentOps/index.ts'
+      - 'apps/server/test/nodeFeatureRefusals.test.ts'
       - 'packages/schemas/src/proxyTraffic.ts'
       - 'packages/schemas/src/multiNode.ts'
       - 'scripts/smoke-serving-traffic.mjs'
