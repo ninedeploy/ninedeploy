@@ -162,6 +162,23 @@ describe('DeployWizard', () => {
     expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled();
   });
 
+  it('warns an admin when the first visitor becomes the app’s administrator', () => {
+    renderWizard({ template: { ...TEMPLATE, openFirstRun: 'first-visitor-admin' } as typeof TEMPLATE });
+    expect(screen.getByRole('alert')).toHaveTextContent(/first person to open this app becomes its administrator or runs its installer/);
+    // Still deployable: the warning asks for prompt setup, it does not block.
+    expect(screen.getByRole('button', { name: /Continue/ })).not.toBeDisabled();
+  });
+
+  it('says a first-visitor template with the Docker socket controls the server', () => {
+    renderWizard({ template: { ...TEMPLATE, dockerSocket: true, openFirstRun: 'first-visitor-admin' } as typeof TEMPLATE });
+    expect(screen.getByRole('alert')).toHaveTextContent(/controls Docker on this server/);
+  });
+
+  it('shows no first-run warning for a template that is closed by default', () => {
+    renderWizard({ template: TEMPLATE });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('lets an admin deploy the same Docker-socket template', () => {
     renderWizard({ template: { ...TEMPLATE, dockerSocket: true } });
     expect(screen.queryByText(/mounts the Docker socket/)).not.toBeInTheDocument();

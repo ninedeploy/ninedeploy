@@ -196,6 +196,13 @@ describe('Hub', () => {
     expect(await screen.findByText(/Community template: its manifest is validated/)).toBeInTheDocument();
   });
 
+  it('warns in the detail when the app has no login of its own', async () => {
+    mockOf(api.templates.get).mockResolvedValue({ ...templateDetail, openFirstRun: 'no-auth' } as never);
+    renderWithProviders(<Hub />);
+    fireEvent.click(await screen.findByText('n8n'));
+    expect(await screen.findByText(/no login of its own: anyone who reaches its address can use it/)).toBeInTheDocument();
+  });
+
   it('shows the requires hint for templates that need extra setup', async () => {
     mockOf(api.templates.get).mockResolvedValue({
       ...templateDetail,

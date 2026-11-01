@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The Hub now says when an app is open before it is set up. The first visitor may become its admin, it may start with a publicly known login, anyone may be able to sign up, or it may have no login at all. 174 templates carry the new `openFirstRun` field, and the deploy wizard and the template detail show the warning. It is stronger when the app also has the Docker socket.
+- The Coolify Portainer, Authentik and Glances templates are withdrawn from the bundled Hub. Each combines host Docker access with an open first run. Stacks already installed from them keep working ([docs/TEMPLATE_MIRRORS.md](docs/TEMPLATE_MIRRORS.md) §4).
+
 ### Added
 
 - 7 more Dokploy blueprints in the bundled Hub (G4.7): Cut, Flatnotes (TOTP), HortusFox, Kokoro Web, MAZANOKE, Omni-Tools and Rustrak. Their upstream files use `latest`; each image is pinned here to a release at least two weeks old. Each started in an isolated smoke run, and asked without credentials for its admin pages, APIs and sign-up, answered with a login, a 401 or 403, or (MAZANOKE, Omni-Tools) is a static page with no server-side data.

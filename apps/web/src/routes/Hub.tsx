@@ -8,6 +8,7 @@ import type { Template } from '@ninedeploy/sdk';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 import { copyText } from '../lib/format.js';
+import { openFirstRunWarning } from '../lib/openFirstRun.js';
 import { Button, Card, EmptyState, ErrorCard, Input, PageHeader, Skeleton, cn, useEscapeToClose } from '../components/ui.js';
 import { DeployWizard } from '../components/DeployWizard.js';
 import { useT } from '../lib/i18n.js';
@@ -508,6 +509,11 @@ function TemplateDetail({
             </div>
 
             <div className="max-h-[50vh] space-y-4 overflow-auto p-5">
+              {openFirstRunWarning(detail.data) && (
+                <div role="alert" className="rounded-xl border border-amber-500/25 bg-amber-500/[0.08] p-3 text-xs leading-relaxed text-amber-200">
+                  {t(openFirstRunWarning(detail.data)!)}
+                </div>
+              )}
               {!detail.data.runtimeVerified && (
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.08] p-3 text-xs leading-relaxed text-amber-200">
                   {t("Community template: its manifest is validated and curated, but this exact image has not yet passed NineDeploy's isolated runtime smoke test. Review the image, environment and requirements before deploying.")}

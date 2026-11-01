@@ -15,7 +15,8 @@
       "website": "https://n8n.io",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "activepieces",
@@ -46,7 +47,8 @@
         }
       ],
       "volumeMount": "/root/.activepieces",
-      "requires": "Needs a Redis instance (AP_REDIS_HOST/AP_REDIS_PORT) for its queue — point these env keys at one after deploy"
+      "requires": "Needs a Redis instance (AP_REDIS_HOST/AP_REDIS_PORT) for its queue — point these env keys at one after deploy",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "directus",
@@ -121,7 +123,8 @@
       "requires": "NocoDB can connect to existing databases or use its internal data store",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "hasura",
@@ -165,7 +168,8 @@
       "website": "https://ollama.com",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "flowise",
@@ -205,7 +209,8 @@
       "volumeMount": "/build/models",
       "website": "https://localai.io",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "searxng",
@@ -241,7 +246,8 @@
       "website": "https://qdrant.tech",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "chromadb",
@@ -255,7 +261,8 @@
       "volumeMount": "/chroma/chroma",
       "website": "https://www.trychroma.com",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "weaviate",
@@ -279,7 +286,8 @@
       ],
       "website": "https://weaviate.io",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "libretranslate",
@@ -320,7 +328,8 @@
         "DATABASE_URL": "url"
       },
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "default-login"
     },
     {
       "id": "matomo",
@@ -348,7 +357,8 @@
         }
       ],
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "metabase",
@@ -363,7 +373,8 @@
       "website": "https://metabase.com",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "yourls",
@@ -414,7 +425,8 @@
       "website": "https://github.com/louislam/uptime-kuma",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "grafana",
@@ -451,7 +463,8 @@
       "website": "https://prometheus.io",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "loki",
@@ -466,7 +479,8 @@
       "website": "https://grafana.com/oss/loki",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "beszel",
@@ -480,7 +494,8 @@
       "volumeMount": "/beszel_data",
       "website": "https://beszel.dev",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "jaeger",
@@ -493,7 +508,8 @@
       "port": 16686,
       "website": "https://www.jaegertracing.io",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "victoriametrics",
@@ -507,7 +523,8 @@
       "volumeMount": "/victoria-metrics-data",
       "website": "https://victoriametrics.com",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "nextcloud",
@@ -522,7 +539,8 @@
       "website": "https://nextcloud.com",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "memos",
@@ -537,7 +555,8 @@
       "website": "https://usememos.com",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "trilium",
@@ -551,7 +570,8 @@
       "volumeMount": "/home/node/trilium-data",
       "website": "https://github.com/zadam/trilium",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "silverbullet",
@@ -565,7 +585,8 @@
       "volumeMount": "/space",
       "website": "https://silverbullet.md",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "vikunja",
@@ -608,7 +629,8 @@
         }
       ],
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "focalboard",
@@ -622,7 +644,8 @@
       "volumeMount": "/data",
       "website": "https://www.focalboard.com",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "stirling-pdf",
@@ -679,7 +702,8 @@
       "website": "https://actualbudget.org",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "mealie",
@@ -694,7 +718,8 @@
       "website": "https://mealie.io",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "default-login"
     },
     {
       "id": "grocy",
@@ -708,7 +733,8 @@
       "volumeMount": "/config",
       "website": "https://grocy.info",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "default-login"
     },
     {
       "id": "linkding",
@@ -737,7 +763,8 @@
       "volumeMount": "/app/data",
       "website": "https://gotify.net",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "default-login"
     },
     {
       "id": "gitea",
@@ -752,7 +779,8 @@
       "website": "https://about.gitea.com",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "forgejo",
@@ -766,7 +794,8 @@
       "volumeMount": "/data",
       "website": "https://forgejo.org",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "gitlab-ce",
@@ -818,7 +847,8 @@
       "website": "https://dozzle.dev",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "dockge",
@@ -834,7 +864,8 @@
       "website": "https://dockge.kuma.pet",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "portainer-ce",
@@ -849,7 +880,8 @@
       "dockerSocket": true,
       "website": "https://www.portainer.io",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "caddy",
@@ -877,7 +909,8 @@
       "volumeMount": "/etc/letsencrypt",
       "website": "https://nginxproxymanager.com",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "default-login"
     },
     {
       "id": "vaultwarden",
@@ -902,7 +935,8 @@
       "website": "https://github.com/dani-garcia/vaultwarden",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "keycloak",
@@ -979,7 +1013,8 @@
       "website": "https://github.com/axllent/mailpit",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "cyberchef",
@@ -1005,7 +1040,8 @@
       "port": 8080,
       "website": "https://www.adminer.org",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "redis-insight",
@@ -1019,7 +1055,8 @@
       "volumeMount": "/data",
       "website": "https://redis.io/insight",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "pgweb",
@@ -1033,7 +1070,8 @@
       "website": "https://github.com/sosedoff/pgweb",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "meilisearch",
@@ -1130,7 +1168,8 @@
       "volumeMount": "/root",
       "website": "https://cloudcmd.io",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "filebrowser",
@@ -1174,7 +1213,8 @@
       "website": "https://jellyfin.org",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "plex",
@@ -1203,7 +1243,8 @@
       "volumeMount": "/config",
       "website": "https://emby.media",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "audiobookshelf",
@@ -1218,7 +1259,8 @@
       "website": "https://www.audiobookshelf.org",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "navidrome",
@@ -1233,7 +1275,8 @@
       "website": "https://www.navidrome.org",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "photoprism",
@@ -1269,7 +1312,8 @@
       "volumeMount": "/config",
       "website": "https://github.com/janeczku/calibre-web",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "default-login"
     },
     {
       "id": "kavita",
@@ -1283,7 +1327,8 @@
       "volumeMount": "/kavita/config",
       "website": "https://www.kavitareader.com",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "qbittorrent",
@@ -1311,7 +1356,8 @@
       "volumeMount": "/config",
       "website": "https://transmissionbt.com",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "sonarr",
@@ -1325,7 +1371,8 @@
       "volumeMount": "/config",
       "website": "https://sonarr.tv",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "radarr",
@@ -1339,7 +1386,8 @@
       "volumeMount": "/config",
       "website": "https://radarr.video",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "prowlarr",
@@ -1353,7 +1401,8 @@
       "volumeMount": "/config",
       "website": "https://prowlarr.com",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "bazarr",
@@ -1367,7 +1416,8 @@
       "volumeMount": "/config",
       "website": "https://www.bazarr.media",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "overseerr",
@@ -1381,7 +1431,8 @@
       "volumeMount": "/app/config",
       "website": "https://overseerr.dev",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "jellyseerr",
@@ -1395,7 +1446,8 @@
       "volumeMount": "/app/config",
       "website": "https://github.com/Fallenbagel/jellyseerr",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "flaresolverr",
@@ -1408,7 +1460,8 @@
       "port": 8191,
       "website": "https://github.com/FlareSolverr/FlareSolverr",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "homarr",
@@ -1423,7 +1476,8 @@
       "website": "https://homarr.dev",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "heimdall",
@@ -1437,7 +1491,8 @@
       "volumeMount": "/config",
       "website": "https://heimdall.site",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "homepage",
@@ -1453,7 +1508,8 @@
       "website": "https://gethomepage.dev",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "dashy",
@@ -1467,7 +1523,8 @@
       "volumeMount": "/app/user-data",
       "website": "https://dashy.to",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "adguard-home",
@@ -1482,7 +1539,8 @@
       "website": "https://adguard.com/adguard-home.html",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "home-assistant",
@@ -1497,7 +1555,8 @@
       "website": "https://www.home-assistant.io",
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "ghost",
@@ -1531,7 +1590,8 @@
       },
       "featured": true,
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "wordpress",
@@ -1554,7 +1614,8 @@
         "WORDPRESS_DB_NAME": "database"
       },
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "umami-stack",
@@ -1585,7 +1646,8 @@
       "volumeMount": "/data",
       "website": "https://changedetection.io",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "ntfy-server",
@@ -1602,7 +1664,8 @@
       ],
       "website": "https://ntfy.sh/docs",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "freshrss",
@@ -1616,7 +1679,8 @@
       "volumeMount": "/var/www/FreshRSS/data",
       "website": "https://freshrss.org",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "shiori",
@@ -1630,7 +1694,8 @@
       "volumeMount": "/shiori",
       "website": "https://github.com/go-shiori/shiori",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "default-login"
     },
     {
       "id": "wallos",
@@ -1644,7 +1709,8 @@
       "volumeMount": "/var/www/html/db",
       "website": "https://github.com/ellite/Wallos",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "speedtest-tracker",
@@ -1713,7 +1779,8 @@
       "volumeMount": "/var/www/html/storage/upload",
       "website": "https://firefly-iii.org",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "syncthing",
@@ -1727,7 +1794,8 @@
       "volumeMount": "/var/syncthing",
       "website": "https://syncthing.net",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "lidarr",
@@ -1741,7 +1809,8 @@
       "volumeMount": "/config",
       "website": "https://lidarr.audio",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "sabnzbd",
@@ -1755,7 +1824,8 @@
       "volumeMount": "/config",
       "website": "https://sabnzbd.org",
       "runtimeVerified": true,
-      "verifiedAt": "2026-09-22"
+      "verifiedAt": "2026-09-22",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "drawio",
@@ -1783,7 +1853,8 @@
       "volumeMount": "/data",
       "website": "https://nodered.org",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "open-webui",
@@ -1797,7 +1868,8 @@
       "volumeMount": "/app/backend/data",
       "website": "https://openwebui.com",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "appsmith",
@@ -1811,7 +1883,8 @@
       "volumeMount": "/appsmith-stacks",
       "website": "https://appsmith.com",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "baserow",
@@ -1825,7 +1898,8 @@
       "volumeMount": "/baserow/data",
       "website": "https://baserow.io",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "whoogle",
@@ -1867,7 +1941,8 @@
       "volumeMount": "/var/www/wallabag/data",
       "website": "https://wallabag.it",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "default-login"
     },
     {
       "id": "lobe-chat",
@@ -1939,7 +2014,8 @@
       "volumeMount": "/usr/src/redmine/files",
       "website": "https://redmine.org",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "default-login"
     },
     {
       "id": "jenkins",
@@ -2033,7 +2109,8 @@
       "website": "https://piwigo.org",
       "runtimeVerified": false,
       "verifiedAt": "2026-09-16",
-      "requires": "Needs a MySQL database and PIWIGO_DB_HOST/PIWIGO_DB_USER/PIWIGO_DB_PASSWORD/PIWIGO_DB_NAME environment variables set on the service before its web server starts."
+      "requires": "Needs a MySQL database and PIWIGO_DB_HOST/PIWIGO_DB_USER/PIWIGO_DB_PASSWORD/PIWIGO_DB_NAME environment variables set on the service before its web server starts.",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "docker-registry",
@@ -2047,7 +2124,8 @@
       "volumeMount": "/var/lib/registry",
       "website": "https://distribution.github.io/distribution/",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "bookstack",
@@ -2075,7 +2153,8 @@
           "value": "base64:",
           "secret": true
         }
-      ]
+      ],
+      "openFirstRun": "default-login"
     },
     {
       "id": "fider",
@@ -2125,7 +2204,8 @@
           "value": "disable",
           "secret": false
         }
-      ]
+      ],
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "privatebin",
@@ -2180,7 +2260,8 @@
       "volumeMount": "/config",
       "website": "https://organizr.app",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "owncast",
@@ -2195,7 +2276,8 @@
       "website": "https://owncast.online",
       "requires": "RTMP ingest listens on 1935 — publish it via the service's published-port setting if you stream INTO this instance",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "default-login"
     },
     {
       "id": "duplicati",
@@ -2231,7 +2313,8 @@
         "SPRING_DATASOURCE_USERNAME": "username",
         "SPRING_DATASOURCE_PASSWORD": "password"
       },
-      "requires": "Needs a PostgreSQL database configured via SPRING_DATASOURCE_URL (jdbc:postgresql://…) — set the SPRING_DATASOURCE_* env vars on the service after deploy; the managed-database URL contract does not match Komga’s JDBC format."
+      "requires": "Needs a PostgreSQL database configured via SPRING_DATASOURCE_URL (jdbc:postgresql://…) — set the SPRING_DATASOURCE_* env vars on the service after deploy; the managed-database URL contract does not match Komga’s JDBC format.",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "metube",
@@ -2245,7 +2328,8 @@
       "volumeMount": "/downloads",
       "website": "https://github.com/alexta69/metube",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "wekan",
@@ -2270,7 +2354,8 @@
           "value": "http://localhost:8080",
           "secret": false
         }
-      ]
+      ],
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "filestash",
@@ -2284,7 +2369,8 @@
       "volumeMount": "/app/data",
       "website": "https://filestash.app",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "deluge",
@@ -2298,7 +2384,8 @@
       "volumeMount": "/config",
       "website": "https://deluge-torrent.org",
       "runtimeVerified": false,
-      "verifiedAt": "2026-09-16"
+      "verifiedAt": "2026-09-16",
+      "openFirstRun": "default-login"
     },
     {
       "id": "coolify-apprise-api",
@@ -2314,23 +2401,8 @@
       "composeService": "apprise-api",
       "requires": "Coolify mirror · routed service: apprise-api (port-reference)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
-    },
-    {
-      "id": "coolify-glances",
-      "name": "Glances",
-      "tagline": "An Eye on your system",
-      "description": "An Eye on your system",
-      "category": "Monitoring",
-      "emoji": "📈",
-      "image": "nicolargo/glances:latest",
-      "port": 61208,
-      "docs": "https://nicolargo.github.io/glances/",
-      "composeContent": "# documentation: https://nicolargo.github.io/glances/\n# slogan: An Eye on your system\n# category: monitoring\n# tags: monitoring tool python cross platform\n# logo: svgs/glances.png\n# port: 61208\n\nservices:\n  glances:\n    image: nicolargo/glances:latest\n    restart: unless-stopped\n    environment:\n      - GLANCES_OPT=-w\n      - SERVICE_URL_GLANCES_61208\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock:ro\n      - /run/user/1000/podman/podman.sock:/run/user/1000/podman/podman.sock:ro\n    pid: \"host\"\n    privileged: true\n    healthcheck:\n      test: [\"CMD\", \"curl\", \"-f\", \"http://localhost:61208\"]\n      interval: 2s\n      timeout: 10s\n      retries: 30\n    # Uncomment for GPU compatibilty (Nvidia) inside the container\n    # deploy:\n    #   resources:\n    #     reservations:\n    #       devices:\n    #         - driver: nvidia\n    #           count: 1\n    #           capabilities: [gpu]\n",
-      "composeService": "glances",
-      "requires": "Coolify mirror · routed service: glances (url-token) · uses the Docker socket, privileged mode, the host PID namespace",
-      "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-gotenberg",
@@ -2513,7 +2585,8 @@
       "composeService": "changedetection",
       "requires": "Coolify mirror · routed service: changedetection (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-dokuwiki",
@@ -2529,7 +2602,8 @@
       "composeService": "dokuwiki",
       "requires": "Coolify mirror · routed service: dokuwiki (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-listmonk",
@@ -2545,7 +2619,8 @@
       "composeService": "listmonk",
       "requires": "Coolify mirror · routed service: listmonk (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-readeck",
@@ -2568,7 +2643,8 @@
       "composeService": "readeck",
       "requires": "Coolify mirror · routed service: readeck (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-miniflux",
@@ -2629,7 +2705,8 @@
       ],
       "requires": "Coolify mirror · routed service: docmost (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-9router",
@@ -2689,7 +2766,8 @@
       "composeService": "babybuddy",
       "requires": "Coolify mirror · routed service: babybuddy (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "default-login"
     },
     {
       "id": "coolify-bento-pdf",
@@ -2749,7 +2827,8 @@
       "composeService": "proxy-service",
       "requires": "Coolify mirror · routed service: proxy-service (port-reference)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-cap-captcha",
@@ -2788,7 +2867,8 @@
       "composeService": "castopod",
       "requires": "Coolify mirror · routed service: castopod (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-chatwoot",
@@ -2877,7 +2957,8 @@
       "composeService": "classicpress",
       "requires": "Coolify mirror · routed service: classicpress (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-cloudbeaver",
@@ -2893,7 +2974,8 @@
       "composeService": "cloudbeaver",
       "requires": "Coolify mirror · routed service: cloudbeaver (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-cockpit",
@@ -2909,7 +2991,8 @@
       "composeService": "cockpit",
       "requires": "Coolify mirror · routed service: cockpit (first-service)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "default-login"
     },
     {
       "id": "coolify-convertx",
@@ -3023,7 +3106,8 @@
       "composeService": "docling-serve",
       "requires": "Coolify mirror · routed service: docling-serve (port-reference)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-dolibarr",
@@ -3165,7 +3249,8 @@
       "composeService": "firefox",
       "requires": "Coolify mirror · routed service: firefox (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-flipt",
@@ -3181,7 +3266,8 @@
       "composeService": "flipt",
       "requires": "Coolify mirror · routed service: flipt (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-freshrss-with-postgresql",
@@ -3209,7 +3295,8 @@
       "composeService": "freshrss",
       "requires": "Coolify mirror · routed service: freshrss (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-glitchtip",
@@ -3252,7 +3339,8 @@
       "composeService": "web",
       "requires": "Coolify mirror · routed service: web (first-service)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-goatcounter",
@@ -3409,7 +3497,8 @@
       "composeService": "hermes-webui",
       "requires": "Coolify mirror · routed service: hermes-webui (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-heyform",
@@ -3425,7 +3514,8 @@
       "composeService": "heyform",
       "requires": "Coolify mirror · routed service: heyform (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-influxdb",
@@ -3457,7 +3547,8 @@
       "composeService": "joplin",
       "requires": "Coolify mirror · routed service: joplin (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "default-login"
     },
     {
       "id": "coolify-labelstudio",
@@ -3553,7 +3644,8 @@
       "composeService": "leantime",
       "requires": "Coolify mirror · routed service: leantime (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-librespeed",
@@ -3592,7 +3684,8 @@
       "composeService": "linkwarden",
       "requires": "Coolify mirror · routed service: linkwarden (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-lowcoder",
@@ -3615,7 +3708,8 @@
       "composeService": "lowcoder",
       "requires": "Coolify mirror · routed service: lowcoder (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-marimo",
@@ -3775,7 +3869,8 @@
       "composeService": "n8n",
       "requires": "Coolify mirror · routed service: n8n (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-newapi",
@@ -3813,7 +3908,8 @@
       "composeService": "new-api",
       "requires": "Coolify mirror · routed service: new-api (port-reference)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "default-login"
     },
     {
       "id": "coolify-nextcloud-with-mariadb",
@@ -3841,7 +3937,8 @@
       "composeService": "nextcloud",
       "requires": "Coolify mirror · routed service: nextcloud (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-nexus-arm",
@@ -3889,7 +3986,8 @@
       "composeService": "nodebb",
       "requires": "Coolify mirror · routed service: nodebb (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-obsidian",
@@ -3965,7 +4063,8 @@
       "composeService": "onetimesecret",
       "requires": "Coolify mirror · routed service: onetimesecret (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-openwa-with-postgresql-and-redis",
@@ -4036,7 +4135,8 @@
       "composeService": "orangehrm",
       "requires": "Coolify mirror · routed service: orangehrm (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-pairdrop",
@@ -4213,7 +4313,8 @@
       "composeService": "pocket-id",
       "requires": "Coolify mirror · routed service: pocket-id (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-postiz",
@@ -4271,7 +4372,8 @@
       "composeService": "postiz",
       "requires": "Coolify mirror · routed service: postiz (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-proxyscotch",
@@ -4332,7 +4434,8 @@
       "composeService": "rallly",
       "requires": "Coolify mirror · routed service: rallly (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-rocketchat",
@@ -4375,7 +4478,8 @@
       "composeService": "rocketchat",
       "requires": "Coolify mirror · routed service: rocketchat (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-seafile",
@@ -4470,7 +4574,8 @@
       "composeService": "slash",
       "requires": "Coolify mirror · routed service: slash (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-snipe-it",
@@ -4538,7 +4643,8 @@
       "composeService": "app",
       "requires": "Coolify mirror · routed service: app (first-service)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-soketi",
@@ -4697,7 +4803,8 @@
       "composeService": "strapi",
       "requires": "Coolify mirror · routed service: strapi (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-supertokens-with-postgresql",
@@ -4776,7 +4883,8 @@
       "composeService": "triliumnext",
       "requires": "Coolify mirror · routed service: triliumnext (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-unleash-with-postgresql",
@@ -4808,7 +4916,8 @@
       "composeService": "unstructured",
       "requires": "Coolify mirror · routed service: unstructured (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-usesend",
@@ -4875,7 +4984,8 @@
       "composeService": "vvveb",
       "requires": "Coolify mirror · routed service: vvveb (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-wakapi",
@@ -4953,7 +5063,8 @@
       "composeService": "wakapi",
       "requires": "Coolify mirror · routed service: wakapi (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-weblate",
@@ -5002,7 +5113,8 @@
       "composeService": "wordpress",
       "requires": "Coolify mirror · routed service: wordpress (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-yamtrack-with-postgresql",
@@ -5035,7 +5147,8 @@
       "composeService": "yamtrack",
       "requires": "Coolify mirror · routed service: yamtrack (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-budge",
@@ -5145,7 +5258,8 @@
       "composeService": "calibre-web-automated",
       "requires": "Coolify mirror · routed service: calibre-web-automated (port-reference)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "default-login"
     },
     {
       "id": "coolify-checkmate",
@@ -5161,7 +5275,8 @@
       "composeService": "checkmate",
       "requires": "Coolify mirror · routed service: checkmate (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-classicpress-without-database",
@@ -5177,7 +5292,8 @@
       "composeService": "classicpress",
       "requires": "Coolify mirror · routed service: classicpress (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-cloudreve",
@@ -5200,7 +5316,8 @@
       "composeService": "cloudreve",
       "requires": "Coolify mirror · routed service: cloudreve (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-codimd",
@@ -5243,7 +5360,8 @@
       "composeService": "codimd",
       "requires": "Coolify mirror · routed service: codimd (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-databasus",
@@ -5323,7 +5441,8 @@
       "composeService": "docuseal",
       "requires": "Coolify mirror · routed service: docuseal (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-drizzle-gateway",
@@ -5355,7 +5474,8 @@
       "composeService": "easyappointments",
       "requires": "Coolify mirror · routed service: easyappointments (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-elasticsearch",
@@ -5387,7 +5507,8 @@
       "composeService": "embystat",
       "requires": "Coolify mirror · routed service: embystat (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-espocrm",
@@ -5438,7 +5559,8 @@
       "composeService": "fileflows",
       "requires": "Coolify mirror · routed service: fileflows (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-fizzy",
@@ -5482,7 +5604,8 @@
       "composeService": "freshrss",
       "requires": "Coolify mirror · routed service: freshrss (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-glpi",
@@ -5505,7 +5628,8 @@
       "composeService": "glpi",
       "requires": "Coolify mirror · routed service: glpi (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "default-login"
     },
     {
       "id": "coolify-gowa",
@@ -5629,7 +5753,8 @@
       "composeService": "hermes-agent",
       "requires": "Coolify mirror · routed service: hermes-agent (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-honcho",
@@ -5652,7 +5777,8 @@
       "composeService": "api",
       "requires": "Coolify mirror · routed service: api (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-imgcompress",
@@ -5703,7 +5829,8 @@
       "composeService": "joomla",
       "requires": "Coolify mirror · routed service: joomla (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-jupyter-notebook-python",
@@ -5805,7 +5932,8 @@
       "composeService": "kuzzle",
       "requires": "Coolify mirror · routed service: kuzzle (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-langflow",
@@ -5866,7 +5994,8 @@
       "composeService": "libreoffice",
       "requires": "Coolify mirror · routed service: libreoffice (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-linkding-plus",
@@ -5898,7 +6027,8 @@
       "composeService": "mage-ai",
       "requires": "Coolify mirror · routed service: mage-ai (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-mediawiki",
@@ -5914,7 +6044,8 @@
       "composeService": "mediawiki",
       "requires": "Coolify mirror · routed service: mediawiki (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-mindsdb",
@@ -5962,7 +6093,8 @@
       "composeService": "mindsdb",
       "requires": "Coolify mirror · routed service: mindsdb (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-moodle",
@@ -6068,7 +6200,8 @@
       "composeService": "n8n",
       "requires": "Coolify mirror · routed service: n8n (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-next-image-transformation",
@@ -6124,7 +6257,8 @@
       "composeService": "nextcloud",
       "requires": "Coolify mirror · routed service: nextcloud (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-nitropage-with-postgresql",
@@ -6170,7 +6304,8 @@
       "composeService": "nocobase",
       "requires": "Coolify mirror · routed service: nocobase (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "default-login"
     },
     {
       "id": "coolify-observium",
@@ -6214,7 +6349,8 @@
       "composeService": "odoo",
       "requires": "Coolify mirror · routed service: odoo (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-onedev",
@@ -6247,7 +6383,8 @@
       "composeService": "onedev",
       "requires": "Coolify mirror · routed service: onedev (url-token) · uses the Docker socket",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-open-archiver",
@@ -6325,7 +6462,8 @@
       "composeService": "open-archiver",
       "requires": "Coolify mirror · routed service: open-archiver (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-openobserve",
@@ -6563,7 +6701,8 @@
       "composeService": "plunk",
       "requires": "Coolify mirror · routed service: plunk (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-pocket-id",
@@ -6626,23 +6765,8 @@
       "composeService": "pocket-id",
       "requires": "Coolify mirror · routed service: pocket-id (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
-    },
-    {
-      "id": "coolify-portainer",
-      "name": "Portainer",
-      "tagline": "Portainer is a lightweight management UI for Docker",
-      "description": "Portainer is a lightweight management UI for Docker",
-      "category": "Developer",
-      "emoji": "🧩",
-      "image": "portainer/portainer-ce:alpine",
-      "port": 9000,
-      "docs": "https://docs.portainer.io",
-      "composeContent": "# documentation: https://docs.portainer.io\n# slogan: Portainer is a lightweight management UI for Docker\n# category: devtools\n# tags: docker, management, ui\n# logo: svgs/portainer.png\n# port: 9000\n\nservices:\n  portainer:\n    image: portainer/portainer-ce:alpine\n    environment:\n      - SERVICE_URL_PORTAINER_9000\n    volumes:\n      - '/var/run/docker.sock:/var/run/docker.sock'\n      - 'portainer_data:/data'\n    healthcheck:\n      test: [\"CMD-SHELL\", \"wget -qO- http://127.0.0.1:9000/\"]\n      interval: 20s\n      timeout: 20s\n      retries: 10\n\nvolumes:\n  portainer_data:\n",
-      "composeService": "portainer",
-      "requires": "Coolify mirror · routed service: portainer (url-token) · uses the Docker socket",
-      "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-pydio-cells",
@@ -6665,7 +6789,8 @@
       "composeService": "cells",
       "requires": "Coolify mirror · routed service: cells (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-rivet-engine",
@@ -6831,7 +6956,8 @@
       "composeService": "termix",
       "requires": "Coolify mirror · routed service: termix (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-trailbase",
@@ -6875,7 +7001,8 @@
       "composeService": "uptime-kuma",
       "requires": "Coolify mirror · routed service: uptime-kuma (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-vvveb",
@@ -6891,7 +7018,8 @@
       "composeService": "vvveb",
       "requires": "Coolify mirror · routed service: vvveb (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-web-check",
@@ -6907,7 +7035,8 @@
       "composeService": "web-check",
       "requires": "Coolify mirror · routed service: web-check (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-wordpress-without-database",
@@ -6923,7 +7052,8 @@
       "composeService": "wordpress",
       "requires": "Coolify mirror · routed service: wordpress (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-yamtrack",
@@ -6951,7 +7081,8 @@
       "composeService": "yamtrack",
       "requires": "Coolify mirror · routed service: yamtrack (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-zipline",
@@ -6984,7 +7115,8 @@
       "composeService": "zipline",
       "requires": "Coolify mirror · routed service: zipline (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-affine",
@@ -7012,7 +7144,8 @@
       "composeService": "affine",
       "requires": "Coolify mirror · routed service: affine (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-elasticsearch-with-kibana",
@@ -7109,7 +7242,8 @@
       "composeService": "inngest",
       "requires": "Coolify mirror · routed service: inngest (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-martin",
@@ -7160,7 +7294,8 @@
       "composeService": "pgbackweb",
       "requires": "Coolify mirror · routed service: pgbackweb (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-drupal-with-postgresql",
@@ -7176,7 +7311,8 @@
       "composeService": "drupal",
       "requires": "Coolify mirror · routed service: drupal (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-immich",
@@ -7214,7 +7350,8 @@
       "composeService": "immich",
       "requires": "Coolify mirror · routed service: immich (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-karakeep",
@@ -7237,7 +7374,8 @@
       "composeService": "web",
       "requires": "Coolify mirror · routed service: web (first-service)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-once-campfire",
@@ -7275,7 +7413,8 @@
       "composeService": "campfire",
       "requires": "Coolify mirror · routed service: campfire (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "coolify-redlib",
@@ -7564,7 +7703,8 @@
       "composeService": "documenso",
       "requires": "Coolify mirror · routed service: documenso (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "open-signup"
     },
     {
       "id": "coolify-matrix-synapse-with-sqlite",
@@ -7645,7 +7785,8 @@
       "composeService": "prefect",
       "requires": "Coolify mirror · routed service: prefect (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "no-auth"
     },
     {
       "id": "coolify-bluesky-pds",
@@ -7711,44 +7852,6 @@
       "verifiedAt": "2026-10-10"
     },
     {
-      "id": "coolify-authentik",
-      "name": "Authentik",
-      "tagline": "An open-source Identity Provider, focused on flexibility and versatility.",
-      "description": "An open-source Identity Provider, focused on flexibility and versatility.",
-      "category": "Auth",
-      "emoji": "🧩",
-      "image": "ghcr.io/goauthentik/server:2026.5.6",
-      "port": 9000,
-      "env": [
-        {
-          "key": "AUTHENTIK_ERROR_REPORTING__ENABLED",
-          "value": "true",
-          "secret": false
-        },
-        {
-          "key": "AUTHENTIK_TAG",
-          "value": "2026.5.6",
-          "secret": false
-        },
-        {
-          "key": "POSTGRES_DB",
-          "value": "authentik",
-          "secret": false
-        },
-        {
-          "key": "POSTGRES_HOST",
-          "value": "postgresql",
-          "secret": false
-        }
-      ],
-      "docs": "https://docs.goauthentik.io/docs/installation/docker-compose",
-      "composeContent": "# documentation: https://docs.goauthentik.io/docs/installation/docker-compose\n# slogan: An open-source Identity Provider, focused on flexibility and versatility.\n# category: auth\n# tags: identity,login,user,oauth,openid,oidc,authentication,saml,auth0,okta\n# logo: svgs/authentik.png\n# port: 9000\n\nservices:\n  authentik-server:\n    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.6}\n    restart: unless-stopped\n    command: server\n    environment:\n      - SERVICE_URL_AUTHENTIKSERVER_9000\n      - AUTHENTIK_POSTGRESQL__HOST=${POSTGRES_HOST:-postgresql}\n      - AUTHENTIK_POSTGRESQL__USER=${SERVICE_USER_POSTGRESQL}\n      - AUTHENTIK_POSTGRESQL__NAME=${POSTGRES_DB:-authentik}\n      - AUTHENTIK_POSTGRESQL__PASSWORD=${SERVICE_PASSWORD_POSTGRESQL}\n      - AUTHENTIK_SECRET_KEY=${SERVICE_PASSWORD_64_AUTHENTIKSERVER}\n      - AUTHENTIK_ERROR_REPORTING__ENABLED=${AUTHENTIK_ERROR_REPORTING__ENABLED:-true}\n      - AUTHENTIK_EMAIL__HOST=${AUTHENTIK_EMAIL__HOST}\n      - AUTHENTIK_EMAIL__PORT=${AUTHENTIK_EMAIL__PORT}\n      - AUTHENTIK_EMAIL__USERNAME=${AUTHENTIK_EMAIL__USERNAME}\n      - AUTHENTIK_EMAIL__PASSWORD=${AUTHENTIK_EMAIL__PASSWORD}\n      - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS}\n      - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL}\n      - AUTHENTIK_EMAIL__TIMEOUT=${AUTHENTIK_EMAIL__TIMEOUT}\n      - AUTHENTIK_EMAIL__FROM=${AUTHENTIK_EMAIL__FROM}\n    volumes:\n      - ./data:/data\n      - ./custom-templates:/templates\n    depends_on:\n      postgresql:\n        condition: service_healthy\n  authentik-worker:\n    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.6}\n    restart: unless-stopped\n    command: worker\n    environment:\n      - AUTHENTIK_POSTGRESQL__HOST=${POSTGRES_HOST:-postgresql}\n      - AUTHENTIK_POSTGRESQL__USER=${SERVICE_USER_POSTGRESQL}\n      - AUTHENTIK_POSTGRESQL__NAME=${POSTGRES_DB:-authentik}\n      - AUTHENTIK_POSTGRESQL__PASSWORD=${SERVICE_PASSWORD_POSTGRESQL}\n      - AUTHENTIK_SECRET_KEY=${SERVICE_PASSWORD_64_AUTHENTIKSERVER}\n      - AUTHENTIK_ERROR_REPORTING__ENABLED=${AUTHENTIK_ERROR_REPORTING__ENABLED:-true}\n      - AUTHENTIK_EMAIL__HOST=${AUTHENTIK_EMAIL__HOST}\n      - AUTHENTIK_EMAIL__PORT=${AUTHENTIK_EMAIL__PORT}\n      - AUTHENTIK_EMAIL__USERNAME=${AUTHENTIK_EMAIL__USERNAME}\n      - AUTHENTIK_EMAIL__PASSWORD=${AUTHENTIK_EMAIL__PASSWORD}\n      - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS}\n      - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL}\n      - AUTHENTIK_EMAIL__TIMEOUT=${AUTHENTIK_EMAIL__TIMEOUT}\n      - AUTHENTIK_EMAIL__FROM=${AUTHENTIK_EMAIL__FROM}\n    # `user: root` and the docker socket volume are optional.\n    # See more for the docker socket integration here:\n    # https://goauthentik.io/docs/outposts/integrations/docker\n    # Removing `user: root` also prevents the worker from fixing the permissions\n    # on the mounted folders, so when removing this make sure the folders have the correct UID/GID\n    # (1000:1000 by default)\n    user: root\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - ./data:/data\n      - ./certs:/certs\n      - ./custom-templates:/templates\n    depends_on:\n      postgresql:\n        condition: service_healthy\n  postgresql:\n    image: postgres:16-alpine\n    restart: unless-stopped\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}\"]\n      interval: 2s\n      timeout: 10s\n      retries: 15\n    volumes:\n      - authentik-db:/var/lib/postgresql/data\n    environment:\n      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRESQL}\n      - POSTGRES_USER=${SERVICE_USER_POSTGRESQL}\n      - POSTGRES_DB=authentik\n\nvolumes:\n  authentik-db:\n",
-      "composeService": "authentik-server",
-      "requires": "Coolify mirror · routed service: authentik-server (url-token) · uses the Docker socket",
-      "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
-    },
-    {
       "id": "coolify-logto",
       "name": "Logto",
       "tagline": "A comprehensive identity solution covering both the front and backend, complete with pre-built infrastructure and enterprise-grade solutions.",
@@ -7769,7 +7872,8 @@
       "composeService": "logto",
       "requires": "Coolify mirror · routed service: logto (url-token)",
       "runtimeVerified": true,
-      "verifiedAt": "2026-10-10"
+      "verifiedAt": "2026-10-10",
+      "openFirstRun": "first-visitor-admin"
     },
     {
       "id": "dokploy-alist",

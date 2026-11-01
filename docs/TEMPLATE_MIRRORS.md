@@ -99,4 +99,21 @@ The evidence is `runtime-verify-2026-11-01-dokploy-4.json`.
 
 A stack that fails is left out; often its upstream file is to blame. The Dokploy Ghost blueprint is an example: it has no `depends_on` or healthcheck, so Ghost restarts until MySQL is ready, and the smoke run reports "exited before readiness".
 
+## 4. Apps that are open before they are set up
+
+The bar above came after the native catalog and the 175 Coolify entries of 0.15.7, which were promoted because they started. On 2026-11-01 the whole bundled Hub was reviewed for what an app does before anyone has set it up. Each template where that is open carries `openFirstRun`, and the deploy wizard and the Hub detail show a warning:
+
+| `openFirstRun` | Meaning | Examples |
+| --- | --- | --- |
+| `first-visitor-admin` | The first person to open it creates the admin account or runs the installer. | n8n, Uptime Kuma, Immich, WordPress, Portainer |
+| `default-login` | It starts with a publicly known login. | Mealie, Nginx Proxy Manager, BookStack, Joplin |
+| `open-signup` | Anyone can create an account. | Vaultwarden, Rallly, Karakeep |
+| `no-auth` | It has no login of its own. | Dozzle, Node-RED, Ollama, Qdrant, Prometheus |
+
+The review marked 174 templates. When such an app also has the Docker socket, the warning says that whoever gets in first controls the server. A test makes sure every template that reaches the host Docker is either marked or named with the generated value that closes it (WUD, Autobase).
+
+Three Coolify entries were withdrawn, because they combine host Docker access with an open first run: Portainer (the socket, first visitor becomes admin), Authentik (the socket, an initial-setup flow that sets the `akadmin` password) and Glances (privileged, host PID namespace, the socket and no login). The native Portainer CE, Dockge and Dozzle stay, with the warning. `runtime-verify-2026-10-10.json` records each withdrawal. A stack installed from a withdrawn template keeps redeploying; only the Hub no longer offers it.
+
+The marks come from reading each app's documented first-run behaviour, not from running all of them. An unmarked template is not a promise that it is closed.
+
 **The bar for promotion:** the stack starts in the smoke run, every image is pinned to a version (no `latest`, no `pull_policy: always`), and nothing is open by default. That rules out a known default login, open registration, auth switched off, a first visitor becoming admin, and a form that reaches arbitrary hosts. A blueprint that needs a manual first step to be safe stays in the remote bundle (Settings → `templates_source`), not the bundled Hub.

@@ -104,6 +104,28 @@ describe('bundled Hub template contract', () => {
     }
   });
 
+  it('says how every template that reaches the host Docker behaves before it is set up (security review)', () => {
+    // Docker access is host root, so a stack that is open to its first
+    // visitor must warn about it in the wizard. Only a stack whose login
+    // comes from a generated value may stay unmarked, and it is named here.
+    const closed = new Map([
+      ['wud', 'WUD_AUTH_ADMIN_USER/PASSWORD set the only login'],
+      ['coolify-autobase', 'its console and API need PG_CONSOLE_AUTHORIZATION_TOKEN, a generated value'],
+    ]);
+    const hostDocker = templates.filter((t) => t.dockerSocket || /docker\.sock|privileged:\s*true|pid:\s*["']?host/.test(t.composeContent ?? ''));
+    expect(hostDocker.length).toBeGreaterThan(4);
+    for (const t of hostDocker) {
+      if (closed.has(t.id)) expect(t.openFirstRun, t.id).toBeUndefined();
+      else if (t.dockerSocket || /docker\.sock/.test(t.composeContent ?? '')) expect(t.openFirstRun, t.id).toBeDefined();
+    }
+    // Withdrawn 2026-11-01: host Docker and open to their first visitor
+    // (runtime-verify-2026-10-10.json records why).
+    const ids = new Set(templates.map((t) => t.id));
+    for (const id of ['coolify-portainer', 'coolify-authentik', 'coolify-glances']) expect(ids.has(id), id).toBe(false);
+    expect(templates.find((t) => t.id === 'portainer-ce')?.openFirstRun).toBe('first-visitor-admin');
+    expect(templates.find((t) => t.id === 'dozzle')?.openFirstRun).toBe('no-auth');
+  });
+
   it('advertises only templates that passed an isolated runtime smoke test', () => {
     // The verified set is DERIVED from the committed smoke-run evidence, not
     // hand-pinned: the next `smoke-template-runtime` run refreshes the JSON

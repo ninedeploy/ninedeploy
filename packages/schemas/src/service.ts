@@ -1176,6 +1176,12 @@ export const template = z.object({
    *  only settable from the admin-controlled template registry, never via
    *  the create-service API). */
   dockerSocket: z.boolean().optional(),
+  /** How the upstream app behaves before anyone has set it up, when that is
+   *  open to whoever reaches it first: the first visitor creates the admin
+   *  account (or runs the installer), it starts with a publicly known login,
+   *  anyone may sign up, or it has no login at all. The wizard and the Hub
+   *  warn about it; a public domain exposes the app from the first second. */
+  openFirstRun: z.enum(['first-visitor-admin', 'default-login', 'open-signup', 'no-auth']).optional(),
   /** Full Docker Compose stack definition. When present the template deploys
    *  as a multi-container compose project (`type: 'compose'`) instead of the
    *  single-container image+port model; `image`/`port` then describe the MAIN

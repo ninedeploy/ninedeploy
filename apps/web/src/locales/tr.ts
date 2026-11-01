@@ -1501,6 +1501,18 @@ export const TR: Readonly<Record<string, string>> = {
     'Bu şablon bir Compose yığını kurar; bu yığın sunucu yollarını bağlayabilir ya da ayrıcalıklı konteynerler isteyebilir. Yalnızca bir yönetici dağıtabilir.',
   'Community template — registry-valid but not yet runtime-certified. Confirm its port, environment and storage settings before deployment.':
     'Topluluk şablonu — kayıt defterinde geçerli ancak çalışma zamanında henüz doğrulanmadı. Dağıtımdan önce port, ortam ve depolama ayarlarını kontrol edin.',
+  'Until it is set up, the first person to open this app becomes its administrator, and it controls Docker on this server. Finish the setup right after deploying, before its address is reachable by anyone else.':
+    'Kurulum yapılana kadar bu uygulamayı ilk açan kişi yöneticisi olur ve uygulama bu sunucudaki Docker’ı yönetir. Kurulumu dağıtımdan hemen sonra, adresine başkası ulaşmadan tamamlayın.',
+  'Until it is set up, the first person to open this app becomes its administrator or runs its installer. Finish the setup right after deploying, before you share its address.':
+    'Kurulum yapılana kadar bu uygulamayı ilk açan kişi yöneticisi olur ya da kurulum sihirbazını çalıştırır. Kurulumu dağıtımdan hemen sonra, adresini paylaşmadan önce tamamlayın.',
+  'This app starts with a publicly known login. Change it right after deploying, before you share its address.':
+    'Bu uygulama herkesçe bilinen bir girişle başlar. Dağıtımdan hemen sonra, adresini paylaşmadan önce değiştirin.',
+  'This app lets anyone create an account by default. Turn sign-up off in its settings or environment if it should stay private.':
+    'Bu uygulama varsayılan olarak herkesin hesap açmasına izin verir. Özel kalması gerekiyorsa kaydı ayarlarından ya da ortam değişkenlerinden kapatın.',
+  'This app has no login of its own and can see Docker on this server: anyone who reaches its address sees every container. Keep it off a public domain or put it behind authentication.':
+    'Bu uygulamanın kendi girişi yoktur ve bu sunucudaki Docker’ı görebilir: adresine ulaşan herkes tüm konteynerleri görür. Herkese açık bir alan adına bağlamayın ya da önüne kimlik doğrulama koyun.',
+  'This app has no login of its own: anyone who reaches its address can use it. Keep it off a public domain or put it behind authentication.':
+    'Bu uygulamanın kendi girişi yoktur: adresine ulaşan herkes kullanabilir. Herkese açık bir alan adına bağlamayın ya da önüne kimlik doğrulama koyun.',
   'Type': 'Tür',
   'Source type': 'Kaynak türü',
   'Git repo': 'Git deposu',
