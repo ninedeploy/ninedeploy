@@ -11,8 +11,9 @@
     {
       "id": "coolify-glances",
       "profile": "compose",
-      "ok": true,
-      "seconds": 15
+      "ok": false,
+      "seconds": 15,
+      "error": "withdrawn after review (2026-11-01): privileged, host PID namespace and the Docker socket, with a web UI that has no login"
     },
     {
       "id": "coolify-gotenberg",
@@ -821,8 +822,9 @@
     {
       "id": "coolify-portainer",
       "profile": "compose",
-      "ok": true,
-      "seconds": 26
+      "ok": false,
+      "seconds": 26,
+      "error": "withdrawn after review (2026-11-01): mounts the host Docker socket and the first visitor creates the admin account, so whoever reaches it first controls the host"
     },
     {
       "id": "coolify-pydio-cells",
@@ -1043,8 +1045,9 @@
     {
       "id": "coolify-authentik",
       "profile": "compose",
-      "ok": true,
-      "seconds": 14
+      "ok": false,
+      "seconds": 14,
+      "error": "withdrawn after review (2026-11-01): mounts the host Docker socket and its initial-setup flow lets the first visitor set the akadmin password"
     },
     {
       "id": "coolify-logto",

@@ -8,6 +8,7 @@ import { copyText, toInt } from '../lib/format.js';
 import { useAuth } from '../lib/auth.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { registeredNodes } from '../lib/multiNode.js';
+import { openFirstRunWarning } from '../lib/openFirstRun.js';
 import { useToast } from './Toast.js';
 import { Button, Input, Select, Textarea, cn } from './ui.js';
 import { DeploymentSupport } from './DeploymentSupport.js';
@@ -581,6 +582,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
   // first screen rather than letting a member fill in five steps and collect a
   // 403 at the end.
   const hostPrivilegedTemplate = template?.dockerSocket === true || !!template?.composeContent;
+  const firstRunWarning = openFirstRunWarning(template);
   const adminOnlyTemplate = !isAdmin && hostPrivilegedTemplate;
 
   const next = () => {
@@ -670,6 +672,11 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
               {template?.dockerSocket === true
                 ? t('This template mounts the Docker socket, which grants control of every container on the host. Only an administrator can deploy it.')
                 : t('This template installs a Compose stack, which can mount host paths or request privileged containers. Only an administrator can deploy it.')}
+            </div>
+          )}
+          {firstRunWarning && (
+            <div role="alert" className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.08] p-3 text-xs leading-relaxed text-amber-200">
+              {t(firstRunWarning)}
             </div>
           )}
           {template && !template.runtimeVerified && (

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The Hub now says when an app is open before it is set up. The first visitor may become its admin, it may start with a publicly known login, anyone may be able to sign up, or it may have no login at all. 174 templates carry the new `openFirstRun` field, and the deploy wizard and the template detail show the warning. It is stronger when the app also has the Docker socket.
+- The Coolify Portainer, Authentik and Glances templates are withdrawn from the bundled Hub. Each combines host Docker access with an open first run. Stacks already installed from them keep working ([docs/TEMPLATE_MIRRORS.md](docs/TEMPLATE_MIRRORS.md) §4).
+
 ## [0.18.16] - 2026-11-01
 
 ### Fixed
