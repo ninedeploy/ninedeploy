@@ -13,6 +13,7 @@ on:
       - 'packages/schemas/src/multiNode.ts'
       - 'scripts/smoke-serving-traffic.mjs'
       - 'scripts/fixtures/serving-traffic-agent.mjs'
+      - 'scripts/lib/serving-traffic-routing.mjs'
       - '.github/workflows/serving-traffic.yml'
   workflow_dispatch:
 

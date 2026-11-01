@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Use an isolated GitHub Actions runner');
@@ -12,6 +12,7 @@ const image = process.argv.find(arg => arg.startsWith('--image='))?.slice(8);
 assert.ok(image && /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image), 'Pass --image=<candidate>');
 const proof = resolve(process.argv.find(arg => arg.startsWith('--proof='))?.slice(8) ?? '.temp_files/serving-traffic');
 mkdirSync(proof, { recursive: true });
+copyFileSync(new URL('./lib/serving-traffic-routing.mjs', import.meta.url), resolve(proof, 'serving-traffic-routing.mjs'));
 const owner = `serving-${randomBytes(8).toString('hex')}`, slug = owner, network = `nd-${owner}`, resources = [], cleanup = [];
 const docker = (args, allowed = false) => {
   const result = spawnSync('docker', args, { encoding: 'utf8', timeout: 120_000, maxBuffer: 2 << 20, windowsHide: true });
@@ -56,10 +57,14 @@ try {
   docker(['cp', 'scripts/fixtures/serving-traffic-agent.mjs', `${client}:/tmp/serving-traffic-proof.mjs`]);
   docker(['exec', client, 'node', '/tmp/serving-traffic-proof.mjs']);
   evidence = JSON.parse(readFileSync(resolve(proof, 'agent-result.json'), 'utf8'));
-  assert.equal(evidence.realSealedHttp, true); assert.equal(evidence.activeWindows, 0);
+  assert.equal(evidence.complete, true); assert.equal(evidence.realSealedHttp, true); assert.equal(evidence.activeWindows, 0);
   assert.equal(evidence.cases.length, 8); assert.ok(evidence.cases.every(row => row.passed));
 } catch (error) { failure = String(error); process.exitCode = 1; }
 finally {
+  if (!evidence && existsSync(resolve(proof, 'agent-result.json'))) {
+    try { evidence = JSON.parse(readFileSync(resolve(proof, 'agent-result.json'), 'utf8')); }
+    catch (error) { failure ??= String(error); process.exitCode = 1; }
+  }
   for (const { kind, id, name } of resources.reverse()) {
     try {
       const inspect = JSON.parse(docker(kind === 'network' ? ['network', 'inspect', id] : ['inspect', id]).out)[0];

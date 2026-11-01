@@ -9,8 +9,9 @@ import { buildAgentApp } from '/app/apps/server/dist/agentApp.js';
 import { agentRoutes } from '/app/apps/server/dist/agent.js';
 import { seal, open } from '/app/apps/server/dist/lib/agentSeal.js';
 import { sha256 } from '/app/apps/server/dist/lib/crypto.js';
-import { withRoutingAck, confirmProxyRouting } from '/app/apps/server/dist/lib/proxyRoutingAck.js';
+import { withRoutingAck, confirmProxyRouting, routingProbeArgs } from '/app/apps/server/dist/lib/proxyRoutingAck.js';
 import { nodeServingTraffic } from '/app/apps/server/dist/lib/nodeServingTraffic.js';
+import { confirmServingTrafficRouting } from '/proof/serving-traffic-routing.mjs';
 
 const input = JSON.parse(process.env.PROOF_INPUT), exec = promisify(execFile);
 const token = randomBytes(32).toString('hex'), hash = sha256(token), cases = [], outcomes = [];
@@ -19,6 +20,7 @@ await app.register(agentRoutes, { tokenHash: hash, nonceFile: '/tmp/serving-traf
 await app.listen({ host: '127.0.0.1', port: 0 });
 const url = `http://127.0.0.1:${app.server.address().port}/agent/exec`;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const confirm = (routes, proxyId) => confirmServingTrafficRouting(routes, proxyId, { confirmRouting: confirmProxyRouting, probeArgs: routingProbeArgs, execDocker: exec });
 async function rpc(action, params, { plain = false } = {}) {
   const nonce = randomBytes(16).toString('hex'), payload = { op: action === 'capabilities' ? 'agent.ping' : `proxy.servingTraffic.${action}`, params, nonce };
   const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...(plain ? { 'x-agent-token': token } : {}) },
@@ -51,6 +53,7 @@ async function rejectedWindow(change) {
   assert.equal(nodeServingTraffic.activeCount(), 0);
   await rpc('close', { windowId: opened.windowId });
 }
+let complete = false;
 try {
   assert.ok((await rpc('capabilities', {})).caps.includes('proxy.servingTraffic'));
   cases.push({ name: 'sealed-capability-owner-opt-in', passed: true });
@@ -79,17 +82,17 @@ try {
     await exec('docker', ['restart', opened.proxyId], { timeout: 30_000 });
   });
   cases.push({ name: 'proxy-restart-held', passed: true });
-  await confirmProxyRouting(input.routingConfig);
+  await confirm(input.routingConfig, opened.proxyId);
   const changed = input.routingConfig + '\n# next generation\n';
   try {
     await rejectedWindow(async () => {
       writeFileSync('/proof/next.yml', withRoutingAck(changed)); renameSync('/proof/next.yml', '/proof/dynamic.yml');
-      await confirmProxyRouting(changed);
+      await confirm(changed, opened.proxyId);
     });
     cases.push({ name: 'routing-generation-change-held', passed: true });
   } finally {
     writeFileSync('/proof/next.yml', withRoutingAck(input.routingConfig)); renameSync('/proof/next.yml', '/proof/dynamic.yml');
-    await confirmProxyRouting(input.routingConfig);
+    await confirm(input.routingConfig, opened.proxyId);
   }
   const replica = input.serving[1];
   try {
@@ -105,8 +108,9 @@ try {
   await assert.rejects(rpc('open', fresh()), /owner|opted in/);
   cases.push({ name: 'owner-disabled-held', passed: true });
   assert.equal(nodeServingTraffic.activeCount(), 0);
-  writeFileSync('/proof/agent-result.json', JSON.stringify({ realSealedHttp: true, cases, outcomes, activeWindows: 0 }, null, 2));
+  complete = true;
 } finally {
   nodeServingTraffic.closeAll();
+  writeFileSync('/proof/agent-result.json', JSON.stringify({ complete, realSealedHttp: true, cases, outcomes, activeWindows: nodeServingTraffic.activeCount() }, null, 2));
   await app.close();
 }
