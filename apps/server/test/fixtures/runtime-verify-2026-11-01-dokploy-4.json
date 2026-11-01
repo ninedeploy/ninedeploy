@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-11-01T09:15:41.796Z",
+  "registryVersion": 2,
+  "results": [
+    {
+      "id": "dokploy-flatnotes-totp",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 16
+    },
+    {
+      "id": "dokploy-omni-tools",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 13
+    },
+    {
+      "id": "dokploy-hortusfox",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 61
+    },
+    {
+      "id": "dokploy-mazanoke",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 7
+    },
+    {
+      "id": "dokploy-kokoro-web",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 95
+    },
+    {
+      "id": "dokploy-cut",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 29
+    },
+    {
+      "id": "dokploy-rustrak",
+      "profile": "compose",
+      "ok": true,
+      "seconds": 13
+    }
+  ]
+}

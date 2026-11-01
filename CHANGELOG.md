@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 7 more Dokploy blueprints in the bundled Hub (G4.7): Cut, Flatnotes (TOTP), HortusFox, Kokoro Web, MAZANOKE, Omni-Tools and Rustrak. Their upstream files use `latest`; each image is pinned here to a release at least two weeks old. Each started in an isolated smoke run, and asked without credentials for its admin pages, APIs and sign-up, answered with a login, a 401 or 403, or (MAZANOKE, Omni-Tools) is a static page with no server-side data.
+
 ## [0.18.15] - 2026-11-01
 
 - Carries the readiness, remote MCP/OAuth, CI runner and runtime increments documented under the unpublished 0.18.14 candidate below.
