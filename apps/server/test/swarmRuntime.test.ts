@@ -276,6 +276,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'engine/builders/remoteReplicas.ts': { exempt: 'node replica preparation refuses Swarm and non-node placement; previous generation discovery requires a Docker deployment name and validates managed service and deployment labels before immutable retirement' },
   'lib/localCanaryTraffic.ts': { exempt: 'local plain-Docker observation explicitly refuses source and fresh-row Swarm placement before opening a window; localCanaryTraffic.test.ts proves refusal without Docker or file access' },
   'lib/nodeProxyTrafficClient.ts': { exempt: 'node-only observation refuses Swarm and changed placement before agent operations; runtimeId is an ownership comparison, never a local container command' },
+  'lib/nodeServingTrafficContext.ts': { exempt: 'ordinary serving observation rejects Swarm and requires selected plain-Docker node capacity before comparing runtime identities; nodeServingTrafficClient tests prove refusal before agent contact' },
   'lib/webhookDispatch.ts': { exempt: 'PR previews never run on Swarm (a preview row has no orchestrator)' },
   'modules/ai.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
   'lib/alertInvestigation.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },

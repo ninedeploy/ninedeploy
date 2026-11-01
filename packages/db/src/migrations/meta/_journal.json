@@ -827,6 +827,13 @@
       "when": 1793450809219,
       "tag": "0118_ci_deploy_gate",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "6",
+      "when": 1793556784104,
+      "tag": "0119_node_serving_traffic_receipts",
+      "breakpoints": true
     }
   ]
 }
