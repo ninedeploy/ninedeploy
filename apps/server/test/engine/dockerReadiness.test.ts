@@ -8,11 +8,16 @@ vi.mock('../../src/lib/exec.js', async (original) => ({
   capture,
   sleep: async (ms: number) => { vi.setSystemTime(Date.now() + ms); },
 }));
-const { dockerBuilder } = await import('../../src/engine/builders/docker.js');
+const { containerIp, dockerBuilder } = await import('../../src/engine/builders/docker.js');
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); spawn.mockReset(); capture.mockReset(); capture.mockResolvedValue('running|172.20.0.2'); });
 
 describe('local Docker readiness', () => {
+  it.each(['172.19.0.2172.22.0.2', 'not-an-address', '127.0.0.1', '0.0.0.0'])('refuses an invalid or non-routable inspected address: %s', async ip => {
+    capture.mockResolvedValue(`running|${ip}|healthy`);
+    expect(await containerIp('app-7')).toBeNull();
+  });
+
   it.each(['command'] as const)('requires the configured port after %s readiness succeeds', async healthCheck => {
     vi.useFakeTimers();
     capture.mockImplementation(async (_exe, args) => {

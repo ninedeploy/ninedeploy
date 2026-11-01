@@ -776,7 +776,7 @@ describe('dockerBuilder.isHealthy', () => {
     ).resolves.toBe(true);
     expect(h.capture).toHaveBeenCalledWith('docker', [
       'inspect', 'r',
-      '--format', '{{.State.Status}}|{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',
+      '--format', expect.stringContaining('.HostConfig.NetworkMode'),
     ], { timeoutMs: 10_000 }); // F870: containerIp is bounded
     expect(fetchMock).not.toHaveBeenCalled();
   });
