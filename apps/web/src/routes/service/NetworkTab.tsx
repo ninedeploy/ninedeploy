@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Globe, Pencil, Plus, Radio, Shield, Trash2, Wand2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DomainRedirects } from './DomainRedirects.js';
+import { ComposeRouteRow } from './ComposeRoutesCard.js';
 import { PortMappingsCard } from './PortMappingsCard.js';
 import { RoutingCard } from './RoutingCard.js';
 import { api } from '../../lib/api.js';
@@ -19,7 +20,7 @@ export function NetworkTab({ serviceId, svc }: { serviceId: number; svc?: Servic
       <ContainerPortCard serviceId={serviceId} svc={svc} />
       <DirectPortCard serviceId={serviceId} svc={svc} />
       <PortMappingsCard serviceId={serviceId} svc={svc} />
-      <DomainsCard serviceId={serviceId} />
+      <DomainsCard serviceId={serviceId} svc={svc} />
     </div>
   );
 }
@@ -296,7 +297,7 @@ export function pastedPath(raw: string): string {
 /** The TXT record a `pending` domain must publish to prove ownership. */
 export type DomainChallenge = DomainVerificationChallenge;
 
-function DomainsCard({ serviceId }: { serviceId: number }) {
+function DomainsCard({ serviceId, svc }: { serviceId: number; svc?: Service | null }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -397,6 +398,11 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
           </Button>
         </form>
 
+        {svc?.type === 'compose' && (domains.data?.length ?? 0) > 0 && (
+          <p className="mt-3 text-xs text-slate-500">
+            {t('Each domain routes to the main service unless you pick another one here. The service must be on the stack’s default network. The next deploy sets SERVICE_FQDN_<SERVICE> and SERVICE_URL_<SERVICE> for it.')}
+          </p>
+        )}
         <div className="mt-3 space-y-2">
           {domains.isLoading ? (
             <Skeleton className="h-8 w-full" />
@@ -408,6 +414,7 @@ function DomainsCard({ serviceId }: { serviceId: number }) {
                 key={d.id}
                 domain={d}
                 serviceId={serviceId}
+                stack={svc?.type === 'compose' ? { mainService: svc.composeService ?? null } : undefined}
                 challenge={challenges[d.id] ?? null}
                 onChallenge={(ch) => setChallenges((c) => ({ ...c, [d.id]: ch }))}
                 onReplaced={(created) => {
@@ -430,9 +437,12 @@ export function DomainItemRow({
   onChallenge,
   onReplaced,
   initialEditing = false,
+  stack,
 }: {
   domain: any;
   serviceId: number;
+  /** G2.1: a compose stack, whose domains can route to any of its services. */
+  stack?: { mainService: string | null };
   challenge: DomainChallenge | null;
   onChallenge: (ch: DomainChallenge) => void;
   /** A hostname/path change added this domain in the row's place (it may still be pending). */
@@ -700,6 +710,10 @@ export function DomainItemRow({
           </button>
         </div>
       </div>
+
+      {stack && !pending && (
+        <ComposeRouteRow domainId={d.id} hostname={`${d.hostname}${d.path && d.path !== '/' ? d.path : ''}`} mainService={stack.mainService} />
+      )}
 
       {editing && (
         <form

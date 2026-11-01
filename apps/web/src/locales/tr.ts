@@ -5703,7 +5703,6 @@ export const TR: Readonly<Record<string, string>> = {
     'Bu servisin deposu yok: Dockerfile varsa yüklenen kaynaktan, yoksa boş bir bağlamdan derlenir.',
 
   // ── Compose routes (G2.1) ─────────────────────────────────────────────
-  'Domains per compose service': 'Compose servisi başına domain',
   'Each domain routes to the main service unless you pick another one here. The service must be on the stack’s default network. The next deploy sets SERVICE_FQDN_<SERVICE> and SERVICE_URL_<SERVICE> for it.':
     'Burada başka bir servis seçmediğiniz sürece her domain ana servise yönlenir. Servis, stack\'in varsayılan ağında olmalıdır. Bir sonraki deploy onun için SERVICE_FQDN_<SERVICE> ve SERVICE_URL_<SERVICE> değişkenlerini ayarlar.',
   '{host} routes to {service}': '{host} artık {service} servisine yönleniyor',

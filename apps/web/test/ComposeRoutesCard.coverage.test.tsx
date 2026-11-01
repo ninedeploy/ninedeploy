@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ComposeRoutesCard } from '../src/routes/service/ComposeRoutesCard.js';
+import { ComposeRouteRow } from '../src/routes/service/ComposeRoutesCard.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
 
@@ -11,9 +11,8 @@ vi.mock('../src/lib/api.js', async () => {
   return createFakeApiModule();
 });
 
-const svc = { id: 5, type: 'compose', composeService: null } as never;
 
-describe('ComposeRoutesCard — free-text service and refusals', () => {
+describe('ComposeRouteRow — free-text service and refusals', () => {
   beforeEach(() => {
     mockOf(api.domains.list).mockReset();
     mockOf(api.domains.composeRoute.get).mockReset();
@@ -24,7 +23,7 @@ describe('ComposeRoutesCard — free-text service and refusals', () => {
   it('types a service name when the stack services are unknown and validates the port', async () => {
     mockOf(api.domains.composeRoute.get).mockResolvedValue({ domainId: 12, route: null, services: null } as never);
     mockOf(api.domains.composeRoute.set).mockResolvedValue({ domainId: 12, route: { service: 'worker', port: 9000 }, services: null } as never);
-    renderWithProviders(<ComposeRoutesCard svc={svc} />);
+    renderWithProviders(<ComposeRouteRow domainId={12} hostname="admin.shop.example.com" mainService={null} />);
     const name = await screen.findByLabelText('Service for admin.shop.example.com');
     expect(name.tagName).toBe('INPUT');
     expect(name).toHaveAttribute('placeholder', 'Main service');
@@ -45,7 +44,7 @@ describe('ComposeRoutesCard — free-text service and refusals', () => {
   it('shows the refusal when resetting to the main service fails', async () => {
     mockOf(api.domains.composeRoute.get).mockResolvedValue({ domainId: 12, route: { service: 'worker', port: 9000 }, services: null } as never);
     mockOf(api.domains.composeRoute.set).mockRejectedValue(new Error('Service worker is not on the default network'));
-    renderWithProviders(<ComposeRoutesCard svc={svc} />);
+    renderWithProviders(<ComposeRouteRow domainId={12} hostname="admin.shop.example.com" mainService={null} />);
     const name = await screen.findByLabelText('Service for admin.shop.example.com');
     await waitFor(() => expect((name as HTMLInputElement).value).toBe('worker'));
     await userEvent.clear(name);

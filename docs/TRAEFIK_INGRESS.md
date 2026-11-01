@@ -86,7 +86,7 @@ Apply security middlewares directly from the dashboard:
 
 ### A domain per compose service (G2.1)
 
-Every domain of a compose stack routes to the stack's main service unless it names another one. Set it under **Service → Settings → Domains per compose service**, or with `PUT /v1/domains/:id/compose-route` and `{ "route": { "service": "admin-ui", "port": 8080 } }`. `{ "route": null }` routes to the main service again.
+Every domain of a compose stack routes to the stack's main service unless it names another one. Pick it in the domain's row under **Service → Network → Domains**, or with `PUT /v1/domains/:id/compose-route` and `{ "route": { "service": "admin-ui", "port": 8080 } }`. `{ "route": null }` routes to the main service again.
 
 **How it routes**
 - Traefik already joins the stack's default network, so it reaches the service as `ndcmp-<slug>-<service>-1` on the port you give. The service must be on that default network.
