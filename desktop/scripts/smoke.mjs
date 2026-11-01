@@ -12,6 +12,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { waitForLauncher } from './launcher-ready.mjs';
 
 const CANDIDATES = {
   win32: ['release/win-unpacked/NineDeploy.exe'],
@@ -59,6 +60,11 @@ function cdp(wsUrl, method, params = {}) {
 const evaluate = async (wsUrl, expression) =>
   (await cdp(wsUrl, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result?.value;
 
+const launcherState = (page) => waitForLauncher(async () => JSON.parse(await evaluate(
+  page.webSocketDebuggerUrl,
+  'JSON.stringify({ form: !!document.querySelector("#add-form"), bridge: typeof window.launcher, node: typeof require, title: document.title })',
+)));
+
 async function target(match, what) {
   for (let i = 0; i < 60; i++) {
     const list = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).catch(() => []);
@@ -97,17 +103,7 @@ let child = launch();
 let failure = null;
 try {
   const launcher = await target((u) => u === LAUNCHER, `the instance list (${LAUNCHER})`);
-  let rendered = null;
-  for (let i = 0; i < 20 && !rendered?.form; i++) {
-    rendered = JSON.parse(
-      await evaluate(
-        launcher.webSocketDebuggerUrl,
-        'JSON.stringify({ form: !!document.querySelector("#add-form"), bridge: typeof window.launcher, node: typeof require, title: document.title })',
-      ),
-    );
-    if (!rendered.form) await sleep(500);
-  }
-  if (!rendered?.form || rendered.bridge !== 'object' || rendered.node !== 'undefined') throw new Error(`unexpected launcher state ${JSON.stringify(rendered)}`);
+  const rendered = await launcherState(launcher);
   console.log(`desktop smoke ok: ${exe} rendered the instance list (${JSON.stringify(rendered)})`);
 
   const status = await evaluate(launcher.webSocketDebuggerUrl, 'window.launcher.status()');
@@ -128,6 +124,7 @@ try {
   await quit(child);
   child = launch();
   const again = await target((u) => u === LAUNCHER, 'the instance list after a restart');
+  await launcherState(again);
   await evaluate(again.webSocketDebuggerUrl, `window.launcher.open(${JSON.stringify(id)})`);
   const reopened = await panelPage('the stand-in panel after a restart');
   const loaded = await evaluate(reopened.webSocketDebuggerUrl, 'window.ninedeployDesktop.loadRefreshToken()');
