@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { primaryNetworkProxyClient } from './lib/primary-network-proxy-client.mjs';
 
 // This acceptance must never touch a developer's or production Docker daemon.
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Use an isolated GitHub Actions runner');
@@ -39,9 +40,10 @@ function client(network, program) {
     '--no-healthcheck', '--user', '0', '-e', 'NODE_ENV=test', '-e', 'DOCKER_HOST=unix:///var/run/docker.sock',
     '-v', '/var/run/docker.sock:/var/run/docker.sock', '--entrypoint', 'node', image, '--input-type=module', '-e', program]);
 }
-const proxyProgram = count => `const rows=[];for(let n=0;n<${count};n++){const r=await fetch('http://${proxy}/',{headers:{host:'readiness.invalid'},signal:AbortSignal.timeout(3000)});rows.push(r.status)}console.log(JSON.stringify(rows));`;
+const proxyProgram = count => primaryNetworkProxyClient(proxy, count);
+let lastProxyObservation;
 async function proxyReady(healthy) {
-  await until(() => { try { const rows = JSON.parse(client(primary, proxyProgram(1)).out); return healthy ? rows[0] === 200 : rows[0] >= 500; } catch { return false; } }, 'proxy routing');
+  await until(() => { try { const rows = JSON.parse(client(primary, proxyProgram(1)).out); lastProxyObservation = rows; return healthy ? rows[0] === 200 : rows[0] >= 500; } catch (error) { lastProxyObservation = String(error).slice(-1500); return false; } }, 'proxy routing');
 }
 async function sample(name, network, expectedReady) {
   const networks = JSON.parse(docker(['inspect', app, '--format', '{{json .NetworkSettings.Networks}}']).out);
@@ -64,8 +66,8 @@ let failure;
 try {
   for (const ref of [image, 'busybox:1.36', 'traefik:3']) if (docker(['image', 'inspect', ref], true).status !== 0) docker(['pull', ref]);
   create('network', primary, []); create('network', secondary, []);
-  create('container', app, ['--network', primary, '--no-healthcheck', '--entrypoint', 'node', image, '-e',
-    "require('node:http').createServer((q,s)=>setTimeout(()=>s.end('ready'),20)).listen(8080,'0.0.0.0')"]);
+  const appId = create('container', app, ['--network', primary, '--no-healthcheck', '--entrypoint', 'node', image, '-e',
+    "const fs=require('node:fs'),s=require('node:http').createServer((q,r)=>setTimeout(()=>r.end('ready'),20));s.listen(8080,'0.0.0.0');process.on('SIGHUP',()=>{s.close(()=>s.listen(8080,fs.readFileSync('/tmp/primary-probe-bind','utf8')));s.closeAllConnections()})"]);
   const config = resolve(proof, 'dynamic.yml');
   writeFileSync(config, JSON.stringify({ http: { routers: { app: { rule: 'Host(`readiness.invalid`)', service: 'app', entryPoints: ['web'] } },
     services: { app: { loadBalancer: { servers: [{ url: `http://${app}:8080` }] } } } } }));
@@ -79,6 +81,12 @@ try {
   await proxyReady(false); await sample('primary-detached', secondary, false);
   docker(['network', 'connect', primary, app]); docker(['restart', proxy]);
   await proxyReady(true); await sample('primary-restored', primary, true);
+  const privateIp = JSON.parse(docker(['inspect', app, '--format', '{{json .NetworkSettings.Networks}}']).out)[secondary].IPAddress;
+  docker(['exec', app, 'node', '-e', `require('node:fs').writeFileSync('/tmp/primary-probe-bind',${JSON.stringify(privateIp)})`]);
+  docker(['kill', '--signal', 'HUP', appId]);
+  await until(() => { try { return JSON.parse(client(secondary, `const r=await fetch('http://${app}:8080/ready',{signal:AbortSignal.timeout(2000)});console.log(r.status)`).out) === 200; } catch { return false; } }, 'private-only listener');
+  docker(['restart', proxy]); await proxyReady(false);
+  await sample('primary-present-private-listener', secondary, false);
   if (baseline) {
     assert.equal(cases[0].passed, true, 'baseline single-network control');
     for (const index of [1, 3]) {
@@ -88,6 +96,9 @@ try {
     }
     assert.equal(cases[2].address, cases[2].concatenatedAddresses);
     assert.deepEqual(cases[2].verdicts, { auto: true, 'http-strict': true, tcp: true }, 'baseline must falsely accept the unreachable primary');
+    assert.equal(cases[4].address, cases[4].concatenatedAddresses);
+    assert.notEqual(cases[4].verdicts.auto, true);
+    assert.equal(cases[4].verdicts['http-strict'], true); assert.equal(cases[4].verdicts.tcp, true);
   } else assert.ok(cases.every(row => row.passed), 'every readiness decision must agree with the primary-network/proxy control');
 } catch (error) { failure = String(error); process.exitCode = 1; }
 finally {
@@ -101,7 +112,7 @@ finally {
       cleanup.push({ kind, name, removed: true });
     } catch (error) { failure ??= String(error); process.exitCode = 1; cleanup.push({ kind, name, removed: false }); }
   }
-  const result = { image, baseline, realDocker: true, cases, cleanup, ...(failure ? { failure } : {}), accepted: !failure };
+  const result = { image, baseline, realDocker: true, cases, cleanup, ...(failure ? { failure, lastProxyObservation } : {}), accepted: !failure };
   writeFileSync(resolve(proof, 'result.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
 }

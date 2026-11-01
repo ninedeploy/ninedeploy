@@ -6,6 +6,7 @@ on:
       - 'apps/server/src/engine/builders/docker.ts'
       - 'apps/server/src/lib/containerProbe.ts'
       - 'scripts/smoke-primary-network-readiness.mjs'
+      - 'scripts/lib/primary-network-proxy-client.mjs'
       - '.github/workflows/runtime-readiness.yml'
   workflow_dispatch:
 
