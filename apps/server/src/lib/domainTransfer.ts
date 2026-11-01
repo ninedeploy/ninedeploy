@@ -29,8 +29,10 @@
  * background sweep.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gte, sql } from 'drizzle-orm';
-import { domainTransfers, domains, services, users, type DB } from '@ninedeploy/db';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { domainTransfers, domains, services, settings, users, type DB } from '@ninedeploy/db';
+import { COMPOSE_ROUTE_PREFIX } from './composeRoutes.js';
+import { FORWARD_AUTH_PREFIX } from './forwardAuth.js';
 
 const TOKEN_BYTES = 32;
 /** Tokens are valid for 7 days; the operator can re-initiate if it lapses. */
@@ -241,6 +243,13 @@ export async function acceptTransfer(db: DB, input: AcceptTransferInput): Promis
       .update(domains)
       .set({ serviceId: input.targetServiceId, updatedAt: new Date() })
       .where(eq(domains.id, row.domainId));
+    // The domain's G2.1 route and G2.3 panel sign-in describe how the OLD
+    // service was served: a route names one of its compose services, which in
+    // the target stack is another container or none. The recipient sets both
+    // again for their service.
+    await tx
+      .delete(settings)
+      .where(inArray(settings.key, [`${COMPOSE_ROUTE_PREFIX}${row.domainId}`, `${FORWARD_AUTH_PREFIX}${row.domainId}`]));
   });
 
   return {

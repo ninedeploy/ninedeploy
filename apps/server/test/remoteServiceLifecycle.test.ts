@@ -56,7 +56,7 @@ vi.mock('../src/lib/serviceFiles.js', async (importOriginal) => ({
 const pages = vi.hoisted(() => ({ refusal: null as string | null }));
 vi.mock('../src/lib/maintenance.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/maintenance.js')>()),
-  nodeMoveRefusal: vi.fn(async () => pages.refusal),
+  panelHostOnlyRefusal: vi.fn(async () => pages.refusal),
 }));
 
 const { servicesRoutes } = await import('../src/modules/services.js');
@@ -219,12 +219,12 @@ describe('r662: moving and deleting remote services', () => {
   });
 
   it('refuses a move to a node while maintenance mode or custom error pages are on, before retiring anything (G2.2)', async () => {
-    pages.refusal = 'Turn maintenance mode off before moving the service to a node';
+    pages.refusal = 'Turn maintenance mode off before the service runs on a node';
     try {
       const app = await movingApp();
       const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser({ isOperator: true }), payload: { serverId: 5 } });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatchObject({ code: 'move_panel_host_pages', message: pages.refusal });
+      expect(res.json().error).toMatchObject({ code: 'move_panel_host_only', message: pages.refusal });
       expect(ops()).toEqual([]);
     } finally {
       pages.refusal = null;
@@ -261,6 +261,27 @@ describe('r662: moving and deleting remote services', () => {
     expect(res.statusCode).toBe(200);
     expect(ops()).toContain('6 workspace.remove {"workspace":"web"}');
     expect(ops()).not.toContain('5 workspace.remove {"workspace":"web"}');
+  });
+
+  it('refuses a NEW fan-out node while panel-served pages are on, and still keeps the ones it has (G2.2)', async () => {
+    pages.refusal = 'Turn maintenance mode off before the service runs on a node';
+    try {
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: { services: remote({ serverId: null, replicas: 1, image: 'nginx:1' }), servers: { id: 7 } },
+          select: { serviceTargets: [{ id: 1, serverId: 5, runtimeId: null }] },
+        }),
+      });
+      await app.register(servicesRoutes);
+      const added = await app.inject({ method: 'PATCH', url: '/1/targets', headers: asUser({ isOperator: true }), payload: { serverIds: [5, 7] } });
+      expect(added.statusCode).toBe(400);
+      expect(added.json().error).toMatchObject({ code: 'move_panel_host_only', message: pages.refusal });
+      expect(ops()).toEqual([]);
+      const kept = await app.inject({ method: 'PATCH', url: '/1/targets', headers: asUser({ isOperator: true }), payload: { serverIds: [5] } });
+      expect(kept.statusCode).toBe(200);
+    } finally {
+      pages.refusal = null;
+    }
   });
 
   it("tears down fan-out targets read BEFORE the row's cascade removed them", async () => {

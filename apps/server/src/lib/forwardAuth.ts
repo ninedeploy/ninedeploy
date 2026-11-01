@@ -24,7 +24,8 @@ import { setSettingJson } from './settings.js';
  * ends it) and their role on the service (cached for 30 s).
  */
 
-const PREFIX = 'forward_auth:';
+export const FORWARD_AUTH_PREFIX = 'forward_auth:';
+const PREFIX = FORWARD_AUTH_PREFIX;
 const key = (domainId: number) => `${PREFIX}${domainId}`;
 
 export const FA_PREFIX = '/_nd/fa';

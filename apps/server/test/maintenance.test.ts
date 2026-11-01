@@ -1,7 +1,7 @@
 /** G2.2 maintenance mode and custom error pages on a migrated SQLite: routes, the pages Traefik fetches, and the rendered routing. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { load } from 'js-yaml';
-import { domains, services, settings, users, type DB } from '@ninedeploy/db';
+import { domains, servers, serviceTargets, services, settings, users, type DB } from '@ninedeploy/db';
 
 vi.hoisted(() => {
   process.env['NINEDEPLOY_MASTER_KEY'] = 'ab'.repeat(32);
@@ -109,16 +109,44 @@ describe('custom error pages', () => {
 });
 
 describe('moving to a node', () => {
+  it('refuses maintenance and custom pages for a service that also runs on fan-out nodes', async () => {
+    const { encrypt } = await import('../src/lib/crypto.js');
+    await db.insert(servers).values({ id: 7, name: 'edge', host: 'edge.example.test', tokenEncrypted: encrypt('fixture-node-token') } as never);
+    await db.insert(serviceTargets).values({ serviceId: 5, serverId: 7, status: 'idle' } as never);
+    const a = await app();
+    const maint = await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: {} } });
+    expect(maint.statusCode).toBe(400);
+    expect(maint.json().error).toMatchObject({ code: 'maintenance_unsupported', message: expect.stringContaining('also runs on nodes') });
+    const pages = await a.inject({ method: 'PUT', url: '/services/5/error-pages', headers: asUser(1), payload: { pages: { '502': '<h1>Oops</h1>' } } });
+    expect(pages.statusCode).toBe(400);
+    expect(pages.json().error.code).toBe('error_pages_unsupported');
+    // Switching off is never refused.
+    expect((await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: null } })).statusCode).toBe(200);
+    await a.close();
+  });
+
   it('names what keeps the service on the panel host until it is cleared', async () => {
-    const { nodeMoveRefusal, setErrorPages, setMaintenance } = await import('../src/lib/maintenance.js');
-    expect(await nodeMoveRefusal(db, 5)).toBeNull();
+    const { panelHostOnlyRefusal, setErrorPages, setMaintenance } = await import('../src/lib/maintenance.js');
+    expect(await panelHostOnlyRefusal(db, 5)).toBeNull();
     await setErrorPages(db, 5, { '503': '<h1>Busy</h1>' });
-    expect(await nodeMoveRefusal(db, 5)).toContain('custom error pages');
+    expect(await panelHostOnlyRefusal(db, 5)).toContain('custom error pages');
     await setMaintenance(db, 5, { title: 'Down', message: 'Soon', retryAfterSeconds: 60, bypass: [] });
-    expect(await nodeMoveRefusal(db, 5)).toContain('maintenance mode');
+    expect(await panelHostOnlyRefusal(db, 5)).toContain('maintenance mode');
     await setMaintenance(db, 5, null);
     await setErrorPages(db, 5, {});
-    expect(await nodeMoveRefusal(db, 5)).toBeNull();
+    expect(await panelHostOnlyRefusal(db, 5)).toBeNull();
+  });
+
+  it('counts panel sign-in on one of its own domains, not on another service', async () => {
+    const { panelHostOnlyRefusal } = await import('../src/lib/maintenance.js');
+    const { setForwardAuth } = await import('../src/lib/forwardAuth.js');
+    await db.insert(services).values({ id: 6, name: 'blog', slug: 'blog', type: 'docker', branch: 'main', ownerUserId: 1, port: 3000, status: 'running' } as never);
+    await db.insert(domains).values({ id: 3, serviceId: 6, hostname: 'blog.example.com', path: '/', ssl: true, status: 'active' } as never);
+    await setForwardAuth(db, 3, { minRole: 'viewer' });
+    expect(await panelHostOnlyRefusal(db, 5)).toBeNull();
+    expect(await panelHostOnlyRefusal(db, 6)).toContain('panel sign-in');
+    await setForwardAuth(db, 3, null);
+    expect(await panelHostOnlyRefusal(db, 6)).toBeNull();
   });
 });
 

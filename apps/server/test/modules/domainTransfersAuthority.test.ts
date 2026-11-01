@@ -33,6 +33,8 @@ import {
   type DB,
 } from '@ninedeploy/db';
 import { domainTransferStartRoutes, domainTransferTokenRoutes } from '../../src/modules/domainTransfers.js';
+import { getComposeRoute, setComposeRoute } from '../../src/lib/composeRoutes.js';
+import { getForwardAuth, setForwardAuth } from '../../src/lib/forwardAuth.js';
 import { config } from '../../src/config.js';
 import { asUser, buildTestApp } from '../helpers.js';
 
@@ -228,5 +230,23 @@ describe('F913: a failed domain move does not consume the transfer', () => {
     await db.run(sql.raw('DROP TRIGGER f913_fault;'));
     expect((await accept(a, token)).statusCode).toBe(200);
     expect(await ownerOf(d)).toBe(sink);
+  });
+});
+
+describe('settings that described the old service', () => {
+  it("drops the domain's compose route and panel sign-in on accept, and only that domain's", async () => {
+    const a = await app();
+    const d = await domain('shop.example.com');
+    const other = await domain('admin.example.com');
+    for (const id of [d, other]) {
+      await setComposeRoute(db, id, { service: 'admin', port: 8080 });
+      await setForwardAuth(db, id, { minRole: 'viewer' });
+    }
+    const { token } = await start(a, d, alice);
+    expect((await accept(a, token)).statusCode).toBe(200);
+    expect(await getComposeRoute(db, d)).toBeNull();
+    expect(await getForwardAuth(db, d)).toBeNull();
+    expect(await getComposeRoute(db, other)).toEqual({ service: 'admin', port: 8080 });
+    expect(await getForwardAuth(db, other)).toMatchObject({ minRole: 'viewer' });
   });
 });

@@ -1001,11 +1001,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (hostRefusal) throw hostRefusal;
     }
     // ── end 0.16 T6 ──
-    // G2.2: maintenance mode and custom error pages work on the panel host only.
+    // G2.2/G2.3: maintenance mode, custom error pages and panel sign-in work on the panel host only.
     if (moving && patch.serverId != null) {
-      const { nodeMoveRefusal } = await import('../lib/maintenance.js');
-      const refusal = await nodeMoveRefusal(app.db, existing.id);
-      if (refusal) throw badRequest(refusal, 'move_panel_host_pages');
+      const { panelHostOnlyRefusal } = await import('../lib/maintenance.js');
+      const refusal = await panelHostOnlyRefusal(app.db, existing.id);
+      if (refusal) throw badRequest(refusal, 'move_panel_host_only');
     }
     if (moving) {
       await assertSlugVolumeNotRetained(existing.slug, patch.type ?? existing.type, {
@@ -1335,6 +1335,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
     // ── end 0.16 T6 ──
     const existing = await app.db.select().from(serviceTargets).where(eq(serviceTargets.serviceId, id));
+    // G2.2/G2.3: a new target node's proxy would route around what the panel serves.
+    if (requested.some((serverId) => serverId !== svc.serverId && !existing.some((t) => t.serverId === serverId))) {
+      const { panelHostOnlyRefusal } = await import('../lib/maintenance.js');
+      const refusal = await panelHostOnlyRefusal(app.db, svc.id);
+      if (refusal) throw badRequest(refusal, 'move_panel_host_only');
+    }
     // F840: a NEW target node mounts `nd-svc-<slug>-data` there (fanout.ts) —
     // ask that node the same retained-volume question a move asks (r662),
     // before anything is torn down or inserted.

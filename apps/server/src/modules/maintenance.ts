@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
-import { domains } from '@ninedeploy/db';
+import { domains, serviceTargets } from '@ninedeploy/db';
 import { ERROR_PAGE_STATUSES, errorPagesInput, maintenanceInput, type ErrorPageStatus } from '@ninedeploy/schemas';
 import { ERROR_PAGE_PREFIX, MAINTENANCE_PREFIX, writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
@@ -98,6 +98,8 @@ export const maintenancePageRoutes: FastifyPluginAsync = async (app) => {
 export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
 
+  const onNodes = async (serviceId: number) =>
+    !!(await app.db.query.serviceTargets.findFirst({ where: eq(serviceTargets.serviceId, serviceId) }));
   const rerender = (log: (msg: string) => void) =>
     writeDynamicConfig(app.db).catch((err: unknown) => log(`proxy re-render failed: ${err instanceof Error ? err.message : String(err)}`));
 
@@ -112,6 +114,8 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
     const { maintenance } = maintenanceInput.parse(req.body ?? {});
     if (maintenance) {
       if (svc.serverId != null) throw badRequest('Maintenance mode is for services on the panel host for now', 'maintenance_unsupported');
+      // The proxies of its fan-out nodes would keep routing to the app.
+      if (await onNodes(svc.id)) throw badRequest('Maintenance mode is not available for a service that also runs on nodes', 'maintenance_unsupported');
       // The page is served by the panel: Traefik must be able to reach it.
       const unreachable = await wakeUnreachableReason();
       if (unreachable) throw badRequest(`Cannot turn maintenance on: ${unreachable}`, 'maintenance_unreachable');
@@ -137,6 +141,7 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
     const any = Object.values(pages).some((html) => typeof html === 'string' && html.trim() !== '');
     if (any) {
       if (svc.serverId != null) throw badRequest('Custom error pages are for services on the panel host for now', 'error_pages_unsupported');
+      if (await onNodes(svc.id)) throw badRequest('Custom error pages are not available for a service that also runs on nodes', 'error_pages_unsupported');
       const unreachable = await wakeUnreachableReason();
       if (unreachable) throw badRequest(`Cannot use custom error pages: ${unreachable}`, 'error_pages_unreachable');
     }

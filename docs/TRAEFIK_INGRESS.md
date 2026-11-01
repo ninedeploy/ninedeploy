@@ -98,7 +98,7 @@ Every domain of a compose stack routes to the stack's main service unless it nam
 
 ### Maintenance mode and custom error pages (G2.2)
 
-Both live under **Service → Settings → Maintenance mode**, or in the API as `PUT /v1/services/:id/maintenance` and `PUT /v1/services/:id/error-pages`. They work for services on the panel host. A service with either one on cannot move to a node (`move_panel_host_pages`); turn it off first.
+Both live under **Service → Settings → Maintenance mode**, or in the API as `PUT /v1/services/:id/maintenance` and `PUT /v1/services/:id/error-pages`. They work for services on the panel host that have no fan-out nodes. While either one is on, the service cannot move to a node or gain a fan-out node (`move_panel_host_only`); turn it off first.
 
 **Maintenance mode**
 - While it is on, every domain of the service answers a 503 page with `Retry-After`, served by the panel. The page shows the title and message you set.
@@ -140,6 +140,8 @@ Any domain of a service on the panel host can require panel sign-in. Turn it on 
 - The return URL must be on the protected domain, so the flow is never an open redirect.
 - The session cookie only works for its own domain id and host.
 - Panel-host services only, not one that also runs on nodes, and Traefik must reach the panel (the same check scale-to-zero uses).
+- While a domain is protected, its service cannot move to a node or gain a fan-out node (`move_panel_host_only`).
+- A domain transfer clears the domain's panel sign-in and its compose route (G2.1). Both described the old service; the recipient sets them again.
 
 **Failing closed**
 - A node's proxy never routes a protected domain.

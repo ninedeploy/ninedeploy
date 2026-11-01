@@ -1,5 +1,5 @@
 import { eq, like, or } from 'drizzle-orm';
-import { settings, type DB } from '@ninedeploy/db';
+import { domains, settings, type DB } from '@ninedeploy/db';
 import {
   ERROR_PAGE_STATUSES,
   errorPagesInput,
@@ -11,6 +11,7 @@ import {
   type ComposeRoute,
 } from '@ninedeploy/schemas';
 import { COMPOSE_ROUTE_PREFIX, parseComposeRoute } from './composeRoutes.js';
+import { forwardAuthDomains } from './forwardAuth.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 
 /**
@@ -69,13 +70,20 @@ export async function setErrorPages(db: DB, serviceId: number, pages: Partial<Re
 }
 
 /**
- * Why a service may not move to a node yet, or null. Node proxies do not route
- * the panel-served pages, so the setting would sit unseen there (the card is
- * hidden for node services) and come back on a later move to the panel host.
+ * Why a service may not run on a node yet (a move or a fan-out target), or
+ * null. Node proxies do not route what the panel serves: a node would keep
+ * serving the app through maintenance, the setting would sit unseen after a
+ * move (its card is hidden for node services) and come back on a move back,
+ * and a domain behind panel sign-in (G2.3) would not be routed there.
  */
-export async function nodeMoveRefusal(db: DB, serviceId: number): Promise<string | null> {
-  if (await getMaintenance(db, serviceId)) return 'Turn maintenance mode off before moving the service to a node';
-  if (Object.keys((await getErrorPages(db, serviceId)).pages).length) return 'Remove the custom error pages before moving the service to a node';
+export async function panelHostOnlyRefusal(db: DB, serviceId: number): Promise<string | null> {
+  if (await getMaintenance(db, serviceId)) return 'Turn maintenance mode off before the service runs on a node';
+  if (Object.keys((await getErrorPages(db, serviceId)).pages).length) return 'Remove the custom error pages before the service runs on a node';
+  const signIn = await forwardAuthDomains(db);
+  if (signIn.size) {
+    const own = await db.select({ id: domains.id }).from(domains).where(eq(domains.serviceId, serviceId));
+    if (own.some((d) => signIn.has(d.id))) return 'Turn panel sign-in off on its domains before the service runs on a node';
+  }
   return null;
 }
 

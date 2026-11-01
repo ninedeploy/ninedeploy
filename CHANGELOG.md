@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Moving a service to a node is refused while its maintenance mode or custom error pages are on. Node proxies do not route these panel-served pages, and the card that turns them off is hidden for node services. The setting stayed stored, and maintenance came back on if the service later moved back to the panel host (G2.2).
+- A service cannot move to a node or gain a fan-out node while its maintenance mode, custom error pages or panel sign-in are on. Node proxies do not route what the panel serves. After a move, the setting stayed stored where its card no longer showed, and came back on a move back to the panel host. A protected domain went dark on the node (G2.2, G2.3).
+- Maintenance mode and custom error pages are refused for a service that also runs on fan-out nodes. Those nodes kept serving the app while the panel host showed the maintenance page (G2.2).
+- Accepting a domain transfer clears the domain's compose route and panel sign-in. The route still named a service of the old stack, so the recipient's stack sent the domain to its own service of that name, or to nothing (G2.1, G2.3).
 
 ### Security
 
