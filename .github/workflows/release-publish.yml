@@ -415,6 +415,23 @@ jobs:
         timeout-minutes: 5
         run: node scripts/smoke-local-docker-readiness.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
+      - name: Verify primary-network readiness through real Traefik
+        if: matrix.suite == 'agent-runtime'
+        timeout-minutes: 8
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-primary-network-readiness.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-primary-network-readiness
+
+      - name: Preserve primary-network readiness evidence
+        if: always() && matrix.suite == 'agent-runtime'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-primary-network-readiness
+          path: .temp_files/release-primary-network-readiness/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       - name: Verify immutable node resource metrics on an isolated daemon
         if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10

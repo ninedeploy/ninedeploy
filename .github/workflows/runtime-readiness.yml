@@ -1,0 +1,49 @@
+name: Runtime readiness
+
+on:
+  pull_request:
+    paths:
+      - 'apps/server/src/engine/builders/docker.ts'
+      - 'apps/server/src/lib/containerProbe.ts'
+      - 'scripts/smoke-primary-network-readiness.mjs'
+      - '.github/workflows/runtime-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: runtime-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  primary-network:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_CONTEXT: default
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+      - name: Pull the immutable published regression control
+        run: |
+          docker pull ghcr.io/ninedeploy/ninedeploy:v0.18.15
+          docker image inspect ghcr.io/ninedeploy/ninedeploy:v0.18.15 --format '{{json .RepoDigests}}' | jq -e 'index("ghcr.io/ninedeploy/ninedeploy@sha256:4237e24eeb01ec5d5fe3055fe7b1e03efd53f2221f521a5f20c4e5c848e33173") != null'
+      - name: Reproduce the published multi-network readiness defect
+        run: node scripts/smoke-primary-network-readiness.mjs --image=ghcr.io/ninedeploy/ninedeploy:v0.18.15 --expect-regression --proof=.temp_files/primary-network-readiness/baseline
+      - name: Build candidate
+        run: docker build -t ninedeploy:readiness .
+      - name: Verify primary-network readiness with real Traefik
+        run: node scripts/smoke-primary-network-readiness.mjs --image=ninedeploy:readiness --proof=.temp_files/primary-network-readiness/candidate
+      - name: Preserve baseline and candidate evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: primary-network-readiness-${{ github.run_id }}
+          path: .temp_files/primary-network-readiness/
+          include-hidden-files: true
+          if-no-files-found: warn
