@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.18.16",
+    "date": "2026-11-01",
+    "title": "Primary-network readiness and additional Hub blueprints",
+    "changes": [
+      "Resolve local Docker readiness addresses from the configured primary bridge by name or network ID, rather than concatenating addresses from multiple networks.",
+      "Refuse missing or invalid primary endpoints even when the application still answers on a private network.",
+      "Probe the selected primary IPv4 address for local strict HTTP and TCP readiness, and reject a verdict if that address changes during the probe.",
+      "Add version-pinned Hub blueprints for Cut, Flatnotes (TOTP), HortusFox, Kokoro Web, MAZANOKE, Omni-Tools and Rustrak."
+    ]
+  },
+  {
     "version": "0.18.15",
     "date": "2026-11-01",
     "title": "Deployment readiness, remote MCP and CI runners",

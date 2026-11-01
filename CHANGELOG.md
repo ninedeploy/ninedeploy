@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.16] - 2026-11-01
+
+### Fixed
+
+- Resolve a local Docker container's IPv4 address from its configured primary network, by name or full network ID. Preserve legacy default/bridge compatibility. Multiple attached networks previously produced concatenated addresses, and a detached primary could silently fall back to a private endpoint.
+- Bind strict HTTP and TCP readiness to that selected primary address and require it to remain unchanged after the probe. A listener reachable only on a private network must not pass when Traefik cannot reach the application's primary endpoint. The command readiness port gate inherits the corrected TCP behavior; explicit running-mode policy remains unchanged.
+- Require real Docker/Traefik primary-network acceptance in candidate CI and the published-image release matrix. The isolated regression compares the unchanged 0.18.15 image with the candidate across single/multiple networks, primary detachment/restoration and a private-only listener. Proxy errors injected by the negative controls must correspond to refused readiness; they are not successful serving responses.
+
 ### Added
 
 - 7 more Dokploy blueprints in the bundled Hub (G4.7): Cut, Flatnotes (TOTP), HortusFox, Kokoro Web, MAZANOKE, Omni-Tools and Rustrak. Their upstream files use `latest`; each image is pinned here to a release at least two weeks old. Each started in an isolated smoke run, and asked without credentials for its admin pages, APIs and sign-up, answered with a login, a 401 or 403, or (MAZANOKE, Omni-Tools) is a static page with no server-side data.
