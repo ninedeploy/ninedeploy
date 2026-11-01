@@ -1,13 +1,14 @@
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import type { ProxyTrafficOpen } from '@ninedeploy/schemas';
+import type { ProxyTrafficOpen, ServingTrafficOpen } from '@ninedeploy/schemas';
 import { dockerTransport, engineRequest, type EngineTransport } from './dockerTty.js';
 import { PROXY_TRAFFIC_BYTE_LIMIT, PROXY_TRAFFIC_LINE_LIMIT, proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 import { capture } from './exec.js';
 import { routingProbeArgs, routingReplyIsApplied } from './proxyRoutingAck.js';
+import { servingTrafficRoutesMatch } from './servingTrafficRouting.js';
 
-export interface NodeProxyTrafficIO {
-  inspect(input: ProxyTrafficOpen): Promise<{ proxyId: string; sourceId: string }>;
+export interface NodeProxyTrafficIO<Input = ProxyTrafficOpen> {
+  inspect(input: Input): Promise<{ proxyId: string; sourceId: string }>;
   connect(proxyId: string, onLine: (line: string) => void, onFailure: () => void): { ready: Promise<void>; close(): void };
   heartbeat(proxyId: string, path: string): Promise<void>;
 }
@@ -26,24 +27,26 @@ const json = async (t: EngineTransport, method: string, path: string, body?: unk
 };
 
 /** Fixed proxy logs/loopback probe only. No caller-supplied path, command or daemon. */
-export function nodeProxyTrafficDocker(): NodeProxyTrafficIO {
+export function nodeProxyTrafficDocker(): NodeProxyTrafficIO<ProxyTrafficOpen | ServingTrafficOpen> {
   return {
     async inspect(input) {
       try {
+        if ('serving' in input && !servingTrafficRoutesMatch(input)) throw proxyTrafficUnavailable('selected serving leaves are not routed');
         const t = transport();
         const proxy = await json(t, 'GET', '/containers/ninedeploy-proxy/json');
         if (!/^[a-f0-9]{64}$/.test(proxy?.Id) || proxy.Name !== '/ninedeploy-proxy' || !proxy.State?.Running ||
           typeof proxy.State.StartedAt !== 'string' || !Number.isFinite(Date.parse(proxy.State.StartedAt)) ||
           !Number.isSafeInteger(proxy.RestartCount) || proxy.RestartCount < 0 || proxy.Config?.Tty !== false ||
           !['json-file', 'local'].includes(proxy.HostConfig?.LogConfig?.Type)) throw proxyTrafficUnavailable('proxy log source is unsupported');
-        const targets = [...input.stable, ...input.canary];
+        const targets = 'serving' in input ? input.serving : [...input.stable, ...input.canary];
         const filter = encodeURIComponent(JSON.stringify({ id: targets.map(target => target.id) }));
         const rows = await json(t, 'GET', `/containers/json?all=1&filters=${filter}`);
         if (!Array.isArray(rows) || rows.length !== targets.length) throw proxyTrafficUnavailable('runtime identities changed');
         for (const target of targets) {
           const row = rows.find(value => value?.Id === target.id);
           if (!row || row.State !== 'running' || !Array.isArray(row.Names) || !row.Names.includes('/' + target.name) ||
-            row.Labels?.['ninedeploy.managed'] !== 'service' || row.Labels?.['ninedeploy.service'] !== String(input.serviceId)) throw proxyTrafficUnavailable('runtime identities changed');
+            row.Labels?.['ninedeploy.managed'] !== 'service' || row.Labels?.['ninedeploy.service'] !== String(input.serviceId) ||
+            ('serving' in input && row.Labels?.['ninedeploy.deployment'] !== String(input.deploymentId))) throw proxyTrafficUnavailable('runtime identities changed');
         }
         for (const tls of [false, true]) {
           const raw = await capture('docker', routingProbeArgs(proxy.Id, tls), { timeoutMs: 2500, maxOutputBytes: 4 * 1024 * 1024 });

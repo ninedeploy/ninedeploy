@@ -296,6 +296,22 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+      - name: Verify ordinary serving-traffic observations through sealed HTTP
+        timeout-minutes: 5
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-serving-traffic.mjs --image=ninedeploy:ci --proof=.temp_files/ci-serving-traffic
+
+      - name: Preserve serving-traffic observation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-serving-traffic-${{ github.run_id }}
+          path: .temp_files/ci-serving-traffic/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       - name: Verify node readiness modes and failure controls
         timeout-minutes: 10
         run: node scripts/smoke-container-readiness.mjs --image=ninedeploy:ci

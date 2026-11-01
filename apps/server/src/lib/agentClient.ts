@@ -252,7 +252,7 @@ async function supportsSealed(serverId: number, host: string, port: number, sign
  * the first place.
  */
 export const SEALED_ONLY_AGENT_OPS: ReadonlySet<string> = new Set(['swarm.info', 'swarm.join', 'swarm.leave', 'docker.probe', 'docker.readiness', 'docker.logsSince', 'proxy.confirmRouting', 'proxy.writeOrderedConfig', 'docker.identity', 'docker.retire', 'docker.containerTool', 'volume.fileTool', 'db.client.prepare', 'terminal.open']);
-export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op.startsWith('swarm.') || op.startsWith('db.studio.') || op.startsWith('proxy.traffic.');
+export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op.startsWith('swarm.') || op.startsWith('db.studio.') || op.startsWith('proxy.traffic.') || op.startsWith('proxy.servingTraffic.');
 
 /**
  * 0.13 (T5): whether operations to this node travel inside the sealed

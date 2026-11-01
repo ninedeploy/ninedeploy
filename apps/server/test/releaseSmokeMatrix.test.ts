@@ -14,6 +14,7 @@ const expected = [
   command('smoke-user-journey'), command('smoke-user-journey', ' --compose-release-only'),
   command('smoke-multinode', ' --node-operations-only --no-swarm'), command('smoke-container-readiness'), command('smoke-local-docker-readiness'),
   command('smoke-primary-network-readiness', ' --proof=.temp_files/release-primary-network-readiness'),
+  command('smoke-serving-traffic', ' --proof=.temp_files/release-serving-traffic'),
   command('smoke-container-metrics'), command('smoke-container-lifecycle'), command('smoke-container-generation-stop'),
   command('smoke-agent-creation-drain'), command('smoke-node-lifecycle-controller'),
   command('smoke-node-lifecycle-fanout'), command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'),

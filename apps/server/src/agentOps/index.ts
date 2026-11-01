@@ -2,6 +2,7 @@ import { containerMutationOps } from './containerMutation.js';
 import { databaseClientOps } from './databaseClient.js';
 import { studioOps } from './studios.js';
 import { proxyTrafficOps } from './proxyTraffic.js';
+import { servingTrafficOps } from './servingTraffic.js';
 import { containerReadinessOps } from './containerReadiness.js';
 import { containerMetricsOps } from './containerMetrics.js';
 import { containerLifecycleOps } from './containerLifecycle.js';
@@ -80,6 +81,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   containerMetricsOps,
   containerReadinessOps,
   proxyTrafficOps,
+  servingTrafficOps,
   studioOps,
   databaseClientOps,
   volumeFileOps,
@@ -146,6 +148,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'docker.lifecycle.retire': ['NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE'],
   'docker.metrics': ['NINEDEPLOY_AGENT_CONTAINER_METRICS'],
   'proxy.traffic': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
+  'proxy.servingTraffic': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
   'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],
   'db.client': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_CLIENTS'],
   'db.publicAccess': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_PUBLIC_DATABASES'],
@@ -179,6 +182,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
  */
 export const AGENT_OPT_IN: Readonly<Partial<Record<MultiNodeCapability, string>>> = {
   'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
+  'proxy.servingTraffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
   // G4.5: a node runs other people's CI jobs only when its owner says so.
   'gha.runner': 'NINEDEPLOY_AGENT_GHA_RUNNERS',
