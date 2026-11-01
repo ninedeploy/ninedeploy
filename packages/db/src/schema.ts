@@ -1932,6 +1932,23 @@ export const nodeAutoscaleCapacity = sqliteTable('node_autoscale_capacity', {
   createdAt: ts('created_at'),
 });
 
+/** Consumed serving windows survive panel restarts; deployment deletion retires their receipts. */
+export const nodeServingTrafficReceipts = sqliteTable('node_serving_traffic_receipts', {
+  nodeId: integer('node_id').notNull(),
+  serviceId: integer('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+  deploymentId: integer('deployment_id').notNull().references(() => deployments.id, { onDelete: 'cascade' }),
+  requestId: text('request_id').notNull(), windowId: text('window_id').notNull(),
+  sourceId: text('source_id').notNull(), proxyId: text('proxy_id').notNull(), epoch: text('epoch').notNull(),
+  targetHash: text('target_hash').notNull(), routingGeneration: text('routing_generation').notNull(),
+  startCounter: text('start_counter').notNull(), endCounter: text('end_counter').notNull(),
+  requests: integer('requests').notNull(), elapsedMs: integer('elapsed_ms').notNull(), replicas: integer('replicas').notNull(),
+  observedAtMs: integer('observed_at_ms').notNull(), consumedAtMs: integer('consumed_at_ms').notNull(),
+}, t => ({
+  window: primaryKey({ columns: [t.nodeId, t.windowId] }),
+  request: uniqueIndex('node_serving_traffic_request_idx').on(t.nodeId, t.requestId),
+  source: index('node_serving_traffic_source_idx').on(t.serviceId, t.nodeId, t.sourceId, t.endCounter),
+}));
+
 export interface NodeLifecycleSnapshot {
   status: string;
   port: number | null;
