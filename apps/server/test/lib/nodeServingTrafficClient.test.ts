@@ -41,13 +41,23 @@ beforeEach(async () => {
 afterEach(() => { endCanary(1); vi.restoreAllMocks(); c.client?.close(); });
 
 it('observes the selected running deployment and delivers a completed zero exactly once', async () => {
+  let now = Date.now(); vi.spyOn(Date, 'now').mockImplementation(() => now);
   const window = await openNodeServingTraffic(c.db, input);
   expect(await window.sample()).toMatchObject({ complete: false, serving: { requests: 0 } });
   snapshot = { ...snapshot, elapsedMs: 1000, endCounter: '11', expected: 0, complete: true };
+  now += 1000;
   expect(await window.finish()).toMatchObject({ complete: true, observed: 0, elapsedMs: 1000 });
   await expect(window.finish()).rejects.toThrow('window closed');
   await window.close(); expect(closedCalls()).toHaveLength(1);
   expect(io.op.mock.calls.every(args => args[1] === 4)).toBe(true);
+});
+it('refuses the same completed window through an independent adapter instance', async () => {
+  let now = Date.now(); vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const first = await openNodeServingTraffic(c.db, input), second = await openNodeServingTraffic(c.db, input);
+  now += 1000; snapshot = { ...snapshot, elapsedMs: 1000, endCounter: '11', expected: 0, complete: true };
+  expect(await first.finish()).toMatchObject({ complete: true, observed: 0 });
+  await expect(second.finish()).rejects.toThrow(/already consumed/);
+  expect(closedCalls()).toHaveLength(2);
 });
 it.each([{ serverId: 5 }, { runtimeId: 'web-10' }, { status: 'deploying' }, { status: 'stopped' }, { orchestrator: 'swarm' }, { type: 'compose' },
   { runtimeReplicas: 2 }, { port: 4000 }, { asleepAt: new Date() }])('refuses ineligible running context before agent contact: %j', async patch => {

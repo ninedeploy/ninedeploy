@@ -3,11 +3,13 @@ import { servingTrafficOpen, servingTrafficSnapshot, type ServingTrafficOpen, ty
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
 import { nodeServingTrafficContext } from './nodeServingTrafficContext.js';
+import { consumeNodeServingTraffic } from './nodeServingTrafficReceipt.js';
 import { proxyTrafficTargetHash, proxyTrafficRoutingGeneration, proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 
 /** Private panel transport. RPS decisions remain gated until controller acceptance. */
 export async function openNodeServingTraffic(db: DB, params: ServingTrafficOpen, options: { signal?: AbortSignal; checkpoint?: () => Promise<void> } = {}) {
   const input = servingTrafficOpen.parse(params), targetHash = proxyTrafficTargetHash(input), routingGeneration = proxyTrafficRoutingGeneration(input);
+  const openedAt = Date.now();
   const deadline = AbortSignal.timeout(input.durationMs + 30_000);
   const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
   let context: string | undefined;
@@ -62,6 +64,7 @@ export async function openNodeServingTraffic(db: DB, params: ServingTrafficOpen,
       const reply = await rpc(finish ? 'finish' : 'sample', finish ? { windowId: initial.windowId } : { windowIds: [initial.windowId] }) as {
         kind?: unknown; snapshot?: unknown; items?: Array<{ ok?: unknown; snapshot?: unknown }>;
       };
+      const receivedAt = Date.now();
       await current();
       if (closed) throw proxyTrafficUnavailable('window closed');
       if (finish ? reply?.kind !== 'finish' : reply?.kind !== 'sample' || !Array.isArray(reply.items) || reply.items.length !== 1 || reply.items[0]?.ok !== true) {
@@ -75,7 +78,11 @@ export async function openNodeServingTraffic(db: DB, params: ServingTrafficOpen,
         throw proxyTrafficUnavailable('source or observation coverage changed');
       }
       last = next;
-      if (finish) { await close(); await current(); }
+      if (finish) {
+        await close(); await current();
+        await consumeNodeServingTraffic(db, input, next, { context: context!, openedAt, receivedAt });
+        signal.throwIfAborted();
+      }
       return structuredClone(next);
     } catch (err) { await close(); throw err; } finally { busy = false; }
   };

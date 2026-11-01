@@ -11,8 +11,7 @@ import { proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 import { servingTrafficRoutesMatch } from './servingTrafficRouting.js';
 
 /** Read-only eligibility: observations never acquire runtime mutation authority. */
-export async function nodeServingTrafficContext(db: DB, input: ServingTrafficOpen): Promise<string> {
-  const read = () => db.transaction(async tx => {
+export async function readNodeServingTrafficState(tx: Pick<DB, 'query' | 'select'>, input: ServingTrafficOpen): Promise<string> {
     const svc = await tx.query.services.findFirst({ where: eq(services.id, input.serviceId) });
     const deployment = await tx.query.deployments.findFirst({ where: eq(deployments.id, input.deploymentId) });
     const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, input.deploymentId) });
@@ -40,7 +39,10 @@ export async function nodeServingTrafficContext(db: DB, input: ServingTrafficOpe
     ]);
     if (conflicts.some(rows => rows.length) || canaryActive(svc.id)) throw proxyTrafficUnavailable('active runtime work or fanout blocks serving observation');
     return JSON.stringify([svc, deployment, capacity, await readServiceRuntimeOwner(tx, svc.id)]);
-  });
+}
+
+export async function nodeServingTrafficContext(db: DB, input: ServingTrafficOpen): Promise<string> {
+  const read = () => db.transaction(tx => readNodeServingTrafficState(tx, input));
   const before = await read();
   const routes = await renderDynamicConfig(db, { serverId: input.nodeId });
   if (routes !== input.routingConfig || !servingTrafficRoutesMatch(input) || before !== await read()) {
