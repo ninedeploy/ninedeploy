@@ -45,7 +45,7 @@ try {
     '-e', 'DOCKER_CONTEXT=default', '-e', 'NINEDEPLOY_AGENT_PROXY_TRAFFIC=on', '-e', `PROOF_INPUT=${JSON.stringify(input)}`, '-e', `PROOF_OWNER=${owner}`,
     '-v', '/var/run/docker.sock:/var/run/docker.sock', '-v', `${proof}:/proof`, '--entrypoint', 'node', image, '-e', 'setInterval(()=>{},1000)']);
   docker(['exec', client, 'node', '--input-type=module', '-e', `import{withRoutingAck}from'/app/apps/server/dist/lib/proxyRoutingAck.js';import{writeFileSync}from'node:fs';writeFileSync('/proof/dynamic.yml',withRoutingAck(${JSON.stringify(config)}));`]);
-  container('ninedeploy-proxy', ['--network', network, '-v', `${proof}:/proof:ro`, 'traefik:3', '--entrypoints.web.address=:80', '--entrypoints.websecure.address=:443',
+  const proxyId = container('ninedeploy-proxy', ['--network', network, '-v', `${proof}:/proof:ro`, 'traefik:3', '--entrypoints.web.address=:80', '--entrypoints.websecure.address=:443',
     '--api=true', '--providers.file.filename=/proof/dynamic.yml', '--providers.providersThrottleDuration=100ms', '--accesslog=true', '--log.level=ERROR']);
   const deadline = Date.now() + 30_000;
   for (;;) {
@@ -55,10 +55,10 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   docker(['cp', 'scripts/fixtures/serving-traffic-agent.mjs', `${client}:/tmp/serving-traffic-proof.mjs`]);
-  docker(['exec', client, 'node', '/tmp/serving-traffic-proof.mjs']);
+  docker(['exec', '-e', `PROOF_PROXY_ID=${proxyId}`, client, 'node', '/tmp/serving-traffic-proof.mjs']);
   evidence = JSON.parse(readFileSync(resolve(proof, 'agent-result.json'), 'utf8'));
   assert.equal(evidence.complete, true); assert.equal(evidence.realSealedHttp, true); assert.equal(evidence.activeWindows, 0);
-  assert.equal(evidence.cases.length, 8); assert.ok(evidence.cases.every(row => row.passed));
+  assert.equal(evidence.cases.length, 9); assert.ok(evidence.cases.every(row => row.passed));
 } catch (error) { failure = String(error); process.exitCode = 1; }
 finally {
   if (!evidence && existsSync(resolve(proof, 'agent-result.json'))) {

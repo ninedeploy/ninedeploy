@@ -5,6 +5,7 @@ import { dockerTransport, engineRequest, type EngineTransport } from './dockerTt
 import { PROXY_TRAFFIC_BYTE_LIMIT, PROXY_TRAFFIC_LINE_LIMIT, proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 import { capture } from './exec.js';
 import { routingProbeArgs, routingReplyIsApplied } from './proxyRoutingAck.js';
+import { servingTrafficRoutesMatch } from './servingTrafficRouting.js';
 
 export interface NodeProxyTrafficIO<Input = ProxyTrafficOpen> {
   inspect(input: Input): Promise<{ proxyId: string; sourceId: string }>;
@@ -30,6 +31,7 @@ export function nodeProxyTrafficDocker(): NodeProxyTrafficIO<ProxyTrafficOpen | 
   return {
     async inspect(input) {
       try {
+        if ('serving' in input && !servingTrafficRoutesMatch(input)) throw proxyTrafficUnavailable('selected serving leaves are not routed');
         const t = transport();
         const proxy = await json(t, 'GET', '/containers/ninedeploy-proxy/json');
         if (!/^[a-f0-9]{64}$/.test(proxy?.Id) || proxy.Name !== '/ninedeploy-proxy' || !proxy.State?.Running ||
@@ -43,7 +45,8 @@ export function nodeProxyTrafficDocker(): NodeProxyTrafficIO<ProxyTrafficOpen | 
         for (const target of targets) {
           const row = rows.find(value => value?.Id === target.id);
           if (!row || row.State !== 'running' || !Array.isArray(row.Names) || !row.Names.includes('/' + target.name) ||
-            row.Labels?.['ninedeploy.managed'] !== 'service' || row.Labels?.['ninedeploy.service'] !== String(input.serviceId)) throw proxyTrafficUnavailable('runtime identities changed');
+            row.Labels?.['ninedeploy.managed'] !== 'service' || row.Labels?.['ninedeploy.service'] !== String(input.serviceId) ||
+            ('serving' in input && row.Labels?.['ninedeploy.deployment'] !== String(input.deploymentId))) throw proxyTrafficUnavailable('runtime identities changed');
         }
         for (const tls of [false, true]) {
           const raw = await capture('docker', routingProbeArgs(proxy.Id, tls), { timeoutMs: 2500, maxOutputBytes: 4 * 1024 * 1024 });

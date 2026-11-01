@@ -59,6 +59,17 @@ try {
   cases.push({ name: 'sealed-capability-owner-opt-in', passed: true });
   await assert.rejects(rpc('open', fresh(), { plain: true }), /sealed/);
   cases.push({ name: 'plaintext-refused', passed: true });
+  const unrouted = 'http: {}';
+  try {
+    writeFileSync('/proof/next.yml', withRoutingAck(unrouted)); renameSync('/proof/next.yml', '/proof/dynamic.yml');
+    await confirm(unrouted, process.env.PROOF_PROXY_ID);
+    await assert.rejects(rpc('open', { ...fresh(), routingConfig: unrouted }), /unavailable/);
+    assert.equal(nodeServingTraffic.activeCount(), 0);
+    cases.push({ name: 'unrouted-serving-generation-held', passed: true });
+  } finally {
+    writeFileSync('/proof/next.yml', withRoutingAck(input.routingConfig)); renameSync('/proof/next.yml', '/proof/dynamic.yml');
+    await confirm(input.routingConfig, process.env.PROOF_PROXY_ID);
+  }
   const opened = (await rpc('open', fresh())).snapshot;
   for (let i = 0; i < 20; i++) assert.equal((await request()).status, 200);
   for (let i = 0; i < 5; i++) assert.equal((await request('unrelated.invalid')).status, 200);

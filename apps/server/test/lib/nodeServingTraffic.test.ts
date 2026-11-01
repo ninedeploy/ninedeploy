@@ -61,6 +61,13 @@ describe('ordinary serving-generation observations', () => {
     expect(await f.manager.finish({ windowId: opened.windowId })).toMatchObject({ complete: true, expected: 0, observed: 0, serving: { requests: 0 } });
   });
 
+  it('counts selected serving leaves reached through an HTTP twin router', async () => {
+    const f = fixture(), opened = await f.manager.open(input);
+    f.emit({ router: 'web_1_http@file' });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await f.manager.finish({ windowId: opened.windowId })).toMatchObject({ complete: true, serving: { requests: 1 } });
+  });
+
   it('refuses log loss instead of fabricating zero RPS and frees its stream', async () => {
     const f = fixture(), opened = await f.manager.open(input); f.skip(); f.emit();
     await vi.advanceTimersByTimeAsync(1000);

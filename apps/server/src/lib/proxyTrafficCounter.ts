@@ -46,7 +46,8 @@ class TrafficCounter<Group extends string> {
   readonly startPath: string;
   readonly endPath: string;
 
-  constructor(private readonly slug: string, private readonly groups: Record<Group, ProxyTrafficOpen['stable']>, windowId: string) {
+  constructor(private readonly slug: string, private readonly groups: Record<Group, ProxyTrafficOpen['stable']>, windowId: string,
+    private readonly routerSuffix: RegExp = /^\d+@file$/) {
     this.startPath = `/__ninedeploy_traffic_${windowId}_start`;
     this.endPath = `/__ninedeploy_traffic_${windowId}_end`;
     for (const group of Object.keys(groups) as Group[]) for (const target of groups[group]) this.upstreams.set(`http://${target.name}:${target.port}`, group);
@@ -78,7 +79,7 @@ class TrafficCounter<Group extends string> {
     if (++this.count > PROXY_TRAFFIC_RECORD_LIMIT) throw proxyTrafficUnavailable('record limit exceeded');
     const prefix = `${this.slug}_`;
     let group: Group | null = null;
-    if (row.router.startsWith(prefix) && /^\d+@file$/.test(row.router.slice(prefix.length))) {
+    if (row.router.startsWith(prefix) && this.routerSuffix.test(row.router.slice(prefix.length))) {
       group = this.upstreams.get(row.upstream) ?? null;
       if (!group && row.status >= 500) throw proxyTrafficUnavailable('server error cannot be attributed');
       if (!group && row.upstream !== '-') throw proxyTrafficUnavailable('runtime route changed');
@@ -104,6 +105,6 @@ export class ProxyTrafficCounter extends TrafficCounter<'stable' | 'canary'> {
 
 export class ServingTrafficCounter extends TrafficCounter<'serving'> {
   constructor(input: Pick<ServingTrafficOpen, 'slug' | 'serving'>, windowId: string) {
-    super(input.slug, { serving: input.serving }, windowId);
+    super(input.slug, { serving: input.serving }, windowId, /^\d+(?:_http)?@file$/);
   }
 }

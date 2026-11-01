@@ -13,7 +13,7 @@ vi.mock('../../src/lib/exec.js', () => ({ capture: boundary.capture }));
 const input: ProxyTrafficOpen = { requestId: '1'.repeat(32), nodeId: 2, serviceId: 3, deploymentId: 4, step: 1, slug: 'web', durationMs: 1000,
   routingConfig: 'http:\n  services:\n    fixture:\n      weighted:\n        services:\n          - name: old\n            weight: 50\n          - name: new\n            weight: 50\n',
   stable: [{ name: 'old', id: 'a'.repeat(64), port: 80 }], canary: [{ name: 'new', id: 'b'.repeat(64), port: 80 }] };
-let server: http.Server, proxy: any, rows: any[], stream: http.ServerResponse | undefined, logStatus: number, stall: boolean;
+let server: http.Server, proxy: any, rows: any[], stream: http.ServerResponse | undefined, logStatus: number, stall: boolean, routedConfig: string;
 let calls: Array<{ url: string; body?: any }>;
 const connections: Array<{ close(): void }> = [];
 const frame = (value: Buffer | string, type = 1) => {
@@ -23,12 +23,12 @@ const frame = (value: Buffer | string, type = 1) => {
 const start = () => { const lines: string[] = [], fail = vi.fn(); const connection = nodeProxyTrafficDocker().connect('f'.repeat(64), line => lines.push(line), fail); connections.push(connection); return { ...connection, lines, fail }; };
 
 beforeEach(async () => {
-  calls = []; stream = undefined; logStatus = 200; stall = false;
+  calls = []; stream = undefined; logStatus = 200; stall = false; routedConfig = input.routingConfig;
   proxy = { Id: 'f'.repeat(64), Name: '/ninedeploy-proxy', Image: 'sha256:' + '9'.repeat(64), RestartCount: 0,
     State: { Running: true, StartedAt: '2026-10-24T00:00:00Z' }, Config: { Tty: false, Env: ['PRIVATE_TOKEN=fixture'] }, HostConfig: { LogConfig: { Type: 'json-file', Config: {} } } };
   rows = input.stable.concat(input.canary).map(target => ({ Id: target.id, Names: ['/' + target.name], State: 'running', Labels: { 'ninedeploy.managed': 'service', 'ninedeploy.service': '3' } }));
   boundary.capture.mockReset().mockImplementation(async () => {
-    const config = (load(withRoutingAck(input.routingConfig)) as { http: Record<string, Record<string, unknown>> }).http;
+    const config = (load(withRoutingAck(routedConfig)) as { http: Record<string, Record<string, unknown>> }).http;
     const actual = Object.fromEntries(['routers', 'services', 'middlewares'].map(kind => [kind, Object.fromEntries(Object.entries(config[kind] ?? {}).map(([name, value]) => [name + '@file', { ...(value as object), status: 'enabled' }]))]));
     const generation = (actual.middlewares!['nd_routing_generation@file'] as any).headers.customResponseHeaders['X-NineDeploy-Generation'];
     return `HTTP/1.1 200 OK\nX-NineDeploy-Generation: ${generation}\n\n${JSON.stringify(actual)}`;
@@ -60,15 +60,74 @@ afterEach(async () => {
 });
 
 describe('fixed Docker proxy source', () => {
+  function ordinary() {
+    const serving = [{ name: 'web-4', id: 'a'.repeat(64), port: 80 }, { name: 'web-4-r2', id: 'b'.repeat(64), port: 80 }];
+    const config = { http: { routers: { web_1: { rule: 'Host(`web.invalid`)', service: 'app', entryPoints: ['web'] } },
+      services: { app: { loadBalancer: { servers: serving.map(target => ({ url: `http://${target.name}:${target.port}` })) } } } } };
+    routedConfig = JSON.stringify(config);
+    rows = serving.map(target => ({ Id: target.id, Names: ['/' + target.name], State: 'running',
+      Labels: { 'ninedeploy.managed': 'service', 'ninedeploy.service': '3', 'ninedeploy.deployment': '4' } }));
+    const request: ServingTrafficOpen = { purpose: 'autoscale', requestId: input.requestId, nodeId: input.nodeId, serviceId: input.serviceId,
+      deploymentId: input.deploymentId, slug: input.slug, durationMs: input.durationMs, routingConfig: routedConfig, serving };
+    return { config, request };
+  }
+
+  it.each(['deployment-label', 'no-router', 'wrong-upstream', 'missing-replica', 'weighted-canary'])('refuses an ordinary generation whose immutable routing binding is wrong: %s', async fault => {
+    const { config, request } = ordinary();
+    if (fault === 'deployment-label') rows[0].Labels['ninedeploy.deployment'] = '5';
+    if (fault === 'no-router') config.http.routers = {} as typeof config.http.routers;
+    if (fault === 'wrong-upstream') config.http.services.app.loadBalancer.servers[0]!.url = 'http://web-5:80';
+    if (fault === 'missing-replica') config.http.services.app.loadBalancer.servers.pop();
+    if (fault === 'weighted-canary') (config.http.services.app as any) = { weighted: { services: [{ name: 'other', weight: 100 }] } };
+    request.routingConfig = routedConfig = JSON.stringify(config);
+    await expect(nodeProxyTrafficDocker().inspect(request)).rejects.toThrow(/not confirmed/);
+  });
+
   it('checks the ordinary serving generation without requiring canary targets', async () => {
-    const ordinary: ServingTrafficOpen = { purpose: 'autoscale', requestId: input.requestId, nodeId: input.nodeId, serviceId: input.serviceId,
-      deploymentId: input.deploymentId, slug: input.slug, durationMs: input.durationMs, routingConfig: input.routingConfig,
-      serving: [{ name: 'web-4', id: 'a'.repeat(64), port: 80 }, { name: 'web-4-r2', id: 'b'.repeat(64), port: 80 }] };
-    rows = ordinary.serving.map(target => ({ Id: target.id, Names: ['/' + target.name], State: 'running', Labels: { 'ninedeploy.managed': 'service', 'ninedeploy.service': '3' } }));
-    expect(await nodeProxyTrafficDocker().inspect(ordinary)).toMatchObject({ proxyId: 'f'.repeat(64) });
-    expect(JSON.parse(new URL('http://docker' + calls[1]!.url).searchParams.get('filters')!)).toEqual({ id: ordinary.serving.map(target => target.id) });
+    const { request } = ordinary();
+    expect(await nodeProxyTrafficDocker().inspect(request)).toMatchObject({ proxyId: 'f'.repeat(64) });
+    expect(JSON.parse(new URL('http://docker' + calls[1]!.url).searchParams.get('filters')!)).toEqual({ id: request.serving.map(target => target.id) });
     rows[0].Id = 'c'.repeat(64);
-    await expect(nodeProxyTrafficDocker().inspect(ordinary)).rejects.toThrow(/not confirmed/);
+    await expect(nodeProxyTrafficDocker().inspect(request)).rejects.toThrow(/not confirmed/);
+  });
+
+  it('accepts an HTTP twin only when it points at the complete selected serving set', async () => {
+    const { config, request } = ordinary();
+    (config.http.routers as any).web_1_http = { ...config.http.routers.web_1 };
+    request.routingConfig = routedConfig = JSON.stringify(config);
+    expect(await nodeProxyTrafficDocker().inspect(request)).toMatchObject({ proxyId: 'f'.repeat(64) });
+    (config.http.routers as any).web_1_bypass = { ...config.http.routers.web_1 };
+    request.routingConfig = routedConfig = JSON.stringify(config);
+    await expect(nodeProxyTrafficDocker().inspect(request)).rejects.toThrow(/not confirmed/);
+  });
+
+  it.each(['malformed', 'document-array', 'no-http', 'http-array', 'no-services', 'no-routers', 'router-not-object', 'router-service', 'missing-service', 'servers-not-array', 'duplicate-upstream', 'foreign-router', 'foreign-provider', 'extra-upstream'])('refuses an unbound serving route before Docker I/O: %s', async fault => {
+    const { config, request } = ordinary();
+    let value: any = config;
+    if (fault === 'document-array') value = [];
+    if (fault === 'no-http') value = {};
+    if (fault === 'http-array') value.http = [];
+    if (fault === 'no-services') delete value.http.services;
+    if (fault === 'no-routers') delete value.http.routers;
+    if (fault === 'router-not-object') value.http.routers.web_1 = null;
+    if (fault === 'router-service') value.http.routers.web_1.service = 3;
+    if (fault === 'missing-service') value.http.routers.web_1.service = 'missing';
+    if (fault === 'servers-not-array') value.http.services.app.loadBalancer.servers = {};
+    if (fault === 'duplicate-upstream') value.http.services.app.loadBalancer.servers[1] = value.http.services.app.loadBalancer.servers[0];
+    if (fault === 'foreign-router') { value.http.routers.another_1 = value.http.routers.web_1; delete value.http.routers.web_1; }
+    if (fault === 'foreign-provider') value.http.routers.web_1.service = 'app@docker';
+    if (fault === 'extra-upstream') value.http.services.app.loadBalancer.servers.push({ url: 'http://web-5:80' });
+    request.routingConfig = routedConfig = fault === 'malformed' ? 'http: [' : JSON.stringify(value);
+    await expect(nodeProxyTrafficDocker().inspect(request)).rejects.toThrow(/not confirmed/);
+    expect(calls).toEqual([]);
+  });
+
+  it('supports file-qualified serving references while ignoring another service with a similar slug', async () => {
+    const { config, request } = ordinary();
+    config.http.routers.web_1.service = 'app@file';
+    (config.http.routers as any).web_other_99 = { ...config.http.routers.web_1 };
+    request.routingConfig = routedConfig = JSON.stringify(config);
+    expect(await nodeProxyTrafficDocker().inspect(request)).toMatchObject({ proxyId: 'f'.repeat(64) });
   });
 
   it('attests immutable proxy and service-labeled target identities without returning environment values', async () => {

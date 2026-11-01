@@ -8,6 +8,8 @@ Agent implementation checkpoint (development, not released): `proxy.servingTraff
 
 ## Confirmed boundaries
 
+- Ordinary serving observations require matching deployment labels and a managed HTTP load-balancer route containing exactly the selected replica URLs. Missing routes, another generation, incomplete leaf sets and weighted canary routes refuse observation rather than returning zero. Maintenance bypass routing is held; the HTTP twin is counted when it actually reaches a selected leaf. Five new Docker-boundary assertions failed before these admission checks; the covering eight-file suite passed 112 tests after the change. The nine-case hosted follow-up includes a loaded but unrouted configuration control.
+
 - `engine/builders/nodeAutoscaleDeployment.ts` refuses RPS capacity preparation.
 - `lib/nodeAutoscaleWorker.ts` refuses RPS before measurement and admission.
 - `lib/nodeAutoscaleDecision.ts` refuses RPS before its sustained decision window.

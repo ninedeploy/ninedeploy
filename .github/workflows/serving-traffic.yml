@@ -5,6 +5,7 @@ on:
     paths:
       - 'apps/server/src/lib/node*Traffic*.ts'
       - 'apps/server/src/lib/proxyTrafficCounter.ts'
+      - 'apps/server/src/lib/servingTrafficRouting.ts'
       - 'apps/server/src/lib/agentClient.ts'
       - 'apps/server/src/lib/agentCapabilities.ts'
       - 'apps/server/src/agentOps/servingTraffic.ts'
