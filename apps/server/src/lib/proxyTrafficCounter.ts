@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { errorRatePercent, type CanaryReleaseStats, type ProxyTrafficOpen } from '@ninedeploy/schemas';
+import { errorRatePercent, type CanaryReleaseStats, type ProxyTrafficOpen, type ServingTrafficOpen } from '@ninedeploy/schemas';
 
 export const PROXY_TRAFFIC_RECORD_LIMIT = 100_000;
 export const PROXY_TRAFFIC_BYTE_LIMIT = 32 * 1024 * 1024;
 export const PROXY_TRAFFIC_LINE_LIMIT = 16 * 1024;
 export const proxyTrafficUnavailable = (reason: string) => new Error(`Node proxy traffic unavailable: ${reason}`);
-export const proxyTrafficTargetHash = (input: ProxyTrafficOpen): string => createHash('sha256').update(JSON.stringify(input)).digest('hex');
+export const proxyTrafficTargetHash = (input: ProxyTrafficOpen | ServingTrafficOpen): string => createHash('sha256').update(JSON.stringify(input)).digest('hex');
 export const proxyTrafficRoutingGeneration = (input: Pick<ProxyTrafficOpen, 'routingConfig'>): string => {
   if (Buffer.byteLength(input.routingConfig) > 1024 * 1024) throw proxyTrafficUnavailable('routing configuration exceeds 1 MiB');
   return createHash('sha256').update(input.routingConfig).digest('hex');
@@ -29,16 +29,16 @@ export function parseProxyAccessRecord(line: string): ProxyAccessRecord | null {
   return { request: match[1]!, status, sequence, router: match[4]!.slice(1, -1), upstream: match[5]!.slice(1, -1), ms };
 }
 
-type Hit = { group: 'stable' | 'canary' | null; status: number; ms: number };
+type Hit<Group extends string = string> = { group: Group | null; status: number; ms: number };
 const summary = (hits: Hit[]): CanaryReleaseStats => {
   const errors = hits.filter(h => h.status >= 500).length, times = hits.map(h => h.ms).sort((a, b) => a - b);
   return { requests: hits.length, errors, errorRate: errorRatePercent(errors, hits.length), p95Ms: times.length ? times[Math.ceil(times.length * 0.95) - 1]! : null };
 };
 
 /** A complete result covers every request started between two observed markers. */
-export class ProxyTrafficCounter {
-  private readonly records = new Map<bigint, Hit>();
-  private readonly upstreams = new Map<string, 'stable' | 'canary'>();
+class TrafficCounter<Group extends string> {
+  private readonly records = new Map<bigint, Hit<Group>>();
+  private readonly upstreams = new Map<string, Group>();
   private start: bigint | null = null;
   private end: bigint | null = null;
   private finishing = false;
@@ -46,14 +46,15 @@ export class ProxyTrafficCounter {
   readonly startPath: string;
   readonly endPath: string;
 
-  constructor(private readonly input: Pick<ProxyTrafficOpen, 'slug' | 'stable' | 'canary'>, windowId: string) {
+  constructor(private readonly slug: string, private readonly groups: Record<Group, ProxyTrafficOpen['stable']>, windowId: string) {
     this.startPath = `/__ninedeploy_traffic_${windowId}_start`;
     this.endPath = `/__ninedeploy_traffic_${windowId}_end`;
-    for (const group of ['stable', 'canary'] as const) for (const target of input[group]) this.upstreams.set(`http://${target.name}:${target.port}`, group);
+    for (const group of Object.keys(groups) as Group[]) for (const target of groups[group]) this.upstreams.set(`http://${target.name}:${target.port}`, group);
   }
 
   requestFinish(): void { this.finishing = true; }
   started(): boolean { return this.start !== null; }
+  ended(): boolean { return this.end !== null; }
 
   ingest(line: string): void {
     const row = parseProxyAccessRecord(line);
@@ -75,8 +76,8 @@ export class ProxyTrafficCounter {
       return;
     }
     if (++this.count > PROXY_TRAFFIC_RECORD_LIMIT) throw proxyTrafficUnavailable('record limit exceeded');
-    const prefix = this.input.slug + '_';
-    let group: 'stable' | 'canary' | null = null;
+    const prefix = `${this.slug}_`;
+    let group: Group | null = null;
     if (row.router.startsWith(prefix) && /^\d+@file$/.test(row.router.slice(prefix.length))) {
       group = this.upstreams.get(row.upstream) ?? null;
       if (!group && row.status >= 500) throw proxyTrafficUnavailable('server error cannot be attributed');
@@ -91,6 +92,18 @@ export class ProxyTrafficCounter {
     const expected = this.end === null ? null : Number(this.end - this.start - 1n);
     return { startCounter: this.start.toString(), endCounter: this.end?.toString() ?? null,
       observed: hits.length, expected, complete: expected !== null && hits.length === expected,
-      canary: summary(hits.filter(h => h.group === 'canary')), stable: summary(hits.filter(h => h.group === 'stable')) };
+      ...Object.fromEntries((Object.keys(this.groups) as Group[]).map(group => [group, summary(hits.filter(h => h.group === group))])) as Record<Group, CanaryReleaseStats> };
+  }
+}
+
+export class ProxyTrafficCounter extends TrafficCounter<'stable' | 'canary'> {
+  constructor(input: Pick<ProxyTrafficOpen, 'slug' | 'stable' | 'canary'>, windowId: string) {
+    super(input.slug, { stable: input.stable, canary: input.canary }, windowId);
+  }
+}
+
+export class ServingTrafficCounter extends TrafficCounter<'serving'> {
+  constructor(input: Pick<ServingTrafficOpen, 'slug' | 'serving'>, windowId: string) {
+    super(input.slug, { serving: input.serving }, windowId);
   }
 }

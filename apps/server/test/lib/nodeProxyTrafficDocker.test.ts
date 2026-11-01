@@ -3,7 +3,7 @@ import http from 'node:http';
 import { once } from 'node:events';
 import { setImmediate as turn } from 'node:timers/promises';
 import { nodeProxyTrafficDocker } from '../../src/lib/nodeProxyTrafficDocker.js';
-import type { ProxyTrafficOpen } from '@ninedeploy/schemas';
+import type { ProxyTrafficOpen, ServingTrafficOpen } from '@ninedeploy/schemas';
 import { load } from 'js-yaml';
 import { withRoutingAck, routingProbeArgs } from '../../src/lib/proxyRoutingAck.js';
 
@@ -60,6 +60,17 @@ afterEach(async () => {
 });
 
 describe('fixed Docker proxy source', () => {
+  it('checks the ordinary serving generation without requiring canary targets', async () => {
+    const ordinary: ServingTrafficOpen = { purpose: 'autoscale', requestId: input.requestId, nodeId: input.nodeId, serviceId: input.serviceId,
+      deploymentId: input.deploymentId, slug: input.slug, durationMs: input.durationMs, routingConfig: input.routingConfig,
+      serving: [{ name: 'web-4', id: 'a'.repeat(64), port: 80 }, { name: 'web-4-r2', id: 'b'.repeat(64), port: 80 }] };
+    rows = ordinary.serving.map(target => ({ Id: target.id, Names: ['/' + target.name], State: 'running', Labels: { 'ninedeploy.managed': 'service', 'ninedeploy.service': '3' } }));
+    expect(await nodeProxyTrafficDocker().inspect(ordinary)).toMatchObject({ proxyId: 'f'.repeat(64) });
+    expect(JSON.parse(new URL('http://docker' + calls[1]!.url).searchParams.get('filters')!)).toEqual({ id: ordinary.serving.map(target => target.id) });
+    rows[0].Id = 'c'.repeat(64);
+    await expect(nodeProxyTrafficDocker().inspect(ordinary)).rejects.toThrow(/not confirmed/);
+  });
+
   it('attests immutable proxy and service-labeled target identities without returning environment values', async () => {
     const value = await nodeProxyTrafficDocker().inspect(input);
     expect(value).toMatchObject({ proxyId: 'f'.repeat(64), sourceId: expect.stringMatching(/^[a-f0-9]{64}$/) });

@@ -83,6 +83,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'db.publicAccess',
       'db.pgbouncer',
       'proxy.orderedWrite',
+      'proxy.servingTraffic',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     expect(multiNodeCapability.parse('docker.retireHandoff')).toBe('docker.retireHandoff');

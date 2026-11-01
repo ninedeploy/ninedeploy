@@ -432,6 +432,23 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+      - name: Verify ordinary serving-traffic observations through sealed HTTP
+        if: matrix.suite == 'agent-runtime'
+        timeout-minutes: 5
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-serving-traffic.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-serving-traffic
+
+      - name: Preserve serving-traffic observation evidence
+        if: always() && matrix.suite == 'agent-runtime'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-serving-traffic
+          path: .temp_files/release-serving-traffic/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       - name: Verify immutable node resource metrics on an isolated daemon
         if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10

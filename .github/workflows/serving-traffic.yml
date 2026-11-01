@@ -1,0 +1,50 @@
+name: Serving traffic
+
+on:
+  pull_request:
+    paths:
+      - 'apps/server/src/lib/node*Traffic*.ts'
+      - 'apps/server/src/lib/proxyTrafficCounter.ts'
+      - 'apps/server/src/lib/agentClient.ts'
+      - 'apps/server/src/lib/agentCapabilities.ts'
+      - 'apps/server/src/agentOps/servingTraffic.ts'
+      - 'apps/server/src/agentOps/index.ts'
+      - 'packages/schemas/src/proxyTraffic.ts'
+      - 'packages/schemas/src/multiNode.ts'
+      - 'scripts/smoke-serving-traffic.mjs'
+      - 'scripts/fixtures/serving-traffic-agent.mjs'
+      - '.github/workflows/serving-traffic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: serving-traffic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  serving-generation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_CONTEXT: default
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+      - name: Build candidate
+        run: docker build -t ninedeploy:serving .
+      - name: Observe ordinary serving generations through sealed HTTP and real Traefik
+        run: node scripts/smoke-serving-traffic.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic
+      - name: Preserve observations and owned cleanup receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: serving-traffic-${{ github.run_id }}
+          path: .temp_files/serving-traffic/
+          include-hidden-files: true
+          if-no-files-found: warn

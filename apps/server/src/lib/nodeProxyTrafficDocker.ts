@@ -1,13 +1,13 @@
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import type { ProxyTrafficOpen } from '@ninedeploy/schemas';
+import type { ProxyTrafficOpen, ServingTrafficOpen } from '@ninedeploy/schemas';
 import { dockerTransport, engineRequest, type EngineTransport } from './dockerTty.js';
 import { PROXY_TRAFFIC_BYTE_LIMIT, PROXY_TRAFFIC_LINE_LIMIT, proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 import { capture } from './exec.js';
 import { routingProbeArgs, routingReplyIsApplied } from './proxyRoutingAck.js';
 
-export interface NodeProxyTrafficIO {
-  inspect(input: ProxyTrafficOpen): Promise<{ proxyId: string; sourceId: string }>;
+export interface NodeProxyTrafficIO<Input = ProxyTrafficOpen> {
+  inspect(input: Input): Promise<{ proxyId: string; sourceId: string }>;
   connect(proxyId: string, onLine: (line: string) => void, onFailure: () => void): { ready: Promise<void>; close(): void };
   heartbeat(proxyId: string, path: string): Promise<void>;
 }
@@ -26,7 +26,7 @@ const json = async (t: EngineTransport, method: string, path: string, body?: unk
 };
 
 /** Fixed proxy logs/loopback probe only. No caller-supplied path, command or daemon. */
-export function nodeProxyTrafficDocker(): NodeProxyTrafficIO {
+export function nodeProxyTrafficDocker(): NodeProxyTrafficIO<ProxyTrafficOpen | ServingTrafficOpen> {
   return {
     async inspect(input) {
       try {
@@ -36,7 +36,7 @@ export function nodeProxyTrafficDocker(): NodeProxyTrafficIO {
           typeof proxy.State.StartedAt !== 'string' || !Number.isFinite(Date.parse(proxy.State.StartedAt)) ||
           !Number.isSafeInteger(proxy.RestartCount) || proxy.RestartCount < 0 || proxy.Config?.Tty !== false ||
           !['json-file', 'local'].includes(proxy.HostConfig?.LogConfig?.Type)) throw proxyTrafficUnavailable('proxy log source is unsupported');
-        const targets = [...input.stable, ...input.canary];
+        const targets = 'serving' in input ? input.serving : [...input.stable, ...input.canary];
         const filter = encodeURIComponent(JSON.stringify({ id: targets.map(target => target.id) }));
         const rows = await json(t, 'GET', `/containers/json?all=1&filters=${filter}`);
         if (!Array.isArray(rows) || rows.length !== targets.length) throw proxyTrafficUnavailable('runtime identities changed');

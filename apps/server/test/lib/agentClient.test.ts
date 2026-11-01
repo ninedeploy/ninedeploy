@@ -258,7 +258,7 @@ describe('agentOp', () => {
     const [,init]=fetchMock.mock.calls.at(-1)!;expect(String(init.body)).not.toContain('private-terminal-fixture');
     expect(openSealed<{params:{client:{password:string}}}>(SHARED,JSON.parse(String(init.body)).sealed).params.client.password).toBe('private-terminal-fixture');
   });
-  it.each(['db.studio.start', 'db.studio.stop', 'db.studio.open', 'proxy.traffic.open', 'proxy.traffic.sample', 'proxy.traffic.finish', 'proxy.traffic.close', 'proxy.traffic.future', 'docker.readiness'])('never sends %s metadata or credentials through legacy plaintext fallback', async op => {
+  it.each(['db.studio.start', 'db.studio.stop', 'db.studio.open', 'proxy.traffic.open', 'proxy.traffic.sample', 'proxy.traffic.finish', 'proxy.traffic.close', 'proxy.traffic.future', 'proxy.servingTraffic.open', 'proxy.servingTraffic.sample', 'proxy.servingTraffic.finish', 'proxy.servingTraffic.close', 'proxy.servingTraffic.future', 'docker.readiness'])('never sends %s metadata or credentials through legacy plaintext fallback', async op => {
     process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
     routeFetch({ sealed: false, exec: { lines: [], exitCode: 0 } });
     await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, op, { password: 'private-studio-fixture' }, () => undefined)).rejects.toThrow();
