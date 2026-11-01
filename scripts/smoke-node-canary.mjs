@@ -11,6 +11,7 @@ import { smokePublicNodeLifecycle } from './lib/smoke-public-node-lifecycle.mjs'
 import { smokeNodeReplicaDatabases } from './lib/smoke-node-replica-databases.mjs';
 import { smokeNodeAutoscale } from './lib/smoke-node-autoscale.mjs';
 import { smokePanelHealthModes } from './lib/smoke-panel-health-modes.mjs';
+import { startCanaryTraffic } from './lib/smoke-canary-traffic.mjs';
 import { nodeReplicaDatabaseApp } from './fixtures/node-replica-database-app.mjs';
 const lifecycleOnly=process.argv.includes('--lifecycle-only');
 const replicaDatabasesOnly=process.argv.includes('--replica-databases-only');
@@ -160,9 +161,8 @@ try{
    const oldLabel=inner(['inspect',old.runtimeId,'--format','{{range .Config.Env}}{{println .}}{{end}}']).out.split('\n').find(x=>x.startsWith('RELEASE_LABEL='))?.slice(14)??'old';
    await api(`/v1/services/${id}`,{method:'PATCH',body:{canary:cfg(steps)}});
    await env('RELEASE_LABEL',name);await env('NEEDS_READINESS',hold?'1':'0');await env('FAIL_BUSINESS',business?'1':'0');
-   const trafficCode="const http=require('node:http');const records=[];let stopped=false;async function tick(){if(stopped)return;try{records.push(await new Promise((resolve,reject)=>{const q=http.request({hostname:'ninedeploy-proxy',port:80,path:'/',headers:{host:"+JSON.stringify(domain.hostname)+"}},r=>{let body='';r.on('data',c=>body+=c);r.on('end',()=>resolve({at:Date.now(),status:r.statusCode,body}));});q.setTimeout(1500,()=>q.destroy(Error('timeout')));q.on('error',reject);q.end();}));}catch(e){records.push({at:Date.now(),error:e.message});}setTimeout(tick,50);}process.on('SIGTERM',()=>{stopped=true;require('node:fs').writeFileSync('/tmp/r1-traffic.json',JSON.stringify(records));process.exit(0);});tick();";
    const client='nd-r1-traffic-'+name+'-'+suffix;
-   inner(['run','-d','--name',client,'--network','ninedeploy','--entrypoint','node',fixtureImage,'-e',trafficCode]);
+   await startCanaryTraffic({ inner, until, client, fixtureImage, hostname: domain.hostname });
    const dep=(await api(`/v1/services/${id}/deploys`,{method:'POST',body:{}})).deploymentId,candidate=old.slug+'-'+dep;
    return {name,old,oldId,oldLabel,dep,candidate,client};
  }

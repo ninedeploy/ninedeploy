@@ -259,6 +259,23 @@ jobs:
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-only --proof=.temp_files/ci-node-autoscale
 
+      - name: Verify public canary lifecycle with sampled traffic
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --proof=.temp_files/ci-public-canary
+
+      - name: Preserve public canary traffic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-public-canary-${{ github.run_id }}
+          path: |
+            .temp_files/ci-public-canary/cases.json
+            .temp_files/ci-public-canary/*-traffic.json
+            .temp_files/ci-public-canary/failure-state.json
+            .temp_files/ci-public-canary/runtime-cleanup.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       - name: Verify local Docker readiness and native health gates
         timeout-minutes: 5
         run: node scripts/smoke-local-docker-readiness.mjs --image=ninedeploy:ci
