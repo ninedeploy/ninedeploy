@@ -1,6 +1,6 @@
 # Node request-rate autoscaling implementation plan
 
-Status: agent observation accepted; panel/controller integration pending. Memory autoscaling has real single-node and PostgreSQL acceptance; those results do not accept request-rate autoscaling.
+Status: agent observation accepted; panel adapter implemented, controller integration pending. Memory autoscaling has real single-node and PostgreSQL acceptance; those results do not accept request-rate autoscaling.
 
 Schema contract: `servingTrafficOpen` and `servingTrafficSnapshot` model ordinary serving generations separately from canary steps. Validation rejects missing/duplicate/wrong-generation replicas, unsupported fields, invalid source/counter shapes and incomplete coverage declared complete. All 802 schema tests in 40 files passed locally.
 
@@ -12,7 +12,13 @@ Agent observation acceptance — 2026-11-01: development source `7716cf93099e8c3
 
 The same final-head CI's normal-deploy artifact independently retained 1,892 HTTP 200 responses across HTTP, strict HTTP, TCP, running and command readiness, with previous and replacement responses in every trace and confirmed owned cleanup. Evidence: `.temp_files/rps-serving/ci-panel-health-41323263845/independent-verification.json`. This is isolated Host-header HTTP acceptance, not production DNS/TLS certification.
 
-The agent portions of steps 1–2 below are implemented and observed. Panel/controller work in steps 3–6 remains open; RPS preparation, measurement admission and scaling decisions remain disabled.
+The agent portions of steps 1–2 below are implemented and observed. Step 3 now has a private panel adapter and real SQLite-backed boundary tests; its transport boundary is mocked in those tests. Integrated hosted panel/controller acceptance remains open. Steps 4–6, RPS preparation, measurement admission and scaling decisions remain disabled.
+
+Panel adapter implementation — 2026-11-01: `openNodeServingTraffic` accepts the selected running deployment, with matching immutable capacity, serving count and port. Before and after awaited operations it checks runtime ownership, service configuration, database bridges, queued/building/deploying work, lifecycle intents, preparation and transition journals, and the current node routing render. It refuses fanout because a node-local counter cannot measure traffic served elsewhere. Sealed capability preflight is followed by another context check before reservation. Snapshot binding retains request, target, source, proxy, routing, epoch and sequence identities; unavailable or regressing coverage is never substituted with zero.
+
+Cancellation closes known windows even while idle; cleanup uses its own bounded call without the cancelled signal. A total observation deadline supplements the agent's existing expiry. Overlapping calls are refused, returned snapshots cannot mutate internal continuity checks, and a successful final receipt closes the client so it can be delivered only once through that instance. This is not durable replay protection: duplicate request/window receipts across adapter instances and panel restarts still require the admission ledger in step 4. Invalid unbound opening receipts are never used to close a foreign window; unknown reservations remain subject to agent expiry.
+
+Local panel-adapter validation: 190 tests passed across eight files, including 52 new adapter cases against migrated in-memory SQLite. The suite covers real routing rendering and runtime-owner changes, sealed capability refusal, database placement changes, deployment/Stop conflicts, idle/in-flight cancellation, overlap, foreign receipts, unavailable sources and mutable receipt isolation. Server typecheck and targeted lint passed. Local Docker was not accessed (`DOCKER_HOST=tcp://127.0.0.1:9`). These focused checks do not certify a new release or hosted RPS scaling.
 
 ## Confirmed boundaries
 
