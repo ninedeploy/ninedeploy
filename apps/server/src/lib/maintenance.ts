@@ -69,6 +69,17 @@ export async function setErrorPages(db: DB, serviceId: number, pages: Partial<Re
 }
 
 /**
+ * Why a service may not move to a node yet, or null. Node proxies do not route
+ * the panel-served pages, so the setting would sit unseen there (the card is
+ * hidden for node services) and come back on a later move to the panel host.
+ */
+export async function nodeMoveRefusal(db: DB, serviceId: number): Promise<string | null> {
+  if (await getMaintenance(db, serviceId)) return 'Turn maintenance mode off before moving the service to a node';
+  if (Object.keys((await getErrorPages(db, serviceId)).pages).length) return 'Remove the custom error pages before moving the service to a node';
+  return null;
+}
+
+/**
  * For the proxy render, in one read: services in maintenance, services with
  * custom error pages, and (G2.1) compose domains routed to another service.
  */

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A compose stack's domain now picks its service in its own row under Service → Network → Domains, next to the domain's other settings. The separate card under Service → Settings is gone. Save appears only once the choice differs from the stored one (G2.1).
 
+### Fixed
+
+- Moving a service to a node is refused while its maintenance mode or custom error pages are on. Node proxies do not route these panel-served pages, and the card that turns them off is hidden for node services. The setting stayed stored, and maintenance came back on if the service later moved back to the panel host (G2.2).
+
 ### Security
 
 - The Hub now says when an app is open before it is set up. The first visitor may become its admin, it may start with a publicly known login, anyone may be able to sign up, or it may have no login at all. 174 templates carry the new `openFirstRun` field, and the deploy wizard and the template detail show the warning. The Hub list marks those cards "open until set up". It is stronger when the app also has the Docker socket.

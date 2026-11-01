@@ -98,7 +98,7 @@ Every domain of a compose stack routes to the stack's main service unless it nam
 
 ### Maintenance mode and custom error pages (G2.2)
 
-Both live under **Service → Settings → Maintenance mode**, or in the API as `PUT /v1/services/:id/maintenance` and `PUT /v1/services/:id/error-pages`. They work for services on the panel host.
+Both live under **Service → Settings → Maintenance mode**, or in the API as `PUT /v1/services/:id/maintenance` and `PUT /v1/services/:id/error-pages`. They work for services on the panel host. A service with either one on cannot move to a node (`move_panel_host_pages`); turn it off first.
 
 **Maintenance mode**
 - While it is on, every domain of the service answers a 503 page with `Retry-After`, served by the panel. The page shows the title and message you set.

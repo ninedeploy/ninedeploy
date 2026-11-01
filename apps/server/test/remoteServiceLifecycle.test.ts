@@ -52,6 +52,13 @@ vi.mock('../src/lib/serviceFiles.js', async (importOriginal) => ({
   removeServiceFilesDir: files.removeServiceFilesDir,
 }));
 
+// G2.2: whether the service has panel-served pages that keep it on the panel host.
+const pages = vi.hoisted(() => ({ refusal: null as string | null }));
+vi.mock('../src/lib/maintenance.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/maintenance.js')>()),
+  nodeMoveRefusal: vi.fn(async () => pages.refusal),
+}));
+
 const { servicesRoutes } = await import('../src/modules/services.js');
 
 const remote = (over: Record<string, unknown> = {}) =>
@@ -209,6 +216,19 @@ describe('r662: moving and deleting remote services', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('slug_volume_retained');
     expect(ops()).toEqual(['5 docker.volumeInspect {"name":"nd-svc-web-data"}']);
+  });
+
+  it('refuses a move to a node while maintenance mode or custom error pages are on, before retiring anything (G2.2)', async () => {
+    pages.refusal = 'Turn maintenance mode off before moving the service to a node';
+    try {
+      const app = await movingApp();
+      const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser({ isOperator: true }), payload: { serverId: 5 } });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatchObject({ code: 'move_panel_host_pages', message: pages.refusal });
+      expect(ops()).toEqual([]);
+    } finally {
+      pages.refusal = null;
+    }
   });
 
   it("allows a move back onto the node that holds the service's OWN volume (created after the row)", async () => {

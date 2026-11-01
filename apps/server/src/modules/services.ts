@@ -1001,6 +1001,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       if (hostRefusal) throw hostRefusal;
     }
     // ── end 0.16 T6 ──
+    // G2.2: maintenance mode and custom error pages work on the panel host only.
+    if (moving && patch.serverId != null) {
+      const { nodeMoveRefusal } = await import('../lib/maintenance.js');
+      const refusal = await nodeMoveRefusal(app.db, existing.id);
+      if (refusal) throw badRequest(refusal, 'move_panel_host_pages');
+    }
     if (moving) {
       await assertSlugVolumeNotRetained(existing.slug, patch.type ?? existing.type, {
         db: app.db,

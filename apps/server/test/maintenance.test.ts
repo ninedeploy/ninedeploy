@@ -108,6 +108,20 @@ describe('custom error pages', () => {
   });
 });
 
+describe('moving to a node', () => {
+  it('names what keeps the service on the panel host until it is cleared', async () => {
+    const { nodeMoveRefusal, setErrorPages, setMaintenance } = await import('../src/lib/maintenance.js');
+    expect(await nodeMoveRefusal(db, 5)).toBeNull();
+    await setErrorPages(db, 5, { '503': '<h1>Busy</h1>' });
+    expect(await nodeMoveRefusal(db, 5)).toContain('custom error pages');
+    await setMaintenance(db, 5, { title: 'Down', message: 'Soon', retryAfterSeconds: 60, bypass: [] });
+    expect(await nodeMoveRefusal(db, 5)).toContain('maintenance mode');
+    await setMaintenance(db, 5, null);
+    await setErrorPages(db, 5, {});
+    expect(await nodeMoveRefusal(db, 5)).toBeNull();
+  });
+});
+
 describe('rendered routing', () => {
   type Doc = { http: { routers: Record<string, { rule: string; service: string; middlewares?: string[] }>; middlewares: Record<string, Record<string, unknown>> } };
 
