@@ -1511,6 +1511,7 @@ export const TR: Readonly<Record<string, string>> = {
     'Bu uygulama varsayılan olarak herkesin hesap açmasına izin verir. Özel kalması gerekiyorsa kaydı ayarlarından ya da ortam değişkenlerinden kapatın.',
   'This app has no login of its own and can see Docker on this server: anyone who reaches its address sees every container. Keep it off a public domain or put it behind authentication.':
     'Bu uygulamanın kendi girişi yoktur ve bu sunucudaki Docker’ı görebilir: adresine ulaşan herkes tüm konteynerleri görür. Herkese açık bir alan adına bağlamayın ya da önüne kimlik doğrulama koyun.',
+  'open until set up': 'kurulana kadar açık',
   'This app has no login of its own: anyone who reaches its address can use it. Keep it off a public domain or put it behind authentication.':
     'Bu uygulamanın kendi girişi yoktur: adresine ulaşan herkes kullanabilir. Herkese açık bir alan adına bağlamayın ya da önüne kimlik doğrulama koyun.',
   'Type': 'Tür',

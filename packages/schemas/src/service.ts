@@ -1123,6 +1123,9 @@ export const createVolumeBackup = z.object({
 export type CreateVolumeBackupInput = z.input<typeof createVolumeBackup>;
 
 // ── Template hub ───────────────────────────────────────────────────────────
+/** See `template.openFirstRun`. */
+export const templateOpenFirstRun = z.enum(['first-visitor-admin', 'default-login', 'open-signup', 'no-auth']);
+
 export const templateSummary = z.object({
   id: z.string(),
   name: z.string(),
@@ -1132,6 +1135,7 @@ export const templateSummary = z.object({
   featured: z.boolean().optional(),
   runtimeVerified: z.boolean().optional(),
   verifiedAt: z.iso.date().optional(),
+  openFirstRun: templateOpenFirstRun.optional(),
 });
 export type TemplateSummary = z.infer<typeof templateSummary>;
 
@@ -1181,7 +1185,7 @@ export const template = z.object({
    *  account (or runs the installer), it starts with a publicly known login,
    *  anyone may sign up, or it has no login at all. The wizard and the Hub
    *  warn about it; a public domain exposes the app from the first second. */
-  openFirstRun: z.enum(['first-visitor-admin', 'default-login', 'open-signup', 'no-auth']).optional(),
+  openFirstRun: templateOpenFirstRun.optional(),
   /** Full Docker Compose stack definition. When present the template deploys
    *  as a multi-container compose project (`type: 'compose'`) instead of the
    *  single-container image+port model; `image`/`port` then describe the MAIN

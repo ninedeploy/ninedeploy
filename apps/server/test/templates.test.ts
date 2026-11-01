@@ -35,7 +35,7 @@ describe('template routes', () => {
     // assertion protects the summary shape instead of the exact count.
     expect(rows.length).toBeGreaterThanOrEqual(100);
     expect(rows.some((row: { id: string }) => row.id === 'umami-stack')).toBe(true);
-    expect(rows[0]).toMatchObject({ id: 'n8n', name: 'n8n', category: 'Automation', runtimeVerified: true });
+    expect(rows[0]).toMatchObject({ id: 'n8n', name: 'n8n', category: 'Automation', runtimeVerified: true, openFirstRun: 'first-visitor-admin' });
     expect(rows[0]).not.toHaveProperty('description');
   });
 

@@ -38,6 +38,7 @@ const summary = (t: Template) => ({
   featured: t.featured,
   runtimeVerified: t.runtimeVerified === true,
   verifiedAt: t.verifiedAt,
+  openFirstRun: t.openFirstRun,
 });
 
 type ProvisionStage = {

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useMemo, useState } from 'react';
 import {
-  CheckCircle2, Download, ExternalLink,
+  AlertTriangle, CheckCircle2, Download, ExternalLink,
   Layers, Package, RefreshCw, Rocket, Search, ShieldCheck, Sparkles, Store, X,
 } from 'lucide-react';
 import type { Template } from '@ninedeploy/sdk';
@@ -265,6 +265,14 @@ export function Hub() {
                       {tpl.featured && (
                         <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-medium uppercase text-indigo-300">
                           {t('featured')}
+                        </span>
+                      )}
+                      {openFirstRunWarning(tpl) && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase text-amber-300 ring-1 ring-inset ring-amber-500/20"
+                          title={t(openFirstRunWarning(tpl)!)}
+                        >
+                          <AlertTriangle size={9} aria-hidden="true" /> {t('open until set up')}
                         </span>
                       )}
                     </div>

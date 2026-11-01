@@ -196,6 +196,14 @@ describe('Hub', () => {
     expect(await screen.findByText(/Community template: its manifest is validated/)).toBeInTheDocument();
   });
 
+  it('marks the card of an app that is open until set up', async () => {
+    mockOf(api.templates.list).mockResolvedValue([{ ...templates[0], openFirstRun: 'first-visitor-admin' }, templates[1]] as never);
+    renderWithProviders(<Hub />);
+    const badge = await screen.findByText('open until set up');
+    expect(badge.closest('span')).toHaveAttribute('title', expect.stringMatching(/first person to open this app becomes its administrator/));
+    expect(screen.getAllByText('open until set up')).toHaveLength(1);
+  });
+
   it('warns in the detail when the app has no login of its own', async () => {
     mockOf(api.templates.get).mockResolvedValue({ ...templateDetail, openFirstRun: 'no-auth' } as never);
     renderWithProviders(<Hub />);
