@@ -1,8 +1,21 @@
 [
   {
+    "version": "0.18.15",
+    "date": "2026-11-01",
+    "title": "Deployment readiness, remote MCP and CI runners",
+    "changes": [
+      "Carry the readiness, MCP/OAuth, CI runner and runtime changes from the unpublished 0.18.14 candidate; its tag is preserved.",
+      "Wait for a real sampled traffic baseline before canary smoke deploys, retain early failures and run the public canary lifecycle in normal CI.",
+      "Respect native Docker health, reject loopback-only listeners and expired readiness verdicts, and wait for the application port after a command healthcheck succeeds.",
+      "Add opt-in remote MCP with scoped OAuth grants and durable CI jobs on enrolled runners, with isolated job networks and commit-pinned deployment gates.",
+      "Prepare fenced node autoscale capacity, scan Compose images before replacement, apply supported Swarm container options and stop PM2 restart loops.",
+      "RPS, node sleep/wake and full R2 acceptance remain unfinished. Desktop signing and signed macOS Keychain persistence remain unverified."
+    ]
+  },
+  {
     "version": "0.18.14",
     "date": "2026-11-01",
-    "title": "Safer deploy readiness, remote MCP and CI runners",
+    "title": "Unpublished candidate: safer readiness and integrations",
     "changes": [
       "Respect native Docker health for HTTP and TCP readiness, reject loopback-only listeners and expired verdicts, and wait for the configured application port after command readiness succeeds.",
       "Add opt-in remote MCP over Streamable HTTP with scoped API tokens, OAuth consent, PKCE, rotating refresh tokens and revocation.",

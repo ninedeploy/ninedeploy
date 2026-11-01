@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.15] - 2026-11-01
+
+- Carries the readiness, remote MCP/OAuth, CI runner and runtime increments documented under the unpublished 0.18.14 candidate below.
+- Start collecting at least 20 real traffic outcomes before submitting a canary smoke deployment. A fast owner-opt-out refusal could previously finish before the collector sampled enough requests, failing the release's minimum-evidence assertion. Keep the minimum sample and zero-unexpected-error requirements; retain early errors and the complete synthetic traffic trace.
+- Require the public canary lifecycle smoke in normal candidate-image CI, in addition to the final published-image release matrix.
+
 ## [0.18.14] - 2026-11-01
+
+Unpublished candidate: its Git tag and signed registry image are retained. Release workflow 41254561302 passed the full source gate and six smoke cohorts, then withheld GitHub/npm publication after the public canary smoke's insufficient-traffic assertion.
 
 ### Fixed
 
