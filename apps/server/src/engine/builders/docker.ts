@@ -509,7 +509,8 @@ async function probeSiblingHttp(ip: string, port: number, healthPath: string): P
 
 /**
  * Resolve a container's primary-network IPv4 address, or null when that
- * endpoint is unavailable or the container is not running. The host can route to bridge-network IPs
+ * endpoint is unavailable or the container is not running. The host can route
+ * to bridge-network IPs
  * directly, which lets us healthcheck a container WITHOUT publishing any host
  * port — so blue-green never fights over `127.0.0.1:<port>` and rollback probes
  * always resolve the current address fresh from the runtime id.
@@ -1697,9 +1698,9 @@ export const dockerBuilder: Builder = {
           const protocol = runtime.healthCheck === 'tcp' ? 'tcp' : 'http';
           const lines: string[] = [];
           const exitCode = await probeContainer({ name: runtime.runtimeId, port: runtime.port,
-            protocol, path: runtime.healthPath }, line => lines.push(line), { timeoutMs: remaining });
+            protocol, path: runtime.healthPath }, line => lines.push(line), { timeoutMs: remaining, address: eligible });
           ready = confirmedNodeProbe(lines, exitCode, protocol);
-          if (ready && Date.now() < deadline && !deployAborted()) ready = await containerIp(runtime.runtimeId) !== null;
+          if (ready && Date.now() < deadline && !deployAborted()) ready = await containerIp(runtime.runtimeId) === eligible;
         } catch { /* retry until the readiness deadline */ }
         await options.checkpoint?.();
         if (Date.now() >= deadline || deployAborted()) break;
