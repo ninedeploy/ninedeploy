@@ -267,7 +267,7 @@ A docker service that builds from source can use a Dockerfile pasted in the pane
 
 **Limits and storage**
 - At most 64 KiB, and the text must start with `FROM` (or `ARG` before `FROM`).
-- No migration is needed: the text is a settings row, `inline_dockerfile:<id>`.
+- No migration is needed: the text is a settings row, `inline_dockerfile:<id>`. A clone of the service copies it.
 
 ### Restart-loop limit (G1.3)
 

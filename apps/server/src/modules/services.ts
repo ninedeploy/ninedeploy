@@ -1961,6 +1961,14 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         buildTarget: b.buildTarget,
       });
     }
+    // G1.1: the pasted Dockerfile is part of the build definition (a settings
+    // row, not a column): without it the copy built the repository's own
+    // Dockerfile, or nothing at all for a "Dockerfile only" service.
+    {
+      const { getInlineDockerfile, setInlineDockerfile } = await import('../lib/inlineDockerfile.js');
+      const dockerfile = await getInlineDockerfile(app.db, svc.id);
+      if (dockerfile) await setInlineDockerfile(app.db, created.id, dockerfile);
+    }
 
     // Clone env vars
     const envs = await app.db.query.envVars.findMany({ where: eq(envVars.serviceId, svc.id) });
