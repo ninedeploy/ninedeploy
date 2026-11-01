@@ -117,4 +117,23 @@ describe('routes', () => {
     const off = await app.inject({ method: 'PUT', url: '/services/5/restart-limit', headers: asUser(1), payload: { limit: null } });
     expect(off.json().limit).toBeNull();
   });
+
+  it('refuses turning it on where the sweep never samples: a Swarm service; off stays allowed', async () => {
+    await db.insert(services).values({ id: 8, name: 'sw', slug: 'sw', type: 'docker', branch: 'main', ownerUserId: 1, runtimeId: 'nd-sw', status: 'running', orchestrator: 'swarm' } as never);
+    const app = await buildTestApp({ db });
+    await app.register(restartLimitRoutes, { prefix: '/services' });
+    const on = await app.inject({ method: 'PUT', url: '/services/8/restart-limit', headers: asUser(1), payload: { limit } });
+    expect(on.statusCode).toBe(400);
+    expect(on.json().error.code).toBe('restart_limit_unsupported');
+    expect(await lib.getRestartLimit(db, 8)).toBeNull();
+    expect((await app.inject({ method: 'PUT', url: '/services/8/restart-limit', headers: asUser(1), payload: { limit: null } })).statusCode).toBe(200);
+  });
+
+  it('names the services the sweep samples', () => {
+    expect(lib.restartLimitSupported({ type: 'docker', serverId: null, orchestrator: null })).toBe(true);
+    expect(lib.restartLimitSupported({ type: 'pm2', serverId: null, orchestrator: null })).toBe(true);
+    expect(lib.restartLimitSupported({ type: 'docker', serverId: 4, orchestrator: null })).toBe(false);
+    expect(lib.restartLimitSupported({ type: 'docker', serverId: null, orchestrator: 'swarm' })).toBe(false);
+    expect(lib.restartLimitSupported({ type: 'compose', serverId: null, orchestrator: null })).toBe(false);
+  });
 });

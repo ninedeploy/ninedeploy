@@ -271,7 +271,7 @@ A docker service that builds from source can use a Dockerfile pasted in the pane
 
 ### Restart-loop limit (G1.3)
 
-A docker service on the panel host, or a PM2 service (bare-metal mode), can be stopped when its containers or processes keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off.
+A docker service on the panel host, or a PM2 service (bare-metal mode), can be stopped when its containers or processes keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off. Turning it on is refused for a node service or a Swarm service (`restart_limit_unsupported`), whose containers the panel does not sample, and a service with the limit on cannot move to a node (`move_panel_host_only`).
 
 **How it works**
 - Once a minute the panel reads Docker's restart count for each of the service's containers. For a PM2 service it reads PM2's restart count for each process, less the restarts the panel itself asked for (Start, Restart, bringing the service back after a panel restart), so only crashes count.

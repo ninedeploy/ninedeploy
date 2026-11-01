@@ -43,6 +43,11 @@ export async function setRestartLimit(db: DB, serviceId: number, limit: RestartL
   await setSettingJson(db, key(serviceId), { ...restartLimitConfig.parse(limit), trippedAt: prev?.trippedAt ?? null });
 }
 
+/** Panel-host docker services and PM2 services; a Swarm service has no containers of its name, and nodes are not sampled. */
+export function restartLimitSupported(svc: Pick<Service, 'type' | 'serverId' | 'orchestrator'>): boolean {
+  return (svc.type === 'docker' || svc.type === 'pm2') && svc.serverId == null && svc.orchestrator !== 'swarm';
+}
+
 /** Per service: the last RestartCount seen per container id, and when restarts happened. */
 const history = new Map<number, { counts: Map<string, number>; restarts: number[] }>();
 
@@ -123,9 +128,8 @@ export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, 
     const svc = await db.query.services.findFirst({ where: eq(services.id, id) });
     const limit = await getRestartLimit(db, id);
     if (!svc || !limit) continue;
-    // Panel-host docker services and PM2 services that run; a Swarm service has no containers of its name.
     const pm2 = svc.type === 'pm2';
-    if ((!pm2 && svc.type !== 'docker') || svc.serverId != null || svc.orchestrator === 'swarm' || !svc.runtimeId || svc.status !== 'running') {
+    if (!restartLimitSupported(svc) || !svc.runtimeId || svc.status !== 'running') {
       history.delete(id);
       continue;
     }

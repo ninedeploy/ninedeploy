@@ -1006,6 +1006,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       const { panelHostOnlyRefusal } = await import('../lib/maintenance.js');
       const refusal = await panelHostOnlyRefusal(app.db, existing.id);
       if (refusal) throw badRequest(refusal, 'move_panel_host_only');
+      // G1.3: nodes are not sampled; the limit would sit unseen there (its card is hidden).
+      const { getRestartLimit } = await import('../lib/restartLimit.js');
+      if (await getRestartLimit(app.db, existing.id)) {
+        throw badRequest('Turn the restart-loop limit off before the service runs on a node', 'move_panel_host_only');
+      }
     }
     if (moving) {
       await assertSlugVolumeNotRetained(existing.slug, patch.type ?? existing.type, {

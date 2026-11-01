@@ -18,8 +18,8 @@ export function RestartLimitCard({ svc }: { svc: ServiceDetail }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
-  // G1.3: docker services on the panel host and PM2 services.
-  const limitable = svc.type === 'docker' || svc.type === 'pm2';
+  // G1.3: docker services on the panel host and PM2 services, not Swarm (the server refuses the rest).
+  const limitable = (svc.type === 'docker' || svc.type === 'pm2') && svc.serverId == null && svc.orchestrator !== 'swarm';
   const q = useQuery({ queryKey: ['restart-limit', svc.id], queryFn: () => api.services.restartLimit.get(svc.id), enabled: limitable });
   const [on, setOn] = useState(false);
   const [max, setMax] = useState('5');

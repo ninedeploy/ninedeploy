@@ -26,6 +26,16 @@ describe('RestartLimitCard (G1.3)', () => {
     expect(container.textContent).toBe('');
   });
 
+  it('is not offered where the server would refuse it: a node service or a Swarm service', () => {
+    const before = mockOf(api.services.restartLimit.get).mock.calls.length;
+    for (const svc of [{ id: 5, type: 'docker', serverId: 4 }, { id: 5, type: 'docker', serverId: null, orchestrator: 'swarm' }]) {
+      const { container, unmount } = renderWithProviders(<RestartLimitCard svc={svc as never} />);
+      expect(container.textContent).toBe('');
+      unmount();
+    }
+    expect(mockOf(api.services.restartLimit.get).mock.calls.length).toBe(before);
+  });
+
   it('offers the limit on a PM2 service', async () => {
     mockOf(api.services.restartLimit.get).mockResolvedValue({ limit: null, recentRestarts: 0, trippedAt: null } as never);
     renderWithProviders(<RestartLimitCard svc={{ id: 7, type: 'pm2' } as never} />);

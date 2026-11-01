@@ -59,6 +59,12 @@ vi.mock('../src/lib/maintenance.js', async (importOriginal) => ({
   panelHostOnlyRefusal: vi.fn(async () => pages.refusal),
 }));
 
+const restart = vi.hoisted(() => ({ limit: null as { maxRestarts: number; windowMinutes: number } | null }));
+vi.mock('../src/lib/restartLimit.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/restartLimit.js')>()),
+  getRestartLimit: vi.fn(async () => restart.limit),
+}));
+
 const { servicesRoutes } = await import('../src/modules/services.js');
 
 const remote = (over: Record<string, unknown> = {}) =>
@@ -228,6 +234,19 @@ describe('r662: moving and deleting remote services', () => {
       expect(ops()).toEqual([]);
     } finally {
       pages.refusal = null;
+    }
+  });
+
+  it('refuses a move to a node while the restart-loop limit is on (G1.3)', async () => {
+    restart.limit = { maxRestarts: 3, windowMinutes: 10 };
+    try {
+      const app = await movingApp();
+      const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser({ isOperator: true }), payload: { serverId: 5 } });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatchObject({ code: 'move_panel_host_only', message: expect.stringContaining('restart-loop limit') });
+      expect(ops()).toEqual([]);
+    } finally {
+      restart.limit = null;
     }
   });
 

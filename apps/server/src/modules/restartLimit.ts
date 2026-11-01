@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { restartLimitInput } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { parseId } from '../lib/errors.js';
-import { getRestartLimit, restartLimitView, setRestartLimit } from '../lib/restartLimit.js';
+import { badRequest, parseId } from '../lib/errors.js';
+import { getRestartLimit, restartLimitSupported, restartLimitView, setRestartLimit } from '../lib/restartLimit.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
 
 /**
@@ -23,6 +23,10 @@ export const restartLimitRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     const { limit } = restartLimitInput.parse(req.body ?? {});
+    // Turning it off is always allowed; on, it must be a service the sweep samples.
+    if (limit && !restartLimitSupported(svc)) {
+      throw badRequest('The restart-loop limit is for docker services on the panel host and PM2 services, not Swarm', 'restart_limit_unsupported');
+    }
     await setRestartLimit(app.db, id, limit);
     void audit(app.db, req.user!.id, 'service.restart_limit.set', `${svc.name} #${svc.id}`, { serviceId: id, limit });
     return restartLimitView(await getRestartLimit(app.db, id), id);
