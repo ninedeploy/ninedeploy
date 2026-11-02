@@ -39,6 +39,7 @@ import { FA_PREFIX, forwardAuthDomains } from '../lib/forwardAuth.js';
 import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
 import { nodeWakeKey } from '../lib/nodeWakeKey.js';
 import { WAKE_CATCHER_PORT, WAKE_KEY_HEADER } from '../wakeCatcher.js';
+import { checkNodeWakeRoutePromotion, type NodeWakeRoutePromotion } from '../lib/nodeWakeRoutePromotion.js';
 
 /** 0.16.11: the path prefix the wake endpoint answers under (modules/wake.ts). */
 export const WAKE_PREFIX = '/_nd/wake';
@@ -880,6 +881,7 @@ export interface DynamicConfigOptions {
   /** Service whose generated routes must be observed before retirement. */
   confirmServiceId?: number;
   autoscalePromotion?: AutoscaleRoutePromotion;
+  wakePromotion?: NodeWakeRoutePromotion;
   /** Require the selected node to adopt ordered dynamic writes before updating routes. */
   requireOrderedNode?: boolean;
   signal?: AbortSignal;
@@ -893,6 +895,10 @@ export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Pro
 
 async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): Promise<void> {
   if (opts.signal?.aborted) throw new ProxyRoutingUnconfirmed();
+  if (opts.wakePromotion) {
+    if (opts.requireNode == null || opts.confirmNodeRouting !== true || opts.autoscalePromotion) throw new ProxyRoutingUnconfirmed('Wake promotion requires exclusive confirmed node routing');
+    await checkNodeWakeRoutePromotion(opts.wakePromotion, opts.requireNode);
+  }
   if (opts.autoscalePromotion && (opts.requireNode == null || opts.confirmNodeRouting !== true)) throw new ProxyRoutingUnconfirmed('Autoscale promotion requires confirmed node routing');
   if (opts.requireOrderedNode && (opts.requireNode == null || opts.confirmNodeRouting !== true)) throw new ProxyRoutingUnconfirmed('Ordered routing requires a confirmed node');
   // The render refreshes the uploaded-certificate cache; the certificates
@@ -923,7 +929,7 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     }
   }
   if (confirm) await confirmProxyRouting(routes, { signal: opts.signal });
-  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion, opts.requireOrderedNode);
+  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion, opts.requireOrderedNode, opts.wakePromotion);
 }
 
 /**
@@ -987,7 +993,7 @@ const lastNodeSyncAuditAt = new Map<number, number>();
  * `routingFlipped` true and the pipeline stop the still-routed previous
  * container on the node — an outage reported as a successful deploy.
  */
-async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion, requireOrderedNode?: boolean): Promise<void> {
+async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion, requireOrderedNode?: boolean, wakePromotion?: NodeWakeRoutePromotion): Promise<void> {
   let results: Array<{ serverId: number; ok: boolean; reason?: string; routingUnconfirmed?: boolean }> = [];
   try {
     signal?.throwIfAborted();
@@ -1000,8 +1006,8 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
     }
     if (nodes.length === 0) return;
     const { syncAllNodeProxies } = await import('../lib/nodeProxy.js');
-    results = signal || autoscalePromotion || requireOrderedNode
-      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, ...(signal ? { signal, timeoutMs: 15_000 } : {}), ...(autoscalePromotion ? { autoscalePromotion } : {}), ...(requireOrderedNode ? { adoptOrderedNode: requireNode } : {}) })
+    results = signal || autoscalePromotion || requireOrderedNode || wakePromotion
+      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, ...(signal ? { signal, timeoutMs: 15_000 } : {}), ...(autoscalePromotion ? { autoscalePromotion } : {}), ...(wakePromotion ? { wakePromotion } : {}), ...(requireOrderedNode ? { adoptOrderedNode: requireNode } : {}) })
       : confirmNode === undefined
       ? await syncAllNodeProxies(db, nodes.map((n) => n.id))
       : await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode });
@@ -1058,7 +1064,7 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
 export type AutoscaleRoutePromotion = { serviceId: number; workerToken: string; ownerEpoch: number; requestId: string };
 export async function renderDynamicConfig(
   db: DB,
-  opts: { serverId: number | null; autoscalePromotion?: AutoscaleRoutePromotion } = { serverId: null },
+  opts: { serverId: number | null; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion } = { serverId: null },
 ): Promise<string> {
   const forNode = opts.serverId != null;
   const all = await db.select().from(domains);
@@ -1093,6 +1099,12 @@ export async function renderDynamicConfig(
       service.type !== 'docker' || service.orchestrator === 'swarm' || targetRuntimeByService.has(service.id)) {
       throw new Error('Node wake routing identity is invalid');
     }
+  }
+  let wakePromoted: number | null = null;
+  if (opts.wakePromotion) {
+    if (!forNode || opts.autoscalePromotion) throw new Error('Node wake promotion requires its own node render');
+    wakePromoted = await checkNodeWakeRoutePromotion(opts.wakePromotion, opts.serverId!);
+    if (!sleepRouting.has(wakePromoted)) throw new Error('Node wake fallback generation changed');
   }
   const scaleTransitions = forNode ? await db.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serverId, opts.serverId!)) : [];
   const scaleOwners = scaleTransitions.length ? await db.select().from(serviceRuntimeOwners) : [];
@@ -1325,8 +1337,8 @@ export async function renderDynamicConfig(
     // a protected domain still asks for its credentials before anything wakes.
     const maint = overrides.maintenance.get(svc.id);
     const asleep = !forNode && svc.type === 'docker' && svc.asleepAt != null;
-    const nodeSleep = forNode && svc.type === 'docker' && svc.orchestrator !== 'swarm' && !targetRuntimeByService.has(svc.id) ? sleepRouting.get(svc.id) : undefined;
-    if (forNode && svc.asleepAt != null && !nodeSleep) throw new Error('Sleeping node service has no confirmed fallback route');
+    const nodeSleep = forNode && svc.type === 'docker' && svc.orchestrator !== 'swarm' && !targetRuntimeByService.has(svc.id) && svc.id !== wakePromoted ? sleepRouting.get(svc.id) : undefined;
+    if (forNode && svc.asleepAt != null && !nodeSleep && svc.id !== wakePromoted) throw new Error('Sleeping node service has no confirmed fallback route');
     if (nodeSleep) {
       const prefix = `mw_${key}_node_wake`, credential = 'mw_ninedeploy_node_wake_key';
       mwList.push(prefix, credential);
