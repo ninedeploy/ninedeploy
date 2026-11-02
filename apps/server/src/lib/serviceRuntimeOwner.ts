@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, nodeDeploymentPreparations, runtimeMutationKinds, serviceRuntimeOwners, services, sql, type DB, type ServiceRuntimeOwner } from '@ninedeploy/db';
-import { isNull } from 'drizzle-orm';
+import { and, eq, nodeDeploymentPreparations, nodeSleepTransitions, runtimeMutationKinds, serviceRuntimeOwners, services, sql, type DB, type ServiceRuntimeOwner } from '@ninedeploy/db';
+import { isNull, notInArray } from 'drizzle-orm';
 import { HttpError } from './errors.js';
+import { nodeSleepAutomationBlock } from './nodeSleepAutomationBlock.js';
 
 export type RuntimeMutationKind = Exclude<ServiceRuntimeOwner['kind'], 'legacy'>;
 export type RuntimeOwnerDB = Pick<DB, 'select' | 'insert' | 'update'>;
@@ -41,6 +42,10 @@ export async function reserveServiceRuntimeOwnerInTransaction(db: RuntimeOwnerDB
     !runtimeMutationKinds.includes(kind)) throw new Error('Invalid runtime ownership request');
   if (expected !== 'supersede' && expected !== null && expected.serviceId !== serviceId) throw changed();
   const current = await readServiceRuntimeOwner(db, serviceId);
+  if (kind === 'scale' && (await db.select({ serviceId: nodeSleepTransitions.serviceId }).from(nodeSleepTransitions)
+    .where(nodeSleepAutomationBlock(serviceId)).limit(1)).length) {
+    throw new HttpError(409, 'node_sleep_pending', 'Node sleep or wake must settle before automatic scaling');
+  }
   if (current?.requestId === requestId) {
     if (current.kind !== kind) throw changed();
     return current;
@@ -64,6 +69,8 @@ export async function reserveServiceRuntimeOwnerInTransaction(db: RuntimeOwnerDB
       current.requestId === null ? isNull(serviceRuntimeOwners.requestId) : eq(serviceRuntimeOwners.requestId, current.requestId), eq(serviceRuntimeOwners.kind, current.kind))).returning()
     : await db.insert(serviceRuntimeOwners).values({ serviceId, ...values }).onConflictDoNothing().returning();
   if (rows.length !== 1) throw changed();
+  if (kind !== 'sleep' && kind !== 'wake') await db.update(nodeSleepTransitions).set({ phase: 'superseded', workerToken: null, leaseUntil: null,
+    reason: `superseded by ${kind}` }).where(and(eq(nodeSleepTransitions.serviceId, serviceId), notInArray(nodeSleepTransitions.phase, ['completed', 'superseded'])));
   return valid(rows[0]!);
 }
 

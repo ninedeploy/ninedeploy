@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { idleWatchOpen, type IdleWatchSnapshot } from '@ninedeploy/schemas';
-import { NodeIdleCoverage, type CompletedIdleWindow } from '../../src/lib/nodeIdleCoverage.js';
+import { NodeIdleCoverage, spendNodeIdleEvidence, type CompletedIdleWindow } from '../../src/lib/nodeIdleCoverage.js';
 import { proxyTrafficRoutingGeneration, proxyTrafficTargetHash } from '../../src/lib/proxyTrafficCounter.js';
 
 function window(nonce = 1, start = '10', end = '20', beforeOpen = 0, context = 'runtime-owner-and-config'): CompletedIdleWindow {
@@ -80,4 +80,20 @@ it('reset discards coverage after a lease or panel lifecycle loss', () => {
 it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, Number.MAX_SAFE_INTEGER + 1])('refuses invalid panel clock bounds: %s', value => {
   const invalid = window(); invalid.beforeOpen = invalid.afterOpen = value;
   expect(() => new NodeIdleCoverage().complete(invalid)).toThrow(/timing/);
+});
+it('issues opaque evidence once per completed window and consumes it only once', () => {
+  const clock = new NodeIdleCoverage(); clock.complete(window());
+  const token = clock.takeEvidence()!; expect(token).not.toBeNull(); expect(Object.isFrozen(token)).toBe(true);
+  expect(clock.takeEvidence()).toBeNull(); expect(spendNodeIdleEvidence(token)).toMatchObject({ idleMs: 60_000 });
+  expect(spendNodeIdleEvidence(token)).toBeNull();
+});
+it.each(['monotonic', 'wall', 'reset', 'source', 'traffic'])('revokes evidence after %s changes or expiry', kind => {
+  let mono = 1000, wall = 100_000;
+  const clock = new NodeIdleCoverage(() => mono, () => wall); clock.complete(window()); const token = clock.takeEvidence()!;
+  if (kind === 'monotonic') mono += 30_000;
+  if (kind === 'wall') wall += 30_000;
+  if (kind === 'reset') clock.reset();
+  if (kind === 'source') { const next = window(2, '19', '30', 50_000); next.opened.sourceId = next.finished.sourceId = '0'.repeat(64); clock.complete(next); }
+  if (kind === 'traffic') { const next = window(2, '19', '30', 50_000); next.finished.serving = { requests: 1, errors: 0, errorRate: 0, p95Ms: 1 }; clock.complete(next); }
+  expect(spendNodeIdleEvidence(token)).toBeNull();
 });

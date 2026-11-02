@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
-import { deploymentRuntimeOwners, deployments, fanoutTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
+import { deploymentRuntimeOwners, deployments, fanoutTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, nodeSleepTransitions, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
 import { HttpError } from './errors.js';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
+import { nodeSleepAutomationBlock } from './nodeSleepAutomationBlock.js';
 
 const terminal = ['completed', 'superseded'] as const;
 const cancellable = ['queued', 'building', 'deploying', 'awaiting_ci', 'awaiting_approval'] as const;
@@ -62,6 +63,8 @@ export async function acceptNodeLifecycleIntent(db: DB, service: Service, action
       throw new HttpError(404, 'not_found', 'Service has no selected runtime or active deployment to stop');
     }
     if (options.automatic) {
+      const sleep = await tx.select({ id: nodeSleepTransitions.serviceId }).from(nodeSleepTransitions).where(nodeSleepAutomationBlock(service.id, fresh.runtimeId)).limit(1);
+      if (sleep.length || fresh.asleepAt != null) throw new HttpError(409, 'node_sleep_pending', 'Automatic Start cannot supersede node sleep or wake');
       if (action !== 'start' || fresh.status !== 'running') throw changed();
       const pending = await tx.query.nodeLifecycleIntents.findFirst({ where: and(eq(nodeLifecycleIntents.serviceId, service.id), notInArray(nodeLifecycleIntents.phase, [...terminal])) });
       if (pending && await nodeLifecycleHasRuntimeAuthority(tx, pending)) return pending;
