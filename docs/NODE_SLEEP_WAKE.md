@@ -1,6 +1,6 @@
 # Node scale to zero and wake (R2)
 
-Status, 2026-11-02: design accepted; step 1 (agent idle watch) implemented, its hosted cases pending. Scale to zero (`sleepAfterMinutes`) runs on the panel host only. `lib/sleep.ts` refuses node services with "scale to zero runs on the panel host only for now", and [DEPLOYMENTS.md](DEPLOYMENTS.md) documents that limit. This document records why the panel-host mechanism cannot be reused on a node, the decisions that replace it, and the ordered steps with their acceptance.
+Status, 2026-11-02: design accepted. Step 1, the agent idle watch, is accepted: [CI 41498096715](https://github.com/ninedeploy/ninedeploy/actions/runs/41498096715) passed all 12 sealed serving-traffic cases. Those included a 62 s verified zero, a chained window that counted one request, and a proxy restart that ended coverage, with no window left open. Steps 2–7 are open, and node services still cannot sleep. Scale to zero (`sleepAfterMinutes`) runs on the panel host only. `lib/sleep.ts` refuses node services with "scale to zero runs on the panel host only for now", and [DEPLOYMENTS.md](DEPLOYMENTS.md) documents that limit. This document records why the panel-host mechanism cannot be reused on a node, the decisions that replace it, and the ordered steps with their acceptance.
 
 ## Why the panel-host mechanism does not carry over
 
