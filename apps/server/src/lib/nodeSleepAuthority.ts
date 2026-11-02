@@ -9,6 +9,7 @@ import { spendNodeIdleEvidence, type NodeIdleEvidence } from './nodeIdleCoverage
 import { nodeServingTrafficContext, readNodeServingTrafficState } from './nodeServingTrafficContext.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 import { registerNodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
+import { nodeWakeMaintenancePending } from './nodeWakeMaintenanceBlock.js';
 
 type ReadDB = Pick<DB, 'query' | 'select'>;
 export type NodeSleepAdmission = { serviceId: number; owner: ServiceRuntimeOwner; workerToken: string; binding: string };
@@ -70,7 +71,7 @@ export async function admitNodeSleep(db: DB, expected: Service, token: NodeIdleE
     if (await nodeServingTrafficContext(db, proof.window.input) !== proof.window.context) return null;
     return await db.transaction(async tx => {
       const fresh = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
-      if (!fresh || JSON.stringify(fresh) !== JSON.stringify(expected) || !await unblocked(tx, fresh.id) || !freshProof() ||
+      if (!fresh || JSON.stringify(fresh) !== JSON.stringify(expected) || await nodeWakeMaintenancePending(tx, fresh.serverId!) || !await unblocked(tx, fresh.id) || !freshProof() ||
         await readNodeServingTrafficState(tx, proof.window.input) !== proof.window.context) return null;
       const current = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, fresh.id) });
       if (current && !terminal.includes(current.phase as typeof terminal[number])) return null;
@@ -198,13 +199,22 @@ export async function bindNodeSleepCatcher(db: DB, admission: NodeSleepAdmission
 
 /** Rebind a recreated, separately confirmed catcher without reviving a superseded sleep cycle. */
 export async function refreshNodeSleepCatcher(db: DB, expected: ServiceRuntimeOwner, previousId: string, catcher: { id: string; image: string }) {
+  await db.transaction(tx => refreshNodeSleepCatcherInTransaction(tx, expected, previousId, catcher));
+}
+
+export async function readNodeSleepingState(db: ReadDB, serviceId: number) {
+  const row = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, serviceId) });
+  const owner = await readServiceRuntimeOwner(db, serviceId);
+  if (!row || !owner || row.action !== 'sleep' || row.phase !== 'asleep' || owner.kind !== 'sleep' || owner.epoch !== row.ownerEpoch || owner.requestId !== row.requestId) return null;
+  return { ...await assertCurrent(db, { serviceId, owner, workerToken: '', binding: row.binding }, false), owner };
+}
+
+export async function refreshNodeSleepCatcherInTransaction(db: ReadDB & Pick<DB, 'update'>, expected: ServiceRuntimeOwner, previousId: string, catcher: { id: string; image: string }) {
   if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image)) throw changed();
-  await db.transaction(async tx => {
-    const row = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, expected.serviceId) });
-    if (!row || row.action !== 'sleep' || row.phase !== 'asleep' || row.catcherId !== previousId) throw changed();
-    await assertCurrent(tx, { serviceId: expected.serviceId, owner: expected, workerToken: '', binding: row.binding }, false);
-    await tx.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image }).where(eq(nodeSleepTransitions.serviceId, expected.serviceId));
-  });
+  const row = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, expected.serviceId) });
+  if (!row || row.action !== 'sleep' || row.phase !== 'asleep' || row.catcherId !== previousId) throw changed();
+  await assertCurrent(db, { serviceId: expected.serviceId, owner: expected, workerToken: '', binding: row.binding }, false);
+  await db.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image }).where(eq(nodeSleepTransitions.serviceId, expected.serviceId));
 }
 
 async function complete(db: DB, admission: NodeSleepAdmission, raw: unknown, action: 'sleep' | 'wake') {
@@ -253,7 +263,7 @@ export async function admitNodeWake(db: DB, expected: Service, demand: { nodeId:
     const row = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, expected.id) });
     const service = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
     const previous = await readServiceRuntimeOwner(tx, expected.id);
-    if (!row || !service || JSON.stringify(service) !== JSON.stringify(expected) || row.phase !== 'asleep' || row.action !== 'sleep' ||
+    if (!row || !service || JSON.stringify(service) !== JSON.stringify(expected) || await nodeWakeMaintenancePending(tx, service.serverId!) || row.phase !== 'asleep' || row.action !== 'sleep' ||
       row.wakeToken !== demand.token || row.catcherId !== demand.catcherId || !previous || previous.kind !== 'sleep' || previous.epoch !== row.ownerEpoch || previous.requestId !== row.requestId) return null;
     await assertCurrent(tx, { serviceId: service.id, owner: previous, workerToken: '', binding: row.binding }, false);
     const owner = await reserveServiceRuntimeOwnerInTransaction(tx, service.id, 'wake', nonce(), previous), workerToken = nonce();

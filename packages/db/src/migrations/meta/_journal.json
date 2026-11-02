@@ -841,6 +841,13 @@
       "when": 1793654014485,
       "tag": "0120_node_sleep_transitions",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "6",
+      "when": 1793660544322,
+      "tag": "0121_node_wake_maintenance",
+      "breakpoints": true
     }
   ]
 }
