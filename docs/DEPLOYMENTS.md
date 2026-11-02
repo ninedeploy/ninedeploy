@@ -232,7 +232,7 @@ A domain's basic auth and IP allow list run before the wake, so a protected serv
 Requirements and limits:
 - Traffic analytics must be on (**Traefik → Traffic**): requests are counted from the traffic log. Without it nothing sleeps.
 - The service needs at least one routed domain; otherwise nothing could wake it. Host ports and the service's internal network do not count as requests and do not wake it, so a service reached only that way should not sleep.
-- Panel host only; not for node or Swarm services. Nothing sleeps during a deploy or a canary, and the autoscaler holds while a service sleeps.
+- Panel host only; not for node or Swarm services. Node support is designed in [NODE_SLEEP_WAKE.md](NODE_SLEEP_WAKE.md). Nothing sleeps during a deploy or a canary, and the autoscaler holds while a service sleeps.
 - The idle window starts again after a panel restart and after each deploy.
 
 ### Pending changes (G5.2)
