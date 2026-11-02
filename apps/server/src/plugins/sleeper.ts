@@ -6,6 +6,8 @@ import { putToSleep, SLEEP_TICK_MS, type SleepDeps, sleepHoldReason } from '../l
 import { sleepDeps } from '../lib/sleepRuntime.js';
 import { wakeUnreachableReason } from '../lib/panelUpstream.js';
 import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
+import { createNodeIdleScheduler, NODE_IDLE_SAMPLE_MS } from '../lib/nodeIdleScheduler.js';
+import { openServiceNodeIdleWatch } from '../lib/nodeIdleWatchService.js';
 
 /**
  * 0.16.11 scale to zero: every minute, puts to sleep the services with
@@ -57,6 +59,13 @@ export function createSleeper(deps: {
 
 export default fp(
   async (fastify) => {
+    const nodeIdle = createNodeIdleScheduler({
+      load: () => fastify.db.select().from(services).where(isNotNull(services.sleepAfterMinutes)),
+      open: (service, signal) => openServiceNodeIdleWatch(fastify.db, service, signal),
+      onError: err => fastify.log.warn({ err }, 'node idle coverage unavailable'),
+    });
+    const nodeIdleTimer = setInterval(() => void nodeIdle.tick(), NODE_IDLE_SAMPLE_MS);
+    nodeIdleTimer.unref();
     const sleeper = createSleeper({
       load: async () => {
         try {
@@ -96,6 +105,8 @@ export default fp(
     fastify.addHook('onClose', async () => {
       running = false;
       clearTimeout(timer);
+      clearInterval(nodeIdleTimer);
+      await nodeIdle.close();
     });
     timer = setTimeout(() => void loop(), SLEEP_TICK_MS);
     timer.unref?.();
