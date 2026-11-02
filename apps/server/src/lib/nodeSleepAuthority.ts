@@ -8,6 +8,7 @@ import { replicaNames } from '../engine/dockerNames.js';
 import { spendNodeIdleEvidence, type NodeIdleEvidence } from './nodeIdleCoverage.js';
 import { nodeServingTrafficContext, readNodeServingTrafficState } from './nodeServingTrafficContext.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
+import { registerNodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
 
 type ReadDB = Pick<DB, 'query' | 'select'>;
 export type NodeSleepAdmission = { serviceId: number; owner: ServiceRuntimeOwner; workerToken: string; binding: string };
@@ -124,6 +125,17 @@ export async function checkpointNodeSleep(db: DB, admission: NodeSleepAdmission)
     await tx.update(nodeSleepTransitions).set({ leaseUntil: new Date(Date.now() + NODE_SLEEP_LEASE_MS) }).where(and(eq(nodeSleepTransitions.serviceId, admission.serviceId), eq(nodeSleepTransitions.workerToken, admission.workerToken)));
     return row;
   });
+}
+
+/** The ordered controller must reach publishing only after fresh stable readiness. */
+export async function prepareNodeWakeRouting(db: DB, admission: NodeSleepAdmission) {
+  const verify = async () => {
+    const row = await checkpointNodeSleep(db, admission);
+    if (row.action !== 'wake' || row.phase !== 'publishing') throw changed();
+    return row;
+  };
+  const row = await verify();
+  return registerNodeWakeRoutePromotion(row.serverId, row.serviceId, async () => { await verify(); });
 }
 
 /** Request identity stays fixed across worker recovery; a newer service command uses a higher epoch. */
