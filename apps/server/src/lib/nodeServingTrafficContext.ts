@@ -1,6 +1,6 @@
 import { and, eq, inArray, notInArray } from 'drizzle-orm';
 import { databaseAttachments, databases, deployments, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeDeploymentPreparations,
-  nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB } from '@ninedeploy/db';
+  nodeLifecycleIntents, nodeSleepTransitions, primaryTransitions, services, serviceTargets, type DB } from '@ninedeploy/db';
 import type { IdleWatchOpen, ServingTrafficOpen } from '@ninedeploy/schemas';
 import { canaryActive } from '../engine/canaryState.js';
 import { replicaNames } from '../engine/dockerNames.js';
@@ -9,6 +9,7 @@ import { validNodeAutoscaleDatabaseNetworks } from './nodeAutoscaleAuthority.js'
 import { readServiceRuntimeOwner } from './serviceRuntimeOwner.js';
 import { proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 import { servingTrafficRoutesMatch } from './servingTrafficRouting.js';
+import { nodeSleepAutomationBlock } from './nodeSleepAutomationBlock.js';
 
 /** Read-only eligibility: observations never acquire runtime mutation authority. */
 export async function readNodeServingTrafficState(tx: Pick<DB, 'query' | 'select'>, input: ServingTrafficOpen | IdleWatchOpen): Promise<string> {
@@ -38,6 +39,7 @@ export async function readNodeServingTrafficState(tx: Pick<DB, 'query' | 'select
       .where(eq(databaseAttachments.serviceId, svc.id)).orderBy(databaseAttachments.id) : [];
     if (attached.some(item => item.serverId !== svc.serverId || item.status !== 'running')) throw unavailable();
     const conflicts = await Promise.all([
+      tx.select({ id: nodeSleepTransitions.serviceId }).from(nodeSleepTransitions).where(nodeSleepAutomationBlock(svc.id, svc.runtimeId)).limit(1),
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, svc.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, svc.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
       tx.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, svc.id)).limit(1),

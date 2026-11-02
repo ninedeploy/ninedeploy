@@ -1897,6 +1897,24 @@ export const nodeAutoscaleTransitions = sqliteTable('node_autoscale_transitions'
 });
 export type NodeAutoscaleTransition = typeof nodeAutoscaleTransitions.$inferSelect;
 
+/** Durable node sleep/wake authority. The token and replica IDs survive panel restarts. */
+export const nodeSleepTransitions = sqliteTable('node_sleep_transitions', {
+  serviceId: integer('service_id').primaryKey().references(() => services.id, { onDelete: 'cascade' }),
+  serverId: integer('server_id').notNull(), deploymentId: integer('deployment_id').notNull(), runtimeId: text('runtime_id').notNull(),
+  ownerEpoch: integer('owner_epoch').notNull(), requestId: text('request_id').notNull(),
+  action: text('action', { enum: ['sleep', 'wake'] }).notNull(),
+  phase: text('phase', { enum: ['accepted', 'fencing', 'prepared', 'routing', 'routed', 'stopping', 'asleep', 'starting', 'readiness', 'publishing', 'completed', 'superseded'] }).notNull(),
+  configuration: text('configuration').notNull(), binding: text('binding').notNull(), watermark: integer('watermark').notNull(),
+  wakeToken: text('wake_token').notNull(),
+  fallbackRouting: integer('fallback_routing', { mode: 'boolean' }).notNull().default(false),
+  targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string; deploymentId: number; port: number }>>().notNull(),
+  idleEvidence: text('idle_evidence', { mode: 'json' }).$type<{ idleMs: number; sampledAt: number; windowId: string; sourceId: string; proxyId: string; epoch: string; routingGeneration: string; targetHash: string }>().notNull(),
+  catcherId: text('catcher_id'), catcherImage: text('catcher_image'),
+  workerToken: text('worker_token'), leaseUntil: integer('lease_until', { mode: 'timestamp_ms' }),
+  reason: text('reason'), createdAt: ts('created_at'), updatedAt: tsUpdatable('updated_at'),
+}, t => ({ request: uniqueIndex('node_sleep_request_idx').on(t.requestId), wake: uniqueIndex('node_sleep_wake_token_idx').on(t.wakeToken) }));
+export type NodeSleepTransition = typeof nodeSleepTransitions.$inferSelect;
+
 /** Private immutable deployment authority, independent of mutable configuration snapshots. */
 export const deploymentRuntimeOwners = sqliteTable('deployment_runtime_owners', {
   deploymentId: integer('deployment_id').primaryKey().references(() => deployments.id, { onDelete: 'cascade' }),

@@ -64,11 +64,11 @@ export function createNodeIdleScheduler(deps: {
       if (sample.elapsedMs < entry.active.input.durationMs) return;
       const active = entry.active, next = entry.next;
       if (!next) throw new Error('node idle successor is missing');
-      const finished = await active.finish(); live(entry);
+      const sampledAt = Date.now(), finished = await active.finish(); live(entry);
       const nextSample = await next.sample(); live(entry); entry.sampledAt = now();
       if (nextSample.serving.requests > 0) { await reset(entry, 'serving traffic interrupted node idle coverage', 0); return; }
       const proof = entry.clock.complete({ input: active.input, opened: active.receipt, finished,
-        beforeOpen: active.beforeOpen, afterOpen: active.afterOpen, context: active.context });
+        beforeOpen: active.beforeOpen, afterOpen: active.afterOpen, context: active.context, sampledAt });
       await active.close(); live(entry);
       entry.active = next; entry.next = undefined;
       entry.status = { ...entry.status, idleMs: proof.idleMs, idleSatisfied: proof.idleMs >= entry.status.requiredMs, holding: proof.reason };
@@ -108,7 +108,7 @@ export function createNodeIdleScheduler(deps: {
       for (const service of selected) {
         let entry = entries.get(service.id);
         if (!entry) {
-          entry = { service, generation: generation(service), clock: new NodeIdleCoverage(), abort: new AbortController(), sampledAt: now(), retryAt: 0,
+          entry = { service, generation: generation(service), clock: new NodeIdleCoverage(now), abort: new AbortController(), sampledAt: now(), retryAt: 0,
             status: { idleMs: null, requiredMs: service.sleepAfterMinutes! * 60_000, idleSatisfied: false, holding: 'waiting for node idle coverage' } };
           entries.set(service.id, entry);
         }
@@ -129,6 +129,12 @@ export function createNodeIdleScheduler(deps: {
       if (!entry || entry.generation !== generation(service)) return null;
       if (entry.active && (now() < entry.sampledAt || now() - entry.sampledAt >= LEASE_MS)) return { ...entry.status, idleMs: null, idleSatisfied: false, holding: 'node idle lease is not current' };
       return { ...entry.status };
+    },
+    takeEvidence(service: Service) {
+      const entry = entries.get(service.id);
+      if (!entry || entry.running || entry.generation !== generation(service) || !entry.status.idleSatisfied ||
+        now() < entry.sampledAt || now() - entry.sampledAt >= LEASE_MS) return null;
+      return entry.clock.takeEvidence();
     },
     async close(): Promise<void> {
       closed = true; const previous = [...entries.values()]; entries.clear();
