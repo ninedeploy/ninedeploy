@@ -1338,6 +1338,9 @@ export const TR: Readonly<Record<string, string>> = {
     'Yeniden dağıtım gerektirmeden, yüke göre en az ve en çok konteyner sayısı arasında çalışır. Her 30 sn\'de bir konteyner başına metriği hedefle karşılaştırır (hedefin %10\'u içinde hiçbir şey değişmez) ve ihtiyaç ölçek büyütme ya da küçültme penceresi boyunca sürdüğünde konteyner ekler veya kaldırır.',
   'It applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turned off, the containers serving now keep serving until the next deploy, which runs the Replicas count again.':
     'Yedek konteynerleri oluşturan sonraki dağıtımda tamamen uygulanır; o zamana kadar yalnızca küçültebilir. Kapatıldığında, şu an hizmet veren konteynerler, Kopyalar sayısını yeniden çalıştıran sonraki dağıtıma kadar hizmet vermeye devam eder.',
+  'Node autoscaling requires confirmed replica capacity, and request-rate scaling an agent that observes serving traffic.':
+    'Düğümde otomatik ölçekleme doğrulanmış kopya kapasitesi, istek hızına göre ölçekleme ise sunulan trafiği gözlemleyen bir ajan gerektirir.',
+  '{metric} — not available here': '{metric} — burada kullanılamaz',
   'Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.':
     'Düğümde otomatik ölçekleme doğrulanmış kopya kapasitesi gerektirir ve CPU veya belleği destekler; istek hızına göre ölçekleme henüz kullanılamıyor.',
   'This service runs on Swarm, which scales with its own replicas; the autoscaler holds for it.':

@@ -11,6 +11,11 @@ import { ToastProvider } from '../src/components/Toast.js';
 
 const apiMock = vi.hoisted(() => ({ api: { services: { update: vi.fn() } } }));
 vi.mock('../src/lib/api.js', () => apiMock);
+const statusMock = vi.hoisted(() => vi.fn(async (): Promise<Record<string, unknown>> => ({ enabled: false, replicas: 1 })));
+vi.mock('../src/lib/autoscaleApi.js', () => ({
+  autoscaleKeys: { status: (id: number) => ['service-autoscale', id] },
+  autoscaleApi: { status: statusMock },
+}));
 
 import { AutoscaleCard, autoscaleFormFrom, parseAutoscaleForm } from '../src/routes/service/AutoscaleCard.js';
 
@@ -224,5 +229,20 @@ describe('AutoscaleCard', () => {
     cleanup();
     renderCard(serviceWith({ placement: { orchestrator: 'swarm' } }));
     expect(screen.getByText(/runs on Swarm, which scales with its own replicas/)).toBeInTheDocument();
+  });
+
+  it('marks a metric the placement cannot act on, from the panel status', async () => {
+    statusMock.mockResolvedValueOnce({ enabled: false, replicas: 1, supportedMetrics: ['cpu', 'memory'] });
+    renderCard(serviceWith({ serverId: 2, autoscale: { ...STORED, metric: 'cpu', target: 70 } }));
+    const rps = await screen.findByRole('option', { name: /Requests per second \(rps\) — not available here/ });
+    expect(rps).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'CPU (cpu)' })).not.toBeDisabled();
+    expect(screen.getByText(/request-rate scaling is not available yet/)).toBeInTheDocument();
+  });
+
+  it('keeps a stored unsupported metric selectable so the card still shows it', async () => {
+    statusMock.mockResolvedValueOnce({ enabled: true, replicas: 1, supportedMetrics: ['cpu', 'memory'] });
+    renderCard(serviceWith({ serverId: 2, autoscale: STORED }));
+    expect(await screen.findByRole('option', { name: /not available here/ })).not.toBeDisabled();
   });
 });

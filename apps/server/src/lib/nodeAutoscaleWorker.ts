@@ -5,9 +5,9 @@ import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from './nodeAu
 import { createNodeAutoscaleDecider } from './nodeAutoscaleDecision.js';
 import { nodeAutoscaleRuntime } from './nodeAutoscaleRuntime.js';
 import { readNodeAutoscaleSample } from './nodeAutoscaleSample.js';
-import { NODE_RPS_AUTOSCALING_ACCEPTED, readNodeServingTrafficSample } from './nodeServingTrafficSample.js';
+import { readNodeServingTrafficSample } from './nodeServingTrafficSample.js';
 import { readServiceRuntimeOwner, sameRuntimeOwner } from './serviceRuntimeOwner.js';
-import { recordNodeAutoscaleHolding, recordNodeAutoscaleSample } from './autoscaler.js';
+import { NODE_RPS_AUTOSCALING_ACCEPTED, NODE_RPS_HOLDING, recordNodeAutoscaleHolding, recordNodeAutoscaleSample } from './autoscaler.js';
 
 /** Compose measurement and durable effects; the caller schedules and supplies its live conflict check. */
 export function createNodeAutoscaleWorker(db: DB, deps: {
@@ -37,7 +37,7 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
         }
         if (config.data.metric === 'rps' && !(deps.rpsAccepted ?? NODE_RPS_AUTOSCALING_ACCEPTED)) {
           forget(service.id);
-          return held('node request-rate autoscaling is not available yet');
+          return held(NODE_RPS_HOLDING);
         }
         const deploymentId = Number(/-([1-9]\d*)$/.exec(service.runtimeId ?? '')?.[1]);
         const capacity = Number.isSafeInteger(deploymentId) && deploymentId > 0

@@ -157,6 +157,7 @@ During the routing transition the deployment remains `deploying`, with no `finis
 
 `GET /v1/services/:id/autoscale` shows:
 - the containers serving now;
+- `supportedMetrics`, the metrics the autoscaler acts on where the service runs (the CLI shows them as "Metrics here");
 - the last value and the count it asks for;
 - why it holds, if it does: a deploy or a canary in progress, no traffic analytics for `rps`, or no spare container yet;
 - the last change.
@@ -164,7 +165,8 @@ During the routing transition the deployment remains `deploying`, with no `finis
 Notes:
 - Turning autoscaling on applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turning it off keeps the containers that serve now until the next deploy, which runs `replicas` containers again.
 - As with replicas, a host port reaches the first container only; the others serve through the domain.
-- Autoscaling holds for services on a node and for Swarm services (Swarm scales with its own replicas).
+- On a node, autoscaling acts on `cpu` and `memory` once a deploy has prepared confirmed replica capacity. `rps` is not available on nodes yet: the status reports it as held, with no value, and the panel marks it "not available here". It is not shown as zero requests. See [NODE_RPS_AUTOSCALING.md](NODE_RPS_AUTOSCALING.md).
+- Autoscaling holds for Swarm services, which scale with their own replicas; their `supportedMetrics` is empty.
 - Stopped spare containers take disk space only. With `--restart always`, a Docker restart starts them again; the autoscaler stops them at its next look.
 
 #### Scheduled minimums (G5.6)

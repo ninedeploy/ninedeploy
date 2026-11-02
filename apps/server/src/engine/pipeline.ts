@@ -71,7 +71,7 @@ import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
 import { beginPrimaryTransition, primaryRecoveryPending, PrimaryIdentityUnconfirmed, PrimaryRecoveryOwnershipLost, PrimaryRecoveryPending, type PrimaryRecoveryLease } from './primaryRecovery.js';
 import { beginSwarmTransition, swarmRecoveryPending, SwarmRecoveryPending, SwarmRecoveryOwnershipLost, type SwarmRecoveryLease } from './swarmRecovery.js';
 import { autoscaleConfig, canaryConfig } from '@ninedeploy/schemas';
-import { NODE_RPS_AUTOSCALING_ACCEPTED } from '../lib/nodeServingTrafficSample.js';
+import { NODE_RPS_AUTOSCALING_ACCEPTED } from '../lib/autoscaler.js';
 import { canarySkipReason, runCanary } from './canary.js';
 import { ensurePreviewDatabaseCopies } from '../lib/previewDatabases.js';
 import { canaryActive, canaryOwnedBy, endCanary } from './canaryState.js';

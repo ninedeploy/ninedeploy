@@ -58,14 +58,22 @@ describe('autoscale configuration and status', () => {
         cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] }) }).step(svc);
     expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toMatchObject({ value: 95, desired: 2, holding: null });
   });
+  it('reports node request rate as unsupported instead of a pending evaluation or a zero', async () => {
+    await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+    await db.update(services).set({ serverId: 4, status: 'running', runtimeId: 'web-9', runtimeReplicas: 1,
+      autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'rps', target: 50, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 5));
+    expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toMatchObject({
+      supportedMetrics: ['cpu', 'memory'], metric: 'rps', value: null, desired: null, holding: 'node request-rate autoscaling is not available yet' });
+  });
   it('is off by default; a PATCH stores it with its defaults and the status shows it', async () => {
-    expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toEqual({ enabled: false, replicas: 2 });
+    expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toEqual({ enabled: false, replicas: 2, supportedMetrics: ['cpu', 'memory', 'rps'] });
     const res = await app.inject({ method: 'PATCH', url: '/v1/services/5', headers: OWNER, payload: { autoscale: { maxReplicas: 4, target: 60 } } });
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json().autoscale).toEqual({ minReplicas: 1, maxReplicas: 4, metric: 'cpu', target: 60, scaleUpSeconds: 60, scaleDownSeconds: 300 });
     expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toEqual({
       enabled: true,
       replicas: 2,
+      supportedMetrics: ['cpu', 'memory', 'rps'],
       minReplicas: 1,
       maxReplicas: 4,
       metric: 'cpu',

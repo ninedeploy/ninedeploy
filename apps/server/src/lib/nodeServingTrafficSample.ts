@@ -7,14 +7,6 @@ import { renderDynamicConfig } from '../engine/proxy.js';
 import type { NodeServingSample } from './nodeAutoscaleMetrics.js';
 import { openNodeServingTraffic } from './nodeServingTrafficClient.js';
 
-/**
- * Acceptance gate for node RPS scaling (docs/NODE_RPS_AUTOSCALING.md steps 5–6).
- * Capacity prepared under cpu or memory stays valid when the metric is switched
- * to rps without a redeploy, so the worker holds RPS here, not only at capacity
- * preparation. Turn on together with RPS capacity preparation and the hosted smoke.
- */
-export const NODE_RPS_AUTOSCALING_ACCEPTED = false;
-
 /** Observation window per autoscale tick; the agent bounds it at 60 s. */
 export const NODE_SERVING_WINDOW_MS = 10_000;
 /** The agent times its window by sequence markers, so finish a little after the panel's own wait. */

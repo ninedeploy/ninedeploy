@@ -190,6 +190,29 @@ describe('autoscale set', () => {
     expect(out()).toContain('It applies fully at the next deploy, which creates the spare containers.');
   });
 
+  it('says when the saved metric does not act where the service runs', async () => {
+    const client = makeClient();
+    client.services.get.mockResolvedValue(service());
+    client.services.update.mockResolvedValue(service({ autoscale: { ...cfg, metric: 'rps', target: 50 } }));
+    client.services.autoscale.mockResolvedValue({ enabled: true, replicas: 1, supportedMetrics: ['cpu', 'memory'] });
+    await autoscaleSet(asClient(client), '4', { metric: 'rps', target: '50' });
+    expect(out()).toContain('The rps metric does not act where this service runs');
+
+    logSpy.mockClear();
+    client.services.autoscale.mockRejectedValue(new Error('older panel'));
+    await autoscaleSet(asClient(client), '4', { metric: 'rps', target: '50' });
+    expect(out()).toContain('Autoscaling on for web.');
+    expect(out()).not.toContain('does not act');
+  });
+
+  it('lists the metrics the placement acts on', async () => {
+    const client = makeClient();
+    client.services.get.mockResolvedValue(service({ autoscale: null }));
+    client.services.autoscale.mockResolvedValue({ enabled: false, replicas: 1, supportedMetrics: [] });
+    await autoscaleShow(asClient(client), '4');
+    expect(out()).toContain('none: the autoscaler holds for this placement');
+  });
+
   it('sends only what was given when the service has none', async () => {
     const client = makeClient();
     client.services.get.mockResolvedValue(service({ autoscale: null }));

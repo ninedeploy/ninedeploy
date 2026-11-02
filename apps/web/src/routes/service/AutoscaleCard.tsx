@@ -1,11 +1,11 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Gauge } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { AUTOSCALE_MAX_REPLICAS, type AutoscaleConfig, type AutoscaleMetric, autoscaleConfig } from '@ninedeploy/schemas';
 import type { ServiceDetail } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
-import { autoscaleKeys } from '../../lib/autoscaleApi.js';
+import { autoscaleApi, autoscaleKeys } from '../../lib/autoscaleApi.js';
 import { useToast } from '../../components/Toast.js';
 import { type Translate, fill, msg, translate, useT } from '../../lib/i18n.js';
 import { Button, Card, CardBody, Field, Input, Select, Switch } from '../../components/ui.js';
@@ -118,6 +118,14 @@ export function AutoscaleCard({ svc }: { svc: ServiceDetail }) {
   const [advanced, setAdvanced] = useState(false);
 
   const parsed = parseAutoscaleForm(form, t);
+  // The placement decides which metrics act; shares the Overview panel's cache.
+  const status = useQuery({
+    queryKey: autoscaleKeys.status(svc.id),
+    queryFn: () => autoscaleApi.status(svc.id),
+    enabled: svc.type === 'docker' && svc.autoscale !== undefined,
+    retry: false,
+  });
+  const supported = status.data?.supportedMetrics;
   const save = useMutation({
     mutationFn: (autoscale: AutoscaleConfig | null) => api.services.update(svc.id, { autoscale }),
     onSuccess: (_res, autoscale) => {
@@ -151,7 +159,11 @@ export function AutoscaleCard({ svc }: { svc: ServiceDetail }) {
           {t('It applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turned off, the containers serving now keep serving until the next deploy, which runs the Replicas count again.')}
         </p>
         {svc.serverId != null ? (
-          <p className="mt-1.5 text-xs text-amber-300">{t('Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.')}</p>
+          <p className="mt-1.5 text-xs text-amber-300">
+            {supported?.includes('rps')
+              ? t('Node autoscaling requires confirmed replica capacity, and request-rate scaling an agent that observes serving traffic.')
+              : t('Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.')}
+          </p>
         ) : svc.placement?.orchestrator === 'swarm' ? (
           <p className="mt-1.5 text-xs text-amber-300">{t('This service runs on Swarm, which scales with its own replicas; the autoscaler holds for it.')}</p>
         ) : null}
@@ -175,7 +187,9 @@ export function AutoscaleCard({ svc }: { svc: ServiceDetail }) {
                 <Field label={t('Metric')} error={parsed.errors.metric}>
                   <Select value={form.metric} onChange={set('metric')} className="h-9 text-xs">
                     {(Object.keys(METRIC_LABEL) as AutoscaleMetric[]).map((m) => (
-                      <option key={m} value={m}>{t(METRIC_LABEL[m])}</option>
+                      <option key={m} value={m} disabled={!!supported && !supported.includes(m) && m !== form.metric}>
+                        {supported && !supported.includes(m) ? t('{metric} — not available here', { metric: t(METRIC_LABEL[m]) }) : t(METRIC_LABEL[m])}
+                      </option>
                     ))}
                   </Select>
                 </Field>

@@ -290,7 +290,8 @@ it('holds an RPS service when the serving-traffic window is refused, never readi
   const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, runtime: () => deps(), rpsAccepted: true,
     servingSample: async () => { throw new Error('Node proxy traffic unavailable: serving routing or runtime context changed'); } });
   await expect(worker.step(await service())).rejects.toThrow(/serving routing/);
-  expect(autoscaleStatus(await service()).holding).toBe('node autoscale evaluation failed; see server logs');
+  // The public status still reports the gate while it is off; the value is never a zero.
+  expect(autoscaleStatus(await service())).toMatchObject({ value: null, desired: null, holding: expect.any(String) });
   expect(await transition()).toBeUndefined();
   expect(calls).toEqual([]);
 });

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - A compose stack's domain now picks its service in its own row under Service → Network → Domains, next to the domain's other settings. The separate card under Service → Settings is gone. Save appears only once the choice differs from the stored one (G2.1).
+- The autoscale status (`GET /v1/services/:id/autoscale`) lists `supportedMetrics`, the metrics that act where the service runs. A node service set to `rps` now shows why it holds, with no value, instead of "waiting for node autoscale evaluation". The panel marks a metric that does not act as "not available here", and the CLI lists the metrics under "Metrics here" and warns when `autoscale set` stores one that does not act (R2).
 
 ### Fixed
 

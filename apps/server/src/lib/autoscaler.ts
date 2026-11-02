@@ -1,10 +1,12 @@
 import { deployments, primaryTransitions, type Service, services, type DB } from '@ninedeploy/db';
 import { describeWindow, effectiveMinimum } from './autoscaleSchedule.js';
 import {
+  AUTOSCALE_METRICS,
   autoscaleConfig,
   desiredReplicas,
   type AutoscaleConfig,
   type AutoscaleEvent,
+  type AutoscaleMetric,
   type AutoscaleStatusView,
 } from '@ninedeploy/schemas';
 import { and, eq, inArray, isNull, notExists, sql } from 'drizzle-orm';
@@ -47,6 +49,22 @@ interface ServiceState {
   holding: string | null;
   lastEvent: AutoscaleEvent | null;
   routingConfirmed: boolean;
+}
+
+/**
+ * Acceptance gate for node RPS scaling (docs/NODE_RPS_AUTOSCALING.md).
+ * Capacity prepared under cpu or memory stays valid when the metric is switched
+ * to rps without a redeploy, so the node worker holds RPS on this, not only at
+ * capacity preparation. Turn on after the hosted 1→2→1 smoke.
+ */
+export const NODE_RPS_AUTOSCALING_ACCEPTED = false;
+export const NODE_RPS_HOLDING = 'node request-rate autoscaling is not available yet';
+
+/** The metrics the autoscaler can act on for this placement; Swarm scales by itself. */
+export function autoscaleSupportedMetrics(svc: Pick<Service, 'serverId' | 'orchestrator'>): AutoscaleMetric[] {
+  if (svc.orchestrator === 'swarm') return [];
+  if (svc.serverId != null) return NODE_RPS_AUTOSCALING_ACCEPTED ? [...AUTOSCALE_METRICS] : ['cpu', 'memory'];
+  return [...AUTOSCALE_METRICS];
 }
 
 const states = new Map<number, ServiceState>();
@@ -377,8 +395,11 @@ export async function autoscaleStep(
 export function autoscaleStatus(svc: Service): AutoscaleStatusView {
   const cfg = autoscaleOf(svc);
   const replicas = servingReplicas(svc);
-  if (!cfg) return { enabled: false, replicas };
+  const supportedMetrics = autoscaleSupportedMetrics(svc);
+  if (!cfg) return { enabled: false, replicas, supportedMetrics };
   const node = svc.serverId != null && svc.orchestrator !== 'swarm';
+  // Never show an unsupported metric as a pending evaluation.
+  const unsupported = node && !supportedMetrics.includes(cfg.metric) ? NODE_RPS_HOLDING : null;
   const st = node ? undefined : states.get(svc.id);
   const nodeHold = nodeHolds.get(svc.id);
   const matchingNodeHold = nodeHold?.generation === nodeStatusGeneration(svc) ? nodeHold : undefined;
@@ -388,13 +409,14 @@ export function autoscaleStatus(svc: Service): AutoscaleStatusView {
   return {
     enabled: true,
     replicas,
+    supportedMetrics,
     minReplicas: cfg.minReplicas,
     maxReplicas: cfg.maxReplicas,
     metric: cfg.metric,
     target: cfg.target,
-    value: node ? freshNodeSample?.value ?? null : st?.value ?? null,
-    desired: node ? freshNodeSample?.desired ?? null : st?.desired ?? null,
-    holding: node ? (nodeSample && !freshNodeSample ? 'waiting for fresh node metrics' : matchingNodeHold ? matchingNodeHold.reason : 'waiting for node autoscale evaluation') : st?.holding ?? null,
+    value: unsupported ? null : node ? freshNodeSample?.value ?? null : st?.value ?? null,
+    desired: unsupported ? null : node ? freshNodeSample?.desired ?? null : st?.desired ?? null,
+    holding: unsupported ?? (node ? (nodeSample && !freshNodeSample ? 'waiting for fresh node metrics' : matchingNodeHold ? matchingNodeHold.reason : 'waiting for node autoscale evaluation') : st?.holding ?? null),
     lastEvent: st?.lastEvent ?? null,
     scheduledFloor: (() => {
       const f = effectiveMinimum(cfg, Date.now());

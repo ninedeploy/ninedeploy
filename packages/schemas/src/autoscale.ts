@@ -69,6 +69,8 @@ export interface AutoscaleStatusView {
   enabled: boolean;
   /** Containers serving now (`runtimeReplicas`). */
   replicas: number;
+  /** The metrics the autoscaler acts on for this placement (absent on older panels). */
+  supportedMetrics?: AutoscaleMetric[];
   minReplicas?: number;
   maxReplicas?: number;
   metric?: AutoscaleMetric;

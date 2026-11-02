@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm';
 import {
   autoscaleOf,
   autoscaleStatus,
+  autoscaleSupportedMetrics,
+  NODE_RPS_AUTOSCALING_ACCEPTED,
   autoscaleStep,
   type AutoscaleDeps,
   decide,
@@ -326,9 +328,15 @@ describe('holdReason, autoscaleOf, status', () => {
     expect(autoscaleOf({ autoscale: null })).toBeNull();
     expect(autoscaleOf({ autoscale: { ...cfg, maxReplicas: 1 } })).toBeNull();
     expect(servingReplicas({ runtimeReplicas: null })).toBe(1);
-    expect(autoscaleStatus({ ...svc, autoscale: null })).toEqual({ enabled: false, replicas: 2 });
+    expect(autoscaleStatus({ ...svc, autoscale: null })).toEqual({ enabled: false, replicas: 2, supportedMetrics: ['cpu', 'memory', 'rps'] });
     expect(autoscaleStatus(svc)).toMatchObject({ value: null, desired: null, holding: null, lastEvent: null });
     resetAutoscaleState(5);
+  });
+
+  it('lists the metrics each placement can act on', () => {
+    expect(autoscaleSupportedMetrics({ serverId: null, orchestrator: null })).toEqual(['cpu', 'memory', 'rps']);
+    expect(autoscaleSupportedMetrics({ serverId: 4, orchestrator: null })).toEqual(NODE_RPS_AUTOSCALING_ACCEPTED ? ['cpu', 'memory', 'rps'] : ['cpu', 'memory']);
+    expect(autoscaleSupportedMetrics({ serverId: null, orchestrator: 'swarm' })).toEqual([]);
   });
 });
 

@@ -128,6 +128,7 @@ function printConfig(cfg: AutoscaleConfig | null | undefined): void {
 function printStatus(st: AutoscaleStatusView): void {
   console.log();
   kv('Serving', containers(st.replicas));
+  if (st.supportedMetrics) kv('Metrics here', st.supportedMetrics.length ? st.supportedMetrics.join(', ') : c.gray('none: the autoscaler holds for this placement'));
   if (!st.enabled) return;
   const metric = st.metric ?? 'cpu';
   kv('Last value', st.value === null || st.value === undefined ? c.gray('not read yet') : `${fmtMetric(metric, st.value)} per container`);
@@ -183,6 +184,13 @@ export async function autoscaleSet(client: NineDeployClient, ref: string, opts: 
     success(`Autoscaling on for ${plain(updated.name)}.`);
     printConfig(updated.autoscale);
     info('It applies fully at the next deploy, which creates the spare containers.');
+    // Saving an unsupported metric is allowed (it is kept for later); say it will not act.
+    const metric = updated.autoscale?.metric;
+    let supported: AutoscaleStatusView['supportedMetrics'];
+    try { supported = (await client.services.autoscale(id))?.supportedMetrics; } catch { supported = undefined; }
+    if (metric && supported && !supported.includes(metric)) {
+      info(`The ${metric} metric does not act where this service runs; the autoscaler holds until it does.`);
+    }
   } catch (err) {
     error(message(err));
   }
