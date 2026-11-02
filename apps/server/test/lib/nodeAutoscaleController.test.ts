@@ -274,11 +274,11 @@ it('scales an RPS service from consumed serving-traffic windows through the same
   expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route', 'handoff-retire', 'handoff']);
   expect((await service()).runtimeReplicas).toBe(2);
 });
-it('holds an RPS service without observing traffic until node RPS scaling is accepted, even with cpu-prepared capacity', async () => {
+it('holds an RPS service without observing traffic when node RPS scaling is withdrawn, even with cpu-prepared capacity', async () => {
   await c.db.update(services).set({ autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'rps', target: 10, scaleUpSeconds: 60, scaleDownSeconds: 120 } })
     .where(eq(services.id, 1));
   const servingSample = vi.fn(), sample = vi.fn();
-  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, runtime: () => deps(), sample, servingSample });
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, runtime: () => deps(), sample, servingSample, rpsAccepted: false });
   expect(await worker.step(await service())).toEqual({ state: 'held', reason: 'node request-rate autoscaling is not available yet' });
   expect(servingSample).not.toHaveBeenCalled();
   expect(sample).not.toHaveBeenCalled();
@@ -290,8 +290,7 @@ it('holds an RPS service when the serving-traffic window is refused, never readi
   const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, runtime: () => deps(), rpsAccepted: true,
     servingSample: async () => { throw new Error('Node proxy traffic unavailable: serving routing or runtime context changed'); } });
   await expect(worker.step(await service())).rejects.toThrow(/serving routing/);
-  // The public status still reports the gate while it is off; the value is never a zero.
-  expect(autoscaleStatus(await service())).toMatchObject({ value: null, desired: null, holding: expect.any(String) });
+  expect(autoscaleStatus(await service())).toMatchObject({ value: null, desired: null, holding: 'node autoscale evaluation failed; see server logs' });
   expect(await transition()).toBeUndefined();
   expect(calls).toEqual([]);
 });

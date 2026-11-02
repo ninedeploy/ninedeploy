@@ -55,20 +55,20 @@ interface ServiceState {
  * Acceptance gate for node RPS scaling (docs/NODE_RPS_AUTOSCALING.md).
  * Capacity prepared under cpu or memory stays valid when the metric is switched
  * to rps without a redeploy, so the node worker holds RPS on this, not only at
- * capacity preparation. Turn on after the hosted 1→2→1 smoke.
+ * capacity preparation. Accepted 2026-11-02 on the hosted 1→2→1 smoke with a
+ * source-loss control (CI 41464316996); set false to withdraw it everywhere.
  */
-export const NODE_RPS_AUTOSCALING_ACCEPTED = false;
+export const NODE_RPS_AUTOSCALING_ACCEPTED = true;
 
-/** The gate, or the operator's preview opt-in `NINEDEPLOY_NODE_RPS_AUTOSCALING=1` (the hosted smoke uses it). */
 export function nodeRpsAutoscalingAccepted(): boolean {
-  return NODE_RPS_AUTOSCALING_ACCEPTED || process.env['NINEDEPLOY_NODE_RPS_AUTOSCALING'] === '1';
+  return NODE_RPS_AUTOSCALING_ACCEPTED;
 }
 export const NODE_RPS_HOLDING = 'node request-rate autoscaling is not available yet';
 
 /** The metrics the autoscaler can act on for this placement; Swarm scales by itself. */
-export function autoscaleSupportedMetrics(svc: Pick<Service, 'serverId' | 'orchestrator'>): AutoscaleMetric[] {
+export function autoscaleSupportedMetrics(svc: Pick<Service, 'serverId' | 'orchestrator'>, rpsAccepted = nodeRpsAutoscalingAccepted()): AutoscaleMetric[] {
   if (svc.orchestrator === 'swarm') return [];
-  if (svc.serverId != null) return nodeRpsAutoscalingAccepted() ? [...AUTOSCALE_METRICS] : ['cpu', 'memory'];
+  if (svc.serverId != null) return rpsAccepted ? [...AUTOSCALE_METRICS] : ['cpu', 'memory'];
   return [...AUTOSCALE_METRICS];
 }
 
@@ -397,10 +397,11 @@ export async function autoscaleStep(
 }
 
 /** `GET /v1/services/:id/autoscale`. */
-export function autoscaleStatus(svc: Service): AutoscaleStatusView {
+/** `rpsAccepted` is for tests of a withdrawn gate. */
+export function autoscaleStatus(svc: Service, rpsAccepted = nodeRpsAutoscalingAccepted()): AutoscaleStatusView {
   const cfg = autoscaleOf(svc);
   const replicas = servingReplicas(svc);
-  const supportedMetrics = autoscaleSupportedMetrics(svc);
+  const supportedMetrics = autoscaleSupportedMetrics(svc, rpsAccepted);
   if (!cfg) return { enabled: false, replicas, supportedMetrics };
   const node = svc.serverId != null && svc.orchestrator !== 'swarm';
   // Never show an unsupported metric as a pending evaluation.

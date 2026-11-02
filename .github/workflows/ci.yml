@@ -351,7 +351,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
-      # R2: node RPS on the operator preview opt-in, until NODE_RPS_AUTOSCALING_ACCEPTED is flipped.
+      # R2: node RPS with default panel settings; the agent opts in with NINEDEPLOY_AGENT_PROXY_TRAFFIC=on.
       - name: Verify node request-rate autoscaling with a source-loss control
         timeout-minutes: 25
         run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-rps-only --proof=.temp_files/ci-node-autoscale-rps

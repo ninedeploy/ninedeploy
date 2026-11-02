@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 /**
- * R2 node RPS autoscaling on the operator preview opt-in: public API, sealed node agent, consumed
+ * R2 node RPS autoscaling with default panel settings: public API, sealed node agent, consumed
  * serving-traffic windows and Traefik on isolated daemons. 1→2 under load, a source-loss control that
  * must hold (never read as zero), then 2→1 on verified low traffic.
  */
@@ -23,7 +23,7 @@ export async function smokeNodeAutoscaleRps({ api, inner, id, fixtureImage, serv
   let last = null;
   const status = async () => (last = await api(`/v1/services/${id}/autoscale`));
   const wait = (fn, description, ms) => until(fn, description, ms).catch(error => { throw Error(`${error.message}; last status ${JSON.stringify(last)}`); });
-  assert.ok((await status()).supportedMetrics?.includes('rps'), 'the preview opt-in must advertise node rps');
+  assert.ok((await status()).supportedMetrics?.includes('rps'), 'the panel must advertise node rps');
   const deploymentId = (await api(`/v1/services/${id}/deploys`, { method: 'POST', body: {} })).deploymentId;
   await success(id, deploymentId);
   await cleared();

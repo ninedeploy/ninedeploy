@@ -489,6 +489,11 @@ jobs:
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --autoscale-only --proof=.temp_files/release-node-autoscale
 
+      - name: Public node request-rate autoscaling with a source-loss control on the pushed image
+        if: matrix.suite == 'public-canary'
+        timeout-minutes: 25
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --autoscale-rps-only --proof=.temp_files/release-node-autoscale-rps
+
       - name: Public node autoscaling with PostgreSQL on the pushed image
         if: matrix.suite == 'replica-databases'
         timeout-minutes: 20
@@ -566,6 +571,7 @@ jobs:
             .temp_files/release-node-smoke/inner-containers.log
             .temp_files/release-node-smoke/runtime-cleanup.json
             .temp_files/release-node-autoscale/
+            .temp_files/release-node-autoscale-rps/
             .temp_files/release-node-initial-stop/failure-state.json
             .temp_files/release-node-initial-stop/inner-containers.log
             .temp_files/release-node-initial-stop/runtime-cleanup.json

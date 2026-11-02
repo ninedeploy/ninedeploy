@@ -10,7 +10,7 @@ import { createDb, type DB, deployments, eq, nodeAutoscaleCapacity, runMigration
 vi.mock('../src/lib/audit.js', () => ({ audit: vi.fn(async () => undefined) }));
 
 const { servicesRoutes } = await import('../src/modules/services.js');
-const { decide, resetAutoscaleState } = await import('../src/lib/autoscaler.js');
+const { autoscaleStatus, decide, resetAutoscaleState } = await import('../src/lib/autoscaler.js');
 const { createNodeAutoscaleWorker } = await import('../src/lib/nodeAutoscaleWorker.js');
 const { asUser, buildTestApp } = await import('./helpers.js');
 
@@ -58,11 +58,14 @@ describe('autoscale configuration and status', () => {
         cpuLimitMilli: 1000, memBytes: 100, memLimitBytes: 1000, restarts: 0 }] }) }).step(svc);
     expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toMatchObject({ value: 95, desired: 2, holding: null });
   });
-  it('reports node request rate as unsupported instead of a pending evaluation or a zero', async () => {
+  it('reports node request rate as supported, and as unsupported instead of a pending evaluation or a zero when withdrawn', async () => {
     await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
     await db.update(services).set({ serverId: 4, status: 'running', runtimeId: 'web-9', runtimeReplicas: 1,
       autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'rps', target: 50, scaleUpSeconds: 60, scaleDownSeconds: 120 } }).where(eq(services.id, 5));
     expect((await app.inject({ url: '/v1/services/5/autoscale', headers: OWNER })).json()).toMatchObject({
+      supportedMetrics: ['cpu', 'memory', 'rps'], metric: 'rps', value: null, holding: 'waiting for node autoscale evaluation' });
+    const svc = (await db.query.services.findFirst({ where: eq(services.id, 5) }))!;
+    expect(autoscaleStatus(svc, false)).toMatchObject({
       supportedMetrics: ['cpu', 'memory'], metric: 'rps', value: null, desired: null, holding: 'node request-rate autoscaling is not available yet' });
   });
   it('is off by default; a PATCH stores it with its defaults and the status shows it', async () => {
