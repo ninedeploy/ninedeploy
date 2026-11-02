@@ -3,7 +3,7 @@ import { certificatesForNode, readAcmeStorage, sharedCertificatesEnabled } from 
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { domains, nodeAutoscaleTransitions, serviceRuntimeOwners, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
+import { domains, nodeAutoscaleTransitions, nodeSleepTransitions, serviceRuntimeOwners, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
 import { httpPath, redirectRegexProblem } from '@ninedeploy/schemas';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
@@ -37,6 +37,8 @@ import { routingOverrides } from '../lib/maintenance.js';
 import { composeRouteCollides, composeServiceContainer } from '../lib/composeRoutes.js';
 import { FA_PREFIX, forwardAuthDomains } from '../lib/forwardAuth.js';
 import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
+import { nodeWakeKey } from '../lib/nodeWakeKey.js';
+import { WAKE_CATCHER_PORT, WAKE_KEY_HEADER } from '../wakeCatcher.js';
 
 /** 0.16.11: the path prefix the wake endpoint answers under (modules/wake.ts). */
 export const WAKE_PREFIX = '/_nd/wake';
@@ -1077,6 +1079,21 @@ export async function renderDynamicConfig(
     overrides.errorPages.clear();
   }
   const allServices = await db.select().from(services);
+  // Retain the catcher even after explicit ownership supersession until a
+  // readiness-confirmed publisher clears the same-generation fallback.
+  const sleepTransitions = forNode ? await db.select().from(nodeSleepTransitions).where(eq(nodeSleepTransitions.serverId, opts.serverId!)) : [];
+  const sleepRouting = new Map(sleepTransitions.filter(row => row.fallbackRouting && allServices.some(service =>
+    service.id === row.serviceId && service.status !== 'stopped' && service.serverId === row.serverId && service.runtimeId === row.runtimeId)).map(row => [row.serviceId, row]));
+  const wakeKey = sleepRouting.size ? await nodeWakeKey(db, opts.serverId!) : null;
+  if (sleepRouting.size && !wakeKey) throw new Error('Node wake routing requires its persisted credential');
+  for (const row of sleepRouting.values()) {
+    const service = allServices.find(service => service.id === row.serviceId)!;
+    if (!/^[a-f0-9]{32}$/.test(row.wakeToken) || !/^[a-f0-9]{64}$/.test(row.catcherId ?? '') ||
+      !/^sha256:[a-f0-9]{64}$/.test(row.catcherImage ?? '') || row.runtimeId !== `${service.slug}-${row.deploymentId}` ||
+      service.type !== 'docker' || service.orchestrator === 'swarm' || targetRuntimeByService.has(service.id)) {
+      throw new Error('Node wake routing identity is invalid');
+    }
+  }
   const scaleTransitions = forNode ? await db.select().from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serverId, opts.serverId!)) : [];
   const scaleOwners = scaleTransitions.length ? await db.select().from(serviceRuntimeOwners) : [];
   const scaleRouting = new Map(scaleTransitions.filter(transition =>
@@ -1308,6 +1325,18 @@ export async function renderDynamicConfig(
     // a protected domain still asks for its credentials before anything wakes.
     const maint = overrides.maintenance.get(svc.id);
     const asleep = !forNode && svc.type === 'docker' && svc.asleepAt != null;
+    const nodeSleep = forNode && svc.type === 'docker' && svc.orchestrator !== 'swarm' && !targetRuntimeByService.has(svc.id) ? sleepRouting.get(svc.id) : undefined;
+    if (forNode && svc.asleepAt != null && !nodeSleep) throw new Error('Sleeping node service has no confirmed fallback route');
+    if (nodeSleep) {
+      const prefix = `mw_${key}_node_wake`, credential = 'mw_ninedeploy_node_wake_key';
+      mwList.push(prefix, credential);
+      middlewares.push(`    ${prefix}:\n      addPrefix:\n        prefix: "${WAKE_PREFIX}/${nodeSleep.wakeToken}"\n`);
+      if (!overrideMws.has(credential)) {
+        overrideMws.add(credential);
+        middlewares.push(`    ${credential}:\n      headers:\n        customRequestHeaders:\n          ${WAKE_KEY_HEADER}: "${wakeKey}"\n`);
+        svcBlocks.push(`    svc_ninedeploy_node_wake:\n      loadBalancer:\n        servers:\n          - url: "http://ninedeploy-wake:${WAKE_CATCHER_PORT}"`);
+      }
+    }
     if (asleep && !maint) {
       mwList.push(WAKE_MW);
       wakeUsed = true;
@@ -1354,7 +1383,7 @@ export async function renderDynamicConfig(
     routers.push(
       `    ${key}:\n` +
         `      rule: "${yamlDoubleQuoted(fullRule)}"\n` +
-        `      service: ${toPanel ? WAKE_SVC : `svc_${key}`}\n` +
+        `      service: ${nodeSleep ? 'svc_ninedeploy_node_wake' : toPanel ? WAKE_SVC : `svc_${key}`}\n` +
         priority +
         (mwList.length ? `      middlewares:\n${mwList.map((m) => `        - ${m}`).join('\n')}\n` : '') +
         `      entryPoints:\n        - ${entry}` +
