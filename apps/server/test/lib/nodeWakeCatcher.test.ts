@@ -104,6 +104,10 @@ describe('agent-managed wake catcher', () => {
     expect(run.find(arg => arg.startsWith('ninedeploy.wake.key='))).not.toContain(KEY);
     expect(run.at(-2)).toBe(AGENT_IMAGE);
   });
+  it('disables the panel image healthcheck because the catcher listens on its own port', async () => {
+    await ensureWakeCatcher({ key: KEY });
+    expect(docker.calls.find(args => args[0] === 'run')).toContain('--no-healthcheck');
+  });
   it('refuses a missing or malformed key before touching Docker', async () => {
     for (const params of [{}, { key: 'short' }, { key: KEY.toUpperCase() }, { key: KEY, extra: 1 }]) await expect(ensureWakeCatcher(params)).rejects.toThrow();
     expect(docker.calls).toEqual([]);
