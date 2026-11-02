@@ -48,7 +48,8 @@ function foreign(): never {
 
 export const wakeCatcherRunArgs = (image: string, key: string): string[] => ['run', '-d', '--name', WAKE_CATCHER_NAME,
   '--label', `ninedeploy.managed=${WAKE_CATCHER_LABEL}`, '--label', `ninedeploy.wake.key=${keyLabel(key)}`, '-e', `ND_WAKE_KEY=${key}`,
-  '--network', PROXY_NETWORK, '--restart', 'unless-stopped',
+  // The image probes the panel/agent port; the catcher is proved separately on 8080.
+  '--network', PROXY_NETWORK, '--restart', 'unless-stopped', '--no-healthcheck',
   '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '65534:65534',
   '--memory', '64m', '--pids-limit', '64', '--log-driver', 'json-file', '--log-opt', 'max-size=1m', '--log-opt', 'max-file=2',
   // The image declares VOLUME /data; without this Docker would attach a writable anonymous volume.
