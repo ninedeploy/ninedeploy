@@ -264,10 +264,11 @@ export async function admitNodeWake(db: DB, expected: Service, demand: { nodeId:
   });
 }
 
-export async function recoverNodeSleep(db: DB, serviceId: number): Promise<NodeSleepAdmission | null> {
+export async function recoverNodeSleep(db: DB, serviceId: number, expected?: Pick<NodeSleepTransition, 'binding' | 'requestId' | 'action'>): Promise<NodeSleepAdmission | null> {
   return db.transaction(async tx => {
     const [row] = await tx.update(nodeSleepTransitions).set({ workerToken: nonce(), leaseUntil: new Date(Date.now() + NODE_SLEEP_LEASE_MS) })
       .where(and(eq(nodeSleepTransitions.serviceId, serviceId), notInArray(nodeSleepTransitions.phase, ['completed', 'superseded', 'asleep']),
+        expected ? and(eq(nodeSleepTransitions.binding, expected.binding), eq(nodeSleepTransitions.requestId, expected.requestId), eq(nodeSleepTransitions.action, expected.action)) : undefined,
         or(isNull(nodeSleepTransitions.leaseUntil), lte(nodeSleepTransitions.leaseUntil, new Date())))).returning();
     if (!row) return null;
     if (staleUnpublished(row)) {
