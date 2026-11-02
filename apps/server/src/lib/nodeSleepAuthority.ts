@@ -14,7 +14,7 @@ type ReadDB = Pick<DB, 'query' | 'select'>;
 export type NodeSleepAdmission = { serviceId: number; owner: ServiceRuntimeOwner; workerToken: string; binding: string };
 export const NODE_SLEEP_LEASE_MS = 90_000;
 const terminal = ['completed', 'superseded'] as const;
-const phases = { sleep: ['accepted', 'fencing', 'prepared', 'routing', 'routed', 'stopping', 'asleep'], wake: ['accepted', 'fencing', 'starting', 'readiness', 'publishing'] };
+const phases = { sleep: ['accepted', 'fencing', 'prepared', 'routing', 'routed', 'stopping', 'asleep', 'restoring'], wake: ['accepted', 'fencing', 'starting', 'readiness', 'publishing'] };
 const unpublished = ['accepted', 'fencing', 'prepared'];
 const staleUnpublished = (row: NodeSleepTransition) => row.action === 'sleep' && unpublished.includes(row.phase) &&
   (!Number.isSafeInteger(row.idleEvidence.sampledAt) || row.idleEvidence.sampledAt > Date.now() || Date.now() - row.idleEvidence.sampledAt >= 30_000);
@@ -96,22 +96,22 @@ export async function admitNodeSleep(db: DB, expected: Service, token: NodeIdleE
   }
 }
 
-async function assertCurrent(db: ReadDB, admission: NodeSleepAdmission, requireLease = true) {
+async function assertCurrent(db: ReadDB, admission: NodeSleepAdmission, requireLease = true, unwinding = false) {
   const row = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, admission.serviceId) });
   const service = await db.query.services.findFirst({ where: eq(services.id, admission.serviceId) });
   if (!row || !service || !eligible(service) || !phases[row.action].includes(row.phase) || terminal.includes(row.phase as typeof terminal[number]) ||
     row.binding !== admission.binding || binding(row) !== row.binding || row.serverId !== service.serverId || row.runtimeId !== service.runtimeId ||
     row.runtimeId !== `${service.slug}-${row.deploymentId}` || row.ownerEpoch !== admission.owner.epoch || row.requestId !== admission.owner.requestId ||
-    admission.owner.kind !== row.action || staleUnpublished(row) || !sameRuntimeOwner(await readServiceRuntimeOwner(db, service.id), admission.owner) ||
-    row.action === 'sleep' && row.phase !== 'asleep' && (!Number.isInteger(service.sleepAfterMinutes) || service.sleepAfterMinutes! < SLEEP_AFTER_MIN ||
+    admission.owner.kind !== row.action || !unwinding && staleUnpublished(row) || !sameRuntimeOwner(await readServiceRuntimeOwner(db, service.id), admission.owner) ||
+    !unwinding && row.action === 'sleep' && !['asleep', 'restoring'].includes(row.phase) && (!Number.isInteger(service.sleepAfterMinutes) || service.sleepAfterMinutes! < SLEEP_AFTER_MIN ||
       service.sleepAfterMinutes! > SLEEP_AFTER_MAX || row.idleEvidence.idleMs < service.sleepAfterMinutes! * 60_000) ||
     requireLease && (row.workerToken !== admission.workerToken || !row.leaseUntil || row.leaseUntil.getTime() <= Date.now()) ||
     (row.action === 'sleep' ? (row.phase === 'asleep') !== (service.asleepAt !== null) : service.asleepAt === null) ||
     !Number.isSafeInteger(row.watermark) || row.watermark < row.deploymentId ||
     row.catcherId !== null && !/^[a-f0-9]{64}$/.test(row.catcherId) || row.catcherImage !== null && !/^sha256:[a-f0-9]{64}$/.test(row.catcherImage) ||
     (row.catcherId === null) !== (row.catcherImage === null) ||
-    (row.action === 'wake' || ['prepared', 'routing', 'routed', 'stopping', 'asleep'].includes(row.phase)) && !row.catcherId ||
-    row.fallbackRouting !== (row.action === 'wake' || ['routing', 'routed', 'stopping', 'asleep'].includes(row.phase)) ||
+    (row.action === 'wake' || ['prepared', 'routing', 'routed', 'stopping', 'asleep', 'restoring'].includes(row.phase)) && !row.catcherId ||
+    row.fallbackRouting !== (row.action === 'wake' || ['routing', 'routed', 'stopping', 'asleep', 'restoring'].includes(row.phase)) ||
     await configuration(db, service) !== row.configuration || !await unblocked(db, service.id)) throw changed();
   const names = replicaNames(service.runtimeId!, service.runtimeReplicas);
   if (!Array.isArray(row.targets) || row.targets.length !== names.length || new Set(row.targets.map(target => target.id)).size !== names.length ||
@@ -136,6 +136,37 @@ export async function prepareNodeWakeRouting(db: DB, admission: NodeSleepAdmissi
   };
   const row = await verify();
   return registerNodeWakeRoutePromotion(row.serverId, row.serviceId, async () => { await verify(); });
+}
+
+/** Before any Stop attempt, a failed sleep must restore the app instead of resuming an old idle decision. */
+export async function abortNodeSleep(db: DB, admission: NodeSleepAdmission, reason: string): Promise<'completed' | 'restoring'> {
+  return db.transaction(async tx => {
+    const { row } = await assertCurrent(tx, admission, true, true);
+    if (row.action !== 'sleep' || ['stopping', 'asleep'].includes(row.phase)) throw changed();
+    const phase = row.fallbackRouting ? 'restoring' as const : 'completed' as const;
+    await tx.update(nodeSleepTransitions).set({ phase, reason: reason.slice(0, 1000), ...(phase === 'completed' ? { workerToken: null, leaseUntil: null } : {}) })
+      .where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
+    return phase;
+  });
+}
+
+export async function prepareNodeSleepRestoration(db: DB, admission: NodeSleepAdmission) {
+  const verify = async () => {
+    const row = await checkpointNodeSleep(db, admission);
+    if (row.action !== 'sleep' || row.phase !== 'restoring') throw changed();
+    return row;
+  };
+  const row = await verify();
+  return registerNodeWakeRoutePromotion(row.serverId, row.serviceId, async () => { await verify(); });
+}
+
+export async function completeNodeSleepRestoration(db: DB, admission: NodeSleepAdmission) {
+  await db.transaction(async tx => {
+    const { row } = await assertCurrent(tx, admission);
+    if (row.action !== 'sleep' || row.phase !== 'restoring') throw changed();
+    await tx.update(nodeSleepTransitions).set({ phase: 'completed', fallbackRouting: false, workerToken: null, leaseUntil: null })
+      .where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
+  });
 }
 
 /** Request identity stays fixed across worker recovery; a newer service command uses a higher epoch. */

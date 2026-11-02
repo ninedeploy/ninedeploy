@@ -1903,7 +1903,7 @@ export const nodeSleepTransitions = sqliteTable('node_sleep_transitions', {
   serverId: integer('server_id').notNull(), deploymentId: integer('deployment_id').notNull(), runtimeId: text('runtime_id').notNull(),
   ownerEpoch: integer('owner_epoch').notNull(), requestId: text('request_id').notNull(),
   action: text('action', { enum: ['sleep', 'wake'] }).notNull(),
-  phase: text('phase', { enum: ['accepted', 'fencing', 'prepared', 'routing', 'routed', 'stopping', 'asleep', 'starting', 'readiness', 'publishing', 'completed', 'superseded'] }).notNull(),
+  phase: text('phase', { enum: ['accepted', 'fencing', 'prepared', 'routing', 'routed', 'stopping', 'asleep', 'restoring', 'starting', 'readiness', 'publishing', 'completed', 'superseded'] }).notNull(),
   configuration: text('configuration').notNull(), binding: text('binding').notNull(), watermark: integer('watermark').notNull(),
   wakeToken: text('wake_token').notNull(),
   fallbackRouting: integer('fallback_routing', { mode: 'boolean' }).notNull().default(false),

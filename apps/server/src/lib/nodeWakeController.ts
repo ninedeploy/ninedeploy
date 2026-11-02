@@ -4,7 +4,7 @@ import type { AgentOpResult } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
 import { advanceNodeSleep, checkpointNodeSleep, completeNodeWake, holdNodeSleep, nodeSleepCommand, prepareNodeWakeRouting,
   recordNodeWakeStarted, type NodeSleepAdmission } from './nodeSleepAuthority.js';
-import { verifyNodeReadiness } from './nodeReadiness.js';
+import { verifyNodeApplicationReadiness } from './nodeApplicationReadiness.js';
 import type { NodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
 
 export interface NodeWakeControllerDeps {
@@ -42,15 +42,9 @@ export async function executeNodeWake(db: DB, admission: NodeSleepAdmission, dep
   const ready = async () => {
     const row = await checkpoint(), service = await db.query.services.findFirst({ where: eq(services.id, row.serviceId) });
     if (!service) throw new Error('Node wake service disappeared');
-    const mode = service.healthCheck, deadline = Date.now() + (service.healthTimeoutSeconds ?? 300) * 1000;
     const targets = row.targets.map(({ id, name }) => ({ id, name }));
-    const modes = mode === 'http-strict' || mode === 'tcp' ? [mode] as const : [mode === 'command' || mode === 'running' ? mode : 'auto', 'tcp'] as const;
-    for (const probeMode of modes) {
-      const passed = await verifyNodeReadiness((op, params, _sink, options) => call(op, params, Math.max(1, Math.min(15_000, options?.timeoutMs ?? 15_000))),
-        { targets, mode: probeMode, port: service.port, path: service.healthPath || '/' }, deadline - Date.now(), async () => { await checkpoint(); }, deps.log ?? (() => undefined));
-      await checkpoint();
-      if (!passed || Date.now() >= deadline) throw new Error('Node wake application readiness is unconfirmed');
-    }
+    await verifyNodeApplicationReadiness(service, targets, (op, params, _sink, options) => call(op, params, Math.max(1, Math.min(15_000, options?.timeoutMs ?? 15_000))),
+      async () => { await checkpoint(); }, deps.log);
   };
   try {
     const row = await checkpoint(), sealed = await deps.sealed(row.serverId);
