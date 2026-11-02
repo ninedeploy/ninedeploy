@@ -19,7 +19,10 @@ export async function smokeNodeAutoscaleRps({ api, inner, id, fixtureImage, serv
   const rate = gap => assert.equal(call(`rate?gap=${gap}`), 'ok');
   await cleared();
   await api(`/v1/services/${id}`, { method: 'PATCH', body: { autoscale: cfg(5) } });
-  const status = () => api(`/v1/services/${id}/autoscale`);
+  // Each failed wait names the last status, so a hold reason reaches the CI log.
+  let last = null;
+  const status = async () => (last = await api(`/v1/services/${id}/autoscale`));
+  const wait = (fn, description, ms) => until(fn, description, ms).catch(error => { throw Error(`${error.message}; last status ${JSON.stringify(last)}`); });
   assert.ok((await status()).supportedMetrics?.includes('rps'), 'the preview opt-in must advertise node rps');
   const deploymentId = (await api(`/v1/services/${id}/deploys`, { method: 'POST', body: {} })).deploymentId;
   await success(id, deploymentId);
@@ -34,7 +37,7 @@ export async function smokeNodeAutoscaleRps({ api, inner, id, fixtureImage, serv
 
   // Load: ~20+ requests per second against a target of 5 per replica.
   rate(20);
-  const up = await until(async () => { const value = await status(); return value.replicas === 2 && value.value > 0 ? value : false; }, 'node rps scale-up', 300_000);
+  const up = await wait(async () => { const value = await status(); return value.replicas === 2 && value.value > 0 ? value : false; }, 'node rps scale-up', 300_000);
   await until(() => running(1), 'started spare');
   const replica = row => row.body.split(':').at(-1);
   await until(() => { const seen = new Set(JSON.parse(call('snapshot')).filter(row => row.status === 200).map(replica));
@@ -44,7 +47,7 @@ export async function smokeNodeAutoscaleRps({ api, inner, id, fixtureImage, serv
   // Source loss: low traffic would scale down, but without the observation it must hold, with no value.
   rate(2000);
   await restartAgent(false);
-  const lost = await until(async () => { const value = await status(); return value.value === null && value.holding ? value : false; }, 'held without a serving-traffic source', 120_000);
+  const lost = await wait(async () => { const value = await status(); return value.value === null && value.holding ? value : false; }, 'held without a serving-traffic source', 120_000);
   const holdUntil = Date.now() + holdMs;
   while (Date.now() < holdUntil) {
     const value = await status();
@@ -56,7 +59,7 @@ export async function smokeNodeAutoscaleRps({ api, inner, id, fixtureImage, serv
 
   // Restored: verified low traffic scales down after the window.
   await restartAgent(true);
-  const down = await until(async () => { const value = await status(); return value.replicas === 1 && value.value !== null ? value : false; }, 'node rps scale-down', 360_000);
+  const down = await wait(async () => { const value = await status(); return value.replicas === 1 && value.value !== null ? value : false; }, 'node rps scale-down', 360_000);
   await until(() => !running(1), 'stopped spare');
   await until(scaleSettled, 'scale-down ownership handoff', 120_000);
   const records = JSON.parse(call('finish'));

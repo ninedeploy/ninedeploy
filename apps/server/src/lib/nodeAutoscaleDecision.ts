@@ -24,9 +24,10 @@ export function createNodeAutoscaleDecider() {
         const measurement = measureNodeServingTraffic(service, sample, now);
         if (measurement.value === null || !measurement.sample) return hold(measurement.holding ?? 'node serving traffic unavailable');
         const { snapshot, serving, sampledAt } = measurement.sample;
-        // A new proxy source, agent epoch, route or replica set starts a new sustained window.
+        // A new proxy source, agent epoch, route or replica set starts a new sustained window. Not targetHash:
+        // it hashes the whole request, unique requestId included, so it differs on every window.
         measured = { value: measurement.value, sampledAt, requestId: snapshot.requestId,
-          generation: [serving, snapshot.sourceId, snapshot.proxyId, snapshot.epoch, snapshot.routingGeneration, snapshot.targetHash],
+          generation: [serving, snapshot.sourceId, snapshot.proxyId, snapshot.epoch, snapshot.routingGeneration],
           evidence: { serverId: service.serverId, serviceId: snapshot.serviceId, deploymentId: snapshot.deploymentId, sampledAt,
             requestId: snapshot.requestId, targets: serving } };
       } else {

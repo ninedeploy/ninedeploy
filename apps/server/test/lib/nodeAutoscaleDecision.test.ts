@@ -76,7 +76,7 @@ describe('node autoscale decisions on serving traffic (rps)', () => {
     const id = n.toString(16).padStart(32, '0'), start = 10 + n * 1000;
     return { kind: 'serving', serverId: 4, sampledAt: at, serving: [{ name: 'web-9', id: 'b'.repeat(64) }, { name: 'web-9-r2', id: 'c'.repeat(64) }],
       snapshot: { protocol: 1, purpose: 'autoscale', basis: 'traefik-request-sequence', precisionMs: 1, windowId: id, requestId: id,
-        epoch: 'd'.repeat(32), sourceId: 'e'.repeat(64), proxyId: 'f'.repeat(64), targetHash: '1'.repeat(64), routingGeneration: '2'.repeat(64),
+        epoch: 'd'.repeat(32), sourceId: 'e'.repeat(64), proxyId: 'f'.repeat(64), targetHash: (n % 10).toString().repeat(64), routingGeneration: '2'.repeat(64),
         nodeId: 4, serviceId: 7, deploymentId: 9, elapsedMs: 10_000, startCounter: String(start), endCounter: String(start + requests + 1),
         observed: requests, expected: requests, complete: true,
         serving: { requests, errors: 0, errorRate: requests ? 0 : null, p95Ms: requests ? 5 : null }, ...patch } };
@@ -97,10 +97,19 @@ describe('node autoscale decisions on serving traffic (rps)', () => {
     expect(d.observe(rps, serving(60_000, 2, 0), 60_000).to).toBeNull();
     expect(d.observe(rps, serving(120_000, 3, 0), 120_000).to).toBe(1);
   });
-  it.each(['sourceId', 'proxyId', 'routingGeneration', 'targetHash'] as const)('restarts the window when the %s changes', field => {
+  it('keeps the sustained window across windows, whose targetHash binds each unique request', () => {
+    const d = createNodeAutoscaleDecider();
+    expect(serving(0, 1, 400).snapshot.targetHash).not.toBe(serving(30_000, 2, 400).snapshot.targetHash);
+    expect(d.observe(rps, serving(0, 1, 400), 0).to).toBeNull();
+    expect(d.observe(rps, serving(30_000, 2, 400), 30_000).to).toBeNull();
+    expect(d.observe(rps, serving(60_000, 3, 400), 60_000).to).toBe(4);
+  });
+  it.each(['sourceId', 'proxyId', 'routingGeneration', 'epoch'] as const)('restarts the window when the %s changes', field => {
     const d = createNodeAutoscaleDecider();
     d.observe(rps, serving(0, 1, 400), 0);
-    expect(d.observe(rps, serving(60_000, 2, 400, { [field]: '9'.repeat(64) }), 60_000).to).toBeNull();
+    // A valid but different identity: the window starts again instead of being refused.
+    const next = d.observe(rps, serving(60_000, 2, 400, { [field]: '9'.repeat(field === 'epoch' ? 32 : 64) }), 60_000);
+    expect(next.to).toBeNull(); expect(next.holding ?? '').not.toMatch(/serving-traffic window/);
   });
   it('does not advance on a repeated receipt and holds on incomplete or foreign windows', () => {
     const d = createNodeAutoscaleDecider();
