@@ -2,6 +2,8 @@
 
 Baseline: NineDeploy 0.17.1, main abf5a39a. This is an implementation and acceptance tracker, not a statement of competitor parity.
 
+Development checkpoint, 2026-11-02: node RPS autoscaling has hosted 1→2→1 and source-loss acceptance ([CI 41464316996](https://github.com/ninedeploy/ninedeploy/actions/runs/41464316996)); see [NODE_RPS_AUTOSCALING.md](NODE_RPS_AUTOSCALING.md) for the exact source and scope. [Node sleep/wake](NODE_SLEEP_WAKE.md) remains incomplete: agent idle watches and the wake catcher exist, and the panel transport/conservative idle coverage calculation now pass focused tests. Panel scheduling, ordered sleep/wake effects, public capability reporting and their hosted acceptance remain open. These development results do not certify the full R2–R6 scope or a new release.
+
 Current published release: **[0.18.16](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.18.16)** (`6fa1046bedcb9018e7eacfdbd5774bf2c19a7b77`). Next feature release: **0.19.0 (R2: remaining runtime support)**. R3–R6 remain separate planned milestones; publish validated maintenance fixes between feature releases.
 
 Published increment **0.18.16** fixes local Docker primary-network readiness and includes seven additional version-pinned Hub blueprints. Resolve the configured primary network by name/full ID, preserve legacy default/bridge compatibility, refuse missing or invalid addresses, pin explicit HTTP/TCP probes to that address and require the address to remain unchanged afterward. Command readiness inherits the corrected TCP gate. Running-mode policy and node-agent RPC operands are unchanged. This increment does not complete R2–R6; desktop installers remain a separate unsigned acceptance track and signed macOS credential persistence is not certified.
