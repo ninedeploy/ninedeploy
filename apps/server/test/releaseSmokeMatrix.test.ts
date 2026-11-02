@@ -19,6 +19,7 @@ const expected = [
   command('smoke-agent-creation-drain'), command('smoke-node-lifecycle-controller'),
   command('smoke-node-lifecycle-fanout'), command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'),
   command('smoke-node-canary', ' --autoscale-only --proof=.temp_files/release-node-autoscale'),
+  command('smoke-node-canary', ' --autoscale-rps-only --proof=.temp_files/release-node-autoscale-rps'),
   command('smoke-node-canary', ' --autoscale-database-only --proof=.temp_files/release-node-autoscale-database'),
   command('smoke-node-canary', ' --health-modes-only --proof=.temp_files/release-panel-health-modes'),
   command('smoke-node-canary', ' --lifecycle-only --proof=.temp_files/release-node-smoke'),
@@ -39,6 +40,10 @@ describe('complete parallel release smoke gate', () => {
     expect(sql?.run).toBe('node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-database-only --proof=.temp_files/ci-node-autoscale-database');
     expect(sql?.if).toBeUndefined();
     expect(sql?.['continue-on-error']).not.toBe(true);
+    const rps = build.steps!.find(item => item.run?.includes('--autoscale-rps-only'));
+    expect(rps?.run).toBe('node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-rps-only --proof=.temp_files/ci-node-autoscale-rps');
+    expect(rps?.if).toBeUndefined();
+    expect(rps?.['continue-on-error']).not.toBe(true);
     expect([ci['publish-image'].needs ?? []].flat()).toContain('docker-image');
   });
   it('keeps seven mandatory cohorts bounded to three independent runners', () => {
