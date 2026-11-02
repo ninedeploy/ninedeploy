@@ -71,8 +71,8 @@ export async function checkpointNodeWakeMaintenance(db: DB, claim: NodeWakeMaint
 export async function recordNodeWakeMaintenanceCatcher(db: DB, claim: NodeWakeMaintenanceClaim, catcher: { id: string; image: string }) {
   if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image)) throw changed();
   await db.transaction(async tx => {
-    const row = await current(tx, claim);
-    if (row.phase !== 'preparing') throw changed();
+    await current(tx, claim);
+    // A recovered/recreated catcher invalidates any earlier routing acknowledgement.
     await tx.update(nodeWakeMaintenance).set({ catcherId: catcher.id, catcherImage: catcher.image, phase: 'routing' }).where(eq(nodeWakeMaintenance.serverId, claim.serverId));
   });
 }

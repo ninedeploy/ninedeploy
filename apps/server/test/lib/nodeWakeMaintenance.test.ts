@@ -112,3 +112,10 @@ it('rolls back all catcher bindings when a later sleeping member changes during 
   expect((await journal(2)).catcherId).toBe('c'.repeat(64));
   expect((await f.c.db.query.nodeWakeMaintenance.findFirst())!.phase).toBe('rebinding');
 });
+it('requires a fresh routing confirmation when a recovered attempt records another catcher', async () => {
+  await asleep(); const claim = (await claimNodeWakeMaintenance(f.c.db, 4))!;
+  await recordNodeWakeMaintenanceCatcher(f.c.db, claim, replacement); await confirmNodeWakeMaintenanceRouting(f.c.db, claim);
+  await recordNodeWakeMaintenanceCatcher(f.c.db, claim, { id: 'a'.repeat(64), image: `sha256:${'b'.repeat(64)}` });
+  expect((await f.c.db.query.nodeWakeMaintenance.findFirst())!.phase).toBe('routing');
+  await expect(completeNodeWakeMaintenance(f.c.db, claim)).rejects.toThrow();
+});
