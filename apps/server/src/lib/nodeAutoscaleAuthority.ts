@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, inArray, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
-import { databaseAttachments, databases, deployments, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, serviceTargets, services,
+import { databaseAttachments, databases, deployments, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeLifecycleIntents, nodeSleepTransitions, primaryTransitions, serviceTargets, services,
   type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { autoscaleConfig, containerInventoryReply } from '@ninedeploy/schemas';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
@@ -9,6 +9,7 @@ import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameR
 import { swarmRuntimeOf } from './swarm.js';
 import type { NodeAutoscaleEvidence } from './nodeAutoscaleDecision.js';
 import { AUTOSCALE_STATS_MAX_AGE_MS } from './autoscaler.js';
+import { nodeSleepAutomationBlock } from './nodeSleepAutomationBlock.js';
 
 type Placement = { serverId: number; runtimeId: string | null };
 export type NodeAutoscaleAdmission = { owner: ServiceRuntimeOwner; service: Service; targets: Placement[]; watermark: number; desiredReplicas: number; workerToken: string; measurement?: NodeAutoscaleEvidence | null };
@@ -67,14 +68,15 @@ export async function admitNodeAutoscale(db: DB, expected: Service, desiredRepli
   return db.transaction(async tx => {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
     if (!fresh || snapshot(fresh) !== snapshot(expected) || fresh.runtimeReplicas !== expected.runtimeReplicas || canaryActive(expected.id)) return null;
-    const [active, lifecycle, primary, fanout, priorTransition] = await Promise.all([
+    const [sleeping, active, lifecycle, primary, fanout, priorTransition] = await Promise.all([
+      tx.select({ id: nodeSleepTransitions.serviceId }).from(nodeSleepTransitions).where(nodeSleepAutomationBlock(fresh.id, fresh.runtimeId)).limit(1),
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, fresh.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
       tx.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, fresh.id)).limit(1),
       tx.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(eq(fanoutTransitions.serviceId, fresh.id)).limit(1),
       tx.select({ id: nodeAutoscaleTransitions.serviceId }).from(nodeAutoscaleTransitions).where(eq(nodeAutoscaleTransitions.serviceId, fresh.id)).limit(1),
     ]);
-    if (active.length || lifecycle.length || primary.length || fanout.length || priorTransition.length) return null;
+    if (sleeping.length || active.length || lifecycle.length || primary.length || fanout.length || priorTransition.length) return null;
     const capacityDeploymentId = Number(/-([1-9]\d*)$/.exec(fresh.runtimeId!)?.[1]);
     if (!Number.isSafeInteger(capacityDeploymentId) || capacityDeploymentId < 1) return null;
     const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, capacityDeploymentId) });
@@ -126,14 +128,15 @@ async function assertCurrent(tx: Pick<DB, 'query' | 'select'>, admission: NodeAu
       transition.replicaInventory?.some(item => !capacity!.targets.some(target => target.name === item.name && target.id === item.id))) {
       throw new Error('Node autoscale capacity identity changed');
     }
-    const [active, lifecycle, primary, fanout] = await Promise.all([
+    const [sleeping, active, lifecycle, primary, fanout] = await Promise.all([
+      tx.select({ id: nodeSleepTransitions.serviceId }).from(nodeSleepTransitions).where(nodeSleepAutomationBlock(fresh.id, fresh.runtimeId)).limit(1),
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status,
         allowQueued || ['fencing', 'prepared', 'started', 'ready', 'routing', 'draining', 'stopping', 'handoff', 'abort_fencing', 'abort_handoff', 'abort_stopping', 'abort_started_handoff'].includes(transition.phase) ? ['building', 'deploying'] : ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, fresh.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
       tx.select({ id: primaryTransitions.id }).from(primaryTransitions).where(eq(primaryTransitions.serviceId, fresh.id)).limit(1),
       tx.select({ id: fanoutTransitions.id }).from(fanoutTransitions).where(eq(fanoutTransitions.serviceId, fresh.id)).limit(1),
     ]);
-    if (active.length || lifecycle.length || primary.length || fanout.length) throw new Error('Node autoscale blocked by active runtime work');
+    if (sleeping.length || active.length || lifecycle.length || primary.length || fanout.length) throw new Error('Node autoscale blocked by active runtime work');
     if (canaryActive(fresh.id)) throw new Error('Node autoscale blocked by active canary');
 }
 
