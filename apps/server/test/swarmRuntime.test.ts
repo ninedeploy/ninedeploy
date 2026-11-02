@@ -278,6 +278,8 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'lib/nodeProxyTrafficClient.ts': { exempt: 'node-only observation refuses Swarm and changed placement before agent operations; runtimeId is an ownership comparison, never a local container command' },
   'lib/nodeServingTrafficSample.ts': { exempt: 'RPS autoscale sampling rejects Swarm and a node-less placement before reading capacity or opening an observation; nodeServingTrafficSample tests prove refusal before the window opens' },
   'lib/nodeServingTrafficContext.ts': { exempt: 'ordinary serving observation rejects Swarm and requires selected plain-Docker node capacity before comparing runtime identities; nodeServingTrafficClient tests prove refusal before agent contact' },
+  'lib/nodeIdleScheduler.ts': { exempt: 'read-only node idle scheduling excludes Swarm and never dispatches runtime mutations; eligibility and teardown are covered by nodeIdleScheduler tests' },
+  'lib/nodeIdleWatchService.ts': { exempt: 'requires a selected running plain-Docker node generation, then checks immutable serving IDs and deployment labels through sealed reads; Swarm is refused before agent contact' },
   'lib/webhookDispatch.ts': { exempt: 'PR previews never run on Swarm (a preview row has no orchestrator)' },
   'modules/ai.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
   'lib/alertInvestigation.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
