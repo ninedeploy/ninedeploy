@@ -30,7 +30,12 @@ Status, 2026-11-02: design accepted. Step 1, the agent idle watch, is accepted: 
    - Agent tests: `test/agentOps/idleWatch.test.ts` (two-minute verified zero under a 15 s lease, a single request, lease lapse, overlapping chain, owner disable).
    - Hosted cases in `scripts/fixtures/serving-traffic-agent.mjs`: a verified zero over one minute, a chained window broken by one request, and a proxy restart ending coverage.
    - The agent now also closes serving and idle windows when it shuts down.
-2. Agent: the `ninedeploy-wake` catcher (an idempotent ensure/remove operation, pinned image, no mounts) and the sealed `wake.demand` operation. Cover token bounds, expiry and missing-catcher refusal.
+2. Agent: the `ninedeploy-wake` catcher (an idempotent ensure/remove operation, pinned image, no mounts) and the sealed `wake.demand` operation. Cover token bounds, expiry and missing-catcher refusal. *Implemented 2026-11-02:*
+   - `src/wakeCatcher.ts`, `lib/nodeWakeCatcher.ts` and `agentOps/wakeCatcher.ts`, under the capability `wake.catcher` (same owner opt-in; `NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=off` also turns it off).
+   - The catcher runs the agent's own image by ID as `65534:65534`, read-only, with all capabilities dropped and no mounts or ports.
+   - It writes at most one `ND-WAKE` line per token per second. `wake.demand` aggregates those lines from the catcher's Docker log since a cursor.
+   - A missing, stopped or unlabelled catcher is refused rather than reported as no demand, and a same-name container it did not create is never touched.
+   - Hosted check: `scripts/smoke-wake-catcher.mjs` in CI and on the release image.
 3. Panel: the node idle clock in the sleep tick, using the idle watch. Report hold reasons (capability, coverage, opt-in) through the existing sleep status. Never sleep on unavailable coverage.
 4. Panel: the node sleep effect (decision 5), with its routing render for sleeping node domains pointing at the catcher with the domain middlewares kept.
 5. Panel: the wake poller and wake effect (decision 4), with deploy/Stop/Restart supersession and Stop arriving during a wake.

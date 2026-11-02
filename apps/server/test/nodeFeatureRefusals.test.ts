@@ -82,6 +82,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'proxy.traffic': 'observe proxy traffic',
   'proxy.servingTraffic': 'observe ordinary serving traffic',
   'proxy.idleWatch': 'watch a node service for idle traffic',
+  'wake.catcher': 'wake a sleeping node service',
   'proxy.orderedWrite': 'order node proxy routing writes',
   'docker.readiness': 'verify candidate replica readiness',
   'docker.metrics': 'measure immutable container resources',

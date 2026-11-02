@@ -312,6 +312,13 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+      - name: Verify the node wake catcher on the image
+        timeout-minutes: 5
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-wake-catcher.mjs --image=ninedeploy:ci --proof=.temp_files/ci-wake-catcher
+
       - name: Verify node readiness modes and failure controls
         timeout-minutes: 10
         run: node scripts/smoke-container-readiness.mjs --image=ninedeploy:ci

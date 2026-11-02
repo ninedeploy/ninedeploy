@@ -85,6 +85,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'proxy.orderedWrite',
       'proxy.servingTraffic',
       'proxy.idleWatch',
+      'wake.catcher',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     expect(multiNodeCapability.parse('docker.retireHandoff')).toBe('docker.retireHandoff');

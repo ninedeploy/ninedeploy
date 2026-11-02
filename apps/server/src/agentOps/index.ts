@@ -4,6 +4,7 @@ import { studioOps } from './studios.js';
 import { proxyTrafficOps } from './proxyTraffic.js';
 import { servingTrafficOps } from './servingTraffic.js';
 import { idleWatchOps } from './idleWatch.js';
+import { wakeCatcherOps } from './wakeCatcher.js';
 import { containerReadinessOps } from './containerReadiness.js';
 import { containerMetricsOps } from './containerMetrics.js';
 import { containerLifecycleOps } from './containerLifecycle.js';
@@ -84,6 +85,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   proxyTrafficOps,
   servingTrafficOps,
   idleWatchOps,
+  wakeCatcherOps,
   studioOps,
   databaseClientOps,
   volumeFileOps,
@@ -152,6 +154,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'proxy.traffic': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
   'proxy.servingTraffic': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
   'proxy.idleWatch': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC'],
+  // A container on the node: the mutations switch turns it off too.
+  'wake.catcher': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],
   'db.client': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_CLIENTS'],
   'db.publicAccess': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_PUBLIC_DATABASES'],
@@ -187,6 +191,7 @@ export const AGENT_OPT_IN: Readonly<Partial<Record<MultiNodeCapability, string>>
   'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'proxy.servingTraffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'proxy.idleWatch': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
+  'wake.catcher': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
   // G4.5: a node runs other people's CI jobs only when its owner says so.
   'gha.runner': 'NINEDEPLOY_AGENT_GHA_RUNNERS',
