@@ -8,16 +8,17 @@ import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js'
 import { renderDynamicConfig } from '../../src/engine/proxy.js';
 import type { NodeWakeControllerDeps } from '../../src/lib/nodeWakeController.js';
 import { nodeWakeKey } from '../../src/lib/nodeWakeKey.js';
+import { ensureNodeWakeCatcher } from '../../src/lib/nodeWakeCatcherClient.js';
 
 const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: io.agent, agentTransportSealed: io.sealed }));
 let f: Awaited<ReturnType<typeof servingReceiptFixture>>, pollers: ReturnType<typeof createNodeWakePoller>[];
-let mode: 'normal' | 'foreign' | 'truncated' | 'unknown', lostRoute: boolean, beforeDemand: (() => Promise<void>) | undefined;
+let mode: 'normal' | 'foreign' | 'truncated' | 'unknown', lostRoute: boolean, failEnsure: boolean, beforeDemand: (() => Promise<void>) | undefined;
 const row = async () => (await f.c.db.query.nodeSleepTransitions.findFirst())!;
 const service = async () => (await f.c.db.query.services.findFirst())!;
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
-  f = await servingReceiptFixture('file::memory:'); pollers = []; mode = 'normal'; lostRoute = false; beforeDemand = undefined;
+  f = await servingReceiptFixture('file::memory:'); pollers = []; mode = 'normal'; lostRoute = false; failEnsure = false; beforeDemand = undefined;
   await f.c.db.update(services).set({ sleepAfterMinutes: 5, healthCheck: 'tcp', healthTimeoutSeconds: 10 });
   const proof = await nodeSleepEvidence(f.c.db), admission = (await admitNodeSleep(f.c.db, await service(), proof.token))!;
   await nodeWakeKey(f.c.db, 4, true);
@@ -34,6 +35,10 @@ beforeEach(async () => {
       return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ catcherId: (mode === 'foreign' ? 'e' : 'c').repeat(64), startedAt: new Date(Date.now() - 60_000).toISOString(),
         cursorMs: Date.now(), truncated: mode === 'truncated', items: [{ token: mode === 'unknown' ? 'f'.repeat(32) : sleeping.wakeToken, count: 2, lastAt: Date.now() }] })}`] };
     }
+    if (op === 'wake.catcher.ensure') {
+      if (failEnsure) throw new Error('Catcher reply lost');
+      return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ id: 'e'.repeat(64), image: `sha256:${'f'.repeat(64)}`, created: true })}`] };
+    }
     if (op === 'docker.runtimeFence') { const { timeoutMs: _timeout, ...request } = params; return { exitCode: 0, lines: [`ND-RUNTIME-FENCE ${JSON.stringify({ ...request, complete: true })}`] }; }
     if (op === 'docker.startSet') return { exitCode: 0, lines: [`ND-STARTED-SET ${JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, revision: params.revision,
       complete: true, items: params.targets.map((target: object) => ({ ...target, running: true })) })}`] };
@@ -47,8 +52,12 @@ afterEach(async () => {
   vi.useRealTimers(); vi.restoreAllMocks(); f.c.client?.close();
 });
 const operations = (op: string) => io.agent.mock.calls.filter(call => call[2] === op);
-function make(onError = vi.fn()) {
-  const poller = createNodeWakePoller(f.c.db, { onError, runtime: signal => ({ signal,
+function make(onError = vi.fn(), recoverCatchers = false) {
+  const poller = createNodeWakePoller(f.c.db, { onError, recoverCatchers, maintenanceRuntime: signal => ({ signal,
+    sealed: () => io.sealed(), agent: (node, op, params, options) => io.agent(f.c.db, node, op, params, () => undefined, options),
+    ensure: (node, key, parent) => ensureNodeWakeCatcher(f.c.db, node, key, parent),
+    route: async serverId => { expect(await renderDynamicConfig(f.c.db, { serverId })).toContain('service: svc_ninedeploy_node_wake'); },
+  }), runtime: signal => ({ signal,
     sealed: () => io.sealed(), agent: (node, op, params, options) => io.agent(f.c.db, node, op, params, () => undefined, options),
     route: async (serverId, promotion) => {
       // Simulated loaded-route acknowledgement, with the real bound renderer.
@@ -106,4 +115,20 @@ it('shares an in-flight node poll and discards its late reply after shutdown', a
   const closing = poller.close(); release(); await Promise.all([first, closing]);
   expect((await row()).phase).toBe('asleep'); expect(operations('docker.startSet')).toHaveLength(0);
   await poller.tick(); expect(operations('wake.demand')).toHaveLength(1);
+});
+it('opted-in catcher recovery rebinds the pinned source before accepting new demand', async () => {
+  mode = 'foreign'; const poller = make(vi.fn(), true);
+  await finish(poller.tick()); await finish(poller.settle());
+  expect((await row()).catcherId).toBe('e'.repeat(64)); expect((await row()).phase).toBe('asleep');
+  expect((await f.c.db.query.nodeWakeMaintenance.findFirst())!.phase).toBe('completed'); expect(operations('docker.startSet')).toHaveLength(0);
+  await poller.tick(); await finish(poller.settle());
+  expect((await row()).phase).toBe('completed'); expect(operations('docker.startSet')).toHaveLength(1);
+});
+it('a new poller recovers pending catcher maintenance without needing a new observation', async () => {
+  mode = 'foreign'; failEnsure = true; const first = make(vi.fn(), true);
+  await finish(first.tick()); expect((await f.c.db.query.nodeWakeMaintenance.findFirst())!.phase).toBe('preparing');
+  const reads = operations('wake.demand').length; await first.close(); failEnsure = false;
+  const second = make(vi.fn(), true); await finish(second.tick()); await finish(second.settle());
+  expect((await f.c.db.query.nodeWakeMaintenance.findFirst())!.phase).toBe('completed');
+  expect((await row()).catcherId).toBe('e'.repeat(64)); expect(operations('wake.demand')).toHaveLength(reads);
 });

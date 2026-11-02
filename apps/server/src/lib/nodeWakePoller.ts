@@ -1,17 +1,24 @@
 import { eq, nodeSleepTransitions, services, type DB, type NodeSleepTransition } from '@ninedeploy/db';
-import { inArray } from 'drizzle-orm';
+import { inArray, ne } from 'drizzle-orm';
+import { nodeWakeMaintenance } from '@ninedeploy/db';
 import { admitNodeWake, holdNodeSleep, recoverNodeSleep, type NodeSleepAdmission } from './nodeSleepAuthority.js';
 import { readNodeWakeDemand } from './nodeWakeCatcherClient.js';
 import { executeNodeWake, type NodeWakeControllerDeps } from './nodeWakeController.js';
 import { nodeWakeRuntime } from './nodeWakeRuntime.js';
+import { claimNodeWakeMaintenance, holdNodeWakeMaintenance } from './nodeWakeMaintenance.js';
+import { executeNodeWakeMaintenance, type NodeWakeMaintenanceDeps } from './nodeWakeMaintenanceController.js';
+import { nodeWakeMaintenanceRuntime } from './nodeWakeMaintenanceRuntime.js';
 
 export const NODE_WAKE_POLL_MS = 2000;
 const MAX_NODES = 4, MAX_WAKES = 4, RETRY_MS = 30_000;
 const active = ['accepted', 'fencing', 'starting', 'readiness', 'publishing'] as const;
 
-/** Private, opt-in coordinator. Does not create/replace catchers or enable automatic sleep. */
+/** Private coordinator. Catcher mutation requires explicit recovery opt-in and durable maintenance authority. */
 export function createNodeWakePoller(db: DB, options: {
   runtime?: (signal: AbortSignal) => NodeWakeControllerDeps;
+  /** Private acceptance opt-in; production activation still requires traffic acceptance. */
+  recoverCatchers?: boolean;
+  maintenanceRuntime?: (signal: AbortSignal) => NodeWakeMaintenanceDeps;
   now?: () => number;
   onError?: (error: unknown) => void;
 } = {}) {
@@ -19,7 +26,18 @@ export function createNodeWakePoller(db: DB, options: {
   const nodes = new Map<number, Promise<void>>(), jobs = new Map<number, Promise<void>>();
   const loads = new Set<Promise<void>>();
   const nodeRetry = new Map<string, number>(), serviceRetry = new Map<number, number>();
+  const maintenanceRetry = new Map<number, number>();
   let closed = false, loading = false, lastNode = 0;
+  const recoverCatcher = async (nodeId: number) => {
+    if (closed || !options.recoverCatchers || now() < (maintenanceRetry.get(nodeId) ?? 0)) return;
+    const claim = await claimNodeWakeMaintenance(db, nodeId);
+    if (!claim) return;
+    if (closed) { await holdNodeWakeMaintenance(db, claim, 'node wake poller stopped before maintenance'); return; }
+    const runtime = options.maintenanceRuntime?.(abort.signal) ?? nodeWakeMaintenanceRuntime(db, { signal: abort.signal });
+    const result = await executeNodeWakeMaintenance(db, claim, { ...runtime, signal: abort.signal });
+    if (result.state === 'held') maintenanceRetry.set(nodeId, now() + RETRY_MS);
+    else maintenanceRetry.delete(nodeId);
+  };
   const dispatch = (serviceId: number, admit: () => Promise<NodeSleepAdmission | null>) => {
     if (closed || jobs.has(serviceId) || jobs.size >= MAX_WAKES || now() < (serviceRetry.get(serviceId) ?? 0)) return;
     const job = Promise.resolve().then(async () => {
@@ -58,6 +76,10 @@ export function createNodeWakePoller(db: DB, options: {
       } catch (error) {
         nodeRetry.set(key, now() + RETRY_MS);
         if (!closed) options.onError?.(error);
+        if (!closed && options.recoverCatchers) {
+          try { await recoverCatcher(nodeId); }
+          catch (recoveryError) { maintenanceRetry.set(nodeId, now() + RETRY_MS); if (!closed) options.onError?.(recoveryError); }
+        }
       }
     }
   };
@@ -77,6 +99,18 @@ export function createNodeWakePoller(db: DB, options: {
       try {
         const rows = await db.select().from(nodeSleepTransitions).where(inArray(nodeSleepTransitions.phase, ['asleep', ...active]));
         if (closed) return;
+        const maintenance = options.recoverCatchers
+          ? await db.select().from(nodeWakeMaintenance).where(ne(nodeWakeMaintenance.phase, 'completed')) : [];
+        if (closed) return;
+        const maintenanceNodes = new Set(maintenance.map(row => row.serverId));
+        for (const id of maintenanceRetry.keys()) if (!maintenanceNodes.has(id)) maintenanceRetry.delete(id);
+        for (const row of maintenance) {
+          if (nodes.has(row.serverId) || nodes.size >= MAX_NODES || now() < (maintenanceRetry.get(row.serverId) ?? 0)) continue;
+          const job = recoverCatcher(row.serverId).catch(error => {
+            maintenanceRetry.set(row.serverId, now() + RETRY_MS); if (!closed) options.onError?.(error);
+          }).finally(() => { if (nodes.get(row.serverId) === job) nodes.delete(row.serverId); });
+          nodes.set(row.serverId, job); started.push(job);
+        }
         const known = new Set(rows.map(row => row.serviceId));
         for (const id of serviceRetry.keys()) if (!known.has(id)) serviceRetry.delete(id);
         // Recovery does not need another visitor request. It retains command identity
