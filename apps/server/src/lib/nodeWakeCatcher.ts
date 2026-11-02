@@ -15,6 +15,7 @@ export const WAKE_CATCHER_LABEL = 'wake';
 const AGENT_CONTAINER = 'ninedeploy-agent';
 const PROXY_NETWORK = 'ninedeploy';
 const SCRIPT = '/app/apps/server/dist/wakeCatcher.js';
+const IMAGE_VOLUME = '/data';
 const DEMAND_TAIL = 2000;
 
 export const wakeDemandParams = z.object({ sinceMs: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }).strict();
@@ -48,6 +49,8 @@ export const wakeCatcherRunArgs = (image: string, key: string): string[] => ['ru
   '--network', PROXY_NETWORK, '--restart', 'unless-stopped',
   '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '65534:65534',
   '--memory', '64m', '--pids-limit', '64', '--log-driver', 'json-file', '--log-opt', 'max-size=1m', '--log-opt', 'max-file=2',
+  // The image declares VOLUME /data; without this Docker would attach a writable anonymous volume.
+  '--mount', `type=tmpfs,destination=${IMAGE_VOLUME},tmpfs-size=65536,tmpfs-mode=0555`,
   '--entrypoint', 'node', image, SCRIPT];
 
 /** Create or keep the catcher; a stale image, a changed key or a stopped catcher is recreated. */
@@ -56,7 +59,7 @@ export async function ensureWakeCatcher(params: unknown): Promise<{ id: string; 
   const image = await agentImage(), found = await inspect(WAKE_CATCHER_NAME);
   if (found && found.managed !== WAKE_CATCHER_LABEL) foreign();
   if (found?.running && found.image === image && found.keyHash === keyLabel(key)) return { id: found.id, image, created: false };
-  if (found) await capture('docker', ['rm', '-f', found.id], { timeoutMs: 30_000 });
+  if (found) await capture('docker', ['rm', '-fv', found.id], { timeoutMs: 30_000 });
   await capture('docker', wakeCatcherRunArgs(image, key), { timeoutMs: 60_000 });
   const created = await inspect(WAKE_CATCHER_NAME);
   if (!created?.running || created.image !== image || created.managed !== WAKE_CATCHER_LABEL || created.keyHash !== keyLabel(key)) {
@@ -69,7 +72,7 @@ export async function removeWakeCatcher(): Promise<{ removed: boolean }> {
   const found = await inspect(WAKE_CATCHER_NAME);
   if (!found) return { removed: false };
   if (found.managed !== WAKE_CATCHER_LABEL) foreign();
-  await capture('docker', ['rm', '-f', found.id], { timeoutMs: 30_000 });
+  await capture('docker', ['rm', '-fv', found.id], { timeoutMs: 30_000 });
   return { removed: true };
 }
 

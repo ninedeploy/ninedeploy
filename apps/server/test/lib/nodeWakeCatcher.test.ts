@@ -84,6 +84,8 @@ describe('agent-managed wake catcher', () => {
     expect(run).toEqual(wakeCatcherRunArgs(AGENT_IMAGE, KEY));
     expect(run).toEqual(expect.arrayContaining(['--read-only', '--cap-drop', 'ALL', '--user', '65534:65534', '--network', 'ninedeploy', `ND_WAKE_KEY=${KEY}`]));
     expect(run.join(' ')).not.toMatch(/ -v | -p |--publish|--volume|docker\.sock|--privileged/);
+    // The image's VOLUME /data is shadowed by an empty, unwritable, size-capped tmpfs instead of an anonymous volume.
+    expect(run.filter(arg => arg.startsWith('type='))).toEqual(['type=tmpfs,destination=/data,tmpfs-size=65536,tmpfs-mode=0555']);
     // The label holds a hash of the key, never the key.
     expect(run.find(arg => arg.startsWith('ninedeploy.wake.key='))).not.toContain(KEY);
     expect(run.at(-2)).toBe(AGENT_IMAGE);
@@ -99,7 +101,7 @@ describe('agent-managed wake catcher', () => {
     for (const stale of [catcherRow({ id: 'd'.repeat(64), image: `sha256:${'b'.repeat(64)}` }), catcherRow({ id: 'd'.repeat(64), key: OTHER_KEY }), catcherRow({ id: 'd'.repeat(64), running: false })]) {
       docker.calls = []; docker.containers.set('ninedeploy-wake', stale);
       expect((await ensureWakeCatcher({ key: KEY })).created).toBe(true);
-      expect(docker.calls).toContainEqual(['rm', '-f', 'd'.repeat(64)]);
+      expect(docker.calls).toContainEqual(['rm', '-fv', 'd'.repeat(64)]);
     }
   });
   it('never touches a same-name container it did not create', async () => {

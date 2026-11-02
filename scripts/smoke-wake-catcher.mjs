@@ -37,7 +37,14 @@ try {
   resources.push({ kind: 'container', id: docker(args) });
   const info = JSON.parse(docker(['inspect', catcher]))[0];
   assert.equal(info.Image, imageId); assert.equal(info.Config.User, '65534:65534'); assert.equal(info.HostConfig.ReadonlyRootfs, true);
-  assert.deepEqual(info.HostConfig.CapDrop, ['ALL']); assert.deepEqual(info.Mounts, []); assert.equal(info.HostConfig.Privileged, false);
+  assert.deepEqual(info.HostConfig.CapDrop, ['ALL']); assert.equal(info.HostConfig.Privileged, false);
+  // The image's VOLUME /data must be shadowed by the empty tmpfs: no volume or bind mount at all.
+  assert.ok(info.Mounts.every(mount => mount.Type === 'tmpfs'), `unexpected mounts: ${JSON.stringify(info.Mounts)}`);
+  assert.deepEqual((info.HostConfig.Mounts ?? []).map(mount => [mount.Type, mount.Target]), [['tmpfs', '/data']]);
+  for (const path of ['/data/probe', '/probe', '/app/probe']) {
+    const write = spawnSync('docker', ['exec', catcher, 'node', '-e', `require('node:fs').writeFileSync(${JSON.stringify(path)},'x')`], { encoding: 'utf8', timeout: 30_000, windowsHide: true });
+    assert.notEqual(write.status, 0, `the catcher could write ${path}`);
+  }
   assert.deepEqual(Object.keys(info.NetworkSettings.Networks), [network]); assert.equal(Object.keys(info.HostConfig.PortBindings ?? {}).length, 0);
   cases.push({ name: 'agent-image-unprivileged-read-only-no-mounts', passed: true });
   assert.ok(!info.Config.Labels['ninedeploy.wake.key'].includes(key), 'the label must not hold the key');
