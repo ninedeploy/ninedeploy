@@ -35,6 +35,7 @@ const RETENTION: Record<string, Retention> = {
   fanout_transitions: { config: 'at most one unresolved transition per service/node (unique service_id,server_id); deleted after confirmed cleanup and cascading with service/node; pending safety records are never age-evicted' },
   metric_rollups: { swept: 'resource-metric-history' },
   log_drain_cursors: { swept: 'log-drain-cursors' },
+  node_serving_traffic_receipts: { swept: 'serving-traffic-receipts' },
   log_drain_batches: { config: 'encrypted payload capped per drain (1–256 MiB and 10000 batches); retained until acknowledgement or explicit operator discard, cascading with drain/service' },
   deployment_release_records: { config: 'one immutable record per deployment (unique deployment_id); cascades when deployment history is pruned or deleted' },
   node_autoscale_capacity: { config: 'one immutable capacity receipt per deployment; cascades with deployment or service deletion' },

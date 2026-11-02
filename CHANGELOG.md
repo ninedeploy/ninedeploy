@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cloning a service now copies its inline Dockerfile. The copy built the repository's own Dockerfile instead, or had nothing to build for a "Dockerfile only" service (G1.1).
 - The restart-loop limit can no longer be turned on for a node service or a Swarm service, and its card is hidden there. The panel never samples those containers, so the saved limit never acted. A service with the limit on cannot move to a node (G1.3).
 - Accepting a domain transfer clears the domain's compose route and panel sign-in. The route still named a service of the old stack, so the recipient's stack sent the domain to its own service of that name, or to nothing (G2.1, G2.3).
+- Node serving-traffic receipts are pruned by housekeeping. After 7 days a receipt is deleted unless it is the newest for its node source, which still refuses a replayed interval. Before, the table grew without bound (R2).
 
 ### Security
 

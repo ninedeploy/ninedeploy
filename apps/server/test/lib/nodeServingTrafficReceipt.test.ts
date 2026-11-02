@@ -8,7 +8,7 @@ import { type createDb, domains, nodeServingTrafficReceipts, services } from '@n
 import { servingTrafficOpen, type ServingTrafficOpen, type ServingTrafficSnapshot } from '@ninedeploy/schemas';
 import { renderDynamicConfig } from '../../src/engine/proxy.js';
 import { nodeServingTrafficContext } from '../../src/lib/nodeServingTrafficContext.js';
-import { consumeNodeServingTraffic } from '../../src/lib/nodeServingTrafficReceipt.js';
+import { consumeNodeServingTraffic, pruneNodeServingTrafficReceipts, SERVING_RECEIPT_RETENTION_MS } from '../../src/lib/nodeServingTrafficReceipt.js';
 import { proxyTrafficRoutingGeneration, proxyTrafficTargetHash } from '../../src/lib/proxyTrafficCounter.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { servingReceiptFixture } from '../fixtures/servingTrafficReceipt.js';
@@ -118,4 +118,16 @@ it('refuses an observation whose runtime ownership changed before durable consum
 it('refuses changed routing before durable consumption', async () => {
   await c.db.update(domains).set({ hostname: 'changed.test' });
   await expect(consume(receipt())).rejects.toThrow(/context changed/); expect(await rows()).toHaveLength(0);
+});
+
+it("prunes superseded receipts after the retention window and keeps each source's newest one", async () => {
+  await consume(receipt('10', '11', 1));
+  await consume(receipt('12', '13', 2));
+  await consume(receipt('14', '15', 3));
+  const later = receivedAt + SERVING_RECEIPT_RETENTION_MS + 1;
+  expect(await pruneNodeServingTrafficReceipts(c.db, receivedAt)).toBe(0);
+  expect(await pruneNodeServingTrafficReceipts(c.db, later)).toBe(2);
+  expect((await rows()).map((r) => r.endCounter)).toEqual(['15'.padStart(20, '0')]);
+  // The kept row still refuses a replayed interval.
+  await expect(consume(receipt('12', '13', 4))).rejects.toThrow(/already consumed or superseded/);
 });

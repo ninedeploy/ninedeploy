@@ -55,6 +55,9 @@ const retention015 = vi.hoisted(() => ({
 }));
 vi.mock('../../src/lib/terminalSessions.js', () => ({ pruneTerminalSessions: retention015.pruneTerminalSessions }));
 vi.mock('../../src/lib/trafficAnalytics.js', () => ({ pruneTrafficRollups: retention015.pruneTrafficRollups }));
+// R2 serving-traffic receipts (tested in test/lib/nodeServingTrafficReceipt.test.ts).
+const servingReceipts = vi.hoisted(() => ({ pruneNodeServingTrafficReceipts: vi.fn(async (..._a: unknown[]) => 0) }));
+vi.mock('../../src/lib/nodeServingTrafficReceipt.js', () => servingReceipts);
 
 const housekeepingPlugin = (await import('../../src/plugins/housekeeping.js')).default;
 
@@ -359,6 +362,18 @@ describe('housekeeping plugin', () => {
     expect(retention015.pruneTerminalSessions).toHaveBeenCalledWith(db, expect.any(Number));
     expect(retention015.pruneTrafficRollups).toHaveBeenCalledTimes(1);
     expect(retention015.pruneTrafficRollups).toHaveBeenCalledWith(db, expect.any(Number));
+    await app.close();
+  });
+
+  it('runs the serving-traffic receipt retention step each tick', async () => {
+    servingReceipts.pruneNodeServingTrafficReceipts.mockClear();
+    const { db } = makeDb();
+    const app = await buildApp(db);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(servingReceipts.pruneNodeServingTrafficReceipts).toHaveBeenCalledTimes(1);
+    expect(servingReceipts.pruneNodeServingTrafficReceipts).toHaveBeenCalledWith(db, expect.any(Number));
     await app.close();
   });
 

@@ -36,6 +36,7 @@ import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
 import { pruneServiceMetrics } from '../lib/serviceMetricHistory.js';
 import { pruneLogDrainCursors } from '../engine/logShipper.js';
 import { pruneNodeLifecycleHistory } from '../lib/nodeLifecycleIntent.js';
+import { pruneNodeServingTrafficReceipts } from '../lib/nodeServingTrafficReceipt.js';
 
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
 /** Export artifacts (secret-bearing archives + scratch files) older than this
@@ -536,6 +537,8 @@ export default fp(
         await step('mcp-oauth', () => sweepMcpOAuth(fastify.db, now));
         // R5 CI: finished jobs (and their logs) after 30 days.
         await step('ci-jobs', () => pruneCiJobs(fastify.db, 30, now));
+        // R2 node serving-traffic receipts: superseded rows after 7 days.
+        await step('serving-traffic-receipts', () => pruneNodeServingTrafficReceipts(fastify.db, now));
         // 0.16.12 database copies whose preview was removed without its teardown.
         await step('preview-databases', () => sweepOrphanPreviewCopies(fastify.db, (line) => fastify.log.info({ component: 'housekeeping' }, line)));
         await step('dangling-images', () => pruneDanglingImages(fastify.db));

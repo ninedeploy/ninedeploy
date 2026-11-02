@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { nodeServingTrafficReceipts, type DB } from '@ninedeploy/db';
 import { servingTrafficOpen, servingTrafficSnapshot, type ServingTrafficOpen, type ServingTrafficSnapshot } from '@ninedeploy/schemas';
 import { AUTOSCALE_STATS_MAX_AGE_MS } from './autoscaler.js';
@@ -46,4 +46,28 @@ export async function consumeNodeServingTraffic(db: DB, params: ServingTrafficOp
   if (await nodeServingTrafficContext(db, input) !== observation.context) throw proxyTrafficUnavailable('serving context changed after receipt consumption');
   fresh();
   return { value, sampledAt: observation.receivedAt, requestId: receipt.requestId, windowId: receipt.windowId };
+}
+
+/** Consumed receipts older than this are pruned, except each source's newest one. */
+export const SERVING_RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const SERVING_RECEIPT_PRUNE_BATCH = 1000;
+
+/**
+ * Housekeeping step `serving-traffic-receipts`. The newest receipt per
+ * service/node/source stays: it carries the end counter that refuses a replayed
+ * interval, so only superseded rows are age-evicted.
+ */
+export async function pruneNodeServingTrafficReceipts(db: DB, now: number = Date.now()): Promise<number> {
+  const cutoff = now - SERVING_RECEIPT_RETENTION_MS;
+  let deleted = 0;
+  for (;;) {
+    const res = (await db.run(sql`DELETE FROM node_serving_traffic_receipts WHERE rowid IN (
+      SELECT r.rowid FROM node_serving_traffic_receipts r WHERE r.consumed_at_ms < ${cutoff} AND r.end_counter < (
+        SELECT MAX(n.end_counter) FROM node_serving_traffic_receipts n
+        WHERE n.service_id = r.service_id AND n.node_id = r.node_id AND n.source_id = r.source_id)
+      LIMIT ${SERVING_RECEIPT_PRUNE_BATCH})`)) as unknown as { rowsAffected?: number };
+    const n = Number(res?.rowsAffected ?? 0);
+    deleted += n;
+    if (n < SERVING_RECEIPT_PRUNE_BATCH) return deleted;
+  }
 }
