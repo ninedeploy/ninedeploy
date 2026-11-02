@@ -13,6 +13,7 @@ const proof = resolve(process.argv.find(arg => arg.startsWith('--proof='))?.slic
 const publicDir = resolve(proof, 'public'), privateDir = resolve(proof, 'private');
 mkdirSync(publicDir, { recursive: true }); mkdirSync(resolve(privateDir, 'shim'), { recursive: true });
 const owner = `wake-recovery-${randomBytes(8).toString('hex')}`, agentToken = randomBytes(32).toString('hex');
+const jwtSecret = randomBytes(32).toString('hex');
 const resources = [], cases = [], cleanup = [];
 let failure, imageId, oldImage, evidence;
 const docker = (args, allowed = false, extra = {}) => {
@@ -24,6 +25,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 function driver(candidate, delay) {
   const id = docker(['run', '-d', '--name', 'ninedeploy-agent', '--label', `ninedeploy.proof=${owner}`, '--network', 'ninedeploy', '--user', '0', '--no-healthcheck', '-w', '/fixture',
     '-e', 'GITHUB_ACTIONS=true', '-e', 'NINEDEPLOY_DATA_DIR=/fixture/data', '-e', 'NINEDEPLOY_DB_PATH=/fixture/panel.db', '-e', 'NINEDEPLOY_AGENT_REQUIRE_SEALED=1',
+    '-e', `NINEDEPLOY_JWT_SECRET=${jwtSecret}`,
     '-e', 'NINEDEPLOY_AGENT_PROXY_TRAFFIC=on', '-e', 'NINEDEPLOY_AGENT_ORDERED_PROXY=on', '-e', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=on',
     '-e', `ND_PROOF_OWNER=${owner}`, '-e', `ND_PROOF_TOKEN=${agentToken}`, '-e', `ND_PROOF_DELAY=${delay}`,
     '-e', 'PATH=/fixture/shim:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
