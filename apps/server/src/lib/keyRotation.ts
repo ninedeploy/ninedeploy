@@ -267,6 +267,7 @@ export const SETTINGS_ENCRYPTED_KEYS = [
 /** Encrypted settings keyed per row (`<prefix><id>`). */
 export const SETTINGS_ENCRYPTED_PREFIXES = [
   'cloud_rekey:', // G4.3 lib/hetznerCloud.ts (a cloud node's pending agent key)
+  'node_wake_key_', // R2 lib/nodeWakeKey.ts (the node proxy's wake credential)
 ] as const;
 
 async function rotateKeyedStoreSecrets(db: DB): Promise<number> {
