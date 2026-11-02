@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { capture } from './exec.js';
 import { HttpError } from './errors.js';
 import { WAKE_DEMAND_PREFIX, WAKE_KEY_PATTERN } from '../wakeCatcher.js';
+import { createKeyedOperationGuard } from './keyedOperationGuard.js';
 
 /**
  * R2 node scale to zero (docs/NODE_SLEEP_WAKE.md), agent side: the fixed `ninedeploy-wake`
@@ -17,6 +18,7 @@ const PROXY_NETWORK = 'ninedeploy';
 const SCRIPT = '/app/apps/server/dist/wakeCatcher.js';
 const IMAGE_VOLUME = '/data';
 const DEMAND_TAIL = 2000;
+const withCatcher = createKeyedOperationGuard<string>();
 
 export const wakeDemandParams = z.object({ sinceMs: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }).strict();
 /** The panel's per-node wake key; the Traefik middleware sends it, the catcher checks it. */
@@ -54,8 +56,7 @@ export const wakeCatcherRunArgs = (image: string, key: string): string[] => ['ru
   '--entrypoint', 'node', image, SCRIPT];
 
 /** Create or keep the catcher; a stale image, a changed key or a stopped catcher is recreated. */
-export async function ensureWakeCatcher(params: unknown): Promise<{ id: string; image: string; created: boolean }> {
-  const { key } = wakeEnsureParams.parse(params);
+async function ensureWakeCatcherUnlocked(key: string): Promise<{ id: string; image: string; created: boolean }> {
   const image = await agentImage(), found = await inspect(WAKE_CATCHER_NAME);
   if (found && found.managed !== WAKE_CATCHER_LABEL) foreign();
   if (found?.running && found.image === image && found.keyHash === keyLabel(key)) return { id: found.id, image, created: false };
@@ -68,12 +69,20 @@ export async function ensureWakeCatcher(params: unknown): Promise<{ id: string; 
   return { id: created.id, image, created: true };
 }
 
-export async function removeWakeCatcher(): Promise<{ removed: boolean }> {
+export async function ensureWakeCatcher(params: unknown): Promise<{ id: string; image: string; created: boolean }> {
+  const { key } = wakeEnsureParams.parse(params);
+  return withCatcher('wake', () => ensureWakeCatcherUnlocked(key));
+}
+
+async function removeWakeCatcherUnlocked(): Promise<{ removed: boolean }> {
   const found = await inspect(WAKE_CATCHER_NAME);
   if (!found) return { removed: false };
   if (found.managed !== WAKE_CATCHER_LABEL) foreign();
   await capture('docker', ['rm', '-fv', found.id], { timeoutMs: 30_000 });
   return { removed: true };
+}
+export async function removeWakeCatcher(): Promise<{ removed: boolean }> {
+  return withCatcher('wake', removeWakeCatcherUnlocked);
 }
 
 /** Wake demand per token since `sinceMs`, from the running catcher's own log lines. */
@@ -81,11 +90,18 @@ export async function readWakeDemand(params: unknown) {
   const { sinceMs } = wakeDemandParams.parse(params);
   const found = await inspect(WAKE_CATCHER_NAME);
   if (!found || found.managed !== WAKE_CATCHER_LABEL || !found.running) throw new HttpError(409, 'wake_catcher_missing', 'The wake catcher is not running on the node');
+  const startedMs = Date.parse(found.startedAt);
+  if (!Number.isFinite(startedMs) || startedMs < 0) throw new HttpError(502, 'wake_catcher_unconfirmed', 'The wake catcher start time could not be read');
+  const lowerBound = Math.max(Math.floor(sinceMs / 1000) * 1000, startedMs);
   // Docker's --since has second precision; re-reading a line is harmless because a wake is idempotent.
-  const since = new Date(Math.floor(sinceMs / 1000) * 1000).toISOString();
+  const since = new Date(lowerBound).toISOString();
   const out = await capture('docker', ['logs', '--timestamps', '--since', since, '--tail', String(DEMAND_TAIL), found.id], { timeoutMs: 15_000 });
+  const after = await inspect(WAKE_CATCHER_NAME);
+  if (!after || after.id !== found.id || after.startedAt !== found.startedAt || !after.running || after.managed !== WAKE_CATCHER_LABEL) {
+    throw new HttpError(409, 'wake_catcher_changed', 'The wake catcher process changed while demand was read');
+  }
   const items = new Map<string, { token: string; count: number; lastAt: number }>();
-  let cursorMs = sinceMs;
+  let cursorMs = Math.max(sinceMs, startedMs);
   const lines = out.split('\n').filter(line => line.trim());
   // A full tail may have dropped older lines: say so, so the panel never reads it as all the demand.
   const truncated = lines.length >= DEMAND_TAIL;
@@ -93,7 +109,7 @@ export async function readWakeDemand(params: unknown) {
     const match = /^(\S+) ND-WAKE (\{"token":"[a-f0-9]{32}"\})$/.exec(line.trim());
     if (!match || !line.includes(WAKE_DEMAND_PREFIX)) continue;
     const at = Date.parse(match[1]!);
-    if (!Number.isFinite(at) || at < Math.floor(sinceMs / 1000) * 1000) continue;
+    if (!Number.isFinite(at) || at < lowerBound) continue;
     const { token } = JSON.parse(match[2]!) as { token: string };
     const item = items.get(token) ?? { token, count: 0, lastAt: 0 };
     item.count += 1; item.lastAt = Math.max(item.lastAt, at); items.set(token, item);

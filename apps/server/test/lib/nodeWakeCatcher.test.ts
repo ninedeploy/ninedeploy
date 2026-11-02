@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { catcherReply, demandLogger, startWakeCatcher, wakeKeyMatches, wakePage } from '../../src/wakeCatcher.js';
 
-const docker = vi.hoisted(() => ({ calls: [] as string[][], containers: new Map<string, string>(), logs: '' }));
+const docker = vi.hoisted(() => ({ calls: [] as string[][], containers: new Map<string, string>(), logs: '', before: undefined as ((args: string[]) => Promise<void>) | undefined }));
 vi.mock('../../src/lib/exec.js', () => ({ capture: vi.fn(async (_cmd: string, args: string[]) => {
   docker.calls.push(args);
+  await docker.before?.(args);
   if (args[0] === 'inspect') {
     const found = docker.containers.get(args[1]!);
     if (found === undefined) throw new Error('No such object');
@@ -27,7 +28,7 @@ const catcherRow = (fields: { id?: string; image?: string; running?: boolean; ma
   return `${fields.id ?? 'c'.repeat(64)}|${fields.image ?? AGENT_IMAGE}|${fields.running ?? true}|${fields.managed ?? 'wake'}|2026-11-02T10:00:00Z|${keyHash}`;
 };
 beforeEach(() => {
-  docker.calls = []; docker.logs = '';
+  docker.calls = []; docker.logs = ''; docker.before = undefined;
   docker.containers = new Map([['ninedeploy-agent', `${'f'.repeat(64)}|${AGENT_IMAGE}|true||2026-11-02T09:00:00Z|`]]);
 });
 
@@ -78,6 +79,19 @@ describe('wake catcher replies', () => {
 });
 
 describe('agent-managed wake catcher', () => {
+  it('serializes concurrent ensures of the one shared catcher', async () => {
+    let enter!: () => void, release!: () => void;
+    const started = new Promise<void>(resolve => { enter = resolve; });
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    docker.before = async args => { if (args[0] === 'inspect' && args[1] === 'ninedeploy-agent') { enter(); await barrier; } };
+    const first = ensureWakeCatcher({ key: KEY }); await started;
+    const second = ensureWakeCatcher({ key: KEY });
+    try {
+      await Promise.resolve(); await Promise.resolve();
+      expect(docker.calls.filter(args => args[0] === 'inspect' && args[1] === 'ninedeploy-agent')).toHaveLength(1);
+    } finally { release(); await Promise.allSettled([first, second]); docker.before = undefined; }
+    expect(docker.calls.filter(args => args[0] === 'run')).toHaveLength(1);
+  });
   it('runs the agent image unprivileged, read-only and without mounts or ports', async () => {
     expect(await ensureWakeCatcher({ key: KEY })).toEqual({ id: 'c'.repeat(64), image: AGENT_IMAGE, created: true });
     const run = docker.calls.find(args => args[0] === 'run')!;
@@ -140,6 +154,16 @@ describe('agent-managed wake catcher', () => {
     docker.containers.set('ninedeploy-wake', catcherRow());
     docker.logs = Array.from({ length: 2000 }, (_, i) => `2026-11-02T10:00:${String(10 + (i % 40)).padStart(2, '0')}.000000000Z ND-WAKE {"token":"${TOKEN}"}`).join('\n');
     expect(await readWakeDemand({ sinceMs: Date.parse('2026-11-02T10:00:00Z') })).toMatchObject({ truncated: true });
+  });
+  it('does not replay demand from before the same catcher container restarted', async () => {
+    docker.containers.set('ninedeploy-wake', catcherRow().replace('10:00:00Z', '10:00:05Z'));
+    docker.logs = [`2026-11-02T10:00:04.000Z ND-WAKE {"token":"${TOKEN}"}`, `2026-11-02T10:00:06.000Z ND-WAKE {"token":"${TOKEN}"}`].join('\n');
+    expect((await readWakeDemand({ sinceMs: 0 })).items).toEqual([{ token: TOKEN, count: 1, lastAt: Date.parse('2026-11-02T10:00:06Z') }]);
+  });
+  it('refuses a catcher process change while its demand log is being read', async () => {
+    docker.containers.set('ninedeploy-wake', catcherRow());
+    docker.before = async args => { if (args[0] === 'logs') docker.containers.set('ninedeploy-wake', catcherRow().replace('10:00:00Z', '10:00:05Z')); };
+    await expect(readWakeDemand({ sinceMs: 0 })).rejects.toThrow(/changed/);
   });
   it('refuses demand from a missing, stopped or foreign catcher instead of reporting none', async () => {
     await expect(readWakeDemand({ sinceMs: 0 })).rejects.toThrow(/not running/);
