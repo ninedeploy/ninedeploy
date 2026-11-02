@@ -16,8 +16,15 @@ on:
       - 'scripts/smoke-serving-traffic.mjs'
       - 'scripts/fixtures/serving-traffic-agent.mjs'
       - 'scripts/lib/serving-traffic-routing.mjs'
+      - 'scripts/smoke-wake-recovery.mjs'
+      - 'scripts/fixtures/wake-recovery.mjs'
       - '.github/workflows/serving-traffic.yml'
   workflow_dispatch:
+    inputs:
+      wake_recovery:
+        description: Run the real Traefik catcher replacement acceptance instead of serving windows
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -42,12 +49,24 @@ jobs:
       - name: Build candidate
         run: docker build -t ninedeploy:serving .
       - name: Observe ordinary serving generations through sealed HTTP and real Traefik
+        if: github.event.inputs.wake_recovery != 'true'
         run: node scripts/smoke-serving-traffic.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic
+      - name: Verify catcher replacement through real sealed HTTP and sampled Traefik traffic
+        if: github.event.inputs.wake_recovery == 'true'
+        run: node scripts/smoke-wake-recovery.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic/wake-recovery
       - name: Preserve observations and owned cleanup receipts
-        if: always()
+        if: always() && github.event.inputs.wake_recovery != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: serving-traffic-${{ github.run_id }}
           path: .temp_files/serving-traffic/
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Preserve public wake replacement evidence only
+        if: always() && github.event.inputs.wake_recovery == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: wake-recovery-${{ github.run_id }}
+          path: .temp_files/serving-traffic/wake-recovery/public/
           include-hidden-files: true
           if-no-files-found: warn
