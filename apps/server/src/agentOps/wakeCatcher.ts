@@ -18,7 +18,7 @@ async function answer(onLine: (line: string) => void, action: () => Promise<unkn
 export const wakeCatcherOps: AgentOpModule = {
   name: 'wakeCatcher', caps: ['wake.catcher'],
   ops: {
-    'wake.catcher.ensure': { cap: 'wake.catcher', sealedOnly: true, run: (_params, sink) => answer(sink, () => ensureWakeCatcher()) },
+    'wake.catcher.ensure': { cap: 'wake.catcher', sealedOnly: true, run: (params, sink) => answer(sink, () => ensureWakeCatcher(params)) },
     'wake.catcher.remove': { cap: 'wake.catcher', sealedOnly: true, run: (_params, sink) => answer(sink, () => removeWakeCatcher()) },
     'wake.demand': { cap: 'wake.catcher', sealedOnly: true, run: (params, sink) => answer(sink, () => readWakeDemand(params)) },
   },

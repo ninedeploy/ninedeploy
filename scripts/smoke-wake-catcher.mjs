@@ -23,13 +23,13 @@ const docker = args => {
   assert.equal(result.status, 0, `${args.slice(0, 3)}: ${result.stderr || result.stdout}`);
   return result.stdout.trim();
 };
-const token = randomBytes(16).toString('hex');
+const token = randomBytes(16).toString('hex'), key = randomBytes(32).toString('hex');
 let failure;
 try {
   const imageId = docker(['image', 'inspect', image, '--format', '{{.Id}}']);
   resources.push({ kind: 'network', id: docker(['network', 'create', '--label', `ninedeploy.proof=${owner}`, network]) });
   const args = JSON.parse(docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', image, '--input-type=module', '-e',
-    `const m=await import('/app/apps/server/dist/lib/nodeWakeCatcher.js');console.log(JSON.stringify(m.wakeCatcherRunArgs(${JSON.stringify(imageId)})))`]));
+    `const m=await import('/app/apps/server/dist/lib/nodeWakeCatcher.js');console.log(JSON.stringify(m.wakeCatcherRunArgs(${JSON.stringify(imageId)},${JSON.stringify(key)})))`]));
   const name = args.indexOf('--name'), net = args.indexOf('--network');
   assert.equal(args[name + 1], 'ninedeploy-wake'); assert.equal(args[net + 1], 'ninedeploy');
   args[name + 1] = catcher; args[net + 1] = network;
@@ -40,7 +40,8 @@ try {
   assert.deepEqual(info.HostConfig.CapDrop, ['ALL']); assert.deepEqual(info.Mounts, []); assert.equal(info.HostConfig.Privileged, false);
   assert.deepEqual(Object.keys(info.NetworkSettings.Networks), [network]); assert.equal(Object.keys(info.HostConfig.PortBindings ?? {}).length, 0);
   cases.push({ name: 'agent-image-unprivileged-read-only-no-mounts', passed: true });
-  const fetchScript = path => `fetch('http://${catcher}:8080${path}',{method:'GET'}).then(async r=>console.log(JSON.stringify({status:r.status,retry:r.headers.get('retry-after'),body:await r.text()})))`;
+  assert.ok(!info.Config.Labels['ninedeploy.wake.key'].includes(key), 'the label must not hold the key');
+  const fetchScript = (path, keyed = true) => `fetch('http://${catcher}:8080${path}',{headers:${keyed ? JSON.stringify({ 'x-nd-wake-key': key }) : '{}'}}).then(async r=>console.log(JSON.stringify({status:r.status,retry:r.headers.get('retry-after'),body:await r.text()})))`;
   let reply;
   for (const deadline = Date.now() + 30_000; ;) {
     const run = spawnSync('docker', ['run', '--rm', '--network', network, '--label', `ninedeploy.proof=${owner}`, '--entrypoint', 'node', image, '-e', fetchScript(`/_nd/wake/${token}/dashboard`)],
@@ -53,6 +54,10 @@ try {
   const other = JSON.parse(docker(['run', '--rm', '--network', network, '--label', `ninedeploy.proof=${owner}`, '--entrypoint', 'node', image, '-e', fetchScript('/')]));
   assert.equal(other.status, 404);
   cases.push({ name: 'untokened-request-wakes-nothing', passed: true });
+  // A neighbouring container on the proxy network does not know the node's wake key.
+  const spoofed = JSON.parse(docker(['run', '--rm', '--network', network, '--label', `ninedeploy.proof=${owner}`, '--entrypoint', 'node', image, '-e', fetchScript(`/_nd/wake/${randomBytes(16).toString('hex')}/`, false)]));
+  assert.equal(spoofed.status, 404);
+  cases.push({ name: 'unkeyed-neighbour-request-wakes-nothing', passed: true });
   const logs = docker(['logs', '--timestamps', catcher]).split('\n').filter(line => / ND-WAKE /.test(line));
   assert.equal(logs.length, 1);
   assert.match(logs[0], new RegExp(`^\\S+ ND-WAKE \\{"token":"${token}"\\}$`));

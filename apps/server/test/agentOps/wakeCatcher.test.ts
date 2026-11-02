@@ -21,7 +21,7 @@ describe('sealed node wake catcher operations (R2 scale to zero)', () => {
     try {
       await expect(runRegisteredOp('wake.catcher.ensure', {}, () => {}, { sealed: false })).rejects.toThrow(/sealed/);
       const lines: string[] = [];
-      expect(await runRegisteredOp('wake.catcher.ensure', {}, line => lines.push(line), { sealed: true })).toBe(0);
+      expect(await runRegisteredOp('wake.catcher.ensure', { key: 'b'.repeat(64) }, line => lines.push(line), { sealed: true })).toBe(0);
       expect(lines).toEqual([`ND-WAKE-CATCHER {"id":"${'c'.repeat(64)}","image":"sha256:${'a'.repeat(64)}","created":true}`]);
       lines.length = 0;
       expect(await runRegisteredOp('wake.demand', { sinceMs: 0 }, line => lines.push(line), { sealed: true })).toBe(1);

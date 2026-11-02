@@ -68,6 +68,8 @@ describe('.env.example', () => {
     read.delete('TZ');
     // The CI runner hands its own home directory to the docker client it runs (R5).
     read.delete('HOME');
+    // Set by the agent on the node's wake catcher container (R2 scale to zero), never by an operator.
+    read.delete('ND_WAKE_KEY');
     read.delete('USERPROFILE');
     const documented = envVarsDocumented();
     expect([...read].filter((v) => !documented.has(v)).sort()).toEqual([]);
