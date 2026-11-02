@@ -71,7 +71,7 @@ import { ProxyRoutingUnconfirmed } from '../lib/proxyRoutingAck.js';
 import { beginPrimaryTransition, primaryRecoveryPending, PrimaryIdentityUnconfirmed, PrimaryRecoveryOwnershipLost, PrimaryRecoveryPending, type PrimaryRecoveryLease } from './primaryRecovery.js';
 import { beginSwarmTransition, swarmRecoveryPending, SwarmRecoveryPending, SwarmRecoveryOwnershipLost, type SwarmRecoveryLease } from './swarmRecovery.js';
 import { autoscaleConfig, canaryConfig } from '@ninedeploy/schemas';
-import { NODE_RPS_AUTOSCALING_ACCEPTED } from '../lib/autoscaler.js';
+import { nodeRpsAutoscalingAccepted } from '../lib/autoscaler.js';
 import { canarySkipReason, runCanary } from './canary.js';
 import { ensurePreviewDatabaseCopies } from '../lib/previewDatabases.js';
 import { canaryActive, canaryOwnedBy, endCanary } from './canaryState.js';
@@ -1601,7 +1601,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     const scale = autoscaleConfig.safeParse(ctx.service.autoscale);
     if (remoteBuilderFor && remoteNodeCall && admission?.claimed && nodeAuthority && service.serverId != null &&
       service.type === 'docker' && service.orchestrator !== 'swarm' && !swarmRuntimeOf(service) &&
-      scale.success && (scale.data.metric !== 'rps' || NODE_RPS_AUTOSCALING_ACCEPTED) && service.canary == null &&
+      scale.success && (scale.data.metric !== 'rps' || nodeRpsAutoscalingAccepted()) && service.canary == null &&
       service.publishedPort == null && !(service.portMappings?.length)) {
       const [activeRoutes, targets] = await Promise.all([
         db.select({ id: domains.id }).from(domains).where(and(eq(domains.serviceId, service.id), eq(domains.status, 'active'))).limit(1),

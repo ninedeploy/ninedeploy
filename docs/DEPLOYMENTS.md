@@ -165,7 +165,7 @@ During the routing transition the deployment remains `deploying`, with no `finis
 Notes:
 - Turning autoscaling on applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turning it off keeps the containers that serve now until the next deploy, which runs `replicas` containers again.
 - As with replicas, a host port reaches the first container only; the others serve through the domain.
-- On a node, autoscaling acts on `cpu` and `memory` once a deploy has prepared confirmed replica capacity. `rps` is not available on nodes yet: the status reports it as held, with no value, and the panel marks it "not available here". It is not shown as zero requests. See [NODE_RPS_AUTOSCALING.md](NODE_RPS_AUTOSCALING.md).
+- On a node, autoscaling acts on `cpu` and `memory` once a deploy has prepared confirmed replica capacity. `rps` is not available on nodes yet unless the operator sets the preview opt-in `NINEDEPLOY_NODE_RPS_AUTOSCALING=1` on the panel and `NINEDEPLOY_AGENT_PROXY_TRAFFIC=on` on the agent. Without the opt-in, the status reports it as held, with no value, and the panel marks it "not available here". It is not shown as zero requests. See [NODE_RPS_AUTOSCALING.md](NODE_RPS_AUTOSCALING.md).
 - Autoscaling holds for Swarm services, which scale with their own replicas; their `supportedMetrics` is empty.
 - Stopped spare containers take disk space only. With `--restart always`, a Docker restart starts them again; the autoscaler stops them at its next look.
 

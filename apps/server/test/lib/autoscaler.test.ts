@@ -7,7 +7,7 @@ import {
   autoscaleOf,
   autoscaleStatus,
   autoscaleSupportedMetrics,
-  NODE_RPS_AUTOSCALING_ACCEPTED,
+  nodeRpsAutoscalingAccepted,
   autoscaleStep,
   type AutoscaleDeps,
   decide,
@@ -335,8 +335,17 @@ describe('holdReason, autoscaleOf, status', () => {
 
   it('lists the metrics each placement can act on', () => {
     expect(autoscaleSupportedMetrics({ serverId: null, orchestrator: null })).toEqual(['cpu', 'memory', 'rps']);
-    expect(autoscaleSupportedMetrics({ serverId: 4, orchestrator: null })).toEqual(NODE_RPS_AUTOSCALING_ACCEPTED ? ['cpu', 'memory', 'rps'] : ['cpu', 'memory']);
+    expect(autoscaleSupportedMetrics({ serverId: 4, orchestrator: null })).toEqual(nodeRpsAutoscalingAccepted() ? ['cpu', 'memory', 'rps'] : ['cpu', 'memory']);
     expect(autoscaleSupportedMetrics({ serverId: null, orchestrator: 'swarm' })).toEqual([]);
+  });
+
+  it('opens node rps only for the operator preview opt-in', () => {
+    vi.stubEnv('NINEDEPLOY_NODE_RPS_AUTOSCALING', '1');
+    expect(nodeRpsAutoscalingAccepted()).toBe(true);
+    expect(autoscaleSupportedMetrics({ serverId: 4, orchestrator: null })).toContain('rps');
+    vi.stubEnv('NINEDEPLOY_NODE_RPS_AUTOSCALING', 'true');
+    expect(nodeRpsAutoscalingAccepted()).toBe(false);
+    vi.unstubAllEnvs();
   });
 });
 

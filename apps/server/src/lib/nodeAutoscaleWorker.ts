@@ -7,14 +7,14 @@ import { nodeAutoscaleRuntime } from './nodeAutoscaleRuntime.js';
 import { readNodeAutoscaleSample } from './nodeAutoscaleSample.js';
 import { readNodeServingTrafficSample } from './nodeServingTrafficSample.js';
 import { readServiceRuntimeOwner, sameRuntimeOwner } from './serviceRuntimeOwner.js';
-import { NODE_RPS_AUTOSCALING_ACCEPTED, NODE_RPS_HOLDING, recordNodeAutoscaleHolding, recordNodeAutoscaleSample } from './autoscaler.js';
+import { NODE_RPS_HOLDING, nodeRpsAutoscalingAccepted, recordNodeAutoscaleHolding, recordNodeAutoscaleSample } from './autoscaler.js';
 
 /** Compose measurement and durable effects; the caller schedules and supplies its live conflict check. */
 export function createNodeAutoscaleWorker(db: DB, deps: {
   blocked: (serviceId: number) => boolean | Promise<boolean>;
   sample?: typeof readNodeAutoscaleSample;
   servingSample?: typeof readNodeServingTrafficSample;
-  /** Tests only: bypass NODE_RPS_AUTOSCALING_ACCEPTED. */
+  /** Tests only: bypass the node RPS gate. */
   rpsAccepted?: boolean;
   runtime?: (admission: NodeAutoscaleAdmission, signal?: AbortSignal) => NodeAutoscaleControllerDeps;
   now?: () => number;
@@ -35,7 +35,7 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
           forget(service.id);
           return held('node autoscale is blocked or its metric is unavailable');
         }
-        if (config.data.metric === 'rps' && !(deps.rpsAccepted ?? NODE_RPS_AUTOSCALING_ACCEPTED)) {
+        if (config.data.metric === 'rps' && !(deps.rpsAccepted ?? nodeRpsAutoscalingAccepted())) {
           forget(service.id);
           return held(NODE_RPS_HOLDING);
         }

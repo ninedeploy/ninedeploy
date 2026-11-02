@@ -58,12 +58,17 @@ interface ServiceState {
  * capacity preparation. Turn on after the hosted 1→2→1 smoke.
  */
 export const NODE_RPS_AUTOSCALING_ACCEPTED = false;
+
+/** The gate, or the operator's preview opt-in `NINEDEPLOY_NODE_RPS_AUTOSCALING=1` (the hosted smoke uses it). */
+export function nodeRpsAutoscalingAccepted(): boolean {
+  return NODE_RPS_AUTOSCALING_ACCEPTED || process.env['NINEDEPLOY_NODE_RPS_AUTOSCALING'] === '1';
+}
 export const NODE_RPS_HOLDING = 'node request-rate autoscaling is not available yet';
 
 /** The metrics the autoscaler can act on for this placement; Swarm scales by itself. */
 export function autoscaleSupportedMetrics(svc: Pick<Service, 'serverId' | 'orchestrator'>): AutoscaleMetric[] {
   if (svc.orchestrator === 'swarm') return [];
-  if (svc.serverId != null) return NODE_RPS_AUTOSCALING_ACCEPTED ? [...AUTOSCALE_METRICS] : ['cpu', 'memory'];
+  if (svc.serverId != null) return nodeRpsAutoscalingAccepted() ? [...AUTOSCALE_METRICS] : ['cpu', 'memory'];
   return [...AUTOSCALE_METRICS];
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Public node canary acceptance on isolated panel/node daemons. Keeps owned proof artifacts.
 // Usage: node scripts/smoke-node-canary.mjs --image=<candidate> [--proof=<output directory>]
-// Optional focused modes: --lifecycle-only, --replica-databases-only, --initial-stop-only, --mixed-agent-only, --autoscale-only, --autoscale-database-only.
+// Optional focused modes: --lifecycle-only, --replica-databases-only, --initial-stop-only, --mixed-agent-only, --autoscale-only, --autoscale-database-only, --autoscale-rps-only.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -10,6 +10,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { smokePublicNodeLifecycle } from './lib/smoke-public-node-lifecycle.mjs';
 import { smokeNodeReplicaDatabases } from './lib/smoke-node-replica-databases.mjs';
 import { smokeNodeAutoscale } from './lib/smoke-node-autoscale.mjs';
+import { smokeNodeAutoscaleRps } from './lib/smoke-node-autoscale-rps.mjs';
 import { smokePanelHealthModes } from './lib/smoke-panel-health-modes.mjs';
 import { startCanaryTraffic } from './lib/smoke-canary-traffic.mjs';
 import { nodeReplicaDatabaseApp } from './fixtures/node-replica-database-app.mjs';
@@ -19,9 +20,10 @@ const initialStopOnly=process.argv.includes('--initial-stop-only');
 const mixedAgentOnly=process.argv.includes('--mixed-agent-only');
 const autoscaleOnly=process.argv.includes('--autoscale-only');
 const autoscaleDatabaseOnly=process.argv.includes('--autoscale-database-only');
+const autoscaleRpsOnly=process.argv.includes('--autoscale-rps-only');
 const healthModesOnly=process.argv.includes('--health-modes-only');
 const sqlFixture=replicaDatabasesOnly||autoscaleDatabaseOnly;
-assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly,autoscaleOnly,autoscaleDatabaseOnly,healthModesOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
+assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,healthModesOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image&&/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
 const agentImage=mixedAgentOnly?'ghcr.io/ninedeploy/ninedeploy:v0.18.10':image;
@@ -64,7 +66,7 @@ try{
  const fixtureImage=`127.0.0.1:5000/nd-readiness-app:${suffix}`;
  inner(["run","-d","--name","nd-owned-registry","-p","127.0.0.1:5000:5000","registry:2"]);
  await until(()=>docker(["exec",daemon,"wget","-qO-","-T","2","http://127.0.0.1:5000/v2/"],{allowFailure:true}).status===0,"owned node registry");
- const code="const fs=require('node:fs');require('node:http').createServer((q,r)=>{const ready=(process.env.NEEDS_READINESS!=='1'||fs.existsSync('/tmp/nd-ready'))&&(!fs.existsSync('/tmp/nd-unready')||fs.readFileSync('/tmp/nd-unready','utf8')!=='1');const business=q.url!=='/ready'&&process.env.FAIL_BUSINESS==='1';r.statusCode=!ready||business?503:200;r.end(!ready?'booting':(process.env.RELEASE_LABEL||'old')"+(autoscaleOnly?"+':'+require('node:os').hostname()":"")+");}).listen(8080,'0.0.0.0')";
+ const code="const fs=require('node:fs');require('node:http').createServer((q,r)=>{const ready=(process.env.NEEDS_READINESS!=='1'||fs.existsSync('/tmp/nd-ready'))&&(!fs.existsSync('/tmp/nd-unready')||fs.readFileSync('/tmp/nd-unready','utf8')!=='1');const business=q.url!=='/ready'&&process.env.FAIL_BUSINESS==='1';r.statusCode=!ready||business?503:200;r.end(!ready?'booting':(process.env.RELEASE_LABEL||'old')"+(autoscaleOnly||autoscaleRpsOnly?"+':'+require('node:os').hostname()":"")+");}).listen(8080,'0.0.0.0')";
  const launchCode=healthModesOnly?`setTimeout(()=>{${code}},Number(process.env.LISTEN_DELAY_MS)||0)`:code;
  docker(['exec','-i',daemon,'sh','-c','mkdir -p /tmp/readiness-fixture; cat > /tmp/readiness-fixture/Dockerfile'],{input:`FROM node:26-slim\nHEALTHCHECK NONE\nEXPOSE 8080\n${sqlFixture?'COPY app.cjs /app.cjs\n':''}CMD ${JSON.stringify(sqlFixture?['node','/app.cjs']:['node','-e',launchCode])}\n`});
  if(sqlFixture)docker(['exec','-i',daemon,'sh','-c','cat > /tmp/readiness-fixture/app.cjs'],{input:nodeReplicaDatabaseApp()});
@@ -72,7 +74,7 @@ try{
  const saving=spawn('docker',['exec',daemon,'docker','save',fixtureImage],{windowsHide:true,stdio:['ignore','pipe','pipe']}),loading=spawn('docker',['exec','-i',panelDaemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});saving.stdout.pipe(loading.stdin);saving.stderr.resume();loading.stdout.resume();loading.stderr.resume();await Promise.all([saving,loading].map(p=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{p.kill();reject(Error('fixture image transfer deadline'));},180000);p.on('error',reject);p.on('close',code=>{clearTimeout(timer);code===0?resolve():reject(Error('fixture image transfer '+code));});})));
  primary(['run','-d','--name','nd-owned-registry','-p','127.0.0.1:5000:5000','registry:2']);await until(()=>docker(['exec',panelDaemon,'wget','-qO-','-T','2','http://127.0.0.1:5000/v2/'],{allowFailure:true}).status===0,'owned primary registry');primary(['push',fixtureImage]);
  const setup=randomBytes(24).toString('hex');
- run(panel,['--network',net,'--user','0','-p','127.0.0.1::3000','-v',`${volume}:/data`,'-e',`DOCKER_HOST=tcp://${panelDaemon}:2375`,'-e',`NINEDEPLOY_MASTER_KEY=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_JWT_SECRET=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_SETUP_TOKEN=${setup}`,'-e','NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1','-e','NINEDEPLOY_WILDCARD_DOMAIN=readiness.test',image]);
+ run(panel,['--network',net,'--user','0','-p','127.0.0.1::3000','-v',`${volume}:/data`,'-e',`DOCKER_HOST=tcp://${panelDaemon}:2375`,'-e',`NINEDEPLOY_MASTER_KEY=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_JWT_SECRET=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_SETUP_TOKEN=${setup}`,'-e','NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1','-e','NINEDEPLOY_WILDCARD_DOMAIN=readiness.test',...(autoscaleRpsOnly?['-e','NINEDEPLOY_NODE_RPS_AUTOSCALING=1']:[]),image]);
  baseUrl=`http://127.0.0.1:${docker(['port',panel,'3000/tcp']).out.split(':').at(-1)}`;
  await until(async()=>{try{return(await fetch(baseUrl+'/health',{signal:AbortSignal.timeout(2000)})).ok;}catch{return false;}},'panel health',180000);
  token=(await api('/v1/auth/register',{method:'POST',body:{email:'readiness@example.test',password:'Readiness-fixture-only-2026!',name:'Readiness proof',setupToken:setup}})).tokens.accessToken;
@@ -206,6 +208,10 @@ try{
  if(healthModesOnly){
    await smokePanelHealthModes({api,primary,id,fixtureImage,domain,until,success,report,
      saveTraffic:(mode,records)=>writeFileSync(resolve(proof,`health-${mode}-traffic.json`),JSON.stringify(records))});
+ }else if(autoscaleRpsOnly){
+   await smokeNodeAutoscaleRps({api,inner,id,fixtureImage,service,domain,until,pause,report,cleared,success,restartAgent,
+     scaleSettled:()=>docker(['exec',panel,'node','--input-type=module','-e',`import {DatabaseSync} from 'node:sqlite';const d=new DatabaseSync(process.env.NINEDEPLOY_DB_PATH,{readOnly:true});console.log(d.prepare('SELECT count(*) AS n FROM node_autoscale_transitions WHERE service_id=?').get(${id}).n);d.close();`],{allowFailure:true}).out==='0',
+     saveTraffic:records=>writeFileSync(resolve(proof,'autoscale-rps-traffic.json'),JSON.stringify(records))});
  }else if(autoscaleOnly||autoscaleDatabaseOnly){
    await smokeNodeAutoscale({api,inner,id,fixtureImage,service,domain,until,report,cleared,success,database:replicaDatabase,
      scaleSettled:()=>docker(['exec',panel,'node','--input-type=module','-e',`import {DatabaseSync} from 'node:sqlite';const d=new DatabaseSync(process.env.NINEDEPLOY_DB_PATH,{readOnly:true});console.log(d.prepare('SELECT count(*) AS n FROM node_autoscale_transitions WHERE service_id=?').get(${id}).n);d.close();`],{allowFailure:true}).out==='0',
@@ -311,7 +317,7 @@ try{
    report({case:c.name,stopRemainedAuthoritative:true,noAutomaticRevival:true,trafficSamplingEndsBeforeStop:true,...sampled});
  }
  }
- const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,autoscaleOnly,autoscaleDatabaseOnly,cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
+ const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
  writeFileSync(proof+'/runtime-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
  }
 }catch(e){
@@ -327,7 +333,7 @@ try{
  }catch{/* Diagnostics must never hide the original failure. */}
  try{
    if(docker(['inspect',daemon,'--format','{{index .Config.Labels "ninedeploy.proof"}}'],{allowFailure:true}).out===label){
-     if((autoscaleOnly||autoscaleDatabaseOnly)&&serviceId){
+     if((autoscaleOnly||autoscaleDatabaseOnly||autoscaleRpsOnly)&&serviceId){
        const trace=inner(['exec',`nd-autoscale-client-${serviceId}`,'node','-e',"fetch('http://127.0.0.1:8091/snapshot').then(r=>r.text()).then(console.log)"],{allowFailure:true});
        if(trace.status===0)writeFileSync(resolve(proof,'autoscale-failure-traffic.json'),trace.stdout);
      }

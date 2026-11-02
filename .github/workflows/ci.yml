@@ -351,6 +351,20 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+      # R2: node RPS on the operator preview opt-in, until NODE_RPS_AUTOSCALING_ACCEPTED is flipped.
+      - name: Verify node request-rate autoscaling with a source-loss control
+        timeout-minutes: 25
+        run: node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-rps-only --proof=.temp_files/ci-node-autoscale-rps
+
+      - name: Preserve node RPS autoscale proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-node-autoscale-rps-${{ github.run_id }}
+          path: .temp_files/ci-node-autoscale-rps/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
   # Publishes the panel image to GHCR on every push to main so an
   # `install.sh --docker` from the main channel never lands on a stale
   # `:latest`. The release workflow (release-publish.yml) pushes `:vX.Y.Z`
