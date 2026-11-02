@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { eq, domains, nodeSleepTransitions, servers, services, settings } from '@ninedeploy/db';
 import { servingReceiptFixture } from '../fixtures/servingTrafficReceipt.js';
 import { nodeSleepEvidence } from '../fixtures/nodeSleepEvidence.js';
-import { admitNodeSleep, admitNodeWake, advanceNodeSleep, bindNodeSleepCatcher, completeNodeSleep, nodeSleepCommand, prepareNodeWakeRouting } from '../../src/lib/nodeSleepAuthority.js';
+import { admitNodeSleep, admitNodeWake, advanceNodeSleep, bindNodeSleepCatcher, completeNodeSleep, nodeSleepCommand, prepareNodeWakeRouting, recordNodeWakeStarted } from '../../src/lib/nodeSleepAuthority.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { nodeWakeKey } from '../../src/lib/nodeWakeKey.js';
 import { WAKE_PREFIX, renderDynamicConfig } from '../../src/engine/proxy.js';
@@ -55,7 +55,9 @@ async function wakePublishing() {
   const wake = (await admitNodeWake(f.c.db, await selected(), { nodeId: 4, token: row.wakeToken, catcherId: row.catcherId!, receivedAt: Date.now(), demandAt: Date.now() }))!;
   await expect(prepareNodeWakeRouting(f.c.db, wake)).rejects.toThrow();
   for (const [from, to] of [['accepted', 'fencing'], ['fencing', 'starting'], ['starting', 'readiness'], ['readiness', 'publishing']] as const) {
-    await advanceNodeSleep(f.c.db, wake, from, to);
+    if (from === 'starting') await recordNodeWakeStarted(f.c.db, wake, { ...nodeSleepCommand(wake, 'start'), complete: true,
+      items: row.targets.map(target => ({ id: target.id, name: target.name, deploymentId: target.deploymentId, running: true })) });
+    else await advanceNodeSleep(f.c.db, wake, from, to);
   }
   return { wake, token: await prepareNodeWakeRouting(f.c.db, wake) };
 }

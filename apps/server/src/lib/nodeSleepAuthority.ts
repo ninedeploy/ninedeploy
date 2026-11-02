@@ -146,7 +146,7 @@ export function nodeSleepCommand(admission: NodeSleepAdmission, operation: 'fenc
 
 const steps: Record<'sleep' | 'wake', Partial<Record<NodeSleepTransition['phase'], NodeSleepTransition['phase']>>> = {
   sleep: { accepted: 'fencing', fencing: 'prepared', prepared: 'routing', routing: 'routed', routed: 'stopping' },
-  wake: { accepted: 'fencing', fencing: 'starting', starting: 'readiness', readiness: 'publishing' },
+  wake: { accepted: 'fencing', fencing: 'starting', readiness: 'publishing' },
 };
 export async function advanceNodeSleep(db: DB, admission: NodeSleepAdmission, from: NodeSleepTransition['phase'], to: NodeSleepTransition['phase']) {
   await db.transaction(async tx => {
@@ -180,15 +180,37 @@ async function complete(db: DB, admission: NodeSleepAdmission, raw: unknown, act
   await db.transaction(async tx => {
     const { row } = await assertCurrent(tx, admission), command = nodeSleepCommand(admission, row.action === 'sleep' ? 'stop' : 'start');
     if (row.action !== action) throw changed();
-    const receipt = row.action === 'sleep' ? containerStopSetReply.parse(raw) : containerStartSetReply.parse(raw);
-    if (row.phase !== (row.action === 'sleep' ? 'stopping' : 'publishing') || receipt.requestId !== command.requestId || receipt.serviceId !== command.serviceId || receipt.revision !== command.revision ||
-      receipt.items.length !== row.targets.length || row.targets.some(target => !receipt.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId))) throw changed();
+    if (row.phase !== (row.action === 'sleep' ? 'stopping' : 'publishing')) throw changed();
+    if (row.action === 'sleep') {
+      const receipt = containerStopSetReply.parse(raw);
+      if (receipt.requestId !== command.requestId || receipt.serviceId !== command.serviceId || receipt.revision !== command.revision ||
+        receipt.items.length !== row.targets.length || row.targets.some(target => !receipt.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId))) throw changed();
+    }
     await tx.update(services).set({ asleepAt: row.action === 'sleep' ? new Date() : null }).where(eq(services.id, admission.serviceId));
     await tx.update(nodeSleepTransitions).set({ phase: row.action === 'sleep' ? 'asleep' : 'completed', fallbackRouting: row.action === 'sleep', workerToken: null, leaseUntil: null, reason: null }).where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
   });
 }
 export const completeNodeSleep = (db: DB, admission: NodeSleepAdmission, receipt: unknown) => complete(db, admission, receipt, 'sleep');
-export const completeNodeWake = (db: DB, admission: NodeSleepAdmission, receipt: unknown) => complete(db, admission, receipt, 'wake');
+export const completeNodeWake = (db: DB, admission: NodeSleepAdmission) => complete(db, admission, undefined, 'wake');
+
+/** The readiness phase durably records a validated Start acknowledgement, without replaying Start after recovery. */
+export async function recordNodeWakeStarted(db: DB, admission: NodeSleepAdmission, raw: unknown) {
+  await db.transaction(async tx => {
+    const { row } = await assertCurrent(tx, admission), command = nodeSleepCommand(admission, 'start');
+    const receipt = containerStartSetReply.parse(raw);
+    if (row.action !== 'wake' || row.phase !== 'starting' || receipt.requestId !== command.requestId || receipt.serviceId !== command.serviceId ||
+      receipt.revision !== command.revision || receipt.items.length !== row.targets.length || row.targets.some(target =>
+        !receipt.items.some(item => item.id === target.id && item.name === target.name && item.deploymentId === target.deploymentId))) throw changed();
+    await tx.update(nodeSleepTransitions).set({ phase: 'readiness', leaseUntil: new Date(Date.now() + NODE_SLEEP_LEASE_MS) }).where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
+  });
+}
+
+export async function holdNodeSleep(db: DB, admission: NodeSleepAdmission, reason: string) {
+  await db.update(nodeSleepTransitions).set({ reason: reason.slice(0, 1000), workerToken: null, leaseUntil: null }).where(and(
+    eq(nodeSleepTransitions.serviceId, admission.serviceId), eq(nodeSleepTransitions.ownerEpoch, admission.owner.epoch),
+    eq(nodeSleepTransitions.requestId, admission.owner.requestId!), eq(nodeSleepTransitions.workerToken, admission.workerToken),
+    notInArray(nodeSleepTransitions.phase, ['asleep', 'completed', 'superseded'])));
+}
 
 /** Only a current sleeping token from the pinned catcher's fresh demand can admit a wake. */
 export async function admitNodeWake(db: DB, expected: Service, demand: { nodeId: number; token: string; catcherId: string; demandAt: number; receivedAt: number }): Promise<NodeSleepAdmission | null> {
