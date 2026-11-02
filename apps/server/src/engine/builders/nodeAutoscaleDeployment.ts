@@ -34,7 +34,6 @@ export async function prepareNodeAutoscaleDeployment(input: {
   if (service.type !== 'docker' || service.orchestrator === 'swarm' || service.id !== owner.serviceId || service.serverId !== owner.serverId ||
     !Number.isSafeInteger(owner.deploymentId) || owner.deploymentId < 1 || !Number.isSafeInteger(input.creationWatermark) ||
     input.creationWatermark < owner.deploymentId || !scale.success) throw new Error('Node autoscale deployment authority or configuration is invalid');
-  if (scale.data.metric === 'rps') throw new Error('Node request-rate autoscaling is not available');
   const call: AgentCall = async (op, params, sink, options) => {
     await input.checkpoint();
     try { return await input.agent(op, params, sink, options); } finally { await input.checkpoint(); }
@@ -42,6 +41,8 @@ export async function prepareNodeAutoscaleDeployment(input: {
   const checks = [
     { cap: ['docker.mutations', 'docker.prepareAttemptEnv', 'docker.retireHandoff', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'image.manage'] as const, feature: 'prepare and safely scale node replicas' },
     { cap: nodeRunCapabilities(service, attachments), feature: 'run the complete node replica configuration' },
+    // RPS capacity is useful only if the node can observe its serving traffic; older agents keep refusing.
+    ...(scale.data.metric === 'rps' ? [{ cap: ['proxy.servingTraffic' as const], feature: 'measure node request rate' }] : []),
     ...nodeRunExtrasChecks(service), ...nodeFileMountChecks(files.length),
     ...(service.portMappings?.length ? [{ cap: ['docker.ports' as const], feature: 'publish node port mappings' }] : []),
   ];
