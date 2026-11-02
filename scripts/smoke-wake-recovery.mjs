@@ -23,11 +23,12 @@ const docker = (args, allowed = false, extra = {}) => {
 };
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 function driver(candidate, delay) {
+  writeFileSync(resolve(privateDir, 'creation-delay'), String(delay));
   const id = docker(['run', '-d', '--name', 'ninedeploy-agent', '--label', `ninedeploy.proof=${owner}`, '--network', 'ninedeploy', '--user', '0', '--no-healthcheck', '-w', '/fixture',
     '-e', 'GITHUB_ACTIONS=true', '-e', 'NINEDEPLOY_DATA_DIR=/fixture/data', '-e', 'NINEDEPLOY_DB_PATH=/fixture/panel.db', '-e', 'NINEDEPLOY_AGENT_REQUIRE_SEALED=1',
     '-e', `NINEDEPLOY_JWT_SECRET=${jwtSecret}`,
     '-e', 'NINEDEPLOY_AGENT_PROXY_TRAFFIC=on', '-e', 'NINEDEPLOY_AGENT_ORDERED_PROXY=on', '-e', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=on',
-    '-e', `ND_PROOF_OWNER=${owner}`, '-e', `ND_PROOF_TOKEN=${agentToken}`, '-e', `ND_PROOF_DELAY=${delay}`,
+    '-e', `ND_PROOF_TOKEN=${agentToken}`,
     '-e', 'PATH=/fixture/shim:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     '-v', '/var/run/docker.sock:/var/run/docker.sock', '-v', `${privateDir}:/fixture`, '-v', `${publicDir}:/proof`, '--entrypoint', 'node', candidate, '-e', 'setInterval(()=>{},1000)']).out;
   resources.push({ kind: 'container', id }); return id;
@@ -44,7 +45,7 @@ try {
   copyFileSync(new URL('./fixtures/wake-recovery.mjs', import.meta.url), resolve(privateDir, 'fixture.mjs'));
   // Delay the real Docker creation boundary; do not patch the application.
   // The same delay should leave the old backend serving during a safe handoff.
-  writeFileSync(resolve(privateDir, 'shim/docker'), `#!/bin/sh\ncase " $* " in\n  *" ninedeploy.managed=wake "*)\n    if [ "$1" = run ]; then\n      shift\n      if [ "$ND_PROOF_DELAY" != 0 ]; then touch /proof/creation-paused; sleep "$ND_PROOF_DELAY"; fi\n      exec /usr/bin/docker run --label "ninedeploy.proof=$ND_PROOF_OWNER" "$@"\n    fi;;\nesac\nexec /usr/bin/docker "$@"\n`, { mode: 0o755 });
+  writeFileSync(resolve(privateDir, 'shim/docker'), `#!/bin/sh\ncase " $* " in\n  *" ninedeploy.managed=wake "*)\n    if [ "$1" = run ]; then\n      shift\n      delay=$(cat /fixture/creation-delay)\n      if [ "$delay" -gt 0 ]; then touch /proof/creation-paused; sleep "$delay"; fi\n      exec /usr/bin/docker run --label "ninedeploy.proof=${owner}" "$@"\n    fi;;\nesac\nexec /usr/bin/docker "$@"\n`, { mode: 0o755 });
   const oldDriver = driver(`${owner}:old`, 0);
   docker(['exec', oldDriver, 'node', '/fixture/fixture.mjs', 'seed'], false, { timeout: 180_000 });
   const seed = JSON.parse(readFileSync(resolve(publicDir, 'seed.json'), 'utf8'));
@@ -54,9 +55,11 @@ try {
   const proxy = docker(['run', '-d', '--name', 'ninedeploy-proxy', '--label', `ninedeploy.proof=${owner}`, '--network', 'ninedeploy',
     '-v', `${privateDir}/.agent-proxy:/etc/traefik:ro`, 'traefik:3', '--configFile=/etc/traefik/traefik.yml']).out;
   resources.push({ kind: 'container', id: proxy });
-  const request = "fetch('http://ninedeploy-proxy/dashboard',{headers:{host:'wake.invalid'},signal:AbortSignal.timeout(2000)}).then(r=>process.exit(r.status===503?0:1)).catch(()=>process.exit(1))";
+  const request = "const h=require('node:http');const q=h.get({hostname:'ninedeploy-proxy',path:'/dashboard',headers:{host:'wake.invalid'}},r=>{r.resume();r.on('end',()=>{console.log(JSON.stringify({status:r.statusCode}));process.exit(r.statusCode===503?0:1)})});q.setTimeout(2000,()=>q.destroy());q.on('error',()=>process.exit(1))";
   for (const deadline = Date.now() + 30_000; ;) {
-    if (docker(['exec', oldDriver, 'node', '-e', request], true).status === 0) break;
+    const probe = docker(['exec', oldDriver, 'node', '-e', request], true);
+    writeFileSync(resolve(publicDir, 'initial-route.json'), JSON.stringify({ exitCode: probe.status, response: probe.out, error: probe.stderr?.slice(0, 500) }));
+    if (probe.status === 0) break;
     assert.ok(Date.now() < deadline, 'Initial waking route never became available'); await pause(200);
   }
   docker(['rm', '-fv', oldDriver]);
