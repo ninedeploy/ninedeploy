@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { proxyTrafficWindowId, proxyTrafficSample, type ProxyTrafficOpen, type ProxyTrafficSnapshot, type ServingTrafficOpen } from '@ninedeploy/schemas';
+import { proxyTrafficWindowId, proxyTrafficSample, type IdleWatchOpen, type ProxyTrafficOpen, type ProxyTrafficSnapshot, type ServingTrafficOpen } from '@ninedeploy/schemas';
 import { proxyTrafficTargetHash, proxyTrafficRoutingGeneration, proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 import type { NodeProxyTrafficIO } from './nodeProxyTrafficDocker.js';
 
 export const PROXY_TRAFFIC_MAX_SESSIONS = 16;
 const opaque = () => randomBytes(16).toString('hex');
-type TrafficObservationInput = ProxyTrafficOpen | ServingTrafficOpen;
+type TrafficObservationInput = ProxyTrafficOpen | ServingTrafficOpen | IdleWatchOpen;
 type CounterFields = Pick<ProxyTrafficSnapshot, 'startCounter' | 'endCounter' | 'observed' | 'expected' | 'complete'>;
 type ReceiptFields = Omit<ProxyTrafficSnapshot, 'step' | 'stable' | 'canary'>;
 interface TrafficCounter {

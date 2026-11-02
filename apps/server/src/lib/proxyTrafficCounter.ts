@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { errorRatePercent, type CanaryReleaseStats, type ProxyTrafficOpen, type ServingTrafficOpen } from '@ninedeploy/schemas';
+import { errorRatePercent, type CanaryReleaseStats, type IdleWatchOpen, type ProxyTrafficOpen, type ServingTrafficOpen } from '@ninedeploy/schemas';
 
 export const PROXY_TRAFFIC_RECORD_LIMIT = 100_000;
 export const PROXY_TRAFFIC_BYTE_LIMIT = 32 * 1024 * 1024;
 export const PROXY_TRAFFIC_LINE_LIMIT = 16 * 1024;
 export const proxyTrafficUnavailable = (reason: string) => new Error(`Node proxy traffic unavailable: ${reason}`);
-export const proxyTrafficTargetHash = (input: ProxyTrafficOpen | ServingTrafficOpen): string => createHash('sha256').update(JSON.stringify(input)).digest('hex');
+export const proxyTrafficTargetHash = (input: ProxyTrafficOpen | ServingTrafficOpen | IdleWatchOpen): string => createHash('sha256').update(JSON.stringify(input)).digest('hex');
 export const proxyTrafficRoutingGeneration = (input: Pick<ProxyTrafficOpen, 'routingConfig'>): string => {
   if (Buffer.byteLength(input.routingConfig) > 1024 * 1024) throw proxyTrafficUnavailable('routing configuration exceeds 1 MiB');
   return createHash('sha256').update(input.routingConfig).digest('hex');

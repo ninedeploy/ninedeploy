@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import type { ProxyTrafficOpen, ServingTrafficOpen } from '@ninedeploy/schemas';
+import type { IdleWatchOpen, ProxyTrafficOpen, ServingTrafficOpen } from '@ninedeploy/schemas';
 import { dockerTransport, engineRequest, type EngineTransport } from './dockerTty.js';
 import { PROXY_TRAFFIC_BYTE_LIMIT, PROXY_TRAFFIC_LINE_LIMIT, proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 import { capture } from './exec.js';
@@ -27,7 +27,7 @@ const json = async (t: EngineTransport, method: string, path: string, body?: unk
 };
 
 /** Fixed proxy logs/loopback probe only. No caller-supplied path, command or daemon. */
-export function nodeProxyTrafficDocker(): NodeProxyTrafficIO<ProxyTrafficOpen | ServingTrafficOpen> {
+export function nodeProxyTrafficDocker(): NodeProxyTrafficIO<ProxyTrafficOpen | ServingTrafficOpen | IdleWatchOpen> {
   return {
     async inspect(input) {
       try {

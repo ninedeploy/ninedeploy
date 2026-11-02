@@ -7,6 +7,8 @@ import { agentStreamRoute, agentStudioRoute, agentTunnelRoute, agentWebsocketOpt
 import { closeAllStudioChannels } from './agentOps/studios.js';
 import { closeAllTunnelChannels } from './agentOps/tunnels.js';
 import { nodeProxyTraffic } from './lib/nodeProxyTraffic.js';
+import { nodeServingTraffic } from './lib/nodeServingTraffic.js';
+import { nodeIdleWatch } from './lib/nodeIdleWatch.js';
 import { advertisedCapabilities, AGENT_OPS, registeredCapabilities, runRegisteredOp } from './agentOps/index.js';
 import { gitCredentialEnv } from './agentOps/gitCredential.js';
 import { AGENT_TOKEN_HASH_FILE, loadRekeyedTokenHash, REKEY_BOOTSTRAP_OPS } from './agentOps/agentRekey.js';
@@ -1812,6 +1814,8 @@ export const agentRoutes = async (
     closeAllStudioChannels();
     closeAllTunnelChannels();
     nodeProxyTraffic.closeAll();
+    nodeServingTraffic.closeAll();
+    nodeIdleWatch.closeAll();
   });
   app.get(AGENT_TERMINAL_PATH, { websocket: true, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (socket, req) => {
     const id = agentTerminalChannelId(req.headers['sec-websocket-protocol']);

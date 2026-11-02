@@ -81,6 +81,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'db.pgbouncer': 'pool connections with PgBouncer',
   'proxy.traffic': 'observe proxy traffic',
   'proxy.servingTraffic': 'observe ordinary serving traffic',
+  'proxy.idleWatch': 'watch a node service for idle traffic',
   'proxy.orderedWrite': 'order node proxy routing writes',
   'docker.readiness': 'verify candidate replica readiness',
   'docker.metrics': 'measure immutable container resources',

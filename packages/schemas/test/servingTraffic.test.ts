@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { servingTrafficOpen, servingTrafficSnapshot } from '../src/proxyTraffic.js';
+import { IDLE_WATCH_MAX_MS, IDLE_WATCH_MIN_MS, idleWatchOpen, idleWatchSnapshot, servingTrafficOpen, servingTrafficSnapshot } from '../src/proxyTraffic.js';
 
 const target = { name: 'web-4', id: 'a'.repeat(64), port: 8080 };
 const open = { purpose: 'autoscale', requestId: '1'.repeat(32), nodeId: 2, serviceId: 3, deploymentId: 4,
@@ -42,4 +42,20 @@ it.each([
   { startCounter: 'invalid' }, { stable: snapshot.serving }, { step: 1 },
 ])('rejects invalid or incomplete coverage: %j', change => {
   expect(servingTrafficSnapshot.safeParse({ ...snapshot, ...change }).success).toBe(false);
+});
+
+// R2 node scale to zero: the same serving identity in a long window with its own purpose.
+it('accepts idle windows from one minute to one hour and keeps them apart from autoscale windows', () => {
+  const idle = { ...open, purpose: 'idle', durationMs: IDLE_WATCH_MIN_MS };
+  expect(idleWatchOpen.parse(idle)).toEqual(idle);
+  expect(idleWatchOpen.safeParse({ ...idle, durationMs: IDLE_WATCH_MAX_MS }).success).toBe(true);
+  for (const change of [{ durationMs: IDLE_WATCH_MIN_MS - 1 }, { durationMs: IDLE_WATCH_MAX_MS + 1 }, { purpose: 'autoscale' }, { serving: [{ ...target, name: 'other-4' }] }]) {
+    expect(idleWatchOpen.safeParse({ ...idle, ...change }).success).toBe(false);
+  }
+  expect(servingTrafficOpen.safeParse(idle).success).toBe(false);
+  const receipt = { ...snapshot, purpose: 'idle', elapsedMs: 3_600_000, endCounter: '11', expected: 0, complete: true };
+  expect(idleWatchSnapshot.parse(receipt)).toEqual(receipt);
+  expect(idleWatchSnapshot.safeParse({ ...receipt, complete: true, endCounter: null, expected: null }).success).toBe(false);
+  expect(servingTrafficSnapshot.safeParse(receipt).success).toBe(false);
+  expect(idleWatchSnapshot.safeParse(snapshot).success).toBe(false);
 });

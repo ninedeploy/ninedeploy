@@ -434,7 +434,7 @@ jobs:
 
       - name: Verify ordinary serving-traffic observations through sealed HTTP
         if: matrix.suite == 'agent-runtime'
-        timeout-minutes: 5
+        timeout-minutes: 12
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
           DOCKER_CONTEXT: default

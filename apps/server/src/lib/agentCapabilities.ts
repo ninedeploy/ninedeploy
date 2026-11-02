@@ -395,6 +395,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'db.studio': '0.18.0',
   'proxy.traffic': '0.18.0',
   'proxy.servingTraffic': '0.19.0',
+  'proxy.idleWatch': '0.19.0',
   // G4.2 OS security updates
   'host.packages': '0.18.6',
   'agent.rekey': '0.18.6',
@@ -435,6 +436,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'docker.metrics': 'NINEDEPLOY_AGENT_CONTAINER_METRICS',
   'proxy.traffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'proxy.servingTraffic': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
+  'proxy.idleWatch': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'proxy.orderedWrite': 'NINEDEPLOY_AGENT_ORDERED_PROXY',
   'docker.containerTools': 'NINEDEPLOY_AGENT_CONTAINER_TOOLS',
   'volume.files': 'NINEDEPLOY_AGENT_VOLUME_FILES',

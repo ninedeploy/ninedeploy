@@ -14,8 +14,8 @@ const proof = resolve(process.argv.find(arg => arg.startsWith('--proof='))?.slic
 mkdirSync(proof, { recursive: true });
 copyFileSync(new URL('./lib/serving-traffic-routing.mjs', import.meta.url), resolve(proof, 'serving-traffic-routing.mjs'));
 const owner = `serving-${randomBytes(8).toString('hex')}`, slug = owner, network = `nd-${owner}`, resources = [], cleanup = [];
-const docker = (args, allowed = false) => {
-  const result = spawnSync('docker', args, { encoding: 'utf8', timeout: 120_000, maxBuffer: 2 << 20, windowsHide: true });
+const docker = (args, allowed = false, timeout = 120_000) => {
+  const result = spawnSync('docker', args, { encoding: 'utf8', timeout, maxBuffer: 2 << 20, windowsHide: true });
   if (!allowed) assert.equal(result.status, 0, `${args.slice(0, 3)}: ${result.stderr || result.stdout}`);
   return { ...result, out: (result.stdout ?? '').trim() };
 };
@@ -55,10 +55,11 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   docker(['cp', 'scripts/fixtures/serving-traffic-agent.mjs', `${client}:/tmp/serving-traffic-proof.mjs`]);
-  docker(['exec', '-e', `PROOF_PROXY_ID=${proxyId}`, client, 'node', '/tmp/serving-traffic-proof.mjs']);
+  // The idle-watch cases hold real one-minute windows.
+  docker(['exec', '-e', `PROOF_PROXY_ID=${proxyId}`, client, 'node', '/tmp/serving-traffic-proof.mjs'], false, 480_000);
   evidence = JSON.parse(readFileSync(resolve(proof, 'agent-result.json'), 'utf8'));
   assert.equal(evidence.complete, true); assert.equal(evidence.realSealedHttp, true); assert.equal(evidence.activeWindows, 0);
-  assert.equal(evidence.cases.length, 9); assert.ok(evidence.cases.every(row => row.passed));
+  assert.equal(evidence.cases.length, 12); assert.ok(evidence.cases.every(row => row.passed));
 } catch (error) { failure = String(error); process.exitCode = 1; }
 finally {
   if (!evidence && existsSync(resolve(proof, 'agent-result.json'))) {

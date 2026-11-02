@@ -1,11 +1,11 @@
 import { load } from 'js-yaml';
-import type { ServingTrafficOpen } from '@ninedeploy/schemas';
+import type { IdleWatchOpen, ServingTrafficOpen } from '@ninedeploy/schemas';
 
 type Dict = Record<string, unknown>;
 const dict = (value: unknown): value is Dict => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** Zero traffic is meaningful only when the selected serving leaves are routed. */
-export function servingTrafficRoutesMatch(input: ServingTrafficOpen): boolean {
+export function servingTrafficRoutesMatch(input: ServingTrafficOpen | IdleWatchOpen): boolean {
   try {
     const document = load(input.routingConfig);
     if (!dict(document) || !dict(document.http) || !dict(document.http.routers) || !dict(document.http.services)) return false;

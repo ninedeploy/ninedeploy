@@ -52,10 +52,10 @@ export const proxyTrafficSnapshot = snapshotFields.pipe(z.custom<z.infer<typeof 
 export type ProxyTrafficSnapshot = z.infer<typeof proxyTrafficSnapshot>;
 
 /** Ordinary serving-generation observations are distinct from canary steps. */
-export const servingTrafficOpen = z.object({
-  purpose: z.literal('autoscale'), requestId: opaque, nodeId: id, serviceId: id, deploymentId: id,
+const servingWindowOpen = <P extends 'autoscale' | 'idle'>(purpose: P, minMs: number, maxMs: number) => z.object({
+  purpose: z.literal(purpose), requestId: opaque, nodeId: id, serviceId: id, deploymentId: id,
   slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,127}$/),
-  durationMs: z.number().int().min(1000).max(60_000),
+  durationMs: z.number().int().min(minMs).max(maxMs),
   routingConfig: z.string().min(1).max(1024 * 1024),
   serving: z.array(target).min(1).max(10),
 }).strict().superRefine((value, ctx) => {
@@ -65,17 +65,33 @@ export const servingTrafficOpen = z.object({
     ctx.addIssue({ code: 'custom', message: 'Serving targets must identify one complete immutable generation' });
   }
 });
+export const servingTrafficOpen = servingWindowOpen('autoscale', 1000, 60_000);
 export type ServingTrafficOpen = z.infer<typeof servingTrafficOpen>;
 
-const servingSnapshotFields = snapshotFields.omit({ step: true, stable: true, canary: true }).extend({
-  purpose: z.literal('autoscale'), serving: canaryReleaseStats,
-}).strict();
-export const servingTrafficSnapshot = servingSnapshotFields.pipe(z.custom<z.infer<typeof servingSnapshotFields>>().superRefine((value, ctx) => {
-  const expected = value.endCounter === null ? null : BigInt(value.endCounter) - BigInt(value.startCounter) - 1n;
-  if ((expected !== null && (expected < 0n || expected !== BigInt(value.expected ?? -1) || BigInt(value.observed) > expected)) ||
-    (value.endCounter === null && value.expected !== null) || value.serving.requests > value.observed ||
-    (value.complete && (!value.endCounter || value.expected === null || value.expected !== value.observed))) {
-    ctx.addIssue({ code: 'custom', message: 'Serving windows require contiguous sequence coverage' });
-  }
-}));
+const servingWindowSnapshot = <P extends 'autoscale' | 'idle'>(purpose: P) => {
+  const fields = snapshotFields.omit({ step: true, stable: true, canary: true }).extend({
+    purpose: z.literal(purpose), serving: canaryReleaseStats,
+  }).strict();
+  return fields.pipe(z.custom<z.infer<typeof fields>>().superRefine((value, ctx) => {
+    const expected = value.endCounter === null ? null : BigInt(value.endCounter) - BigInt(value.startCounter) - 1n;
+    if ((expected !== null && (expected < 0n || expected !== BigInt(value.expected ?? -1) || BigInt(value.observed) > expected)) ||
+      (value.endCounter === null && value.expected !== null) || value.serving.requests > value.observed ||
+      (value.complete && (!value.endCounter || value.expected === null || value.expected !== value.observed))) {
+      ctx.addIssue({ code: 'custom', message: 'Serving windows require contiguous sequence coverage' });
+    }
+  }));
+};
+export const servingTrafficSnapshot = servingWindowSnapshot('autoscale');
 export type ServingTrafficSnapshot = z.infer<typeof servingTrafficSnapshot>;
+
+/**
+ * R2 node scale to zero (docs/NODE_SLEEP_WAKE.md): one long serving window. The panel chains
+ * overlapping windows from one source to prove continuous idle coverage; a lapsed lease
+ * (no sample within 30 s) or a changed source ends a window, never reads as idle.
+ */
+export const IDLE_WATCH_MIN_MS = 60_000;
+export const IDLE_WATCH_MAX_MS = 3_600_000;
+export const idleWatchOpen = servingWindowOpen('idle', IDLE_WATCH_MIN_MS, IDLE_WATCH_MAX_MS);
+export type IdleWatchOpen = z.infer<typeof idleWatchOpen>;
+export const idleWatchSnapshot = servingWindowSnapshot('idle');
+export type IdleWatchSnapshot = z.infer<typeof idleWatchSnapshot>;

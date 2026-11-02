@@ -11,6 +11,7 @@ import { seal, open } from '/app/apps/server/dist/lib/agentSeal.js';
 import { sha256 } from '/app/apps/server/dist/lib/crypto.js';
 import { withRoutingAck, confirmProxyRouting, routingProbeArgs } from '/app/apps/server/dist/lib/proxyRoutingAck.js';
 import { nodeServingTraffic } from '/app/apps/server/dist/lib/nodeServingTraffic.js';
+import { nodeIdleWatch } from '/app/apps/server/dist/lib/nodeIdleWatch.js';
 import { confirmServingTrafficRouting } from '/proof/serving-traffic-routing.mjs';
 
 const input = JSON.parse(process.env.PROOF_INPUT), exec = promisify(execFile);
@@ -21,8 +22,8 @@ await app.listen({ host: '127.0.0.1', port: 0 });
 const url = `http://127.0.0.1:${app.server.address().port}/agent/exec`;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const confirm = (routes, proxyId) => confirmServingTrafficRouting(routes, proxyId, { confirmRouting: confirmProxyRouting, probeArgs: routingProbeArgs, execDocker: exec });
-async function rpc(action, params, { plain = false } = {}) {
-  const nonce = randomBytes(16).toString('hex'), payload = { op: action === 'capabilities' ? 'agent.ping' : `proxy.servingTraffic.${action}`, params, nonce };
+async function rpc(action, params, { plain = false, family = 'servingTraffic' } = {}) {
+  const nonce = randomBytes(16).toString('hex'), payload = { op: action === 'capabilities' ? 'agent.ping' : `proxy.${family}.${action}`, params, nonce };
   const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...(plain ? { 'x-agent-token': token } : {}) },
     body: JSON.stringify(plain ? payload : { sealed: seal(hash, payload) }), signal: AbortSignal.timeout(20_000) });
   const raw = await response.json();
@@ -30,7 +31,7 @@ async function rpc(action, params, { plain = false } = {}) {
   assert.ok(!plain && raw.sealed, 'successful observations must be sealed');
   const value = open(hash, raw.sealed);
   assert.equal(value.nonce, nonce); assert.equal(value.exitCode, 0);
-  const prefix = action === 'capabilities' ? 'ND-AGENT ' : 'ND-SERVING-TRAFFIC ';
+  const prefix = action === 'capabilities' ? 'ND-AGENT ' : family === 'idleWatch' ? 'ND-IDLE-WATCH ' : 'ND-SERVING-TRAFFIC ';
   const frames = value.lines.filter(line => line.startsWith(prefix));
   assert.equal(frames.length, 1);
   return JSON.parse(frames[0].slice(prefix.length));
@@ -87,6 +88,42 @@ try {
   const zero = (await rpc('finish', { windowId: idle.windowId })).snapshot;
   assert.equal(zero.complete, true); assert.equal(zero.serving.requests, 0);
   cases.push({ name: 'verified-zero-serving-traffic', passed: true, snapshot: zero });
+  // R2 scale to zero: long idle windows kept alive by samples inside the 30 s lease, chained without a gap.
+  const idleRpc = (action, params) => rpc(action, params, { family: 'idleWatch' });
+  const idleInput = () => ({ ...fresh(), purpose: 'idle', durationMs: 60_000 });
+  const keep = async (windowIds, ms) => {
+    for (let left = ms; left > 0; left -= 15_000) {
+      await pause(Math.min(15_000, left));
+      assert.ok((await idleRpc('sample', { windowIds })).items.every(item => item.ok), 'a sampled idle window must stay open');
+    }
+  };
+  assert.ok((await rpc('capabilities', {})).caps.includes('proxy.idleWatch'));
+  const first = (await idleRpc('open', idleInput())).snapshot;
+  await keep([first.windowId], 45_000);
+  const second = (await idleRpc('open', idleInput())).snapshot;
+  await keep([first.windowId, second.windowId], 16_000);
+  const idleZero = (await idleRpc('finish', { windowId: first.windowId })).snapshot;
+  assert.equal(idleZero.purpose, 'idle'); assert.equal(idleZero.complete, true); assert.equal(idleZero.serving.requests, 0);
+  assert.ok(idleZero.elapsedMs >= 60_000);
+  cases.push({ name: 'idle-watch-verified-zero-minute', passed: true, snapshot: idleZero });
+  assert.ok(BigInt(second.startCounter) < BigInt(idleZero.endCounter), 'chained idle windows must overlap');
+  assert.deepEqual([second.sourceId, second.proxyId, second.epoch], [idleZero.sourceId, idleZero.proxyId, idleZero.epoch]);
+  assert.equal((await request()).status, 200);
+  await keep([second.windowId], 45_000);
+  const busy = (await idleRpc('finish', { windowId: second.windowId })).snapshot;
+  assert.equal(busy.complete, true); assert.equal(busy.serving.requests, 1);
+  cases.push({ name: 'idle-watch-chained-request-breaks-zero', passed: true, snapshot: busy });
+  {
+    const watched = (await idleRpc('open', idleInput())).snapshot;
+    const metadata = JSON.parse((await exec('docker', ['inspect', watched.proxyId], { timeout: 10_000 })).stdout)[0];
+    assert.equal(metadata.Config.Labels['ninedeploy.proof'], process.env.PROOF_OWNER);
+    await exec('docker', ['restart', watched.proxyId], { timeout: 30_000 });
+    const reply = await idleRpc('sample', { windowIds: [watched.windowId] });
+    assert.equal(reply.items[0].ok, false); assert.equal(nodeIdleWatch.activeCount(), 0);
+    await idleRpc('close', { windowId: watched.windowId });
+    await confirm(input.routingConfig, watched.proxyId);
+    cases.push({ name: 'idle-watch-proxy-restart-ends-coverage', passed: true });
+  }
   await rejectedWindow(async opened => {
     const metadata = JSON.parse((await exec('docker', ['inspect', opened.proxyId], { timeout: 10_000 })).stdout)[0];
     assert.equal(metadata.Config.Labels['ninedeploy.proof'], process.env.PROOF_OWNER);
@@ -116,12 +153,13 @@ try {
   } finally { await exec('docker', ['start', replica.id], { timeout: 20_000 }); }
   process.env.NINEDEPLOY_AGENT_PROXY_TRAFFIC = 'off';
   assert.ok(!(await rpc('capabilities', {})).caps.includes('proxy.servingTraffic'));
+  assert.ok(!(await rpc('capabilities', {})).caps.includes('proxy.idleWatch'));
   await assert.rejects(rpc('open', fresh()), /owner|opted in/);
   cases.push({ name: 'owner-disabled-held', passed: true });
   assert.equal(nodeServingTraffic.activeCount(), 0);
   complete = true;
 } finally {
-  nodeServingTraffic.closeAll();
+  nodeServingTraffic.closeAll(); nodeIdleWatch.closeAll();
   writeFileSync('/proof/agent-result.json', JSON.stringify({ complete, realSealedHttp: true, cases, outcomes, activeWindows: nodeServingTraffic.activeCount() }, null, 2));
   await app.close();
 }

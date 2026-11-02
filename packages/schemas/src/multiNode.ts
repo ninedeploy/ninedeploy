@@ -82,6 +82,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'db.pgbouncer',
   'proxy.orderedWrite',
   'proxy.servingTraffic',
+  // R2 node scale to zero: long chained serving windows (docs/NODE_SLEEP_WAKE.md)
+  'proxy.idleWatch',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;
