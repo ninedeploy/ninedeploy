@@ -1,7 +1,7 @@
 import { and, eq, inArray, notInArray } from 'drizzle-orm';
-import { deployments, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeDeploymentPreparations,
+import { databaseAttachments, databases, deployments, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeDeploymentPreparations,
   nodeLifecycleIntents, primaryTransitions, services, serviceTargets, type DB } from '@ninedeploy/db';
-import type { ServingTrafficOpen } from '@ninedeploy/schemas';
+import type { IdleWatchOpen, ServingTrafficOpen } from '@ninedeploy/schemas';
 import { canaryActive } from '../engine/canaryState.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { renderDynamicConfig } from '../engine/proxy.js';
@@ -11,22 +11,32 @@ import { proxyTrafficUnavailable } from './proxyTrafficCounter.js';
 import { servingTrafficRoutesMatch } from './servingTrafficRouting.js';
 
 /** Read-only eligibility: observations never acquire runtime mutation authority. */
-export async function readNodeServingTrafficState(tx: Pick<DB, 'query' | 'select'>, input: ServingTrafficOpen): Promise<string> {
+export async function readNodeServingTrafficState(tx: Pick<DB, 'query' | 'select'>, input: ServingTrafficOpen | IdleWatchOpen): Promise<string> {
     const svc = await tx.query.services.findFirst({ where: eq(services.id, input.serviceId) });
     const deployment = await tx.query.deployments.findFirst({ where: eq(deployments.id, input.deploymentId) });
     const capacity = await tx.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, input.deploymentId) });
     const unavailable = () => proxyTrafficUnavailable('serving placement, ownership or capacity changed');
     if (!svc || svc.type !== 'docker' || svc.orchestrator === 'swarm' || svc.serverId !== input.nodeId || svc.slug !== input.slug ||
       svc.status !== 'running' || svc.asleepAt != null || svc.runtimeId !== `${input.slug}-${input.deploymentId}` ||
-      svc.runtimeReplicas !== input.serving.length || !deployment || deployment.serviceId !== svc.id || deployment.status !== 'running' ||
-      !capacity || capacity.serviceId !== svc.id || capacity.serverId !== svc.serverId || capacity.runtimeId !== svc.runtimeId ||
-      !/^sha256:[a-f0-9]{64}$/.test(capacity.imageId) || !Array.isArray(capacity.targets) ||
-      capacity.targets.length < svc.runtimeReplicas || capacity.targets.length > 10) throw unavailable();
-    const names = replicaNames(svc.runtimeId, capacity.targets.length);
-    if (capacity.targets.some((target, index) => !target || target.name !== names[index] || !/^[a-f0-9]{64}$/.test(target.id)) ||
-      new Set(capacity.targets.map(target => target.id)).size !== names.length ||
-      input.serving.some(target => target.port !== svc.port || !capacity.targets.slice(0, svc.runtimeReplicas).some(known => known.name === target.name && known.id === target.id)) ||
-      !await validNodeAutoscaleDatabaseNetworks(tx, svc, capacity)) throw unavailable();
+      svc.runtimeReplicas !== input.serving.length || !deployment || deployment.serviceId !== svc.id || deployment.status !== 'running') throw unavailable();
+    const servingNames = replicaNames(svc.runtimeId, svc.runtimeReplicas);
+    if (input.serving.some(target => target.port !== svc.port || !servingNames.includes(target.name))) throw unavailable();
+    // A normal node deployment need not have autoscale spares. Idle observations bind
+    // its serving IDs through the sealed agent's live identity/label verification.
+    if (capacity) {
+      if (capacity.serviceId !== svc.id || capacity.serverId !== svc.serverId || capacity.runtimeId !== svc.runtimeId ||
+        !/^sha256:[a-f0-9]{64}$/.test(capacity.imageId) || !Array.isArray(capacity.targets) ||
+        capacity.targets.length < svc.runtimeReplicas || capacity.targets.length > 10) throw unavailable();
+      const names = replicaNames(svc.runtimeId, capacity.targets.length);
+      if (capacity.targets.some((target, index) => !target || target.name !== names[index] || !/^[a-f0-9]{64}$/.test(target.id)) ||
+        new Set(capacity.targets.map(target => target.id)).size !== names.length ||
+        input.serving.some(target => !capacity.targets.slice(0, svc.runtimeReplicas).some(known => known.name === target.name && known.id === target.id)) ||
+        !await validNodeAutoscaleDatabaseNetworks(tx, svc, capacity)) throw unavailable();
+    } else if (input.purpose !== 'idle') throw unavailable();
+    const attached = input.purpose === 'idle' ? await tx.select({ attachmentId: databaseAttachments.id, id: databases.id, slug: databases.slug,
+      serverId: databases.serverId, status: databases.status }).from(databaseAttachments).innerJoin(databases, eq(databases.id, databaseAttachments.databaseId))
+      .where(eq(databaseAttachments.serviceId, svc.id)).orderBy(databaseAttachments.id) : [];
+    if (attached.some(item => item.serverId !== svc.serverId || item.status !== 'running')) throw unavailable();
     const conflicts = await Promise.all([
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, svc.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, svc.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),
@@ -38,10 +48,10 @@ export async function readNodeServingTrafficState(tx: Pick<DB, 'query' | 'select
       tx.select({ id: serviceTargets.id }).from(serviceTargets).where(eq(serviceTargets.serviceId, svc.id)).limit(1),
     ]);
     if (conflicts.some(rows => rows.length) || canaryActive(svc.id)) throw proxyTrafficUnavailable('active runtime work or fanout blocks serving observation');
-    return JSON.stringify([svc, deployment, capacity, await readServiceRuntimeOwner(tx, svc.id)]);
+    return JSON.stringify([svc, deployment, capacity, await readServiceRuntimeOwner(tx, svc.id), attached]);
 }
 
-export async function nodeServingTrafficContext(db: DB, input: ServingTrafficOpen): Promise<string> {
+export async function nodeServingTrafficContext(db: DB, input: ServingTrafficOpen | IdleWatchOpen): Promise<string> {
   const read = () => db.transaction(tx => readNodeServingTrafficState(tx, input));
   const before = await read();
   const routes = await renderDynamicConfig(db, { serverId: input.nodeId });
