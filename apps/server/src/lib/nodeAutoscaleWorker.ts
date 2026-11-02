@@ -5,6 +5,7 @@ import { executeNodeAutoscale, type NodeAutoscaleControllerDeps } from './nodeAu
 import { createNodeAutoscaleDecider } from './nodeAutoscaleDecision.js';
 import { nodeAutoscaleRuntime } from './nodeAutoscaleRuntime.js';
 import { readNodeAutoscaleSample } from './nodeAutoscaleSample.js';
+import { NODE_RPS_AUTOSCALING_ACCEPTED, readNodeServingTrafficSample } from './nodeServingTrafficSample.js';
 import { readServiceRuntimeOwner, sameRuntimeOwner } from './serviceRuntimeOwner.js';
 import { recordNodeAutoscaleHolding, recordNodeAutoscaleSample } from './autoscaler.js';
 
@@ -12,6 +13,9 @@ import { recordNodeAutoscaleHolding, recordNodeAutoscaleSample } from './autosca
 export function createNodeAutoscaleWorker(db: DB, deps: {
   blocked: (serviceId: number) => boolean | Promise<boolean>;
   sample?: typeof readNodeAutoscaleSample;
+  servingSample?: typeof readNodeServingTrafficSample;
+  /** Tests only: bypass NODE_RPS_AUTOSCALING_ACCEPTED. */
+  rpsAccepted?: boolean;
   runtime?: (admission: NodeAutoscaleAdmission, signal?: AbortSignal) => NodeAutoscaleControllerDeps;
   now?: () => number;
 }) {
@@ -27,9 +31,13 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
       try {
         signal?.throwIfAborted();
         const config = autoscaleConfig.safeParse(service.autoscale);
-        if (!config.success || config.data.metric === 'rps' || await deps.blocked(service.id)) {
+        if (!config.success || await deps.blocked(service.id)) {
           forget(service.id);
           return held('node autoscale is blocked or its metric is unavailable');
+        }
+        if (config.data.metric === 'rps' && !(deps.rpsAccepted ?? NODE_RPS_AUTOSCALING_ACCEPTED)) {
+          forget(service.id);
+          return held('node request-rate autoscaling is not available yet');
         }
         const deploymentId = Number(/-([1-9]\d*)$/.exec(service.runtimeId ?? '')?.[1]);
         const capacity = Number.isSafeInteger(deploymentId) && deploymentId > 0
@@ -42,7 +50,10 @@ export function createNodeAutoscaleWorker(db: DB, deps: {
         }
         const measuredOwner = await readServiceRuntimeOwner(db, service.id);
         if (owners.has(service.id) && !sameRuntimeOwner(owners.get(service.id)!, measuredOwner)) forget(service.id);
-        const sample = await (deps.sample ?? readNodeAutoscaleSample)(db, service, { signal });
+        // RPS reads one consumed serving-traffic window; cpu and memory read container metrics.
+        const sample = config.data.metric === 'rps'
+          ? await (deps.servingSample ?? readNodeServingTrafficSample)(db, service, { signal })
+          : await (deps.sample ?? readNodeAutoscaleSample)(db, service, { signal });
         signal?.throwIfAborted();
         if (await deps.blocked(service.id)) { forget(service.id); return held('node autoscale is blocked'); }
         if (!sameRuntimeOwner(await readServiceRuntimeOwner(db, service.id), measuredOwner)) {

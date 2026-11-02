@@ -43,7 +43,7 @@ describe('node autoscale decisions', () => {
     expect(d.observe(service, { ...sample(60_000, 'b'), serverId: 5 }, 60_000).to).toBeNull();
     expect(d.observe(service, sample(0, 'a'), 100_000).to).toBeNull();
     expect(d.observe(service, { ...sample(100_000, 'c'), complete: false }, 100_000).to).toBeNull();
-    expect(d.observe({ ...service, autoscale: { ...(service.autoscale as object), metric: 'rps' } }, sample(100_000, 'c'), 100_000).holding).toMatch(/request rate/);
+    expect(d.observe({ ...service, autoscale: { ...(service.autoscale as object), metric: 'rps' } }, sample(100_000, 'c'), 100_000).holding).toMatch(/serving-traffic window/);
     expect(d.observe(service, sample(120_000, 'd'), 120_000).to).toBeNull();
   });
   it('waits for the full scale-down window', () => {
@@ -67,5 +67,50 @@ describe('node autoscale decisions', () => {
     expect(d.observe(memory, high(30_000, 'b', 0), 30_000).holding).toMatch(/memory limits/);
     expect(d.observe(memory, high(60_000, 'c'), 60_000).to).toBeNull();
     expect(d.observe(memory, high(120_000, 'd'), 120_000).to).toBe(4);
+  });
+});
+
+describe('node autoscale decisions on serving traffic (rps)', () => {
+  const rps = { ...service, autoscale: { ...(service.autoscale as object), metric: 'rps', target: 10 } } as Service;
+  const serving = (at: number, n: number, requests: number, patch: Record<string, unknown> = {}) => {
+    const id = n.toString(16).padStart(32, '0'), start = 10 + n * 1000;
+    return { kind: 'serving', serverId: 4, sampledAt: at, serving: [{ name: 'web-9', id: 'b'.repeat(64) }, { name: 'web-9-r2', id: 'c'.repeat(64) }],
+      snapshot: { protocol: 1, purpose: 'autoscale', basis: 'traefik-request-sequence', precisionMs: 1, windowId: id, requestId: id,
+        epoch: 'd'.repeat(32), sourceId: 'e'.repeat(64), proxyId: 'f'.repeat(64), targetHash: '1'.repeat(64), routingGeneration: '2'.repeat(64),
+        nodeId: 4, serviceId: 7, deploymentId: 9, elapsedMs: 10_000, startCounter: String(start), endCounter: String(start + requests + 1),
+        observed: requests, expected: requests, complete: true,
+        serving: { requests, errors: 0, errorRate: requests ? 0 : null, p95Ms: requests ? 5 : null }, ...patch } };
+  };
+
+  it('scales up on sustained per-replica request rate and binds the receipt as evidence', () => {
+    const d = createNodeAutoscaleDecider(), seen: number[] = [];
+    // 400 requests over 10 s across two replicas is 20 rps each.
+    expect(d.observe(rps, serving(0, 1, 400), 0, false, o => seen.push(o.value)).to).toBeNull();
+    expect(d.observe(rps, serving(60_000, 2, 400), 60_000)).toEqual({ to: 4, holding: null, evidence: {
+      serverId: 4, serviceId: 7, deploymentId: 9, sampledAt: 60_000, requestId: (2).toString(16).padStart(32, '0'),
+      targets: [{ name: 'web-9', id: 'b'.repeat(64) }, { name: 'web-9-r2', id: 'c'.repeat(64) }] } });
+    expect(seen).toEqual([20]);
+  });
+  it('treats a verified zero window as zero traffic and scales down after the full window', () => {
+    const d = createNodeAutoscaleDecider();
+    expect(d.observe(rps, serving(0, 1, 0), 0).to).toBeNull();
+    expect(d.observe(rps, serving(60_000, 2, 0), 60_000).to).toBeNull();
+    expect(d.observe(rps, serving(120_000, 3, 0), 120_000).to).toBe(1);
+  });
+  it.each(['sourceId', 'proxyId', 'routingGeneration', 'targetHash'] as const)('restarts the window when the %s changes', field => {
+    const d = createNodeAutoscaleDecider();
+    d.observe(rps, serving(0, 1, 400), 0);
+    expect(d.observe(rps, serving(60_000, 2, 400, { [field]: '9'.repeat(64) }), 60_000).to).toBeNull();
+  });
+  it('does not advance on a repeated receipt and holds on incomplete or foreign windows', () => {
+    const d = createNodeAutoscaleDecider();
+    d.observe(rps, serving(0, 1, 400), 0);
+    expect(d.observe(rps, { ...serving(60_000, 1, 400) }, 60_000)).toEqual({ to: null, holding: 'waiting for a new node metrics sample' });
+    const open = serving(60_000, 2, 400);
+    expect(d.observe(rps, { ...open, snapshot: { ...open.snapshot, complete: false, endCounter: null, expected: null } }, 60_000).holding).toMatch(/serving-traffic window/);
+    expect(d.observe(rps, { ...serving(60_000, 3, 400), serverId: 5 }, 60_000).holding).toMatch(/serving-traffic window/);
+    expect(d.observe(rps, serving(60_000, 4, 400, { deploymentId: 8 }), 60_000).holding).toMatch(/serving-traffic window/);
+    expect(d.observe(rps, { ...serving(60_000, 5, 400), serving: [{ name: 'web-9', id: 'b'.repeat(64) }] }, 60_000).holding).toMatch(/serving-traffic window/);
+    expect(d.observe(rps, serving(0, 6, 400), 200_000).holding).toMatch(/serving-traffic window/);
   });
 });

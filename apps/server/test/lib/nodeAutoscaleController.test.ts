@@ -250,6 +250,50 @@ it('runs sampled decisions through durable admission and the controller', async 
   expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route', 'handoff-retire', 'handoff']);
   expect((await service()).runtimeReplicas).toBe(2);
 });
+it('scales an RPS service from consumed serving-traffic windows through the same admission and controller', async () => {
+  await c.db.update(services).set({ autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'rps', target: 10, scaleUpSeconds: 60, scaleDownSeconds: 120 } })
+    .where(eq(services.id, 1));
+  const now = Date.now(), svc = await service();
+  let time = now - 60_000, request = 0;
+  const sample = vi.fn();
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, now: () => time, runtime: () => deps(), sample, rpsAccepted: true,
+    servingSample: async () => {
+      const id = (++request).toString(16).padStart(32, '0'), start = 10 + request * 1000;
+      return { kind: 'serving' as const, serverId: 4, sampledAt: time, serving: [{ name: 'web-9', id: 'a'.repeat(64) }], snapshot: {
+        protocol: 1 as const, purpose: 'autoscale' as const, basis: 'traefik-request-sequence' as const, precisionMs: 1 as const,
+        windowId: id, requestId: id, epoch: 'd'.repeat(32), sourceId: 'e'.repeat(64), proxyId: 'f'.repeat(64),
+        targetHash: '1'.repeat(64), routingGeneration: '2'.repeat(64), nodeId: 4, serviceId: 1, deploymentId: 9, elapsedMs: 10_000,
+        startCounter: String(start), endCounter: String(start + 201), observed: 200, expected: 200, complete: true,
+        serving: { requests: 200, errors: 0, errorRate: 0, p95Ms: 5 } } };
+    } });
+  // 200 requests in 10 s on one replica is 20 rps against a target of 10.
+  expect((await worker.step(svc)).state).toBe('held');
+  time = now;
+  expect(await worker.step(svc)).toEqual({ state: 'completed' });
+  expect(sample).not.toHaveBeenCalled();
+  expect(calls).toEqual(['fence', 'inventory', 'start', 'ready', 'ready', 'route', 'handoff-retire', 'handoff']);
+  expect((await service()).runtimeReplicas).toBe(2);
+});
+it('holds an RPS service without observing traffic until node RPS scaling is accepted, even with cpu-prepared capacity', async () => {
+  await c.db.update(services).set({ autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'rps', target: 10, scaleUpSeconds: 60, scaleDownSeconds: 120 } })
+    .where(eq(services.id, 1));
+  const servingSample = vi.fn(), sample = vi.fn();
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, runtime: () => deps(), sample, servingSample });
+  expect(await worker.step(await service())).toEqual({ state: 'held', reason: 'node request-rate autoscaling is not available yet' });
+  expect(servingSample).not.toHaveBeenCalled();
+  expect(sample).not.toHaveBeenCalled();
+  expect(await transition()).toBeUndefined();
+});
+it('holds an RPS service when the serving-traffic window is refused, never reading it as zero', async () => {
+  await c.db.update(services).set({ autoscale: { minReplicas: 1, maxReplicas: 3, metric: 'rps', target: 10, scaleUpSeconds: 60, scaleDownSeconds: 120 } })
+    .where(eq(services.id, 1));
+  const worker = createNodeAutoscaleWorker(c.db, { blocked: () => false, runtime: () => deps(), rpsAccepted: true,
+    servingSample: async () => { throw new Error('Node proxy traffic unavailable: serving routing or runtime context changed'); } });
+  await expect(worker.step(await service())).rejects.toThrow(/serving routing/);
+  expect(autoscaleStatus(await service()).holding).toBe('node autoscale evaluation failed; see server logs');
+  expect(await transition()).toBeUndefined();
+  expect(calls).toEqual([]);
+});
 it('holds when a conflicting operation starts during sampling', async () => {
   const svc = await service(); let blocked = false;
   const worker = createNodeAutoscaleWorker(c.db, { blocked: () => blocked, runtime: () => deps(), sample: async () => {
