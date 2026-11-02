@@ -18,6 +18,7 @@ on:
       - 'scripts/lib/serving-traffic-routing.mjs'
       - 'scripts/smoke-wake-recovery.mjs'
       - 'scripts/fixtures/wake-recovery.mjs'
+      - 'scripts/fixtures/wake-recovery-sampler.mjs'
       - '.github/workflows/serving-traffic.yml'
   workflow_dispatch:
     inputs:

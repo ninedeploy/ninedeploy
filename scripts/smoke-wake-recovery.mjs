@@ -43,6 +43,7 @@ try {
   resources.push({ kind: 'image', id: oldImage });
   resources.push({ kind: 'network', id: docker(['network', 'create', '--label', `ninedeploy.proof=${owner}`, 'ninedeploy']).out });
   copyFileSync(new URL('./fixtures/wake-recovery.mjs', import.meta.url), resolve(privateDir, 'fixture.mjs'));
+  copyFileSync(new URL('./fixtures/wake-recovery-sampler.mjs', import.meta.url), resolve(privateDir, 'sample.mjs'));
   // Delay the real Docker creation boundary; do not patch the application.
   // The same delay should leave the old backend serving during a safe handoff.
   writeFileSync(resolve(privateDir, 'shim/docker'), `#!/bin/sh\ncase " $* " in\n  *" ninedeploy.managed=wake "*)\n    if [ "$1" = run ]; then\n      shift\n      delay=$(cat /fixture/creation-delay)\n      if [ "$delay" -gt 0 ]; then touch /proof/creation-paused; sleep "$delay"; fi\n      exec /usr/bin/docker run --label "ninedeploy.proof=${owner}" "$@"\n    fi;;\nesac\nexec /usr/bin/docker "$@"\n`, { mode: 0o755 });
@@ -55,17 +56,15 @@ try {
   const proxy = docker(['run', '-d', '--name', 'ninedeploy-proxy', '--label', `ninedeploy.proof=${owner}`, '--network', 'ninedeploy',
     '-v', `${privateDir}/.agent-proxy:/etc/traefik:ro`, 'traefik:3', '--configFile=/etc/traefik/traefik.yml']).out;
   resources.push({ kind: 'container', id: proxy });
-  const request = "const h=require('node:http');const q=h.get({hostname:'ninedeploy-proxy',path:'/dashboard',headers:{host:'wake.invalid'}},r=>{r.resume();r.on('end',()=>{console.log(JSON.stringify({status:r.statusCode}));process.exit(r.statusCode===503?0:1)})});q.setTimeout(2000,()=>q.destroy());q.on('error',()=>process.exit(1))";
   for (const deadline = Date.now() + 30_000; ;) {
-    const probe = docker(['exec', oldDriver, 'node', '-e', request], true);
+    const probe = docker(['exec', oldDriver, 'node', '/fixture/sample.mjs', 'probe'], true);
     writeFileSync(resolve(publicDir, 'initial-route.json'), JSON.stringify({ exitCode: probe.status, response: probe.out, error: probe.stderr?.slice(0, 500) }));
     if (probe.status === 0) break;
     assert.ok(Date.now() < deadline, 'Initial waking route never became available'); await pause(200);
   }
   docker(['rm', '-fv', oldDriver]);
   const candidate = driver(image, 3);
-  writeFileSync(resolve(privateDir, 'sample.mjs'), `import http from 'node:http';import{appendFileSync,existsSync,writeFileSync}from'node:fs';const rows=[];while(!existsSync('/proof/stop')){const row=await new Promise(resolve=>{const start=Date.now(),q=http.get({hostname:'ninedeploy-proxy',path:'/dashboard',headers:{host:'wake.invalid'}},r=>{r.resume();r.on('end',()=>resolve({at:start,status:r.statusCode}))});q.setTimeout(1000,()=>q.destroy(Error('timeout')));q.on('error',()=>resolve({at:start,status:0}))});rows.push(row);appendFileSync('/proof/traffic.jsonl',JSON.stringify(row)+'\\n');await new Promise(r=>setTimeout(r,20))}writeFileSync('/proof/samples.json',JSON.stringify(rows));`);
-  docker(['exec', '-d', candidate, 'node', '/fixture/sample.mjs']); await pause(1000);
+  docker(['exec', '-d', candidate, 'node', '/fixture/sample.mjs', 'sample']); await pause(1000);
   docker(['exec', candidate, 'node', '/fixture/fixture.mjs', 'recover'], false, { timeout: 180_000 });
   await pause(1000); writeFileSync(resolve(publicDir, 'stop'), '');
   for (const deadline = Date.now() + 5000; !existsSync(resolve(publicDir, 'samples.json')); ) { assert.ok(Date.now() < deadline, 'Sampler did not stop'); await pause(50); }
@@ -74,7 +73,8 @@ try {
   assert.ok(existsSync(resolve(publicDir, 'creation-paused')), 'Creation delay did not exercise the handoff');
   assert.ok(samples.length >= 50, 'Too few real proxy requests');
   const counts = {}; for (const row of samples) counts[row.status] = (counts[row.status] ?? 0) + 1;
-  cases.push({ name: 'traffic-during-delayed-replacement', passed: samples.every(row => row.status === 503), requests: samples.length, counts });
+  cases.push({ name: 'traffic-during-delayed-replacement', passed: samples.every(row => row.status === 503 && row.waking), requests: samples.length, counts,
+    wakingPages: samples.filter(row => row.waking).length });
   cases.push({ name: 'maintenance-completed-after-real-sealed-routing', passed: evidence.result.state === 'completed' && evidence.phase === 'completed' });
   assert.equal(docker(['inspect', 'ninedeploy-proxy', '--format', '{{.Id}}']).out, proxy, 'Proxy was recreated');
   assert.ok(cases.every(row => row.passed), 'Catcher replacement acceptance failed; see cases and traffic trace');
