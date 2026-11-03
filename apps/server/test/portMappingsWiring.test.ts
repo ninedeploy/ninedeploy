@@ -28,7 +28,7 @@ const { dockerBuilder } = await import('../src/engine/builders/docker.js');
 
 afterEach(() => vi.clearAllMocks());
 
-async function deploy(extra: Record<string, unknown>, previous: { runtimeId: string } | null = null) {
+async function deploy(extra: Record<string, unknown>, previous: { runtimeId: string } | null = null, env: Record<string, string> = { A: '1' }) {
   const logs: string[] = [];
   await dockerBuilder.buildAndRun(
     {
@@ -40,7 +40,7 @@ async function deploy(extra: Record<string, unknown>, previous: { runtimeId: str
       },
       workDir: '/nonexistent',
       commitSha: '',
-      env: { A: '1' },
+      env,
       log: (line: string) => logs.push(line),
     } as never,
     previous as never,
@@ -56,6 +56,56 @@ const mappings = [
 ];
 
 describe('port mappings on the docker run line', () => {
+  it('creates the stopped candidate before taking host ports away from the serving runtime', async () => {
+    await deploy({ portMappings: mappings }, { runtimeId: 'game-4' });
+    const commands = execMocks.run.mock.calls.map(call => call[1] as string[]);
+    const create = commands.findIndex(args => args[0] === 'create');
+    expect(create).toBeGreaterThanOrEqual(0);
+    expect(create).toBeLessThan(commands.findIndex(args => args[0] === 'stop'));
+    expect(commands.findIndex(args => args[0] === 'stop')).toBeLessThan(commands.findIndex(args => args[0] === 'start'));
+    expect(commands[create]).toContain('27015-27030:27015-27030/udp');
+    expect(commands[create]).not.toContain('-d');
+  });
+  it('keeps the serving runtime up if candidate creation fails', async () => {
+    execMocks.run.mockImplementation(async (_command: unknown, argv: unknown) => {
+      const args = argv as string[];
+      if (args[0] === 'create' || args[0] === 'run') throw new Error('Candidate configuration refused');
+    });
+    try {
+      await expect(deploy({ portMappings: mappings }, { runtimeId: 'game-4' })).rejects.toThrow('Candidate configuration refused');
+      expect(execMocks.run.mock.calls.some(call => (call[1] as string[])[0] === 'stop')).toBe(false);
+    } finally { execMocks.run.mockImplementation(async () => undefined); }
+  });
+  it('keeps the serving runtime up if multiline-env candidate creation fails', async () => {
+    execMocks.run.mockImplementation(async (_command: unknown, argv: unknown) => {
+      const args = argv as string[];
+      if (args[0] === 'compose' && (args.includes('create') || args.includes('up'))) throw new Error('Compose candidate refused');
+    });
+    try {
+      await expect(deploy({ portMappings: mappings }, { runtimeId: 'game-4' }, { CERT: 'line1\nline2' })).rejects.toThrow('Compose candidate refused');
+      expect(execMocks.run.mock.calls.some(call => (call[1] as string[])[0] === 'stop')).toBe(false);
+    } finally { execMocks.run.mockImplementation(async () => undefined); }
+  });
+  it('prepares a multiline-env candidate before stopping the previous runtime and starts that prepared project', async () => {
+    await deploy({ publishedPort: 8080 }, { runtimeId: 'game-4' }, { CERT: 'line1\nline2' });
+    const commands = execMocks.run.mock.calls.map(call => call[1] as string[]);
+    const create = commands.findIndex(args => args[0] === 'compose' && args.includes('create'));
+    const stop = commands.findIndex(args => args[0] === 'stop');
+    const start = commands.findIndex(args => args[0] === 'compose' && args.includes('start'));
+    expect(create).toBeGreaterThanOrEqual(0); expect(create).toBeLessThan(stop); expect(stop).toBeLessThan(start);
+    expect(commands.some(args => args[0] === 'compose' && args.includes('up'))).toBe(false);
+  });
+  it('removes only the failed candidate if its prepared start fails', async () => {
+    execMocks.run.mockImplementation(async (_command: unknown, argv: unknown) => {
+      if ((argv as string[])[0] === 'start') throw new Error('Candidate start refused');
+    });
+    try {
+      await expect(deploy({ publishedPort: 8080 }, { runtimeId: 'game-4' })).rejects.toThrow('Candidate start refused');
+      const commands = execMocks.run.mock.calls.map(call => call[1] as string[]);
+      expect(commands).toContainEqual(['rm', '-f', 'game-5']);
+      expect(commands.filter(args => args[0] === 'rm').flat()).not.toContain('game-4');
+    } finally { execMocks.run.mockImplementation(async () => undefined); }
+  });
   it('publishes every mapping before the image', async () => {
     const { runs } = await deploy({ portMappings: mappings });
     const argv = runs[0]!;
@@ -84,6 +134,7 @@ describe('port mappings on the docker run line', () => {
     const { runs, removed } = await deploy({}, { runtimeId: 'game-4' });
     expect(runs[0]).not.toContain('-p');
     expect(removed).not.toContainEqual(['rm', '-f', 'game-4']);
+    expect(execMocks.run.mock.calls.some(call => (call[1] as string[])[0] === 'stop')).toBe(false);
   });
 });
 

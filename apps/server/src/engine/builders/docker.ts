@@ -1328,9 +1328,10 @@ export const dockerBuilder: Builder = {
     // EXCEPTION — host-published ports cannot run blue-green: Docker refuses to
     // bind the same host port twice, so EVERY redeploy after the first would
     // die on "port is already allocated" and the service would be stuck on its
-    // first version forever. Stop the previous runtime FIRST and deploy
-    // sequentially — a short, deliberate gap beats a permanently failing
-    // redeploy. It is STOPPED, not removed: a stopped container holds no
+    // first version forever. Prepare the stopped candidate first, then stop
+    // the previous runtime immediately before candidate start. Preparation
+    // failures must not interrupt the still-serving application.
+    // It is STOPPED, not removed: a stopped container holds no
     // port, and a candidate that fails its healthcheck (or a cancel) gets the
     // previous one started again by the pipeline (`revive`). Removing it here
     // left the service with no runtime at all and services.runtimeId naming a
@@ -1340,14 +1341,16 @@ export const dockerBuilder: Builder = {
       // Allow-listed ones are held by the port proxy, not by this container.
       ...publishedByContainer(service.portMappings).map(formatPortMapping),
     ];
-    if (hostPorts.length > 0 && previous?.runtimeId && previous.runtimeId !== name) {
+    const portHandoff = hostPorts.length > 0 && !!previous?.runtimeId && previous.runtimeId !== name;
+    const stopPreviousForPorts = async () => {
+      if (!portHandoff || !previous) return;
       log(
         `Host port${hostPorts.length === 1 ? '' : 's'} ${hostPorts.join(', ')} ${hostPorts.length === 1 ? 'is' : 'are'} published — stopping previous runtime ${previous.runtimeId} before start (sequential deploy, no blue-green; it is started again if this deploy fails)`,
       );
       const grace = buildConfig?.stopGraceSeconds;
       await run('docker', ['stop', '-t', String(typeof grace === 'number' && grace >= 0 ? Math.min(Math.floor(grace), 300) : 5), ...replicaNames(previous.runtimeId, MAX_REPLICAS)], {}, swallowLine)
         .catch(() => undefined); // a missing replica name fails the batch; the rest are stopped
-    }
+    };
 
     // A worker/host crash can leave this deployment's candidate container
     // behind before DB finalization. The deployment ID makes the name exact;
@@ -1494,19 +1497,33 @@ export const dockerBuilder: Builder = {
       if (service.cmd?.length) args.push(...service.cmd);
     }
 
-    log(`Starting container ${name} …`);
+    log(`${portHandoff ? 'Preparing' : 'Starting'} container ${name} …`);
     try {
       if (composeSpec) {
+        if (portHandoff) {
+          // Creation validates the candidate while the serving application
+          // still owns its ports. No candidate process or healthcheck starts.
+          await run('docker', ['compose', '-p', `ndrt-${name}`, '-f', composeSpec.path, 'create', '--no-build', '--pull', 'never'],
+            { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Preparing application container ${name}` }, log);
+          await stopPreviousForPorts();
+          log(`Starting prepared container ${name} …`);
+        }
         await run(
           'docker',
-          ['compose', '-p', `ndrt-${name}`, '-f', composeSpec.path, 'up', '-d', '--no-build', ...(ctx.prebuiltImage ? ['--pull', 'never'] : [])],
+          ['compose', '-p', `ndrt-${name}`, '-f', composeSpec.path, ...(portHandoff ? ['start'] : ['up', '-d', '--no-build', ...(ctx.prebuiltImage ? ['--pull', 'never'] : [])])],
           { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting application container ${name} (compose bridge: real newlines in env)` },
           log,
         );
       } else {
+        if (portHandoff) {
+          await run('docker', ['create', ...args.slice(2)],
+            { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Preparing application container ${name}` }, log);
+          await stopPreviousForPorts();
+          log(`Starting prepared container ${name} …`);
+        }
         await run(
           'docker',
-          args,
+          portHandoff ? ['start', name] : args,
           { heartbeatMs: DEPLOY_HEARTBEAT_MS, heartbeatLabel: `Starting application container ${name}` },
           log,
         );
