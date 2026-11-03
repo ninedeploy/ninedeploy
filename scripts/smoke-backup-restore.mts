@@ -21,7 +21,7 @@ assert.match(source ?? '', /^[a-f0-9]{40}$/);
 const docker = (args: string[], timeoutMs = 30_000) => capture('docker', args, { timeoutMs, maxOutputBytes: 64 * 1024 });
 const query = (sql: string) => docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '-c', sql]);
 const hash = async (file: string) => createHash('sha256').update(await readFile(file)).digest('hex');
-const report: { source: string | undefined; publicApi: boolean; engine: string; imageId?: string; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string } = {
+const report: { source: string | undefined; publicApi: boolean; engine: string; imageId?: string; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string } = {
   source, publicApi: false, engine: 'postgres', cases: [], sourceUntouched: false,
   backupBytesUnchanged: false, helperInventoryUnchanged: false, cleanup: false,
 };
@@ -31,29 +31,35 @@ let created = false;
 let phase = 'setup';
 try {
   const helpersBefore = (await docker(['ps', '-a', '--no-trunc', '-q', '--filter', 'label=ninedeploy.role=restore-verification'])).trim().split('\n').filter(Boolean).sort();
+  phase = 'image-pull';
   await docker(['pull', 'postgres:18'], 180_000);
   const imageId = (await docker(['image', 'inspect', '--format', '{{.Id}}', 'postgres:18'])).trim();
   assert.match(imageId, /^sha256:[a-f0-9]{64}$/); report.imageId = imageId;
+  phase = 'source-create';
   created = true;
   await docker(['run', '-d', '--name', name, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none',
     '--user', 'postgres', '--tmpfs', '/tmp:mode=1777,size=256m', '--tmpfs', '/var/run/postgresql:mode=1777',
     '-e', 'PGDATA=/tmp/nd-source/data', '-e', 'POSTGRES_USER=nine', '-e', 'POSTGRES_DB=app',
     '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', imageId]);
+  phase = 'source-readiness';
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt++) {
     try { await query('SELECT 1'); ready = true; break; } catch { await sleep(1000); }
   }
   assert.equal(ready, true, 'Source did not become ready');
+  phase = 'source-seed';
   await query("CREATE TABLE restore_sentinel(id integer PRIMARY KEY, value text); INSERT INTO restore_sentinel VALUES (1,'before');");
   scratch = await mkdtemp(join(tmpdir(), 'nd-restore-proof-'));
   const dumps: Array<{ file: string; digest: string }> = [];
   for (const format of ['plain', 'custom']) {
+    phase = `source-dump-${format}`;
     const target = `/tmp/backup-${format}.dump`;
     await docker(['exec', name, 'pg_dump', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '--clean', '--if-exists', `--format=${format}`, `--file=${target}`]);
     const file = join(scratch, `${format}.dump`); files.push(file);
     await docker(['cp', `${name}:${target}`, file]);
     dumps.push({ file, digest: await hash(file) });
   }
+  phase = 'source-mutate';
   await query("UPDATE restore_sentinel SET value='after' WHERE id=1");
   const sql = 'SELECT value FROM restore_sentinel WHERE id=1';
   for (const [index, dump] of dumps.entries()) {
@@ -80,8 +86,11 @@ try {
   report.backupBytesUnchanged = true;
   const helpersAfter = (await docker(['ps', '-a', '--no-trunc', '-q', '--filter', 'label=ninedeploy.role=restore-verification'])).trim().split('\n').filter(Boolean).sort();
   assert.deepEqual(helpersAfter, helpersBefore); report.helperInventoryUnchanged = true;
-} catch {
+} catch (error) {
   report.failure = phase;
+  // Only the synthetic source's image/container creation diagnostics are safe:
+  // these commands contain no SQL, data, passwords or production identities.
+  if (['image-pull', 'source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-1000);
 } finally {
   let cleanup = true;
   if (created) {
