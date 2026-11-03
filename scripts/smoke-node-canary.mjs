@@ -16,8 +16,10 @@ import { smokePanelHealthModes } from './lib/smoke-panel-health-modes.mjs';
 import { startCanaryTraffic } from './lib/smoke-canary-traffic.mjs';
 import { nodeReplicaDatabaseApp } from './fixtures/node-replica-database-app.mjs';
 import { smokeNodeManualWake } from './lib/smoke-node-manual-wake.mjs';
+import { smokeNodeSleepRestoration } from './lib/smoke-node-sleep-restoration.mjs';
 const manualWakeOnly=process.argv.includes('--manual-wake-only');
-if(manualWakeOnly){
+const sleepRestorationOnly=process.argv.includes('--sleep-restoration-only');
+if(manualWakeOnly||sleepRestorationOnly){
  assert.equal(process.env.GITHUB_ACTIONS,'true','Use an isolated GitHub Actions runner');
  assert.equal(process.env.RUNNER_ENVIRONMENT,'github-hosted','Use a GitHub-hosted runner');
  assert.equal(process.env.DOCKER_HOST,'unix:///var/run/docker.sock','Use only the hosted runner daemon');
@@ -31,7 +33,7 @@ const autoscaleDatabaseOnly=process.argv.includes('--autoscale-database-only');
 const autoscaleRpsOnly=process.argv.includes('--autoscale-rps-only');
 const healthModesOnly=process.argv.includes('--health-modes-only');
 const sqlFixture=replicaDatabasesOnly||autoscaleDatabaseOnly;
-assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,healthModesOnly,manualWakeOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
+assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,healthModesOnly,manualWakeOnly,sleepRestorationOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image&&/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
 const agentImage=mixedAgentOnly?'ghcr.io/ninedeploy/ninedeploy:v0.18.10':image;
@@ -213,7 +215,10 @@ try{
    const value=/X-NineDeploy-Generation:\s*([a-f0-9]{64})/i.exec(output)?.[1];assert.ok(value);return value;
  };
 
- if(manualWakeOnly){
+ if(sleepRestorationOnly){
+   await smokeNodeSleepRestoration({api,inner,docker,panel,id,fixtureImage,ownerLabel:label,source:process.env.GITHUB_SHA,service,domain,until,pause,report,cleared,
+     save:(name,value)=>writeFileSync(resolve(proof,name),JSON.stringify(value,null,2))});
+ }else if(manualWakeOnly){
    await smokeNodeManualWake({api,inner,primary,docker,panel,id,fixtureImage,ownerLabel:label,source:process.env.GITHUB_SHA,service,domain,until,pause,report,cleared,
      save:(name,value)=>writeFileSync(resolve(proof,name),JSON.stringify(value,null,2))});
  }else if(healthModesOnly){
@@ -328,7 +333,7 @@ try{
    report({case:c.name,stopRemainedAuthoritative:true,noAutomaticRevival:true,trafficSamplingEndsBeforeStop:true,...sampled});
  }
  }
- const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,...(manualWakeOnly?{manualWakeOnly:true,privateRealIdleAdmission:true,source:process.env.GITHUB_SHA,imageId:docker(['image','inspect',image,'--format','{{.Id}}']).out}:{}),cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
+ const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,...(manualWakeOnly||sleepRestorationOnly?{manualWakeOnly,sleepRestorationOnly,privateRealIdleAdmission:true,source:process.env.GITHUB_SHA,imageId:docker(['image','inspect',image,'--format','{{.Id}}']).out}:{}),cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
  writeFileSync(proof+'/runtime-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
  }
 }catch(e){
