@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
-import { createDb, runMigrations, services, deployments, domains, servers, eq } from '/app/packages/db/dist/index.js';
+import { createDb, runMigrations, services, deployments, domains, servers, nodeSleepTransitions, eq } from '/app/packages/db/dist/index.js';
 import { buildAgentApp } from '/app/apps/server/dist/agentApp.js';
 import { agentRoutes } from '/app/apps/server/dist/agent.js';
 import { encrypt, sha256 } from '/app/apps/server/dist/lib/crypto.js';
@@ -36,7 +36,7 @@ const app = await buildAgentApp(); await app.register(agentRoutes, { tokenHash: 
 await app.listen({ host: '127.0.0.1', port: 8899 });
 let scheduler, poller;
 const service = (id = 1) => c.db.query.services.findFirst({ where: eq(services.id, id) });
-const journal = (id = 1) => c.db.query.nodeSleepTransitions.findFirst({ where: eq(services.id, id) });
+const journal = (id = 1) => c.db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, id) });
 const save = (name, value) => writeFileSync(`/proof/${name}.json`, JSON.stringify(value));
 try {
   if (mode === 'setup') {
