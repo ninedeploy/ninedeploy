@@ -65,11 +65,24 @@ it('refuses a reused backend name instead of fencing or deleting a different con
   expect(removed).toBe(false);
 });
 it.each(['http://ninedeploy-wake:8080', 'http://NINEDEPLOY-WAKE.:8080', 'http://%6einedeploy-wake:8080', 'ninedeploy-wake:8080'])('detects retired URL/address host %s without leaking configuration', address => {
-  expect(() => assertNoWakeBackendReference({ http: { service: { address } } }, new Set([old.name]))).toThrow(/retired/);
-  expect(() => assertNoWakeBackendReference({ url: 'http://ninedeploy-wake.example:8080' }, new Set([old.name]))).not.toThrow();
+  const server = address.includes('://') ? { url: address } : { address };
+  expect(() => assertNoWakeBackendReference({ http: { services: { wake: { loadBalancer: { servers: [server] } } } } }, new Set([old.name]))).toThrow(/retired/);
+  expect(() => assertNoWakeBackendReference({ loadBalancer: { servers: [{ url: 'http://ninedeploy-wake.example:8080' }] } }, new Set([old.name]))).not.toThrow();
 });
 it('handles aliases with cycles and sanitizes invalid YAML errors', () => {
   const value: Record<string, unknown> = {}; value.self = value;
   expect(() => assertNoWakeBackendReference(value, new Set([old.name]))).not.toThrow();
   expect(() => parseWakeRouting('private-secret: [invalid')).toThrow('Node proxy configuration could not be parsed for safe retirement');
+});
+it('keeps ordinary response headers and descriptive URL text usable after retirement', () => {
+  const responseHeaders = {
+    'Content-Security-Policy': "default-src 'self'; connect-src https://api.example.test",
+    url: 'See https://docs.example.test for details',
+    Link: '<http://ninedeploy-wake:8080/example>; rel="help"',
+  };
+  const config = { http: {
+    middlewares: { safe: { headers: { customResponseHeaders: responseHeaders } } },
+    services: { app: { loadBalancer: { servers: [{ url: 'http://web-9:3000' }] } } },
+  } };
+  expect(() => assertNoWakeBackendReference(config, new Set([old.name]))).not.toThrow();
 });
