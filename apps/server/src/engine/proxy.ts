@@ -3,7 +3,7 @@ import { certificatesForNode, readAcmeStorage, sharedCertificatesEnabled } from 
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { domains, nodeAutoscaleTransitions, nodeSleepTransitions, serviceRuntimeOwners, serviceTargets, servers, services, type DB } from '@ninedeploy/db';
+import { domains, nodeAutoscaleTransitions, nodeSleepTransitions, serviceRuntimeOwners, serviceTargets, servers, services, type DB, type NodeProxyWriteHead } from '@ninedeploy/db';
 import { httpPath, redirectRegexProblem } from '@ninedeploy/schemas';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
@@ -884,7 +884,7 @@ export interface DynamicConfigOptions {
   confirmServiceId?: number;
   autoscalePromotion?: AutoscaleRoutePromotion;
   wakePromotion?: NodeWakeRoutePromotion;
-  onWakeConfirmed?: () => Promise<void>;
+  onWakeConfirmed?: (authority: NodeProxyWriteHead) => Promise<void>;
   /** Private post-ack effect, kept within the same serialized routing slot. */
   onNodeConfirmed?: () => Promise<void>;
   catcherPromotion?: NodeCatcherRoutePromotion;
@@ -945,7 +945,7 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     }
   }
   if (confirm) await confirmProxyRouting(routes, { signal: opts.signal });
-  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion, opts.requireOrderedNode, opts.wakePromotion, opts.catcherPromotion);
+  const routingAuthority = await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion, opts.requireOrderedNode, opts.wakePromotion, opts.catcherPromotion);
   if (opts.catcherPromotion) {
     opts.signal?.throwIfAborted();
     await checkNodeCatcherRoutePromotion(opts.catcherPromotion, opts.requireNode!);
@@ -954,7 +954,8 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
   if (opts.onWakeConfirmed) {
     opts.signal?.throwIfAborted();
     await checkNodeWakeRoutePromotion(opts.wakePromotion!, opts.requireNode!);
-    await opts.onWakeConfirmed();
+    if (!routingAuthority) throw new ProxyRoutingUnconfirmed('Wake routing authority unavailable');
+    await opts.onWakeConfirmed(routingAuthority);
   }
   if (opts.onNodeConfirmed) {
     opts.signal?.throwIfAborted();
@@ -1023,8 +1024,8 @@ const lastNodeSyncAuditAt = new Map<number, number>();
  * `routingFlipped` true and the pipeline stop the still-routed previous
  * container on the node — an outage reported as a successful deploy.
  */
-async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion, requireOrderedNode?: boolean, wakePromotion?: NodeWakeRoutePromotion, catcherPromotion?: NodeCatcherRoutePromotion): Promise<void> {
-  let results: Array<{ serverId: number; ok: boolean; reason?: string; routingUnconfirmed?: boolean }> = [];
+async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion, requireOrderedNode?: boolean, wakePromotion?: NodeWakeRoutePromotion, catcherPromotion?: NodeCatcherRoutePromotion): Promise<NodeProxyWriteHead | undefined> {
+  let results: Array<{ serverId: number; ok: boolean; reason?: string; routingUnconfirmed?: boolean; routingAuthority?: NodeProxyWriteHead }> = [];
   try {
     signal?.throwIfAborted();
     // Ask which NODES exist, not which services are pinned: a node whose last
@@ -1074,6 +1075,7 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
     if (requiredUnconfirmed) throw new ProxyRoutingUnconfirmed(`The proxy routing on node #${requireNode} was not confirmed; keep both runtime generations running`);
     throw new Error(`the proxy on node #${requireNode} could not be updated: ${requiredFailure}`);
   }
+  return results.find(result => result.serverId === confirmNode && result.ok)?.routingAuthority;
 }
 
 /**

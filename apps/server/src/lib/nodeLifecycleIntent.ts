@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
-import { deploymentRuntimeOwners, deployments, fanoutTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, nodeSleepTransitions, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type Service } from '@ninedeploy/db';
+import { deploymentRuntimeOwners, deployments, fanoutTransitions, nodeDeploymentPreparations, nodeLifecycleIntents, nodeSleepTransitions, primaryTransitions, services, serviceTargets, type DB, type NodeLifecycleIntent, type NodeProxyWriteHead, type Service } from '@ninedeploy/db';
 import { HttpError } from './errors.js';
 import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 import { nodeSleepAutomationBlock } from './nodeSleepAutomationBlock.js';
 import { registerNodeWakeRoutePromotion, type NodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
+import { assertNodeProxyAcknowledgement } from './nodeProxyAuthority.js';
 
 const terminal = ['completed', 'superseded'] as const;
 const cancellable = ['queued', 'building', 'deploying', 'awaiting_ci', 'awaiting_approval'] as const;
@@ -192,7 +193,7 @@ export async function checkpointNodeLifecycleIntent(db: DB, intent: NodeLifecycl
   });
 }
 
-export type NodeExplicitWakePublication = { promotion: NodeWakeRoutePromotion; settle: () => Promise<void> };
+export type NodeExplicitWakePublication = { promotion: NodeWakeRoutePromotion; settle: (authority: NodeProxyWriteHead) => Promise<void> };
 
 /** Readiness-confirmed explicit Start/Restart may replace only its own superseded fallback. */
 export async function prepareNodeLifecycleWakeRouting(db: DB, intent: NodeLifecycleIntent): Promise<NodeExplicitWakePublication | null> {
@@ -210,8 +211,9 @@ export async function prepareNodeLifecycleWakeRouting(db: DB, intent: NodeLifecy
   };
   await verify(db);
   const promotion = registerNodeWakeRoutePromotion(current.serverId, current.serviceId, async () => { await verify(db); });
-  return { promotion, settle: () => db.transaction(async tx => {
+  return { promotion, settle: authority => db.transaction(async tx => {
     await verify(tx);
+    await assertNodeProxyAcknowledgement(tx, current.serverId, authority);
     await tx.update(nodeSleepTransitions).set({ fallbackRouting: false }).where(eq(nodeSleepTransitions.serviceId, current.serviceId));
   }) };
 }
