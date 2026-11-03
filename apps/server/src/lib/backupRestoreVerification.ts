@@ -4,6 +4,7 @@ import { chmod, copyFile, mkdtemp, open, rmdir, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { capture, ExecOutputTooLargeError, ExecTimeoutError, sleep } from './exec.js';
+import { streamFileToCommand } from './fileCommandInput.js';
 
 export interface PostgresRestoreProbe {
   /** Already decrypted, caller-owned backup. Never modified or removed here. */
@@ -65,13 +66,13 @@ export async function verifyPostgresRestore(input: PostgresRestoreProbe): Promis
       const { bytesRead } = await handle.read(header, 0, 5, 0);
       result.format = bytesRead === 5 && header.toString('ascii') === 'PGDMP' ? 'custom' : 'plain';
     } finally { await handle.close(); }
-    // docker cp may retain the panel's uid. Make only our private copy readable
-    // by the helper's postgres user; the parent remains 0700 and source stays intact.
+    // Keep a caller-owned private copy; stream it through exec stdin so Docker's
+    // archive API never tries to resolve a path inside the helper's tmpfs.
     scratch = await mkdtemp(join(tmpdir(), 'nd-restore-verification-'));
     await chmod(scratch, 0o700);
     copy = join(scratch, 'source.dump');
     await copyFile(input.file, copy);
-    await chmod(copy, 0o644);
+    await chmod(copy, 0o600);
     createAttempted = true;
     await docker([
       'create', '--name', name, '--label', 'ninedeploy.role=restore-verification',
@@ -96,7 +97,7 @@ export async function verifyPostgresRestore(input: PostgresRestoreProbe): Promis
       } catch { await sleep(1000); }
     }
     if (!ready) throw new Error('Restore helper did not become ready');
-    await docker(['cp', copy, `${name}:${DUMP}`], 30_000);
+    await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', DUMP], copy, 60_000);
     phase = 'restore';
     const restoreStarted = Date.now();
     const connection = ['-h', '127.0.0.1', '-U', 'nine', '-d', 'app'];

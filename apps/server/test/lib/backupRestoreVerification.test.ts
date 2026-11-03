@@ -4,6 +4,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ calls: [] as string[][], fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}` }));
+vi.mock('../../src/lib/fileCommandInput.js', () => ({
+  streamFileToCommand: async (_cmd: string, args: string[], file: string) => {
+    state.calls.push(args); state.copied = file;
+    expect(await readFile(file, 'utf8')).toContain(state.custom ? 'PGDMP' : 'CREATE TABLE');
+    if (state.fail === 'copy') throw new Error('copy error');
+  },
+}));
 vi.mock('../../src/lib/exec.js', () => {
   class ExecTimeoutError extends Error {}
   class ExecOutputTooLargeError extends Error {}
@@ -64,6 +71,8 @@ describe('isolated real PostgreSQL restore verifier orchestration', () => {
     const create = state.calls.find(args => args[0] === 'create')!;
     for (const flag of ['--read-only', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', 'postgres', '--pids-limit', '--memory', '--cpus']) expect(create).toContain(flag);
     expect(create).toContain(state.image);
+    expect(state.calls.some(args => args[0] === 'cp')).toBe(false);
+    expect(state.calls.find(args => args.includes('restore-copy'))).toEqual(expect.arrayContaining(['exec', '-i', 'sh', '-c', 'umask 077; cat > "$1"']));
     expect(create).not.toContain('postgres:18');
     expect(create.some(arg => ['--mount', '-v', '--volume', '-p', '--publish', '--privileged'].includes(arg))).toBe(false);
     expect(create.filter(arg => arg.startsWith('PGDATA='))).toEqual(['PGDATA=/tmp/nd-restore/data']);
