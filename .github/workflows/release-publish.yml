@@ -654,6 +654,7 @@ jobs:
             .temp_files/release-automatic-node-sleep/runtime-cleanup.json
             .temp_files/release-automatic-node-sleep/automatic-sleep-idle.json
             .temp_files/release-automatic-node-sleep/automatic-sleep-control.json
+            .temp_files/release-automatic-node-sleep/automatic-sleep-observations.json
             .temp_files/release-automatic-node-sleep/automatic-sleep-audit.json
             .temp_files/release-automatic-node-sleep/automatic-sleep-traffic.json
             .temp_files/release-automatic-node-sleep/cases.json

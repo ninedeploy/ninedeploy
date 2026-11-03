@@ -20,7 +20,17 @@ export async function smokeNodeAutomaticSleep({ api, inner, docker, panel, id, f
   assert.equal(state().Running, true);
   const started = Date.now();
   await api(`/v1/services/${id}`, { method: 'PATCH', body: { sleepAfterMinutes: 5, healthTimeoutSeconds: 10 } });
-  const status = () => api(`/v1/services/${id}/sleep`);
+  const observations = [];
+  const status = async () => {
+    const current = await api(`/v1/services/${id}/sleep`), at = Date.now();
+    const previous = observations.at(-1);
+    if (!previous || at - previous.at >= 15_000 || previous.phase !== current.phase || previous.holding !== current.holding) {
+      observations.push({ at, phase: current.phase, idleMs: current.idleMs, idleSatisfied: current.idleSatisfied, holding: current.holding });
+      if (observations.length > 120) observations.shift();
+      save('automatic-sleep-observations.json', observations);
+    }
+    return current;
+  };
   const activity = async action => (await api(`/v1/activity?serviceId=${id}&action=${action}`)).entries;
   const initial = await status(); assert.equal(initial.nodeControllerActive, true); assert.equal(initial.placement, 'node');
   assert.equal(initial.configured, true); assert.equal(initial.requiredMs, 300_000);

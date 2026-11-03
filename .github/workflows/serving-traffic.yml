@@ -34,6 +34,10 @@ on:
       - '.github/workflows/serving-traffic.yml'
   workflow_dispatch:
     inputs:
+      immutable_image:
+        description: Optional immutable published NineDeploy image for the automatic sleep diagnostic
+        type: string
+        default: ''
       wake_recovery:
         description: Run the real Traefik catcher replacement acceptance instead of serving windows
         type: boolean
@@ -80,7 +84,15 @@ jobs:
         with:
           node-version: 26.12.1
       - name: Build candidate
+        if: github.event.inputs.automatic_node_sleep != 'true' || github.event.inputs.immutable_image == ''
         run: docker build -t ninedeploy:serving .
+      - name: Pull immutable automatic sleep diagnostic image
+        if: github.event.inputs.automatic_node_sleep == 'true' && github.event.inputs.immutable_image != ''
+        env:
+          IMMUTABLE_IMAGE: ${{ github.event.inputs.immutable_image }}
+        run: |
+          [[ "$IMMUTABLE_IMAGE" =~ ^ghcr\.io/ninedeploy/ninedeploy@sha256:[a-f0-9]{64}$ ]]
+          docker pull "$IMMUTABLE_IMAGE"
       - name: Observe ordinary serving generations through sealed HTTP and real Traefik
         if: github.event.inputs.wake_recovery != 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         run: node scripts/smoke-serving-traffic.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic
@@ -150,7 +162,9 @@ jobs:
           if-no-files-found: warn
       - name: Verify public automatic node sleep and wake recovery
         if: github.event.inputs.automatic_node_sleep == 'true' && github.event.inputs.swarm_runtime != 'true'
-        run: node scripts/smoke-node-canary.mjs --automatic-sleep-only --image=ninedeploy:serving --proof=.temp_files/serving-traffic/automatic-node-sleep
+        env:
+          SMOKE_IMAGE: ${{ github.event.inputs.immutable_image || 'ninedeploy:serving' }}
+        run: node scripts/smoke-node-canary.mjs --automatic-sleep-only --image="$SMOKE_IMAGE" --proof=.temp_files/serving-traffic/automatic-node-sleep
       - name: Preserve public automatic sleep receipts only
         if: always() && github.event.inputs.automatic_node_sleep == 'true' && github.event.inputs.swarm_runtime != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -161,6 +175,7 @@ jobs:
             .temp_files/serving-traffic/automatic-node-sleep/runtime-cleanup.json
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-idle.json
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-control.json
+            .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-observations.json
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-audit.json
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-traffic.json
             .temp_files/serving-traffic/automatic-node-sleep/cases.json
