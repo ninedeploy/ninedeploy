@@ -40,7 +40,7 @@ const eligible = (svc: Service) => {
  * whatever domains the service has now, to the catcher while it sleeps and to
  * the app once wake publishes. Binding the rows here made any edit to a sleeping
  * service's domain (a header, the SSL toggle, even `updatedAt`) refuse every
- * wake until someone pressed Wake by hand.
+ * wake until someone pressed Wake by hand; health-setting edits did the same.
  * `legacy` is the 0.18.17 formula, which hashed the whole domain rows. A journal
  * written by that release still matches it while its domains are unchanged, so
  * services asleep across the upgrade can still wake.
@@ -48,8 +48,9 @@ const eligible = (svc: Service) => {
 async function configuration(db: ReadDB, service: Service): Promise<{ current: string; legacy: string }> {
   // Cosmetic fields and next-deploy replica/autoscale preferences do not change
   // the immutable serving generation a visitor is allowed to wake.
-  const config = [service.type, service.orchestrator, service.slug, service.serverId, service.runtimeId, service.runtimeReplicas, service.port,
-    service.healthCheck, service.healthPath, service.healthCommand, service.healthTimeoutSeconds, service.cpuShares, service.cpuLimitMilli, service.memLimitMb];
+  const generation = [service.type, service.orchestrator, service.slug, service.serverId, service.runtimeId, service.runtimeReplicas, service.port],
+    health = [service.healthCheck, service.healthPath, service.healthCommand, service.healthTimeoutSeconds],
+    limits = [service.cpuShares, service.cpuLimitMilli, service.memLimitMb], config = [...generation, ...health, ...limits];
   const [attached, routes, capacity] = await Promise.all([
     db.select({ attachmentId: databaseAttachments.id, id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status }).from(databaseAttachments)
       .innerJoin(databases, eq(databases.id, databaseAttachments.databaseId)).where(eq(databaseAttachments.serviceId, service.id)).orderBy(databaseAttachments.id),
@@ -58,7 +59,9 @@ async function configuration(db: ReadDB, service: Service): Promise<{ current: s
   ]);
   if (attached.some(item => item.serverId !== service.serverId || item.status !== 'running') || !routes.some(route => route.status === 'active')) throw changed();
   const hash = (parts: unknown[]) => createHash('sha256').update(JSON.stringify(parts)).digest('hex');
-  return { current: hash(['v2', config, attached, capacity]), legacy: hash([config, attached, routes, capacity]) };
+  // Health settings are readiness policy, read live when restoration or wake
+  // checks the started replicas; they do not change which containers start.
+  return { current: hash(['v2', generation, limits, attached, capacity]), legacy: hash([config, attached, routes, capacity]) };
 }
 
 async function unblocked(db: ReadDB, serviceId: number): Promise<boolean> {

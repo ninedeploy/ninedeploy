@@ -231,6 +231,11 @@ it.each([
   await f.c.db.update(domains).set(change as Partial<typeof domains.$inferInsert>);
   expect(await admitNodeWake(f.c.db, await selected(), await demand())).not.toBeNull();
 });
+it('a health-setting edit on a sleeping service still lets a fresh demand wake it (readiness reads them live)', async () => {
+  await asleep();
+  await f.c.db.update(services).set({ healthPath: '/ready', healthTimeoutSeconds: 120 });
+  expect(await admitNodeWake(f.c.db, await selected(), await demand())).not.toBeNull();
+});
 it('a journal written by 0.18.17 (whole domain rows in the configuration) still wakes after the upgrade', async () => {
   await asleep();
   const sha = (parts: unknown[]) => createHash('sha256').update(JSON.stringify(parts)).digest('hex');
