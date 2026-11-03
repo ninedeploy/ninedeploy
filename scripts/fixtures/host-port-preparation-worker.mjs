@@ -28,7 +28,10 @@ const context = {
 };
 const previous = { runtimeId: config.old, port: 3000, healthPath: '/' };
 try {
-  if (config.failCreate) await assert.rejects(() => dockerBuilder.buildAndRun(context, previous), /Injected candidate create acknowledgement failure/);
+  if (config.failCreate) {
+    await assert.rejects(() => dockerBuilder.buildAndRun(context, previous), /exited with code 125/);
+    assert.ok(logs.some(line => line.includes('Injected candidate create acknowledgement failure')), 'The owned creation fault must have fired');
+  }
   else {
     const runtime = await dockerBuilder.buildAndRun(context, previous);
     assert.equal(await dockerBuilder.isHealthy(runtime, 30000, 250, line => logs.push(line)), true);
