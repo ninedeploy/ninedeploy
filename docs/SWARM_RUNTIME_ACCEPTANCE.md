@@ -6,7 +6,7 @@ The cohort uses owned panel/node Docker daemons on a GitHub-hosted runner. A sma
 
 Required cases:
 
-1. Docker-to-Swarm migration: healthy task/image identities and encrypted overlay are confirmed; the captured previous Docker container is no longer serving. The source release reports an available recorded Docker artifact.
+1. Docker-to-Swarm migration: healthy task/image identities and encrypted overlay are confirmed; the captured previous Docker container is removed. The source release reports an available recorded Docker artifact. Public service and deployment commit identities must agree with the actual selected image in every case.
 2. Pinned artifact promotion: advance repository HEAD to the second commit, then promote the first artifact to another Swarm service. Its native task must run the original config image ID and commit without another Git fetch. The source uses image-native health; the target uses an explicit command healthcheck.
 3. Native restart recovery: deploy the second commit behind real native-image readiness, restart the panel after the pending journal and candidate exist, then release readiness. The original deployment and native service ID must settle with the captured candidate image ID, no new Git request, no unresolved journal and a persisted recovery outcome.
 4. Recorded rollback: restore the first source artifact while repository HEAD remains at the second commit. Native task image ID and recorded commit must return to the first artifact without fetching/rebuilding from current source.
