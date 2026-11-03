@@ -885,6 +885,8 @@ export interface DynamicConfigOptions {
   autoscalePromotion?: AutoscaleRoutePromotion;
   wakePromotion?: NodeWakeRoutePromotion;
   onWakeConfirmed?: () => Promise<void>;
+  /** Private post-ack effect, kept within the same serialized routing slot. */
+  onNodeConfirmed?: () => Promise<void>;
   catcherPromotion?: NodeCatcherRoutePromotion;
   /** Settlement runs before the next queued render can observe the old bindings. */
   onCatcherConfirmed?: () => Promise<void>;
@@ -901,6 +903,7 @@ export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Pro
 
 async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): Promise<void> {
   if (opts.signal?.aborted) throw new ProxyRoutingUnconfirmed();
+  if (opts.onNodeConfirmed && (opts.requireNode == null || opts.confirmNodeRouting !== true || !opts.requireOrderedNode)) throw new ProxyRoutingUnconfirmed('Node effect requires ordered confirmed routing');
   if (opts.catcherPromotion) {
     if (opts.requireNode == null || opts.confirmNodeRouting !== true || !opts.requireOrderedNode || opts.autoscalePromotion || opts.wakePromotion || !opts.onCatcherConfirmed) {
       throw new ProxyRoutingUnconfirmed('Catcher promotion requires exclusive ordered confirmed node routing and settlement');
@@ -952,6 +955,10 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     opts.signal?.throwIfAborted();
     await checkNodeWakeRoutePromotion(opts.wakePromotion!, opts.requireNode!);
     await opts.onWakeConfirmed();
+  }
+  if (opts.onNodeConfirmed) {
+    opts.signal?.throwIfAborted();
+    await opts.onNodeConfirmed();
   }
 }
 

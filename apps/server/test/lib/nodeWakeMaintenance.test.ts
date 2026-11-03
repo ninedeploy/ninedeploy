@@ -3,7 +3,8 @@ import { deployments, domains, eq, nodeWakeMaintenance, servers, services } from
 import { servingReceiptFixture } from '../fixtures/servingTrafficReceipt.js';
 import { nodeSleepEvidence } from '../fixtures/nodeSleepEvidence.js';
 import { admitNodeSleep, admitNodeWake, advanceNodeSleep, bindNodeSleepCatcher, completeNodeSleep, nodeSleepCommand, type NodeSleepAdmission } from '../../src/lib/nodeSleepAuthority.js';
-import { claimNodeWakeMaintenance, checkpointNodeWakeMaintenance, completeNodeWakeMaintenance, confirmNodeWakeMaintenanceRouting, holdNodeWakeMaintenance, recordNodeWakeMaintenanceCatcher } from '../../src/lib/nodeWakeMaintenance.js';
+import { claimNodeWakeMaintenance, checkpointNodeWakeMaintenance, completeNodeWakeMaintenance, confirmNodeWakeMaintenanceRouting, holdNodeWakeMaintenance, recordNodeWakeMaintenanceCatcher,
+  rebaseNodeWakeMaintenance, completeNodeWakeRetirement } from '../../src/lib/nodeWakeMaintenance.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { nodeWakeKey } from '../../src/lib/nodeWakeKey.js';
 
@@ -38,7 +39,7 @@ async function other(serverId = 4) {
 async function wake(id = 1) {
   const row = await journal(id); return admitNodeWake(f.c.db, await service(id), { nodeId: 4, token: row.wakeToken, catcherId: row.catcherId!, receivedAt: Date.now(), demandAt: Date.now() });
 }
-const replacement = { id: 'e'.repeat(64), image: `sha256:${'f'.repeat(64)}` };
+const replacement = { id: 'e'.repeat(64), image: `sha256:${'f'.repeat(64)}`, name: `ninedeploy-wake-g-${'f'.repeat(32)}` };
 it('blocks new sleep and wake admission until maintenance reaches confirmed settlement', async () => {
   await asleep(); await other();
   const claim = (await claimNodeWakeMaintenance(f.c.db, 4))!; expect(claim).not.toBeNull();
@@ -48,6 +49,8 @@ it('blocks new sleep and wake admission until maintenance reaches confirmed sett
   await confirmNodeWakeMaintenanceRouting(f.c.db, claim);
   expect(await completeNodeWakeMaintenance(f.c.db, claim)).toBe(1);
   expect((await journal()).catcherId).toBe(replacement.id); expect((await service()).asleepAt).not.toBeNull();
+  expect(await wake()).toBeNull();
+  await completeNodeWakeRetirement(f.c.db, claim, [{ id: 'c'.repeat(64), name: 'ninedeploy-wake', removed: true, fenced: true }]);
   expect(await wake()).not.toBeNull();
 });
 it('retains the admission barrier after expiry and recovers the same intent under a different worker', async () => {
@@ -74,6 +77,7 @@ it('explicit Stop supersedes sleeping membership without being resurrected by ma
   await recordNodeWakeMaintenanceCatcher(f.c.db, claim, replacement); await confirmNodeWakeMaintenanceRouting(f.c.db, claim);
   await acceptNodeLifecycleIntent(f.c.db, await service(), 'stop');
   expect(await completeNodeWakeMaintenance(f.c.db, claim)).toBe(0);
+  await completeNodeWakeRetirement(f.c.db, claim, [{ id: 'c'.repeat(64), name: 'ninedeploy-wake', removed: true, fenced: true }]);
   expect((await service()).status).toBe('stopped'); expect((await journal()).phase).toBe('superseded');
 });
 it('refuses retargeted maintenance snapshots and cannot settle without the routing phase', async () => {
@@ -118,4 +122,27 @@ it('requires a fresh routing confirmation when a recovered attempt records anoth
   await recordNodeWakeMaintenanceCatcher(f.c.db, claim, { id: 'a'.repeat(64), image: `sha256:${'b'.repeat(64)}` });
   expect((await f.c.db.query.nodeWakeMaintenance.findFirst())!.phase).toBe('routing');
   await expect(completeNodeWakeMaintenance(f.c.db, claim)).rejects.toThrow();
+});
+it('rebases interrupted retirement to a new catcher without dropping older targets or reviving an old worker', async () => {
+  await asleep(); const first = (await claimNodeWakeMaintenance(f.c.db, 4))!;
+  const prior = { ...replacement, name: `ninedeploy-wake-g-${'f'.repeat(32)}` };
+  await recordNodeWakeMaintenanceCatcher(f.c.db, first, prior); await confirmNodeWakeMaintenanceRouting(f.c.db, first);
+  expect(await completeNodeWakeMaintenance(f.c.db, first)).toBe(1);
+  expect(await wake()).toBeNull();
+  await expect(completeNodeWakeRetirement(f.c.db, first, [])).rejects.toThrow();
+  const next = { id: '9'.repeat(64), image: `sha256:${'9'.repeat(64)}`, name: `ninedeploy-wake-g-${'9'.repeat(32)}` };
+  const recovered = await rebaseNodeWakeMaintenance(f.c.db, first, next);
+  expect(recovered.requestId).toBe(first.requestId); expect(recovered.generation).toBe(first.generation);
+  expect(recovered.workerToken).not.toBe(first.workerToken); expect(recovered.binding).not.toBe(first.binding);
+  await holdNodeWakeMaintenance(f.c.db, first, 'late old worker');
+  const row = await checkpointNodeWakeMaintenance(f.c.db, recovered);
+  expect(row.phase).toBe('rerouting');
+  expect(row.snapshot.filter(item => !item.retirementOnly).map(item => item.catcherId)).toEqual([prior.id]);
+  expect(row.snapshot.filter(item => item.retirementOnly).map(item => item.catcherId)).toEqual(['c'.repeat(64)]);
+  await confirmNodeWakeMaintenanceRouting(f.c.db, recovered);
+  expect(await completeNodeWakeMaintenance(f.c.db, recovered)).toBe(1);
+  await expect(completeNodeWakeRetirement(f.c.db, recovered, [{ id: prior.id, name: prior.name, removed: true, fenced: true }])).rejects.toThrow();
+  await completeNodeWakeRetirement(f.c.db, recovered, [{ id: prior.id, name: prior.name, removed: true, fenced: true },
+    { id: 'c'.repeat(64), name: 'ninedeploy-wake', removed: false, fenced: true }]);
+  expect((await journal()).catcherId).toBe(next.id); expect(await wake()).not.toBeNull();
 });

@@ -5,7 +5,7 @@ import { createDb, nodeWakeMaintenance, services } from '@ninedeploy/db';
 import { servingReceiptFixture } from './servingTrafficReceipt.js';
 import { nodeSleepEvidence } from './nodeSleepEvidence.js';
 import { admitNodeSleep, admitNodeWake, advanceNodeSleep, bindNodeSleepCatcher, completeNodeSleep, nodeSleepCommand } from '../../src/lib/nodeSleepAuthority.js';
-import { claimNodeWakeMaintenance, checkpointNodeWakeMaintenance, completeNodeWakeMaintenance, confirmNodeWakeMaintenanceRouting, recordNodeWakeMaintenanceCatcher } from '../../src/lib/nodeWakeMaintenance.js';
+import { claimNodeWakeMaintenance, checkpointNodeWakeMaintenance, completeNodeWakeMaintenance, confirmNodeWakeMaintenanceRouting, recordNodeWakeMaintenanceCatcher, completeNodeWakeRetirement } from '../../src/lib/nodeWakeMaintenance.js';
 import { nodeWakeKey } from '../../src/lib/nodeWakeKey.js';
 
 const [mode, root] = process.argv.slice(2); assert(root && ['accept', 'recover'].includes(mode!));
@@ -33,9 +33,12 @@ if (mode === 'accept') {
     assert.equal(await admitNodeWake(c.db, service, { nodeId: 4, token: sleeping.wakeToken, catcherId: sleeping.catcherId!, demandAt: Date.now(), receivedAt: Date.now() }), null);
     const claim = await claimNodeWakeMaintenance(c.db, 4); assert(claim); assert.equal(claim.requestId, prior.requestId); assert.equal(claim.generation, prior.generation);
     assert.notEqual(claim.workerToken, prior.workerToken); await assert.rejects(checkpointNodeWakeMaintenance(c.db, prior));
-    await recordNodeWakeMaintenanceCatcher(c.db, claim, { id: 'e'.repeat(64), image: `sha256:${'f'.repeat(64)}` });
+    await recordNodeWakeMaintenanceCatcher(c.db, claim, { id: 'e'.repeat(64), image: `sha256:${'f'.repeat(64)}`, name: `ninedeploy-wake-g-${'f'.repeat(32)}` });
     await confirmNodeWakeMaintenanceRouting(c.db, claim); assert.equal(await completeNodeWakeMaintenance(c.db, claim), 1);
     assert.equal((await c.db.query.nodeSleepTransitions.findFirst())!.catcherId, 'e'.repeat(64));
+    assert.equal((await c.db.query.nodeWakeMaintenance.findFirst())!.phase, 'retiring');
+    await completeNodeWakeRetirement(c.db, claim, [{ id: 'c'.repeat(64), name: 'ninedeploy-wake', fenced: true, removed: true }]);
+    assert.equal((await c.db.query.nodeWakeMaintenance.findFirst())!.phase, 'completed');
     process.stdout.write(JSON.stringify({ recovered: true, oldWorkerRefused: true, admissionBlocked: true, rebound: 1 }));
   } finally { c.client?.close(); }
 }
