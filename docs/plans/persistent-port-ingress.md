@@ -51,6 +51,10 @@ against the expected publication: a matching comment alone is insufficient.
 Retirement requires a confirmed generation, no pending intent and a completed
 drain observation followed by another kernel readback. Retention is bounded to
 three targets; further deploys must wait instead of forcibly stopping active flows.
+The version 2 journal also records retirement intent before issuing an immutable
+runtime stop. A lost stop acknowledgement blocks later publication/reuse until
+that retirement is reconciled. The runtime reference is removed only after stop
+and forwarding-grant cleanup acknowledge completion.
 
 The hosted acceptance adapter writes and fsyncs a real journal, injects a lost
 Traefik acknowledgement after the route actually loads, reconstructs the

@@ -34,7 +34,7 @@ function host() {
       await previous; try { return await operation(); } finally { release(); }
     },
     readJournal: async () => structuredClone(journal),
-    saveJournal: async state => { journal = structuredClone(state); events.push(state.pending ? 'intent' : 'commit'); },
+    saveJournal: async state => { journal = structuredClone(state); events.push(state.pending ? 'intent' : state.retiring ? 'retire-intent' : 'commit'); },
     installed: async () => kernel,
     ready: async () => { if (!ready) throw new Error('unready'); },
     prepare: async () => { events.push('forward'); },
@@ -155,5 +155,22 @@ describe('persistent port publication authority', () => {
     h.drain(); expect(await p.retireDrained(next, first.target.id)).toBe(true);
     expect(h.state()?.retained).toEqual([next.target]);
     await expect(p.retireDrained(next, next.target.id)).rejects.toThrow('serving runtime');
+  });
+  it('persists retirement intent before stopping a drained immutable runtime', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); await p.promote(next); h.drain();
+    h.events.length = 0;
+    await p.retireDrained(next, first.target.id);
+    expect(h.events).toEqual(['retire-intent', 'retire:' + first.target.id, 'commit']);
+  });
+  it('blocks reuse of a runtime after a lost retirement acknowledgement and resumes its cleanup', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); await p.promote(next); h.drain();
+    const retire = h.authority.retire;
+    h.authority.retire = async target => { await retire(target); throw new Error('lost retirement ACK'); };
+    await expect(p.retireDrained(next, first.target.id)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    expect(h.state()?.retiring).toEqual(first.target);
+    await expect(p.promote({ ...first, revision: 3 })).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    h.authority.retire = retire;
+    await new PersistentPortPublisher(h.authority).recoverRetirement(next);
+    expect(h.state()?.retiring).toBe(null); expect(h.state()?.retained).toEqual([next.target]);
   });
 });

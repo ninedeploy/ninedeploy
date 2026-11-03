@@ -2,9 +2,10 @@ import { assertPersistentPortNftState, persistentPortFingerprint, persistentPort
 
 type Target = PersistentPortNftSpec['target'];
 export interface PersistentPortJournal {
-  version: 1;
+  version: 2;
   committed: PersistentPortNftSpec | null;
   pending: PersistentPortNftSpec | null;
+  retiring: Target | null;
   retained: Target[];
 }
 
@@ -49,7 +50,7 @@ function sameClaim(a: PersistentPortNftSpec, b: PersistentPortNftSpec): boolean 
 
 function journalCheck(journal: PersistentPortJournal, desired: PersistentPortNftSpec): void {
   persistentPortRules(desired);
-  if (journal.version !== 1 || !Array.isArray(journal.retained) || journal.retained.length > 3) throw new Error('Invalid persistent port journal');
+  if (journal.version !== 2 || journal.retiring === undefined || !Array.isArray(journal.retained) || journal.retained.length > 3) throw new Error('Invalid persistent port journal');
   if (!journal.committed && !journal.pending && journal.retained.length) throw new Error('Unowned retained runtimes in journal');
   for (const spec of [journal.committed, journal.pending]) {
     if (spec && !sameClaim(spec, desired)) throw new Error('Persistent port ownership or binding claim changed');
@@ -62,6 +63,10 @@ function journalCheck(journal: PersistentPortJournal, desired: PersistentPortNft
     ids.add(target.id); ips.add(target.ipv4);
   }
   if (journal.pending && journal.pending.revision !== (journal.committed?.revision ?? 0) + 1) throw new Error('Invalid pending publication revision');
+  if (journal.retiring && (journal.pending || !journal.committed || journal.retiring.id === journal.committed.target.id ||
+    !journal.retained.some(target => target.id === journal.retiring?.id && target.ipv4 === journal.retiring.ipv4))) {
+    throw new Error('Invalid pending retirement');
+  }
 }
 
 /** No activation switch: pipeline callers must also guard every failure/cleanup
@@ -72,9 +77,9 @@ export class PersistentPortPublisher {
   async promote(input: PersistentPortNftSpec): Promise<PersistentPortJournal> {
     const desired = structuredClone(input);
     return this.authority.exclusive(async () => {
-      const state = await this.authority.readJournal() ?? { version: 1 as const, committed: null, pending: null, retained: [] };
+      const state = await this.authority.readJournal() ?? { version: 2 as const, committed: null, pending: null, retiring: null, retained: [] };
       journalCheck(state, desired);
-      if (state.pending) throw new PersistentPortPublicationPending('Recover the existing intent before another deploy');
+      if (state.pending || state.retiring) throw new PersistentPortPublicationPending('Recover the existing intent before another deploy');
       if (desired.revision !== (state.committed?.revision ?? 0) + 1) throw new Error('Stale persistent port publication revision');
       await this.assertInstalled(state.committed, desired);
       await this.authority.ready(desired);
@@ -97,6 +102,7 @@ export class PersistentPortPublisher {
       const state = await this.authority.readJournal();
       if (!state) throw new Error('Persistent port journal is missing');
       journalCheck(state, desired);
+      if (state.retiring) throw new PersistentPortPublicationPending('Recover the pending retirement first');
       if (!state.pending && identity(state.committed) === identity(desired)) {
         try {
           await this.assertInstalled(desired, desired);
@@ -138,7 +144,7 @@ export class PersistentPortPublisher {
       const state = await this.authority.readJournal();
       if (!state) throw new Error('Persistent port journal is missing');
       journalCheck(state, desired);
-      if (state.pending) throw new PersistentPortPublicationPending('Retirement is blocked by an unresolved publication');
+      if (state.pending || state.retiring) throw new PersistentPortPublicationPending('Retirement is blocked by an unresolved operation');
       if (identity(state.committed) !== identity(desired)) throw new Error('Retirement publication revision changed');
       if (targetId === desired.target.id) throw new Error('Cannot retire the serving runtime');
       await this.assertInstalled(desired, desired);
@@ -146,9 +152,36 @@ export class PersistentPortPublisher {
       if (!target) return false;
       if (!await this.authority.drained(target)) return false;
       await this.assertInstalled(desired, desired);
-      await this.authority.retire(target);
-      await this.authority.saveJournal({ ...state, retained: state.retained.filter(target => target.id !== targetId) });
+      const retiring = { ...state, retiring: target };
+      try {
+        await this.authority.saveJournal(retiring);
+        await this.finishRetirement(retiring, desired);
+      } catch (error) { throw new PersistentPortPublicationPending(error); }
       return true;
     });
+  }
+
+  async recoverRetirement(input: PersistentPortNftSpec): Promise<PersistentPortJournal> {
+    const desired = structuredClone(input);
+    return this.authority.exclusive(async () => {
+      const state = await this.authority.readJournal();
+      if (!state) throw new Error('Persistent port journal is missing');
+      journalCheck(state, desired);
+      if (state.pending || identity(state.committed) !== identity(desired)) throw new Error('Recovery does not own the retirement generation');
+      try {
+        await this.assertInstalled(desired, desired);
+        return state.retiring ? await this.finishRetirement(state, desired) : state;
+      } catch (error) { throw new PersistentPortPublicationPending(error); }
+    });
+  }
+
+  private async finishRetirement(state: PersistentPortJournal, desired: PersistentPortNftSpec): Promise<PersistentPortJournal> {
+    if (!state.retiring) throw new Error('Retirement intent is missing');
+    await this.assertInstalled(desired, desired);
+    await this.authority.retire(state.retiring);
+    await this.assertInstalled(desired, desired);
+    const committed = { ...state, retiring: null, retained: state.retained.filter(target => target.id !== state.retiring?.id) };
+    await this.authority.saveJournal(committed);
+    return committed;
   }
 }
