@@ -16,6 +16,8 @@ import { executeNodeSleep } from '/app/apps/server/dist/lib/nodeSleepController.
 import { nodeSleepRuntime } from '/app/apps/server/dist/lib/nodeSleepRuntime.js';
 import { createNodeWakePoller } from '/app/apps/server/dist/lib/nodeWakePoller.js';
 import { readNodeWakeDemand } from '/app/apps/server/dist/lib/nodeWakeCatcherClient.js';
+import { agentOp } from '/app/apps/server/dist/lib/agentClient.js';
+import { parseAgentCapabilities } from '/app/apps/server/dist/lib/agentCapabilities.js';
 import { hashBasicAuthEntry } from '/app/apps/server/dist/lib/htpasswd.js';
 import { acceptNodeLifecycleIntent } from '/app/apps/server/dist/lib/nodeLifecycleIntent.js';
 import { executeNodeLifecycleIntent } from '/app/apps/server/dist/lib/nodeLifecycleController.js';
@@ -57,12 +59,22 @@ try {
     assert.equal((await sampleApplication(authorized)).application, true);
     const appId = await docker(['inspect', '--format', '{{.Id}}', 'web-9']);
     const secureId = await docker(['inspect', '--format', '{{.Id}}', 'secure-10']);
+    const capabilities = async () => {
+      const reply = await agentOp(c.db, 4, 'agent.ping', {}, () => undefined); assert.equal(reply.exitCode, 0);
+      return parseAgentCapabilities(reply.lines).caps;
+    };
+    assert.equal((await capabilities()).has('proxy.idleWatch'), true);
     process.env.NINEDEPLOY_AGENT_PROXY_TRAFFIC = 'off';
     try {
-      await assert.rejects(openServiceNodeIdleWatch(c.db, await service(), new AbortController().signal), /NINEDEPLOY_AGENT_PROXY_TRAFFIC/);
+      assert.equal((await capabilities()).has('proxy.idleWatch'), false);
+      // A development image still carrying the previous release version can
+      // correctly refuse via its upgrade message rather than an opt-in hint.
+      await assert.rejects(openServiceNodeIdleWatch(c.db, await service(), new AbortController().signal), error => error instanceof Error &&
+        error.message.startsWith('Node proxy traffic unavailable:') && error.message.includes('cannot observe continuous node idle coverage'));
       assert.equal(await journal(), undefined); assert.equal(await docker(['inspect', '--format', '{{.State.Running}}', appId]), 'true');
-      passed('agent-opt-out-refuses-idle-without-runtime-effects');
+      passed('agent-opt-out-refuses-idle-without-runtime-effects', { advertisedBefore: true, advertisedDuring: false, operationRefused: true });
     } finally { process.env.NINEDEPLOY_AGENT_PROXY_TRAFFIC = 'on'; }
+    assert.equal((await capabilities()).has('proxy.idleWatch'), true);
     scheduler = createNodeIdleScheduler({ load: () => c.db.select().from(services), open: (selected, signal) => openServiceNodeIdleWatch(c.db, selected, signal),
       onError: error => errors.push(String(error).slice(0, 512)) });
     // Positive traffic must reset the actual observer before a quiet interval can qualify.
