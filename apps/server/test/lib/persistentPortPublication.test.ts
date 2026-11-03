@@ -115,6 +115,70 @@ describe('persistent port publication authority', () => {
     await expect(new PersistentPortPublisher(h.authority).recover(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
     expect(h.events).toEqual(before); expect(h.state()?.retained).toEqual([first.target, next.target]);
   });
+  it('can roll an unconfirmed handoff back to the healthy committed target without retiring either flow owner', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); h.failWeb();
+    await expect(p.promote(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    h.allowWeb();
+    const rollback = { ...first, revision: 3 };
+    const result = await p.rollbackPending(rollback);
+    expect(result).toMatchObject({ committed: rollback, pending: null, source: null, retained: [first.target, next.target] });
+    expect(await p.retireDrained(rollback, next.target.id)).toBe(false);
+    expect(h.events.filter(x => x.startsWith('retire:'))).toEqual([]);
+  });
+  it('recovers a rollback whose kernel acknowledgement was lost', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); h.failWeb();
+    await expect(p.promote(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    h.allowWeb(); h.loseKernelAck(); const rollback = { ...first, revision: 3 };
+    await expect(p.rollbackPending(rollback)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    expect(h.state()).toMatchObject({ committed: first, pending: rollback, source: next });
+    expect((await new PersistentPortPublisher(h.authority).recover(rollback)).committed).toEqual(rollback);
+  });
+  it('refuses rollback to a different runtime or stale revision without changing networking', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); h.failWeb();
+    await expect(p.promote(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    const before = [...h.events];
+    await expect(p.rollbackPending({ ...next, revision: 3 })).rejects.toThrow('committed target');
+    await expect(p.rollbackPending({ ...first, revision: 2 })).rejects.toThrow('revision');
+    expect(h.events).toEqual(before);
+  });
+  it('can roll back when the pending candidate has become unready', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); h.failWeb();
+    await expect(p.promote(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    h.allowWeb(); h.authority.ready = async spec => { if (spec.target.id === next.target.id) throw new Error('Candidate failed after publication'); };
+    await expect(p.recover(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    const rollback = { ...first, revision: 3 };
+    expect((await p.rollbackPending(rollback)).committed).toEqual(rollback);
+  });
+  it('does not invent a rollback target for an unresolved first deployment', async () => {
+    const h = host(); h.failWeb(); const p = new PersistentPortPublisher(h.authority);
+    await expect(p.promote(first)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    const before = [...h.events];
+    await expect(p.rollbackPending({ ...first, revision: 2 })).rejects.toThrow('committed target');
+    expect(h.events).toEqual(before); expect(h.state()?.retained).toEqual([first.target]);
+  });
+  it('can roll back an intent that never reached the kernel', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first);
+    const save = h.authority.saveJournal;
+    h.authority.saveJournal = async state => { await save(state); if (state.pending) throw new Error('intent ACK lost'); };
+    await expect(p.promote(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    h.authority.saveJournal = save;
+    const rollback = { ...first, revision: 3 };
+    expect((await p.rollbackPending(rollback)).committed).toEqual(rollback);
+  });
+  it('refuses rollback over unknown kernel state and retains both runtime references', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); h.failWeb();
+    await expect(p.promote(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    h.foreign(); const before = [...h.events];
+    await expect(p.rollbackPending({ ...first, revision: 3 })).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    expect(h.events).toEqual(before); expect(h.state()?.retained).toEqual([first.target, next.target]);
+  });
+  it('does not redirect an unresolved handoff to an unready committed runtime', async () => {
+    const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); h.failWeb();
+    await expect(p.promote(next)).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    h.unready(); const before = [...h.events];
+    await expect(p.rollbackPending({ ...first, revision: 3 })).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+    expect(h.events).toEqual(before); expect(h.state()?.pending).toEqual(next);
+  });
   it('refuses a fourth retained generation instead of forcing active runtimes to stop', async () => {
     const h = host(); const p = new PersistentPortPublisher(h.authority); await p.promote(first); await p.promote(next);
     await p.promote({ ...first, revision: 3, target: { id: 'd'.repeat(64), ipv4: '172.29.0.4' } });

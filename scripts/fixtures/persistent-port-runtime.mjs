@@ -94,14 +94,17 @@ if (mode === 'server') {
   try {
     await probe();
     if (mode === 'hold') {
-      writeFileSync('/proof/hold-ready', 'ready');
+      const label = process.argv[5] ?? '';
+      assert.ok(['', 'candidate'].includes(label));
+      const prefix = label ? `/proof/${label}-` : '/proof/';
+      writeFileSync(prefix + 'hold-ready', 'ready');
       let count = 1;
       const deadline = Date.now() + 120000;
       while (!existsSync('/proof/finish') && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 150)); await probe(); count++;
       }
       assert.ok(existsSync('/proof/finish'), 'hold completion deadline');
-      writeFileSync('/proof/hold-result.json', JSON.stringify({ count, expected, sourcePreserved: true }));
+      writeFileSync(prefix + 'hold-result.json', JSON.stringify({ count, expected, sourcePreserved: true }));
     } else console.log(JSON.stringify({ expected, sourcePreserved: true, tcp: 1, udp: 5, stun: 1 }));
   } finally { for (const socket of sockets) { if (socket instanceof net.Socket) socket.destroy(); else socket.close(); } }
 } else if (mode === 'web-probe') {

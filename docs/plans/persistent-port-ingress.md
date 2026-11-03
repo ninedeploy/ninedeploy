@@ -51,10 +51,20 @@ against the expected publication: a matching comment alone is insufficient.
 Retirement requires a confirmed generation, no pending intent and a completed
 drain observation followed by another kernel readback. Retention is bounded to
 three targets; further deploys must wait instead of forcibly stopping active flows.
-The version 2 journal also records retirement intent before issuing an immutable
+The journal also records retirement intent before issuing an immutable
 runtime stop. A lost stop acknowledgement blocks later publication/reuse until
 that retirement is reconciled. The runtime reference is removed only after stop
 and forwarding-grant cleanup acknowledge completion.
+
+The version 3 journal records the observed source publication of each pending
+intent. An unresolved handoff can roll back only to the last confirmed immutable
+target, after that target passes readiness again. The rollback receives a new
+revision; it never replays an old revision. This allows recovery when the pending
+candidate has become unhealthy, including a lost acknowledgement after kernel
+commit. Unknown kernel state and an unhealthy fallback refuse mutation. The
+candidate remains retained while its existing flows drain; rollback does not
+authorize immediately stopping it. An unresolved first deploy has no invented
+fallback target and remains held for recovery.
 
 The hosted acceptance adapter writes and fsyncs a real journal, injects a lost
 Traefik acknowledgement after the route actually loads, reconstructs the
