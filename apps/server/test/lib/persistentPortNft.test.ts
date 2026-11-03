@@ -28,6 +28,9 @@ describe('source-preserving persistent ingress rules', () => {
       expect(persistentPortFingerprint({ ...spec, ...change })).not.toBe(persistentPortFingerprint(spec));
     }
   });
+  it('keeps the fingerprint stable across equivalent target property order', () => {
+    expect(persistentPortFingerprint({ ...spec, target: { ipv4: spec.target.ipv4, id: spec.target.id } })).toBe(persistentPortFingerprint(spec));
+  });
   it('retains old and new forwarding only for the marked original service endpoint', () => {
     const rules = persistentPortForwardRules(spec, [spec.target, { id: 'c'.repeat(64), ipv4: '172.29.0.3' }]);
     expect(rules).toHaveLength(208);
