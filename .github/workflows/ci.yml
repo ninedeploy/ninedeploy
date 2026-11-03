@@ -80,6 +80,11 @@ jobs:
       # Note: no separate migration step — the server self-migrates at startup
       # and the db package tests apply the real migrations to a fresh SQLite
       # file (see packages/db/test/migrate.test.ts).
+      - name: Check Swarm runtime reader coverage before the full suite
+        env:
+          DOCKER_HOST: tcp://127.0.0.1:9
+        run: pnpm --filter @ninedeploy/server exec vitest run test/swarmRuntime.test.ts --no-coverage --maxWorkers=1
+
       - name: Test
         # Serialized: server+web coverage suites starve each other on the
         # 2-core runner when turbo runs them in parallel (intermittent
