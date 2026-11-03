@@ -1,6 +1,10 @@
 # Real Swarm artifact and recovery acceptance
 
-Status, 2026-11-03: hosted cohort prepared; no native result yet. This closes a missing real-system gate in R2, not the entire runtime or release program. Local Docker remains disabled.
+Status, 2026-11-03: the corrected hosted cohort passed, and its downloaded public receipts passed independent verification. This closes the single-manager artifact/restart cohort in R2, not the entire runtime or release program. Local Docker remains disabled.
+
+Accepted evidence: [run 41644236264](https://github.com/ninedeploy/ninedeploy/actions/runs/41644236264), frozen source `1e2214e3ae765e1d414f89149649abb9c38bfee1`. All four cases completed: Docker-to-Swarm migration retired the previous Docker container; promotion retained the first image config ID and commit after repository HEAD advanced; a panel restart recovered the original pending deployment with its captured second image; recorded rollback returned to the first image and commit. Promotion and recovery made no additional Git fetch. The worker also asserted no fetch during recorded rollback.
+
+Independent recount of the downloaded traces found **7,171 source and 6,003 target requests: 13,174 exact application HTTP 200 responses**, with no errors or 502. Source traffic contains both image bodies and ends with 40 first-image responses after rollback; every target response remains the promoted first image. Recovery and rollback preserve the source native service, manager and encrypted overlay identities. Four owned outer containers, both named volumes and the network were removed. Evidence is retained in `.temp_files/swarm-runtime-41644236264/swarm-runtime-41644236264/independent-verification.json`; verifier: `.temp_files/verify-swarm-runtime-41644236264.mjs`. This fixture is not yet integrated through its own full-source PR gate. Earlier preparation/failure checkpoints below are historical.
 
 The cohort uses owned panel/node Docker daemons on a GitHub-hosted runner. A smart HTTP Git fixture serves two real commits. Normal authenticated API deployment builds the first repository-backed Docker image. The operator then initializes/enables an actual single-manager Swarm, selects Swarm placement and deploys through the normal worker.
 
