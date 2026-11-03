@@ -70,8 +70,8 @@ export async function smokeNodeManualWake({ api, inner, primary, docker, panel, 
   }
 }
 
-export function manualWakeSampler(hostname) {
-  return `const http=require('node:http');const rows=[];let stopped=false,active;
+export function manualWakeSampler(hostname, { paused = false } = {}) {
+  return `const http=require('node:http');const rows=[];let stopped=false,active,started=${!paused};
 async function tick(){if(stopped)return;const at=Date.now();active=new Promise(resolve=>{let timer,done=false;
  const finish=row=>{if(!done){done=true;clearTimeout(timer);resolve(row)}};
  const q=http.get({hostname:'ninedeploy-proxy',path:'/',headers:{host:${JSON.stringify(hostname)}}},r=>{let body='',large=false;r.setEncoding('utf8');
@@ -80,5 +80,5 @@ async function tick(){if(stopped)return;const at=Date.now();active=new Promise(r
  r.on('error',()=>finish({at,status:0,error:'RESPONSE_ERROR'}))});
  timer=setTimeout(()=>q.destroy(Object.assign(new Error('deadline'),{code:'PROBE_TIMEOUT'})),1500);
  q.on('error',e=>finish({at,status:0,error:e.code||'REQUEST_ERROR'}))});rows.push(await active);active=undefined;if(!stopped)setTimeout(tick,30)}
-http.createServer(async(q,r)=>{if(q.url==='/finish'){stopped=true;await active}r.end(JSON.stringify(rows))}).listen(8091,'127.0.0.1');tick();`;
+http.createServer(async(q,r)=>{if(q.url==='/start'&&!started){started=true;tick()}if(q.url==='/finish'){stopped=true;await active}r.end(JSON.stringify(rows))}).listen(8091,'127.0.0.1');if(started)tick();`;
 }
