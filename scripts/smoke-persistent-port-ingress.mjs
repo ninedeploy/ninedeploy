@@ -75,7 +75,7 @@ try {
   const probe = expected => JSON.parse(innerDocker('exec', 'client', 'node', fixture, 'probe', expected, '172.28.0.2'));
   const webTarget = expected => innerDocker('exec', 'client', 'node', fixture, 'web-probe', expected);
   await until(() => webTarget('old'));
-  let loseWebAck = false;
+  let loseWebAck = false, loseKernelAck = false;
   const journalPath = resolve(proof, 'publication.json');
   // This runner is the sole writer in its disposable daemon. A production
   // adapter additionally needs non-stealable cross-process host authority.
@@ -106,7 +106,10 @@ try {
         catch { inside('iptables', '-A', 'NDPI_TEST', ...rule); }
       }
     },
-    publish: async (desired, replace) => publish(desired, replace),
+    publish: async (desired, replace) => {
+      publish(desired, replace);
+      if (loseKernelAck) throw new Error('Injected lost kernel acknowledgement after actual commit');
+    },
     confirmWeb: async desired => {
       route(desired.target.ipv4); await until(() => webTarget(desired.target.id === candidate.id ? 'new' : 'old'));
       if (loseWebAck) throw new Error('Injected lost Traefik acknowledgement after actual route load');
@@ -140,6 +143,23 @@ try {
   await recovered.promote({ ...spec, revision: 3 });
   observations.push(probe('old'));
   await until(() => webTarget('old'));
+
+  // A candidate can fail after the port publication but before the web ACK.
+  // Keep its existing flows while restoring fresh traffic to the healthy old
+  // target through a new, durable rollback revision.
+  const interrupted = { ...spec, target: candidate, revision: 4 };
+  loseKernelAck = true;
+  await assert.rejects(() => recovered.promote(interrupted), PersistentPortPublicationPending);
+  loseKernelAck = false;
+  observations.push(probe('new'));
+  innerDocker('exec', '-d', 'client', 'node', fixture, 'hold', 'new', '172.28.0.2', 'candidate');
+  await until(() => assert.ok(existsSync(resolve(proof, 'candidate-hold-ready'))));
+  innerDocker('exec', 'new', 'node', '-e', 'require("node:fs").unlinkSync("/tmp/ready")');
+  await assert.rejects(() => new PersistentPortPublisher(authority).recover(interrupted), PersistentPortPublicationPending);
+  const rollback = { ...spec, revision: 5 };
+  await new PersistentPortPublisher(authority).rollbackPending(rollback);
+  observations.push(probe('old')); await until(() => webTarget('old'));
+  assert.equal(await new PersistentPortPublisher(authority).retireDrained(rollback, candidate.id), false);
 
   // Prove that a surviving mutator, rather than its killed parent, owns the
   // OS lock. The unfenced control must let a competing writer enter early.
@@ -178,10 +198,12 @@ try {
   // can archive the public proof files without weakening lock permissions.
   innerDocker('exec', 'authority', 'node', '-e', 'require("node:fs").rmSync("/proof/locks",{recursive:true,force:true})');
   writeFileSync(resolve(proof, 'finish'), 'finish');
-  await until(() => { assert.ok(existsSync(resolve(proof, 'hold-result.json'))); assert.ok(existsSync(resolve(proof, 'web-result.json'))); });
+  await until(() => { assert.ok(existsSync(resolve(proof, 'hold-result.json'))); assert.ok(existsSync(resolve(proof, 'candidate-hold-result.json'))); assert.ok(existsSync(resolve(proof, 'web-result.json'))); });
   const held = JSON.parse(readFileSync(resolve(proof, 'hold-result.json'))), web = JSON.parse(readFileSync(resolve(proof, 'web-result.json')));
+  const candidateHeld = JSON.parse(readFileSync(resolve(proof, 'candidate-hold-result.json')));
   assert.ok(held.count > 10); assert.ok(web.count > 10);
-  writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, observations, held, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
+  assert.ok(candidateHeld.count > 5);
+  writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, observations, held, candidateHeld, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, unconfirmedRollback: true, rollbackCandidateWasUnready: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
 } finally {
   if (created) {
     for (const kind of ['fenced', 'unfenced']) {
