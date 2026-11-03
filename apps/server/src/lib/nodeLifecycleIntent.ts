@@ -6,6 +6,7 @@ import { MAX_REPLICAS, replicaNames } from '../engine/dockerNames.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 import { nodeSleepAutomationBlock } from './nodeSleepAutomationBlock.js';
+import { registerNodeWakeRoutePromotion, type NodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
 
 const terminal = ['completed', 'superseded'] as const;
 const cancellable = ['queued', 'building', 'deploying', 'awaiting_ci', 'awaiting_approval'] as const;
@@ -189,6 +190,30 @@ export async function checkpointNodeLifecycleIntent(db: DB, intent: NodeLifecycl
       .where(and(eq(nodeLifecycleIntents.id, intent.id), eq(nodeLifecycleIntents.ownerToken, intent.ownerToken!))).returning();
     return { intent: renewed!, service: current.service };
   });
+}
+
+export type NodeExplicitWakePublication = { promotion: NodeWakeRoutePromotion; settle: () => Promise<void> };
+
+/** Readiness-confirmed explicit Start/Restart may replace only its own superseded fallback. */
+export async function prepareNodeLifecycleWakeRouting(db: DB, intent: NodeLifecycleIntent): Promise<NodeExplicitWakePublication | null> {
+  const { intent: current, service } = await checkpointNodeLifecycleIntent(db, intent);
+  if (current.action === 'stop' || current.phase !== (current.action === 'start' ? 'routing' : 'publishing')) throw changed();
+  const prior = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, current.serviceId) });
+  if (!prior?.fallbackRouting || prior.serverId !== service.serverId || prior.runtimeId !== service.runtimeId) return null;
+  const verify = async (tx: Pick<DB, 'query' | 'select'>) => {
+    const { fresh, service: selected } = await owned(tx, intent, Date.now());
+    const fallback = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, intent.serviceId) });
+    if (fresh.action === 'stop' || fresh.phase !== (fresh.action === 'start' ? 'routing' : 'publishing') || selected.asleepAt !== null ||
+      JSON.stringify(fresh.targets) !== JSON.stringify(intent.targets) || !fallback?.fallbackRouting || fallback.phase !== 'superseded' ||
+      fallback.binding !== prior.binding || fallback.requestId !== prior.requestId || fallback.ownerEpoch !== prior.ownerEpoch ||
+      fallback.ownerEpoch >= (fresh.snapshot.mutationEpoch ?? 0) || fallback.runtimeId !== selected.runtimeId || fallback.serverId !== selected.serverId) throw changed();
+  };
+  await verify(db);
+  const promotion = registerNodeWakeRoutePromotion(current.serverId, current.serviceId, async () => { await verify(db); });
+  return { promotion, settle: () => db.transaction(async tx => {
+    await verify(tx);
+    await tx.update(nodeSleepTransitions).set({ fallbackRouting: false }).where(eq(nodeSleepTransitions.serviceId, current.serviceId));
+  }) };
 }
 
 export async function advanceNodeLifecycleIntent(db: DB, intent: NodeLifecycleIntent, phase: NodeLifecycleIntent['phase'],
