@@ -15,6 +15,9 @@
  * in a throwaway, network-less container of the database's own
  * image (r356), never as host binaries.
  *
+ * R3's optional internal restore probe instead restores into an isolated real
+ * PostgreSQL helper and records the known-data verdict. The existing public
+ * drill route does not enable this option; asynchronous admission is separate.
  * The drill never deletes or modifies the source backup.
  * Encrypted envelopes are decrypted to a sibling temp file
  * (and deleted on the way out) via the same flow
@@ -35,6 +38,7 @@ import { fetchRemoteBackup, type RemoteBackupRef } from './backupRemote.js';
 import { decryptBackupFile, isEncryptedBackupFile } from './backupCrypto.js';
 import { capture, ExecTimeoutError, run } from './exec.js';
 import { ENGINES, readBackupBytes } from '../engine/database.js';
+import { verifyPostgresRestore, type PostgresRestoreProbe } from './backupRestoreVerification.js';
 
 /** Every status a drill row can hold (pending/running/passed/failed, and
  *  r356's `unverifiable`). */
@@ -82,6 +86,7 @@ export async function runBackupDrill(
   db: DB,
   databaseId: number,
   backupId: number,
+  restoreProbe?: Pick<PostgresRestoreProbe, 'query' | 'expected'>,
 ): Promise<DrillResult> {
   const dRow = await db.query.databases.findFirst({ where: eq(databases.id, databaseId) });
   if (!dRow) throw new Error(`Database ${databaseId} not found`);
@@ -89,6 +94,13 @@ export async function runBackupDrill(
   if (!bRow) throw new Error(`Backup ${backupId} not found`);
   if (bRow.databaseId !== dRow.id) {
     throw new Error(`Backup ${backupId} does not belong to database ${databaseId}`);
+  }
+  if (restoreProbe) {
+    if (dRow.engine !== 'postgres') throw new Error('Isolated restore verification currently requires PostgreSQL');
+    if (bRow.status !== 'completed' || bRow.scope !== 'db') throw new Error('Restore verification requires a completed database backup');
+    if (!restoreProbe.query.trim() || Buffer.byteLength(restoreProbe.query) > 16_384 || Buffer.byteLength(restoreProbe.expected) > 16_384) {
+      throw new Error('Restore verification requires a bounded query and expected result');
+    }
   }
 
   // Insert a 'running' row first so the operator sees the
@@ -116,16 +128,26 @@ export async function runBackupDrill(
   try {
     // F133: scratch names carry this drill's row id — concurrent drills (same
     // backup, or the same millisecond) must never share or unlink each other's.
-    const ctx = await stageForDrill(db, bRow.path, bRow, dRow.engine, `${process.pid}-${row.id}`);
+    const ctx = await stageForDrill(db, bRow.path, bRow, dRow.engine, `${process.pid}-${row.id}`, !!restoreProbe);
     try {
-      result = await validateDump(ctx, image);
+      if (restoreProbe) {
+        if (!image) throw new Error('Restore engine image is unavailable');
+        const { status, error, ...details } = await verifyPostgresRestore({ file: ctx.file, image, ...restoreProbe });
+        result = status === 'passed'
+          ? { outcome: 'passed', details: { verification: 'restore', ...details } }
+          : { outcome: status, error: error ?? 'Restore verification did not complete', details: { verification: 'restore', ...details } };
+      } else result = await validateDump(ctx, image);
     } finally {
       // Every path — passed, failed, unverifiable, or a validator throwing —
       // removes the PLAINTEXT `*-drill.dec` and any fetched copy.
-      await ctx.cleanup().catch(() => undefined);
+      if (restoreProbe) await ctx.cleanup();
+      else await ctx.cleanup().catch(() => undefined);
     }
+    if (restoreProbe) result.details = { ...result.details, stagingCleanupConfirmed: true };
   } catch (err) {
-    result = failed(`Drill setup failed: ${err instanceof Error ? err.message : String(err)}`);
+    result = restoreProbe
+      ? { outcome: 'unverifiable', error: 'Restore verification could not stage, execute or clean its private backup copy', details: { verification: 'restore', stagingCleanupConfirmed: false } }
+      : failed(`Drill setup failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   const completedAt = new Date();
@@ -204,8 +226,8 @@ export async function listBackupDrills(
  * validator. Mirrors `engine/database.ts`'s `stageForRestore`
  * for encrypted backups and adds the remote-fetch step the
  * restore route does inline. The returned `cleanup` is
- * always best-effort — a partial file left on disk is
- * preferable to a hard fail on the drill row.
+ * best-effort for structural checks. Real restore verification requires
+ * confirmed cleanup; a retained private copy prevents a passing verdict.
  */
 async function stageForDrill(
   db: DB,
@@ -213,37 +235,42 @@ async function stageForDrill(
   remote: RemoteBackupRef,
   _engine: string,
   token: string,
+  strictCleanup = false,
 ): Promise<DrillContext> {
   // Remote-only backup: pull to a local temp file first.
   let source = path;
   let fetched: string | null = null;
-  if (!await fileExists(path).catch(() => false)) {
-    if (!remote.remoteKey) {
-      throw new Error('Backup file is missing on disk and no remote key is recorded');
+  let decrypted: string | null = null;
+  const cleanup = async () => {
+    let failed = false;
+    for (const file of [decrypted, fetched]) {
+      if (!file) continue;
+      try { await unlink(file); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') failed = true; }
     }
-    fetched = join(tmpdir(), `${DRILL_FETCH_PREFIX}${token}-${Date.now()}.dump`);
-    await fetchRemoteBackup(db, remote, fetched);
-    source = fetched;
-  }
-  const dropFetched = async () => {
-    if (fetched) await unlink(fetched).catch(() => undefined);
+    if (failed && strictCleanup) throw new Error('Private drill staging cleanup could not be confirmed');
   };
-
   try {
+    if (!await fileExists(path).catch(() => false)) {
+      if (!remote.remoteKey) {
+        throw new Error('Backup file is missing on disk and no remote key is recorded');
+      }
+      fetched = join(tmpdir(), `${DRILL_FETCH_PREFIX}${token}-${Date.now()}.dump`);
+      await fetchRemoteBackup(db, remote, fetched);
+      source = fetched;
+    }
     // r189: the fetched object goes through the SAME decryption as a local
     // file. The remote copy is the on-disk file uploaded as-is — an encrypted
     // NDBK1 envelope — and it used to be handed straight to the validator,
     // so every drill of a pruned-locally backup "failed" on ciphertext.
     if (await isEncryptedBackupFile(source)) {
       const dec = `${source}.${token}${DRILL_PLAINTEXT_SUFFIX}`;
+      decrypted = dec;
       await decryptBackupFile(source, dec);
       return {
         file: dec,
         engine: _engine,
-        cleanup: async () => {
-          await unlink(dec).catch(() => undefined);
-          await dropFetched();
-        },
+        cleanup,
       };
     }
 
@@ -251,25 +278,23 @@ async function stageForDrill(
     // restore path still reads: decrypt it the same way restore does.
     if (LEGACY_ENVELOPE_RE.test(await readHead(source, 32).catch(() => ''))) {
       const dec = `${source}.${token}${DRILL_PLAINTEXT_SUFFIX}`;
+      decrypted = dec;
       await writeFile(dec, readBackupBytes(source), { mode: 0o600 });
       return {
         file: dec,
         engine: _engine,
-        cleanup: async () => {
-          await unlink(dec).catch(() => undefined);
-          await dropFetched();
-        },
+        cleanup,
       };
     }
   } catch (err) {
     // F134: staging failed after the fetch — no cleanup hook reaches the
     // caller, so the fetched copy is dropped here.
-    await dropFetched();
+    await cleanup();
     throw err;
   }
 
   // Plaintext: use in place.
-  return { file: source, engine: _engine, cleanup: dropFetched };
+  return { file: source, engine: _engine, cleanup };
 }
 
 const LEGACY_ENVELOPE_RE = /^v\d+:/;

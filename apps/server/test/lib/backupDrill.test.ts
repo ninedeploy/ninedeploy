@@ -81,6 +81,7 @@ const {
   },
   remoteState: {
     fetchedTo: new Map<string, string>(),
+    failAfterWrite: false,
   },
 }));
 
@@ -125,6 +126,7 @@ vi.mock('../../src/lib/backupRemote.js', () => ({
     remoteState.fetchedTo.set(remote.remoteKey ?? '', dest);
     // A complete plain pg_dump, so the postgres structural check passes.
     await writeFile(dest, PG_PLAIN, 'utf8');
+    if (remoteState.failAfterWrite) throw new Error('private remote fetch failure');
   }),
 }));
 
@@ -135,6 +137,26 @@ import {
   runBackupDrill,
 } from '../../src/lib/backupDrill.js';
 import { createFakeDb } from '../helpers.js';
+
+const restoreCheck = vi.hoisted(() => ({
+  status: 'passed' as 'passed' | 'failed' | 'unverifiable',
+  calls: [] as Array<{ file: string; image: string; query: string; expected: string }>,
+  throwError: false,
+  blockCleanup: false,
+}));
+vi.mock('../../src/lib/backupRestoreVerification.js', () => ({
+  verifyPostgresRestore: vi.fn(async (input: { file: string; image: string; query: string; expected: string }) => {
+    restoreCheck.calls.push(input);
+    expect(existsSync(input.file)).toBe(true);
+    if (restoreCheck.throwError) throw new Error('private SQL or staging credential');
+    if (restoreCheck.blockCleanup) { await rm(input.file); await mkdir(input.file); }
+    return {
+      status: restoreCheck.status, engine: 'postgres', format: 'plain', imageId: `sha256:${'a'.repeat(64)}`,
+      durationMs: 35, restoreMs: 20, queryMs: 5, queryMatched: restoreCheck.status === 'passed',
+      cleanupConfirmed: true, error: restoreCheck.status === 'passed' ? null : 'Restored data did not match the expected probe result',
+    };
+  }),
+}));
 
 function buildDb() {
   return createFakeDb({
@@ -228,6 +250,8 @@ function mongoArchive(opts: { terminator?: boolean } = {}): Buffer {
 }
 
 beforeEach(async () => {
+  restoreCheck.status = 'passed'; restoreCheck.calls = []; restoreCheck.throwError = false; restoreCheck.blockCleanup = false;
+  remoteState.failAfterWrite = false;
   await mkdir(TMP, { recursive: true });
   dbState.databases.clear();
   dbState.backups.clear();
@@ -240,6 +264,70 @@ beforeEach(async () => {
   cryptoState.decryptedTo.clear();
   cryptoState.plaintext = PG_PLAIN;
   remoteState.fetchedTo.clear();
+});
+
+describe('real restore drill staging and history', () => {
+  const probe = { query: 'SELECT private_known_value', expected: 'private expected value' };
+  const complete = () => Object.assign(dbState.backups.get(1)!, { status: 'completed', scope: 'db' });
+  it('records restore timings and exact probe verdict without persisting probe SQL or data', async () => {
+    const file = await dumpFile('restore.sql', PG_PLAIN); seed('postgres', file); complete();
+    const result = await runBackupDrill(buildDb(), 1, 1, probe);
+    expect(result.status).toBe('passed');
+    expect(restoreCheck.calls).toEqual([{ file, image: 'postgres:18', ...probe }]);
+    expect(result.details).toMatchObject({ verification: 'restore', restoreMs: 20, queryMs: 5, stagingCleanupConfirmed: true });
+    expect(dbState.drills.get(result.drillId)).toMatchObject({ status: 'passed' });
+    expect(JSON.stringify(dbState.drills.get(result.drillId))).not.toMatch(/private_known_value|private expected value/);
+    expect(existsSync(file)).toBe(true);
+  });
+  it('decrypts an encrypted backup before restore and removes only its private staging file', async () => {
+    const file = await dumpFile('restore-encrypted.dump', 'NDBK1:encrypted'); seed('postgres', file); complete();
+    cryptoState.encryptedPaths.add(file); cryptoState.plaintext = PG_PLAIN;
+    const result = await runBackupDrill(buildDb(), 1, 1, probe);
+    expect(result.status).toBe('passed');
+    const staged = restoreCheck.calls[0]!.file;
+    expect(staged).not.toBe(file); expect(existsSync(staged)).toBe(false); expect(existsSync(file)).toBe(true);
+  });
+  it('fetches a remote-only backup, verifies its staged copy and removes the fetched file', async () => {
+    seed('postgres', join(TMP, 'remote-missing'), null, 'owned-remote'); complete();
+    expect((await runBackupDrill(buildDb(), 1, 1, probe)).status).toBe('passed');
+    expect(restoreCheck.calls[0]!.file).toBe(remoteState.fetchedTo.get('owned-remote'));
+    expect(existsSync(restoreCheck.calls[0]!.file)).toBe(false);
+  });
+  it.each(['failed', 'unverifiable'] as const)('persists a %s verifier result without reporting structural success', async status => {
+    const file = await dumpFile('restore.sql', PG_PLAIN); seed('postgres', file); complete(); restoreCheck.status = status;
+    const result = await runBackupDrill(buildDb(), 1, 1, probe);
+    expect(result.status).toBe(status); expect(dbState.drills.get(result.drillId)?.status).toBe(status);
+  });
+  it('sanitizes unexpected restore errors and still drops encrypted staging', async () => {
+    const file = await dumpFile('restore-encrypted.dump', 'NDBK1:encrypted'); seed('postgres', file); complete();
+    cryptoState.encryptedPaths.add(file); cryptoState.plaintext = PG_PLAIN; restoreCheck.throwError = true;
+    const result = await runBackupDrill(buildDb(), 1, 1, probe);
+    expect(result.status).toBe('unverifiable'); expect(JSON.stringify(result)).not.toContain('private SQL');
+    expect(existsSync(restoreCheck.calls[0]!.file)).toBe(false);
+  });
+  it('refuses an unsupported engine before inserting history or invoking an engine', async () => {
+    seed('mysql', join(TMP, 'not-read')); complete();
+    await expect(runBackupDrill(buildDb(), 1, 1, probe)).rejects.toThrow(/PostgreSQL/);
+    expect(dbState.drills.size).toBe(0); expect(restoreCheck.calls).toEqual([]);
+  });
+  it('refuses incomplete backups before invoking the verifier', async () => {
+    seed('postgres', join(TMP, 'not-read'));
+    await expect(runBackupDrill(buildDb(), 1, 1, probe)).rejects.toThrow(/completed/);
+    expect(dbState.drills.size).toBe(0);
+  });
+  it('removes a partially fetched remote backup before recording an unavailable result', async () => {
+    seed('postgres', join(TMP, 'remote-missing'), null, 'owned-partial'); complete(); remoteState.failAfterWrite = true;
+    expect((await runBackupDrill(buildDb(), 1, 1, probe)).status).toBe('unverifiable');
+    expect(existsSync(remoteState.fetchedTo.get('owned-partial')!)).toBe(false);
+    expect(restoreCheck.calls).toEqual([]);
+  });
+  it('does not pass when decrypted staging cleanup cannot be confirmed', async () => {
+    const file = await dumpFile('restore-encrypted.dump', 'NDBK1:encrypted'); seed('postgres', file); complete();
+    cryptoState.encryptedPaths.add(file); cryptoState.plaintext = PG_PLAIN; restoreCheck.blockCleanup = true;
+    const result = await runBackupDrill(buildDb(), 1, 1, probe);
+    expect(result.status).toBe('unverifiable'); expect(result.details?.stagingCleanupConfirmed).toBe(false);
+    expect(existsSync(file)).toBe(true);
+  });
 });
 
 afterEach(async () => {
