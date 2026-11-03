@@ -56,7 +56,8 @@ export async function smokeSwarmRuntime({ api, primary, docker, panel, id, first
     await until(async () => !(await api(`/v1/services/${id}/swarm/recovery`)).entry, 'initial native journal settlement', 180_000);
     const firstSwarm = await snapshot(id, one);
     const oldState = primary(['inspect', oldDockerId, '--format', '{{.State.Running}}'], { allowFailure: true });
-    assert.ok(oldState.status !== 0 || oldState.out === 'false', 'Docker-to-Swarm left the captured old runtime serving');
+    assert.notEqual(oldState.status, 0, 'Docker-to-Swarm did not remove the captured previous Docker container');
+    assert.equal((await service(id)).commitSha, repository.first);
     const release = await api(`/v1/services/${id}/deploys/${one}/release`); assert.equal(release.available, true); assert.equal(release.mode, 'recorded-docker');
     report({ case: 'real-swarm-source-artifact', source, commit: repository.first, ...firstSwarm, previousDockerRetired: true });
     phase = 'promotion'; const secondCommit = repository.advance(); await syncRepository(); assert.notEqual(secondCommit, repository.first);
@@ -70,6 +71,7 @@ export async function smokeSwarmRuntime({ api, primary, docker, panel, id, first
     await until(async () => !(await api(`/v1/services/${target}/swarm/recovery`)).entry, 'promoted native journal settlement', 180_000);
     const promoted = await snapshot(target, promotion.deploymentId); assert.equal(promoted.imageId, firstSwarm.imageId);
     assert.equal((await rows(target)).find(row => row.id === promotion.deploymentId).commitSha, repository.first);
+    assert.equal((await service(target)).commitSha, repository.first);
     assert.match(await log(target, promotion.deploymentId), /Recorded artifact.*skipping checkout/);
     assert.equal(gitStats().requests, beforePromotionRequests, 'Artifact promotion fetched source instead of using the recorded image');
     const targetDomain = (await api(`/v1/services/${target}/domains`))[0]; const targetTraffic = await traffic(target, targetDomain.hostname);
@@ -103,6 +105,7 @@ export async function smokeSwarmRuntime({ api, primary, docker, panel, id, first
     assert.equal(recovered.imageId, candidateImageId); assert.equal(recovered.nativeServiceId, firstSwarm.nativeServiceId);
     assert.equal(gitStats().requests, beforeRestartRequests, 'Swarm recovery fetched source again');
     assert.equal((await rows(id)).find(row => row.id === candidate).commitSha, secondCommit);
+    assert.equal((await service(id)).commitSha, secondCommit);
     const activity = await until(async () => (await api(`/v1/activity?serviceId=${id}&action=deploy.success`)).entries.find(entry => entry.meta?.deploymentId === candidate && entry.meta?.recoveredAfterRestart), 'persisted recovered native update outcome', 15_000);
     assert.ok(activity);
     await until(() => sourceTraffic.read('snapshot').some(row => row.label === 'two'), 'recovered second artifact serves', 15_000);
@@ -113,6 +116,7 @@ export async function smokeSwarmRuntime({ api, primary, docker, panel, id, first
     await until(async () => !(await api(`/v1/services/${id}/swarm/recovery`)).entry, 'rollback native journal settlement', 180_000);
     const restored = await snapshot(id, rollback); assert.equal(restored.imageId, firstSwarm.imageId);
     assert.equal((await rows(id)).find(row => row.id === rollback).commitSha, repository.first);
+    assert.equal((await service(id)).commitSha, repository.first);
     assert.match(await log(id, rollback), /Recorded artifact.*skipping checkout/);
     assert.equal(gitStats().requests, beforeRestartRequests, 'Recorded rollback fetched source again');
     assert.equal(restored.nativeServiceId, firstSwarm.nativeServiceId);
