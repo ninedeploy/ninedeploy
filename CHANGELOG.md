@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.17] - 2026-11-03
+
+### Added
+
+- Automatic node sleep after continuously verified idle traffic, guarded demand wake through immutable runtime identities, readiness-held route restoration and panel restart recovery. Requires the node traffic capability and configured sleep policy; the automation flag can pause automatic actions. Public status reports observation, held and waking states without exposing execution credentials.
+- Real single-manager Swarm acceptance for Docker migration, pinned artifact promotion after source HEAD advances, panel restart recovery on the original deployment and recorded rollback. Require this cohort and public manual/automatic node wake plus lost-routing-acknowledgement recovery on the pushed release image before promotion.
+- Internal PostgreSQL restore-verification foundation using isolated networkless helpers, strict SQL/archive restore, known-data probes and confirmed cleanup. Public restore verification controls, other-engine verification and PITR remain unfinished; ordinary backup checks still validate dump structure.
+
 ### Changed
 
 - A compose stack's domain now picks its service in its own row under Service → Network → Domains, next to the domain's other settings. The separate card under Service → Settings is gone. Save appears only once the choice differs from the stored one (G2.1).
@@ -17,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Route manual node wake through durable remote Start rather than starting a same-name panel container. Report pending lifecycle work in the API, SDK, CLI and panel until readiness and routing settle.
+- Preserve the healthy application when a pre-Stop routing acknowledgement is lost, recover staged catcher retirement through ordered barriers, and refuse stale routing writes after retirement. Serialize managed database transactions across users of the same database handle.
+- Clean partially fetched remote drill files after a failed download. Restore-verification history retains coarse verdicts and timings without persisting SQL probes, expected values or restored results.
 - A service cannot move to a node or gain a fan-out node while its maintenance mode, custom error pages or panel sign-in are on. Node proxies do not route what the panel serves. After a move, the setting stayed stored where its card no longer showed, and came back on a move back to the panel host. A protected domain went dark on the node (G2.2, G2.3).
 - Maintenance mode and custom error pages are refused for a service that also runs on fan-out nodes. Those nodes kept serving the app while the panel host showed the maintenance page (G2.2).
 - A deploy that builds on a node or a build server is refused up front when the service has an inline Dockerfile, with a reason that names Build on: panel. The file is written only into the panel's checkout. The node cloned the repository again and the build failed on a missing `.ninedeploy.Dockerfile`, and the docs claimed node builds worked (G1.1).
