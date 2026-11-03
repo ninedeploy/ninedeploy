@@ -29,13 +29,18 @@ on:
       - 'scripts/lib/smoke-node-sleep-restoration.mjs'
       - 'scripts/lib/smoke-sealed-routing-fault.mjs'
       - 'scripts/lib/smoke-node-automatic-sleep.mjs'
+      - 'scripts/lib/smoke-node-sleep-diagnostic.mjs'
       - 'scripts/lib/smoke-git-repository.mjs'
       - 'scripts/lib/smoke-swarm-runtime.mjs'
       - '.github/workflows/serving-traffic.yml'
   workflow_dispatch:
     inputs:
+      sleep_cohort:
+        description: Reproduce manual wake, lost routing ACK and automatic sleep in the original runner order
+        type: boolean
+        default: false
       immutable_image:
-        description: Optional immutable published NineDeploy image for the automatic sleep diagnostic
+        description: Immutable published NineDeploy image for automatic sleep diagnostics (required for sleep_cohort)
         type: string
         default: ''
       wake_recovery:
@@ -72,7 +77,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  automatic-sleep-cohort:
+    if: github.event.inputs.sleep_cohort == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_CONTEXT: default
+      SMOKE_IMAGE: ${{ github.event.inputs.immutable_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+      - name: Pull the immutable diagnostic image without rebuilding
+        run: |
+          [[ "$SMOKE_IMAGE" =~ ^ghcr\.io/ninedeploy/ninedeploy@sha256:[a-f0-9]{64}$ ]]
+          docker pull "$SMOKE_IMAGE"
+          docker image inspect "$SMOKE_IMAGE" --format '{{json .RepoDigests}}'
+          docker image inspect "$SMOKE_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+      - name: Verify manual node wake first
+        timeout-minutes: 15
+        run: node scripts/smoke-node-canary.mjs --image="$SMOKE_IMAGE" --manual-wake-only --proof=.temp_files/automatic-sleep-cohort/manual
+      - name: Verify lost pre-Stop routing acknowledgement second
+        timeout-minutes: 12
+        run: node scripts/smoke-node-canary.mjs --image="$SMOKE_IMAGE" --sleep-restoration-only --proof=.temp_files/automatic-sleep-cohort/restoration
+      - name: Verify automatic sleep and readiness-held restart recovery last
+        timeout-minutes: 20
+        run: node scripts/smoke-node-canary.mjs --image="$SMOKE_IMAGE" --automatic-sleep-only --proof=.temp_files/automatic-sleep-cohort/automatic
+      - name: Preserve bounded original-order diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: automatic-sleep-cohort-${{ github.run_id }}
+          path: |
+            .temp_files/automatic-sleep-cohort/manual/runtime-result.json
+            .temp_files/automatic-sleep-cohort/manual/runtime-cleanup.json
+            .temp_files/automatic-sleep-cohort/manual/manual-wake-idle.json
+            .temp_files/automatic-sleep-cohort/manual/manual-wake-traffic.json
+            .temp_files/automatic-sleep-cohort/manual/cases.json
+            .temp_files/automatic-sleep-cohort/manual/failure-state.json
+            .temp_files/automatic-sleep-cohort/restoration/runtime-result.json
+            .temp_files/automatic-sleep-cohort/restoration/runtime-cleanup.json
+            .temp_files/automatic-sleep-cohort/restoration/sleep-restoration-receipt.json
+            .temp_files/automatic-sleep-cohort/restoration/sleep-restoration-traffic.json
+            .temp_files/automatic-sleep-cohort/restoration/cases.json
+            .temp_files/automatic-sleep-cohort/restoration/failure-state.json
+            .temp_files/automatic-sleep-cohort/automatic/runtime-result.json
+            .temp_files/automatic-sleep-cohort/automatic/runtime-cleanup.json
+            .temp_files/automatic-sleep-cohort/automatic/automatic-sleep-idle.json
+            .temp_files/automatic-sleep-cohort/automatic/automatic-sleep-control.json
+            .temp_files/automatic-sleep-cohort/automatic/automatic-sleep-audit.json
+            .temp_files/automatic-sleep-cohort/automatic/automatic-sleep-traffic.json
+            .temp_files/automatic-sleep-cohort/automatic/automatic-sleep-observations.json
+            .temp_files/automatic-sleep-cohort/automatic/automatic-sleep-journal.json
+            .temp_files/automatic-sleep-cohort/automatic/automatic-sleep-failure.json
+            .temp_files/automatic-sleep-cohort/automatic/cases.json
+            .temp_files/automatic-sleep-cohort/automatic/failure-state.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
   serving-generation:
+    if: github.event.inputs.sleep_cohort != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -176,6 +242,8 @@ jobs:
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-idle.json
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-control.json
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-observations.json
+            .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-failure.json
+            .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-journal.json
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-audit.json
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-traffic.json
             .temp_files/serving-traffic/automatic-node-sleep/cases.json
