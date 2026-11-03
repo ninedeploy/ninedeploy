@@ -5,7 +5,7 @@ type Step = { id?: string; run?: string; if?: string; 'continue-on-error'?: bool
 type Job = { needs?: string | string[]; if?: string; 'continue-on-error'?: boolean; permissions?: Record<string, string>;
   strategy?: { 'fail-fast'?: boolean; 'max-parallel'?: number; matrix?: { suite?: string[] } }; steps?: Step[] };
 const jobs = () => (load(readFileSync(new URL('../../../.github/workflows/release-publish.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
-const suites = ['upgrade-journey', 'agent-runtime', 'panel-lifecycle', 'public-canary', 'public-lifecycle', 'replica-databases', 'node-infrastructure'];
+const suites = ['upgrade-journey', 'agent-runtime', 'panel-lifecycle', 'public-canary', 'public-lifecycle', 'replica-databases', 'node-infrastructure', 'swarm-artifacts'];
 // biome-ignore lint/suspicious/noTemplateCurlyInString: Literal GitHub shell variable in the actual smoke commands.
 const image = 'ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}';
 const command = (name: string, flags = '') => `node scripts/${name}.mjs --image="${image}"${flags}`;
@@ -30,6 +30,7 @@ const expected = [
   command('smoke-node-limits', ' --proof=.temp_files/release-node-limits'),
   command('smoke-node-canary', ' --replica-databases-only --proof=.temp_files/release-node-smoke'),
   command('smoke-multinode', ' --new-node-features --no-swarm'), command('smoke-multinode', ' --swarm-only'),
+  command('smoke-node-canary', ' --swarm-runtime-only --proof=.temp_files/release-swarm-runtime'),
 ];
 describe('complete parallel release smoke gate', () => {
   it('requires staged catcher traffic acceptance and uploads only its public evidence in CI and release runs', () => {
@@ -62,13 +63,27 @@ describe('complete parallel release smoke gate', () => {
     expect(rps?.['continue-on-error']).not.toBe(true);
     expect([ci['publish-image'].needs ?? []].flat()).toContain('docker-image');
   });
-  it('keeps seven mandatory cohorts bounded to three independent runners', () => {
+  it('keeps all mandatory cohorts bounded to three independent runners', () => {
     const smoke = jobs()['smoke-published-image'];
     expect(smoke.strategy?.matrix?.suite).toEqual(suites);
     expect(smoke.strategy?.['max-parallel']).toBe(3);
     expect(smoke.strategy?.['fail-fast']).toBe(false);
     expect(smoke['continue-on-error']).not.toBe(true); expect(smoke.if).toBeUndefined();
     expect(smoke.permissions).toEqual({ contents: 'read', packages: 'read' });
+  });
+  it('requires Swarm artifact recovery and retains enumerated public receipts even after failure', () => {
+    const steps = jobs()['smoke-published-image'].steps!;
+    const smoke = steps.find(step => step.run?.includes('--swarm-runtime-only'));
+    expect(smoke?.if).toBe("matrix.suite == 'swarm-artifacts'");
+    expect(smoke?.['continue-on-error']).not.toBe(true);
+    expect(smoke?.['timeout-minutes']).toBe(15);
+    const upload = steps.find(step => step.name === 'Preserve public Swarm artifact recovery receipts');
+    expect(upload?.if).toBe("always() && matrix.suite == 'swarm-artifacts'");
+    expect(upload?.with?.path?.trim().split('\n').map(path => path.trim())).toEqual([
+      'runtime-result.json', 'runtime-cleanup.json', 'swarm-source-traffic.json',
+      'swarm-target-traffic.json', 'swarm-failure-traffic.json', 'swarm-failure-state.json',
+      'cases.json', 'failure-state.json',
+    ].map(file => `.temp_files/release-swarm-runtime/${file}`));
   });
   it.each([true, false])('runs every required smoke exactly once when a previous release exists: %s', previousExists => {
     const smoke = jobs()['smoke-published-image'], scheduled: string[] = [];
