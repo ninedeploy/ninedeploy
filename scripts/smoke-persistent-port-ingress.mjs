@@ -53,7 +53,7 @@ try {
     renameSync(resolve(proof, 'dynamic.next'), resolve(proof, 'dynamic.yml'));
   };
   route('172.29.0.2');
-  innerDocker('run', '-d', '--name', 'proxy', '--network', 'backend', '-p', '10.6.6.9:8080:80', '-v', '/proof:/config:ro', 'traefik:3', '--entrypoints.web.address=:80', '--providers.file.directory=/config', '--providers.file.watch=true');
+  innerDocker('run', '-d', '--name', 'proxy', '--network', 'backend', '-p', '10.6.6.9:8080:80', '-v', '/proof:/config:ro', 'traefik:3', '--entrypoints.web.address=:80', '--providers.file.directory=/config', '--providers.file.watch=true', '--accesslog=true', '--log.level=INFO');
   writeFileSync(resolve(proof, 'images.json'), innerDocker('image', 'inspect', nodeImage, 'traefik:3', '--format', '{{json .RepoDigests}}'));
   innerDocker('run', '-d', '--name', 'client', '--network', 'none', '-v', '/workspace:/workspace:ro', '-v', '/proof:/proof', nodeImage, 'sleep', '180');
   // Model an external routed client, not another Docker bridge destination.
@@ -73,7 +73,7 @@ try {
   ]) inside('nsenter', '-t', clientPid, '-n', 'ip', ...args);
   const probe = expected => JSON.parse(innerDocker('exec', 'client', 'node', fixture, 'probe', expected, '172.28.0.2'));
   observations.push(await until(() => probe('old')));
-  const webTarget = expected => innerDocker('exec', 'client', 'node', '-e', `fetch('http://10.6.6.9:8080',{headers:{host:'pbx.test'},signal:AbortSignal.timeout(4000)}).then(async r=>{if(r.status!==200||await r.text()!==${JSON.stringify(expected)})process.exit(1)})`);
+  const webTarget = expected => innerDocker('exec', 'client', 'node', '-e', `fetch('http://10.6.6.9:8080',{headers:{host:'pbx.test'},signal:AbortSignal.timeout(4000)}).then(async r=>{const body=await r.text();console.log(JSON.stringify({status:r.status,body:body.slice(0,100)}));if(r.status!==200||body!==${JSON.stringify(expected)})process.exit(1)})`);
   await until(() => webTarget('old'));
   innerDocker('exec', '-d', 'client', 'node', fixture, 'hold', 'old', '172.28.0.2');
   innerDocker('exec', '-d', 'client', 'node', fixture, 'sample');
