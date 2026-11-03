@@ -1,5 +1,23 @@
 # Node scale to zero and wake (R2)
 
+Current release checkpoint: [v0.18.17](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.18.17) was published from `91017c3405398666aa78f168751e0baa62a9b42f`. Its [release run](https://github.com/ninedeploy/ninedeploy/actions/runs/41666599464) completed with all nine runtime cohorts and 18,373 source tests passing. The sleep/wake cohort passed on attempt 2; the unchanged image also passed [isolated automatic acceptance](https://github.com/ninedeploy/ninedeploy/actions/runs/41683897308). The first automatic idle/Stop timeout remains unresolved. Preserve that failed attempt alongside the passing evidence.
+
+## Diagnose an automatic idle timeout
+
+Run the original manual-wake → lost-routing-acknowledgement → automatic-sleep sequence on one isolated GitHub-hosted runner, using an immutable published image:
+
+```sh
+gh workflow run serving-traffic.yml --repo ninedeploy/ninedeploy --ref main -f sleep_cohort=true -f immutable_image=ghcr.io/ninedeploy/ninedeploy@sha256:c19bafb5a4c04508994b4ce3009319dc15dd1882233a509e40ac6b88be2d1dd0
+```
+
+The diagnostic job retains the original per-case deadlines (15/12/20 minutes) and real five-minute idle requirement. It pulls the digest without rebuilding. Its script revision and the image's embedded source revision are separate identities and must both be recorded.
+
+Download the `automatic-sleep-cohort-<run-id>` artifact. The automatic case includes bounded public status observations, a journal snapshot after the actual Stop, traffic/audit records and owned cleanup. On failure, `automatic-sleep-failure.json` records the automatic journal phase, idle decision age, remaining lease and a fixed reason class. Raw exception text, wake keys, worker tokens and agent credentials are excluded. Failure to collect diagnostics preserves the original test failure.
+
+Automatic transitions live in `nodeSleepTransitions`; `/lifecycle` reports manual intents. Use the automatic journal to distinguish missing idle coverage, expiry before Stop, restoration and failed wake readiness. These diagnostics read the owned fixture's state and preserve the production timers and readiness checks. Local Docker execution remains refused by the smoke's hosted-runner guards.
+
+## Historical pre-release checkpoints
+
 Status, 2026-11-03: durable node authority, ordered sleep/wake effects, guarded demand and staged catcher retirement have component acceptance. The [two-service cohort 41616036959](https://github.com/ninedeploy/ninedeploy/actions/runs/41616036959) passed actual five-minute idle, Stop/Start, failed strict HTTP readiness, new-process recovery, Basic Auth/IP denials, agent opt-out and Stop during wake, with 2,328 valid responses. The [pre-Stop transport fault 41627779632](https://github.com/ninedeploy/ninedeploy/actions/runs/41627779632) restored the application after a lost real loaded-routing acknowledgement, with 640 valid responses. The latest [public automatic-cycle cohort 41634736108](https://github.com/ninedeploy/ninedeploy/actions/runs/41634736108) passed ordinary API settings, production timers, genuine idle after a real traffic reset, automatic Stop, readiness-held demand wake and panel restart, with 791 valid responses and settled audit events. All three had zero 502/connection errors. The public automatic candidate passed all required [CI 41643863613](https://github.com/ninedeploy/ninedeploy/actions/runs/41643863613) and serving-traffic checks on frozen head `65d15f69f71eb0e63e59dd1600e7455089e331a8`. [PR #25](https://github.com/ninedeploy/ninedeploy/pull/25) merged to main as `977390d7279268b3ab8dffd0dde133fa40668c01`; normal main plugin timers now activate eligible configured nodes. It is not in a numbered release. Manual Sleep now continues to refuse node placement. Final combined release/upgrade/artifact checks remain open. Sections below retain exact source identities; [DEPLOYMENTS.md](DEPLOYMENTS.md) documents the released activation limit.
 
 ## Why the panel-host mechanism does not carry over

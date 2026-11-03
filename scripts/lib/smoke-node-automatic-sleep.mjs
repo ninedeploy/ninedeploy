@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { manualWakeSampler } from './smoke-node-manual-wake.mjs';
+import { captureNodeSleepDiagnostic } from './smoke-node-sleep-diagnostic.mjs';
 
 export function automaticSleepControl(hostname, proxyHost = 'ninedeploy-proxy', port = 80) {
   return `const http=require('node:http');let done=false,timer;
@@ -12,7 +13,19 @@ timer=setTimeout(()=>q.destroy(new Error('probe deadline')),1500);q.on('error',(
 }
 
 /** Public setting/status + real plugin timers; no private idle admission or controller invocation. */
-export async function smokeNodeAutomaticSleep({ api, inner, docker, panel, id, fixtureImage, ownerLabel, source, service, domain, until, pause, report, cleared, restartPanel, save }) {
+export async function smokeNodeAutomaticSleep(context) {
+  try { return await runAutomaticSleep(context); }
+  catch (error) {
+    try {
+      context.save('automatic-sleep-failure.json', captureNodeSleepDiagnostic(context));
+    } catch {
+      try { context.save('automatic-sleep-failure.json', { available: false }); } catch { /* Retain the original failure. */ }
+    }
+    throw error;
+  }
+}
+
+async function runAutomaticSleep({ api, inner, docker, panel, id, fixtureImage, ownerLabel, source, service, domain, until, pause, report, cleared, restartPanel, save }) {
   await cleared();
   const selected = await service(id), name = selected.runtimeId;
   const nodeId = inner(['inspect', name, '--format', '{{.Id}}']).out;
@@ -20,7 +33,17 @@ export async function smokeNodeAutomaticSleep({ api, inner, docker, panel, id, f
   assert.equal(state().Running, true);
   const started = Date.now();
   await api(`/v1/services/${id}`, { method: 'PATCH', body: { sleepAfterMinutes: 5, healthTimeoutSeconds: 10 } });
-  const status = () => api(`/v1/services/${id}/sleep`);
+  const observations = [];
+  const status = async () => {
+    const current = await api(`/v1/services/${id}/sleep`), at = Date.now();
+    const previous = observations.at(-1);
+    if (!previous || at - previous.at >= 15_000 || previous.phase !== current.phase || previous.holding !== current.holding) {
+      observations.push({ at, phase: current.phase, idleMs: current.idleMs, idleSatisfied: current.idleSatisfied, holding: current.holding });
+      if (observations.length > 120) observations.shift();
+      save('automatic-sleep-observations.json', observations);
+    }
+    return current;
+  };
   const activity = async action => (await api(`/v1/activity?serviceId=${id}&action=${action}`)).entries;
   const initial = await status(); assert.equal(initial.nodeControllerActive, true); assert.equal(initial.placement, 'node');
   assert.equal(initial.configured, true); assert.equal(initial.requiredMs, 300_000);
@@ -42,6 +65,9 @@ export async function smokeNodeAutomaticSleep({ api, inner, docker, panel, id, f
   }, 'public plugin genuine idle and automatic Stop', 480_000);
   assert.ok(Date.now() - lastServingAt >= 300_000 && asleep.idleMs >= 300_000, 'Public automatic sleep lacked genuine idle after the serving-request reset');
   assert.equal(state().Running, false);
+  const journal = captureNodeSleepDiagnostic({ docker, panel, id });
+  assert.equal(journal.available, true); assert.equal(journal.journalAction, 'sleep'); assert.equal(journal.journalPhase, 'asleep');
+  save('automatic-sleep-journal.json', journal);
   await until(async () => (await activity('service.sleep')).length === 1, 'committed automatic sleep audit', 15_000);
   assert.equal((await activity('service.wake')).length, 0, 'Wake was audited before any demand/readiness');
   save('automatic-sleep-idle.json', { source, realPublicApi: true, privateFactoryAdmission: false,
