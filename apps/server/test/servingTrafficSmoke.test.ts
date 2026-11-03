@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 
-const scripts = ['smoke-serving-traffic', 'smoke-wake-catcher'].map(name => fileURLToPath(new URL(`../../../scripts/${name}.mjs`, import.meta.url)));
+const scripts = ['smoke-serving-traffic', 'smoke-wake-catcher', 'smoke-wake-recovery'].map(name => fileURLToPath(new URL(`../../../scripts/${name}.mjs`, import.meta.url)));
 it.each([
   { env: { GITHUB_ACTIONS: 'false', RUNNER_ENVIRONMENT: 'github-hosted', DOCKER_HOST: 'unix:///var/run/docker.sock' }, message: 'Use an isolated GitHub Actions runner' },
   { env: { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'self-hosted', DOCKER_HOST: 'unix:///var/run/docker.sock' }, message: 'Use a GitHub-hosted runner' },

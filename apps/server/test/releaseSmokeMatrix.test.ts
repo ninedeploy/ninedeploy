@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-type Step = { id?: string; run?: string; if?: string; 'continue-on-error'?: boolean; 'timeout-minutes'?: number };
+type Step = { id?: string; run?: string; if?: string; 'continue-on-error'?: boolean; 'timeout-minutes'?: number; name?: string; with?: { path?: string } };
 type Job = { needs?: string | string[]; if?: string; 'continue-on-error'?: boolean; permissions?: Record<string, string>;
   strategy?: { 'fail-fast'?: boolean; 'max-parallel'?: number; matrix?: { suite?: string[] } }; steps?: Step[] };
 const jobs = () => (load(readFileSync(new URL('../../../.github/workflows/release-publish.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
@@ -16,6 +16,7 @@ const expected = [
   command('smoke-primary-network-readiness', ' --proof=.temp_files/release-primary-network-readiness'),
   command('smoke-serving-traffic', ' --proof=.temp_files/release-serving-traffic'),
   command('smoke-wake-catcher', ' --proof=.temp_files/release-wake-catcher'),
+  command('smoke-wake-recovery', ' --proof=.temp_files/release-wake-recovery'),
   command('smoke-container-metrics'), command('smoke-container-lifecycle'), command('smoke-container-generation-stop'),
   command('smoke-agent-creation-drain'), command('smoke-node-lifecycle-controller'),
   command('smoke-node-lifecycle-fanout'), command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'),
@@ -31,6 +32,20 @@ const expected = [
   command('smoke-multinode', ' --new-node-features --no-swarm'), command('smoke-multinode', ' --swarm-only'),
 ];
 describe('complete parallel release smoke gate', () => {
+  it('requires staged catcher traffic acceptance and uploads only its public evidence in CI and release runs', () => {
+    const ci = (load(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
+    for (const [steps, proof, condition] of [
+      [ci['docker-image'].steps!, '.temp_files/ci-wake-recovery', undefined],
+      [jobs()['smoke-published-image'].steps!, '.temp_files/release-wake-recovery', "matrix.suite == 'agent-runtime'"],
+    ] as const) {
+      const smoke = steps.find(step => step.run?.includes('scripts/smoke-wake-recovery.mjs'));
+      expect(smoke).toBeDefined(); expect(smoke?.if).toBe(condition); expect(smoke?.['continue-on-error']).not.toBe(true);
+      expect(smoke?.['timeout-minutes']).toBe(8); expect(smoke?.run).toContain(`--proof=${proof}`);
+      const upload = steps.find(step => step.name === 'Preserve public catcher handoff evidence');
+      expect(upload?.with?.path).toBe(`${proof}/public/`);
+      expect(upload?.if).toContain('always()');
+    }
+  });
   it('requires isolated node autoscale routing before the main image can be published', () => {
     const ci = (load(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
     const build = ci['docker-image'];
