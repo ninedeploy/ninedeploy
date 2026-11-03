@@ -9,12 +9,14 @@ import { spendNodeIdleEvidence, type NodeIdleEvidence } from './nodeIdleCoverage
 import { nodeServingTrafficContext, readNodeServingTrafficState } from './nodeServingTrafficContext.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 import { registerNodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
+import { nodeWakeMaintenancePending } from './nodeWakeMaintenanceBlock.js';
+import { validNodeCatcherName, type CatcherIdentity } from './nodeCatcherIdentity.js';
 
 type ReadDB = Pick<DB, 'query' | 'select'>;
 export type NodeSleepAdmission = { serviceId: number; owner: ServiceRuntimeOwner; workerToken: string; binding: string };
 export const NODE_SLEEP_LEASE_MS = 90_000;
 const terminal = ['completed', 'superseded'] as const;
-const phases = { sleep: ['accepted', 'fencing', 'prepared', 'routing', 'routed', 'stopping', 'asleep'], wake: ['accepted', 'fencing', 'starting', 'readiness', 'publishing'] };
+const phases = { sleep: ['accepted', 'fencing', 'prepared', 'routing', 'routed', 'stopping', 'asleep', 'restoring'], wake: ['accepted', 'fencing', 'starting', 'readiness', 'publishing'] };
 const unpublished = ['accepted', 'fencing', 'prepared'];
 const staleUnpublished = (row: NodeSleepTransition) => row.action === 'sleep' && unpublished.includes(row.phase) &&
   (!Number.isSafeInteger(row.idleEvidence.sampledAt) || row.idleEvidence.sampledAt > Date.now() || Date.now() - row.idleEvidence.sampledAt >= 30_000);
@@ -70,7 +72,7 @@ export async function admitNodeSleep(db: DB, expected: Service, token: NodeIdleE
     if (await nodeServingTrafficContext(db, proof.window.input) !== proof.window.context) return null;
     return await db.transaction(async tx => {
       const fresh = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
-      if (!fresh || JSON.stringify(fresh) !== JSON.stringify(expected) || !await unblocked(tx, fresh.id) || !freshProof() ||
+      if (!fresh || JSON.stringify(fresh) !== JSON.stringify(expected) || await nodeWakeMaintenancePending(tx, fresh.serverId!) || !await unblocked(tx, fresh.id) || !freshProof() ||
         await readNodeServingTrafficState(tx, proof.window.input) !== proof.window.context) return null;
       const current = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, fresh.id) });
       if (current && !terminal.includes(current.phase as typeof terminal[number])) return null;
@@ -83,7 +85,7 @@ export async function admitNodeSleep(db: DB, expected: Service, token: NodeIdleE
         wakeToken: nonce(), fallbackRouting: false, targets: input.serving.map(target => ({ ...target, deploymentId: input.deploymentId })),
         idleEvidence: { idleMs: proof.idleMs, sampledAt: proof.sampledAt, windowId: receipt.windowId, sourceId: receipt.sourceId,
           proxyId: receipt.proxyId, epoch: receipt.epoch, routingGeneration: receipt.routingGeneration, targetHash: receipt.targetHash },
-        catcherId: null, catcherImage: null, workerToken, leaseUntil: new Date(Date.now() + NODE_SLEEP_LEASE_MS), reason: null };
+        catcherId: null, catcherImage: null, catcherName: 'ninedeploy-wake', workerToken, leaseUntil: new Date(Date.now() + NODE_SLEEP_LEASE_MS), reason: null };
       const stamp = binding(values);
       const inserted = await tx.insert(nodeSleepTransitions).values({ ...values, binding: stamp }).onConflictDoUpdate({ target: nodeSleepTransitions.serviceId,
         set: { ...values, binding: stamp }, setWhere: inArray(nodeSleepTransitions.phase, ['completed', 'superseded']) }).returning();
@@ -96,22 +98,22 @@ export async function admitNodeSleep(db: DB, expected: Service, token: NodeIdleE
   }
 }
 
-async function assertCurrent(db: ReadDB, admission: NodeSleepAdmission, requireLease = true) {
+async function assertCurrent(db: ReadDB, admission: NodeSleepAdmission, requireLease = true, unwinding = false) {
   const row = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, admission.serviceId) });
   const service = await db.query.services.findFirst({ where: eq(services.id, admission.serviceId) });
   if (!row || !service || !eligible(service) || !phases[row.action].includes(row.phase) || terminal.includes(row.phase as typeof terminal[number]) ||
     row.binding !== admission.binding || binding(row) !== row.binding || row.serverId !== service.serverId || row.runtimeId !== service.runtimeId ||
     row.runtimeId !== `${service.slug}-${row.deploymentId}` || row.ownerEpoch !== admission.owner.epoch || row.requestId !== admission.owner.requestId ||
-    admission.owner.kind !== row.action || staleUnpublished(row) || !sameRuntimeOwner(await readServiceRuntimeOwner(db, service.id), admission.owner) ||
-    row.action === 'sleep' && row.phase !== 'asleep' && (!Number.isInteger(service.sleepAfterMinutes) || service.sleepAfterMinutes! < SLEEP_AFTER_MIN ||
+    admission.owner.kind !== row.action || !unwinding && staleUnpublished(row) || !sameRuntimeOwner(await readServiceRuntimeOwner(db, service.id), admission.owner) ||
+    !unwinding && row.action === 'sleep' && !['asleep', 'restoring'].includes(row.phase) && (!Number.isInteger(service.sleepAfterMinutes) || service.sleepAfterMinutes! < SLEEP_AFTER_MIN ||
       service.sleepAfterMinutes! > SLEEP_AFTER_MAX || row.idleEvidence.idleMs < service.sleepAfterMinutes! * 60_000) ||
     requireLease && (row.workerToken !== admission.workerToken || !row.leaseUntil || row.leaseUntil.getTime() <= Date.now()) ||
     (row.action === 'sleep' ? (row.phase === 'asleep') !== (service.asleepAt !== null) : service.asleepAt === null) ||
     !Number.isSafeInteger(row.watermark) || row.watermark < row.deploymentId ||
     row.catcherId !== null && !/^[a-f0-9]{64}$/.test(row.catcherId) || row.catcherImage !== null && !/^sha256:[a-f0-9]{64}$/.test(row.catcherImage) ||
-    (row.catcherId === null) !== (row.catcherImage === null) ||
-    (row.action === 'wake' || ['prepared', 'routing', 'routed', 'stopping', 'asleep'].includes(row.phase)) && !row.catcherId ||
-    row.fallbackRouting !== (row.action === 'wake' || ['routing', 'routed', 'stopping', 'asleep'].includes(row.phase)) ||
+    (row.catcherId === null) !== (row.catcherImage === null) || !validNodeCatcherName(row.catcherName) ||
+    (row.action === 'wake' || ['prepared', 'routing', 'routed', 'stopping', 'asleep', 'restoring'].includes(row.phase)) && !row.catcherId ||
+    row.fallbackRouting !== (row.action === 'wake' || ['routing', 'routed', 'stopping', 'asleep', 'restoring'].includes(row.phase)) ||
     await configuration(db, service) !== row.configuration || !await unblocked(db, service.id)) throw changed();
   const names = replicaNames(service.runtimeId!, service.runtimeReplicas);
   if (!Array.isArray(row.targets) || row.targets.length !== names.length || new Set(row.targets.map(target => target.id)).size !== names.length ||
@@ -138,6 +140,37 @@ export async function prepareNodeWakeRouting(db: DB, admission: NodeSleepAdmissi
   return registerNodeWakeRoutePromotion(row.serverId, row.serviceId, async () => { await verify(); });
 }
 
+/** Before any Stop attempt, a failed sleep must restore the app instead of resuming an old idle decision. */
+export async function abortNodeSleep(db: DB, admission: NodeSleepAdmission, reason: string): Promise<'completed' | 'restoring'> {
+  return db.transaction(async tx => {
+    const { row } = await assertCurrent(tx, admission, true, true);
+    if (row.action !== 'sleep' || ['stopping', 'asleep'].includes(row.phase)) throw changed();
+    const phase = row.fallbackRouting ? 'restoring' as const : 'completed' as const;
+    await tx.update(nodeSleepTransitions).set({ phase, reason: reason.slice(0, 1000), ...(phase === 'completed' ? { workerToken: null, leaseUntil: null } : {}) })
+      .where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
+    return phase;
+  });
+}
+
+export async function prepareNodeSleepRestoration(db: DB, admission: NodeSleepAdmission) {
+  const verify = async () => {
+    const row = await checkpointNodeSleep(db, admission);
+    if (row.action !== 'sleep' || row.phase !== 'restoring') throw changed();
+    return row;
+  };
+  const row = await verify();
+  return registerNodeWakeRoutePromotion(row.serverId, row.serviceId, async () => { await verify(); });
+}
+
+export async function completeNodeSleepRestoration(db: DB, admission: NodeSleepAdmission) {
+  await db.transaction(async tx => {
+    const { row } = await assertCurrent(tx, admission);
+    if (row.action !== 'sleep' || row.phase !== 'restoring') throw changed();
+    await tx.update(nodeSleepTransitions).set({ phase: 'completed', fallbackRouting: false, workerToken: null, leaseUntil: null })
+      .where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
+  });
+}
+
 /** Request identity stays fixed across worker recovery; a newer service command uses a higher epoch. */
 export function nodeSleepCommand(admission: NodeSleepAdmission, operation: 'fence' | 'stop' | 'start') {
   return { serviceId: admission.serviceId, requestId: createHash('sha256').update(`${admission.owner.requestId}:node-${admission.owner.kind}-${operation}`).digest('hex').slice(0, 32),
@@ -156,24 +189,35 @@ export async function advanceNodeSleep(db: DB, admission: NodeSleepAdmission, fr
   });
 }
 
-export async function bindNodeSleepCatcher(db: DB, admission: NodeSleepAdmission, catcher: { id: string; image: string }) {
-  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image)) throw changed();
+export async function bindNodeSleepCatcher(db: DB, admission: NodeSleepAdmission, catcher: CatcherIdentity) {
+  const name = catcher.name ?? 'ninedeploy-wake';
+  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image) || !validNodeCatcherName(name)) throw changed();
   await db.transaction(async tx => {
     const { row } = await assertCurrent(tx, admission);
-    if (row.phase !== 'fencing' || row.action !== 'sleep' || row.catcherId !== null && (row.catcherId !== catcher.id || row.catcherImage !== catcher.image)) throw changed();
-    await tx.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image }).where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
+    if (row.phase !== 'fencing' || row.action !== 'sleep' || row.catcherId !== null && (row.catcherId !== catcher.id || row.catcherImage !== catcher.image || row.catcherName !== name)) throw changed();
+    await tx.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image, catcherName: name }).where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
   });
 }
 
 /** Rebind a recreated, separately confirmed catcher without reviving a superseded sleep cycle. */
-export async function refreshNodeSleepCatcher(db: DB, expected: ServiceRuntimeOwner, previousId: string, catcher: { id: string; image: string }) {
-  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image)) throw changed();
-  await db.transaction(async tx => {
-    const row = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, expected.serviceId) });
-    if (!row || row.action !== 'sleep' || row.phase !== 'asleep' || row.catcherId !== previousId) throw changed();
-    await assertCurrent(tx, { serviceId: expected.serviceId, owner: expected, workerToken: '', binding: row.binding }, false);
-    await tx.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image }).where(eq(nodeSleepTransitions.serviceId, expected.serviceId));
-  });
+export async function refreshNodeSleepCatcher(db: DB, expected: ServiceRuntimeOwner, previousId: string, catcher: CatcherIdentity) {
+  await db.transaction(tx => refreshNodeSleepCatcherInTransaction(tx, expected, previousId, catcher));
+}
+
+export async function readNodeSleepingState(db: ReadDB, serviceId: number) {
+  const row = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, serviceId) });
+  const owner = await readServiceRuntimeOwner(db, serviceId);
+  if (!row || !owner || row.action !== 'sleep' || row.phase !== 'asleep' || owner.kind !== 'sleep' || owner.epoch !== row.ownerEpoch || owner.requestId !== row.requestId) return null;
+  return { ...await assertCurrent(db, { serviceId, owner, workerToken: '', binding: row.binding }, false), owner };
+}
+
+export async function refreshNodeSleepCatcherInTransaction(db: ReadDB & Pick<DB, 'update'>, expected: ServiceRuntimeOwner, previousId: string, catcher: CatcherIdentity) {
+  const name = catcher.name ?? 'ninedeploy-wake';
+  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image) || !validNodeCatcherName(name)) throw changed();
+  const row = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, expected.serviceId) });
+  if (!row || row.action !== 'sleep' || row.phase !== 'asleep' || row.catcherId !== previousId) throw changed();
+  await assertCurrent(db, { serviceId: expected.serviceId, owner: expected, workerToken: '', binding: row.binding }, false);
+  await db.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image, catcherName: name }).where(eq(nodeSleepTransitions.serviceId, expected.serviceId));
 }
 
 async function complete(db: DB, admission: NodeSleepAdmission, raw: unknown, action: 'sleep' | 'wake') {
@@ -222,7 +266,7 @@ export async function admitNodeWake(db: DB, expected: Service, demand: { nodeId:
     const row = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, expected.id) });
     const service = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
     const previous = await readServiceRuntimeOwner(tx, expected.id);
-    if (!row || !service || JSON.stringify(service) !== JSON.stringify(expected) || row.phase !== 'asleep' || row.action !== 'sleep' ||
+    if (!row || !service || JSON.stringify(service) !== JSON.stringify(expected) || await nodeWakeMaintenancePending(tx, service.serverId!) || row.phase !== 'asleep' || row.action !== 'sleep' ||
       row.wakeToken !== demand.token || row.catcherId !== demand.catcherId || !previous || previous.kind !== 'sleep' || previous.epoch !== row.ownerEpoch || previous.requestId !== row.requestId) return null;
     await assertCurrent(tx, { serviceId: service.id, owner: previous, workerToken: '', binding: row.binding }, false);
     const owner = await reserveServiceRuntimeOwnerInTransaction(tx, service.id, 'wake', nonce(), previous), workerToken = nonce();
@@ -233,10 +277,11 @@ export async function admitNodeWake(db: DB, expected: Service, demand: { nodeId:
   });
 }
 
-export async function recoverNodeSleep(db: DB, serviceId: number): Promise<NodeSleepAdmission | null> {
+export async function recoverNodeSleep(db: DB, serviceId: number, expected?: Pick<NodeSleepTransition, 'binding' | 'requestId' | 'action'>): Promise<NodeSleepAdmission | null> {
   return db.transaction(async tx => {
     const [row] = await tx.update(nodeSleepTransitions).set({ workerToken: nonce(), leaseUntil: new Date(Date.now() + NODE_SLEEP_LEASE_MS) })
       .where(and(eq(nodeSleepTransitions.serviceId, serviceId), notInArray(nodeSleepTransitions.phase, ['completed', 'superseded', 'asleep']),
+        expected ? and(eq(nodeSleepTransitions.binding, expected.binding), eq(nodeSleepTransitions.requestId, expected.requestId), eq(nodeSleepTransitions.action, expected.action)) : undefined,
         or(isNull(nodeSleepTransitions.leaseUntil), lte(nodeSleepTransitions.leaseUntil, new Date())))).returning();
     if (!row) return null;
     if (staleUnpublished(row)) {

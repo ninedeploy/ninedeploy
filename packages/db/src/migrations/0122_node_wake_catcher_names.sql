@@ -1,0 +1,2 @@
+ALTER TABLE `node_sleep_transitions` ADD `catcher_name` text DEFAULT 'ninedeploy-wake' NOT NULL;--> statement-breakpoint
+ALTER TABLE `node_wake_maintenance` ADD `catcher_name` text DEFAULT 'ninedeploy-wake' NOT NULL;

@@ -40,6 +40,8 @@ import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '..
 import { nodeWakeKey } from '../lib/nodeWakeKey.js';
 import { WAKE_CATCHER_PORT, WAKE_KEY_HEADER } from '../wakeCatcher.js';
 import { checkNodeWakeRoutePromotion, type NodeWakeRoutePromotion } from '../lib/nodeWakeRoutePromotion.js';
+import { checkNodeCatcherRoutePromotion, type NodeCatcherRoutePromotion } from '../lib/nodeCatcherRoutePromotion.js';
+import { validNodeCatcherName } from '../lib/nodeCatcherIdentity.js';
 
 /** 0.16.11: the path prefix the wake endpoint answers under (modules/wake.ts). */
 export const WAKE_PREFIX = '/_nd/wake';
@@ -882,6 +884,9 @@ export interface DynamicConfigOptions {
   confirmServiceId?: number;
   autoscalePromotion?: AutoscaleRoutePromotion;
   wakePromotion?: NodeWakeRoutePromotion;
+  catcherPromotion?: NodeCatcherRoutePromotion;
+  /** Settlement runs before the next queued render can observe the old bindings. */
+  onCatcherConfirmed?: () => Promise<void>;
   /** Require the selected node to adopt ordered dynamic writes before updating routes. */
   requireOrderedNode?: boolean;
   signal?: AbortSignal;
@@ -895,6 +900,12 @@ export function writeDynamicConfig(db: DB, opts: DynamicConfigOptions = {}): Pro
 
 async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): Promise<void> {
   if (opts.signal?.aborted) throw new ProxyRoutingUnconfirmed();
+  if (opts.catcherPromotion) {
+    if (opts.requireNode == null || opts.confirmNodeRouting !== true || !opts.requireOrderedNode || opts.autoscalePromotion || opts.wakePromotion || !opts.onCatcherConfirmed) {
+      throw new ProxyRoutingUnconfirmed('Catcher promotion requires exclusive ordered confirmed node routing and settlement');
+    }
+    await checkNodeCatcherRoutePromotion(opts.catcherPromotion, opts.requireNode);
+  } else if (opts.onCatcherConfirmed) throw new ProxyRoutingUnconfirmed('Catcher settlement requires its promotion permission');
   if (opts.wakePromotion) {
     if (opts.requireNode == null || opts.confirmNodeRouting !== true || opts.autoscalePromotion) throw new ProxyRoutingUnconfirmed('Wake promotion requires exclusive confirmed node routing');
     await checkNodeWakeRoutePromotion(opts.wakePromotion, opts.requireNode);
@@ -929,7 +940,12 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     }
   }
   if (confirm) await confirmProxyRouting(routes, { signal: opts.signal });
-  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion, opts.requireOrderedNode, opts.wakePromotion);
+  await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion, opts.requireOrderedNode, opts.wakePromotion, opts.catcherPromotion);
+  if (opts.catcherPromotion) {
+    opts.signal?.throwIfAborted();
+    await checkNodeCatcherRoutePromotion(opts.catcherPromotion, opts.requireNode!);
+    await opts.onCatcherConfirmed!();
+  }
 }
 
 /**
@@ -993,7 +1009,7 @@ const lastNodeSyncAuditAt = new Map<number, number>();
  * `routingFlipped` true and the pipeline stop the still-routed previous
  * container on the node — an outage reported as a successful deploy.
  */
-async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion, requireOrderedNode?: boolean, wakePromotion?: NodeWakeRoutePromotion): Promise<void> {
+async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: number, signal?: AbortSignal, autoscalePromotion?: AutoscaleRoutePromotion, requireOrderedNode?: boolean, wakePromotion?: NodeWakeRoutePromotion, catcherPromotion?: NodeCatcherRoutePromotion): Promise<void> {
   let results: Array<{ serverId: number; ok: boolean; reason?: string; routingUnconfirmed?: boolean }> = [];
   try {
     signal?.throwIfAborted();
@@ -1006,8 +1022,8 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
     }
     if (nodes.length === 0) return;
     const { syncAllNodeProxies } = await import('../lib/nodeProxy.js');
-    results = signal || autoscalePromotion || requireOrderedNode || wakePromotion
-      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, ...(signal ? { signal, timeoutMs: 15_000 } : {}), ...(autoscalePromotion ? { autoscalePromotion } : {}), ...(wakePromotion ? { wakePromotion } : {}), ...(requireOrderedNode ? { adoptOrderedNode: requireNode } : {}) })
+    results = signal || autoscalePromotion || requireOrderedNode || wakePromotion || catcherPromotion
+      ? await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode, ...(signal ? { signal, timeoutMs: 15_000 } : {}), ...(autoscalePromotion ? { autoscalePromotion } : {}), ...(wakePromotion ? { wakePromotion } : {}), ...(catcherPromotion ? { catcherPromotion } : {}), ...(requireOrderedNode ? { adoptOrderedNode: requireNode } : {}) })
       : confirmNode === undefined
       ? await syncAllNodeProxies(db, nodes.map((n) => n.id))
       : await syncAllNodeProxies(db, nodes.map((n) => n.id), undefined, { confirmNode });
@@ -1064,7 +1080,7 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
 export type AutoscaleRoutePromotion = { serviceId: number; workerToken: string; ownerEpoch: number; requestId: string };
 export async function renderDynamicConfig(
   db: DB,
-  opts: { serverId: number | null; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion } = { serverId: null },
+  opts: { serverId: number | null; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion; catcherPromotion?: NodeCatcherRoutePromotion } = { serverId: null },
 ): Promise<string> {
   const forNode = opts.serverId != null;
   const all = await db.select().from(domains);
@@ -1095,12 +1111,23 @@ export async function renderDynamicConfig(
   for (const row of sleepRouting.values()) {
     const service = allServices.find(service => service.id === row.serviceId)!;
     if (!/^[a-f0-9]{32}$/.test(row.wakeToken) || !/^[a-f0-9]{64}$/.test(row.catcherId ?? '') ||
-      !/^sha256:[a-f0-9]{64}$/.test(row.catcherImage ?? '') || row.runtimeId !== `${service.slug}-${row.deploymentId}` ||
+      !/^sha256:[a-f0-9]{64}$/.test(row.catcherImage ?? '') || !validNodeCatcherName(row.catcherName) || row.runtimeId !== `${service.slug}-${row.deploymentId}` ||
       service.type !== 'docker' || service.orchestrator === 'swarm' || targetRuntimeByService.has(service.id)) {
       throw new Error('Node wake routing identity is invalid');
     }
   }
   let wakePromoted: number | null = null;
+  if (opts.catcherPromotion) {
+    if (!forNode || opts.autoscalePromotion || opts.wakePromotion) throw new Error('Node catcher promotion requires its own node render');
+    const target = await checkNodeCatcherRoutePromotion(opts.catcherPromotion, opts.serverId!);
+    if (!validNodeCatcherName(target.name)) throw new Error('Node catcher promotion target is invalid');
+    for (const member of target.services) {
+      const prior = sleepRouting.get(member.serviceId);
+      if (!prior) continue; // Explicit Stop or a changed serving generation withdraws its fallback.
+      if (prior.binding !== member.binding || prior.catcherId !== member.catcherId) throw new Error('Node catcher fallback generation changed');
+      sleepRouting.set(member.serviceId, { ...prior, catcherId: target.id, catcherImage: target.image, catcherName: target.name });
+    }
+  }
   if (opts.wakePromotion) {
     if (!forNode || opts.autoscalePromotion) throw new Error('Node wake promotion requires its own node render');
     wakePromoted = await checkNodeWakeRoutePromotion(opts.wakePromotion, opts.serverId!);
@@ -1346,7 +1373,11 @@ export async function renderDynamicConfig(
       if (!overrideMws.has(credential)) {
         overrideMws.add(credential);
         middlewares.push(`    ${credential}:\n      headers:\n        customRequestHeaders:\n          ${WAKE_KEY_HEADER}: "${wakeKey}"\n`);
-        svcBlocks.push(`    svc_ninedeploy_node_wake:\n      loadBalancer:\n        servers:\n          - url: "http://ninedeploy-wake:${WAKE_CATCHER_PORT}"`);
+      }
+      const backend = nodeSleep.catcherName === 'ninedeploy-wake' ? 'svc_ninedeploy_node_wake' : `svc_ninedeploy_node_wake_${nodeSleep.catcherName.slice(18)}`;
+      if (!seen.has(backend)) {
+        seen.add(backend);
+        svcBlocks.push(`    ${backend}:\n      loadBalancer:\n        servers:\n          - url: "http://${nodeSleep.catcherName}:${WAKE_CATCHER_PORT}"`);
       }
     }
     if (asleep && !maint) {
@@ -1395,7 +1426,7 @@ export async function renderDynamicConfig(
     routers.push(
       `    ${key}:\n` +
         `      rule: "${yamlDoubleQuoted(fullRule)}"\n` +
-        `      service: ${nodeSleep ? 'svc_ninedeploy_node_wake' : toPanel ? WAKE_SVC : `svc_${key}`}\n` +
+        `      service: ${nodeSleep ? nodeSleep.catcherName === 'ninedeploy-wake' ? 'svc_ninedeploy_node_wake' : `svc_ninedeploy_node_wake_${nodeSleep.catcherName.slice(18)}` : toPanel ? WAKE_SVC : `svc_${key}`}\n` +
         priority +
         (mwList.length ? `      middlewares:\n${mwList.map((m) => `        - ${m}`).join('\n')}\n` : '') +
         `      entryPoints:\n        - ${entry}` +

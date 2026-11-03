@@ -85,6 +85,8 @@ export const MULTI_NODE_CAPABILITIES = [
   // R2 node scale to zero: long chained serving windows (docs/NODE_SLEEP_WAKE.md)
   'proxy.idleWatch',
   'wake.catcher',
+  // Non-destructive replacement preparation; promotion and retirement remain panel-owned.
+  'wake.catcher.prepare',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

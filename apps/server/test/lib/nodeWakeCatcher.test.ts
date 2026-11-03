@@ -1,25 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { catcherReply, demandLogger, startWakeCatcher, wakeKeyMatches, wakePage } from '../../src/wakeCatcher.js';
 
-const docker = vi.hoisted(() => ({ calls: [] as string[][], containers: new Map<string, string>(), logs: '' }));
+const docker = vi.hoisted(() => ({ calls: [] as string[][], containers: new Map<string, string>(), logs: '', before: undefined as ((args: string[]) => Promise<void>) | undefined }));
 vi.mock('../../src/lib/exec.js', () => ({ capture: vi.fn(async (_cmd: string, args: string[]) => {
   docker.calls.push(args);
+  await docker.before?.(args);
   if (args[0] === 'inspect') {
-    const found = docker.containers.get(args[1]!);
+    const found = docker.containers.get(args[1]!) ?? [...docker.containers.values()].find(row => row.startsWith(`${args[1]}|`));
     if (found === undefined) throw new Error('No such object');
     return found;
   }
   if (args[0] === 'logs') return docker.logs;
   if (args[0] === 'run') {
     const keyHash = args.find(arg => arg.startsWith('ninedeploy.wake.key='))!.split('=')[1];
-    docker.containers.set('ninedeploy-wake', `${'c'.repeat(64)}|${AGENT_IMAGE}|true|wake|2026-11-02T10:00:00Z|${keyHash}`);
+    docker.containers.set(args[args.indexOf('--name') + 1]!, `${'c'.repeat(64)}|${args.at(-2)}|true|wake|2026-11-02T10:00:00Z|${keyHash}`);
     return 'c'.repeat(64);
   }
   if (args[0] === 'rm') { for (const [name, row] of docker.containers) if (row.startsWith(args[2]!)) docker.containers.delete(name); return ''; }
+  if (args[0] === 'start') { for (const [name, row] of docker.containers) if (row.startsWith(args[1]!)) docker.containers.set(name, row.replace('|false|', '|true|')); return args[1]; }
   throw new Error(`unexpected docker ${args.join(' ')}`);
 }) }));
 const AGENT_IMAGE = `sha256:${'a'.repeat(64)}`;
-const { ensureWakeCatcher, readWakeDemand, removeWakeCatcher, wakeCatcherRunArgs } = await import('../../src/lib/nodeWakeCatcher.js');
+const { ensureWakeCatcher, prepareWakeCatcher, readWakeDemand, removeWakeCatcher, wakeCatcherRunArgs } = await import('../../src/lib/nodeWakeCatcher.js');
 const TOKEN = '0123456789abcdef'.repeat(2), KEY = 'b'.repeat(64), OTHER_KEY = 'd'.repeat(64);
 const catcherRow = (fields: { id?: string; image?: string; running?: boolean; managed?: string; key?: string } = {}) => {
   const run = wakeCatcherRunArgs(fields.image ?? AGENT_IMAGE, fields.key ?? KEY);
@@ -27,7 +29,7 @@ const catcherRow = (fields: { id?: string; image?: string; running?: boolean; ma
   return `${fields.id ?? 'c'.repeat(64)}|${fields.image ?? AGENT_IMAGE}|${fields.running ?? true}|${fields.managed ?? 'wake'}|2026-11-02T10:00:00Z|${keyHash}`;
 };
 beforeEach(() => {
-  docker.calls = []; docker.logs = '';
+  docker.calls = []; docker.logs = ''; docker.before = undefined;
   docker.containers = new Map([['ninedeploy-agent', `${'f'.repeat(64)}|${AGENT_IMAGE}|true||2026-11-02T09:00:00Z|`]]);
 });
 
@@ -78,6 +80,85 @@ describe('wake catcher replies', () => {
 });
 
 describe('agent-managed wake catcher', () => {
+  it('prepares a distinct generation while the old backend remains present throughout creation', async () => {
+    const old = catcherRow({ id: 'd'.repeat(64), image: `sha256:${'b'.repeat(64)}` });
+    docker.containers.set('ninedeploy-wake', old);
+    let observed = false;
+    docker.before = async args => {
+      if (args[0] !== 'run') return;
+      observed = true;
+      expect(docker.containers.get('ninedeploy-wake'), 'old backend must survive the real creation boundary').toBe(old);
+    };
+    const prepared = await prepareWakeCatcher({ key: KEY });
+    expect(observed).toBe(true);
+    expect(prepared.name).toMatch(/^ninedeploy-wake-g-[a-f0-9]{32}$/);
+    expect(prepared).toMatchObject({ id: 'c'.repeat(64), image: AGENT_IMAGE, created: true });
+    expect(docker.containers.get('ninedeploy-wake')).toBe(old);
+    expect(docker.calls.some(args => args[0] === 'rm')).toBe(false);
+    docker.calls = [];
+    expect(await prepareWakeCatcher({ key: KEY })).toEqual({ ...prepared, created: false });
+    expect(docker.calls.some(args => args[0] === 'run' || args[0] === 'rm')).toBe(false);
+  });
+  it('keeps the legacy catcher and previous generations when the image or key changes', async () => {
+    const old = catcherRow({ id: 'd'.repeat(64) });
+    docker.containers.set('ninedeploy-wake', old);
+    const first = await prepareWakeCatcher({ key: KEY });
+    const rekeyed = await prepareWakeCatcher({ key: OTHER_KEY });
+    docker.containers.set('ninedeploy-agent', `${'f'.repeat(64)}|sha256:${'e'.repeat(64)}|true||2026-11-02T09:00:00Z|`);
+    const upgraded = await prepareWakeCatcher({ key: KEY });
+    expect(new Set([first.name, rekeyed.name, upgraded.name]).size).toBe(3);
+    expect(docker.containers.has(first.name)).toBe(true);
+    expect(docker.containers.has(rekeyed.name)).toBe(true);
+    expect(docker.containers.get('ninedeploy-wake')).toBe(old);
+    expect(docker.calls.some(args => args[0] === 'rm')).toBe(false);
+  });
+  it('restarts the same stopped candidate without removing any backend', async () => {
+    const prepared = await prepareWakeCatcher({ key: KEY });
+    docker.containers.set(prepared.name, docker.containers.get(prepared.name)!.replace('|true|', '|false|'));
+    docker.calls = [];
+    expect(await prepareWakeCatcher({ key: KEY })).toEqual({ ...prepared, created: false });
+    expect(docker.calls).toContainEqual(['start', prepared.id]);
+    expect(docker.calls.some(args => args[0] === 'run' || args[0] === 'rm')).toBe(false);
+  });
+  it('does not delete a conflicting generation, including a foreign or credential-drifted candidate', async () => {
+    const prepared = await prepareWakeCatcher({ key: KEY });
+    for (const bad of [catcherRow({ managed: '' }), catcherRow({ image: `sha256:${'e'.repeat(64)}` }), catcherRow({ key: OTHER_KEY })]) {
+      docker.containers.set(prepared.name, bad); docker.calls = [];
+      await expect(prepareWakeCatcher({ key: KEY })).rejects.toThrow(/did not create|unexpected image or credential/);
+      expect(docker.containers.get(prepared.name)).toBe(bad);
+      expect(docker.calls.some(args => ['run', 'start', 'rm'].includes(args[0]!))).toBe(false);
+    }
+  });
+  it('leaves the old backend intact when creation fails and rejects caller-selected images or names', async () => {
+    const old = catcherRow({ id: 'd'.repeat(64) }); docker.containers.set('ninedeploy-wake', old);
+    docker.before = async args => { if (args[0] === 'run') throw new Error('daemon unavailable'); };
+    await expect(prepareWakeCatcher({ key: KEY })).rejects.toThrow('daemon unavailable');
+    expect(docker.containers.get('ninedeploy-wake')).toBe(old);
+    expect(docker.calls.some(args => args[0] === 'rm')).toBe(false);
+    docker.calls = [];
+    for (const params of [{}, { key: 'short' }, { key: KEY, name: 'chosen' }, { key: KEY, image: 'chosen' }]) {
+      await expect(prepareWakeCatcher(params)).rejects.toThrow();
+    }
+    expect(docker.calls).toEqual([]);
+  });
+  it('coalesces concurrent preparation into the same generation', async () => {
+    const [first, second] = await Promise.all([prepareWakeCatcher({ key: KEY }), prepareWakeCatcher({ key: KEY })]);
+    expect(second).toEqual({ ...first, created: false });
+    expect(docker.calls.filter(args => args[0] === 'run')).toHaveLength(1);
+  });
+  it('serializes concurrent ensures of the one shared catcher', async () => {
+    let enter!: () => void, release!: () => void;
+    const started = new Promise<void>(resolve => { enter = resolve; });
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    docker.before = async args => { if (args[0] === 'inspect' && args[1] === 'ninedeploy-agent') { enter(); await barrier; } };
+    const first = ensureWakeCatcher({ key: KEY }); await started;
+    const second = ensureWakeCatcher({ key: KEY });
+    try {
+      await Promise.resolve(); await Promise.resolve();
+      expect(docker.calls.filter(args => args[0] === 'inspect' && args[1] === 'ninedeploy-agent')).toHaveLength(1);
+    } finally { release(); await Promise.allSettled([first, second]); docker.before = undefined; }
+    expect(docker.calls.filter(args => args[0] === 'run')).toHaveLength(1);
+  });
   it('runs the agent image unprivileged, read-only and without mounts or ports', async () => {
     expect(await ensureWakeCatcher({ key: KEY })).toEqual({ id: 'c'.repeat(64), image: AGENT_IMAGE, created: true });
     const run = docker.calls.find(args => args[0] === 'run')!;
@@ -89,6 +170,10 @@ describe('agent-managed wake catcher', () => {
     // The label holds a hash of the key, never the key.
     expect(run.find(arg => arg.startsWith('ninedeploy.wake.key='))).not.toContain(KEY);
     expect(run.at(-2)).toBe(AGENT_IMAGE);
+  });
+  it('disables the panel image healthcheck because the catcher listens on its own port', async () => {
+    await ensureWakeCatcher({ key: KEY });
+    expect(docker.calls.find(args => args[0] === 'run')).toContain('--no-healthcheck');
   });
   it('refuses a missing or malformed key before touching Docker', async () => {
     for (const params of [{}, { key: 'short' }, { key: KEY.toUpperCase() }, { key: KEY, extra: 1 }]) await expect(ensureWakeCatcher(params)).rejects.toThrow();
@@ -136,10 +221,32 @@ describe('agent-managed wake catcher', () => {
       { token: other, count: 1, lastAt: Date.parse('2026-11-02T10:00:07Z') },
     ] });
   });
+  it('reads a prepared generation by immutable ID while the legacy catcher remains present', async () => {
+    docker.containers.set('ninedeploy-wake', catcherRow({ id: 'd'.repeat(64) }));
+    const prepared = await prepareWakeCatcher({ key: KEY });
+    docker.logs = `2026-11-02T10:00:04.000Z ND-WAKE {"token":"${TOKEN}"}`;
+    docker.calls = [];
+    expect(await readWakeDemand({ sinceMs: 0, catcherId: prepared.id })).toMatchObject({ catcherId: prepared.id, items: [{ token: TOKEN, count: 1 }] });
+    expect(docker.calls.filter(args => args[0] === 'inspect').map(args => args[1])).toEqual([prepared.id, prepared.id]);
+    expect(docker.calls.find(args => args[0] === 'logs')!.at(-1)).toBe(prepared.id);
+    expect((await readWakeDemand({ sinceMs: 0 })).catcherId).toBe('d'.repeat(64));
+    docker.calls = [];
+    await expect(readWakeDemand({ sinceMs: 0, catcherId: 'not-an-id' })).rejects.toThrow(); expect(docker.calls).toEqual([]);
+  });
   it('marks a full tail as truncated instead of presenting it as all the demand', async () => {
     docker.containers.set('ninedeploy-wake', catcherRow());
     docker.logs = Array.from({ length: 2000 }, (_, i) => `2026-11-02T10:00:${String(10 + (i % 40)).padStart(2, '0')}.000000000Z ND-WAKE {"token":"${TOKEN}"}`).join('\n');
     expect(await readWakeDemand({ sinceMs: Date.parse('2026-11-02T10:00:00Z') })).toMatchObject({ truncated: true });
+  });
+  it('does not replay demand from before the same catcher container restarted', async () => {
+    docker.containers.set('ninedeploy-wake', catcherRow().replace('10:00:00Z', '10:00:05Z'));
+    docker.logs = [`2026-11-02T10:00:04.000Z ND-WAKE {"token":"${TOKEN}"}`, `2026-11-02T10:00:06.000Z ND-WAKE {"token":"${TOKEN}"}`].join('\n');
+    expect((await readWakeDemand({ sinceMs: 0 })).items).toEqual([{ token: TOKEN, count: 1, lastAt: Date.parse('2026-11-02T10:00:06Z') }]);
+  });
+  it('refuses a catcher process change while its demand log is being read', async () => {
+    docker.containers.set('ninedeploy-wake', catcherRow());
+    docker.before = async args => { if (args[0] === 'logs') docker.containers.set('ninedeploy-wake', catcherRow().replace('10:00:00Z', '10:00:05Z')); };
+    await expect(readWakeDemand({ sinceMs: 0 })).rejects.toThrow(/changed/);
   });
   it('refuses demand from a missing, stopped or foreign catcher instead of reporting none', async () => {
     await expect(readWakeDemand({ sinceMs: 0 })).rejects.toThrow(/not running/);
