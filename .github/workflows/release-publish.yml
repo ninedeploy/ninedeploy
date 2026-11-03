@@ -319,7 +319,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases, node-infrastructure, swarm-artifacts]
+        suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases, node-infrastructure, swarm-artifacts, node-sleep-wake]
     permissions:
       # releases API read (previous release) + pulling the GHCR images.
       contents: read
@@ -604,6 +604,60 @@ jobs:
             .temp_files/release-swarm-runtime/swarm-failure-state.json
             .temp_files/release-swarm-runtime/cases.json
             .temp_files/release-swarm-runtime/failure-state.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Verify public manual node wake without touching panel decoys
+        if: matrix.suite == 'node-sleep-wake'
+        timeout-minutes: 15
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --manual-wake-only --proof=.temp_files/release-manual-node-wake
+
+      - name: Verify lost pre-Stop routing acknowledgement restores the application
+        if: matrix.suite == 'node-sleep-wake'
+        timeout-minutes: 12
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --sleep-restoration-only --proof=.temp_files/release-sleep-restoration
+
+      - name: Verify public automatic node sleep and readiness-held restart recovery
+        if: matrix.suite == 'node-sleep-wake'
+        timeout-minutes: 20
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --automatic-sleep-only --proof=.temp_files/release-automatic-node-sleep
+
+      - name: Preserve public node sleep and wake receipts
+        if: always() && matrix.suite == 'node-sleep-wake'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-node-sleep-wake
+          path: |
+            .temp_files/release-manual-node-wake/runtime-result.json
+            .temp_files/release-manual-node-wake/runtime-cleanup.json
+            .temp_files/release-manual-node-wake/manual-wake-idle.json
+            .temp_files/release-manual-node-wake/manual-wake-traffic.json
+            .temp_files/release-manual-node-wake/manual-wake-outcome.json
+            .temp_files/release-manual-node-wake/cases.json
+            .temp_files/release-manual-node-wake/failure-state.json
+            .temp_files/release-sleep-restoration/runtime-result.json
+            .temp_files/release-sleep-restoration/runtime-cleanup.json
+            .temp_files/release-sleep-restoration/sleep-restoration-receipt.json
+            .temp_files/release-sleep-restoration/sleep-restoration-traffic.json
+            .temp_files/release-sleep-restoration/cases.json
+            .temp_files/release-sleep-restoration/failure-state.json
+            .temp_files/release-automatic-node-sleep/runtime-result.json
+            .temp_files/release-automatic-node-sleep/runtime-cleanup.json
+            .temp_files/release-automatic-node-sleep/automatic-sleep-idle.json
+            .temp_files/release-automatic-node-sleep/automatic-sleep-control.json
+            .temp_files/release-automatic-node-sleep/automatic-sleep-audit.json
+            .temp_files/release-automatic-node-sleep/automatic-sleep-traffic.json
+            .temp_files/release-automatic-node-sleep/cases.json
+            .temp_files/release-automatic-node-sleep/failure-state.json
           include-hidden-files: true
           if-no-files-found: warn
 

@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.18.17",
+    "date": "2026-11-03",
+    "title": "Node sleep/wake, request-rate scaling and verified Swarm artifacts",
+    "changes": [
+      "Automatically sleep eligible node services only after continuously verified idle traffic, then hold demand wake behind readiness and confirmed routing, including panel restart recovery.",
+      "Expose node sleep observation, paused, held and waking states in the API, SDK, CLI and panel without exposing wake credentials.",
+      "Route manual node wake through durable remote Start instead of touching a same-name panel container, and report pending lifecycle work until it settles.",
+      "Restore the healthy application after a lost pre-Stop routing acknowledgement and retire obsolete catchers through ordered routing barriers.",
+      "Scale eligible node services from real request-rate measurements; unavailable or changed observation sources hold capacity rather than pretending traffic is zero.",
+      "Require real Swarm pinned artifact promotion, restart recovery and recorded rollback plus public node wake acceptance before publishing the pushed release image.",
+      "Serialize managed database transactions, clean partially fetched drill files and add an internal isolated PostgreSQL restore-verification foundation.",
+      "Show open-first-run Hub risks and withdraw host-Docker templates with unsafe first-run access. Preserve explicit node and fan-out feature refusals.",
+      "Public restore verification, PITR, wider distributed-runtime acceptance and signed desktop release acceptance remain unfinished; this increment does not complete R2-R6."
+    ]
+  },
+  {
     "version": "0.18.16",
     "date": "2026-11-01",
     "title": "Primary-network readiness and additional Hub blueprints",
