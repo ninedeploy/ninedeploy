@@ -8,6 +8,11 @@ import { wakeUnreachableReason } from '../lib/panelUpstream.js';
 import { trafficAnalyticsEnabled } from '../lib/trafficAnalytics.js';
 import { createNodeIdleScheduler, NODE_IDLE_SAMPLE_MS } from '../lib/nodeIdleScheduler.js';
 import { openServiceNodeIdleWatch } from '../lib/nodeIdleWatchService.js';
+import { createNodeSleepCoordinator } from '../lib/nodeSleepCoordinator.js';
+import { createNodeWakePoller, NODE_WAKE_POLL_MS } from '../lib/nodeWakePoller.js';
+import { registerNodeSleepObserver } from '../lib/serviceSleepStatus.js';
+import { config } from '../config.js';
+import { audit } from '../lib/audit.js';
 
 /**
  * 0.16.11 scale to zero: every minute, puts to sleep the services with
@@ -64,8 +69,25 @@ export default fp(
       open: (service, signal) => openServiceNodeIdleWatch(fastify.db, service, signal),
       onError: err => fastify.log.warn({ err }, 'node idle coverage unavailable'),
     });
-    const nodeIdleTimer = setInterval(() => void nodeIdle.tick(), NODE_IDLE_SAMPLE_MS);
-    nodeIdleTimer.unref();
+    const nodeSleep = config.nodeSleepAutomation ? createNodeSleepCoordinator(fastify.db, { idle: nodeIdle,
+      settled: serviceId => audit(fastify.db, null, 'service.sleep', `Service #${serviceId}`, { serviceId, trigger: 'node-idle' }),
+      onError: err => fastify.log.warn({ err }, 'node sleep step unavailable') }) : null;
+    const nodeWake = config.nodeSleepAutomation ? createNodeWakePoller(fastify.db, { recoverCatchers: true,
+      settled: serviceId => audit(fastify.db, null, 'service.wake', `Service #${serviceId}`, { serviceId, trigger: 'node-demand' }),
+      onError: err => fastify.log.warn({ err }, 'node wake step unavailable') }) : null;
+    let nodeIdleTimer: NodeJS.Timeout | undefined, nodeWakeTimer: NodeJS.Timeout | undefined;
+    let unregisterObserver: (() => void) | undefined;
+    fastify.addHook('onReady', async () => {
+      if (nodeSleep) unregisterObserver = registerNodeSleepObserver(fastify.db, nodeIdle);
+      nodeIdleTimer = setInterval(() => {
+        void nodeIdle.tick().then(() => nodeSleep?.tick()).catch(err => fastify.log.warn({ err }, 'node idle scheduling failed'));
+      }, NODE_IDLE_SAMPLE_MS); nodeIdleTimer.unref();
+      if (nodeWake) {
+        nodeWakeTimer = setInterval(() => {
+          void nodeWake.tick(); void nodeSleep?.tick();
+        }, NODE_WAKE_POLL_MS); nodeWakeTimer.unref();
+      }
+    });
     const sleeper = createSleeper({
       load: async () => {
         try {
@@ -106,7 +128,9 @@ export default fp(
       running = false;
       clearTimeout(timer);
       clearInterval(nodeIdleTimer);
-      await nodeIdle.close();
+      clearInterval(nodeWakeTimer);
+      unregisterObserver?.();
+      await Promise.all([nodeIdle.close(), nodeSleep?.close(), nodeWake?.close()]);
     });
     timer = setTimeout(() => void loop(), SLEEP_TICK_MS);
     timer.unref?.();

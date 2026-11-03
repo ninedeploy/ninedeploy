@@ -1,4 +1,4 @@
-import { serviceCommitStatusInput, serviceFilePut, serviceLifecycleResult } from '@ninedeploy/schemas';
+import { serviceCommitStatusInput, serviceFilePut, serviceLifecycleResult, serviceSleepStatus } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -226,6 +226,10 @@ export const deploysSpecs: RouteSpecMap = {
     floor: 'member',
     responseType: '{ ok: boolean; status: string }',
   },
+  'GET /v1/services/:id/sleep': {
+    summary: 'Read idle coverage and sleep/wake verification state', tag: 'services', floor: 'viewer', response: serviceSleepStatus,
+    description: 'Read-only observations and coarse pending state. Does not acquire execution authority or return private wake keys, Docker identities, lease tokens or raw worker errors.',
+  },
   'POST /v1/services/:id/sleep': {
     summary: 'Put a service to sleep now (scale to zero)',
     description:
@@ -237,7 +241,7 @@ export const deploysSpecs: RouteSpecMap = {
   'POST /v1/services/:id/wake': {
     summary: 'Wake a sleeping service',
     description:
-      'Local wake completes after healthcheck and routing. Plain Docker on a node accepts a durable remote Start (202, pending=true); follow lifecycle state until readiness and loaded routing complete. Unsupported node placement and disabled/unsealed agents refuse without local Docker effects. Answers 400 not_asleep or a local 409 wake_failed. Automatic node sleep remains gated separately.',
+      'Local wake completes after healthcheck and routing. Plain Docker on a node accepts a durable remote Start (202, pending=true); follow lifecycle state until readiness and loaded routing complete. Unsupported node placement and disabled/unsealed agents refuse without local Docker effects. Answers 400 not_asleep or a local 409 wake_failed. Automatic node sleep uses verified idle coverage and serving-node demand polling; manual node sleep is unavailable.',
     tag: 'services',
     floor: 'member',
     response: serviceLifecycleResult,

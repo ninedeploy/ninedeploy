@@ -242,6 +242,21 @@ export const TR: Readonly<Record<string, string>> = {
   'Stop request superseded by a newer action': 'Durdurma isteğinin yerini daha yeni bir işlem aldı',
   'Restart request superseded by a newer action': 'Yeniden başlatma isteğinin yerini daha yeni bir işlem aldı',
   'Start requested; runtime verification is pending': 'Başlatma istendi; çalışma zamanı doğrulaması bekleniyor',
+  'Asleep — its next request wakes it': 'Uykuda — sonraki istek uyandırır',
+  'Automatic node wake is paused — use Wake now': 'Düğümün otomatik uyandırılması duraklatıldı — Şimdi uyandır seçeneğini kullanın',
+  'Automatic sleep is off': 'Otomatik uyku kapalı',
+  'Could not load node sleep status': 'Düğümün uyku durumu yüklenemedi',
+  'Loading node sleep status…': 'Düğümün uyku durumu yükleniyor…',
+  'Node idle coverage is sampled every 15 seconds; a deploy or panel restart begins a new idle window.':
+    'Düğümün boşta kalma süresi 15 saniyede bir ölçülür; dağıtım veya panelin yeniden başlatılması yeni bir boşta kalma aralığı başlatır.',
+  'Node verification is pending': 'Düğüm doğrulaması bekleniyor',
+  'Nodes require a sealed agent with proxy traffic observation enabled and an active domain. Only verified requests through the node proxy count toward idle coverage and wake demand.':
+    'Düğümler için proxy trafik gözlemi açık, şifreli iletişim kullanan bir agent ve etkin bir alan adı gerekir. Boşta kalma süresine ve uyandırma talebine yalnızca düğüm proxy’sinden geçen doğrulanmış istekler sayılır.',
+  'Preparing verified sleep routing': 'Doğrulanmış uyku yönlendirmesi hazırlanıyor',
+  'Scale to zero requires an ordinary Docker service': 'Sıfıra ölçekleme standart bir Docker servisi gerektirir',
+  'Verified idle: {seconds}s / {required}s': 'Doğrulanan boşta kalma: {seconds} sn / {required} sn',
+  'Waiting for verified node idle coverage': 'Düğümün doğrulanmış boşta kalma ölçümü bekleniyor',
+  'Waking — application readiness and routing are pending': 'Uyanıyor — uygulama hazırlığı ve yönlendirme bekleniyor',
   'Stop requested; runtime verification is pending': 'Durdurma istendi; çalışma zamanı doğrulaması bekleniyor',
   'Restart requested; runtime verification is pending':
     'Yeniden başlatma istendi; çalışma zamanı doğrulaması bekleniyor',
@@ -402,8 +417,6 @@ export const TR: Readonly<Record<string, string>> = {
   'It needs traffic analytics (an operator turns it on in {link}) and at least one domain; without them nothing sleeps. Host ports and the service\'s internal network do not count as requests and do not wake it, so a service reached only that way should not sleep.':
     'Trafik analitiği (bir operatör bunu {link} bölümünden açar) ve en az bir alan adı gerekir; bunlar olmadan hiçbir servis uyumaz. Sunucu portları ve servisin dahili ağı istek sayılmaz ve servisi uyandırmaz; bu yüzden yalnızca bu yollarla erişilen bir servis uyutulmamalıdır.',
   'Traefik → Traffic': 'Traefik → Trafik',
-  'This service runs on a node, so it does not sleep for now: scale to zero runs on the panel host only.':
-    'Bu servis bir düğümde çalıştığı için şimdilik uyumaz: sıfıra ölçekleme yalnızca panel sunucusunda çalışır.',
   'This service runs on Swarm; scale to zero does not apply to it.':
     'Bu servis Swarm üzerinde çalışıyor; sıfıra ölçekleme ona uygulanmaz.',
   'This service has no active domain, so no request could wake it: it does not sleep until one routes to it. Add one under Network & Domains.':

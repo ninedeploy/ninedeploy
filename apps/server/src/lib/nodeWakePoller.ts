@@ -13,14 +13,16 @@ export const NODE_WAKE_POLL_MS = 2000;
 const MAX_NODES = 4, MAX_WAKES = 4, RETRY_MS = 30_000;
 const active = ['accepted', 'fencing', 'starting', 'readiness', 'publishing'] as const;
 
-/** Private coordinator. Catcher mutation requires explicit recovery opt-in and durable maintenance authority. */
+/** Bounded coordinator. Catcher recovery requires the maintenance option and durable authority. */
 export function createNodeWakePoller(db: DB, options: {
   runtime?: (signal: AbortSignal) => NodeWakeControllerDeps;
-  /** Private acceptance opt-in; production activation still requires traffic acceptance. */
+  /** Enable durable catcher maintenance; the production sleeper supplies this option. */
   recoverCatchers?: boolean;
   maintenanceRuntime?: (signal: AbortSignal) => NodeWakeMaintenanceDeps;
   now?: () => number;
   onError?: (error: unknown) => void;
+  /** Called only after ready application routing and journal settlement. */
+  settled?: (serviceId: number) => Promise<void>;
 } = {}) {
   const abort = new AbortController(), now = options.now ?? (() => performance.now());
   const nodes = new Map<number, Promise<void>>(), jobs = new Map<number, Promise<void>>();
@@ -46,6 +48,7 @@ export function createNodeWakePoller(db: DB, options: {
       if (closed) { await holdNodeSleep(db, admission, 'node wake poller stopped before dispatch'); return; }
       const runtime = options.runtime?.(abort.signal) ?? nodeWakeRuntime(db, { signal: abort.signal });
       const result = await executeNodeWake(db, admission, { ...runtime, signal: abort.signal });
+      if (result.state === 'completed') await options.settled?.(serviceId);
       if (result.state === 'held') serviceRetry.set(serviceId, now() + RETRY_MS);
     }).catch(error => {
       serviceRetry.set(serviceId, now() + RETRY_MS);

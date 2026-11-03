@@ -7,6 +7,8 @@ import { servingReceiptFixture } from '../fixtures/servingTrafficReceipt.js';
 import { NodeIdleWatch } from '../../src/lib/nodeIdleWatch.js';
 import sleeperPlugin from '../../src/plugins/sleeper.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
+import { config } from '../../src/config.js';
+import { readServiceSleepStatus } from '../../src/lib/serviceSleepStatus.js';
 
 const io = vi.hoisted(() => ({ op: vi.fn(), sealed: vi.fn(async () => true) }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: io.op, agentTransportSealed: io.sealed }));
@@ -99,11 +101,27 @@ it('runs the real plugin on the 15-second cadence and closes all windows on serv
   vi.useFakeTimers();
   const app = Fastify(); app.decorate('db', f.c.db); await app.register(sleeperPlugin); await app.ready();
   try {
+    expect((await readServiceSleepStatus(f.c.db, service)).nodeControllerActive).toBe(true);
     await vi.advanceTimersByTimeAsync(15_000); await vi.waitFor(() => expect(readers.size).toBe(1));
     await vi.advanceTimersByTimeAsync(15_000); await vi.advanceTimersByTimeAsync(15_000);
     await vi.waitFor(() => expect(readers.size).toBe(2));
     expect((await f.c.db.query.services.findFirst())!.asleepAt).toBeNull();
   } finally { await app.close(); }
   expect(readers.size).toBe(0);
+  expect((await readServiceSleepStatus(f.c.db, service)).nodeControllerActive).toBe(false);
   expect(io.op.mock.calls.every(args => ['agent.ping', 'docker.identity', 'proxy.idleWatch.open', 'proxy.idleWatch.sample', 'proxy.idleWatch.finish', 'proxy.idleWatch.close'].includes(args[2]))).toBe(true);
+});
+
+it('keeps the observation-only path when automatic node workers are explicitly paused', async () => {
+  vi.useFakeTimers();
+  const settings = config as { nodeSleepAutomation: boolean }, previous = settings.nodeSleepAutomation;
+  settings.nodeSleepAutomation = false;
+  const app = Fastify(); app.decorate('db', f.c.db);
+  try {
+    await app.register(sleeperPlugin); await app.ready();
+    await vi.advanceTimersByTimeAsync(15_000); await vi.waitFor(() => expect(readers.size).toBe(1));
+    expect((await readServiceSleepStatus(f.c.db, service)).nodeControllerActive).toBe(false);
+    expect((await f.c.db.query.services.findFirst())!.asleepAt).toBeNull();
+  } finally { await app.close(); settings.nodeSleepAutomation = previous; }
+  expect(readers.size).toBe(0);
 });

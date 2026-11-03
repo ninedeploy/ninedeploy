@@ -591,6 +591,8 @@ export function createAutoscaleApiMock() {
  */
 export function createSleepApiMock() {
   return {
+    status: vi.fn().mockResolvedValue({ placement: 'node', phase: 'observing', configured: true, nodeControllerActive: true,
+      idleMs: null, requiredMs: 300_000, idleSatisfied: false, holding: null }),
     sleep: vi.fn().mockResolvedValue({ ok: true, asleep: true }),
     wake: vi.fn().mockResolvedValue({ ok: true, status: 'running' }),
   };

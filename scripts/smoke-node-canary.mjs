@@ -17,9 +17,11 @@ import { startCanaryTraffic } from './lib/smoke-canary-traffic.mjs';
 import { nodeReplicaDatabaseApp } from './fixtures/node-replica-database-app.mjs';
 import { smokeNodeManualWake } from './lib/smoke-node-manual-wake.mjs';
 import { smokeNodeSleepRestoration } from './lib/smoke-node-sleep-restoration.mjs';
+import { smokeNodeAutomaticSleep } from './lib/smoke-node-automatic-sleep.mjs';
 const manualWakeOnly=process.argv.includes('--manual-wake-only');
 const sleepRestorationOnly=process.argv.includes('--sleep-restoration-only');
-if(manualWakeOnly||sleepRestorationOnly){
+const automaticSleepOnly=process.argv.includes('--automatic-sleep-only');
+if(manualWakeOnly||sleepRestorationOnly||automaticSleepOnly){
  assert.equal(process.env.GITHUB_ACTIONS,'true','Use an isolated GitHub Actions runner');
  assert.equal(process.env.RUNNER_ENVIRONMENT,'github-hosted','Use a GitHub-hosted runner');
  assert.equal(process.env.DOCKER_HOST,'unix:///var/run/docker.sock','Use only the hosted runner daemon');
@@ -33,7 +35,7 @@ const autoscaleDatabaseOnly=process.argv.includes('--autoscale-database-only');
 const autoscaleRpsOnly=process.argv.includes('--autoscale-rps-only');
 const healthModesOnly=process.argv.includes('--health-modes-only');
 const sqlFixture=replicaDatabasesOnly||autoscaleDatabaseOnly;
-assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,healthModesOnly,manualWakeOnly,sleepRestorationOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
+assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,healthModesOnly,manualWakeOnly,sleepRestorationOnly,automaticSleepOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image&&/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
 const agentImage=mixedAgentOnly?'ghcr.io/ninedeploy/ninedeploy:v0.18.10':image;
@@ -84,7 +86,7 @@ try{
  const saving=spawn('docker',['exec',daemon,'docker','save',fixtureImage],{windowsHide:true,stdio:['ignore','pipe','pipe']}),loading=spawn('docker',['exec','-i',panelDaemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});saving.stdout.pipe(loading.stdin);saving.stderr.resume();loading.stdout.resume();loading.stderr.resume();await Promise.all([saving,loading].map(p=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{p.kill();reject(Error('fixture image transfer deadline'));},180000);p.on('error',reject);p.on('close',code=>{clearTimeout(timer);code===0?resolve():reject(Error('fixture image transfer '+code));});})));
  primary(['run','-d','--name','nd-owned-registry','-p','127.0.0.1:5000:5000','registry:2']);await until(()=>docker(['exec',panelDaemon,'wget','-qO-','-T','2','http://127.0.0.1:5000/v2/'],{allowFailure:true}).status===0,'owned primary registry');primary(['push',fixtureImage]);
  const setup=randomBytes(24).toString('hex');
- run(panel,['--network',net,'--user','0','-p','127.0.0.1::3000','-v',`${volume}:/data`,'-e',`DOCKER_HOST=tcp://${panelDaemon}:2375`,'-e',`NINEDEPLOY_MASTER_KEY=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_JWT_SECRET=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_SETUP_TOKEN=${setup}`,'-e','NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1','-e','NINEDEPLOY_WILDCARD_DOMAIN=readiness.test',image]);
+ run(panel,['--network',net,'--user','0','-p','127.0.0.1::3000','-v',`${volume}:/data`,'-e',`DOCKER_HOST=tcp://${panelDaemon}:2375`,'-e',`NINEDEPLOY_MASTER_KEY=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_JWT_SECRET=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_SETUP_TOKEN=${setup}`,'-e','NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1','-e','NINEDEPLOY_WILDCARD_DOMAIN=readiness.test',...(manualWakeOnly||sleepRestorationOnly?['-e','NINEDEPLOY_NODE_SLEEP_AUTOMATION=off']:[]),image]);
  baseUrl=`http://127.0.0.1:${docker(['port',panel,'3000/tcp']).out.split(':').at(-1)}`;
  await until(async()=>{try{return(await fetch(baseUrl+'/health',{signal:AbortSignal.timeout(2000)})).ok;}catch{return false;}},'panel health',180000);
  token=(await api('/v1/auth/register',{method:'POST',body:{email:'readiness@example.test',password:'Readiness-fixture-only-2026!',name:'Readiness proof',setupToken:setup}})).tokens.accessToken;
@@ -215,7 +217,12 @@ try{
    const value=/X-NineDeploy-Generation:\s*([a-f0-9]{64})/i.exec(output)?.[1];assert.ok(value);return value;
  };
 
- if(sleepRestorationOnly){
+ if(automaticSleepOnly){
+   await smokeNodeAutomaticSleep({api,inner,docker,panel,id,fixtureImage,ownerLabel:label,source:process.env.GITHUB_SHA,service,domain,until,pause,report,cleared,
+     restartPanel:async()=>{docker(['restart',panel]);baseUrl='http://127.0.0.1:'+docker(['port',panel,'3000/tcp']).out.split(':').at(-1);
+       await until(async()=>{try{return(await fetch(baseUrl+'/health',{signal:AbortSignal.timeout(2000)})).ok;}catch{return false;}},'restarted public panel',120000);},
+     save:(name,value)=>writeFileSync(resolve(proof,name),JSON.stringify(value,null,2))});
+ }else if(sleepRestorationOnly){
    await smokeNodeSleepRestoration({api,inner,docker,panel,id,fixtureImage,ownerLabel:label,source:process.env.GITHUB_SHA,service,domain,until,pause,report,cleared,
      save:(name,value)=>writeFileSync(resolve(proof,name),JSON.stringify(value,null,2))});
  }else if(manualWakeOnly){
@@ -333,7 +340,7 @@ try{
    report({case:c.name,stopRemainedAuthoritative:true,noAutomaticRevival:true,trafficSamplingEndsBeforeStop:true,...sampled});
  }
  }
- const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,...(manualWakeOnly||sleepRestorationOnly?{manualWakeOnly,sleepRestorationOnly,privateRealIdleAdmission:true,source:process.env.GITHUB_SHA,imageId:docker(['image','inspect',image,'--format','{{.Id}}']).out}:{}),cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
+ const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,...(manualWakeOnly||sleepRestorationOnly||automaticSleepOnly?{manualWakeOnly,sleepRestorationOnly,automaticSleepOnly,privateRealIdleAdmission:!automaticSleepOnly,source:process.env.GITHUB_SHA,imageId:docker(['image','inspect',image,'--format','{{.Id}}']).out}:{}),cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
  writeFileSync(proof+'/runtime-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
  }
 }catch(e){
