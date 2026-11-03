@@ -12,6 +12,7 @@ import { createNodeSleepCoordinator } from '../lib/nodeSleepCoordinator.js';
 import { createNodeWakePoller, NODE_WAKE_POLL_MS } from '../lib/nodeWakePoller.js';
 import { registerNodeSleepObserver } from '../lib/serviceSleepStatus.js';
 import { config } from '../config.js';
+import { audit } from '../lib/audit.js';
 
 /**
  * 0.16.11 scale to zero: every minute, puts to sleep the services with
@@ -69,8 +70,10 @@ export default fp(
       onError: err => fastify.log.warn({ err }, 'node idle coverage unavailable'),
     });
     const nodeSleep = config.nodeSleepAutomation ? createNodeSleepCoordinator(fastify.db, { idle: nodeIdle,
+      settled: serviceId => audit(fastify.db, null, 'service.sleep', `Service #${serviceId}`, { serviceId, trigger: 'node-idle' }),
       onError: err => fastify.log.warn({ err }, 'node sleep step unavailable') }) : null;
     const nodeWake = config.nodeSleepAutomation ? createNodeWakePoller(fastify.db, { recoverCatchers: true,
+      settled: serviceId => audit(fastify.db, null, 'service.wake', `Service #${serviceId}`, { serviceId, trigger: 'node-demand' }),
       onError: err => fastify.log.warn({ err }, 'node wake step unavailable') }) : null;
     let nodeIdleTimer: NodeJS.Timeout | undefined, nodeWakeTimer: NodeJS.Timeout | undefined;
     let unregisterObserver: (() => void) | undefined;

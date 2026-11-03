@@ -21,6 +21,8 @@ export function createNodeWakePoller(db: DB, options: {
   maintenanceRuntime?: (signal: AbortSignal) => NodeWakeMaintenanceDeps;
   now?: () => number;
   onError?: (error: unknown) => void;
+  /** Called only after ready application routing and journal settlement. */
+  settled?: (serviceId: number) => Promise<void>;
 } = {}) {
   const abort = new AbortController(), now = options.now ?? (() => performance.now());
   const nodes = new Map<number, Promise<void>>(), jobs = new Map<number, Promise<void>>();
@@ -46,6 +48,7 @@ export function createNodeWakePoller(db: DB, options: {
       if (closed) { await holdNodeSleep(db, admission, 'node wake poller stopped before dispatch'); return; }
       const runtime = options.runtime?.(abort.signal) ?? nodeWakeRuntime(db, { signal: abort.signal });
       const result = await executeNodeWake(db, admission, { ...runtime, signal: abort.signal });
+      if (result.state === 'completed') await options.settled?.(serviceId);
       if (result.state === 'held') serviceRetry.set(serviceId, now() + RETRY_MS);
     }).catch(error => {
       serviceRetry.set(serviceId, now() + RETRY_MS);

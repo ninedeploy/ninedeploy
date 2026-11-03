@@ -14,6 +14,8 @@ export function createNodeSleepCoordinator(db: DB, options: {
   runtime?: (signal: AbortSignal) => NodeSleepControllerDeps;
   now?: () => number;
   onError?: (error: unknown) => void;
+  /** Called only after the immutable Stop receipt is committed as asleep. */
+  settled?: (serviceId: number) => Promise<void>;
 }) {
   const abort = new AbortController(), now = options.now ?? (() => performance.now());
   const jobs = new Map<number, Promise<void>>(), retries = new Map<number, number>();
@@ -27,6 +29,7 @@ export function createNodeSleepCoordinator(db: DB, options: {
       if (closed) { await holdNodeSleep(db, admission, 'Node sleep coordinator stopped before dispatch'); return; }
       const runtime = options.runtime?.(abort.signal) ?? nodeSleepRuntime(db, { signal: abort.signal });
       const result = await executeNodeSleep(db, admission, { ...runtime, signal: abort.signal });
+      if (result.state === 'asleep') await options.settled?.(id);
       if (result.state === 'held') retries.set(id, now() + RETRY_MS);
       else retries.delete(id);
     }).catch(error => {

@@ -18,11 +18,13 @@ const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: io.agent, agentTransportSealed: io.sealed }));
 let f: Awaited<ReturnType<typeof servingReceiptFixture>>, pollers: ReturnType<typeof createNodeWakePoller>[];
 let mode: 'normal' | 'foreign' | 'truncated' | 'unknown', lostRoute: boolean, failEnsure: boolean, beforeDemand: (() => Promise<void>) | undefined;
+let settled: ReturnType<typeof vi.fn>;
 const row = async () => (await f.c.db.query.nodeSleepTransitions.findFirst())!;
 const service = async () => (await f.c.db.query.services.findFirst())!;
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   f = await servingReceiptFixture('file::memory:'); pollers = []; mode = 'normal'; lostRoute = false; failEnsure = false; beforeDemand = undefined;
+  settled = vi.fn(async (id: number) => { expect(id).toBe(1); expect(await row()).toMatchObject({ phase: 'completed', fallbackRouting: false }); expect((await service()).asleepAt).toBeNull(); });
   await f.c.db.update(services).set({ sleepAfterMinutes: 5, healthCheck: 'tcp', healthTimeoutSeconds: 10 });
   const proof = await nodeSleepEvidence(f.c.db), admission = (await admitNodeSleep(f.c.db, await service(), proof.token))!;
   await nodeWakeKey(f.c.db, 4, true);
@@ -59,7 +61,7 @@ afterEach(async () => {
 });
 const operations = (op: string) => io.agent.mock.calls.filter(call => call[2] === op);
 function make(onError = vi.fn(), recoverCatchers = false) {
-  const poller = createNodeWakePoller(f.c.db, { onError, recoverCatchers, maintenanceRuntime: signal => ({ signal,
+  const poller = createNodeWakePoller(f.c.db, { onError, recoverCatchers, settled, maintenanceRuntime: signal => ({ signal,
     sealed: () => io.sealed(), agent: (node, op, params, options) => io.agent(f.c.db, node, op, params, () => undefined, options),
     ensure: (node, key, parent) => prepareNodeWakeCatcher(f.c.db, node, key, parent),
     route: async (serverId, catcherPromotion) => {
@@ -94,6 +96,7 @@ it('polls pinned demand and runs the durable wake without enabling catcher repla
   expect(operations('wake.catcher.ensure')).toHaveLength(0);
   expect(operations('wake.catcher.prepare')).toHaveLength(0);
   await poller.tick(); expect(operations('docker.startSet')).toHaveLength(1);
+  expect(settled).toHaveBeenCalledOnce();
 });
 it.each(['foreign', 'truncated', 'unknown'] as const)('never wakes from %s demand', async kind => {
   mode = kind; const poller = make(); await poller.tick();
@@ -107,10 +110,12 @@ it('backs off refused observations rather than hammering the node every tick', a
 it('a new poller recovers the journal without another demand and never repeats acknowledged Start', async () => {
   lostRoute = true; const first = make(); await first.tick();
   await finish(first.settle()); expect(await row()).toMatchObject({ phase: 'publishing', workerToken: null });
+  expect(settled).not.toHaveBeenCalled();
   await first.close(); const reads = operations('wake.demand').length;
   const second = make(); await second.tick(); await finish(second.settle()); expect((await row()).phase).toBe('completed');
   expect(operations('wake.demand')).toHaveLength(reads); expect(operations('docker.startSet')).toHaveLength(1);
   expect(operations('docker.readiness')).toHaveLength(6);
+  expect(settled).toHaveBeenCalledOnce();
 });
 it('refuses stale recovery snapshots without claiming another journal identity', async () => {
   lostRoute = true; const poller = make(); await poller.tick();
