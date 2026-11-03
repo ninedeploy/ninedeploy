@@ -60,7 +60,45 @@ export function persistentPortTable(spec: PersistentPortNftSpec): string {
 
 export function persistentPortFingerprint(spec: PersistentPortNftSpec): string {
   const rules = persistentPortRules(spec);
-  return createHash('sha256').update(JSON.stringify({ serviceId: spec.serviceId, owner: spec.owner, revision: spec.revision, mark: spec.mark, target: spec.target, rules })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ serviceId: spec.serviceId, owner: spec.owner, revision: spec.revision, mark: spec.mark, target: { id: spec.target.id, ipv4: spec.target.ipv4 }, rules })).digest('hex');
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value !== null && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
+/** Verify actual kernel rules, not just an ownership comment left on a table.
+ * Unknown flags/objects fail closed. Kernel-assigned handles are immaterial. */
+export function assertPersistentPortNftState(spec: PersistentPortNftSpec, snapshot: unknown): void {
+  const rules = persistentPortRules(spec), name = persistentPortTable(spec);
+  const data = snapshot as { nftables?: unknown[] } | null;
+  if (!data || !Array.isArray(data.nftables)) throw new Error('Invalid persistent ingress kernel snapshot');
+  const actual: unknown[] = [];
+  for (const entry of data.nftables) {
+    if (!entry || typeof entry !== 'object') throw new Error('Invalid persistent ingress kernel object');
+    for (const [kind, value] of Object.entries(entry)) {
+      if (!value || typeof value !== 'object') continue;
+      const object = value as Record<string, unknown>;
+      if (object.family !== 'ip' || (object.table !== name && !(kind === 'table' && object.name === name))) continue;
+      const { handle: _handle, ...meaning } = object;
+      actual.push({ [kind]: meaning });
+    }
+  }
+  const expected: unknown[] = [{ table: { family: 'ip', name, comment: `ninedeploy:${spec.owner}:${spec.revision}:${persistentPortFingerprint(spec)}` } }];
+  for (const [chain, hook] of [['incoming', 'prerouting'], ['local', 'output']]) {
+    expected.push({ chain: { family: 'ip', table: name, name: chain, type: 'nat', hook, prio: -101, policy: 'accept' } });
+    for (const rule of rules) expected.push({ rule: { family: 'ip', table: name, chain, expr: [
+      { match: { op: '==', left: { payload: { protocol: 'ip', field: 'daddr' } }, right: rule.ip } },
+      { match: { op: '==', left: { payload: { protocol: rule.protocol, field: 'dport' } }, right: rule.hostPort } },
+      { mangle: { key: { ct: { key: 'mark' } }, value: spec.mark } },
+      { dnat: { addr: spec.target.ipv4, port: rule.containerPort } },
+    ] } });
+  }
+  if (JSON.stringify(actual.map(canonical).sort()) !== JSON.stringify(expected.map(canonical).sort())) {
+    throw new Error('Installed persistent ingress differs from the expected publication');
+  }
 }
 
 /** One scoped nft transaction. Existing conntrack bindings retain their original backend. */

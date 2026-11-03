@@ -1,6 +1,7 @@
 # Persistent TCP/UDP ingress and MonoSIP migration
 
-Status: kernel acceptance under development. No production deploy mode is enabled.
+Status: kernel rule foundation merged in PR #30. Publication authority acceptance
+is in progress. No production deploy mode is enabled.
 
 ## Confirmed trigger
 
@@ -42,6 +43,26 @@ state. Retirement requires an explicit transport/application drain policy. A
 timeout must report an unresolved drain rather than claim lossless retirement.
 
 ## Publication authority and runtime integration still required
+
+`PersistentPortPublisher` now records intent before either routing plane changes,
+retains both targets after an uncertain acknowledgement, and can resume from a
+durable journal. It compares the actual nft table, chains and rule expressions
+against the expected publication: a matching comment alone is insufficient.
+Retirement requires a confirmed generation, no pending intent and a completed
+drain observation followed by another kernel readback. Retention is bounded to
+three targets; further deploys must wait instead of forcibly stopping active flows.
+The version 2 journal also records retirement intent before issuing an immutable
+runtime stop. A lost stop acknowledgement blocks later publication/reuse until
+that retirement is reconciled. The runtime reference is removed only after stop
+and forwarding-grant cleanup acknowledge completion.
+
+The hosted acceptance adapter writes and fsyncs a real journal, injects a lost
+Traefik acknowledgement after the route actually loads, reconstructs the
+publisher from that journal and checks active-flow retirement refusal. The runner
+is the only writer in its owned daemon. This does not certify production locking:
+the production adapter still needs non-stealable host authority, durable ownership
+and pipeline cleanup integration. A process-local queue or stale-heartbeat lock
+alone must not be used to fence firewall mutation.
 
 1. Persist binding ownership, service generation, immutable Docker IDs, backend
    addresses, keeper identity, firewall capability and publication revision.

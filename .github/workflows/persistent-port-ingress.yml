@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'apps/server/src/lib/persistentPortNft.ts'
+      - 'apps/server/src/lib/persistentPortPublication.ts'
       - 'scripts/smoke-persistent-port-ingress.mjs'
       - 'scripts/fixtures/persistent-port-runtime.mjs'
       - '.github/workflows/persistent-port-ingress.yml'
@@ -18,10 +19,13 @@ jobs:
       DOCKER_CONTEXT: default
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.12.1
-      - run: node scripts/smoke-persistent-port-ingress.mjs
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ninedeploy/server exec tsx ../../scripts/smoke-persistent-port-ingress.mjs
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

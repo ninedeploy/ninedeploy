@@ -1,15 +1,18 @@
 // Kernel acceptance only. Never run against a developer or production Docker daemon.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, openSync, fsyncSync, closeSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { persistentPortForwardRules, renderPersistentPortNft } from '../apps/server/src/lib/persistentPortNft.ts';
+import { PersistentPortPublisher, PersistentPortPublicationPending } from '../apps/server/src/lib/persistentPortPublication.ts';
 
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
 assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
 assert.equal(process.env.DOCKER_HOST, 'unix:///var/run/docker.sock');
 assert.equal(process.env.DOCKER_CONTEXT, 'default');
-const root = process.cwd(), proof = resolve('.temp_files/persistent-port-native');
+const root = fileURLToPath(new URL('..', import.meta.url)), proof = resolve(root, '.temp_files/persistent-port-native');
+process.chdir(root);
 mkdirSync(proof, { recursive: true });
 const name = `ndpi-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`;
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', timeout: 180000, maxBuffer: 8 << 20 }).trim();
@@ -45,9 +48,7 @@ try {
   inside('iptables', '-S', 'DOCKER-FORWARD'); // Refuse unsupported Docker forwarding topology.
   inside('iptables', '-N', 'NDPI_TEST');
   inside('iptables', '-I', 'DOCKER-FORWARD', '1', '-j', 'NDPI_TEST');
-  for (const rule of persistentPortForwardRules(spec, [spec.target, candidate])) inside('iptables', '-A', 'NDPI_TEST', ...rule);
-  const publish = next => { writeFileSync(resolve(proof, 'rules.nft'), renderPersistentPortNft(next, next.revision > 1)); inside('nft', '-f', '/proof/rules.nft'); };
-  publish(spec);
+  const publish = (next, replace) => { writeFileSync(resolve(proof, 'rules.nft'), renderPersistentPortNft(next, replace)); inside('nft', '-f', '/proof/rules.nft'); };
   const route = target => {
     writeFileSync(resolve(proof, 'dynamic.next'), `http:\n  routers:\n    web:\n      rule: Host(\`pbx.test\`)\n      service: web\n  services:\n    web:\n      loadBalancer:\n        servers:\n          - url: http://${target}:3000\n`);
     renameSync(resolve(proof, 'dynamic.next'), resolve(proof, 'dynamic.yml'));
@@ -72,29 +73,78 @@ try {
     ['route', 'add', 'default', 'via', '172.28.0.1'],
   ]) inside('nsenter', '-t', clientPid, '-n', 'ip', ...args);
   const probe = expected => JSON.parse(innerDocker('exec', 'client', 'node', fixture, 'probe', expected, '172.28.0.2'));
-  observations.push(await until(() => probe('old')));
   const webTarget = expected => innerDocker('exec', 'client', 'node', fixture, 'web-probe', expected);
   await until(() => webTarget('old'));
+  let loseWebAck = false;
+  const journalPath = resolve(proof, 'publication.json');
+  // This runner is the sole writer in its disposable daemon. A production
+  // adapter additionally needs non-stealable cross-process host authority.
+  const authority = {
+    exclusive: operation => operation(),
+    readJournal: async () => existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, 'utf8')) : null,
+    saveJournal: async state => {
+      const temp = journalPath + '.next', fd = openSync(temp, 'w', 0o600);
+      try { writeFileSync(fd, JSON.stringify(state)); fsyncSync(fd); } finally { closeSync(fd); }
+      renameSync(temp, journalPath);
+      const dir = openSync(proof, 'r'); try { fsyncSync(dir); } finally { closeSync(dir); }
+    },
+    installed: async table => {
+      const list = JSON.parse(inside('nft', '-j', 'list', 'tables'));
+      if (!list.nftables.some(entry => entry.table?.family === 'ip' && entry.table?.name === table)) return null;
+      return JSON.parse(inside('nft', '-j', 'list', 'table', 'ip', table));
+    },
+    ready: async desired => {
+      const runtime = JSON.parse(innerDocker('inspect', desired.target.id))[0];
+      assert.equal(runtime.Id, desired.target.id); assert.equal(runtime.State.Running, true);
+      assert.equal(runtime.NetworkSettings.Networks.backend.IPAddress, desired.target.ipv4);
+      const status = innerDocker('exec', desired.target.id, 'node', '-e', "fetch('http://127.0.0.1:3000/ready').then(r=>console.log(r.status))");
+      assert.equal(status, '200', 'Candidate is not ready');
+    },
+    prepare: async (desired, retained) => {
+      for (const rule of persistentPortForwardRules(desired, retained)) {
+        try { inside('iptables', '-C', 'NDPI_TEST', ...rule); }
+        catch { inside('iptables', '-A', 'NDPI_TEST', ...rule); }
+      }
+    },
+    publish: async (desired, replace) => publish(desired, replace),
+    confirmWeb: async desired => {
+      route(desired.target.ipv4); await until(() => webTarget(desired.target.id === candidate.id ? 'new' : 'old'));
+      if (loseWebAck) throw new Error('Injected lost Traefik acknowledgement after actual route load');
+    },
+    drained: async target => !inside('conntrack', '-L').split('\n').some(line => line.includes(`mark=${spec.mark}`) && line.includes(`src=${target.ipv4} `)),
+    retire: async () => { throw new Error('A target with active native flows must never be retired'); },
+  };
+  const publisher = new PersistentPortPublisher(authority);
+  await until(() => authority.ready(spec));
+  await publisher.promote(spec);
+  observations.push(await until(() => probe('old')));
   innerDocker('exec', '-d', 'client', 'node', fixture, 'hold', 'old', '172.28.0.2');
   innerDocker('exec', '-d', 'client', 'node', fixture, 'sample');
   await until(() => assert.ok(existsSync(resolve(proof, 'hold-ready'))));
-  // Probe readiness from the host namespace; cross-network traffic is intentionally denied.
-  const readyStatus = () => innerDocker('exec', 'new', 'node', '-e', "fetch('http://127.0.0.1:3000/ready').then(r=>console.log(r.status))");
-  assert.equal(readyStatus(), '503');
+  const next = { ...spec, target: candidate, revision: 2 };
+  await assert.rejects(() => publisher.promote(next), /Candidate is not ready/);
+  assert.equal((await authority.readJournal()).pending, null);
   observations.push(probe('old'));
   innerDocker('exec', 'new', 'touch', '/tmp/ready');
-  assert.equal(readyStatus(), '200');
-  publish({ ...spec, target: candidate, revision: 2 }); route(candidate.ipv4);
+  loseWebAck = true;
+  await assert.rejects(() => publisher.promote(next), PersistentPortPublicationPending);
+  const unresolved = await authority.readJournal();
+  assert.equal(unresolved.pending.revision, 2); assert.equal(unresolved.committed.revision, 1);
+  assert.deepEqual(unresolved.retained.map(target => target.id).sort(), [spec.target.id, candidate.id].sort());
+  await assert.rejects(() => publisher.retireDrained(next, spec.target.id), PersistentPortPublicationPending);
   observations.push(probe('new'));
-  await until(() => webTarget('new'));
-  publish({ ...spec, revision: 3 }); route(spec.target.ipv4);
+  loseWebAck = false;
+  const recovered = new PersistentPortPublisher(authority);
+  await recovered.recover(next);
+  assert.equal(await recovered.retireDrained(next, spec.target.id), false);
+  await recovered.promote({ ...spec, revision: 3 });
   observations.push(probe('old'));
   await until(() => webTarget('old'));
   writeFileSync(resolve(proof, 'finish'), 'finish');
   await until(() => { assert.ok(existsSync(resolve(proof, 'hold-result.json'))); assert.ok(existsSync(resolve(proof, 'web-result.json'))); });
   const held = JSON.parse(readFileSync(resolve(proof, 'hold-result.json'))), web = JSON.parse(readFileSync(resolve(proof, 'web-result.json')));
   assert.ok(held.count > 10); assert.ok(web.count > 10);
-  writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, observations, held, web, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
+  writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, observations, held, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
 } finally {
   if (created) {
     for (const [file, args] of [['nft.json', ['nft', '-j', 'list', 'ruleset']], ['iptables.txt', ['iptables-save', '-c']], ['conntrack.txt', ['conntrack', '-L']], ['routes.txt', ['ip', 'route']]]) {
