@@ -19,11 +19,18 @@ on:
       - 'scripts/smoke-wake-recovery.mjs'
       - 'scripts/fixtures/wake-recovery.mjs'
       - 'scripts/fixtures/wake-recovery-sampler.mjs'
+      - 'scripts/smoke-node-sleep-wake.mjs'
+      - 'scripts/fixtures/node-sleep-wake.mjs'
+      - 'scripts/fixtures/node-sleep-wake-sampler.mjs'
       - '.github/workflows/serving-traffic.yml'
   workflow_dispatch:
     inputs:
       wake_recovery:
         description: Run the real Traefik catcher replacement acceptance instead of serving windows
+        type: boolean
+        default: false
+      node_sleep_wake:
+        description: Run real five-minute idle, application Stop and readiness-held wake acceptance
         type: boolean
         default: false
 
@@ -50,13 +57,16 @@ jobs:
       - name: Build candidate
         run: docker build -t ninedeploy:serving .
       - name: Observe ordinary serving generations through sealed HTTP and real Traefik
-        if: github.event.inputs.wake_recovery != 'true'
+        if: github.event.inputs.wake_recovery != 'true' && github.event.inputs.node_sleep_wake != 'true'
         run: node scripts/smoke-serving-traffic.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic
       - name: Verify catcher replacement through real sealed HTTP and sampled Traefik traffic
-        if: github.event.inputs.wake_recovery == 'true'
+        if: github.event.inputs.wake_recovery == 'true' && github.event.inputs.node_sleep_wake != 'true'
         run: node scripts/smoke-wake-recovery.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic/wake-recovery
+      - name: Verify real idle, immutable application Stop and readiness-held wake
+        if: github.event.inputs.node_sleep_wake == 'true'
+        run: node scripts/smoke-node-sleep-wake.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic/node-sleep-wake
       - name: Preserve observations and owned cleanup receipts
-        if: always() && github.event.inputs.wake_recovery != 'true'
+        if: always() && github.event.inputs.wake_recovery != 'true' && github.event.inputs.node_sleep_wake != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: serving-traffic-${{ github.run_id }}
@@ -64,10 +74,18 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
       - name: Preserve public wake replacement evidence only
-        if: always() && github.event.inputs.wake_recovery == 'true'
+        if: always() && github.event.inputs.wake_recovery == 'true' && github.event.inputs.node_sleep_wake != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: wake-recovery-${{ github.run_id }}
           path: .temp_files/serving-traffic/wake-recovery/public/
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Preserve public real sleep and wake evidence only
+        if: always() && github.event.inputs.node_sleep_wake == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: node-sleep-wake-${{ github.run_id }}
+          path: .temp_files/serving-traffic/node-sleep-wake/public/
           include-hidden-files: true
           if-no-files-found: warn
