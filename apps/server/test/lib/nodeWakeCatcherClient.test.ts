@@ -24,6 +24,15 @@ it('accepts complete fresh demand bound to the pinned catcher and returns its pa
   expect(io.agent.mock.calls.at(-1)![2]).toBe('wake.demand');
   expect(io.agent.mock.calls.at(-1)![5].timeoutMs).toBe(15_000);
 });
+it('pins prepared-generation demand by immutable ID and refuses agents without the new protocol', async () => {
+  const name = `ninedeploy-wake-g-${'b'.repeat(32)}`, start = since();
+  await expect(readNodeWakeDemand(db, 4, catcher, start, undefined, name)).rejects.toThrow();
+  expect(io.agent.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
+  caps.push('wake.catcher.prepare'); io.agent.mockClear();
+  expect((await readNodeWakeDemand(db, 4, catcher, start, undefined, name)).catcherId).toBe(catcher);
+  expect(io.agent.mock.calls.at(-1)![3]).toEqual({ sinceMs: start, catcherId: catcher });
+  for (const invalid of ['other', `${name}\n`]) await expect(readNodeWakeDemand(db, 4, catcher, start, undefined, invalid)).rejects.toThrow();
+});
 it('ensures a catcher only through a sealed capability-checked exchange with a valid credential', async () => {
   reply = { id: catcher, image: `sha256:${'f'.repeat(64)}`, created: true };
   expect(await ensureNodeWakeCatcher(db, 4, key)).toEqual(reply);

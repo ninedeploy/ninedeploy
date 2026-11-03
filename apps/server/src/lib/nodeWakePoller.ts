@@ -60,7 +60,7 @@ export function createNodeWakePoller(db: DB, options: {
       try {
         // Stateless lookback survives panel restart. Admission is one-use in SQLite,
         // so rereading a token cannot start another wake or the next sleep cycle.
-        const receipt = await readNodeWakeDemand(db, nodeId, catcherId, Math.max(0, Date.now() - 60_000), abort.signal);
+        const receipt = await readNodeWakeDemand(db, nodeId, catcherId, Math.max(0, Date.now() - 60_000), abort.signal, rows[0]!.catcherName);
         if (closed) return;
         nodeRetry.delete(key);
         for (const item of receipt.items) {

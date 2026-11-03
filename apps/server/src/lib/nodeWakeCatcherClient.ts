@@ -2,24 +2,25 @@ import type { DB } from '@ninedeploy/db';
 import { z } from 'zod';
 import { agentOp, agentTransportSealed } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
+import { validNodeCatcherName } from './nodeCatcherIdentity.js';
 
 const id = z.string().regex(/^[a-f0-9]{64}$/), time = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const ensured = z.object({ id, image: z.string().regex(/^sha256:[a-f0-9]{64}$/), created: z.boolean() }).strict();
-const prepared = ensured.extend({ name: z.string().regex(/^ninedeploy-wake-g-[a-f0-9]{32}$/) }).strict();
+const prepared = ensured.extend({ name: z.string().length(50).regex(/^ninedeploy-wake-g-[a-f0-9]{32}$/) }).strict();
 const demand = z.object({ catcherId: id, startedAt: z.string().max(128).refine(value => Number.isFinite(Date.parse(value)) && Date.parse(value) >= 0),
   cursorMs: time, truncated: z.boolean(), items: z.array(z.object({ token: z.string().regex(/^[a-f0-9]{32}$/),
     count: z.number().int().positive().max(2000), lastAt: time }).strict()).max(2000),
 }).strict().refine(reply => new Set(reply.items.map(item => item.token)).size === reply.items.length && reply.items.reduce((sum, item) => sum + item.count, 0) <= 2000, 'Invalid demand coverage');
 
 /** One sealed, bounded exchange; no response text or node credential appears in errors. */
-async function exchange(db: DB, nodeId: number, op: 'wake.demand' | 'wake.catcher.ensure' | 'wake.catcher.prepare', params: Record<string, unknown>, parent?: AbortSignal) {
+async function exchange(db: DB, nodeId: number, op: 'wake.demand' | 'wake.catcher.ensure' | 'wake.catcher.prepare', params: Record<string, unknown>, parent?: AbortSignal, pinned = false) {
   if (!Number.isSafeInteger(nodeId) || nodeId <= 0) throw new Error('Invalid wake node');
   const signal = AbortSignal.any([...(parent ? [parent] : []), AbortSignal.timeout(op === 'wake.demand' ? 25_000 : 80_000)]);
   signal.throwIfAborted();
   const sealed = await agentTransportSealed(db, nodeId, signal);
   signal.throwIfAborted();
   const refusal = await capabilityRefusal((operation, input, sink) => agentOp(db, nodeId, operation, input, sink, { signal, timeoutMs: 5000 }),
-    `#${nodeId}`, sealed, { cap: op === 'wake.catcher.prepare' ? 'wake.catcher.prepare' : 'wake.catcher', feature: 'observe or recover the node wake catcher', sealedRequired: true });
+    `#${nodeId}`, sealed, { cap: pinned || op === 'wake.catcher.prepare' ? 'wake.catcher.prepare' : 'wake.catcher', feature: 'observe or recover the node wake catcher', sealedRequired: true });
   if (refusal) throw new Error(refusal.message);
   signal.throwIfAborted();
   const result = await agentOp(db, nodeId, op, params, () => undefined, { signal, timeoutMs: op === 'wake.demand' ? 15_000 : 65_000 });
@@ -42,10 +43,11 @@ export async function prepareNodeWakeCatcher(db: DB, nodeId: number, key: string
 }
 
 /** Positive demand is valid only for the pinned catcher and a complete fresh log window. */
-export async function readNodeWakeDemand(db: DB, nodeId: number, expectedCatcherId: string, sinceMs: number, signal?: AbortSignal) {
-  if (!id.safeParse(expectedCatcherId).success || !time.safeParse(sinceMs).success) throw new Error('Invalid node wake demand binding');
+export async function readNodeWakeDemand(db: DB, nodeId: number, expectedCatcherId: string, sinceMs: number, signal?: AbortSignal, catcherName = 'ninedeploy-wake') {
+  if (!id.safeParse(expectedCatcherId).success || !time.safeParse(sinceMs).success || !validNodeCatcherName(catcherName)) throw new Error('Invalid node wake demand binding');
+  const pinned = catcherName !== 'ninedeploy-wake';
   const before = Date.now(), monotonic = performance.now();
-  const reply = demand.parse(await exchange(db, nodeId, 'wake.demand', { sinceMs }, signal));
+  const reply = demand.parse(await exchange(db, nodeId, 'wake.demand', { sinceMs, ...(pinned ? { catcherId: expectedCatcherId } : {}) }, signal, pinned));
   const receivedAt = Date.now(), elapsed = performance.now() - monotonic;
   if (receivedAt < before || receivedAt - before >= 30_000 || elapsed < 0 || elapsed >= 30_000 || reply.catcherId !== expectedCatcherId || reply.truncated ||
     reply.cursorMs < sinceMs || reply.cursorMs > receivedAt + 5000 || Date.parse(reply.startedAt) > receivedAt + 5000 ||

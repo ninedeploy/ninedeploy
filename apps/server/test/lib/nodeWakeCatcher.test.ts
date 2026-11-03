@@ -6,7 +6,7 @@ vi.mock('../../src/lib/exec.js', () => ({ capture: vi.fn(async (_cmd: string, ar
   docker.calls.push(args);
   await docker.before?.(args);
   if (args[0] === 'inspect') {
-    const found = docker.containers.get(args[1]!);
+    const found = docker.containers.get(args[1]!) ?? [...docker.containers.values()].find(row => row.startsWith(`${args[1]}|`));
     if (found === undefined) throw new Error('No such object');
     return found;
   }
@@ -220,6 +220,18 @@ describe('agent-managed wake catcher', () => {
       { token: TOKEN, count: 2, lastAt: Date.parse('2026-11-02T10:00:06.500Z') },
       { token: other, count: 1, lastAt: Date.parse('2026-11-02T10:00:07Z') },
     ] });
+  });
+  it('reads a prepared generation by immutable ID while the legacy catcher remains present', async () => {
+    docker.containers.set('ninedeploy-wake', catcherRow({ id: 'd'.repeat(64) }));
+    const prepared = await prepareWakeCatcher({ key: KEY });
+    docker.logs = `2026-11-02T10:00:04.000Z ND-WAKE {"token":"${TOKEN}"}`;
+    docker.calls = [];
+    expect(await readWakeDemand({ sinceMs: 0, catcherId: prepared.id })).toMatchObject({ catcherId: prepared.id, items: [{ token: TOKEN, count: 1 }] });
+    expect(docker.calls.filter(args => args[0] === 'inspect').map(args => args[1])).toEqual([prepared.id, prepared.id]);
+    expect(docker.calls.find(args => args[0] === 'logs')!.at(-1)).toBe(prepared.id);
+    expect((await readWakeDemand({ sinceMs: 0 })).catcherId).toBe('d'.repeat(64));
+    docker.calls = [];
+    await expect(readWakeDemand({ sinceMs: 0, catcherId: 'not-an-id' })).rejects.toThrow(); expect(docker.calls).toEqual([]);
   });
   it('marks a full tail as truncated instead of presenting it as all the demand', async () => {
     docker.containers.set('ninedeploy-wake', catcherRow());

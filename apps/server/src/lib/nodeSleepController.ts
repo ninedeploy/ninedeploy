@@ -15,7 +15,8 @@ export interface NodeSleepControllerDeps extends Omit<NodeWakeControllerDeps, 'r
   route: (nodeId: number, promotion?: NodeWakeRoutePromotion, signal?: AbortSignal) => Promise<void>;
   drain: (signal?: AbortSignal) => Promise<void>;
 }
-const catcherReceipt = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), image: z.string().regex(/^sha256:[a-f0-9]{64}$/), created: z.boolean() }).strict();
+const catcherReceipt = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), image: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  name: z.string().length(50).regex(/^ninedeploy-wake-g-[a-f0-9]{32}$/), created: z.boolean() }).strict();
 
 /** No Stop begins before confirmed, reachable catcher routing; pre-Stop failures restore the app. */
 export async function executeNodeSleep(db: DB, admission: NodeSleepAdmission, deps: NodeSleepControllerDeps): Promise<{
@@ -39,7 +40,7 @@ export async function executeNodeSleep(db: DB, admission: NodeSleepAdmission, de
     const row = await checkpoint();
     if (!row.catcherId) throw new Error('Node sleep catcher identity unavailable');
     const ready = await verifyNodeReadiness((op, params, _sink, options) => call(op, params, Math.max(1, options?.timeoutMs ?? 15_000)),
-      { targets: [{ id: row.catcherId, name: 'ninedeploy-wake' }], mode: 'tcp', port: 8080, path: '/' }, 15_000, async () => { await checkpoint(); }, deps.log ?? (() => undefined));
+      { targets: [{ id: row.catcherId, name: row.catcherName }], mode: 'tcp', port: 8080, path: '/' }, 15_000, async () => { await checkpoint(); }, deps.log ?? (() => undefined));
     if (!ready) throw new Error('Node sleep catcher readiness is unconfirmed');
   };
   const restore = async () => {
@@ -54,7 +55,7 @@ export async function executeNodeSleep(db: DB, admission: NodeSleepAdmission, de
   try {
     const row = await checkpoint(), sealed = await effect(() => deps.sealed(row.serverId));
     const refusal = await capabilityRefusal((op, params) => call(op, params), `#${row.serverId}`, sealed, {
-      cap: ['docker.mutations', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'wake.catcher'],
+      cap: ['docker.mutations', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'wake.catcher.prepare'],
       feature: 'sleep a node service with confirmed wake routing', sealedRequired: true,
     });
     if (refusal) throw new Error(refusal.message);
@@ -68,7 +69,7 @@ export async function executeNodeSleep(db: DB, admission: NodeSleepAdmission, de
         const reply = runtimeFenceReply.parse(frame(await call('docker.runtimeFence', request, 35_000), 'ND-RUNTIME-FENCE '));
         if (reply.requestId !== request.requestId || reply.serviceId !== request.serviceId || reply.revision !== request.revision || reply.deploymentWatermark !== request.deploymentWatermark) throw new Error('Node sleep fence changed');
         const key = await effect(() => nodeWakeKey(db, current.serverId, true));
-        const catcher = catcherReceipt.parse(frame(await call('wake.catcher.ensure', { key }, 65_000), 'ND-WAKE-CATCHER '));
+        const catcher = catcherReceipt.parse(frame(await call('wake.catcher.prepare', { key }, 65_000), 'ND-WAKE-CATCHER '));
         await bindNodeSleepCatcher(db, admission, catcher);
         await catcherReady(); await advanceNodeSleep(db, admission, 'fencing', 'prepared');
       } else if (current.phase === 'prepared') await advanceNodeSleep(db, admission, 'prepared', 'routing');
