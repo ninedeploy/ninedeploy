@@ -33,11 +33,24 @@ const eligible = (svc: Service) => {
     Number.isSafeInteger(svc.runtimeReplicas) && svc.runtimeReplicas >= 1 && svc.runtimeReplicas <= 10;
 };
 
-async function configuration(db: ReadDB, service: Service): Promise<string> {
+/**
+ * The serving generation a journal is bound to. Domain rows are deliberately
+ * outside it: sleep admission already binds the idle evidence to the whole
+ * rendered routing config (nodeServingTrafficContext), and the renderer routes
+ * whatever domains the service has now, to the catcher while it sleeps and to
+ * the app once wake publishes. Binding the rows here made any edit to a sleeping
+ * service's domain (a header, the SSL toggle, even `updatedAt`) refuse every
+ * wake until someone pressed Wake by hand; health-setting edits did the same.
+ * `legacy` is the 0.18.17 formula, which hashed the whole domain rows. A journal
+ * written by that release still matches it while its domains are unchanged, so
+ * services asleep across the upgrade can still wake.
+ */
+async function configuration(db: ReadDB, service: Service): Promise<{ current: string; legacy: string }> {
   // Cosmetic fields and next-deploy replica/autoscale preferences do not change
   // the immutable serving generation a visitor is allowed to wake.
-  const config = [service.type, service.orchestrator, service.slug, service.serverId, service.runtimeId, service.runtimeReplicas, service.port,
-    service.healthCheck, service.healthPath, service.healthCommand, service.healthTimeoutSeconds, service.cpuShares, service.cpuLimitMilli, service.memLimitMb];
+  const generation = [service.type, service.orchestrator, service.slug, service.serverId, service.runtimeId, service.runtimeReplicas, service.port],
+    health = [service.healthCheck, service.healthPath, service.healthCommand, service.healthTimeoutSeconds],
+    limits = [service.cpuShares, service.cpuLimitMilli, service.memLimitMb], config = [...generation, ...health, ...limits];
   const [attached, routes, capacity] = await Promise.all([
     db.select({ attachmentId: databaseAttachments.id, id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status }).from(databaseAttachments)
       .innerJoin(databases, eq(databases.id, databaseAttachments.databaseId)).where(eq(databaseAttachments.serviceId, service.id)).orderBy(databaseAttachments.id),
@@ -45,7 +58,10 @@ async function configuration(db: ReadDB, service: Service): Promise<string> {
     db.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, Number(/-([1-9]\d*)$/.exec(service.runtimeId ?? '')?.[1])) }),
   ]);
   if (attached.some(item => item.serverId !== service.serverId || item.status !== 'running') || !routes.some(route => route.status === 'active')) throw changed();
-  return createHash('sha256').update(JSON.stringify([config, attached, routes, capacity])).digest('hex');
+  const hash = (parts: unknown[]) => createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+  // Health settings are readiness policy, read live when restoration or wake
+  // checks the started replicas; they do not change which containers start.
+  return { current: hash(['v2', generation, limits, attached, capacity]), legacy: hash([config, attached, routes, capacity]) };
 }
 
 async function unblocked(db: ReadDB, serviceId: number): Promise<boolean> {
@@ -77,7 +93,7 @@ export async function admitNodeSleep(db: DB, expected: Service, token: NodeIdleE
         await readNodeServingTrafficState(tx, proof.window.input) !== proof.window.context) return null;
       const current = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, fresh.id) });
       if (current && !terminal.includes(current.phase as typeof terminal[number])) return null;
-      const config = await configuration(tx, fresh), previous = await readServiceRuntimeOwner(tx, fresh.id);
+      const config = (await configuration(tx, fresh)).current, previous = await readServiceRuntimeOwner(tx, fresh.id);
       const owner = await reserveServiceRuntimeOwnerInTransaction(tx, fresh.id, 'sleep', nonce(), previous);
       const [sequence] = await tx.select({ value: sql<number>`COALESCE((SELECT seq FROM sqlite_sequence WHERE name='deployments'), 0)` }).from(services).where(eq(services.id, fresh.id)).limit(1);
       const input = proof.window.input, receipt = proof.window.finished, workerToken = nonce();
@@ -115,7 +131,7 @@ async function assertCurrent(db: ReadDB, admission: NodeSleepAdmission, requireL
     (row.catcherId === null) !== (row.catcherImage === null) || !validNodeCatcherName(row.catcherName) ||
     (row.action === 'wake' || ['prepared', 'routing', 'routed', 'stopping', 'asleep', 'restoring'].includes(row.phase)) && !row.catcherId ||
     row.fallbackRouting !== (row.action === 'wake' || ['routing', 'routed', 'stopping', 'asleep', 'restoring'].includes(row.phase)) ||
-    await configuration(db, service) !== row.configuration || !await unblocked(db, service.id)) throw changed();
+    !Object.values(await configuration(db, service)).includes(row.configuration) || !await unblocked(db, service.id)) throw changed();
   const names = replicaNames(service.runtimeId!, service.runtimeReplicas);
   if (!Array.isArray(row.targets) || row.targets.length !== names.length || new Set(row.targets.map(target => target.id)).size !== names.length ||
     names.some(name => !row.targets.some(target => target.name === name && target.deploymentId === row.deploymentId && target.port === service.port && /^[a-f0-9]{64}$/.test(target.id)))) throw changed();

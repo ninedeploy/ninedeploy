@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A sleeping node service could not be woken by visitors after one of its domains was edited. Adding a header, turning SSL on or off, or any other domain change made every wake demand fail, and visitors saw "Waking up" until someone pressed Wake or redeployed. Changing a health setting (path, check, command or timeout) had the same effect. Wake now goes through after either kind of edit. Sleep admission already binds the routes to the idle evidence, and readiness uses the current health settings. Services that went to sleep on 0.18.17 still wake after the upgrade (R2).
+- On a panel with several nodes, a wake could stall when other nodes were unreachable. The proxy update now goes to the waking service's own node first, ahead of the rest of the fleet. Before, nodes were updated in id order, and two unreachable nodes ahead of it could use up the 30 s publication window, so the wake was refused on every retry. Deploys and autoscaling also update their own node first (R2).
+
 ## [0.18.17] - 2026-11-03
 
 ### Added

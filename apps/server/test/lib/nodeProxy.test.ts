@@ -270,4 +270,14 @@ describe('confirmed node routing transitions', () => {
     const confirmed = h.agentOp.mock.calls.filter(c => (c as unknown[])[2] === 'proxy.confirmRouting');
     expect(confirmed.map(c => (c as unknown[])[1])).toEqual([4]);
   });
+
+  it('syncs the selected node first so slow nodes ahead of it cannot expire its short-lived promotion', async () => {
+    currentAgent();
+    h.agentOp.mockClear();
+    const results = await syncAllNodeProxies(db, [3, 4, 5], undefined, { confirmNode: 5 } as never);
+    const visits = h.agentOp.mock.calls.map(c => (c as unknown[])[1] as number);
+    expect(visits[0]).toBe(5);
+    expect(visits.lastIndexOf(5)).toBeLessThan(visits.indexOf(3));
+    expect(results.map(r => r.serverId)).toEqual([3, 4, 5]);
+  });
 });
