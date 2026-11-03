@@ -12,6 +12,15 @@ const timeout = (promise, ms = 4000) => {
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('socket deadline')), ms); })]).finally(() => clearTimeout(timer));
 };
 const stun = packet => packet.length === 20 && packet.readUInt32BE(4) === 0x2112a442;
+const web = () => new Promise((resolve, reject) => {
+  // Node 26 fetch ignores a custom Host header; use http so Traefik sees pbx.test.
+  const request = http.get({ hostname: address, port: 8080, headers: { host: 'pbx.test' } }, response => {
+    let body = '';
+    response.setEncoding('utf8'); response.on('data', chunk => { body += chunk; if (body.length > 1024) request.destroy(new Error('Oversized web fixture response')); });
+    response.once('error', reject); response.once('end', () => resolve({ status: response.statusCode, body }));
+  });
+  request.setTimeout(4000, () => request.destroy(new Error('Web deadline'))); request.once('error', reject);
+});
 if (mode === 'server') {
   const version = process.argv[3];
   for (const port of [5060, 3478, ...Array.from({ length: 101 }, (_, i) => i + 10000)]) {
@@ -95,12 +104,15 @@ if (mode === 'server') {
       writeFileSync('/proof/hold-result.json', JSON.stringify({ count, expected, sourcePreserved: true }));
     } else console.log(JSON.stringify({ expected, sourcePreserved: true, tcp: 1, udp: 5, stun: 1 }));
   } finally { for (const socket of sockets) { if (socket instanceof net.Socket) socket.destroy(); else socket.close(); } }
+} else if (mode === 'web-probe') {
+  const response = await web(); console.log(JSON.stringify(response));
+  assert.equal(response.status, 200); assert.equal(response.body, process.argv[3]);
 } else if (mode === 'sample') {
   let count = 0;
   const deadline = Date.now() + 120000;
   while (!existsSync('/proof/finish') && Date.now() < deadline) {
-    const response = await fetch('http://10.6.6.9:8080', { headers: { host: 'pbx.test' }, signal: AbortSignal.timeout(4000) });
-    assert.equal(response.status, 200); assert.ok(['old', 'new'].includes(await response.text())); count++;
+    const response = await web();
+    assert.equal(response.status, 200); assert.ok(['old', 'new'].includes(response.body)); count++;
     await new Promise(resolve => setTimeout(resolve, 30));
   }
   assert.ok(existsSync('/proof/finish'), 'sample completion deadline');
