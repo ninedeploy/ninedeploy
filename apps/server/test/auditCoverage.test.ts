@@ -22,7 +22,7 @@ const EXEMPT: Record<string, string> = {
   'uptime.ts POST /:id/check':
     'runs one check like the scheduler; a down/up transition it causes is audited by recordCheck (alert.monitor_down / alert.monitor_up)',
   'settings.ts POST /vault/test': 'connectivity probe, no state change',
-  'services.ts POST /:id/wake': 'audited as service.wake by lib/sleep.ts wakeService, with trigger "manual"',
+  'services.ts POST /:id/wake': 'local wake audits service.wake in sleep.ts; node acceptance audits service.start when the durable lifecycle settles',
   'settings.ts POST /dns-records/test': 'connectivity probe, no state change',
   'settings.ts POST /dns-records/provider/test': 'G3.5: lists zones, no state change',
   'settings.ts POST /auto-url/detect-ip': 'asks a public echo service for the host IP; reads only, nothing is stored',

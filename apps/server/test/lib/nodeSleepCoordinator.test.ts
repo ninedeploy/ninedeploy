@@ -11,11 +11,13 @@ const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: io.agent, agentTransportSealed: io.sealed }));
 let f: Awaited<ReturnType<typeof servingReceiptFixture>>, coordinators: ReturnType<typeof createNodeSleepCoordinator>[];
 let lostStop: boolean, during: ((op: string) => Promise<void>) | undefined;
+let settled: ReturnType<typeof vi.fn>;
 const service = async () => (await f.c.db.query.services.findFirst())!;
 const row = () => f.c.db.query.nodeSleepTransitions.findFirst();
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   f = await servingReceiptFixture('file::memory:'); coordinators = []; lostStop = false; during = undefined;
+  settled = vi.fn(async (id: number) => { expect(id).toBe(1); expect(await row()).toMatchObject({ phase: 'asleep' }); expect((await service()).asleepAt).not.toBeNull(); });
   await f.c.db.update(services).set({ sleepAfterMinutes: 5, healthCheck: 'tcp', healthTimeoutSeconds: 10 });
   io.sealed.mockReset().mockResolvedValue(true);
   io.agent.mockReset().mockImplementation(async (_db, _node, op, params) => {
@@ -54,7 +56,7 @@ afterEach(async () => {
   vi.useRealTimers(); vi.restoreAllMocks(); f.c.client?.close();
 });
 function make(idle = { takeEvidence: vi.fn() }, onError = vi.fn()) {
-  const coordinator = createNodeSleepCoordinator(f.c.db, { idle, onError, now: Date.now }); coordinators.push(coordinator); return coordinator;
+  const coordinator = createNodeSleepCoordinator(f.c.db, { idle, onError, now: Date.now, settled }); coordinators.push(coordinator); return coordinator;
 }
 const ops = (op: string) => io.agent.mock.calls.filter(call => call[2] === op);
 
@@ -65,6 +67,7 @@ it('starts a sleep only with genuine scheduler-issued authority and does not rep
   expect(await row()).toMatchObject({ action: 'sleep', phase: 'asleep' }); expect((await service()).asleepAt).not.toBeNull();
   expect(ops('docker.stopSet')).toHaveLength(1);
   await coordinator.tick(); await finish(coordinator.settle()); expect(ops('docker.stopSet')).toHaveLength(1);
+  expect(settled).toHaveBeenCalledOnce();
 });
 it('does not substitute elapsed time or an arbitrary object for an opaque idle proof', async () => {
   const coordinator = make({ takeEvidence: vi.fn(() => ({ idleMs: 300_000 })) });
@@ -84,6 +87,7 @@ it('recovers a lost Stop acknowledgement with the same durable command without n
   const proof = await nodeSleepEvidence(f.c.db), first = make({ takeEvidence: vi.fn(() => proof.token) });
   await first.tick(); await finish(first.settle());
   const held = (await row())!; expect(held).toMatchObject({ phase: 'stopping', workerToken: null });
+  expect(settled).not.toHaveBeenCalled();
   const command = ops('docker.stopSet')[0]![3];
   await first.tick(); await first.tick(); await first.settle();
   expect(ops('docker.stopSet'), 'a held command must back off instead of hammering the node').toHaveLength(1);
@@ -92,6 +96,7 @@ it('recovers a lost Stop acknowledgement with the same durable command without n
   await second.tick(); await finish(second.settle());
   expect(await row()).toMatchObject({ phase: 'asleep', requestId: held.requestId }); expect(idle.takeEvidence).not.toHaveBeenCalled();
   expect(ops('docker.stopSet')).toHaveLength(2); expect(ops('docker.stopSet')[1]![3]).toEqual(command);
+  expect(settled).toHaveBeenCalledOnce();
 });
 it('does not take over another worker lease and expires unpublished idle rather than stopping later', async () => {
   const proof = await nodeSleepEvidence(f.c.db), admission = (await admitNodeSleep(f.c.db, await service(), proof.token))!;
