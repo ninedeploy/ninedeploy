@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { deployments, domains, eq, nodeAutoscaleCapacity, nodeSleepTransitions, serviceTargets, services } from '@ninedeploy/db';
+import { createHash } from 'node:crypto';
+import { databaseAttachments, databases, deployments, domains, eq, nodeAutoscaleCapacity, nodeSleepTransitions, serviceTargets, services } from '@ninedeploy/db';
 import { nodeSleepEvidence } from '../fixtures/nodeSleepEvidence.js';
 import { servingReceiptFixture } from '../fixtures/servingTrafficReceipt.js';
 import { admitNodeSleep, admitNodeWake, advanceNodeSleep, bindNodeSleepCatcher, checkpointNodeSleep, completeNodeSleep, completeNodeWake, nodeSleepCommand, recordNodeWakeStarted, recoverNodeSleep, refreshNodeSleepCatcher, type NodeSleepAdmission } from '../../src/lib/nodeSleepAuthority.js';
@@ -219,4 +220,35 @@ it('rolls back both runtime ownership and journal creation if a canary starts be
   await expect(admitNodeSleep(f.c.db, service, proof.token)).rejects.toThrow(/authority/);
   expect(triggered).toBe(true); expect(await readServiceRuntimeOwner(f.c.db, 1)).toBeNull();
   expect(await f.c.db.select().from(nodeSleepTransitions)).toEqual([]);
+});
+it.each([
+  ['a response header', { headers: JSON.stringify([{ name: 'X-Test', value: '1' }]) }],
+  ['the SSL toggle', { ssl: false }],
+  ['only updatedAt', { updatedAt: new Date(Date.now() + 60_000) }],
+] as const)('an edit to %s on a sleeping service still lets a fresh demand wake it', async (_edit, change) => {
+  await asleep();
+  // PATCH /domains/:id and POST /domains/:id/ssl do not stop at a sleeping service; the renderer keeps the catcher route.
+  await f.c.db.update(domains).set(change as Partial<typeof domains.$inferInsert>);
+  expect(await admitNodeWake(f.c.db, await selected(), await demand())).not.toBeNull();
+});
+it('a journal written by 0.18.17 (whole domain rows in the configuration) still wakes after the upgrade', async () => {
+  await asleep();
+  const sha = (parts: unknown[]) => createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+  const svc = await selected(), row = await journal();
+  const config = [svc.type, svc.orchestrator, svc.slug, svc.serverId, svc.runtimeId, svc.runtimeReplicas, svc.port,
+    svc.healthCheck, svc.healthPath, svc.healthCommand, svc.healthTimeoutSeconds, svc.cpuShares, svc.cpuLimitMilli, svc.memLimitMb];
+  const attached = await f.c.db.select({ attachmentId: databaseAttachments.id, id: databases.id, slug: databases.slug, serverId: databases.serverId, status: databases.status })
+    .from(databaseAttachments).innerJoin(databases, eq(databases.id, databaseAttachments.databaseId)).where(eq(databaseAttachments.serviceId, 1)).orderBy(databaseAttachments.id);
+  const routes = await f.c.db.select().from(domains).where(eq(domains.serviceId, 1)).orderBy(domains.id);
+  const capacity = await f.c.db.query.nodeAutoscaleCapacity.findFirst({ where: eq(nodeAutoscaleCapacity.deploymentId, row.deploymentId) });
+  const legacy = sha([config, attached, routes, capacity]);
+  expect(legacy).not.toBe(row.configuration);
+  const binding = sha([row.serviceId, row.serverId, row.deploymentId, row.runtimeId, row.ownerEpoch, row.requestId, row.action, legacy, row.watermark, row.wakeToken, row.targets, row.idleEvidence]);
+  await f.c.db.update(nodeSleepTransitions).set({ configuration: legacy, binding });
+  expect(await admitNodeWake(f.c.db, await selected(), await demand())).not.toBeNull();
+});
+it('a serving-generation change on a sleeping service still refuses its wake', async () => {
+  await asleep();
+  await f.c.db.update(services).set({ port: 4000 });
+  await expect(admitNodeWake(f.c.db, await selected(), await demand())).rejects.toThrow(/configuration/);
 });

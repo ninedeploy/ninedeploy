@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A sleeping node service could not be woken by visitors after one of its domains was edited. Adding a header, turning SSL on or off, or any other domain change made every wake demand fail, and visitors saw "Waking up" until someone pressed Wake or redeployed. Wake now goes through after a domain edit, because sleep admission already binds the routes to the idle evidence. Services that went to sleep on 0.18.17 still wake after the upgrade (R2).
+
 ## [0.18.17] - 2026-11-03
 
 ### Added
