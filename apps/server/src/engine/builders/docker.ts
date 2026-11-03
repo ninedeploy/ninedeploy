@@ -1344,6 +1344,7 @@ export const dockerBuilder: Builder = {
     const portHandoff = hostPorts.length > 0 && !!previous?.runtimeId && previous.runtimeId !== name;
     const stopPreviousForPorts = async () => {
       if (!portHandoff || !previous) return;
+      if (deployAborted()) throw new Error('Deployment cancelled before host-port handoff');
       log(
         `Host port${hostPorts.length === 1 ? '' : 's'} ${hostPorts.join(', ')} ${hostPorts.length === 1 ? 'is' : 'are'} published — stopping previous runtime ${previous.runtimeId} before start (sequential deploy, no blue-green; it is started again if this deploy fails)`,
       );

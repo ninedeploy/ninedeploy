@@ -76,6 +76,16 @@ describe('port mappings on the docker run line', () => {
       expect(execMocks.run.mock.calls.some(call => (call[1] as string[])[0] === 'stop')).toBe(false);
     } finally { execMocks.run.mockImplementation(async () => undefined); }
   });
+  it('does not stop the serving runtime when cancellation arrives during candidate preparation', async () => {
+    const { abortDeployment, runInDeployScope } = await import('../src/lib/deployAbort.js');
+    execMocks.run.mockImplementation(async (_command: unknown, argv: unknown) => {
+      if ((argv as string[])[0] === 'create') abortDeployment(5);
+    });
+    try {
+      await expect(runInDeployScope(5, () => deploy({ portMappings: mappings }, { runtimeId: 'game-4' }))).rejects.toThrow('cancelled before host-port handoff');
+      expect(execMocks.run.mock.calls.some(call => (call[1] as string[])[0] === 'stop')).toBe(false);
+    } finally { execMocks.run.mockImplementation(async () => undefined); }
+  });
   it('keeps the serving runtime up if multiline-env candidate creation fails', async () => {
     execMocks.run.mockImplementation(async (_command: unknown, argv: unknown) => {
       const args = argv as string[];
