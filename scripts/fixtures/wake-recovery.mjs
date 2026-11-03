@@ -56,7 +56,7 @@ try {
     const head = await c.db.query.nodeProxyWriteHeads.findFirst(); assert.ok(head);
     const seed = JSON.parse(readFileSync('/proof/seed.json', 'utf8'));
     const result = await agentOp(c.db, 4, 'wake.catcher.retire', { revision: head.revision, requestId: head.requestId, timeoutMs: 30_000,
-      content: await renderDynamicConfig(c.db, { serverId: 4 }), target: { id: seed.catcherId, name: 'ninedeploy-wake' } }, () => undefined, { timeoutMs: 35_000 });
+      content: await renderDynamicConfig(c.db, { serverId: 4 }), target: { id: seed.catcherId, name: 'ninedeploy-wake' } }, () => undefined, { timeoutMs: 35_000, tolerateExit: true });
     const frames = result.lines.filter(line => line.startsWith('ND-WAKE-CATCHER ')); assert.equal(frames.length, 1); assert.equal(result.exitCode, 1);
     const refusal = JSON.parse(frames[0].slice('ND-WAKE-CATCHER '.length));
     assert.equal(refusal.error?.code, 'wake_catcher_failed');
