@@ -97,6 +97,7 @@ export const config = {
   acmeCaServer: env.NINEDEPLOY_ACME_CA_SERVER ?? null,
   templatesSource: env.NINEDEPLOY_TEMPLATES_SOURCE ?? null,
   deployConcurrency: env.NINEDEPLOY_DEPLOY_CONCURRENCY,
+  nodeSleepAutomation: env.NINEDEPLOY_NODE_SLEEP_AUTOMATION === 'on',
   dnsProvider: env.NINEDEPLOY_DNS_PROVIDER ?? null,
   dnsToken: env.NINEDEPLOY_DNS_TOKEN ?? null,
   // JSON endpoint returning {"tag_name": "vX.Y.Z", ...} (GitHub Releases format).

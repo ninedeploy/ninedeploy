@@ -1,6 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, type DB, domains, runMigrations, services, users, servers, deployments, eq } from '@ninedeploy/db';
+import { serviceSleepStatus } from '@ninedeploy/schemas';
+import { registerNodeSleepObserver } from '../src/lib/serviceSleepStatus.js';
 
 /**
  * 0.16.11 scale to zero through the services routes: the PATCH that sets
@@ -89,6 +91,34 @@ describe('sleepAfterMinutes', () => {
     const compose = await app.inject({ method: 'PATCH', url: '/v1/services/6', headers: OWNER, payload: { sleepAfterMinutes: 15 } });
     expect(compose.statusCode).toBe(400);
     expect(compose.json().error.message).toBe('Scale to zero applies to docker services only');
+  });
+});
+
+describe('GET /:id/sleep', () => {
+  it('reports unavailable node observation without inventing idle time and obeys service access', async () => {
+    await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'private-token' });
+    await db.update(services).set({ serverId: 4, sleepAfterMinutes: 5 }).where(eq(services.id, 5));
+    const response = await app.inject({ method: 'GET', url: '/v1/services/5/sleep', headers: OWNER });
+    expect(response.statusCode).toBe(200);
+    expect(serviceSleepStatus.parse(response.json())).toEqual({ placement: 'node', phase: 'observing', configured: true,
+      nodeControllerActive: false, idleMs: null, requiredMs: 300_000, idleSatisfied: false, holding: 'Node sleep controller is not running' });
+    expect(h.run).not.toHaveBeenCalled(); expect(h.agent).not.toHaveBeenCalled();
+    const denied = await app.inject({ method: 'GET', url: '/v1/services/5/sleep', headers: asUser({ id: 999, isOperator: false }) });
+    expect(denied.statusCode).toBe(404);
+  });
+  it('uses the current app observation only while its observer is registered', async () => {
+    await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'private-token' });
+    await db.update(services).set({ serverId: 4, sleepAfterMinutes: 5 }).where(eq(services.id, 5));
+    const remove = registerNodeSleepObserver(db, { status: () => ({ idleMs: 123_000, requiredMs: 300_000, idleSatisfied: false, holding: null }) });
+    try {
+      const response = await app.inject({ method: 'GET', url: '/v1/services/5/sleep', headers: OWNER });
+      expect(serviceSleepStatus.parse(response.json())).toMatchObject({ nodeControllerActive: true, idleMs: 123_000, holding: null });
+    } finally { remove(); }
+    expect((await app.inject({ method: 'GET', url: '/v1/services/5/sleep', headers: OWNER })).json().nodeControllerActive).toBe(false);
+  });
+  it('keeps local disabled and unsupported placement states explicit', async () => {
+    expect((await app.inject({ method: 'GET', url: '/v1/services/5/sleep', headers: OWNER })).json()).toMatchObject({ placement: 'panel', phase: 'disabled', requiredMs: null });
+    expect((await app.inject({ method: 'GET', url: '/v1/services/6/sleep', headers: OWNER })).json()).toMatchObject({ placement: 'unsupported', phase: 'unsupported' });
   });
 });
 

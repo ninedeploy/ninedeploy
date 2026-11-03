@@ -3,7 +3,7 @@ import { nodeWakeRuntime } from './nodeWakeRuntime.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import type { NodeSleepControllerDeps } from './nodeSleepController.js';
 
-/** Internal adapter; automatic node sleep remains gated until hosted acceptance. */
+/** Production adapter: sleep/restoration requires ordered, loaded-routing confirmation. */
 export function nodeSleepRuntime(db: DB, options: { signal?: AbortSignal; log?: (line: string) => void } = {}): NodeSleepControllerDeps {
   return { ...nodeWakeRuntime(db, options),
     route: (requireNode, wakePromotion, signal, settle) => {

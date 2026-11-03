@@ -9,7 +9,7 @@ const ESC = String.fromCharCode(27);
 
 function makeClient() {
   return {
-    services: { list: vi.fn(), get: vi.fn(), update: vi.fn(), sleep: vi.fn(), wake: vi.fn() },
+    services: { list: vi.fn(), get: vi.fn(), update: vi.fn(), sleepStatus: vi.fn(), sleep: vi.fn(), wake: vi.fn() },
   };
 }
 type Client = ReturnType<typeof makeClient>;
@@ -68,6 +68,15 @@ describe('helpers', () => {
 });
 
 describe('sleep show', () => {
+  it('shows pending node verification instead of claiming an accepted wake is awake', async () => {
+    const client = makeClient(); client.services.get.mockResolvedValue(service({ serverId: 4 }));
+    client.services.sleepStatus.mockResolvedValue({ placement: 'node', phase: 'waking', configured: true, nodeControllerActive: true,
+      idleMs: 300_000, requiredMs: 300_000, idleSatisfied: false, holding: `Pending${ESC}[2J` });
+    await sleepShow(asClient(client), '4');
+    expect(out()).toContain('waking'); expect(out()).toContain('300s / 300s'); expect(out()).not.toContain('awake'); expect(out()).not.toContain(`${ESC}[2J`);
+    logSpy.mockClear(); await sleepShow(asClient(client), '4', { json: true });
+    expect(JSON.parse(out()).observation.phase).toBe('waking');
+  });
   it('shows an awake service with the setting', async () => {
     const client = makeClient();
     client.services.get.mockResolvedValue(service());
