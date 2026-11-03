@@ -56,7 +56,10 @@ try {
     const target = `/tmp/backup-${format}.dump`;
     await docker(['exec', name, 'pg_dump', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '--clean', '--if-exists', `--format=${format}`, `--file=${target}`]);
     const file = join(scratch, `${format}.dump`); files.push(file);
-    await docker(['cp', `${name}:${target}`, file]);
+    // These tiny synthetic dumps are captured binary-safe. docker cp cannot
+    // read user-created tmpfs mounts; production input uses bounded streaming.
+    const bytes = await capture('docker', ['exec', name, 'cat', target], { timeoutMs: 30_000, maxOutputBytes: 64 * 1024, captureEncoding: 'base64' });
+    await writeFile(file, Buffer.from(bytes, 'base64'), { mode: 0o600 });
     dumps.push({ file, digest: await hash(file) });
   }
   phase = 'source-mutate';
@@ -104,7 +107,10 @@ try {
       if (error instanceof Error) report.cleanupError = error.message.slice(-1000);
     }
   }
-  for (const file of files) { try { await unlink(file); } catch { cleanup = false; } }
+  for (const file of files) {
+    try { await unlink(file); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') cleanup = false; }
+  }
   if (scratch) { try { await rmdir(scratch); } catch { cleanup = false; } }
   report.cleanup = cleanup;
   await writeFile(join(proof, 'restore-verification.json'), `${JSON.stringify(report, null, 2)}\n`);
