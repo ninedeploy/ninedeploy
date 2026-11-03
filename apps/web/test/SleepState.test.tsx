@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { ToastProvider } from '../src/components/Toast.js';
+import type { ServiceLifecycleResult, ServiceLifecycleView } from '@ninedeploy/sdk';
 
 /** 0.16.11: the asleep badge and the Wake now / Sleep now actions of the service header. */
 
@@ -25,14 +26,15 @@ function svcWith(over: Record<string, unknown> = {}) {
 function renderTree(node: React.ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-  render(
+  const wrap = (content: React.ReactNode) => (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <ToastProvider>{node}</ToastProvider>
+        <ToastProvider>{content}</ToastProvider>
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
-  return { invalidate };
+  const view = render(wrap(node));
+  return { invalidate, queryClient, rerender: (content: React.ReactNode) => view.rerender(wrap(content)) };
 }
 
 describe('isAsleep / asleepTitle', () => {
@@ -78,6 +80,48 @@ describe('SleepActions', () => {
     vi.clearAllMocks();
     wake.mockResolvedValue({ ok: true, status: 'running' });
     sleep.mockResolvedValue({ ok: true, asleep: true });
+  });
+
+  const acceptedWake: ServiceLifecycleResult = { ok: true, status: 'running', pending: true,
+    lifecycle: { id: 8, action: 'start', phase: 'preparing', current: true, busy: false, retryable: false, attempts: 0, reason: null,
+      createdAt: '2026-11-03T12:00:00Z', updatedAt: '2026-11-03T12:00:00Z', nextAttemptAt: '2026-11-03T12:00:00Z' } };
+  it('reports accepted node wake as pending and starts lifecycle observation before declaring it awake', async () => {
+    wake.mockResolvedValueOnce(acceptedWake);
+    const { invalidate, queryClient } = renderTree(<SleepActions svc={svcWith({ asleepAt: ASLEEP_AT, serverId: 4 })} />);
+    fireEvent.click(screen.getByRole('button', { name: /Wake now/ }));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['service', 9] }));
+    expect(screen.queryByText('Service woken up'), 'acceptance is not readiness or loaded-route confirmation').not.toBeInTheDocument();
+    expect(await screen.findByText('Start requested; runtime verification is pending')).toBeInTheDocument();
+    expect(queryClient.getQueryData<ServiceLifecycleView>(['service-lifecycle', 9])?.command).toEqual(acceptedWake.lifecycle);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['service-lifecycle', 9] });
+  });
+  it('retains newer completed lifecycle state when an older wake acceptance arrives', async () => {
+    wake.mockResolvedValueOnce(acceptedWake);
+    const { invalidate, queryClient } = renderTree(<SleepActions svc={svcWith({ asleepAt: ASLEEP_AT, serverId: 4 })} />);
+    const completed = { ...acceptedWake.lifecycle!, id: 9, phase: 'completed' as const };
+    queryClient.setQueryData(['service-lifecycle', 9], { command: completed });
+    fireEvent.click(screen.getByRole('button', { name: /Wake now/ }));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['service', 9] }));
+    expect(queryClient.getQueryData<ServiceLifecycleView>(['service-lifecycle', 9])?.command).toEqual(completed);
+    expect(screen.queryByText('Service woken up')).not.toBeInTheDocument();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['service-lifecycle', 9] });
+  });
+  it('holds the wake action while its current remote Start is still being verified', () => {
+    renderTree(<SleepActions {...{ svc: svcWith({ asleepAt: ASLEEP_AT, serverId: 4 }), command: acceptedWake.lifecycle! }} />);
+    expect(screen.getByRole('button'), 'an accepted Start must not be resubmitted while verification is pending').toBeDisabled();
+    expect(screen.getByRole('button')).toHaveTextContent('Waking…');
+  });
+  it('keeps delayed wake acceptance attached to its original service after navigation', async () => {
+    let answer!: (value: ServiceLifecycleResult) => void;
+    wake.mockReturnValueOnce(new Promise(resolve => { answer = resolve; }));
+    const { invalidate, queryClient, rerender } = renderTree(<SleepActions svc={svcWith({ asleepAt: ASLEEP_AT, serverId: 4 })} />);
+    fireEvent.click(screen.getByRole('button', { name: /Wake now/ }));
+    rerender(<SleepActions svc={svcWith({ id: 10, asleepAt: ASLEEP_AT, serverId: 4 })} />);
+    await act(async () => answer(acceptedWake));
+    expect(queryClient.getQueryData<ServiceLifecycleView>(['service-lifecycle', 9])?.command).toEqual(acceptedWake.lifecycle);
+    expect(queryClient.getQueryData(['service-lifecycle', 10])).toBeUndefined();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['service', 9] });
+    expect(screen.queryByText('Start requested; runtime verification is pending')).not.toBeInTheDocument();
   });
 
   it('wakes a sleeping service and refreshes it', async () => {

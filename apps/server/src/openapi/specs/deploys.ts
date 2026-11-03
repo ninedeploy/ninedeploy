@@ -1,4 +1,4 @@
-import { serviceCommitStatusInput, serviceFilePut } from '@ninedeploy/schemas';
+import { serviceCommitStatusInput, serviceFilePut, serviceLifecycleResult } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -237,10 +237,11 @@ export const deploysSpecs: RouteSpecMap = {
   'POST /v1/services/:id/wake': {
     summary: 'Wake a sleeping service',
     description:
-      '0.16.11. Starts its containers, waits for the healthcheck and routes its domains back. `400 not_asleep` when it is awake, `409 wake_failed` when it would not start or pass the healthcheck (it stays asleep). Start and restart wake a sleeping service the same way.',
+      'Local wake completes after healthcheck and routing. Plain Docker on a node accepts a durable remote Start (202, pending=true); follow lifecycle state until readiness and loaded routing complete. Unsupported node placement and disabled/unsealed agents refuse without local Docker effects. Answers 400 not_asleep or a local 409 wake_failed. Automatic node sleep remains gated separately.',
     tag: 'services',
     floor: 'member',
-    responseType: '{ ok: boolean; status: string }',
+    response: serviceLifecycleResult,
+    successStatuses: [200, 202],
   },
   'GET /v1/services/:id/sizing': {
     summary: 'Memory and CPU limit suggestions from the metric history (advisory)',

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Moon, Sun } from 'lucide-react';
-import type { Service } from '@ninedeploy/sdk';
+import type { Service, ServiceLifecycleCommand, ServiceLifecycleView } from '@ninedeploy/sdk';
 import { sleepApi } from '../../lib/sleepApi.js';
 import { formatDateTime, formatRelative } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
@@ -44,27 +44,40 @@ export function ServiceStatusBadge({ svc, since = false }: { svc: SleepFields; s
  * the service sleeps, **Sleep now** while it is awake with Sleep when idle
  * on. Nothing for a service that is not running, or on an older panel.
  */
-export function SleepActions({ svc }: { svc: SleepFields & Pick<Service, 'id' | 'type'> & { sleepAfterMinutes?: number | null } }) {
+export function SleepActions({ svc, command }: { svc: SleepFields & Pick<Service, 'id' | 'type'> & { sleepAfterMinutes?: number | null }; command?: ServiceLifecycleCommand | null }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['service', svc.id] });
+  const refresh = (serviceId = svc.id) => {
+    qc.invalidateQueries({ queryKey: ['service', serviceId] });
     qc.invalidateQueries({ queryKey: ['services'] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
   };
   const message = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
   const wake = useMutation({
-    mutationFn: () => sleepApi.wake(svc.id),
-    onSuccess: () => {
-      refresh();
-      toast(t('Service woken up'), 'success');
+    mutationFn: (serviceId: number) => sleepApi.wake(serviceId),
+    onSuccess: (result, serviceId) => {
+      refresh(serviceId);
+      if (result.pending) {
+        const key = ['service-lifecycle', serviceId];
+        const known = qc.getQueryData<ServiceLifecycleView>(key)?.command;
+        if (known && result.lifecycle && (known.id > result.lifecycle.id || known.id === result.lifecycle.id && ['completed', 'superseded'].includes(known.phase))) {
+          void qc.invalidateQueries({ queryKey: key }); return;
+        }
+        qc.setQueryData(key, { command: result.lifecycle ?? null });
+        void qc.invalidateQueries({ queryKey: key });
+        if (serviceId === svc.id) toast(result.lifecycle?.phase === 'superseded' ? t('Start request superseded by a newer action') : t('Start requested; runtime verification is pending'), 'info');
+        return;
+      }
+      if (serviceId === svc.id) toast(t('Service woken up'), 'success');
     },
-    onError: (err) => {
-      refresh();
-      toast(message(err, t('Could not wake the service')), 'error');
+    onError: (err, serviceId) => {
+      refresh(serviceId);
+      if (serviceId === svc.id) toast(message(err, t('Could not wake the service')), 'error');
     },
   });
+  const busyCommand = command?.current === true && !['completed', 'superseded'].includes(command.phase);
+  const wakingCurrent = wake.isPending && wake.variables === svc.id || busyCommand && command?.action === 'start';
   const sleep = useMutation({
     mutationFn: () => sleepApi.sleep(svc.id),
     onSuccess: () => {
@@ -77,14 +90,14 @@ export function SleepActions({ svc }: { svc: SleepFields & Pick<Service, 'id' | 
   if (svc.status !== 'running') return null;
   if (isAsleep(svc)) {
     return (
-      <Button variant="secondary" size="md" onClick={() => wake.mutate()} disabled={wake.isPending} title={t('Start the containers and route the domains back')}>
-        <Sun size={15} /> {wake.isPending ? t('Waking…') : t('Wake now')}
+      <Button variant="secondary" size="md" onClick={() => wake.mutate(svc.id)} disabled={wakingCurrent || busyCommand} title={t('Start the containers and route the domains back')}>
+        <Sun size={15} /> {wakingCurrent ? t('Waking…') : t('Wake now')}
       </Button>
     );
   }
   if (svc.type !== 'docker' || svc.sleepAfterMinutes == null) return null;
   return (
-    <Button variant="secondary" size="md" onClick={() => sleep.mutate()} disabled={sleep.isPending} title={t('Stop the containers now; the next request wakes the service')}>
+    <Button variant="secondary" size="md" onClick={() => sleep.mutate()} disabled={sleep.isPending || busyCommand} title={t('Stop the containers now; the next request wakes the service')}>
       <Moon size={15} /> {sleep.isPending ? t('Sleeping…') : t('Sleep now')}
     </Button>
   );

@@ -299,10 +299,13 @@ export interface ServicesApi {
     /**
      * Wake a sleeping service (`POST /v1/services/:id/wake`, member): starts
      * its containers, waits for the healthcheck and routes its domains back.
-     * Answers 400 `not_asleep` or 409 `wake_failed`. `start` and `restart`
-     * wake a sleeping service too.
+     * Local wake completes synchronously. A plain Docker node acknowledges a
+     * durable remote Start with 202 and `pending: true`; observe `lifecycle`
+     * until readiness and loaded routing settle. Answers 400 `not_asleep`,
+     * 409 `wake_failed`, or a node capability/placement refusal. `start` and
+     * `restart` wake a sleeping service too.
      */
-    wake: (id: number) => Promise<{ ok: boolean; status: string }>;
+    wake: (id: number) => Promise<ServiceLifecycleResult>;
   };
   labels: {
     /** `query` is appended verbatim, e.g. `?workspaceId=1`. */
@@ -478,7 +481,7 @@ export function servicesApi(t: Transport): ServicesApi {
         apply: (id, input) => send<PendingApplyResult>('POST', `/v1/services/${id}/pending/apply`, input ?? {}),
       },
       sleep: (id) => send<{ ok: boolean; asleep: boolean }>('POST', `/v1/services/${id}/sleep`),
-      wake: (id) => send<{ ok: boolean; status: string }>('POST', `/v1/services/${id}/wake`),
+      wake: (id) => send<ServiceLifecycleResult>('POST', `/v1/services/${id}/wake`),
       // ── end 0.16 T8 ──
     },
     labels: {

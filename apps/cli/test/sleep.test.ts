@@ -238,6 +238,14 @@ describe('sleep now', () => {
 });
 
 describe('sleep wake', () => {
+  it('reports accepted node wake as pending rather than awake', async () => {
+    const client = makeClient();
+    client.services.wake.mockResolvedValue({ ok: true, status: 'running', pending: true, lifecycle: { id: 8, phase: 'preparing' } });
+    await sleepWake(asClient(client), '4');
+    expect(out(), 'command acceptance is not application readiness').not.toContain('is awake');
+    expect(out()).toContain('Wake requested; runtime verification is pending (command #8).');
+    expect(out()).toContain('ninedeploy services lifecycle 4');
+  });
   it('wakes the service', async () => {
     const client = makeClient();
     client.services.wake.mockResolvedValue({ ok: true, status: 'running' });
