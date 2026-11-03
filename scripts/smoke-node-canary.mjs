@@ -18,10 +18,13 @@ import { nodeReplicaDatabaseApp } from './fixtures/node-replica-database-app.mjs
 import { smokeNodeManualWake } from './lib/smoke-node-manual-wake.mjs';
 import { smokeNodeSleepRestoration } from './lib/smoke-node-sleep-restoration.mjs';
 import { smokeNodeAutomaticSleep } from './lib/smoke-node-automatic-sleep.mjs';
+import { smokeSwarmRuntime } from './lib/smoke-swarm-runtime.mjs';
+import { createSwarmGitRepository, gitHttpServerCode } from './lib/smoke-git-repository.mjs';
 const manualWakeOnly=process.argv.includes('--manual-wake-only');
 const sleepRestorationOnly=process.argv.includes('--sleep-restoration-only');
 const automaticSleepOnly=process.argv.includes('--automatic-sleep-only');
-if(manualWakeOnly||sleepRestorationOnly||automaticSleepOnly){
+const swarmRuntimeOnly=process.argv.includes('--swarm-runtime-only');
+if(manualWakeOnly||sleepRestorationOnly||automaticSleepOnly||swarmRuntimeOnly){
  assert.equal(process.env.GITHUB_ACTIONS,'true','Use an isolated GitHub Actions runner');
  assert.equal(process.env.RUNNER_ENVIRONMENT,'github-hosted','Use a GitHub-hosted runner');
  assert.equal(process.env.DOCKER_HOST,'unix:///var/run/docker.sock','Use only the hosted runner daemon');
@@ -35,7 +38,7 @@ const autoscaleDatabaseOnly=process.argv.includes('--autoscale-database-only');
 const autoscaleRpsOnly=process.argv.includes('--autoscale-rps-only');
 const healthModesOnly=process.argv.includes('--health-modes-only');
 const sqlFixture=replicaDatabasesOnly||autoscaleDatabaseOnly;
-assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,healthModesOnly,manualWakeOnly,sleepRestorationOnly,automaticSleepOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
+assert.ok([lifecycleOnly,replicaDatabasesOnly,initialStopOnly,mixedAgentOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,healthModesOnly,manualWakeOnly,sleepRestorationOnly,automaticSleepOnly,swarmRuntimeOnly].filter(Boolean).length<=1,'Select one focused smoke mode');
 const image=process.argv.find(arg=>arg.startsWith('--image='))?.slice(8);
 assert.ok(image&&/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(image),'Pass --image=<built NineDeploy image>');
 const agentImage=mixedAgentOnly?'ghcr.io/ninedeploy/ninedeploy:v0.18.10':image;
@@ -83,7 +86,7 @@ try{
  docker(['exec','-i',daemon,'sh','-c','mkdir -p /tmp/readiness-fixture; cat > /tmp/readiness-fixture/Dockerfile'],{input:`FROM node:26-slim\nHEALTHCHECK NONE\nEXPOSE 8080\n${sqlFixture?'COPY app.cjs /app.cjs\n':''}CMD ${JSON.stringify(sqlFixture?['node','/app.cjs']:['node','-e',launchCode])}\n`});
  if(sqlFixture)docker(['exec','-i',daemon,'sh','-c','cat > /tmp/readiness-fixture/app.cjs'],{input:nodeReplicaDatabaseApp()});
  inner(['build','-t',fixtureImage,'/tmp/readiness-fixture']);inner(['push',fixtureImage]);
- const saving=spawn('docker',['exec',daemon,'docker','save',fixtureImage],{windowsHide:true,stdio:['ignore','pipe','pipe']}),loading=spawn('docker',['exec','-i',panelDaemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});saving.stdout.pipe(loading.stdin);saving.stderr.resume();loading.stdout.resume();loading.stderr.resume();await Promise.all([saving,loading].map(p=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{p.kill();reject(Error('fixture image transfer deadline'));},180000);p.on('error',reject);p.on('close',code=>{clearTimeout(timer);code===0?resolve():reject(Error('fixture image transfer '+code));});})));
+ const saving=spawn('docker',['exec',daemon,'docker','save',fixtureImage,...(swarmRuntimeOnly?['node:26-slim']:[])],{windowsHide:true,stdio:['ignore','pipe','pipe']}),loading=spawn('docker',['exec','-i',panelDaemon,'docker','load'],{windowsHide:true,stdio:['pipe','pipe','pipe']});saving.stdout.pipe(loading.stdin);saving.stderr.resume();loading.stdout.resume();loading.stderr.resume();await Promise.all([saving,loading].map(p=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{p.kill();reject(Error('fixture image transfer deadline'));},180000);p.on('error',reject);p.on('close',code=>{clearTimeout(timer);code===0?resolve():reject(Error('fixture image transfer '+code));});})));
  primary(['run','-d','--name','nd-owned-registry','-p','127.0.0.1:5000:5000','registry:2']);await until(()=>docker(['exec',panelDaemon,'wget','-qO-','-T','2','http://127.0.0.1:5000/v2/'],{allowFailure:true}).status===0,'owned primary registry');primary(['push',fixtureImage]);
  const setup=randomBytes(24).toString('hex');
  run(panel,['--network',net,'--user','0','-p','127.0.0.1::3000','-v',`${volume}:/data`,'-e',`DOCKER_HOST=tcp://${panelDaemon}:2375`,'-e',`NINEDEPLOY_MASTER_KEY=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_JWT_SECRET=${randomBytes(32).toString('hex')}`,'-e',`NINEDEPLOY_SETUP_TOKEN=${setup}`,'-e','NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1','-e','NINEDEPLOY_WILDCARD_DOMAIN=readiness.test',...(manualWakeOnly||sleepRestorationOnly?['-e','NINEDEPLOY_NODE_SLEEP_AUTOMATION=off']:[]),image]);
@@ -99,10 +102,22 @@ try{
 
  console.log('Panel and sealed agent enrolled; public canary lifecycle begins');
  const results=[];
- const created=await api('/v1/services',{method:'POST',body:{name:'R1 node canary',type:'docker',image:fixtureImage,port:8080,...(healthModesOnly?{}:{serverId:registration.id})}});
+ let repository,repoUrl,syncRepository,gitStats;
+ if(swarmRuntimeOnly){
+   repository=createSwarmGitRepository(resolve(proof,'private-git'));
+   const gitServer=`nd-swarm-git-${suffix}`;
+   run(gitServer,['--network',net,'--user','0','--entrypoint','node',image,'-e',gitHttpServerCode()]);
+   await until(()=>docker(['exec',gitServer,'node','-e',"fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"],{allowFailure:true}).status===0,'owned smart Git HTTP server',15000);
+   syncRepository=async()=>{docker(['cp',repository.bare+'/.',`${gitServer}:/repo/repo.git`]);};
+   // Docker cp requires its parent; the smart server owns /repo only.
+   docker(['exec',gitServer,'node','-e',"require('node:fs').mkdirSync('/repo/repo.git',{recursive:true})"]);
+   await syncRepository();repoUrl=`http://${gitServer}:8080/repo.git`;
+   gitStats=()=>JSON.parse(docker(['exec',gitServer,'node','-e',"fetch('http://127.0.0.1:8080/health').then(r=>r.text()).then(console.log)"]).out);
+ }
+ const created=await api('/v1/services',{method:'POST',body:{name:'R1 node canary',type:'docker',...(swarmRuntimeOnly?{repoUrl,branch:'main'}:{image:fixtureImage}),port:8080,...(healthModesOnly||swarmRuntimeOnly?{}:{serverId:registration.id})}});
  const id=created.id??created.service?.id;
  serviceId=id;
- await api('/v1/services/'+id,{method:'PATCH',body:{healthCheck:'http-strict',healthPath:'/ready',healthTimeoutSeconds:60}});
+ await api('/v1/services/'+id,{method:'PATCH',body:{healthCheck:swarmRuntimeOnly?'http':'http-strict',healthPath:'/ready',healthTimeoutSeconds:swarmRuntimeOnly?180:60}});
  if(lifecycleOnly||replicaDatabasesOnly)await api('/v1/services/'+id,{method:'PATCH',body:{replicas:2}});
  let replicaDatabase;
  if(sqlFixture){
@@ -217,7 +232,13 @@ try{
    const value=/X-NineDeploy-Generation:\s*([a-f0-9]{64})/i.exec(output)?.[1];assert.ok(value);return value;
  };
 
- if(automaticSleepOnly){
+ if(swarmRuntimeOnly){
+   await smokeSwarmRuntime({api,primary,docker,panel,id,first,fixtureImage,ownerLabel:label,source:process.env.GITHUB_SHA,service,domain,until,pause,report,success,rows,log,env,cleared,
+     repository,syncRepository,gitStats,repoUrl,managerAddr:docker(['inspect',panelDaemon,'--format','{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}']).out,
+     restartPanel:async()=>{docker(['restart',panel]);baseUrl='http://127.0.0.1:'+docker(['port',panel,'3000/tcp']).out.split(':').at(-1);
+       await until(async()=>{try{return(await fetch(baseUrl+'/health',{signal:AbortSignal.timeout(2000)})).ok;}catch{return false;}},'restarted Swarm panel',120000);},
+     save:(name,value)=>writeFileSync(resolve(proof,name),JSON.stringify(value,null,2))});
+ }else if(automaticSleepOnly){
    await smokeNodeAutomaticSleep({api,inner,docker,panel,id,fixtureImage,ownerLabel:label,source:process.env.GITHUB_SHA,service,domain,until,pause,report,cleared,
      restartPanel:async()=>{docker(['restart',panel]);baseUrl='http://127.0.0.1:'+docker(['port',panel,'3000/tcp']).out.split(':').at(-1);
        await until(async()=>{try{return(await fetch(baseUrl+'/health',{signal:AbortSignal.timeout(2000)})).ok;}catch{return false;}},'restarted public panel',120000);},
@@ -340,7 +361,7 @@ try{
    report({case:c.name,stopRemainedAuthoritative:true,noAutomaticRevival:true,trafficSamplingEndsBeforeStop:true,...sampled});
  }
  }
- const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,...(manualWakeOnly||sleepRestorationOnly||automaticSleepOnly?{manualWakeOnly,sleepRestorationOnly,automaticSleepOnly,privateRealIdleAdmission:!automaticSleepOnly,source:process.env.GITHUB_SHA,imageId:docker(['image','inspect',image,'--format','{{.Id}}']).out}:{}),cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
+ const result={realPublicApi:true,realWorker:true,standardBridgeAgent:true,ownerOptIn:true,lifecycleOnly,replicaDatabasesOnly,autoscaleOnly,autoscaleDatabaseOnly,autoscaleRpsOnly,...(manualWakeOnly||sleepRestorationOnly||automaticSleepOnly||swarmRuntimeOnly?{manualWakeOnly,sleepRestorationOnly,automaticSleepOnly,swarmRuntimeOnly,privateRealIdleAdmission:manualWakeOnly||sleepRestorationOnly,source:process.env.GITHUB_SHA,imageId:docker(['image','inspect',image,'--format','{{.Id}}']).out}:{}),cases:results,requests:results.reduce((n,r)=>n+(r.requests??0),0),unexpected502:0,publicDnsTls:'NOT RUN; isolated Host-header HTTP fixtures',publication:false};
  writeFileSync(proof+'/runtime-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
  }
 }catch(e){
