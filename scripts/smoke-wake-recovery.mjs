@@ -81,10 +81,13 @@ try {
     wakingPages: samples.filter(row => row.waking).length });
   cases.push({ name: 'maintenance-completed-after-real-sealed-routing', passed: evidence.result.state === 'completed' && evidence.phase === 'completed' });
   cases.push({ name: 'new-generation-records-real-wake-demand', passed: evidence.pinnedDemand === true && /^ninedeploy-wake-g-[a-f0-9]{32}$/.test(evidence.catcherName ?? '') });
-  // The fixture invokes retirement explicitly; automatic panel recovery is a separate gate.
+  // The controller must have retired the old ID before the fixture's idempotent replay.
   evidence.oldBackendRetained = docker(['inspect', seed.catcherId], true).status === 0;
-  cases.push({ name: 'old-catcher-retired-after-live-routing-and-drain', passed: evidence.retirement?.fenced === true && evidence.retirement?.removed === true &&
-    evidence.retirement?.id === seed.catcherId && evidence.oldBackendRetained === false });
+  cases.push({ name: 'old-catcher-retired-by-durable-panel-maintenance', passed: evidence.automaticPanelRetirement === true && evidence.result.retired === 1 &&
+    evidence.retirement?.fenced === true && evidence.retirement?.removed === false && evidence.retirement?.id === seed.catcherId && evidence.oldBackendRetained === false });
+  cases.push({ name: 'traffic-continues-after-confirmed-retirement', passed: Number.isSafeInteger(evidence.retirementVerifiedAt) &&
+    samples.some(row => row.at >= evidence.retirementVerifiedAt && row.status === 503 && row.waking) });
+  cases.push({ name: 'ordered-writer-still-confirms-routing-after-retirement', passed: evidence.postRetirementRoutingConfirmed === true });
   assert.equal(docker(['inspect', 'ninedeploy-proxy', '--format', '{{.Id}}']).out, proxy, 'Proxy was recreated');
   assert.ok(cases.every(row => row.passed), 'Catcher replacement acceptance failed; see cases and traffic trace');
 } catch (error) { failure = String(error); process.exitCode = 1; }
