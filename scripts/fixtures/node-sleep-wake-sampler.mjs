@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 
-export function sampleApplication() {
+export function sampleApplication({ host = 'sleep.invalid', authorization } = {}) {
   return new Promise(resolve => {
     const at = Date.now(); let timer, settled = false;
     const finish = row => { if (!settled) { settled = true; clearTimeout(timer); resolve(row); } };
-    const request = http.get({ hostname: 'ninedeploy-proxy', path: '/', headers: { host: 'sleep.invalid' } }, response => {
+    const request = http.get({ hostname: 'ninedeploy-proxy', path: '/', headers: { host, ...(authorization ? { authorization } : {}) } }, response => {
       let body = '', oversized = false;
       response.setEncoding('utf8');
       response.on('data', chunk => { if (body.length + chunk.length > 16_384) oversized = true; if (!oversized) body += chunk; });
