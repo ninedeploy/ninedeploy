@@ -238,8 +238,13 @@ describe('attach: tickets, origin and handshake', () => {
 
   it('a foreign Origin closes 4403 before the ticket is touched', async () => {
     const s = await createSession();
-    expect(await attach(s, 'https://evil.example').closed).toEqual({ code: TERMINAL_CLOSE.forbidden, reason: 'origin not allowed' });
+    const c = attach(s, 'https://evil.example');
+    expect(await c.closed).toEqual({ code: TERMINAL_CLOSE.forbidden, reason: 'origin not allowed' });
     expect((await row(s.session.id)).status).toBe('pending');
+    // The page is told why, not only "revoked or not a panel origin", and only its own origin is echoed.
+    expect(c.texts).toHaveLength(1);
+    expect(c.texts[0]).toMatchObject({ t: 'notice', message: expect.stringContaining('(https://evil.example) is not the panel') });
+    expect(String(c.texts[0]!.message)).toContain('NINEDEPLOY_PUBLIC_URL');
   });
 
   it('a session whose context is gone (e.g. revoked) closes 4401 and is recorded as failed', async () => {
