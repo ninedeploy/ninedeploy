@@ -294,6 +294,18 @@ describe('agentOp', () => {
     honestSealedAgent();
     await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, 'swarm.info', {}, () => {})).resolves.toMatchObject({ exitCode: 0 });
   });
+  it.each(['wake.catcher.ensure', 'wake.catcher.prepare', 'wake.catcher.retire', 'wake.demand', 'wake.future', 'proxy.idleWatch.open'])(
+    'never sends private wake routing operands in clear for %s', async op => {
+      process.env['NINEDEPLOY_AGENT_ALLOW_CLEARTEXT'] = '1';
+      routeFetch({ sealed: false, exec: { lines: [], exitCode: 0 } });
+      const params = { key: 'wake-fixture-key', content: 'wake-fixture-routing' };
+      await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, op, params, () => {})).rejects.toThrow(/sealed only/);
+      expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/agent/ping'))).toBe(true);
+      _resetSealedSupportCache(); honestSealedAgent();
+      await expect(agentOp(createFakeDb({ findFirst: { servers: serverRow } }), 1, op, params, () => {})).resolves.toMatchObject({ exitCode: 0 });
+      expect(String(fetchMock.mock.calls.at(-1)![1].body).includes('wake-fixture-key')).toBe(false);
+    },
+  );
 
   it('0.13 (T5): a credential rides inside the sealed envelope only', async () => {
     honestSealedAgent();
