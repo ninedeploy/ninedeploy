@@ -477,7 +477,20 @@ export const terminalRoutes: FastifyPluginAsync = async (app) => {
         /* already closed */
       }
     };
-    if (!originAllowed(req.headers.origin, panelAllowedOrigins())) return close(TERMINAL_CLOSE.forbidden, 'origin not allowed');
+    if (!originAllowed(req.headers.origin, panelAllowedOrigins())) {
+      // The usual cause is opening the panel at an address other than
+      // NINEDEPLOY_PUBLIC_URL; the close code alone reads like a revoked
+      // session. Echo only the caller's own origin, printable and bounded.
+      const seen = String(Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin).replace(/[^\x20-\x7e]/g, '').slice(0, 200);
+      try {
+        if (socket.readyState === 1) {
+          socket.send(JSON.stringify({ t: 'notice', message: `This page's address (${seen}) is not the panel's configured address, so the terminal was refused. Open the panel at the address set in NINEDEPLOY_PUBLIC_URL, or set NINEDEPLOY_PUBLIC_URL (or NINEDEPLOY_CORS_ORIGINS) to this address and restart the panel.` }));
+        }
+      } catch {
+        /* closed */
+      }
+      return close(TERMINAL_CLOSE.forbidden, 'origin not allowed');
+    }
     const { protocol, ticket } = attachHandshake(req.headers['sec-websocket-protocol']);
     const rawId = (req.params as { id: string }).id;
     const id = /^[1-9]\d{0,15}$/.test(rawId) ? Number(rawId) : null;
