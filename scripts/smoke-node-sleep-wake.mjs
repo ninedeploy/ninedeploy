@@ -13,6 +13,7 @@ const proof = resolve(process.argv.find(arg => arg.startsWith('--proof='))?.slic
 const publicDir = resolve(proof, 'public'), privateDir = resolve(proof, 'private');
 mkdirSync(publicDir, { recursive: true }); mkdirSync(resolve(privateDir, 'app-state'), { recursive: true }); mkdirSync(resolve(privateDir, 'shim'), { recursive: true });
 const owner = `sleep-wake-${randomBytes(8).toString('hex')}`, token = randomBytes(32).toString('hex'), jwt = randomBytes(32).toString('hex');
+const basicAuth = randomBytes(24).toString('hex');
 const resources = [], cleanup = [], cases = [];
 let failure, imageId, evidence;
 // Async execution keeps the driver observable while the real five-minute clock runs.
@@ -37,7 +38,7 @@ async function container(name, args) {
   resources.push({ kind: 'container', id }); return id;
 }
 try {
-  for (const name of ['ninedeploy-agent', 'ninedeploy-proxy', 'web-9']) assert.notEqual((await docker(['inspect', name], true)).status, 0, `Refuse existing ${name}`);
+  for (const name of ['ninedeploy-agent', 'ninedeploy-proxy', 'web-9', 'secure-10']) assert.notEqual((await docker(['inspect', name], true)).status, 0, `Refuse existing ${name}`);
   assert.notEqual((await docker(['network', 'inspect', 'ninedeploy'], true)).status, 0, 'Refuse existing network');
   imageId = (await docker(['image', 'inspect', image, '--format', '{{.Id}}'])).out;
   for (const dependency of ['busybox:1.36', 'traefik:3']) if ((await docker(['image', 'inspect', dependency], true)).status !== 0) await docker(['pull', dependency]);
@@ -49,9 +50,13 @@ try {
   const appId = await container('web-9', ['--network', 'ninedeploy', '--user', '0', '--no-healthcheck', '--label', 'ninedeploy.managed=service',
     '--label', 'ninedeploy.service=1', '--label', 'ninedeploy.deployment=9', '-v', `${privateDir}/app-state:/state`, '--entrypoint', 'node', image, '-e',
     "const fs=require('node:fs');fs.appendFileSync('/state/boots','boot\\n');require('node:http').createServer((q,r)=>{if(q.url==='/ready'){r.statusCode=fs.existsSync('/state/block-ready')?503:200;r.end('readiness');}else r.end('owned-sleep-application');}).listen(3000,'0.0.0.0')"]);
+  mkdirSync(resolve(privateDir, 'secure-state'), { recursive: true });
+  const secureId = await container('secure-10', ['--network', 'ninedeploy', '--user', '0', '--no-healthcheck', '--label', 'ninedeploy.managed=service',
+    '--label', 'ninedeploy.service=2', '--label', 'ninedeploy.deployment=10', '-v', `${privateDir}/secure-state:/state`, '--entrypoint', 'node', image, '-e',
+    "const fs=require('node:fs');fs.appendFileSync('/state/boots','boot\\n');require('node:http').createServer((q,r)=>{if(q.url==='/ready'){fs.writeFileSync('/state/ready-probed','');r.statusCode=fs.existsSync('/state/block-ready')?503:200;r.end('readiness');}else r.end('owned-sleep-application');}).listen(3000,'0.0.0.0')"]);
   const driver = await container('ninedeploy-agent', ['--network', 'ninedeploy', '--user', '0', '--no-healthcheck', '-w', '/fixture',
     '-e', 'GITHUB_ACTIONS=true', '-e', 'NINEDEPLOY_DATA_DIR=/fixture/data', '-e', 'NINEDEPLOY_DB_PATH=/fixture/panel.db', '-e', 'NINEDEPLOY_AGENT_REQUIRE_SEALED=1',
-    '-e', `NINEDEPLOY_JWT_SECRET=${jwt}`, '-e', `ND_PROOF_TOKEN=${token}`, '-e', 'NINEDEPLOY_AGENT_PROXY_TRAFFIC=on',
+    '-e', `NINEDEPLOY_JWT_SECRET=${jwt}`, '-e', `ND_PROOF_TOKEN=${token}`, '-e', `ND_PROOF_BASIC_AUTH=${basicAuth}`, '-e', 'NINEDEPLOY_AGENT_PROXY_TRAFFIC=on',
     '-e', 'NINEDEPLOY_AGENT_ORDERED_PROXY=on', '-e', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=on',
     '-e', 'PATH=/fixture/shim:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', '-v', '/var/run/docker.sock:/var/run/docker.sock',
     '-v', `${privateDir}:/fixture`, '-v', `${publicDir}:/proof`, '--entrypoint', 'node', image, '-e', 'setInterval(()=>{},1000)']);
@@ -81,6 +86,8 @@ try {
   cases.push({ name: 'traffic-after-completed-wake', passed: rows.some(row => row.at >= evidence.completedAt && row.application) });
   cases.push({ name: 'immutable-app-and-proxy-kept', passed: (await docker(['inspect', '--format', '{{.Id}}', 'web-9'])).out === appId &&
     (await docker(['inspect', '--format', '{{.Id}}', 'ninedeploy-proxy'])).out === proxy });
+  cases.push({ name: 'superseding-stop-keeps-secure-application-off', passed: (await docker(['inspect', '--format', '{{.Id}}', 'secure-10'])).out === secureId &&
+    (await docker(['inspect', '--format', '{{.State.Running}}', secureId])).out === 'false' });
   assert.ok(cases.every(row => row.passed), 'Real sleep/wake acceptance failed');
 } catch (error) { failure = String(error); process.exitCode = 1; }
 finally {
