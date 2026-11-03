@@ -29,6 +29,8 @@ on:
       - 'scripts/lib/smoke-node-sleep-restoration.mjs'
       - 'scripts/lib/smoke-sealed-routing-fault.mjs'
       - 'scripts/lib/smoke-node-automatic-sleep.mjs'
+      - 'scripts/lib/smoke-git-repository.mjs'
+      - 'scripts/lib/smoke-swarm-runtime.mjs'
       - '.github/workflows/serving-traffic.yml'
   workflow_dispatch:
     inputs:
@@ -38,6 +40,10 @@ on:
         default: false
       node_sleep_wake:
         description: Run real five-minute idle, application Stop and readiness-held wake acceptance
+        type: boolean
+        default: false
+      swarm_runtime:
+        description: Verify real Swarm artifacts, pinned promotion/rollback and panel restart recovery
         type: boolean
         default: false
       automatic_node_sleep:
@@ -76,19 +82,19 @@ jobs:
       - name: Build candidate
         run: docker build -t ninedeploy:serving .
       - name: Observe ordinary serving generations through sealed HTTP and real Traefik
-        if: github.event.inputs.wake_recovery != 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: github.event.inputs.wake_recovery != 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         run: node scripts/smoke-serving-traffic.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic
       - name: Verify catcher replacement through real sealed HTTP and sampled Traefik traffic
-        if: github.event.inputs.wake_recovery == 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: github.event.inputs.wake_recovery == 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         run: node scripts/smoke-wake-recovery.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic/wake-recovery
       - name: Verify real idle, immutable application Stop and readiness-held wake
-        if: github.event.inputs.node_sleep_wake == 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: github.event.inputs.node_sleep_wake == 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         run: node scripts/smoke-node-sleep-wake.mjs --image=ninedeploy:serving --proof=.temp_files/serving-traffic/node-sleep-wake
       - name: Verify public manual node wake through isolated panel and node daemons
-        if: github.event.inputs.manual_node_wake == 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: github.event.inputs.manual_node_wake == 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         run: node scripts/smoke-node-canary.mjs --manual-wake-only --image=ninedeploy:serving --proof=.temp_files/serving-traffic/manual-node-wake
       - name: Preserve observations and owned cleanup receipts
-        if: always() && github.event.inputs.wake_recovery != 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: always() && github.event.inputs.wake_recovery != 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: serving-traffic-${{ github.run_id }}
@@ -96,7 +102,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
       - name: Preserve public wake replacement evidence only
-        if: always() && github.event.inputs.wake_recovery == 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: always() && github.event.inputs.wake_recovery == 'true' && github.event.inputs.node_sleep_wake != 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: wake-recovery-${{ github.run_id }}
@@ -104,7 +110,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
       - name: Preserve public real sleep and wake evidence only
-        if: always() && github.event.inputs.node_sleep_wake == 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: always() && github.event.inputs.node_sleep_wake == 'true' && github.event.inputs.manual_node_wake != 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: node-sleep-wake-${{ github.run_id }}
@@ -112,7 +118,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
       - name: Preserve public manual wake receipts only
-        if: always() && github.event.inputs.manual_node_wake == 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: always() && github.event.inputs.manual_node_wake == 'true' && github.event.inputs.sleep_restoration != 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: manual-node-wake-${{ github.run_id }}
@@ -127,10 +133,10 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
       - name: Verify lost pre-Stop routing acknowledgement through the real sealed agent
-        if: github.event.inputs.sleep_restoration == 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: github.event.inputs.sleep_restoration == 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         run: node scripts/smoke-node-canary.mjs --sleep-restoration-only --image=ninedeploy:serving --proof=.temp_files/serving-traffic/sleep-restoration
       - name: Preserve public restoration receipts only
-        if: always() && github.event.inputs.sleep_restoration == 'true' && github.event.inputs.automatic_node_sleep != 'true'
+        if: always() && github.event.inputs.sleep_restoration == 'true' && github.event.inputs.automatic_node_sleep != 'true' && github.event.inputs.swarm_runtime != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sleep-restoration-${{ github.run_id }}
@@ -143,10 +149,10 @@ jobs:
             .temp_files/serving-traffic/sleep-restoration/failure-state.json
           if-no-files-found: warn
       - name: Verify public automatic node sleep and wake recovery
-        if: github.event.inputs.automatic_node_sleep == 'true'
+        if: github.event.inputs.automatic_node_sleep == 'true' && github.event.inputs.swarm_runtime != 'true'
         run: node scripts/smoke-node-canary.mjs --automatic-sleep-only --image=ninedeploy:serving --proof=.temp_files/serving-traffic/automatic-node-sleep
       - name: Preserve public automatic sleep receipts only
-        if: always() && github.event.inputs.automatic_node_sleep == 'true'
+        if: always() && github.event.inputs.automatic_node_sleep == 'true' && github.event.inputs.swarm_runtime != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: automatic-node-sleep-${{ github.run_id }}
@@ -159,4 +165,22 @@ jobs:
             .temp_files/serving-traffic/automatic-node-sleep/automatic-sleep-traffic.json
             .temp_files/serving-traffic/automatic-node-sleep/cases.json
             .temp_files/serving-traffic/automatic-node-sleep/failure-state.json
+          if-no-files-found: warn
+      - name: Verify real Swarm pinned artifacts and restart recovery
+        if: github.event.inputs.swarm_runtime == 'true'
+        run: node scripts/smoke-node-canary.mjs --swarm-runtime-only --image=ninedeploy:serving --proof=.temp_files/serving-traffic/swarm-runtime
+      - name: Preserve public Swarm receipts only
+        if: always() && github.event.inputs.swarm_runtime == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: swarm-runtime-${{ github.run_id }}
+          path: |
+            .temp_files/serving-traffic/swarm-runtime/runtime-result.json
+            .temp_files/serving-traffic/swarm-runtime/runtime-cleanup.json
+            .temp_files/serving-traffic/swarm-runtime/swarm-source-traffic.json
+            .temp_files/serving-traffic/swarm-runtime/swarm-target-traffic.json
+            .temp_files/serving-traffic/swarm-runtime/swarm-failure-traffic.json
+            .temp_files/serving-traffic/swarm-runtime/swarm-failure-state.json
+            .temp_files/serving-traffic/swarm-runtime/cases.json
+            .temp_files/serving-traffic/swarm-runtime/failure-state.json
           if-no-files-found: warn
