@@ -336,7 +336,7 @@ export function ServiceDetail() {
           {svc.status === 'running' && (
             <>
               {/* 0.16.11: Wake now while asleep, Sleep now while awake with Sleep when idle on. */}
-              <SleepActions svc={svc} />
+              <SleepActions svc={svc} command={lifecycleCommand} />
               <Button variant="secondary" size="md" onClick={() => lifecycle.mutate({ action: 'restart', serviceId: id })} disabled={lifecycle.isPending} title={t('Restart')}>
                 <RotateCcw size={15} /> {t('Restart')}
               </Button>

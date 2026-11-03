@@ -41,7 +41,7 @@ const FLOORS = new Set(['public', 'token', 'self', 'authed', 'viewer', 'member',
 
 describe('ROUTE_SPECS entries', () => {
   it('documents accepted node lifecycle commands separately from completed local operations', () => {
-    for (const action of ['start', 'stop', 'restart']) {
+    for (const action of ['start', 'stop', 'restart', 'wake']) {
       expect(doc.paths[`/v1/services/{id}/${action}`]?.post?.responses).toHaveProperty('202');
       expect(doc.paths[`/v1/services/{id}/${action}`]?.post?.responses).toHaveProperty('200');
     }

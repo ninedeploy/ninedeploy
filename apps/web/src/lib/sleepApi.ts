@@ -1,4 +1,5 @@
 import { apiCall } from './apiCall.js';
+import type { ServiceLifecycleResult } from '@ninedeploy/sdk';
 
 /**
  * 0.16.11 scale to zero. The idle window itself is saved with the service
@@ -8,6 +9,6 @@ import { apiCall } from './apiCall.js';
 export const sleepApi = {
   /** Sleep now, even without `sleepAfterMinutes` (400 `cannot_sleep` says why not, 409 `sleep_failed`). */
   sleep: (serviceId: number) => apiCall<{ ok: boolean; asleep: boolean }>(`/v1/services/${serviceId}/sleep`, 'POST'),
-  /** Start the containers and route the domains back (400 `not_asleep`, 409 `wake_failed`). */
-  wake: (serviceId: number) => apiCall<{ ok: boolean; status: string }>(`/v1/services/${serviceId}/wake`, 'POST'),
+  /** Local wake completes; node wake accepts a durable Start with pending lifecycle state. */
+  wake: (serviceId: number) => apiCall<ServiceLifecycleResult>(`/v1/services/${serviceId}/wake`, 'POST'),
 };

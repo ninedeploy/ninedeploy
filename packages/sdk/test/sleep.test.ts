@@ -49,6 +49,13 @@ describe('sleep routes', () => {
     await expect(api.services.sleep(4)).resolves.toEqual({ ok: true, asleep: true });
     await expect(api.services.wake(4)).resolves.toEqual({ ok: true, status: 'running' });
   });
+  it('retains pending lifecycle state from an accepted remote wake', async () => {
+    const body = { ok: true, status: 'running', pending: true, lifecycle: { id: 8, action: 'start', phase: 'preparing' } };
+    const { api } = client(() => ({ status: 202, body }));
+    const result = await api.services.wake(4);
+    const pending: true | undefined = result.pending;
+    expect(pending).toBe(true); expect(result).toEqual(body);
+  });
 
   it('surfaces the refusals as NineDeployErrors with their code and message', async () => {
     const replies: Record<string, { status: number; body: unknown }> = {
