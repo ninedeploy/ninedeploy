@@ -17,5 +17,7 @@ it('allows overlapping idle windows to read the same stable serving context with
     expect(result.results, 'overlapping read-only observers must not contend for a SQLite writer').toEqual([
       { status: 'fulfilled', sameContext: true }, { status: 'fulfilled', sameContext: true },
     ]);
+    expect(result.writeResults, 'file-backed managed writers also wait for their predecessor').toEqual(['fulfilled', 'fulfilled']);
+    expect(result.written).toEqual([{ id: 1 }, { id: 2 }]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
