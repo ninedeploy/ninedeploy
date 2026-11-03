@@ -1,4 +1,5 @@
 import { SLEEP_AFTER_MAX, SLEEP_AFTER_MIN } from '@ninedeploy/schemas';
+import { NineDeployError, type ServiceSleepStatus } from '@ninedeploy/sdk';
 import type { NineDeployClient } from '../client.js';
 import { c, error, fmtTime, header, info, kv, spinner, success } from '../lib/format.js';
 import { plain } from './sources.js';
@@ -49,17 +50,27 @@ export async function sleepShow(client: NineDeployClient, ref: string, opts: { j
     const svc = await load(opts.json, 'Loading the service', () => client.services.get(id));
     const minutes = svc.sleepAfterMinutes ?? null;
     const asleepAt = svc.asleepAt ?? null;
+    let observation: ServiceSleepStatus | null = null;
+    if (svc.serverId != null) {
+      try { observation = await load(opts.json, 'Loading node idle coverage', () => client.services.sleepStatus(id)); }
+      catch (err) { if (!(err instanceof NineDeployError && err.status === 404)) throw err; }
+    }
     if (opts.json) {
-      console.log(JSON.stringify({ sleepAfterMinutes: minutes, asleepAt }, null, 2));
+      console.log(JSON.stringify({ sleepAfterMinutes: minutes, asleepAt, ...(svc.serverId != null ? { observation } : {}) }, null, 2));
       return;
     }
     header(`Scale to zero: ${plain(svc.name)}`);
     kv('When idle', minutes ? sleepSetting(minutes) : c.gray(sleepSetting(minutes)));
-    kv('Now', asleepAt ? c.yellow('asleep') : 'awake');
+    kv('Now', observation ? plain(observation.phase) : svc.serverId != null ? 'unverified' : asleepAt ? c.yellow('asleep') : 'awake');
+    if (observation) {
+      kv('Node controller', observation.nodeControllerActive ? 'active' : 'not running');
+      if (observation.idleMs != null) kv('Verified idle', `${Math.floor(observation.idleMs / 1000)}s / ${Math.floor((observation.requiredMs ?? 0) / 1000)}s`);
+      if (observation.holding) info(plain(observation.holding));
+    }
     if (asleepAt) {
       kv('Went to sleep', fmtTime(asleepAt));
       console.log();
-      info('The next request through one of its domains wakes it, or `ninedeploy sleep wake`.');
+      info(observation && !observation.nodeControllerActive ? 'Automatic node wake is paused; use `ninedeploy sleep wake` or Start.' : 'The next request through one of its domains wakes it, or `ninedeploy sleep wake`.');
     }
     console.log();
   } catch (err) {

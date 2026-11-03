@@ -12,12 +12,43 @@ vi.mock('../src/lib/sleepApi.js', async () => ({
 }));
 
 import { sleepApi } from '../src/lib/sleepApi.js';
-import { ServiceStatusBadge, SleepActions, asleepTitle, isAsleep } from '../src/routes/service/SleepState.js';
+import { ServiceStatusBadge, SleepActions, NodeSleepState, asleepTitle, isAsleep } from '../src/routes/service/SleepState.js';
 
 const wake = vi.mocked(sleepApi.wake);
 const sleep = vi.mocked(sleepApi.sleep);
+const sleepStatus = vi.mocked(sleepApi.status);
 
 const ASLEEP_AT = new Date(Date.now() - 5 * 60_000).toISOString();
+
+describe('node sleep observations', () => {
+  afterEach(cleanup);
+  const status = { placement: 'node' as const, phase: 'observing' as const, configured: true, nodeControllerActive: true,
+    idleMs: 123_000, requiredMs: 300_000, idleSatisfied: false, holding: null };
+  it('shows actual observed coverage and never calls manual sleep for an awake node', async () => {
+    sleepStatus.mockResolvedValueOnce(status);
+    renderTree(<><NodeSleepState svc={svcWith({ serverId: 4 })} /><SleepActions svc={svcWith({ serverId: 4 })} /></>);
+    expect(await screen.findByText('Verified idle: 123s / 300s')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Sleep now/ })).not.toBeInTheDocument();
+  });
+  it('disables repeated wake while the automatic controller is verifying', async () => {
+    sleepStatus.mockResolvedValueOnce({ ...status, phase: 'waking' });
+    renderTree(<SleepActions svc={svcWith({ serverId: 4, asleepAt: ASLEEP_AT })} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Waking/ })).toBeDisabled());
+  });
+  it('keeps manual wake available when automatic verification is held', async () => {
+    sleepStatus.mockResolvedValueOnce({ ...status, phase: 'held', holding: 'Node verification is pending' });
+    renderTree(<SleepActions svc={svcWith({ serverId: 4, asleepAt: ASLEEP_AT })} />);
+    expect(await screen.findByRole('button', { name: /Wake now/ })).toBeEnabled();
+  });
+  it('does not retain another service coverage during navigation or fabricate it after an API error', async () => {
+    sleepStatus.mockResolvedValueOnce(status).mockRejectedValueOnce(new Error('offline'));
+    const view = renderTree(<NodeSleepState svc={svcWith({ serverId: 4 })} />);
+    await screen.findByText('Verified idle: 123s / 300s');
+    view.rerender(<NodeSleepState svc={svcWith({ id: 10, serverId: 4 })} />);
+    expect(await screen.findByText('Could not load node sleep status')).toBeInTheDocument();
+    expect(screen.queryByText('Verified idle: 123s / 300s')).not.toBeInTheDocument();
+  });
+});
 
 function svcWith(over: Record<string, unknown> = {}) {
   return { id: 9, type: 'docker', status: 'running', sleepAfterMinutes: 15, asleepAt: null, ...over } as never;

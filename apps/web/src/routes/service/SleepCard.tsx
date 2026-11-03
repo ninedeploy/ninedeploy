@@ -67,13 +67,11 @@ export function SleepCard({ svc }: { svc: ServiceDetail }) {
           {t('Once its domains have had no request for the set minutes, the service sleeps: its containers stop, and nothing is removed. It stays running in the panel. The next request through one of its domains wakes it; the visitor waits a few seconds for that first page.')}
         </p>
         <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
-          {fill(t("It needs traffic analytics (an operator turns it on in {link}) and at least one domain; without them nothing sleeps. Host ports and the service's internal network do not count as requests and do not wake it, so a service reached only that way should not sleep."), {
+          {svc.serverId != null ? t('Nodes require a sealed agent with proxy traffic observation enabled and an active domain. Only verified requests through the node proxy count toward idle coverage and wake demand.') : fill(t("It needs traffic analytics (an operator turns it on in {link}) and at least one domain; without them nothing sleeps. Host ports and the service's internal network do not count as requests and do not wake it, so a service reached only that way should not sleep."), {
             link: <Link to="/traefik" className="text-indigo-200 underline-offset-2 hover:underline">{t('Traefik → Traffic')}</Link>,
           })}
         </p>
-        {svc.serverId != null ? (
-          <p className="mt-1.5 text-xs text-amber-300">{t('This service runs on a node, so it does not sleep for now: scale to zero runs on the panel host only.')}</p>
-        ) : svc.placement?.orchestrator === 'swarm' ? (
+        {svc.placement?.orchestrator === 'swarm' ? (
           <p className="mt-1.5 text-xs text-amber-300">{t('This service runs on Swarm; scale to zero does not apply to it.')}</p>
         ) : null}
         {noDomain && (
@@ -107,7 +105,7 @@ export function SleepCard({ svc }: { svc: ServiceDetail }) {
             <Button type="submit" size="sm" disabled={save.isPending || (enabled ? parsed == null : svc.sleepAfterMinutes == null)}>
               {save.isPending ? t('Saving…') : t('Save sleep setting')}
             </Button>
-            <span className="text-xs text-slate-500">{t('Checked every minute; the idle window starts again after a deploy or a panel restart.')}</span>
+            <span className="text-xs text-slate-500">{svc.serverId != null ? t('Node idle coverage is sampled every 15 seconds; a deploy or panel restart begins a new idle window.') : t('Checked every minute; the idle window starts again after a deploy or a panel restart.')}</span>
           </div>
         </form>
       </CardBody>

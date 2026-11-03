@@ -54,6 +54,7 @@ import { autoscaleStatus, resetAutoscaleState } from '../lib/autoscaler.js';
 import { sizingHints } from '../lib/sizingHints.js';
 import { putToSleep, wakeService } from '../lib/sleep.js';
 import { sleepDeps } from '../lib/sleepRuntime.js';
+import { readServiceSleepStatus } from '../lib/serviceSleepStatus.js';
 import { wakeUnreachableReason } from '../lib/panelUpstream.js';
 import {
   assertServiceRole,
@@ -1380,6 +1381,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     return { targets: rows.map((t) => ({ serverId: t.serverId, runtimeId: t.runtimeId, status: t.status })) };
   });
 
+  app.get('/:id/sleep', async req => readServiceSleepStatus(app.db,
+    await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!)));
+
   // 0.16.11 scale to zero, by hand: put a service to sleep now, or wake it.
   const wakeFromRoute = async (svc: Service, req: FastifyRequest, trigger: string) => {
     if (!(await wakeService(sleepDeps(app.db, (line) => req.log.info(line)), svc, trigger))) {
@@ -1408,7 +1412,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         : svc.type !== 'docker'
           ? 'scale to zero applies to docker services only'
           : svc.serverId != null
-            ? 'scale to zero runs on the panel host only for now'
+            ? 'manual node sleep is unavailable; configure verified automatic idle sleep'
             : svc.orchestrator === 'swarm'
               ? 'scale to zero does not apply to Swarm services'
               : svc.status !== 'running' || !svc.runtimeId

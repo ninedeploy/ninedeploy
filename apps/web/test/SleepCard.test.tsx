@@ -144,9 +144,11 @@ describe('SleepCard', () => {
     expect(await screen.findByText(/has no active domain/)).toBeInTheDocument();
   });
 
-  it('says a service on a node or on Swarm does not sleep', () => {
+  it('explains verified node coverage while retaining the Swarm refusal', () => {
     renderCard(serviceWith({ serverId: 2 }));
-    expect(screen.getByText(/runs on a node, so it does not sleep for now/)).toBeInTheDocument();
+    expect(screen.getByText(/Nodes require a sealed agent with proxy traffic observation enabled/)).toBeInTheDocument();
+    expect(screen.getByText(/sampled every 15 seconds/)).toBeInTheDocument();
+    expect(screen.queryByText(/runs on the panel host only/)).not.toBeInTheDocument();
     cleanup();
     renderCard(serviceWith({ placement: { orchestrator: 'swarm' } }));
     expect(screen.getByText(/runs on Swarm; scale to zero does not apply to it/)).toBeInTheDocument();

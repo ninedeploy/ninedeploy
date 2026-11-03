@@ -13,10 +13,10 @@ export const NODE_WAKE_POLL_MS = 2000;
 const MAX_NODES = 4, MAX_WAKES = 4, RETRY_MS = 30_000;
 const active = ['accepted', 'fencing', 'starting', 'readiness', 'publishing'] as const;
 
-/** Private coordinator. Catcher mutation requires explicit recovery opt-in and durable maintenance authority. */
+/** Bounded coordinator. Catcher recovery requires the maintenance option and durable authority. */
 export function createNodeWakePoller(db: DB, options: {
   runtime?: (signal: AbortSignal) => NodeWakeControllerDeps;
-  /** Private acceptance opt-in; production activation still requires traffic acceptance. */
+  /** Enable durable catcher maintenance; the production sleeper supplies this option. */
   recoverCatchers?: boolean;
   maintenanceRuntime?: (signal: AbortSignal) => NodeWakeMaintenanceDeps;
   now?: () => number;

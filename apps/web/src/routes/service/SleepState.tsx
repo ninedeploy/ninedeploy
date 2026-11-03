@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Moon, Sun } from 'lucide-react';
 import type { Service, ServiceLifecycleCommand, ServiceLifecycleView } from '@ninedeploy/sdk';
 import { sleepApi } from '../../lib/sleepApi.js';
@@ -44,14 +44,17 @@ export function ServiceStatusBadge({ svc, since = false }: { svc: SleepFields; s
  * the service sleeps, **Sleep now** while it is awake with Sleep when idle
  * on. Nothing for a service that is not running, or on an older panel.
  */
-export function SleepActions({ svc, command }: { svc: SleepFields & Pick<Service, 'id' | 'type'> & { sleepAfterMinutes?: number | null }; command?: ServiceLifecycleCommand | null }) {
+export function SleepActions({ svc, command }: { svc: SleepFields & Pick<Service, 'id' | 'type'> & { sleepAfterMinutes?: number | null; serverId?: number | null }; command?: ServiceLifecycleCommand | null }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const status = useQuery({ queryKey: ['service-sleep', svc.id], queryFn: () => sleepApi.status(svc.id),
+    enabled: svc.serverId != null && svc.type === 'docker', refetchInterval: 5000, retry: false });
   const refresh = (serviceId = svc.id) => {
     qc.invalidateQueries({ queryKey: ['service', serviceId] });
     qc.invalidateQueries({ queryKey: ['services'] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
+    qc.invalidateQueries({ queryKey: ['service-sleep', serviceId] });
   };
   const message = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
   const wake = useMutation({
@@ -77,7 +80,8 @@ export function SleepActions({ svc, command }: { svc: SleepFields & Pick<Service
     },
   });
   const busyCommand = command?.current === true && !['completed', 'superseded'].includes(command.phase);
-  const wakingCurrent = wake.isPending && wake.variables === svc.id || busyCommand && command?.action === 'start';
+  const automaticWake = status.data?.phase === 'waking';
+  const wakingCurrent = wake.isPending && wake.variables === svc.id || busyCommand && command?.action === 'start' || automaticWake;
   const sleep = useMutation({
     mutationFn: () => sleepApi.sleep(svc.id),
     onSuccess: () => {
@@ -95,10 +99,29 @@ export function SleepActions({ svc, command }: { svc: SleepFields & Pick<Service
       </Button>
     );
   }
-  if (svc.type !== 'docker' || svc.sleepAfterMinutes == null) return null;
+  if (svc.type !== 'docker' || svc.sleepAfterMinutes == null || svc.serverId != null) return null;
   return (
     <Button variant="secondary" size="md" onClick={() => sleep.mutate()} disabled={sleep.isPending || busyCommand} title={t('Stop the containers now; the next request wakes the service')}>
       <Moon size={15} /> {sleep.isPending ? t('Sleeping…') : t('Sleep now')}
     </Button>
   );
+}
+
+/** Node idle observations come from the serving node rather than panel traffic analytics. */
+export function NodeSleepState({ svc }: { svc: Pick<Service, 'id' | 'type' | 'serverId'> & { sleepAfterMinutes?: number | null; asleepAt?: string | null } }) {
+  const t = useT();
+  const show = svc.serverId != null && svc.type === 'docker' && (svc.sleepAfterMinutes != null || svc.asleepAt != null);
+  const status = useQuery({ queryKey: ['service-sleep', svc.id], queryFn: () => sleepApi.status(svc.id), enabled: show, refetchInterval: 5000, retry: false });
+  if (!show) return null;
+  const state = status.data;
+  const text = status.isError ? t('Could not load node sleep status') : !state ? t('Loading node sleep status…')
+    : state.phase === 'asleep' ? state.nodeControllerActive ? t('Asleep — its next request wakes it') : t('Automatic node wake is paused — use Wake now')
+      : state.phase === 'waking' ? t('Waking — application readiness and routing are pending')
+        : state.phase === 'sleeping' ? t('Preparing verified sleep routing')
+          : state.phase === 'held' ? t('Node verification is pending')
+            : state.phase === 'disabled' ? t('Automatic sleep is off')
+              : state.phase === 'unsupported' ? t('Scale to zero requires an ordinary Docker service')
+                : state.idleMs == null ? t('Waiting for verified node idle coverage')
+                  : t('Verified idle: {seconds}s / {required}s', { seconds: Math.floor(state.idleMs / 1000), required: Math.floor((state.requiredMs ?? 0) / 1000) });
+  return <div className="mt-3 text-xs text-slate-400" role="status"><p>{text}</p>{state?.holding && <p className="mt-1">{state.holding}</p>}</div>;
 }

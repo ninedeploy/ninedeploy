@@ -47,6 +47,7 @@ import type {
   ServiceFilePut,
   ServiceLifecycleResult,
   ServiceLifecycleView,
+  ServiceSleepStatus,
   ServiceLifecycleRetry,
   ErrorPagesInput,
   InlineDockerfileView,
@@ -295,6 +296,7 @@ export interface ServicesApi {
      * (5-1440, `null` = never). Answers 400 `cannot_sleep` (the message says
      * why) or 409 `sleep_failed`.
      */
+    sleepStatus: (id: number) => Promise<ServiceSleepStatus>;
     sleep: (id: number) => Promise<{ ok: boolean; asleep: boolean }>;
     /**
      * Wake a sleeping service (`POST /v1/services/:id/wake`, member): starts
@@ -480,6 +482,7 @@ export function servicesApi(t: Transport): ServicesApi {
         discard: (id) => send<PendingChangesView>('DELETE', `/v1/services/${id}/pending`),
         apply: (id, input) => send<PendingApplyResult>('POST', `/v1/services/${id}/pending/apply`, input ?? {}),
       },
+      sleepStatus: id => get<ServiceSleepStatus>(`/v1/services/${id}/sleep`),
       sleep: (id) => send<{ ok: boolean; asleep: boolean }>('POST', `/v1/services/${id}/sleep`),
       wake: (id) => send<ServiceLifecycleResult>('POST', `/v1/services/${id}/wake`),
       // ── end 0.16 T8 ──

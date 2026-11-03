@@ -29,7 +29,7 @@ import { ActivityTab } from './ActivityTab.js';
 import { CiTab } from './CiTab.js';
 import { DangerZone } from './DangerZone.js';
 import { CanaryPanel } from './CanaryPanel.js';
-import { ServiceStatusBadge, SleepActions } from './SleepState.js';
+import { ServiceStatusBadge, SleepActions, NodeSleepState } from './SleepState.js';
 import { NodeLifecycleCard } from './NodeLifecycleCard.js';
 
 import { ContainerFileBrowser } from '../../components/ContainerFileBrowser.js';
@@ -308,6 +308,7 @@ export function ServiceDetail() {
             {svc.port && <span>: {svc.port}</span>}
             <span className="truncate">{svc.repoUrl ?? svc.image}</span>
           </p>
+          <NodeSleepState svc={svc} />
           {svc.autoUrl && (
             <a
               href={`http://${svc.autoUrl}`}

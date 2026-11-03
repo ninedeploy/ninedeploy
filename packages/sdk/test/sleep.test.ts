@@ -33,6 +33,7 @@ describe('sleep routes', () => {
     const on: UpdateServiceInput = { sleepAfterMinutes: 30 };
     const off: UpdateServiceInput = { sleepAfterMinutes: null };
     const cases: Array<[() => Promise<unknown>, string, string, unknown]> = [
+      [() => api.services.sleepStatus(4), 'GET', '/v1/services/4/sleep', undefined],
       [() => api.services.sleep(4), 'POST', '/v1/services/4/sleep', undefined],
       [() => api.services.wake(4), 'POST', '/v1/services/4/wake', undefined],
       [() => api.services.update(4, on), 'PATCH', '/v1/services/4', { sleepAfterMinutes: 30 }],
