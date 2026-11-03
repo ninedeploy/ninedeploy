@@ -8,7 +8,7 @@ import { agentVersionAtLeast, capabilityRefusal, parseAgentCapabilities } from '
 import { HttpError } from './errors.js';
 import {
   advanceNodeLifecycleIntent, checkpointNodeLifecycleIntent, claimNodeLifecycleIntent, holdNodeLifecycleIntent,
-  nodeLifecycleWireRevision, supersedeNodeLifecycleIntent,
+  nodeLifecycleWireRevision, supersedeNodeLifecycleIntent, prepareNodeLifecycleWakeRouting, type NodeExplicitWakePublication,
 } from './nodeLifecycleIntent.js';
 import { verifyNodeReadiness } from './nodeReadiness.js';
 
@@ -16,7 +16,7 @@ export interface NodeLifecycleControllerDeps {
   agent: (serverId: number, op: string, params: Record<string, unknown>, options: { signal?: AbortSignal; timeoutMs: number }) => Promise<AgentOpResult>;
   sealed: (serverId: number) => Promise<boolean>;
   /** Resolve only after this service's routing generation is acknowledged by the selected node. */
-  route: (service: Service, signal?: AbortSignal, serverId?: number) => Promise<void>;
+  route: (service: Service, signal?: AbortSignal, serverId?: number, wake?: NodeExplicitWakePublication) => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   signal?: AbortSignal;
   log?: (line: string) => void;
@@ -224,7 +224,9 @@ export async function executeNodeLifecycleIntent(db: DB, id: number, deps: NodeL
   const routeAll = async () => {
     for (const participant of participants()) {
       const service = await checkpoint();
-      await deps.route(service, deps.signal, participant.serverId);
+      const publishing = intent.action === 'start' && intent.phase === 'routing' || intent.action === 'restart' && intent.phase === 'publishing';
+      const wake = publishing && participant.serverId === intent.serverId ? await prepareNodeLifecycleWakeRouting(db, intent) : null;
+      await deps.route(service, deps.signal, participant.serverId, wake ?? undefined);
       await checkpoint();
     }
   };

@@ -884,6 +884,7 @@ export interface DynamicConfigOptions {
   confirmServiceId?: number;
   autoscalePromotion?: AutoscaleRoutePromotion;
   wakePromotion?: NodeWakeRoutePromotion;
+  onWakeConfirmed?: () => Promise<void>;
   catcherPromotion?: NodeCatcherRoutePromotion;
   /** Settlement runs before the next queued render can observe the old bindings. */
   onCatcherConfirmed?: () => Promise<void>;
@@ -910,6 +911,7 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     if (opts.requireNode == null || opts.confirmNodeRouting !== true || opts.autoscalePromotion) throw new ProxyRoutingUnconfirmed('Wake promotion requires exclusive confirmed node routing');
     await checkNodeWakeRoutePromotion(opts.wakePromotion, opts.requireNode);
   }
+  if (opts.onWakeConfirmed && (!opts.wakePromotion || !opts.requireOrderedNode)) throw new ProxyRoutingUnconfirmed('Wake settlement requires ordered promotion routing');
   if (opts.autoscalePromotion && (opts.requireNode == null || opts.confirmNodeRouting !== true)) throw new ProxyRoutingUnconfirmed('Autoscale promotion requires confirmed node routing');
   if (opts.requireOrderedNode && (opts.requireNode == null || opts.confirmNodeRouting !== true)) throw new ProxyRoutingUnconfirmed('Ordered routing requires a confirmed node');
   // The render refreshes the uploaded-certificate cache; the certificates
@@ -945,6 +947,11 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
     opts.signal?.throwIfAborted();
     await checkNodeCatcherRoutePromotion(opts.catcherPromotion, opts.requireNode!);
     await opts.onCatcherConfirmed!();
+  }
+  if (opts.onWakeConfirmed) {
+    opts.signal?.throwIfAborted();
+    await checkNodeWakeRoutePromotion(opts.wakePromotion!, opts.requireNode!);
+    await opts.onWakeConfirmed();
   }
 }
 
