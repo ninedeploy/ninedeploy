@@ -76,6 +76,9 @@ try {
   cases.push({ name: 'traffic-during-delayed-replacement', passed: samples.every(row => row.status === 503 && row.waking), requests: samples.length, counts,
     wakingPages: samples.filter(row => row.waking).length });
   cases.push({ name: 'maintenance-completed-after-real-sealed-routing', passed: evidence.result.state === 'completed' && evidence.phase === 'completed' });
+  cases.push({ name: 'new-generation-records-real-wake-demand', passed: evidence.pinnedDemand === true && /^ninedeploy-wake-g-[a-f0-9]{32}$/.test(evidence.catcherName ?? '') });
+  // This cohort proves staged handoff. Retirement has a separate ownership/drain gate.
+  evidence.oldBackendRetained = docker(['inspect', seed.catcherId], true).status === 0;
   assert.equal(docker(['inspect', 'ninedeploy-proxy', '--format', '{{.Id}}']).out, proxy, 'Proxy was recreated');
   assert.ok(cases.every(row => row.passed), 'Catcher replacement acceptance failed; see cases and traffic trace');
 } catch (error) { failure = String(error); process.exitCode = 1; }

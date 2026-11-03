@@ -9,6 +9,7 @@ import { nodeCanaryRoutingActive } from '../engine/canaryState.js';
 import { bindNodeProxyWrite, checkpointNodeProxyWrite, reserveNodeProxyWrite } from './nodeProxyAuthority.js';
 import { z } from 'zod';
 import { checkNodeWakeRoutePromotion, type NodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
+import { checkNodeCatcherRoutePromotion, type NodeCatcherRoutePromotion } from './nodeCatcherRoutePromotion.js';
 
 const orderedReceipt = z.object({ revision: z.number().int().positive(), requestId: z.string().regex(/^[a-f0-9]{32}$/),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/), complete: z.literal(true), changed: z.boolean() }).strict();
@@ -60,7 +61,7 @@ export async function syncNodeProxy(
   db: DB,
   serverId: number,
   log: (line: string) => void = () => undefined,
-  opts: { ensureContainer?: boolean; confirmRouting?: boolean; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion; adoptOrdered?: boolean } = {},
+  opts: { ensureContainer?: boolean; confirmRouting?: boolean; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion; catcherPromotion?: NodeCatcherRoutePromotion; adoptOrdered?: boolean } = {},
 ): Promise<NodeProxySyncResult> {
   let ensureStarted = false;
   let routingMayHaveChanged = false;
@@ -69,18 +70,21 @@ export async function syncNodeProxy(
   const call = async (op: string, params: Record<string, unknown>, sink: (line: string) => void) => {
     opts.signal?.throwIfAborted();
     if (opts.wakePromotion) await checkNodeWakeRoutePromotion(opts.wakePromotion, serverId);
+    if (opts.catcherPromotion) await checkNodeCatcherRoutePromotion(opts.catcherPromotion, serverId);
     if (authority) await checkpointNodeProxyWrite(db, authority);
     const result = opts.signal || opts.timeoutMs != null
       ? await agentOp(db, serverId, op, params, sink, { signal: opts.signal, timeoutMs: opts.timeoutMs ?? 15_000 })
       : await agentOp(db, serverId, op, params, sink);
     opts.signal?.throwIfAborted();
     if (opts.wakePromotion) await checkNodeWakeRoutePromotion(opts.wakePromotion, serverId);
+    if (opts.catcherPromotion) await checkNodeCatcherRoutePromotion(opts.catcherPromotion, serverId);
     if (authority) await checkpointNodeProxyWrite(db, authority);
     if (result.exitCode !== 0) throw new Error(`Node proxy operation ${op} failed`);
     return result;
   };
   try {
     opts.signal?.throwIfAborted();
+    if (opts.catcherPromotion && (!confirmRouting || opts.autoscalePromotion || opts.wakePromotion)) throw new Error('Catcher promotion requires exclusive confirmed node routing');
     if (opts.wakePromotion && (!confirmRouting || opts.autoscalePromotion)) throw new Error('Wake promotion requires exclusive confirmed node routing');
     if (opts.autoscalePromotion && !confirmRouting) throw new Error('Autoscale promotion requires confirmed node routing');
     const orderedCapability = async () => {
@@ -89,7 +93,7 @@ export async function syncNodeProxy(
         { cap: 'proxy.orderedWrite', feature: 'order node proxy routing writes', sealedRequired: true });
       if (refusal) throw new Error(refusal.message);
     };
-    const adoptOrdered = opts.adoptOrdered || !!opts.wakePromotion;
+    const adoptOrdered = opts.adoptOrdered || !!opts.wakePromotion || !!opts.catcherPromotion;
     if (adoptOrdered) await orderedCapability();
     authority = await reserveNodeProxyWrite(db, serverId, { adopt: adoptOrdered });
     if (authority && !adoptOrdered) await orderedCapability();
@@ -101,7 +105,7 @@ export async function syncNodeProxy(
     }
     const [acmeEmail, dns] = await Promise.all([getAcmeEmail(db), getDnsConfig(db)]);
     const staticConfig = renderStaticConfig(acmeEmail, dns);
-    const dynamicConfig = await renderDynamicConfig(db, { serverId, ...(opts.autoscalePromotion ? { autoscalePromotion: opts.autoscalePromotion } : {}), ...(opts.wakePromotion ? { wakePromotion: opts.wakePromotion } : {}) });
+    const dynamicConfig = await renderDynamicConfig(db, { serverId, ...(opts.autoscalePromotion ? { autoscalePromotion: opts.autoscalePromotion } : {}), ...(opts.wakePromotion ? { wakePromotion: opts.wakePromotion } : {}), ...(opts.catcherPromotion ? { catcherPromotion: opts.catcherPromotion } : {}) });
     const writtenDynamic = confirmRouting ? withRoutingAck(dynamicConfig) : dynamicConfig;
     if (authority) authority = await bindNodeProxyWrite(db, authority, writtenDynamic);
 
@@ -198,9 +202,13 @@ export async function syncAllNodeProxies(
   db: DB,
   serverIds: number[],
   log: (line: string) => void = () => undefined,
-  opts: { confirmNode?: number; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion; adoptOrderedNode?: number } = {},
+  opts: { confirmNode?: number; signal?: AbortSignal; timeoutMs?: number; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion; catcherPromotion?: NodeCatcherRoutePromotion; adoptOrderedNode?: number } = {},
 ): Promise<Array<NodeProxySyncResult & { serverId: number }>> {
   const unique = [...new Set(serverIds.filter((id) => Number.isInteger(id) && id > 0))];
+  if (opts.catcherPromotion) {
+    await checkNodeCatcherRoutePromotion(opts.catcherPromotion, opts.confirmNode!);
+    if (!unique.includes(opts.confirmNode!)) throw new Error('Node catcher promotion target is absent');
+  }
   if (opts.wakePromotion) {
     await checkNodeWakeRoutePromotion(opts.wakePromotion, opts.confirmNode!);
     if (!unique.includes(opts.confirmNode!)) throw new Error('Node wake promotion target is absent');
@@ -216,6 +224,7 @@ export async function syncAllNodeProxies(
     results.push({ serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id,
       ...(opts.autoscalePromotion && opts.confirmNode === id ? { autoscalePromotion: opts.autoscalePromotion } : {}),
       ...(opts.wakePromotion && opts.confirmNode === id ? { wakePromotion: opts.wakePromotion } : {}),
+      ...(opts.catcherPromotion && opts.confirmNode === id ? { catcherPromotion: opts.catcherPromotion } : {}),
       ...(opts.confirmNode === id && (opts.autoscalePromotion || opts.adoptOrderedNode === id) ? { adoptOrdered: true } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.timeoutMs != null ? { timeoutMs: opts.timeoutMs } : {}) })) });
   }

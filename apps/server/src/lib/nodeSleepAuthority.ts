@@ -10,6 +10,7 @@ import { nodeServingTrafficContext, readNodeServingTrafficState } from './nodeSe
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner, serviceRuntimeRevision } from './serviceRuntimeOwner.js';
 import { registerNodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
 import { nodeWakeMaintenancePending } from './nodeWakeMaintenanceBlock.js';
+import { validNodeCatcherName, type CatcherIdentity } from './nodeCatcherIdentity.js';
 
 type ReadDB = Pick<DB, 'query' | 'select'>;
 export type NodeSleepAdmission = { serviceId: number; owner: ServiceRuntimeOwner; workerToken: string; binding: string };
@@ -84,7 +85,7 @@ export async function admitNodeSleep(db: DB, expected: Service, token: NodeIdleE
         wakeToken: nonce(), fallbackRouting: false, targets: input.serving.map(target => ({ ...target, deploymentId: input.deploymentId })),
         idleEvidence: { idleMs: proof.idleMs, sampledAt: proof.sampledAt, windowId: receipt.windowId, sourceId: receipt.sourceId,
           proxyId: receipt.proxyId, epoch: receipt.epoch, routingGeneration: receipt.routingGeneration, targetHash: receipt.targetHash },
-        catcherId: null, catcherImage: null, workerToken, leaseUntil: new Date(Date.now() + NODE_SLEEP_LEASE_MS), reason: null };
+        catcherId: null, catcherImage: null, catcherName: 'ninedeploy-wake', workerToken, leaseUntil: new Date(Date.now() + NODE_SLEEP_LEASE_MS), reason: null };
       const stamp = binding(values);
       const inserted = await tx.insert(nodeSleepTransitions).values({ ...values, binding: stamp }).onConflictDoUpdate({ target: nodeSleepTransitions.serviceId,
         set: { ...values, binding: stamp }, setWhere: inArray(nodeSleepTransitions.phase, ['completed', 'superseded']) }).returning();
@@ -110,7 +111,7 @@ async function assertCurrent(db: ReadDB, admission: NodeSleepAdmission, requireL
     (row.action === 'sleep' ? (row.phase === 'asleep') !== (service.asleepAt !== null) : service.asleepAt === null) ||
     !Number.isSafeInteger(row.watermark) || row.watermark < row.deploymentId ||
     row.catcherId !== null && !/^[a-f0-9]{64}$/.test(row.catcherId) || row.catcherImage !== null && !/^sha256:[a-f0-9]{64}$/.test(row.catcherImage) ||
-    (row.catcherId === null) !== (row.catcherImage === null) ||
+    (row.catcherId === null) !== (row.catcherImage === null) || !validNodeCatcherName(row.catcherName) ||
     (row.action === 'wake' || ['prepared', 'routing', 'routed', 'stopping', 'asleep', 'restoring'].includes(row.phase)) && !row.catcherId ||
     row.fallbackRouting !== (row.action === 'wake' || ['routing', 'routed', 'stopping', 'asleep', 'restoring'].includes(row.phase)) ||
     await configuration(db, service) !== row.configuration || !await unblocked(db, service.id)) throw changed();
@@ -188,17 +189,18 @@ export async function advanceNodeSleep(db: DB, admission: NodeSleepAdmission, fr
   });
 }
 
-export async function bindNodeSleepCatcher(db: DB, admission: NodeSleepAdmission, catcher: { id: string; image: string }) {
-  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image)) throw changed();
+export async function bindNodeSleepCatcher(db: DB, admission: NodeSleepAdmission, catcher: CatcherIdentity) {
+  const name = catcher.name ?? 'ninedeploy-wake';
+  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image) || !validNodeCatcherName(name)) throw changed();
   await db.transaction(async tx => {
     const { row } = await assertCurrent(tx, admission);
-    if (row.phase !== 'fencing' || row.action !== 'sleep' || row.catcherId !== null && (row.catcherId !== catcher.id || row.catcherImage !== catcher.image)) throw changed();
-    await tx.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image }).where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
+    if (row.phase !== 'fencing' || row.action !== 'sleep' || row.catcherId !== null && (row.catcherId !== catcher.id || row.catcherImage !== catcher.image || row.catcherName !== name)) throw changed();
+    await tx.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image, catcherName: name }).where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
   });
 }
 
 /** Rebind a recreated, separately confirmed catcher without reviving a superseded sleep cycle. */
-export async function refreshNodeSleepCatcher(db: DB, expected: ServiceRuntimeOwner, previousId: string, catcher: { id: string; image: string }) {
+export async function refreshNodeSleepCatcher(db: DB, expected: ServiceRuntimeOwner, previousId: string, catcher: CatcherIdentity) {
   await db.transaction(tx => refreshNodeSleepCatcherInTransaction(tx, expected, previousId, catcher));
 }
 
@@ -209,12 +211,13 @@ export async function readNodeSleepingState(db: ReadDB, serviceId: number) {
   return { ...await assertCurrent(db, { serviceId, owner, workerToken: '', binding: row.binding }, false), owner };
 }
 
-export async function refreshNodeSleepCatcherInTransaction(db: ReadDB & Pick<DB, 'update'>, expected: ServiceRuntimeOwner, previousId: string, catcher: { id: string; image: string }) {
-  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image)) throw changed();
+export async function refreshNodeSleepCatcherInTransaction(db: ReadDB & Pick<DB, 'update'>, expected: ServiceRuntimeOwner, previousId: string, catcher: CatcherIdentity) {
+  const name = catcher.name ?? 'ninedeploy-wake';
+  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image) || !validNodeCatcherName(name)) throw changed();
   const row = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, expected.serviceId) });
   if (!row || row.action !== 'sleep' || row.phase !== 'asleep' || row.catcherId !== previousId) throw changed();
   await assertCurrent(db, { serviceId: expected.serviceId, owner: expected, workerToken: '', binding: row.binding }, false);
-  await db.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image }).where(eq(nodeSleepTransitions.serviceId, expected.serviceId));
+  await db.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image, catcherName: name }).where(eq(nodeSleepTransitions.serviceId, expected.serviceId));
 }
 
 async function complete(db: DB, admission: NodeSleepAdmission, raw: unknown, action: 'sleep' | 'wake') {

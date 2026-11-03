@@ -5,6 +5,8 @@ import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 export function sampleWakePage(options = {}) {
   return new Promise(resolve => {
     const at = Date.now();
+    let deadline;
+    const finish = row => { clearTimeout(deadline); resolve(row); };
     const request = http.get({ hostname: 'ninedeploy-proxy', path: '/dashboard', headers: { host: 'wake.invalid' }, ...options }, response => {
       let body = '', oversized = false;
       response.setEncoding('utf8');
@@ -12,12 +14,13 @@ export function sampleWakePage(options = {}) {
         if (body.length + chunk.length > 16_384) oversized = true;
         if (!oversized) body += chunk;
       });
-      response.on('end', () => resolve({ at, status: response.statusCode,
+      response.on('end', () => finish({ at, status: response.statusCode,
         waking: !oversized && response.headers['retry-after'] === '5' && body.includes('Waking up') && body.includes('http-equiv="refresh"') }));
-      response.on('error', error => resolve({ at, status: 0, waking: false, error: error.code ?? 'RESPONSE_ERROR' }));
+      response.on('error', error => finish({ at, status: 0, waking: false, error: error.code ?? 'RESPONSE_ERROR' }));
     });
-    request.setTimeout(1000, () => request.destroy(Object.assign(new Error('timeout'), { code: 'PROBE_TIMEOUT' })));
-    request.on('error', error => resolve({ at, status: 0, waking: false, error: error.code ?? 'REQUEST_ERROR' }));
+    // An idle socket timeout alone can be kept alive forever by a streaming body.
+    deadline = setTimeout(() => request.destroy(Object.assign(new Error('timeout'), { code: 'PROBE_TIMEOUT' })), 1000);
+    request.on('error', error => finish({ at, status: 0, waking: false, error: error.code ?? 'REQUEST_ERROR' }));
   });
 }
 

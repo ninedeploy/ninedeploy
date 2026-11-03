@@ -22,7 +22,8 @@ const IMAGE_VOLUME = '/data';
 const DEMAND_TAIL = 2000;
 const withCatcher = createKeyedOperationGuard<string>();
 
-export const wakeDemandParams = z.object({ sinceMs: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }).strict();
+export const wakeDemandParams = z.object({ sinceMs: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  catcherId: z.string().length(64).regex(/^[a-f0-9]{64}$/).optional() }).strict();
 /** The panel's per-node wake key; the Traefik middleware sends it, the catcher checks it. */
 export const wakeEnsureParams = z.object({ key: z.string().regex(WAKE_KEY_PATTERN) }).strict();
 const keyLabel = (key: string) => createHash('sha256').update(`ninedeploy-wake:${key}`).digest('hex');
@@ -113,8 +114,9 @@ export async function removeWakeCatcher(): Promise<{ removed: boolean }> {
 
 /** Wake demand per token since `sinceMs`, from the running catcher's own log lines. */
 export async function readWakeDemand(params: unknown) {
-  const { sinceMs } = wakeDemandParams.parse(params);
-  const found = await inspect(WAKE_CATCHER_NAME);
+  const { sinceMs, catcherId } = wakeDemandParams.parse(params);
+  const selected = catcherId ?? WAKE_CATCHER_NAME;
+  const found = await inspect(selected);
   if (!found || found.managed !== WAKE_CATCHER_LABEL || !found.running) throw new HttpError(409, 'wake_catcher_missing', 'The wake catcher is not running on the node');
   const startedMs = Date.parse(found.startedAt);
   if (!Number.isFinite(startedMs) || startedMs < 0) throw new HttpError(502, 'wake_catcher_unconfirmed', 'The wake catcher start time could not be read');
@@ -122,7 +124,7 @@ export async function readWakeDemand(params: unknown) {
   // Docker's --since has second precision; re-reading a line is harmless because a wake is idempotent.
   const since = new Date(lowerBound).toISOString();
   const out = await capture('docker', ['logs', '--timestamps', '--since', since, '--tail', String(DEMAND_TAIL), found.id], { timeoutMs: 15_000 });
-  const after = await inspect(WAKE_CATCHER_NAME);
+  const after = await inspect(selected);
   if (!after || after.id !== found.id || after.startedAt !== found.startedAt || !after.running || after.managed !== WAKE_CATCHER_LABEL) {
     throw new HttpError(409, 'wake_catcher_changed', 'The wake catcher process changed while demand was read');
   }

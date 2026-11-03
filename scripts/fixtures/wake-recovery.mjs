@@ -6,7 +6,7 @@ import { createDb, runMigrations, services, deployments, domains, servers } from
 import { buildAgentApp } from '/app/apps/server/dist/agentApp.js';
 import { agentRoutes } from '/app/apps/server/dist/agent.js';
 import { encrypt, sha256 } from '/app/apps/server/dist/lib/crypto.js';
-import { ensureNodeWakeCatcher } from '/app/apps/server/dist/lib/nodeWakeCatcherClient.js';
+import { ensureNodeWakeCatcher, readNodeWakeDemand } from '/app/apps/server/dist/lib/nodeWakeCatcherClient.js';
 import { nodeWakeKey } from '/app/apps/server/dist/lib/nodeWakeKey.js';
 import { renderDynamicConfig, renderStaticConfig, getAcmeEmail, getDnsConfig } from '/app/apps/server/dist/engine/proxy.js';
 import { withRoutingAck } from '/app/apps/server/dist/lib/proxyRoutingAck.js';
@@ -53,6 +53,18 @@ try {
     const claim = await claimNodeWakeMaintenance(c.db, 4); assert.ok(claim);
     const result = await executeNodeWakeMaintenance(c.db, claim, nodeWakeMaintenanceRuntime(c.db));
     const row = await c.db.query.nodeWakeMaintenance.findFirst();
-    writeFileSync('/proof/maintenance.json', JSON.stringify({ result, phase: row.phase, catcherId: row.catcherId, realSealedHttp: true }));
+    let pinnedDemand = false;
+    if (result.state === 'completed') {
+      const sleeping = await c.db.query.nodeSleepTransitions.findFirst();
+      assert.equal(sleeping.catcherId, row.catcherId); assert.equal(sleeping.catcherName, row.catcherName);
+      for (const deadline = Date.now() + 5000; ;) {
+        const demand = await readNodeWakeDemand(c.db, 4, row.catcherId, Math.max(0, Date.now() - 60_000), undefined, row.catcherName);
+        pinnedDemand = demand.items.some(item => item.token === sleeping.wakeToken && item.count > 0);
+        if (pinnedDemand || Date.now() >= deadline) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    writeFileSync('/proof/maintenance.json', JSON.stringify({ result, phase: row.phase, catcherId: row.catcherId, catcherName: row.catcherName,
+      pinnedDemand, realSealedHttp: true }));
   }
 } finally { await app.close(); c.client?.close(); }

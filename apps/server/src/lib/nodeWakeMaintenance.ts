@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, isNull, lte, ne, notInArray, or } from 'drizzle-orm';
 import { nodeSleepTransitions, nodeWakeMaintenance, servers, type DB, type NodeWakeMaintenance } from '@ninedeploy/db';
 import { readNodeSleepingState, refreshNodeSleepCatcherInTransaction } from './nodeSleepAuthority.js';
+import { validNodeCatcherName } from './nodeCatcherIdentity.js';
+import { registerNodeCatcherRoutePromotion } from './nodeCatcherRoutePromotion.js';
 
 const LEASE_MS = 120_000;
 const nonce = () => randomBytes(16).toString('hex');
@@ -53,7 +55,7 @@ export async function claimNodeWakeMaintenance(db: DB, serverId: number): Promis
     const generation = (prior?.generation ?? 0) + 1, requestId = nonce();
     if (!Number.isSafeInteger(generation) || generation <= 0) throw changed();
     const binding = stamp({ serverId, generation, requestId, snapshot });
-    const values = { serverId, generation, requestId, binding, snapshot, phase: 'preparing' as const, workerToken, leaseUntil, catcherId: null, catcherImage: null, reason: null };
+    const values = { serverId, generation, requestId, binding, snapshot, phase: 'preparing' as const, workerToken, leaseUntil, catcherId: null, catcherImage: null, catcherName: 'ninedeploy-wake', reason: null };
     const [row] = await tx.insert(nodeWakeMaintenance).values(values).onConflictDoUpdate({ target: nodeWakeMaintenance.serverId, set: values,
       setWhere: eq(nodeWakeMaintenance.phase, 'completed') }).returning();
     if (!row) return null;
@@ -68,12 +70,13 @@ export async function checkpointNodeWakeMaintenance(db: DB, claim: NodeWakeMaint
     return row;
   });
 }
-export async function recordNodeWakeMaintenanceCatcher(db: DB, claim: NodeWakeMaintenanceClaim, catcher: { id: string; image: string }) {
-  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image)) throw changed();
+export async function recordNodeWakeMaintenanceCatcher(db: DB, claim: NodeWakeMaintenanceClaim, catcher: { id: string; image: string; name?: string }) {
+  const name = catcher.name ?? 'ninedeploy-wake';
+  if (!/^[a-f0-9]{64}$/.test(catcher.id) || !/^sha256:[a-f0-9]{64}$/.test(catcher.image) || !validNodeCatcherName(name)) throw changed();
   await db.transaction(async tx => {
     await current(tx, claim);
     // A recovered/recreated catcher invalidates any earlier routing acknowledgement.
-    await tx.update(nodeWakeMaintenance).set({ catcherId: catcher.id, catcherImage: catcher.image, phase: 'routing' }).where(eq(nodeWakeMaintenance.serverId, claim.serverId));
+    await tx.update(nodeWakeMaintenance).set({ catcherId: catcher.id, catcherImage: catcher.image, catcherName: name, phase: 'routing' }).where(eq(nodeWakeMaintenance.serverId, claim.serverId));
   });
 }
 export async function confirmNodeWakeMaintenanceRouting(db: DB, claim: NodeWakeMaintenanceClaim) {
@@ -93,10 +96,24 @@ export async function completeNodeWakeMaintenance(db: DB, claim: NodeWakeMainten
       const state = await readNodeSleepingState(tx, item.serviceId);
       if (!state) continue; // A newer explicit command owns settlement of this service.
       if (state.row.binding !== item.binding || state.owner.epoch !== item.ownerEpoch || state.owner.requestId !== item.requestId || state.row.catcherId !== item.catcherId) throw changed();
-      await refreshNodeSleepCatcherInTransaction(tx, state.owner, item.catcherId, { id: row.catcherId, image: row.catcherImage }); rebound++;
+      await refreshNodeSleepCatcherInTransaction(tx, state.owner, item.catcherId, { id: row.catcherId, image: row.catcherImage, name: row.catcherName }); rebound++;
     }
     await tx.update(nodeWakeMaintenance).set({ phase: 'completed', workerToken: null, leaseUntil: null, reason: null }).where(eq(nodeWakeMaintenance.serverId, claim.serverId));
     return rebound;
+  });
+}
+
+/** The ready candidate may override only this maintenance intent's captured fallback members. */
+export async function prepareNodeCatcherRouting(db: DB, claim: NodeWakeMaintenanceClaim) {
+  const row = await checkpointNodeWakeMaintenance(db, claim);
+  if (row.phase !== 'routing' || !row.catcherId || !row.catcherImage || !validNodeCatcherName(row.catcherName)) throw changed();
+  const target = { id: row.catcherId, image: row.catcherImage, name: row.catcherName, services: row.snapshot };
+  return registerNodeCatcherRoutePromotion(claim.serverId, target, async () => {
+    const fresh = await checkpointNodeWakeMaintenance(db, claim);
+    if (fresh.phase !== 'routing' || fresh.catcherId !== target.id || fresh.catcherImage !== target.image || fresh.catcherName !== target.name) throw changed();
+  }, async () => {
+    await confirmNodeWakeMaintenanceRouting(db, claim);
+    return completeNodeWakeMaintenance(db, claim);
   });
 }
 export async function holdNodeWakeMaintenance(db: DB, claim: NodeWakeMaintenanceClaim, reason: string) {

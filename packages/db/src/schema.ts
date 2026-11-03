@@ -1909,7 +1909,7 @@ export const nodeSleepTransitions = sqliteTable('node_sleep_transitions', {
   fallbackRouting: integer('fallback_routing', { mode: 'boolean' }).notNull().default(false),
   targets: text('targets', { mode: 'json' }).$type<Array<{ id: string; name: string; deploymentId: number; port: number }>>().notNull(),
   idleEvidence: text('idle_evidence', { mode: 'json' }).$type<{ idleMs: number; sampledAt: number; windowId: string; sourceId: string; proxyId: string; epoch: string; routingGeneration: string; targetHash: string }>().notNull(),
-  catcherId: text('catcher_id'), catcherImage: text('catcher_image'),
+  catcherId: text('catcher_id'), catcherImage: text('catcher_image'), catcherName: text('catcher_name').notNull().default('ninedeploy-wake'),
   workerToken: text('worker_token'), leaseUntil: integer('lease_until', { mode: 'timestamp_ms' }),
   reason: text('reason'), createdAt: ts('created_at'), updatedAt: tsUpdatable('updated_at'),
 }, t => ({ request: uniqueIndex('node_sleep_request_idx').on(t.requestId), wake: uniqueIndex('node_sleep_wake_token_idx').on(t.wakeToken) }));
@@ -1921,7 +1921,7 @@ export const nodeWakeMaintenance = sqliteTable('node_wake_maintenance', {
   generation: integer('generation').notNull(), requestId: text('request_id').notNull().unique(), binding: text('binding').notNull(),
   phase: text('phase', { enum: ['preparing', 'routing', 'rebinding', 'completed'] }).notNull(),
   snapshot: text('snapshot', { mode: 'json' }).$type<{ serviceId: number; ownerEpoch: number; requestId: string; binding: string; catcherId: string }[]>().notNull(),
-  catcherId: text('catcher_id'), catcherImage: text('catcher_image'),
+  catcherId: text('catcher_id'), catcherImage: text('catcher_image'), catcherName: text('catcher_name').notNull().default('ninedeploy-wake'),
   workerToken: text('worker_token'), leaseUntil: integer('lease_until', { mode: 'timestamp_ms' }), reason: text('reason'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });

@@ -26,11 +26,11 @@ beforeEach(async () => {
     sealed: vi.fn(async () => true),
     agent: vi.fn(async (node, op, params) => {
       expect(node).toBe(4); await during?.(op);
-      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'wake.catcher'] })}`] };
+      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['docker.mutations', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite', 'wake.catcher.prepare'] })}`] };
       if (op === 'docker.runtimeFence') { trace.push('fence'); const { timeoutMs: _timeout, ...request } = params; return { exitCode: 0, lines: [`ND-RUNTIME-FENCE ${JSON.stringify({ ...request, complete: true })}`] }; }
-      if (op === 'wake.catcher.ensure') { trace.push('ensure'); expect(params.key).toMatch(/^[a-f0-9]{64}$/); return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ id: 'c'.repeat(64), image: `sha256:${'d'.repeat(64)}`, created: false })}`] }; }
+      if (op === 'wake.catcher.prepare') { trace.push('ensure'); expect(params.key).toMatch(/^[a-f0-9]{64}$/); return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ id: 'c'.repeat(64), name: `ninedeploy-wake-g-${'b'.repeat(32)}`, image: `sha256:${'d'.repeat(64)}`, created: false })}`] }; }
       if (op === 'docker.readiness') {
-        const catcher = (params.targets as { name: string }[])[0]!.name === 'ninedeploy-wake'; trace.push(catcher ? 'catcher-ready' : 'app-ready');
+        const catcher = (params.targets as { name: string }[])[0]!.name.startsWith('ninedeploy-wake'); trace.push(catcher ? 'catcher-ready' : 'app-ready');
         return { exitCode: 0, lines: [`ND-READINESS ${JSON.stringify({ requestId: params.requestId, complete: true,
           items: (params.targets as { id: string; name: string }[]).map(target => ({ ...target, status: 'running', health: 'none', restarts: 0, failingStreak: 0, ready: catcher ? catcherReady : appReady })) })}`] };
       }
