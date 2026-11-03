@@ -58,18 +58,27 @@ export function recordRetiredWakeBackend(database: DatabaseSync, name: string, i
 export function assertNoWakeBackendReference(value: unknown, names: ReadonlySet<string>): void {
   if (!names.size) return;
   const seen = new WeakSet<object>(); let count = 0;
+  const address = (entry: string) => {
+    let host: string | undefined;
+    try {
+      if (entry.includes('://')) host = new URL(entry).hostname;
+      else if (/^[A-Za-z0-9_.-]+:[0-9]+$/.test(entry)) host = entry.slice(0, entry.lastIndexOf(':'));
+    } catch { throw new Error('Node proxy address is unconfirmed'); }
+    if (host && names.has(host.toLowerCase().replace(/\.+$/, ''))) throw new Error('Node proxy configuration references a retired wake backend');
+  };
   const walk = (entry: unknown, depth: number) => {
     if (++count > 100_000 || depth > 100) throw new Error('Node proxy configuration is too complex for safe retirement');
-    if (typeof entry === 'string') {
-      let host: string | undefined;
-      try {
-        if (entry.includes('://')) host = new URL(entry).hostname;
-        else if (/^[A-Za-z0-9_.-]+:[0-9]+$/.test(entry)) host = entry.slice(0, entry.lastIndexOf(':'));
-      } catch { throw new Error('Node proxy address is unconfirmed'); }
-      if (host && names.has(host.toLowerCase().replace(/\.$/, ''))) throw new Error('Node proxy configuration references a retired wake backend');
-    } else if (entry && typeof entry === 'object' && !seen.has(entry)) {
+    if (entry && typeof entry === 'object' && !seen.has(entry)) {
       seen.add(entry);
-      for (const item of Object.values(entry)) walk(item, depth + 1);
+      for (const [key, item] of Object.entries(entry)) {
+        if (key === 'servers' && Array.isArray(item)) {
+          for (const server of item) if (server && typeof server === 'object') {
+            for (const field of ['url', 'address']) if (typeof server[field] === 'string') address(server[field]);
+          }
+        }
+        if (key === 'forwardAuth' && item && typeof item === 'object' && typeof item.address === 'string') address(item.address);
+        walk(item, depth + 1);
+      }
     }
   };
   walk(value, 0);
