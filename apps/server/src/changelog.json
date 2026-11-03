@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.18.18",
+    "date": "2026-11-04",
+    "title": "Node sleep/wake fixes: sleeping services wake reliably",
+    "changes": [
+      "A sleeping node service now wakes on its next visit after its domains, health settings or CPU/memory limits were edited. Before, any such edit kept visitors on the \"Waking up\" page until someone pressed Wake or redeployed. Services that went to sleep on 0.18.17 still wake after the upgrade.",
+      "A node wake completes while other nodes in the fleet are unreachable. The waking service's own node is updated first, and the wake finishes once that node confirms its route.",
+      "Limits changed while a node service sleeps, or is going to sleep or waking, are saved and apply on the next deploy, instead of taking over the sleeping service.",
+      "With NINEDEPLOY_NODE_SLEEP_AUTOMATION=off, a node sleep interrupted before its containers stopped can be undone with Wake. The panel offers the button, and its domains go back to the running application.",
+      "Terminal & exec says why it was refused when the panel is opened at an address other than NINEDEPLOY_PUBLIC_URL, and how to fix it.",
+      "Port mappings show the complete container port range, and a typed starting port expands on blur."
+    ]
+  },
+  {
     "version": "0.18.17",
     "date": "2026-11-03",
     "title": "Node sleep/wake, request-rate scaling and verified Swarm artifacts",
