@@ -21,7 +21,7 @@ assert.match(source ?? '', /^[a-f0-9]{40}$/);
 const docker = (args: string[], timeoutMs = 30_000) => capture('docker', args, { timeoutMs, maxOutputBytes: 64 * 1024 });
 const query = (sql: string) => docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '-c', sql]);
 const hash = async (file: string) => createHash('sha256').update(await readFile(file)).digest('hex');
-const report: { source: string | undefined; publicApi: boolean; engine: string; imageId?: string; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string } = {
+const report: { source: string | undefined; publicApi: boolean; engine: string; imageId?: string; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string; cleanupError?: string } = {
   source, publicApi: false, engine: 'postgres', cases: [], sourceUntouched: false,
   backupBytesUnchanged: false, helperInventoryUnchanged: false, cleanup: false,
 };
@@ -88,9 +88,9 @@ try {
   assert.deepEqual(helpersAfter, helpersBefore); report.helperInventoryUnchanged = true;
 } catch (error) {
   report.failure = phase;
-  // Only the synthetic source's image/container creation diagnostics are safe:
-  // these commands contain no SQL, data, passwords or production identities.
-  if (['image-pull', 'source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-1000);
+  // Only fixed synthetic source commands are eligible: never retain the
+  // verifier's SQL, data, probe output or any production database diagnostic.
+  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-1000);
 } finally {
   let cleanup = true;
   if (created) {
@@ -99,7 +99,10 @@ try {
       assert.equal(label, owner);
       await docker(['rm', '-f', '-v', name]);
       assert.equal((await docker(['ps', '-a', '-q', '--filter', `name=^/${name}$`])).trim(), '');
-    } catch { cleanup = false; }
+    } catch (error) {
+      cleanup = false;
+      if (error instanceof Error) report.cleanupError = error.message.slice(-1000);
+    }
   }
   for (const file of files) { try { await unlink(file); } catch { cleanup = false; } }
   if (scratch) { try { await rmdir(scratch); } catch { cleanup = false; } }
