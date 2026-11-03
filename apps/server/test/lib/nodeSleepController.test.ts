@@ -6,8 +6,10 @@ import { nodeSleepEvidence } from '../fixtures/nodeSleepEvidence.js';
 import { admitNodeSleep, recoverNodeSleep, type NodeSleepAdmission } from '../../src/lib/nodeSleepAuthority.js';
 import { executeNodeSleep, type NodeSleepControllerDeps } from '../../src/lib/nodeSleepController.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
-import { renderDynamicConfig } from '../../src/engine/proxy.js';
+import { renderDynamicConfig, writeDynamicConfig } from '../../src/engine/proxy.js';
 import { nodeSleepRuntime } from '../../src/lib/nodeSleepRuntime.js';
+import { reserveNodeProxyWrite, bindNodeProxyWrite } from '../../src/lib/nodeProxyAuthority.js';
+import { withRoutingAck } from '../../src/lib/proxyRoutingAck.js';
 
 const transport = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: transport.agent, agentTransportSealed: transport.sealed }));
@@ -41,13 +43,16 @@ beforeEach(async () => {
       }
       throw new Error(`Unexpected operation ${op}`);
     }),
-    route: vi.fn(async (node, promotion) => {
+    route: vi.fn(async (node, promotion, _signal, settle) => {
+      const head = (await reserveNodeProxyWrite(f.c.db, node, { adopt: true }))!;
       const output = await renderDynamicConfig(f.c.db, { serverId: node, ...(promotion ? { wakePromotion: promotion } : {}) });
+      const bound = await bindNodeProxyWrite(f.c.db, head, withRoutingAck(output));
       trace.push(promotion ? 'route:app' : 'route:catcher');
       const router = output.split('    web_1:\n')[1]!.split(/\n {4}\S/)[0];
       expect(router).toContain(`service: ${promotion ? 'svc_web_1' : 'svc_ninedeploy_node_wake'}`);
       await during?.('route');
       if (!promotion && loseRoute) { loseRoute = false; throw new Error('Catcher routing acknowledgement lost'); }
+      if (promotion) { expect(settle).toBeTypeOf('function'); await settle!(bound); }
     }),
     drain: vi.fn(async () => { trace.push('drain'); await during?.('drain'); await new Promise(resolve => setTimeout(resolve, 2000)); }),
   };
@@ -133,4 +138,47 @@ it('uses the production adapter to confirm ordered catcher routing before the im
   expect(await executeNodeSleep(f.c.db, admission, nodeSleepRuntime(f.c.db))).toEqual({ state: 'asleep' });
   expect(trace.indexOf('ordered-write')).toBeLessThan(trace.indexOf('stop'));
   expect(trace.lastIndexOf('ack')).toBeLessThan(trace.indexOf('stop')); expect((await service()).asleepAt).not.toBeNull();
+});
+it('settles a restored app before queued writers can restore an aborted sleep fallback', async () => {
+  vi.useRealTimers(); const written: string[] = []; let queued: Promise<void> | undefined, loseCatcherAck = true;
+  transport.sealed.mockReset().mockResolvedValue(true); transport.agent.mockReset().mockImplementation(async (_db, node, op, params, _sink, options) => {
+    if (op === 'proxy.writeConfig') return { exitCode: 0, lines: ['proxy-config x unchanged'] };
+    if (op === 'proxy.writeOrderedConfig') {
+      written.push(params.content);
+      return { exitCode: 0, lines: [`ND-PROXY-WRITE ${JSON.stringify({ revision: params.revision, requestId: params.requestId,
+        contentHash: createHash('sha256').update(params.content).digest('hex'), complete: true, changed: true })}`] };
+    }
+    if (op === 'docker.inspect') return { exitCode: 0, lines: ['running'] };
+    if (op === 'proxy.confirmRouting') {
+      if (loseCatcherAck) { loseCatcherAck = false; throw new Error('Catcher ACK lost'); }
+      if (!queued) queued = writeDynamicConfig(f.c.db, { requireNode: node, confirmNodeRouting: true, requireOrderedNode: true });
+      return { exitCode: 0, lines: [`ND-PROXY-ROUTING ${createHash('sha256').update(params.content).digest('hex')}`] };
+    }
+    return deps.agent(node, op, params, options);
+  });
+  const runtime = nodeSleepRuntime(f.c.db);
+  expect(await executeNodeSleep(f.c.db, admission, { ...runtime, route: async (...args) => { await runtime.route(...args); await queued; } })).toMatchObject({ state: 'aborted' });
+  expect(stopped).toBe(false); expect((await service()).asleepAt).toBeNull();
+  expect(await journal()).toMatchObject({ phase: 'completed', fallbackRouting: false });
+  expect(written).toHaveLength(3);
+  expect(written[1]!.includes('http://web-9:3000'), 'ready-app restoration control').toBe(true);
+  expect(written[2]!.includes('http://ninedeploy-wake-g-'), 'an aborted sleep must not leave queued routing on the catcher').toBe(false);
+});
+it.each([false, true])('holds restoration when another writer reserves before settlement (bound=%s)', async bind => {
+  loseRoute = true; const route = deps.route;
+  deps.route = async (node, promotion, signal, settle) => route(node, promotion, signal, !promotion ? settle : async authority => {
+    const newer = (await reserveNodeProxyWrite(f.c.db, node, { adopt: true }))!;
+    if (bind) {
+      const fallback = await renderDynamicConfig(f.c.db, { serverId: node });
+      expect(fallback).toContain('http://ninedeploy-wake-g-');
+      await bindNodeProxyWrite(f.c.db, newer, withRoutingAck(fallback));
+    }
+    await settle!(authority);
+  });
+  expect(await finish(executeNodeSleep(f.c.db, admission, deps))).toMatchObject({ state: 'held', reason: expect.stringMatching(/superseded/) });
+  expect(await journal()).toMatchObject({ phase: 'restoring', fallbackRouting: true, workerToken: null });
+  expect(stopped).toBe(false); expect((await service()).asleepAt).toBeNull();
+  deps.route = route; const recovered = (await recoverNodeSleep(f.c.db, 1))!;
+  expect(await finish(executeNodeSleep(f.c.db, recovered, deps))).toEqual({ state: 'aborted' });
+  expect(await journal()).toMatchObject({ phase: 'completed', fallbackRouting: false }); expect(stopped).toBe(false);
 });

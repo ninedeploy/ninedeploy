@@ -1,4 +1,4 @@
-import { eq, nodeSleepTransitions, services, type DB } from '@ninedeploy/db';
+import { eq, nodeSleepTransitions, services, type DB, type NodeProxyWriteHead } from '@ninedeploy/db';
 import { containerStopSetRequest, runtimeFenceRequest, runtimeFenceReply } from '@ninedeploy/schemas';
 import { z } from 'zod';
 import { capabilityRefusal } from './agentCapabilities.js';
@@ -12,7 +12,7 @@ import type { NodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
 
 export interface NodeSleepControllerDeps extends Omit<NodeWakeControllerDeps, 'route'> {
   /** Without promotion, publish/confirm the journal's catcher fallback. */
-  route: (nodeId: number, promotion?: NodeWakeRoutePromotion, signal?: AbortSignal) => Promise<void>;
+  route: (nodeId: number, promotion?: NodeWakeRoutePromotion, signal?: AbortSignal, settle?: (authority: NodeProxyWriteHead) => Promise<void>) => Promise<void>;
   drain: (signal?: AbortSignal) => Promise<void>;
 }
 const catcherReceipt = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), image: z.string().regex(/^sha256:[a-f0-9]{64}$/),
@@ -49,8 +49,11 @@ export async function executeNodeSleep(db: DB, admission: NodeSleepAdmission, de
     await verifyNodeApplicationReadiness(service, row.targets.map(({ id, name }) => ({ id, name })),
       (op, params, _sink, options) => call(op, params, Math.max(1, options?.timeoutMs ?? 15_000)), async () => { await checkpoint(); }, deps.log);
     const promotion = await prepareNodeSleepRestoration(db, admission);
-    await effect(() => deps.route(row.serverId, promotion, deps.signal));
-    await completeNodeSleepRestoration(db, admission);
+    await checkpoint(); let settled = false;
+    await deps.route(row.serverId, promotion, deps.signal, async authority => {
+      await checkpoint(); await completeNodeSleepRestoration(db, admission, authority); settled = true;
+    });
+    if (!settled) throw new Error('Node sleep restoration routing was not settled');
   };
   try {
     const row = await checkpoint(), sealed = await effect(() => deps.sealed(row.serverId));

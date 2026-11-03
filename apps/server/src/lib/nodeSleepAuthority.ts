@@ -163,10 +163,11 @@ export async function prepareNodeSleepRestoration(db: DB, admission: NodeSleepAd
   return registerNodeWakeRoutePromotion(row.serverId, row.serviceId, async () => { await verify(); });
 }
 
-export async function completeNodeSleepRestoration(db: DB, admission: NodeSleepAdmission) {
+export async function completeNodeSleepRestoration(db: DB, admission: NodeSleepAdmission, authority: NodeProxyWriteHead) {
   await db.transaction(async tx => {
     const { row } = await assertCurrent(tx, admission);
     if (row.action !== 'sleep' || row.phase !== 'restoring') throw changed();
+    await assertNodeProxyAcknowledgement(tx, row.serverId, authority);
     await tx.update(nodeSleepTransitions).set({ phase: 'completed', fallbackRouting: false, workerToken: null, leaseUntil: null })
       .where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
   });
