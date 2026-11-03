@@ -217,18 +217,23 @@ export async function syncAllNodeProxies(
   }
   // r521: per-node outcomes go back to the caller — writeDynamicConfig fails
   // a deploy whose OWN node could not be updated, and audits the rest.
-  const results: Array<NodeProxySyncResult & { serverId: number }> = [];
-  for (const id of unique) {
+  // R2: a wake, catcher or autoscale promotion is valid for 30 s from before
+  // this loop. The node it is for is synced first, so unreachable nodes ahead
+  // of it in id order (15 s each) cannot expire it. Results keep input order.
+  const order = opts.confirmNode !== undefined && unique.includes(opts.confirmNode)
+    ? [opts.confirmNode, ...unique.filter((id) => id !== opts.confirmNode)] : unique;
+  const byId = new Map<number, NodeProxySyncResult & { serverId: number }>();
+  for (const id of order) {
     opts.signal?.throwIfAborted();
     // Sequential on purpose: a fleet refresh is not latency-critical and a
     // burst of parallel agent calls is a good way to trip an agent's rate
     // limit (120/min) during a mass domain change.
-    results.push({ serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id,
+    byId.set(id, { serverId: id, ...(await syncNodeProxy(db, id, log, { confirmRouting: opts.confirmNode === id,
       ...(opts.autoscalePromotion && opts.confirmNode === id ? { autoscalePromotion: opts.autoscalePromotion } : {}),
       ...(opts.wakePromotion && opts.confirmNode === id ? { wakePromotion: opts.wakePromotion } : {}),
       ...(opts.catcherPromotion && opts.confirmNode === id ? { catcherPromotion: opts.catcherPromotion } : {}),
       ...(opts.confirmNode === id && (opts.autoscalePromotion || opts.adoptOrderedNode === id) ? { adoptOrdered: true } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.timeoutMs != null ? { timeoutMs: opts.timeoutMs } : {}) })) });
   }
-  return results;
+  return unique.map((id) => byId.get(id)!);
 }
