@@ -9,6 +9,11 @@ on:
       - 'scripts/lib/primary-network-proxy-client.mjs'
       - '.github/workflows/runtime-readiness.yml'
   workflow_dispatch:
+    inputs:
+      restore_verification:
+        description: Verify isolated PostgreSQL restore, known data and source preservation
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -20,6 +25,7 @@ concurrency:
 
 jobs:
   primary-network:
+    if: github.event.inputs.restore_verification != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -46,5 +52,33 @@ jobs:
         with:
           name: primary-network-readiness-${{ github.run_id }}
           path: .temp_files/primary-network-readiness/
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  restore-verification:
+    if: github.event.inputs.restore_verification == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_CONTEXT: default
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+      - name: Verify Node security baseline
+        run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
+      - run: pnpm install --frozen-lockfile
+      - name: Verify real isolated PostgreSQL restore and query
+        run: pnpm --filter @ninedeploy/server exec tsx ../../scripts/smoke-backup-restore.mts --proof=.temp_files/restore-verification
+      - name: Preserve public restore receipts only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: restore-verification-${{ github.run_id }}
+          path: apps/server/.temp_files/restore-verification/restore-verification.json
           include-hidden-files: true
           if-no-files-found: warn
