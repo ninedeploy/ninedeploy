@@ -1,14 +1,15 @@
 // biome-ignore-all lint/suspicious/noUndeclaredEnvVars: Owned hosted fixture, outside Turbo.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createDb, runMigrations, services, deployments, domains, servers } from '/app/packages/db/dist/index.js';
 import { buildAgentApp } from '/app/apps/server/dist/agentApp.js';
 import { agentRoutes } from '/app/apps/server/dist/agent.js';
 import { encrypt, sha256 } from '/app/apps/server/dist/lib/crypto.js';
-import { ensureNodeWakeCatcher, readNodeWakeDemand } from '/app/apps/server/dist/lib/nodeWakeCatcherClient.js';
+import { ensureNodeWakeCatcher, readNodeWakeDemand, retireNodeWakeCatcher } from '/app/apps/server/dist/lib/nodeWakeCatcherClient.js';
+import { agentOp } from '/app/apps/server/dist/lib/agentClient.js';
 import { nodeWakeKey } from '/app/apps/server/dist/lib/nodeWakeKey.js';
-import { renderDynamicConfig, renderStaticConfig, getAcmeEmail, getDnsConfig } from '/app/apps/server/dist/engine/proxy.js';
+import { renderDynamicConfig, renderStaticConfig, getAcmeEmail, getDnsConfig, writeDynamicConfig } from '/app/apps/server/dist/engine/proxy.js';
 import { withRoutingAck } from '/app/apps/server/dist/lib/proxyRoutingAck.js';
 import { NodeIdleCoverage } from '/app/apps/server/dist/lib/nodeIdleCoverage.js';
 import { nodeServingTrafficContext } from '/app/apps/server/dist/lib/nodeServingTrafficContext.js';
@@ -19,7 +20,7 @@ import { executeNodeWakeMaintenance } from '/app/apps/server/dist/lib/nodeWakeMa
 import { nodeWakeMaintenanceRuntime } from '/app/apps/server/dist/lib/nodeWakeMaintenanceRuntime.js';
 
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
-const mode = process.argv[2]; assert.ok(['seed', 'recover'].includes(mode));
+const mode = process.argv[2]; assert.ok(['seed', 'refuse-live', 'recover'].includes(mode));
 const token = process.env.ND_PROOF_TOKEN; assert.match(token ?? '', /^[a-f0-9]{64}$/);
 const c = createDb({ url: 'file:/fixture/panel.db' }); await c.ready; await runMigrations(c.db);
 const app = await buildAgentApp(); await app.register(agentRoutes, { tokenHash: sha256(token), nonceFile: '/fixture/nonces' });
@@ -49,6 +50,18 @@ try {
     writeFileSync('/fixture/.agent-proxy/dynamic/ninedeploy.yml', withRoutingAck(await renderDynamicConfig(c.db, { serverId: 4 })));
     writeFileSync('/fixture/.agent-proxy/traefik.yml', renderStaticConfig(await getAcmeEmail(c.db), await getDnsConfig(c.db)));
     writeFileSync('/proof/seed.json', JSON.stringify({ catcherId: catcher.id, image: catcher.image, seededDormantJournal: true }));
+  } else if (mode === 'refuse-live') {
+    // Prove refusal with a valid, loaded ordered head, not a missing-journal/setup error.
+    await writeDynamicConfig(c.db, { requireNode: 4, confirmNodeRouting: true, requireOrderedNode: true });
+    const head = await c.db.query.nodeProxyWriteHeads.findFirst(); assert.ok(head);
+    const seed = JSON.parse(readFileSync('/proof/seed.json', 'utf8'));
+    const result = await agentOp(c.db, 4, 'wake.catcher.retire', { revision: head.revision, requestId: head.requestId, timeoutMs: 30_000,
+      content: await renderDynamicConfig(c.db, { serverId: 4 }), target: { id: seed.catcherId, name: 'ninedeploy-wake' } }, () => undefined, { timeoutMs: 35_000 });
+    const frames = result.lines.filter(line => line.startsWith('ND-WAKE-CATCHER ')); assert.equal(frames.length, 1); assert.equal(result.exitCode, 1);
+    const refusal = JSON.parse(frames[0].slice('ND-WAKE-CATCHER '.length));
+    assert.equal(refusal.error?.code, 'wake_catcher_failed');
+    assert.equal(refusal.error?.message, 'Node proxy configuration references a retired wake backend');
+    writeFileSync('/proof/refusal.json', JSON.stringify({ refused: true, validOrderedHead: true, reason: refusal.error.message, realSealedHttp: true }));
   } else {
     const claim = await claimNodeWakeMaintenance(c.db, 4); assert.ok(claim);
     const result = await executeNodeWakeMaintenance(c.db, claim, nodeWakeMaintenanceRuntime(c.db));
@@ -64,7 +77,15 @@ try {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
+    let retirement;
+    if (result.state === 'completed') {
+      assert.ok(pinnedDemand, 'New generation has not received real visitor demand');
+      const seed = JSON.parse(readFileSync('/proof/seed.json', 'utf8')), head = await c.db.query.nodeProxyWriteHeads.findFirst(); assert.ok(head);
+      assert.notEqual(seed.catcherId, row.catcherId);
+      retirement = await retireNodeWakeCatcher(c.db, 4, { id: seed.catcherId, name: 'ninedeploy-wake' },
+        { revision: head.revision, requestId: head.requestId, content: await renderDynamicConfig(c.db, { serverId: 4 }) });
+    }
     writeFileSync('/proof/maintenance.json', JSON.stringify({ result, phase: row.phase, catcherId: row.catcherId, catcherName: row.catcherName,
-      pinnedDemand, realSealedHttp: true }));
+      pinnedDemand, retirement, automaticPanelRetirement: false, realSealedHttp: true }));
   }
 } finally { await app.close(); c.client?.close(); }

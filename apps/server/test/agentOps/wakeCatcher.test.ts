@@ -7,11 +7,23 @@ vi.mock('../../src/lib/nodeWakeCatcher.js', () => ({
   removeWakeCatcher: vi.fn(async () => ({ removed: true })),
   readWakeDemand: vi.fn(async () => { throw new Error('The wake catcher is not running on the node'); }),
 }));
+vi.mock('../../src/lib/nodeWakeCatcherRetirement.js', () => ({ retireWakeCatcher: vi.fn(async () => ({ fenced: true, removed: true })) }));
 
 describe('sealed node wake catcher operations (R2 scale to zero)', () => {
   it('registers legacy operations and separately gates non-destructive preparation', () => {
     for (const op of ['wake.catcher.ensure', 'wake.catcher.remove', 'wake.demand']) expect(AGENT_OPS.get(op)).toMatchObject({ cap: 'wake.catcher', sealedOnly: true });
     expect(AGENT_OPS.get('wake.catcher.prepare')).toMatchObject({ cap: 'wake.catcher.prepare', sealedOnly: true });
+    expect(AGENT_OPS.get('wake.catcher.retire')).toMatchObject({ cap: 'wake.catcher.retire', sealedOnly: true });
+  });
+  it('requires sealed transport and both mutation/ordered-write permission for retirement', async () => {
+    const env = { NINEDEPLOY_AGENT_PROXY_TRAFFIC: 'on' };
+    await expect(runRegisteredOp('wake.catcher.retire', {}, () => {}, { sealed: false }, env)).rejects.toThrow(/sealed/);
+    for (const variable of ['NINEDEPLOY_AGENT_CONTAINER_MUTATIONS', 'NINEDEPLOY_AGENT_ORDERED_PROXY']) {
+      await expect(runRegisteredOp('wake.catcher.retire', {}, () => {}, { sealed: true }, { ...env, [variable]: 'off' })).rejects.toThrow(/disabled/);
+    }
+    const lines: string[] = [];
+    expect(await runRegisteredOp('wake.catcher.retire', {}, line => lines.push(line), { sealed: true }, env)).toBe(0);
+    expect(lines).toEqual(['ND-WAKE-CATCHER {"fenced":true,"removed":true}']);
   });
   it('dispatches preparation through its sealed operation and returns the candidate name', async () => {
     const lines: string[] = [];

@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import { withNodeServiceJournal } from './nodeLifecycle.js';
+import { assertNoRetiredWakeBackend, assertNoWakeBackendReference, recordRetiredWakeBackend, parseWakeRouting,
+  adoptWakeRetirementWriter, withWakeProxyWriter } from './nodeWakeRetirementFence.js';
+import { withRoutingAck } from './proxyRoutingAck.js';
+import { validNodeCatcherName } from './nodeCatcherIdentity.js';
 
 type ProxyWrite = { revision: number; requestId: string; timeoutMs: number; content: string };
 type ProxyReceipt = { revision: number; requestId: string; contentHash: string; complete: true; changed: boolean };
@@ -13,8 +17,9 @@ export async function orderedNodeProxyWrite(root: string, input: ProxyWrite, wri
     input.content.includes('\0') || Buffer.byteLength(input.content) > 1_048_576) throw new Error('Invalid ordered proxy write');
   const contentHash = digest(input.content);
   return withNodeServiceJournal(root, 1, input.timeoutMs, async journal => {
-    await journal.write(async () => {
+    await journal.write(() => withWakeProxyWriter(journal.database, async () => {
       journal.database.exec(schema);
+      assertNoRetiredWakeBackend(journal.database, input.content);
       const head = journal.database.prepare('SELECT revision,request_id,content_hash FROM proxy_write_head WHERE id=1').get();
       if (head && (!Number.isSafeInteger(head.revision) || Number(head.revision) < 1 || typeof head.request_id !== 'string' ||
         !/^[a-f0-9]{32}$/.test(head.request_id) || typeof head.content_hash !== 'string' || !/^[a-f0-9]{64}$/.test(head.content_hash))) throw new Error('Proxy journal is unconfirmed');
@@ -23,8 +28,9 @@ export async function orderedNodeProxyWrite(root: string, input: ProxyWrite, wri
       if (!head || Number(head.revision) < input.revision) journal.database.prepare(
         'INSERT INTO proxy_write_head(id,revision,request_id,content_hash,receipt) VALUES(1,?,?,?,NULL) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,request_id=excluded.request_id,content_hash=excluded.content_hash,receipt=NULL',
       ).run(input.revision, input.requestId, contentHash);
-    });
-    return journal.write(async () => {
+    }));
+    return journal.write(() => withWakeProxyWriter(journal.database, async () => {
+      assertNoRetiredWakeBackend(journal.database, input.content);
       const head = journal.database.prepare('SELECT revision,request_id,content_hash,receipt FROM proxy_write_head WHERE id=1').get();
       if (!head || head.revision !== input.revision || head.request_id !== input.requestId || head.content_hash !== contentHash) throw new Error('Proxy write is stale');
       if (head.receipt !== null) {
@@ -39,7 +45,37 @@ export async function orderedNodeProxyWrite(root: string, input: ProxyWrite, wri
       const receipt: ProxyReceipt = { revision: input.revision, requestId: input.requestId, contentHash, complete: true, changed };
       journal.database.prepare('UPDATE proxy_write_head SET receipt=? WHERE id=1').run(JSON.stringify(receipt));
       return receipt;
+    }));
+  });
+}
+
+/** Persist a non-reusable backend fence before an immutable container removal can land. */
+export async function retireNodeProxyBackend(root: string, input: ProxyWrite, backend: { id: string; name: string },
+  confirm: (remaining: () => number, current: () => void) => Promise<void>, remove: (remaining: () => number, current: () => void) => Promise<boolean>): Promise<boolean> {
+  if (!Number.isSafeInteger(input.revision) || input.revision < 1 || !/^[a-f0-9]{32}$/.test(input.requestId) ||
+    !Number.isSafeInteger(input.timeoutMs) || input.timeoutMs < 1 || input.timeoutMs > 30_000 || typeof input.content !== 'string' ||
+    input.content.includes('\0') || Buffer.byteLength(input.content) > 1_048_576 || !validNodeCatcherName(backend.name) ||
+    backend.id.length !== 64 || !/^[a-f0-9]{64}$/.test(backend.id)) throw new Error('Invalid wake retirement routing');
+  const parsed = parseWakeRouting(input.content), contentHash = digest(withRoutingAck(input.content));
+  return withNodeServiceJournal(root, 1, input.timeoutMs, async journal => {
+    const current = () => {
+      journal.current(); journal.database.exec(schema);
+      const head = journal.database.prepare('SELECT revision,request_id,content_hash,receipt FROM proxy_write_head WHERE id=1').get();
+      if (!head || head.revision !== input.revision || head.request_id !== input.requestId || head.content_hash !== contentHash || typeof head.receipt !== 'string') {
+        throw new Error('Wake retirement routing was superseded or unconfirmed');
+      }
+      const receipt = JSON.parse(head.receipt) as Partial<ProxyReceipt> | null;
+      if (!receipt || receipt.revision !== input.revision || receipt.requestId !== input.requestId || receipt.contentHash !== contentHash ||
+        receipt.complete !== true || typeof receipt.changed !== 'boolean') throw new Error('Wake retirement routing receipt is unconfirmed');
+    };
+    await journal.write(async () => {
+      current(); assertNoWakeBackendReference(parsed, new Set([backend.name]));
+      await confirm(journal.remaining, journal.current); current();
+      adoptWakeRetirementWriter(journal.database);
+      recordRetiredWakeBackend(journal.database, backend.name, backend.id);
     });
+    // A lost Docker reply cannot roll back the committed fence.
+    return journal.write(async () => { current(); return remove(journal.remaining, journal.current); });
   });
 }
 

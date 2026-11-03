@@ -1,9 +1,12 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { capture } from './exec.js';
 import { HttpError } from './errors.js';
 import { WAKE_DEMAND_PREFIX, WAKE_KEY_PATTERN } from '../wakeCatcher.js';
 import { createKeyedOperationGuard } from './keyedOperationGuard.js';
+import { nodeProxyJournalDirectory } from './nodeProxyFiles.js';
+import { withNodeServiceJournal } from './nodeLifecycle.js';
+import { retiredWakeBackends } from './nodeWakeRetirementFence.js';
 
 /**
  * R2 node scale to zero (docs/NODE_SLEEP_WAKE.md), agent side: the legacy `ninedeploy-wake`
@@ -29,9 +32,9 @@ export const wakeEnsureParams = z.object({ key: z.string().regex(WAKE_KEY_PATTER
 const keyLabel = (key: string) => createHash('sha256').update(`ninedeploy-wake:${key}`).digest('hex');
 
 type Inspected = { id: string; image: string; running: boolean; managed: string; startedAt: string; keyHash: string };
-async function inspect(name: string): Promise<Inspected | null> {
+async function inspect(name: string, timeoutMs = 15_000): Promise<Inspected | null> {
   const out = await capture('docker', ['inspect', name, '--format',
-    '{{.Id}}|{{.Image}}|{{.State.Running}}|{{index .Config.Labels "ninedeploy.managed"}}|{{.State.StartedAt}}|{{index .Config.Labels "ninedeploy.wake.key"}}'], { timeoutMs: 15_000 }).catch(() => null);
+    '{{.Id}}|{{.Image}}|{{.State.Running}}|{{index .Config.Labels "ninedeploy.managed"}}|{{.State.StartedAt}}|{{index .Config.Labels "ninedeploy.wake.key"}}'], { timeoutMs }).catch(() => null);
   if (out === null) return null;
   const [id, image, running, managed, startedAt, keyHash] = out.trim().split('|');
   if (!/^[a-f0-9]{64}$/.test(id ?? '') || !/^sha256:[a-f0-9]{64}$/.test(image ?? '')) throw new HttpError(502, 'wake_catcher_unconfirmed', 'The container identity could not be read');
@@ -49,8 +52,9 @@ function foreign(name = WAKE_CATCHER_NAME): never {
   throw new HttpError(409, 'wake_catcher_conflict', `A container named ${name} exists that this agent did not create; remove or rename it`);
 }
 
-export const wakeCatcherRunArgs = (image: string, key: string, name = WAKE_CATCHER_NAME): string[] => ['run', '-d', '--name', name,
+export const wakeCatcherRunArgs = (image: string, key: string, name = WAKE_CATCHER_NAME, generation?: string): string[] => ['run', '-d', '--name', name,
   '--label', `ninedeploy.managed=${WAKE_CATCHER_LABEL}`, '--label', `ninedeploy.wake.key=${keyLabel(key)}`, '-e', `ND_WAKE_KEY=${key}`,
+  ...(generation ? ['--label', `ninedeploy.wake.generation=${generation}`] : []),
   // The image probes the panel/agent port; the catcher is proved separately on 8080.
   '--network', PROXY_NETWORK, '--restart', 'unless-stopped', '--no-healthcheck',
   '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '65534:65534',
@@ -81,24 +85,36 @@ export async function ensureWakeCatcher(params: unknown): Promise<{ id: string; 
 /** Prepare a replacement without withdrawing the backend already used by Traefik. */
 export async function prepareWakeCatcher(params: unknown) {
   const { key } = wakeEnsureParams.parse(params);
-  return withCatcher('wake', async () => {
+  return withCatcher('wake', () => withNodeServiceJournal(nodeProxyJournalDirectory(), 1, 80_000, journal => journal.write(async () => {
+    const timeout = (limit: number) => { journal.current(); return Math.max(1, Math.min(limit, journal.remaining())); };
     const image = await agentImage();
-    // Retry the same generation after lost replies. Neither its image nor its name is caller-chosen.
-    const fingerprint = createHash('sha256').update(JSON.stringify([image, keyLabel(key)])).digest('hex').slice(0, 32);
-    const name = `${WAKE_CATCHER_NAME}-g-${fingerprint}`, found = await inspect(name);
+    // Labels recover a lost creation reply, while a never-reused instance name
+    // lets the routing journal permanently fence retired backends.
+    const fingerprint = createHash('sha256').update(JSON.stringify([image, keyLabel(key)])).digest('hex');
+    const output = await capture('docker', ['ps', '-a', '--filter', `label=ninedeploy.wake.generation=${fingerprint}`, '--format', '{{.Names}}'],
+      { timeoutMs: timeout(15_000), maxOutputBytes: 8192 });
+    journal.current(); const retired = retiredWakeBackends(journal.database);
+    const names = output.trim().split(/\s+/).filter(Boolean);
+    if (names.length > 10 || names.some(name => name.length !== 50 || !/^ninedeploy-wake-g-[a-f0-9]{32}$/.test(name))) throw new HttpError(409, 'wake_catcher_conflict', 'Prepared catcher names are unconfirmed');
+    const candidates = names.filter(name => !retired.has(name));
+    if (candidates.length > 1) throw new HttpError(409, 'wake_catcher_conflict', 'Multiple prepared catcher generations need review');
+    const name = candidates[0] ?? `${WAKE_CATCHER_NAME}-g-${randomBytes(16).toString('hex')}`;
+    const found = candidates.length ? await inspect(name, timeout(15_000)) : null;
+    journal.current();
+    if (candidates.length && !found) throw new HttpError(502, 'wake_catcher_unconfirmed', 'The prepared catcher identity could not be read');
     if (found && found.managed !== WAKE_CATCHER_LABEL) foreign(name);
     if (found && (found.image !== image || found.keyHash !== keyLabel(key))) {
       throw new HttpError(409, 'wake_catcher_conflict', 'The prepared catcher generation has an unexpected image or credential');
     }
     if (found?.running) return { id: found.id, name, image, created: false };
     // A stopped candidate may already be referenced by a recovered route. Never remove it.
-    if (found) await capture('docker', ['start', found.id], { timeoutMs: 30_000 });
-    else await capture('docker', wakeCatcherRunArgs(image, key, name), { timeoutMs: 60_000 });
-    const candidate = await inspect(name);
+    if (found) await capture('docker', ['start', found.id], { timeoutMs: timeout(30_000) });
+    else await capture('docker', wakeCatcherRunArgs(image, key, name, fingerprint), { timeoutMs: timeout(60_000) });
+    const candidate = await inspect(name, timeout(15_000)); journal.current();
     if (!candidate?.running || candidate.image !== image || candidate.managed !== WAKE_CATCHER_LABEL || candidate.keyHash !== keyLabel(key) ||
       found && candidate.id !== found.id) throw new HttpError(502, 'wake_catcher_unconfirmed', 'The prepared wake catcher did not start');
     return { id: candidate.id, name, image, created: !found };
-  });
+  })));
 }
 
 async function removeWakeCatcherUnlocked(): Promise<{ removed: boolean }> {

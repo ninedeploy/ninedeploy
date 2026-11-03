@@ -1,7 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { withNodeServiceJournal } from '../../src/lib/nodeLifecycle.js';
+import { recordRetiredWakeBackend } from '../../src/lib/nodeWakeRetirementFence.js';
 import { catcherReply, demandLogger, startWakeCatcher, wakeKeyMatches, wakePage } from '../../src/wakeCatcher.js';
 
-const docker = vi.hoisted(() => ({ calls: [] as string[][], containers: new Map<string, string>(), logs: '', before: undefined as ((args: string[]) => Promise<void>) | undefined }));
+const docker = vi.hoisted(() => ({ calls: [] as string[][], containers: new Map<string, string>(), generations: new Map<string, string>(), root: '', logs: '', before: undefined as ((args: string[]) => Promise<void>) | undefined }));
+vi.mock('../../src/lib/nodeProxyFiles.js', () => ({ nodeProxyJournalDirectory: () => docker.root }));
 vi.mock('../../src/lib/exec.js', () => ({ capture: vi.fn(async (_cmd: string, args: string[]) => {
   docker.calls.push(args);
   await docker.before?.(args);
@@ -11,9 +17,15 @@ vi.mock('../../src/lib/exec.js', () => ({ capture: vi.fn(async (_cmd: string, ar
     return found;
   }
   if (args[0] === 'logs') return docker.logs;
+  if (args[0] === 'ps') {
+    const fingerprint = args.find(arg => arg.startsWith('label=ninedeploy.wake.generation='))!.split('=')[2];
+    return [...docker.generations].filter(([name, value]) => value === fingerprint && docker.containers.has(name)).map(([name]) => name).join('\n');
+  }
   if (args[0] === 'run') {
     const keyHash = args.find(arg => arg.startsWith('ninedeploy.wake.key='))!.split('=')[1];
     docker.containers.set(args[args.indexOf('--name') + 1]!, `${'c'.repeat(64)}|${args.at(-2)}|true|wake|2026-11-02T10:00:00Z|${keyHash}`);
+    const fingerprint = args.find(arg => arg.startsWith('ninedeploy.wake.generation='))?.split('=')[1];
+    if (fingerprint) docker.generations.set(args[args.indexOf('--name') + 1]!, fingerprint);
     return 'c'.repeat(64);
   }
   if (args[0] === 'rm') { for (const [name, row] of docker.containers) if (row.startsWith(args[2]!)) docker.containers.delete(name); return ''; }
@@ -30,8 +42,10 @@ const catcherRow = (fields: { id?: string; image?: string; running?: boolean; ma
 };
 beforeEach(() => {
   docker.calls = []; docker.logs = ''; docker.before = undefined;
+  docker.generations = new Map(); docker.root = mkdtempSync(join(tmpdir(), 'nd-wake-prepare-'));
   docker.containers = new Map([['ninedeploy-agent', `${'f'.repeat(64)}|${AGENT_IMAGE}|true||2026-11-02T09:00:00Z|`]]);
 });
+afterEach(() => rmSync(docker.root, { recursive: true, force: true }));
 
 describe('wake catcher replies', () => {
   it('answers a keyed, tokened request with a self-reloading 503 and names the token', () => {
@@ -145,6 +159,20 @@ describe('agent-managed wake catcher', () => {
     const [first, second] = await Promise.all([prepareWakeCatcher({ key: KEY }), prepareWakeCatcher({ key: KEY })]);
     expect(second).toEqual({ ...first, created: false });
     expect(docker.calls.filter(args => args[0] === 'run')).toHaveLength(1);
+  });
+  it('does not reuse a generation name after its container disappears or is durably fenced', async () => {
+    const first = await prepareWakeCatcher({ key: KEY });
+    docker.containers.delete(first.name);
+    const second = await prepareWakeCatcher({ key: KEY });
+    expect(second.name).not.toBe(first.name);
+    await withNodeServiceJournal(docker.root, 1, 5000, journal => journal.write(async () => {
+      recordRetiredWakeBackend(journal.database, second.name, second.id);
+    }));
+    const third = await prepareWakeCatcher({ key: KEY });
+    expect(third.name).not.toBe(second.name);
+    expect(docker.containers.has(second.name)).toBe(true);
+    expect(docker.calls.some(args => args[0] === 'rm')).toBe(false);
+    expect((await prepareWakeCatcher({ key: KEY })).name).toBe(third.name);
   });
   it('serializes concurrent ensures of the one shared catcher', async () => {
     let enter!: () => void, release!: () => void;

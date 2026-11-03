@@ -62,6 +62,10 @@ try {
     if (probe.status === 0) break;
     assert.ok(Date.now() < deadline, 'Initial waking route never became available'); await pause(200);
   }
+  docker(['exec', oldDriver, 'node', '/fixture/fixture.mjs', 'refuse-live'], false, { timeout: 180_000 });
+  const refusal = JSON.parse(readFileSync(resolve(publicDir, 'refusal.json'), 'utf8'));
+  cases.push({ name: 'live-catcher-retirement-refused-with-valid-ordered-head', passed: refusal.refused === true && refusal.validOrderedHead === true &&
+    docker(['inspect', seed.catcherId, '--format', '{{.State.Running}}']).out === 'true' });
   docker(['rm', '-fv', oldDriver]);
   const candidate = driver(image, 3);
   docker(['exec', '-d', candidate, 'node', '/fixture/sample.mjs', 'sample']); await pause(1000);
@@ -77,8 +81,10 @@ try {
     wakingPages: samples.filter(row => row.waking).length });
   cases.push({ name: 'maintenance-completed-after-real-sealed-routing', passed: evidence.result.state === 'completed' && evidence.phase === 'completed' });
   cases.push({ name: 'new-generation-records-real-wake-demand', passed: evidence.pinnedDemand === true && /^ninedeploy-wake-g-[a-f0-9]{32}$/.test(evidence.catcherName ?? '') });
-  // This cohort proves staged handoff. Retirement has a separate ownership/drain gate.
+  // The fixture invokes retirement explicitly; automatic panel recovery is a separate gate.
   evidence.oldBackendRetained = docker(['inspect', seed.catcherId], true).status === 0;
+  cases.push({ name: 'old-catcher-retired-after-live-routing-and-drain', passed: evidence.retirement?.fenced === true && evidence.retirement?.removed === true &&
+    evidence.retirement?.id === seed.catcherId && evidence.oldBackendRetained === false });
   assert.equal(docker(['inspect', 'ninedeploy-proxy', '--format', '{{.Id}}']).out, proxy, 'Proxy was recreated');
   assert.ok(cases.every(row => row.passed), 'Catcher replacement acceptance failed; see cases and traffic trace');
 } catch (error) { failure = String(error); process.exitCode = 1; }
