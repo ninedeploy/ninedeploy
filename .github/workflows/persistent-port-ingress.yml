@@ -1,0 +1,30 @@
+name: Persistent port kernel acceptance
+on:
+  pull_request:
+    paths:
+      - 'apps/server/src/lib/persistentPortNft.ts'
+      - 'scripts/smoke-persistent-port-ingress.mjs'
+      - 'scripts/fixtures/persistent-port-runtime.mjs'
+      - '.github/workflows/persistent-port-ingress.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_CONTEXT: default
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+      - run: node scripts/smoke-persistent-port-ingress.mjs
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: persistent-port-kernel-${{ github.run_id }}
+          path: .temp_files/persistent-port-native/
+          include-hidden-files: true
