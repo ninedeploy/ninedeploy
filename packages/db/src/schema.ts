@@ -1919,8 +1919,8 @@ export type NodeSleepTransition = typeof nodeSleepTransitions.$inferSelect;
 export const nodeWakeMaintenance = sqliteTable('node_wake_maintenance', {
   serverId: integer('server_id').primaryKey(),
   generation: integer('generation').notNull(), requestId: text('request_id').notNull().unique(), binding: text('binding').notNull(),
-  phase: text('phase', { enum: ['preparing', 'routing', 'rebinding', 'completed'] }).notNull(),
-  snapshot: text('snapshot', { mode: 'json' }).$type<{ serviceId: number; ownerEpoch: number; requestId: string; binding: string; catcherId: string }[]>().notNull(),
+  phase: text('phase', { enum: ['preparing', 'routing', 'rebinding', 'retiring', 'rerouting', 'retirement_rebinding', 'completed'] }).notNull(),
+  snapshot: text('snapshot', { mode: 'json' }).$type<{ serviceId: number; ownerEpoch: number; requestId: string; binding: string; catcherId: string; catcherName?: string; retirementOnly?: true }[]>().notNull(),
   catcherId: text('catcher_id'), catcherImage: text('catcher_image'), catcherName: text('catcher_name').notNull().default('ninedeploy-wake'),
   workerToken: text('worker_token'), leaseUntil: integer('lease_until', { mode: 'timestamp_ms' }), reason: text('reason'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),

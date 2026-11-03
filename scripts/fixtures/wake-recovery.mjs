@@ -30,7 +30,8 @@ try {
     await c.db.insert(servers).values({ id: 4, name: 'Owned fixture', host: '127.0.0.1', port: 8899, tokenEncrypted: encrypt(token) });
     await c.db.insert(services).values({ id: 1, name: 'Sleeping fixture', slug: 'web', type: 'docker', serverId: 4, status: 'running', runtimeId: 'web-9', port: 3000, sleepAfterMinutes: 5 });
     await c.db.insert(deployments).values({ id: 9, serviceId: 1, status: 'running' });
-    await c.db.insert(domains).values({ serviceId: 1, hostname: 'wake.invalid', status: 'active', ssl: false });
+    await c.db.insert(domains).values({ serviceId: 1, hostname: 'wake.invalid', status: 'active', ssl: false,
+      headers: JSON.stringify([{ name: 'Content-Security-Policy', value: "default-src 'self'; connect-src https://api.example.test" }]) });
     const key = await nodeWakeKey(c.db, 4, true), catcher = await ensureNodeWakeCatcher(c.db, 4, key);
     // Seed a dormant journal using simulated idle/Stop receipts. This fixture
     // accepts maintenance only, not actual idle duration or service shutdown.
@@ -82,10 +83,15 @@ try {
       assert.ok(pinnedDemand, 'New generation has not received real visitor demand');
       const seed = JSON.parse(readFileSync('/proof/seed.json', 'utf8')), head = await c.db.query.nodeProxyWriteHeads.findFirst(); assert.ok(head);
       assert.notEqual(seed.catcherId, row.catcherId);
+      assert.equal(result.retired, 1, 'Panel maintenance did not settle its captured retirement target');
       retirement = await retireNodeWakeCatcher(c.db, 4, { id: seed.catcherId, name: 'ninedeploy-wake' },
         { revision: head.revision, requestId: head.requestId, content: await renderDynamicConfig(c.db, { serverId: 4 }) });
+      assert.equal(retirement.removed, false, 'Idempotent replay unexpectedly performed the panel retirement');
+      // A fresh ordered write must still work after the native retirement writer gate is adopted.
+      await writeDynamicConfig(c.db, { requireNode: 4, confirmNodeRouting: true, requireOrderedNode: true });
     }
     writeFileSync('/proof/maintenance.json', JSON.stringify({ result, phase: row.phase, catcherId: row.catcherId, catcherName: row.catcherName,
-      pinnedDemand, retirement, automaticPanelRetirement: false, realSealedHttp: true }));
+      pinnedDemand, retirement, automaticPanelRetirement: true, postRetirementRoutingConfirmed: result.state === 'completed',
+      retirementVerifiedAt: Date.now(), realSealedHttp: true }));
   }
 } finally { await app.close(); c.client?.close(); }

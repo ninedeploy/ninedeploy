@@ -8,7 +8,9 @@ import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js'
 import { renderDynamicConfig } from '../../src/engine/proxy.js';
 import type { NodeWakeControllerDeps } from '../../src/lib/nodeWakeController.js';
 import { nodeWakeKey } from '../../src/lib/nodeWakeKey.js';
-import { prepareNodeWakeCatcher } from '../../src/lib/nodeWakeCatcherClient.js';
+import { prepareNodeWakeCatcher, retireNodeWakeCatcher } from '../../src/lib/nodeWakeCatcherClient.js';
+import { createHash } from 'node:crypto';
+import { withRoutingAck } from '../../src/lib/proxyRoutingAck.js';
 import { settleNodeCatcherRoutePromotion } from '../../src/lib/nodeCatcherRoutePromotion.js';
 
 const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
@@ -30,7 +32,7 @@ beforeEach(async () => {
   await completeNodeSleep(f.c.db, admission, { ...nodeSleepCommand(admission, 'stop'), complete: true,
     items: sleeping.targets.map(({ id, name, deploymentId }) => ({ id, name, deploymentId, running: false })) });
   io.sealed.mockReset().mockResolvedValue(true); io.agent.mockReset().mockImplementation(async (_db, _node, op, params) => {
-    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['wake.catcher', 'wake.catcher.prepare', 'docker.mutations', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite'] })}`] };
+    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['wake.catcher', 'wake.catcher.prepare', 'wake.catcher.retire', 'docker.recovery', 'docker.mutations', 'docker.startSet', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite'] })}`] };
     if (op === 'wake.demand') {
       await beforeDemand?.();
       return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ catcherId: (mode === 'foreign' ? 'e' : 'c').repeat(64), startedAt: new Date(Date.now() - 60_000).toISOString(),
@@ -40,6 +42,8 @@ beforeEach(async () => {
       if (failEnsure) throw new Error('Catcher reply lost');
       return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ id: 'e'.repeat(64), name: `ninedeploy-wake-g-${'a'.repeat(32)}`, image: `sha256:${'f'.repeat(64)}`, created: true })}`] };
     }
+    if (op === 'wake.catcher.retire') return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ ...params.target, fenced: true, removed: true,
+      revision: params.revision, requestId: params.requestId, contentHash: createHash('sha256').update(withRoutingAck(params.content)).digest('hex') })}`] };
     if (op === 'docker.runtimeFence') { const { timeoutMs: _timeout, ...request } = params; return { exitCode: 0, lines: [`ND-RUNTIME-FENCE ${JSON.stringify({ ...request, complete: true })}`] }; }
     if (op === 'docker.startSet') return { exitCode: 0, lines: [`ND-STARTED-SET ${JSON.stringify({ requestId: params.requestId, serviceId: params.serviceId, revision: params.revision,
       complete: true, items: params.targets.map((target: object) => ({ ...target, running: true })) })}`] };
@@ -60,6 +64,11 @@ function make(onError = vi.fn(), recoverCatchers = false) {
     route: async (serverId, catcherPromotion) => {
       expect(await renderDynamicConfig(f.c.db, { serverId, catcherPromotion })).toContain('service: svc_ninedeploy_node_wake');
       return settleNodeCatcherRoutePromotion(catcherPromotion, serverId);
+    },
+    retire: async (node, target, verify, parent) => {
+      await verify();
+      const reply = await retireNodeWakeCatcher(f.c.db, node, target, { revision: 1, requestId: 'd'.repeat(32), content: await renderDynamicConfig(f.c.db, { serverId: node }) }, parent);
+      await verify(); return reply;
     },
   }), runtime: signal => ({ signal,
     sealed: () => io.sealed(), agent: (node, op, params, options) => io.agent(f.c.db, node, op, params, () => undefined, options),
