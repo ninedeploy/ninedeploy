@@ -1387,10 +1387,14 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     }
     return { ok: true, status: 'running' };
   };
-  app.post('/:id/wake', async (req) => {
+  app.post('/:id/wake', async (req, reply) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     if (svc.asleepAt == null) throw badRequest('The service is not asleep', 'not_asleep');
+    if (svc.serverId != null) {
+      if (!orderedNode(svc)) throw new HttpError(422, 'node_lifecycle_unsupported', 'Manual node wake requires an ordinary Docker service');
+      return reply.code(202).send(await requestLifecycle(svc, 'start', req));
+    }
     return wakeFromRoute(svc, req, 'manual');
   });
   app.post('/:id/sleep', async (req) => {

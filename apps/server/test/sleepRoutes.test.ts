@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, type DB, domains, runMigrations, services, users } from '@ninedeploy/db';
+import { createDb, type DB, domains, runMigrations, services, users, servers, deployments, eq } from '@ninedeploy/db';
 
 /**
  * 0.16.11 scale to zero through the services routes: the PATCH that sets
@@ -14,6 +14,11 @@ const h = vi.hoisted(() => ({
   isHealthy: vi.fn(async (..._a: unknown[]) => true),
   writeDynamicConfig: vi.fn(async (..._a: unknown[]) => undefined),
   audit: vi.fn(async (..._a: unknown[]) => undefined),
+  agent: vi.fn(),
+  sealed: vi.fn(),
+}));
+vi.mock('../src/lib/agentClient.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../src/lib/agentClient.js')>()), agentOp: h.agent, agentTransportSealed: h.sealed,
 }));
 vi.mock('../src/lib/audit.js', () => ({ audit: h.audit }));
 // Stop uses exec directly, outside sleepDeps. Keep this route test independent
@@ -48,12 +53,13 @@ const { resetSleepState } = await import('../src/lib/sleep.js');
 const { asUser, buildTestApp } = await import('./helpers.js');
 
 let db: DB;
+let connection: ReturnType<typeof createDb>;
 let app: Awaited<ReturnType<typeof buildTestApp>>;
 const OWNER = asUser({ id: 2, isOperator: false });
 const row = async () => (await db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, 5) }))!;
 
 beforeEach(async () => {
-  ({ db } = createDb({ url: ':memory:' }));
+  connection = createDb({ url: 'file::memory:' }); await connection.ready; db = connection.db;
   await runMigrations(db, fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url)));
   await db.insert(users).values({ id: 2, email: 'owner@example.com', passwordHash: 'x' });
   await db.insert(services).values([
@@ -64,10 +70,14 @@ beforeEach(async () => {
   app = await buildTestApp({ db });
   await app.register(servicesRoutes, { prefix: '/v1/services' });
   for (const f of Object.values(h)) f.mockClear();
+  h.sealed.mockReset().mockResolvedValue(true);
+  h.agent.mockReset().mockResolvedValue({ exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0',
+    caps: ['docker.lifecycle', 'docker.recovery', 'docker.readiness', 'proxy.routingAck'] })}`] });
   resetSleepState();
 });
 afterEach(async () => {
   await app.close();
+  connection.client?.close();
 });
 
 describe('sleepAfterMinutes', () => {
@@ -83,6 +93,38 @@ describe('sleepAfterMinutes', () => {
 });
 
 describe('POST /:id/sleep and /:id/wake', () => {
+  it('admits manual node wake through durable remote Start without touching panel Docker', async () => {
+    await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+    await db.insert(deployments).values({ id: 9, serviceId: 5, status: 'running' });
+    await db.update(services).set({ serverId: 4, asleepAt: new Date(0) }).where(eq(services.id, 5));
+    const response = await app.inject({ method: 'POST', url: '/v1/services/5/wake', headers: OWNER });
+    expect(h.run, 'node wake must never start a similarly named panel container').not.toHaveBeenCalled();
+    expect(response.statusCode, response.body).toBe(202);
+    expect(response.json()).toMatchObject({ ok: true, pending: true, lifecycle: { action: 'start', phase: 'preparing', current: true } });
+    expect(h.run).not.toHaveBeenCalled(); expect(h.capture).not.toHaveBeenCalled(); expect(h.writeDynamicConfig).not.toHaveBeenCalled();
+    expect((await db.query.nodeLifecycleIntents.findFirst())!).toMatchObject({ serviceId: 5, serverId: 4, action: 'start', phase: 'preparing' });
+    expect((await row()).asleepAt).not.toBeNull();
+  });
+  it.each([{ type: 'compose' }, { orchestrator: 'swarm' }])('refuses unsupported node wake placement without a local Docker effect: %j', async patch => {
+    await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+    await db.update(services).set({ serverId: 4, asleepAt: new Date(0), ...patch } as never).where(eq(services.id, 5));
+    const response = await app.inject({ method: 'POST', url: '/v1/services/5/wake', headers: OWNER });
+    expect(h.run, 'unsupported node wake must not touch panel containers').not.toHaveBeenCalled();
+    expect(response.statusCode, response.body).toBe(422);
+    expect(h.run).not.toHaveBeenCalled(); expect(h.capture).not.toHaveBeenCalled();
+    expect((await row()).asleepAt).not.toBeNull(); expect(await db.query.nodeLifecycleIntents.findFirst()).toBeUndefined();
+  });
+  it.each(['disabled', 'unsealed'] as const)('retains a sleeping node when remote Start is %s', async mode => {
+    await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+    await db.update(services).set({ serverId: 4, asleepAt: new Date(0) }).where(eq(services.id, 5));
+    if (mode === 'disabled') h.agent.mockResolvedValue({ exitCode: 0, lines: ['ND-AGENT {"version":"0.19.0","caps":[]}'] });
+    else h.sealed.mockResolvedValue(false);
+    const response = await app.inject({ method: 'POST', url: '/v1/services/5/wake', headers: OWNER });
+    expect(response.statusCode, response.body).toBe(mode === 'disabled' ? 403 : 422);
+    expect(response.json().error.code).toBe(mode === 'disabled' ? 'node_feature_disabled' : 'node_transport_unsealed');
+    expect(h.run).not.toHaveBeenCalled(); expect(h.capture).not.toHaveBeenCalled();
+    expect(await db.query.nodeLifecycleIntents.findFirst()).toBeUndefined(); expect((await row()).asleepAt).not.toBeNull();
+  });
   it('puts a service to sleep by hand and wakes it again', async () => {
     const sleep = await app.inject({ method: 'POST', url: '/v1/services/5/sleep', headers: OWNER });
     expect(sleep.statusCode, sleep.body).toBe(200);

@@ -112,7 +112,13 @@ export async function sleepWake(client: NineDeployClient, ref: string): Promise<
   try {
     const id = await resolveServiceRef(client, ref);
     if (id === null) return;
-    const res = await spinner('Waking the service (it waits for the healthcheck)', () => client.services.wake(id));
+    const res = await spinner('Requesting service wake', () => client.services.wake(id));
+    if (res.pending) {
+      info(res.lifecycle?.phase === 'superseded' ? 'Wake request superseded by a newer action.' :
+        `Wake requested; runtime verification is pending${res.lifecycle ? ` (command #${plain(String(res.lifecycle.id))})` : ''}.`);
+      info(`Inspect progress with \`ninedeploy services lifecycle ${id}\`.`);
+      return;
+    }
     success(`${plain(ref)} is awake (${plain(res.status)}).`);
   } catch (err) {
     error(message(err));
