@@ -5,6 +5,7 @@ import { nodeSleepEvidence } from '../fixtures/nodeSleepEvidence.js';
 import { servingReceiptFixture } from '../fixtures/servingTrafficReceipt.js';
 import { admitNodeSleep, admitNodeWake, advanceNodeSleep, bindNodeSleepCatcher, checkpointNodeSleep, completeNodeSleep, completeNodeWake, nodeSleepCommand, recordNodeWakeStarted, recoverNodeSleep, refreshNodeSleepCatcher, type NodeSleepAdmission } from '../../src/lib/nodeSleepAuthority.js';
 import { admitNodeAutoscale } from '../../src/lib/nodeAutoscaleAuthority.js';
+import { admitNodeLimits } from '../../src/lib/nodeLimitsAuthority.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import type { NodeIdleEvidence } from '../../src/lib/nodeIdleCoverage.js';
@@ -256,4 +257,17 @@ it('a serving-generation change on a sleeping service still refuses its wake', a
   await asleep();
   await f.c.db.update(services).set({ port: 4000 });
   await expect(admitNodeWake(f.c.db, await selected(), await demand())).rejects.toThrow(/configuration/);
+});
+it('a limits edit on a sleeping service is saved for the next deploy: no live owner, and a demand still wakes it', async () => {
+  await asleep();
+  await f.c.db.update(services).set({ memLimitMb: 512 });
+  // PATCH /:id/limits calls applyNodeLimits; superseding the asleep journal would leave the domains on the catcher with no wake.
+  expect(await admitNodeLimits(f.c.db, await selected())).toBeNull();
+  expect(await journal()).toMatchObject({ phase: 'asleep', fallbackRouting: true });
+  expect(await admitNodeWake(f.c.db, await selected(), await demand())).not.toBeNull();
+});
+it('limits do not take the owner from an in-flight sleep either', async () => {
+  const admission = await accept();
+  expect(await admitNodeLimits(f.c.db, await selected())).toBeNull();
+  expect(await readServiceRuntimeOwner(f.c.db, 1)).toEqual(admission.owner);
 });

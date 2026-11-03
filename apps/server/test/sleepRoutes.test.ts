@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, type DB, domains, runMigrations, services, users, servers, deployments, eq } from '@ninedeploy/db';
+import { createDb, type DB, domains, runMigrations, services, users, servers, deployments, eq, nodeLifecycleIntents, nodeSleepTransitions } from '@ninedeploy/db';
 import { serviceSleepStatus } from '@ninedeploy/schemas';
 import { registerNodeSleepObserver } from '../src/lib/serviceSleepStatus.js';
 
@@ -134,6 +134,25 @@ describe('POST /:id/sleep and /:id/wake', () => {
     expect(h.run).not.toHaveBeenCalled(); expect(h.capture).not.toHaveBeenCalled(); expect(h.writeDynamicConfig).not.toHaveBeenCalled();
     expect((await db.query.nodeLifecycleIntents.findFirst())!).toMatchObject({ serviceId: 5, serverId: 4, action: 'start', phase: 'preparing' });
     expect((await row()).asleepAt).not.toBeNull();
+  });
+  it('accepts Wake for a node sleep held in restoring: the app runs, asleepAt is null, yet the domains are on the catcher', async () => {
+    await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });
+    await db.insert(deployments).values({ id: 9, serviceId: 5, status: 'running' });
+    await db.update(services).set({ serverId: 4 }).where(eq(services.id, 5));
+    const journal = { serviceId: 5, serverId: 4, deploymentId: 9, runtimeId: 'web-9', ownerEpoch: 1, requestId: 'a'.repeat(32), action: 'sleep' as const,
+      phase: 'restoring' as const, configuration: 'c'.repeat(64), binding: 'b'.repeat(64), watermark: 9, wakeToken: 'd'.repeat(32), fallbackRouting: true,
+      targets: [{ id: 'e'.repeat(64), name: 'web-9', deploymentId: 9, port: 3000 }], catcherId: 'f'.repeat(64), catcherImage: `sha256:${'0'.repeat(64)}`,
+      idleEvidence: { idleMs: 300_000, sampledAt: 0, windowId: 'w', sourceId: 's', proxyId: 'p', epoch: 'e', routingGeneration: 'g', targetHash: 't' },
+      reason: 'Node sleep coordinator stopped; restoration unavailable' };
+    await db.insert(nodeSleepTransitions).values(journal);
+    const response = await app.inject({ method: 'POST', url: '/v1/services/5/wake', headers: OWNER });
+    expect(response.statusCode, response.body).toBe(202);
+    expect(response.json()).toMatchObject({ ok: true, pending: true, lifecycle: { action: 'start', current: true } });
+    expect(h.run, 'node wake must never start a similarly named panel container').not.toHaveBeenCalled();
+    // Without a same-generation fallback a running service is still not asleep.
+    await db.update(nodeSleepTransitions).set({ runtimeId: 'web-8' });
+    await db.delete(nodeLifecycleIntents);
+    expect((await app.inject({ method: 'POST', url: '/v1/services/5/wake', headers: OWNER })).json().error.code).toBe('not_asleep');
   });
   it.each([{ type: 'compose' }, { orchestrator: 'swarm' }])('refuses unsupported node wake placement without a local Docker effect: %j', async patch => {
     await db.insert(servers).values({ id: 4, name: 'Node', host: 'node.test', tokenEncrypted: 'fixture' });

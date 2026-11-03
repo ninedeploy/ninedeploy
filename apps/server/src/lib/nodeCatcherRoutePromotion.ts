@@ -24,8 +24,20 @@ export async function checkNodeCatcherRoutePromotion(token: NodeCatcherRouteProm
 
 /** Invoked inside the serialized routing writer, after exact acknowledgement and before the next render. */
 export async function settleNodeCatcherRoutePromotion(token: NodeCatcherRoutePromotion, nodeId: number): Promise<number> {
-  await checkNodeCatcherRoutePromotion(token, nodeId);
-  const permission = permissions.get(token)!;
+  const permission = await confirmNodeCatcherRoutePromotion(token, nodeId);
   permission.consumed = true;
   return permission.settle();
+}
+
+/**
+ * After the target node acknowledged under a fresh permission, settlement needs
+ * the live check only, not the 30 s clock, which the rest of the fleet's sync can
+ * use up (see confirmNodeWakeRoutePromotion).
+ */
+export async function confirmNodeCatcherRoutePromotion(token: NodeCatcherRoutePromotion, nodeId: number): Promise<Permission> {
+  const permission = permissions.get(token);
+  if (!permission || permission.consumed || permission.nodeId !== nodeId) throw new Error('Node catcher route promotion expired or changed');
+  await permission.verify();
+  if (permission.consumed) throw new Error('Node catcher route promotion expired or changed');
+  return permission;
 }

@@ -11,6 +11,18 @@ export function registerNodeSleepObserver(db: DB, observer: Observation) {
   return () => { if (observers.get(db) === observer) observers.delete(db); };
 }
 
+/**
+ * The journal still routes this node service's domains to the wake catcher,
+ * under the renderer's own condition (engine/proxy.ts sleepRouting). True for
+ * an asleep service, and for a sleep interrupted before Stop that is held in
+ * `restoring`: the app runs, asleepAt is null, yet visitors get the waking page.
+ */
+export async function nodeCatcherFallbackHeld(db: DB, service: Service): Promise<boolean> {
+  if (service.serverId == null || service.status === 'stopped') return false;
+  const row = await db.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, service.id) });
+  return !!row?.fallbackRouting && row.serverId === service.serverId && row.runtimeId === service.runtimeId;
+}
+
 export async function readServiceSleepStatus(db: DB, service: Service): Promise<ServiceSleepStatus> {
   const supported = service.type === 'docker' && service.orchestrator !== 'swarm';
   const placement = !supported ? 'unsupported' : service.serverId != null ? 'node' : 'panel';
