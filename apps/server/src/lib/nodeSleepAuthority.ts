@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, inArray, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import { databaseAttachments, databases, deployments, domains, fanoutTransitions, nodeAutoscaleCapacity, nodeAutoscaleTransitions, nodeDeploymentPreparations,
-  nodeLifecycleIntents, nodeSleepTransitions, primaryTransitions, serviceTargets, services, type DB, type NodeSleepTransition, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
+  nodeLifecycleIntents, nodeSleepTransitions, primaryTransitions, serviceTargets, services, type DB, type NodeProxyWriteHead, type NodeSleepTransition, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { containerStartSetReply, containerStopSetReply, SLEEP_AFTER_MAX, SLEEP_AFTER_MIN } from '@ninedeploy/schemas';
 import { canaryActive } from '../engine/canaryState.js';
 import { replicaNames } from '../engine/dockerNames.js';
@@ -11,6 +11,7 @@ import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameR
 import { registerNodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
 import { nodeWakeMaintenancePending } from './nodeWakeMaintenanceBlock.js';
 import { validNodeCatcherName, type CatcherIdentity } from './nodeCatcherIdentity.js';
+import { assertNodeProxyAcknowledgement } from './nodeProxyAuthority.js';
 
 type ReadDB = Pick<DB, 'query' | 'select'>;
 export type NodeSleepAdmission = { serviceId: number; owner: ServiceRuntimeOwner; workerToken: string; binding: string };
@@ -162,10 +163,11 @@ export async function prepareNodeSleepRestoration(db: DB, admission: NodeSleepAd
   return registerNodeWakeRoutePromotion(row.serverId, row.serviceId, async () => { await verify(); });
 }
 
-export async function completeNodeSleepRestoration(db: DB, admission: NodeSleepAdmission) {
+export async function completeNodeSleepRestoration(db: DB, admission: NodeSleepAdmission, authority: NodeProxyWriteHead) {
   await db.transaction(async tx => {
     const { row } = await assertCurrent(tx, admission);
     if (row.action !== 'sleep' || row.phase !== 'restoring') throw changed();
+    await assertNodeProxyAcknowledgement(tx, row.serverId, authority);
     await tx.update(nodeSleepTransitions).set({ phase: 'completed', fallbackRouting: false, workerToken: null, leaseUntil: null })
       .where(eq(nodeSleepTransitions.serviceId, admission.serviceId));
   });
@@ -220,11 +222,15 @@ export async function refreshNodeSleepCatcherInTransaction(db: ReadDB & Pick<DB,
   await db.update(nodeSleepTransitions).set({ catcherId: catcher.id, catcherImage: catcher.image, catcherName: name }).where(eq(nodeSleepTransitions.serviceId, expected.serviceId));
 }
 
-async function complete(db: DB, admission: NodeSleepAdmission, raw: unknown, action: 'sleep' | 'wake') {
+async function complete(db: DB, admission: NodeSleepAdmission, raw: unknown, action: 'sleep' | 'wake', authority?: NodeProxyWriteHead) {
   await db.transaction(async tx => {
     const { row } = await assertCurrent(tx, admission), command = nodeSleepCommand(admission, row.action === 'sleep' ? 'stop' : 'start');
     if (row.action !== action) throw changed();
     if (row.phase !== (row.action === 'sleep' ? 'stopping' : 'publishing')) throw changed();
+    if (row.action === 'wake') {
+      if (!authority) throw changed();
+      await assertNodeProxyAcknowledgement(tx, row.serverId, authority);
+    }
     if (row.action === 'sleep') {
       const receipt = containerStopSetReply.parse(raw);
       if (receipt.requestId !== command.requestId || receipt.serviceId !== command.serviceId || receipt.revision !== command.revision ||
@@ -235,7 +241,7 @@ async function complete(db: DB, admission: NodeSleepAdmission, raw: unknown, act
   });
 }
 export const completeNodeSleep = (db: DB, admission: NodeSleepAdmission, receipt: unknown) => complete(db, admission, receipt, 'sleep');
-export const completeNodeWake = (db: DB, admission: NodeSleepAdmission) => complete(db, admission, undefined, 'wake');
+export const completeNodeWake = (db: DB, admission: NodeSleepAdmission, authority: NodeProxyWriteHead) => complete(db, admission, undefined, 'wake', authority);
 
 /** The readiness phase durably records a validated Start acknowledgement, without replaying Start after recovery. */
 export async function recordNodeWakeStarted(db: DB, admission: NodeSleepAdmission, raw: unknown) {

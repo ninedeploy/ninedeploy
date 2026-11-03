@@ -84,6 +84,18 @@ export function createDb(opts: CreateDbOptions): CreateDbResult {
     .then(() => client.execute(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};`))
     .then(() => undefined);
   const db = drizzle(client, { schema });
+  // libsql starts transactions synchronously, while Drizzle runs their bodies
+  // asynchronously. A second BEGIN on this client can block the event loop
+  // waiting for the first callback's COMMIT (or reject TRANSACTION_ACTIVE in
+  // memory). Queue complete managed transactions, including rollback, per DB.
+  // Nested tx.transaction savepoints and independent DB handles are unaffected.
+  const transact = db.transaction.bind(db);
+  let transactionTail = Promise.resolve();
+  db.transaction = (callback, transactionConfig) => {
+    const run = transactionTail.then(() => transact(callback, transactionConfig));
+    transactionTail = run.then(() => undefined, () => undefined);
+    return run;
+  };
   // The client is opt-out via `withClient: false` so call sites that only
   // need the Drizzle handle can release the underlying libSQL connection.
   return opts.withClient === false ? { db, ready } : { db, client, ready };

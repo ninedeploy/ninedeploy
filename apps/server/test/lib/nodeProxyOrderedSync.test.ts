@@ -53,7 +53,12 @@ it('stops an older render when another refresh reserves a newer revision', async
 });
 it('adopts ordered routing for a confirmed scale-down without a scale-up override', async () => {
   caps = ['proxy.orderedWrite', 'proxy.routingAck'];
-  await expect(syncAllNodeProxies(c.db, [2], undefined, { confirmNode: 2, adoptOrderedNode: 2 })).resolves.toEqual([{ serverId: 2, ok: true }]);
+  const results = await syncAllNodeProxies(c.db, [2], undefined, { confirmNode: 2, adoptOrderedNode: 2 });
+  const [authority] = await c.db.select().from(nodeProxyWriteHeads);
+  expect(results).toEqual([{ serverId: 2, ok: true, routingAuthority: authority }]);
+  const write = io.agent.mock.calls.find(call => call[2] === 'proxy.writeOrderedConfig')![3];
+  expect(authority).toMatchObject({ revision: write.revision, requestId: write.requestId,
+    contentHash: createHash('sha256').update(write.content).digest('hex') });
   expect(io.agent.mock.calls.some(call => call[2] === 'proxy.writeOrderedConfig')).toBe(true);
   expect(io.agent.mock.calls.some(call => call[2] === 'proxy.confirmRouting')).toBe(true);
 });

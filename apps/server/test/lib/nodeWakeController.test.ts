@@ -7,9 +7,11 @@ import { admitNodeSleep, admitNodeWake, advanceNodeSleep, bindNodeSleepCatcher, 
 import { executeNodeWake, type NodeWakeControllerDeps } from '../../src/lib/nodeWakeController.js';
 import { reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import { nodeWakeKey } from '../../src/lib/nodeWakeKey.js';
-import { renderDynamicConfig } from '../../src/engine/proxy.js';
+import { renderDynamicConfig, writeDynamicConfig } from '../../src/engine/proxy.js';
 import { nodeWakeRuntime } from '../../src/lib/nodeWakeRuntime.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
+import { reserveNodeProxyWrite, bindNodeProxyWrite } from '../../src/lib/nodeProxyAuthority.js';
+import { withRoutingAck } from '../../src/lib/proxyRoutingAck.js';
 
 const transport = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: transport.agent, agentTransportSealed: transport.sealed }));
@@ -55,11 +57,14 @@ async function setup(mode: Service['healthCheck'] = 'tcp', healthPath = '/') {
       }
       throw new Error(`Unexpected operation ${op}`);
     }),
-    route: vi.fn(async (nodeId, promotion) => {
+    route: vi.fn(async (nodeId, promotion, _signal, settle) => {
       expect((await service()).asleepAt).not.toBeNull();
+      const head = (await reserveNodeProxyWrite(f.c.db, nodeId, { adopt: true }))!;
       const output = await renderDynamicConfig(f.c.db, { serverId: nodeId, wakePromotion: promotion });
+      const bound = await bindNodeProxyWrite(f.c.db, head, withRoutingAck(output));
       expect(output).toContain('service: svc_web_1'); trace.push('route'); await during?.('route');
       if (lostRoute) { lostRoute = false; throw new Error('Routing acknowledgement lost'); }
+      await settle(bound);
     }),
   };
 }
@@ -172,5 +177,49 @@ it('uses the production runtime through queued rendering, ordered proxy writes a
   });
   expect(await executeNodeWake(f.c.db, wake, nodeWakeRuntime(f.c.db))).toEqual({ state: 'completed' });
   expect(trace).toEqual(['fence', 'start', 'ready:tcp', 'ready:tcp', 'ready:tcp', 'ordered-write', 'ack']);
+  expect((await service()).asleepAt).toBeNull();
+});
+it('settles wake state before the next queued writer can restore the catcher route', async () => {
+  vi.useRealTimers(); const written: string[] = []; let queued: Promise<void> | undefined;
+  transport.sealed.mockReset().mockResolvedValue(true); transport.agent.mockReset().mockImplementation(async (_db, node, op, params, _sink, options) => {
+    if (op === 'proxy.writeConfig') return { exitCode: 0, lines: ['proxy-config x unchanged'] };
+    if (op === 'proxy.writeOrderedConfig') {
+      written.push(params.content);
+      return { exitCode: 0, lines: [`ND-PROXY-WRITE ${JSON.stringify({ revision: params.revision, requestId: params.requestId,
+        contentHash: createHash('sha256').update(params.content).digest('hex'), complete: true, changed: true })}`] };
+    }
+    if (op === 'docker.inspect') return { exitCode: 0, lines: ['running'] };
+    if (op === 'proxy.confirmRouting') {
+      if (!queued) queued = writeDynamicConfig(f.c.db, { requireNode: node, confirmNodeRouting: true, requireOrderedNode: true });
+      return { exitCode: 0, lines: [`ND-PROXY-ROUTING ${createHash('sha256').update(params.content).digest('hex')}`] };
+    }
+    return deps.agent(node, op, params, options);
+  });
+  const runtime = nodeWakeRuntime(f.c.db);
+  expect(await executeNodeWake(f.c.db, wake, { ...runtime, route: async (...args) => {
+    await runtime.route(...args); await queued;
+  } })).toEqual({ state: 'completed' });
+  expect(written).toHaveLength(2);
+  expect(written[0]!.includes('http://ninedeploy-wake:8080'), 'ready-app publication control').toBe(false);
+  expect(written[1]!.includes('http://ninedeploy-wake:8080'), 'a queued writer must not leave a completed wake on the catcher').toBe(false);
+});
+it.each([false, true])('retains fallback when a newer external writer reserves before settlement (bound=%s)', async bound => {
+  const route = deps.route;
+  deps.route = async (node, promotion, signal, settle) => route(node, promotion, signal, async authority => {
+    const newer = (await reserveNodeProxyWrite(f.c.db, node, { adopt: true }))!;
+    if (bound) {
+      const fallback = await renderDynamicConfig(f.c.db, { serverId: node });
+      expect(fallback).toContain('http://ninedeploy-wake:8080');
+      await bindNodeProxyWrite(f.c.db, newer, withRoutingAck(fallback));
+    }
+    await settle(authority);
+  });
+  expect(await finish(executeNodeWake(f.c.db, wake, deps))).toMatchObject({ state: 'held', reason: expect.stringMatching(/superseded/) });
+  expect((await service()).asleepAt).not.toBeNull();
+  expect(await journal()).toMatchObject({ phase: 'publishing', fallbackRouting: true, workerToken: null });
+  deps.route = route;
+  const recovered = (await recoverNodeSleep(f.c.db, 1))!;
+  expect(await finish(executeNodeWake(f.c.db, recovered, deps))).toEqual({ state: 'completed' });
+  expect(trace.filter(item => item === 'start')).toHaveLength(1);
   expect((await service()).asleepAt).toBeNull();
 });

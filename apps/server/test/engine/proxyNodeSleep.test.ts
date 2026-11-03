@@ -151,8 +151,12 @@ it('rechecks the journal and owner instead of trusting a previously issued permi
 });
 it('requires ordered writes and confirms the exact app routing before reporting publication success', async () => {
   const { token } = await wakePublishing();
-  expect(await syncNodeProxy(f.c.db, 4, undefined, { confirmRouting: true, wakePromotion: token })).toEqual({ ok: true });
+  const result = await syncNodeProxy(f.c.db, 4, undefined, { confirmRouting: true, wakePromotion: token });
+  const head = await f.c.db.query.nodeProxyWriteHeads.findFirst();
+  expect(result).toEqual({ ok: true, routingAuthority: head });
   const write = io.agent.mock.calls.find(call => call[2] === 'proxy.writeOrderedConfig');
+  expect(head).toMatchObject({ serverId: 4, revision: write![3].revision, requestId: write![3].requestId,
+    contentHash: createHash('sha256').update(write![3].content).digest('hex') });
   expect(router(write![3].content)).toContain('service: svc_web_1');
   expect(io.agent.mock.calls.some(call => call[2] === 'proxy.confirmRouting')).toBe(true);
   expect((await f.c.db.query.nodeSleepTransitions.findFirst())!.fallbackRouting).toBe(true);

@@ -32,6 +32,13 @@ export async function checkpointNodeProxyWrite(db: Pick<DB, 'select'>, expected:
   return current;
 }
 
+/** Call inside the transaction settling routing-dependent state. Reservations precede rendering. */
+export async function assertNodeProxyAcknowledgement(db: Pick<DB, 'select'>, serverId: number, expected: NodeProxyWriteHead): Promise<void> {
+  if (!expected || expected.serverId !== serverId || expected.contentHash === null) throw new Error('Node proxy acknowledgement unavailable');
+  const current = await checkpointNodeProxyWrite(db, expected);
+  if (current.contentHash !== expected.contentHash) throw new Error('Node proxy acknowledgement was superseded');
+}
+
 /** A revision has one immutable config digest, including across lost transport replies. */
 export async function bindNodeProxyWrite(db: DB, expected: NodeProxyWriteHead, content: string): Promise<NodeProxyWriteHead> {
   if (typeof content !== 'string' || content.includes('\0') || Buffer.byteLength(content) > 1_048_576) throw new Error('Invalid node proxy configuration');

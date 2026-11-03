@@ -10,17 +10,20 @@ import { executeNodeLifecycleIntent } from '../../src/lib/nodeLifecycleControlle
 import { nodeLifecycleRuntime } from '../../src/lib/nodeLifecycleRuntime.js';
 import { nodeWakeKey } from '../../src/lib/nodeWakeKey.js';
 import { renderDynamicConfig, writeDynamicConfig } from '../../src/engine/proxy.js';
+import { reserveNodeProxyWrite, bindNodeProxyWrite } from '../../src/lib/nodeProxyAuthority.js';
+import { withRoutingAck } from '../../src/lib/proxyRoutingAck.js';
 
 const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: io.agent, agentTransportSealed: io.sealed }));
 let f: Awaited<ReturnType<typeof servingReceiptFixture>>, running: boolean, configs: string[], badAck: boolean, ready: boolean;
 let during: ((op: string) => Promise<void>) | undefined;
 let afterRoute: (() => Promise<void>) | undefined;
+let supersedeSettlement: boolean | undefined;
 const service = async () => (await f.c.db.query.services.findFirst())!;
 const target = { id: 'a'.repeat(64), name: 'web-9' };
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
-  f = await servingReceiptFixture('file::memory:'); running = false; configs = []; badAck = false; ready = true; during = undefined; afterRoute = undefined;
+  f = await servingReceiptFixture('file::memory:'); running = false; configs = []; badAck = false; ready = true; during = undefined; afterRoute = undefined; supersedeSettlement = undefined;
   await f.c.db.update(services).set({ sleepAfterMinutes: 5, healthCheck: 'tcp', healthTimeoutSeconds: 10 }); await nodeWakeKey(f.c.db, 4, true);
   const proof = await nodeSleepEvidence(f.c.db), admission = (await admitNodeSleep(f.c.db, await service(), proof.token))!;
   await advanceNodeSleep(f.c.db, admission, 'accepted', 'fencing');
@@ -62,6 +65,19 @@ async function run(id: number) {
   const abort = new AbortController();
   const runtime = nodeLifecycleRuntime(f.c.db, { signal: abort.signal });
   const pending = executeNodeLifecycleIntent(f.c.db, id, { ...runtime, route: async (...args) => {
+    const wake = args[3];
+    if (wake && supersedeSettlement !== undefined) {
+      const bind = supersedeSettlement; supersedeSettlement = undefined;
+      args[3] = { ...wake, settle: async authority => {
+        const newer = (await reserveNodeProxyWrite(f.c.db, 4, { adopt: true }))!;
+        if (bind) {
+          const fallback = await renderDynamicConfig(f.c.db, { serverId: 4 });
+          expect(fallback).toContain('http://ninedeploy-wake:8080');
+          await bindNodeProxyWrite(f.c.db, newer, withRoutingAck(fallback));
+        }
+        await wake.settle(authority);
+      } };
+    }
     await runtime.route(...args);
     // Model a valid scheduling order without overlapping libSQL's single in-memory connection.
     await afterRoute?.();
@@ -122,4 +138,13 @@ it('clears the fallback inside the routing queue before the next ordinary render
   expect(await execute('start')).toEqual({ state: 'completed' }); await queued;
   expect(configs).toHaveLength(2);
   expect(configs.every(content => !content.includes('http://ninedeploy-wake:8080'))).toBe(true);
+});
+it.each([false, true])('holds explicit wake if another writer reserves after ACK before settlement (bound=%s)', async bound => {
+  supersedeSettlement = bound;
+  expect(await execute('start')).toEqual({ state: 'held' });
+  expect((await f.c.db.query.nodeSleepTransitions.findFirst())!.fallbackRouting).toBe(true);
+  expect((await service()).status).toBe('deploying');
+  const retried = await retryNodeLifecycleIntent(f.c.db, await service());
+  expect(await run(retried.id)).toEqual({ state: 'completed' });
+  expect((await f.c.db.query.nodeSleepTransitions.findFirst())!.fallbackRouting).toBe(false);
 });

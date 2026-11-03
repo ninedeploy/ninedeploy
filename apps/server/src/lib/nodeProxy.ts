@@ -43,6 +43,8 @@ const orderedReceipt = z.object({ revision: z.number().int().positive(), request
 /** Result of one sync attempt, for the caller's log line. */
 export interface NodeProxySyncResult {
   ok: boolean;
+  /** Exact ordered generation acknowledged by the node, never a later DB read. */
+  routingAuthority?: NodeProxyWriteHead;
   /** Populated when `ok` is false. */
   reason?: string;
   /** The write may have landed even if its transport response was lost. */
@@ -157,7 +159,7 @@ export async function syncNodeProxy(
       const expected = `ND-PROXY-ROUTING ${createHash('sha256').update(dynamicConfig).digest('hex')}`;
       if (!receipt.lines.includes(expected)) throw new Error('The node did not confirm the requested routing generation');
     }
-    return { ok: true };
+    return { ok: true, ...(confirmRouting && authority ? { routingAuthority: authority } : {}) };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     // After a dynamic write or ensure, an error cannot establish which

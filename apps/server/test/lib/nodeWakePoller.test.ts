@@ -12,6 +12,7 @@ import { prepareNodeWakeCatcher, retireNodeWakeCatcher } from '../../src/lib/nod
 import { createHash } from 'node:crypto';
 import { withRoutingAck } from '../../src/lib/proxyRoutingAck.js';
 import { settleNodeCatcherRoutePromotion } from '../../src/lib/nodeCatcherRoutePromotion.js';
+import { reserveNodeProxyWrite, bindNodeProxyWrite } from '../../src/lib/nodeProxyAuthority.js';
 
 const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: io.agent, agentTransportSealed: io.sealed }));
@@ -72,10 +73,13 @@ function make(onError = vi.fn(), recoverCatchers = false) {
     },
   }), runtime: signal => ({ signal,
     sealed: () => io.sealed(), agent: (node, op, params, options) => io.agent(f.c.db, node, op, params, () => undefined, options),
-    route: async (serverId, promotion) => {
+    route: async (serverId, promotion, _signal, settle) => {
       // Simulated loaded-route acknowledgement, with the real bound renderer.
+      const head = (await reserveNodeProxyWrite(f.c.db, serverId, { adopt: true }))!;
       const output = await renderDynamicConfig(f.c.db, { serverId, wakePromotion: promotion }); expect(output).toContain('service: svc_web_1');
+      const bound = await bindNodeProxyWrite(f.c.db, head, withRoutingAck(output));
       if (lostRoute) { lostRoute = false; throw new Error('Routing acknowledgement lost'); }
+      await settle(bound);
     },
   }) satisfies NodeWakeControllerDeps }); pollers.push(poller); return poller;
 }
