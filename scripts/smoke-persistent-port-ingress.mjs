@@ -32,11 +32,10 @@ try {
   docker('run', '-d', '--privileged', '--name', name, '-e', 'DOCKER_TLS_CERTDIR=', '-v', `${root}:/workspace:ro`, '-v', `${proof}:/proof`, 'docker:29-dind', '--iptables=true');
   created = true;
   await until(() => innerDocker('info'));
-  inside('apk', 'add', '--no-cache', 'nftables', 'conntrack-tools', 'tcpdump');
+  inside('apk', 'add', '--no-cache', 'nftables', 'conntrack-tools', 'tcpdump', 'iproute2', 'util-linux');
   docker('exec', '-d', name, 'sh', '-c', 'tcpdump -l -nn -i any udp port 5060 or tcp port 5060 or udp port 3478 > /proof/packets.log 2>&1');
   inside('ip', 'addr', 'add', '10.6.6.9/32', 'dev', 'lo');
   innerDocker('network', 'create', '--subnet=172.29.0.0/24', 'backend');
-  innerDocker('network', 'create', '--subnet=172.28.0.0/24', '--opt', 'com.docker.network.bridge.enable_ip_masquerade=false', 'clients');
   const run = (container, network, ip, args, extra = []) => innerDocker('run', '-d', '--name', container, '--network', network, ...(ip ? ['--ip', ip] : []), '-v', '/workspace:/workspace:ro', '-v', '/proof:/proof', ...extra, nodeImage, 'node', fixture, ...args);
   run('old', 'backend', '172.29.0.2', ['server', 'old']);
   run('new', 'backend', '172.29.0.3', ['server', 'new']);
@@ -56,7 +55,22 @@ try {
   route('172.29.0.2');
   innerDocker('run', '-d', '--name', 'proxy', '--network', 'backend', '-p', '10.6.6.9:8080:80', '-v', '/proof:/config:ro', 'traefik:3', '--entrypoints.web.address=:80', '--providers.file.directory=/config', '--providers.file.watch=true');
   writeFileSync(resolve(proof, 'images.json'), innerDocker('image', 'inspect', nodeImage, 'traefik:3', '--format', '{{json .RepoDigests}}'));
-  innerDocker('run', '-d', '--name', 'client', '--network', 'clients', '--ip', '172.28.0.2', '-v', '/workspace:/workspace:ro', '-v', '/proof:/proof', nodeImage, 'sleep', '180');
+  innerDocker('run', '-d', '--name', 'client', '--network', 'none', '-v', '/workspace:/workspace:ro', '-v', '/proof:/proof', nodeImage, 'sleep', '180');
+  // Model an external routed client, not another Docker bridge destination.
+  // Docker 29 correctly drops replies to unpublished ports on protected bridges
+  // in raw PREROUTING; weakening that protection would hide an invalid fixture.
+  const clientPid = innerDocker('inspect', 'client', '--format', '{{.State.Pid}}');
+  assert.match(clientPid, /^[1-9][0-9]*$/);
+  inside('ip', 'link', 'add', 'ndpi-client', 'type', 'veth', 'peer', 'name', 'ndpi-peer');
+  inside('ip', 'link', 'set', 'ndpi-peer', 'netns', clientPid);
+  inside('ip', 'addr', 'add', '172.28.0.1/24', 'dev', 'ndpi-client');
+  inside('ip', 'link', 'set', 'ndpi-client', 'up');
+  for (const args of [
+    ['link', 'set', 'ndpi-peer', 'name', 'eth0'],
+    ['addr', 'add', '172.28.0.2/24', 'dev', 'eth0'],
+    ['link', 'set', 'eth0', 'up'],
+    ['route', 'add', 'default', 'via', '172.28.0.1'],
+  ]) inside('nsenter', '-t', clientPid, '-n', 'ip', ...args);
   const probe = expected => JSON.parse(innerDocker('exec', 'client', 'node', fixture, 'probe', expected, '172.28.0.2'));
   observations.push(await until(() => probe('old')));
   const webTarget = expected => innerDocker('exec', 'client', 'node', '-e', `fetch('http://10.6.6.9:8080',{headers:{host:'pbx.test'},signal:AbortSignal.timeout(4000)}).then(async r=>{if(r.status!==200||await r.text()!==${JSON.stringify(expected)})process.exit(1)})`);
