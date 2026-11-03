@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { DB } from '@ninedeploy/db';
-import { ensureNodeWakeCatcher, prepareNodeWakeCatcher, readNodeWakeDemand } from '../../src/lib/nodeWakeCatcherClient.js';
+import { ensureNodeWakeCatcher, prepareNodeWakeCatcher, readNodeWakeDemand, retireNodeWakeCatcher } from '../../src/lib/nodeWakeCatcherClient.js';
+import { createHash } from 'node:crypto';
+import { withRoutingAck } from '../../src/lib/proxyRoutingAck.js';
 
 const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: io.agent, agentTransportSealed: io.sealed }));
@@ -38,6 +40,20 @@ it('ensures a catcher only through a sealed capability-checked exchange with a v
   expect(await ensureNodeWakeCatcher(db, 4, key)).toEqual(reply);
   expect(io.agent.mock.calls.at(-1)![3]).toEqual({ key });
   io.agent.mockClear(); await expect(ensureNodeWakeCatcher(db, 4, 'bad')).rejects.toThrow(); expect(io.agent).not.toHaveBeenCalled();
+});
+it('retires only through the new sealed capability and binds the receipt to identity and ordered routing', async () => {
+  const target = { id: catcher, name: 'ninedeploy-wake' }, routing = { revision: 2, requestId: 'e'.repeat(32), content: 'http: {}\n' };
+  reply = { ...target, fenced: true, removed: true, revision: routing.revision, requestId: routing.requestId,
+    contentHash: createHash('sha256').update(withRoutingAck(routing.content)).digest('hex') };
+  await expect(retireNodeWakeCatcher(db, 4, target, routing)).rejects.toThrow();
+  expect(io.agent.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
+  caps.push('wake.catcher.retire', 'proxy.orderedWrite', 'proxy.routingAck'); io.agent.mockClear();
+  expect(await retireNodeWakeCatcher(db, 4, target, routing)).toEqual(reply);
+  expect(io.agent.mock.calls.at(-1)![3]).toEqual({ ...routing, timeoutMs: 30_000, target });
+  for (const changed of [{ id: 'f'.repeat(64) }, { name: `ninedeploy-wake-g-${'f'.repeat(32)}` }, { revision: 3 }, { contentHash: '0'.repeat(64) }, { fenced: false }]) {
+    const correct = { ...reply }; Object.assign(reply, changed);
+    await expect(retireNodeWakeCatcher(db, 4, target, routing)).rejects.toThrow(); reply = correct;
+  }
 });
 it('requires the separate preparation capability and a generation name rather than a legacy ensure receipt', async () => {
   reply = { id: catcher, name: `ninedeploy-wake-g-${'b'.repeat(32)}`, image: `sha256:${'f'.repeat(64)}`, created: true };
