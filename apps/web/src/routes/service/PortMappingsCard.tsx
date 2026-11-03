@@ -17,10 +17,15 @@ export interface PortRow {
   allow?: string;
 }
 
+const containerPorts = (m: PortMapping): string => {
+  const span = (m.hostPortEnd ?? m.hostPort) - m.hostPort;
+  return span > 0 ? `${m.containerPort}-${m.containerPort + span}` : String(m.containerPort);
+};
+
 const toRow = (m: PortMapping): PortRow => ({
   ip: m.hostIp ?? '',
   host: m.hostPortEnd ? `${m.hostPort}-${m.hostPortEnd}` : String(m.hostPort),
-  container: String(m.containerPort),
+  container: containerPorts(m),
   protocol: m.protocol ?? 'tcp',
   allow: (m.allowFrom ?? []).join(', '),
 });
@@ -102,6 +107,11 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
   if (!visible) return null;
   const udpOnly = mappings.length > 0 && mappings.every((m) => m.protocol === 'udp');
   const update = (i: number, patch: Partial<PortRow>) => setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const normalizeContainer = (i: number) => setRows((prev) => prev.map((r, j) => {
+    if (j !== i) return r;
+    const mapping = rowToMapping(r, t);
+    return typeof mapping === 'string' ? r : { ...r, container: containerPorts(mapping) };
+  }));
 
   return (
     <Card>
@@ -151,6 +161,7 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
                   <Input
                     value={r.host}
                     onChange={(e) => update(i, { host: e.target.value })}
+                    onBlur={() => normalizeContainer(i)}
                     placeholder="27015-27030"
                     aria-label={t('Mapping {n} host ports', { n: i + 1 })}
                     className="h-8 w-32 font-mono text-[11px]"
@@ -159,9 +170,10 @@ export function PortMappingsCard({ serviceId, svc }: { serviceId: number; svc?: 
                   <Input
                     value={r.container}
                     onChange={(e) => update(i, { container: e.target.value })}
+                    onBlur={() => normalizeContainer(i)}
                     placeholder={t('same')}
                     aria-label={t('Mapping {n} container port', { n: i + 1 })}
-                    className="h-8 w-24 font-mono text-[11px]"
+                    className="h-8 w-32 font-mono text-[11px]"
                   />
                   <Select
                     value={r.protocol}
