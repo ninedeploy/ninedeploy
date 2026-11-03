@@ -12,6 +12,15 @@ const get = async () => (await f.c.db.query.services.findFirst())!;
 beforeEach(async () => { f = await servingReceiptFixture('file::memory:'); await f.c.db.update(services).set({ sleepAfterMinutes: 5 }); });
 afterEach(() => f.c.client?.close());
 
+it('refuses Swarm status before reading node idle coverage or interpreting its native runtime id', async () => {
+  await f.c.db.update(services).set({ orchestrator: 'swarm', runtimeId: 'nd-web_web' });
+  const remove = registerNodeSleepObserver(f.c.db, { status: () => { throw new Error('Swarm must not consult the plain-node observer'); } });
+  try {
+    expect(serviceSleepStatus.parse(await readServiceSleepStatus(f.c.db, await get()))).toMatchObject({ placement: 'unsupported', phase: 'unsupported',
+      nodeControllerActive: false, idleMs: null, idleSatisfied: false });
+  } finally { remove(); }
+});
+
 it('exposes a pending sleep without its execution authority or raw worker failure', async () => {
   const proof = await nodeSleepEvidence(f.c.db), admission = (await admitNodeSleep(f.c.db, await get(), proof.token))!;
   const pending = serviceSleepStatus.parse(await readServiceSleepStatus(f.c.db, await get()));
