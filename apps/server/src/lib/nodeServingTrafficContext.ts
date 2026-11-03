@@ -53,21 +53,7 @@ export async function readNodeServingTrafficState(tx: Pick<DB, 'query' | 'select
     return JSON.stringify([svc, deployment, capacity, await readServiceRuntimeOwner(tx, svc.id), attached]);
 }
 
-const contextReads = new WeakMap<DB, Promise<void>>();
-
-/** LibSQL's Drizzle adapter starts write transactions even for these snapshot reads.
- * Overlapping watches must not synchronously wait for a writer whose callback
- * cannot finish until that wait yields. Keep only metadata capture serialized;
- * observation windows and agent/network operations remain independent. */
-export function nodeServingTrafficContext(db: DB, input: ServingTrafficOpen | IdleWatchOpen): Promise<string> {
-  const run = (contextReads.get(db) ?? Promise.resolve()).then(() => captureServingTrafficContext(db, input));
-  const tail = run.then(() => undefined, () => undefined);
-  contextReads.set(db, tail);
-  void tail.then(() => { if (contextReads.get(db) === tail) contextReads.delete(db); });
-  return run;
-}
-
-async function captureServingTrafficContext(db: DB, input: ServingTrafficOpen | IdleWatchOpen): Promise<string> {
+export async function nodeServingTrafficContext(db: DB, input: ServingTrafficOpen | IdleWatchOpen): Promise<string> {
   const read = () => db.transaction(tx => readNodeServingTrafficState(tx, input));
   const before = await read();
   const routes = await renderDynamicConfig(db, { serverId: input.nodeId });
