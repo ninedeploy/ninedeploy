@@ -150,10 +150,10 @@ jobs:
         with:
           node-version: 26.12.1
       - name: Build candidate
-        if: github.event.inputs.automatic_node_sleep != 'true' || github.event.inputs.immutable_image == ''
+        if: github.event.inputs.automatic_node_sleep != 'true' || github.event.inputs.swarm_runtime == 'true' || github.event.inputs.immutable_image == ''
         run: docker build -t ninedeploy:serving .
       - name: Pull immutable automatic sleep diagnostic image
-        if: github.event.inputs.automatic_node_sleep == 'true' && github.event.inputs.immutable_image != ''
+        if: github.event.inputs.automatic_node_sleep == 'true' && github.event.inputs.swarm_runtime != 'true' && github.event.inputs.immutable_image != ''
         env:
           IMMUTABLE_IMAGE: ${{ github.event.inputs.immutable_image }}
         run: |
