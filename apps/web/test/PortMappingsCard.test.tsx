@@ -51,6 +51,37 @@ describe('portMappingLabel', () => {
 });
 
 describe('PortMappingsCard', () => {
+  it('shows both ends of a stored RTP container range while saving its existing base-port representation', async () => {
+    const rtp = { hostIp: '10.6.6.9', hostPort: 10000, hostPortEnd: 10100, containerPort: 10000, protocol: 'udp' as const };
+    renderWithProviders(<PortMappingsCard serviceId={3} svc={svc({ portMappings: [rtp] })} />);
+    expect(screen.getByLabelText('Mapping 1 host ports')).toHaveValue('10000-10100');
+    expect(screen.getByLabelText('Mapping 1 container port')).toHaveValue('10000-10100');
+    expect(screen.getByText('-p 10.6.6.9:10000-10100:10000-10100/udp')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save mappings' }));
+    await waitFor(() => expect(api.services.update).toHaveBeenCalledWith(3, { portMappings: [rtp] }));
+  });
+
+  it('lets an operator type a starting port and expands the full container range after leaving the field', () => {
+    renderWithProviders(<PortMappingsCard serviceId={3} svc={svc({ portMappings: [{ ...udp, hostPort: 10000, hostPortEnd: 10100, containerPort: 10000 }] })} />);
+    const field = screen.getByLabelText('Mapping 1 container port');
+    fireEvent.change(field, { target: { value: '20000' } });
+    expect(field).toHaveValue('20000');
+    fireEvent.blur(field);
+    expect(field).toHaveValue('20000-20100');
+    expect(screen.getByText('-p 10000-10100:20000-20100/udp')).toBeInTheDocument();
+  });
+
+  it('keeps a mismatched explicit range visible and blocks saving it', () => {
+    renderWithProviders(<PortMappingsCard serviceId={3} svc={svc({ portMappings: [udp] })} />);
+    const field = screen.getByLabelText('Mapping 1 container port');
+    fireEvent.change(field, { target: { value: '30000-30001' } });
+    fireEvent.blur(field);
+    expect(field).toHaveValue('30000-30001');
+    expect(screen.getByText(/as long as the host range/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save mappings' })).toBeDisabled();
+    expect(api.services.update).not.toHaveBeenCalled();
+  });
+
   it('adds a UDP range on a dedicated IP and saves it', async () => {
     renderWithProviders(<PortMappingsCard serviceId={3} svc={svc()} />);
     expect(screen.getByText('No extra ports published.')).toBeInTheDocument();
