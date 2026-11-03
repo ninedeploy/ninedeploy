@@ -6,10 +6,12 @@ import { WAKE_DEMAND_PREFIX, WAKE_KEY_PATTERN } from '../wakeCatcher.js';
 import { createKeyedOperationGuard } from './keyedOperationGuard.js';
 
 /**
- * R2 node scale to zero (docs/NODE_SLEEP_WAKE.md), agent side: the fixed `ninedeploy-wake`
- * container. It runs the agent's own immutable image (no pull, nothing caller-chosen) on the
+ * R2 node scale to zero (docs/NODE_SLEEP_WAKE.md), agent side: the legacy `ninedeploy-wake`
+ * container and separately prepared generations. They run the agent's own immutable image
+ * (no pull, nothing caller-chosen) on the
  * node proxy's network, read-only, unprivileged, without mounts or a published port. A
- * same-name container this agent did not label is never touched.
+ * same-name container this agent did not label is never touched. Preparation never removes
+ * an existing backend and does not grant permission to promote or retire it.
  */
 export const WAKE_CATCHER_NAME = 'ninedeploy-wake';
 export const WAKE_CATCHER_LABEL = 'wake';
@@ -42,11 +44,11 @@ async function agentImage(): Promise<string> {
   return self.image;
 }
 
-function foreign(): never {
-  throw new HttpError(409, 'wake_catcher_conflict', `A container named ${WAKE_CATCHER_NAME} exists that this agent did not create; remove or rename it`);
+function foreign(name = WAKE_CATCHER_NAME): never {
+  throw new HttpError(409, 'wake_catcher_conflict', `A container named ${name} exists that this agent did not create; remove or rename it`);
 }
 
-export const wakeCatcherRunArgs = (image: string, key: string): string[] => ['run', '-d', '--name', WAKE_CATCHER_NAME,
+export const wakeCatcherRunArgs = (image: string, key: string, name = WAKE_CATCHER_NAME): string[] => ['run', '-d', '--name', name,
   '--label', `ninedeploy.managed=${WAKE_CATCHER_LABEL}`, '--label', `ninedeploy.wake.key=${keyLabel(key)}`, '-e', `ND_WAKE_KEY=${key}`,
   // The image probes the panel/agent port; the catcher is proved separately on 8080.
   '--network', PROXY_NETWORK, '--restart', 'unless-stopped', '--no-healthcheck',
@@ -73,6 +75,29 @@ async function ensureWakeCatcherUnlocked(key: string): Promise<{ id: string; ima
 export async function ensureWakeCatcher(params: unknown): Promise<{ id: string; image: string; created: boolean }> {
   const { key } = wakeEnsureParams.parse(params);
   return withCatcher('wake', () => ensureWakeCatcherUnlocked(key));
+}
+
+/** Prepare a replacement without withdrawing the backend already used by Traefik. */
+export async function prepareWakeCatcher(params: unknown) {
+  const { key } = wakeEnsureParams.parse(params);
+  return withCatcher('wake', async () => {
+    const image = await agentImage();
+    // Retry the same generation after lost replies. Neither its image nor its name is caller-chosen.
+    const fingerprint = createHash('sha256').update(JSON.stringify([image, keyLabel(key)])).digest('hex').slice(0, 32);
+    const name = `${WAKE_CATCHER_NAME}-g-${fingerprint}`, found = await inspect(name);
+    if (found && found.managed !== WAKE_CATCHER_LABEL) foreign(name);
+    if (found && (found.image !== image || found.keyHash !== keyLabel(key))) {
+      throw new HttpError(409, 'wake_catcher_conflict', 'The prepared catcher generation has an unexpected image or credential');
+    }
+    if (found?.running) return { id: found.id, name, image, created: false };
+    // A stopped candidate may already be referenced by a recovered route. Never remove it.
+    if (found) await capture('docker', ['start', found.id], { timeoutMs: 30_000 });
+    else await capture('docker', wakeCatcherRunArgs(image, key, name), { timeoutMs: 60_000 });
+    const candidate = await inspect(name);
+    if (!candidate?.running || candidate.image !== image || candidate.managed !== WAKE_CATCHER_LABEL || candidate.keyHash !== keyLabel(key) ||
+      found && candidate.id !== found.id) throw new HttpError(502, 'wake_catcher_unconfirmed', 'The prepared wake catcher did not start');
+    return { id: candidate.id, name, image, created: !found };
+  });
 }
 
 async function removeWakeCatcherUnlocked(): Promise<{ removed: boolean }> {
