@@ -4,10 +4,10 @@ export function swarmTrafficSampler(hostname) {
   return `const http=require('node:http');const rows=[];let stopped=false,active;
 async function tick(){if(stopped)return;const at=Date.now();active=new Promise(resolve=>{let timer,done=false;
  const finish=row=>{if(!done){done=true;clearTimeout(timer);resolve(row)}};
- const q=http.get({hostname:'ninedeploy-proxy',headers:{host:${JSON.stringify(hostname)}}},r=>{let body='',large=false;r.setEncoding('utf8');
+ const q=http.get({hostname:'ninedeploy-traefik',headers:{host:${JSON.stringify(hostname)}}},r=>{let body='',large=false;r.setEncoding('utf8');
  r.on('data',c=>{if(body.length+c.length>16384)large=true;if(!large)body+=c});r.on('end',()=>{const label=!large&&body==='baked-one'?'one':!large&&body==='baked-two'?'two':null;finish({at,status:r.statusCode,label,application:r.statusCode===200&&label!==null})});
  r.on('error',()=>finish({at,status:0,application:false,error:'RESPONSE_ERROR'}))});
- timer=setTimeout(()=>q.destroy(new Error('deadline')),1500);q.on('error',()=>finish({at,status:0,application:false,error:'REQUEST_ERROR'}))});
+ timer=setTimeout(()=>q.destroy(new Error('deadline')),1500);q.on('error',e=>finish({at,status:0,application:false,error:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'REQUEST_ERROR'}))});
  rows.push(await active);active=undefined;if(!stopped)setTimeout(tick,30)}
 http.createServer(async(q,r)=>{if(q.url==='/finish'){stopped=true;await active}r.end(JSON.stringify(rows))}).listen(8091,'127.0.0.1');tick();`;
 }
@@ -47,8 +47,9 @@ export async function smokeSwarmRuntime({ api, primary, docker, panel, id, first
     return { serviceId, deploymentId, nativeServiceId: native.id, nativeVersion: native.version, imageRef: native.image, imageId: image,
       taskId: task.id, containerId: task.container, managerNodeId: manager, encryptedOverlayId: network.Id };
   }
-  const sourceTraffic = await traffic(id, domain.hostname); let completed = false, phase = 'migration';
+  let sourceTraffic, completed = false, phase = 'baseline';
   try {
+    sourceTraffic = await traffic(id, domain.hostname); phase = 'migration';
     await api(`/v1/services/${id}/placement`, { method: 'PUT', body: { orchestrator: 'swarm' } });
     const one = (await api(`/v1/services/${id}/deploys`, { method: 'POST', body: {} })).deploymentId;
     await success(id, one);
