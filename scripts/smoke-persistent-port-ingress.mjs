@@ -32,7 +32,8 @@ try {
   docker('run', '-d', '--privileged', '--name', name, '-e', 'DOCKER_TLS_CERTDIR=', '-v', `${root}:/workspace:ro`, '-v', `${proof}:/proof`, 'docker:29-dind', '--iptables=true');
   created = true;
   await until(() => innerDocker('info'));
-  inside('apk', 'add', '--no-cache', 'nftables', 'conntrack-tools');
+  inside('apk', 'add', '--no-cache', 'nftables', 'conntrack-tools', 'tcpdump');
+  docker('exec', '-d', name, 'sh', '-c', 'tcpdump -l -nn -i any udp port 5060 or tcp port 5060 or udp port 3478 > /proof/packets.log 2>&1');
   inside('ip', 'addr', 'add', '10.6.6.9/32', 'dev', 'lo');
   innerDocker('network', 'create', '--subnet=172.29.0.0/24', 'backend');
   innerDocker('network', 'create', '--subnet=172.28.0.0/24', '--opt', 'com.docker.network.bridge.enable_ip_masquerade=false', 'clients');
@@ -82,6 +83,9 @@ try {
   writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, observations, held, web, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
 } finally {
   if (created) {
+    for (const [file, args] of [['nft.json', ['nft', '-j', 'list', 'ruleset']], ['iptables.txt', ['iptables-save', '-c']], ['conntrack.txt', ['conntrack', '-L']], ['routes.txt', ['ip', 'route']]]) {
+      try { writeFileSync(resolve(proof, file), inside(...args)); } catch {}
+    }
     for (const container of ['old', 'new', 'keeper', 'proxy', 'client']) { try { writeFileSync(resolve(proof, `${container}.log`), innerDocker('logs', container)); } catch {} }
     docker('rm', '-f', '-v', name);
     assert.ok(!docker('ps', '-a', '--filter', `name=^/${name}$`, '--format', '{{.ID}}'));

@@ -55,13 +55,14 @@ if (mode === 'server') {
     let message, error;
     const pending = new Promise((resolve, reject) => { message = resolve; error = reject; socket.once('message', message); socket.once('error', error); });
     try { socket.send(packet); return await timeout(pending); }
+    catch (error) { throw new Error(`UDP ${socket.remoteAddress().port}: ${error.message}`, { cause: error }); }
     finally { socket.off('message', message); socket.off('error', error); }
   };
   const sip = await udp(5060);
   const rtp = await Promise.all([10000, 10050, 10100].map(udp));
   const st = await udp(3478);
   const tcp = net.connect(5060, address); sockets.push(tcp);
-  await timeout(new Promise((resolve, reject) => { tcp.once('connect', resolve); tcp.once('error', reject); }));
+  await timeout(new Promise((resolve, reject) => { tcp.once('connect', resolve); tcp.once('error', reject); })).catch(error => { throw new Error(`TCP connect: ${error.message}`); });
   async function probe() {
     const packet = Buffer.from('OPTIONS sip:pbx.test SIP/2.0\r\nCall-ID: ' + randomBytes(8).toString('hex') + '\r\n\r\n');
     for (const [socket, data] of [[sip, packet], ...rtp.map((socket, i) => [socket, Buffer.from([0x80, 0, 0, i, ...randomBytes(8)])])]) {
