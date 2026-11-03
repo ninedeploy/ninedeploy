@@ -39,8 +39,8 @@ import { FA_PREFIX, forwardAuthDomains } from '../lib/forwardAuth.js';
 import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
 import { nodeWakeKey } from '../lib/nodeWakeKey.js';
 import { WAKE_CATCHER_PORT, WAKE_KEY_HEADER } from '../wakeCatcher.js';
-import { checkNodeWakeRoutePromotion, type NodeWakeRoutePromotion } from '../lib/nodeWakeRoutePromotion.js';
-import { checkNodeCatcherRoutePromotion, type NodeCatcherRoutePromotion } from '../lib/nodeCatcherRoutePromotion.js';
+import { checkNodeWakeRoutePromotion, confirmNodeWakeRoutePromotion, type NodeWakeRoutePromotion } from '../lib/nodeWakeRoutePromotion.js';
+import { checkNodeCatcherRoutePromotion, confirmNodeCatcherRoutePromotion, type NodeCatcherRoutePromotion } from '../lib/nodeCatcherRoutePromotion.js';
 import { validNodeCatcherName } from '../lib/nodeCatcherIdentity.js';
 
 /** 0.16.11: the path prefix the wake endpoint answers under (modules/wake.ts). */
@@ -948,12 +948,12 @@ async function writeDynamicConfigUnlocked(db: DB, opts: DynamicConfigOptions): P
   const routingAuthority = await refreshNodeProxies(db, opts.requireNode, confirmNode, opts.signal, opts.autoscalePromotion, opts.requireOrderedNode, opts.wakePromotion, opts.catcherPromotion);
   if (opts.catcherPromotion) {
     opts.signal?.throwIfAborted();
-    await checkNodeCatcherRoutePromotion(opts.catcherPromotion, opts.requireNode!);
+    await confirmNodeCatcherRoutePromotion(opts.catcherPromotion, opts.requireNode!);
     await opts.onCatcherConfirmed!();
   }
   if (opts.onWakeConfirmed) {
     opts.signal?.throwIfAborted();
-    await checkNodeWakeRoutePromotion(opts.wakePromotion!, opts.requireNode!);
+    await confirmNodeWakeRoutePromotion(opts.wakePromotion!, opts.requireNode!);
     if (!routingAuthority) throw new ProxyRoutingUnconfirmed('Wake routing authority unavailable');
     await opts.onWakeConfirmed(routingAuthority);
   }

@@ -40,6 +40,17 @@ describe('node sleep observations', () => {
     renderTree(<SleepActions svc={svcWith({ serverId: 4, asleepAt: ASLEEP_AT })} />);
     expect(await screen.findByRole('button', { name: /Wake now/ })).toBeEnabled();
   });
+  it('offers Wake for an awake-looking node service held on the catcher while automatic recovery is off', async () => {
+    sleepStatus.mockResolvedValueOnce({ ...status, nodeControllerActive: false, phase: 'held', holding: 'Node verification is pending' });
+    renderTree(<SleepActions svc={svcWith({ serverId: 4 })} />);
+    expect(await screen.findByRole('button', { name: /Wake now/ })).toBeEnabled();
+  });
+  it('offers no Wake for an awake node service the running controller is still verifying', async () => {
+    sleepStatus.mockResolvedValueOnce({ ...status, phase: 'held', holding: 'Node verification is pending' });
+    renderTree(<SleepActions svc={svcWith({ serverId: 4 })} />);
+    await waitFor(() => expect(sleepStatus).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /Wake now/ })).not.toBeInTheDocument();
+  });
   it('does not retain another service coverage during navigation or fabricate it after an API error', async () => {
     sleepStatus.mockResolvedValueOnce(status).mockRejectedValueOnce(new Error('offline'));
     const view = renderTree(<NodeSleepState svc={svcWith({ serverId: 4 })} />);

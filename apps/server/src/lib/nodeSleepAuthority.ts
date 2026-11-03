@@ -61,7 +61,10 @@ async function configuration(db: ReadDB, service: Service): Promise<{ current: s
   const hash = (parts: unknown[]) => createHash('sha256').update(JSON.stringify(parts)).digest('hex');
   // Health settings are readiness policy, read live when restoration or wake
   // checks the started replicas; they do not change which containers start.
-  return { current: hash(['v2', generation, limits, attached, capacity]), legacy: hash([config, attached, routes, capacity]) };
+  // Saved limits apply on the next deploy: while a journal is active the live
+  // node apply refuses (nodeLimitsAuthority), and wake starts the same captured
+  // containers, so a limits edit must not refuse the wake either.
+  return { current: hash(['v2', generation, attached, capacity]), legacy: hash([config, attached, routes, capacity]) };
 }
 
 async function unblocked(db: ReadDB, serviceId: number): Promise<boolean> {

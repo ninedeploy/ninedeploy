@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
-import { deployments, fanoutTransitions, nodeAutoscaleTransitions, nodeLifecycleIntents, primaryTransitions, services, serviceTargets,
+import { deployments, fanoutTransitions, nodeAutoscaleTransitions, nodeLifecycleIntents, nodeSleepTransitions, primaryTransitions, services, serviceTargets,
   type DB, type Service, type ServiceRuntimeOwner } from '@ninedeploy/db';
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwnerInTransaction, sameRuntimeOwner } from './serviceRuntimeOwner.js';
 import { swarmRuntimeOf } from './swarm.js';
@@ -14,10 +14,16 @@ const placements = (db: Pick<DB, 'select'>, serviceId: number) => db.select({ se
 
 /** Atomically admit limits only for a stable runtime, without superseding active work. */
 export async function admitNodeLimits(db: DB, expected: Service): Promise<NodeLimitsAdmission | null> {
-  if (expected.type !== 'docker' || expected.orchestrator === 'swarm' || swarmRuntimeOf(expected) || !expected.serverId || expected.status !== 'running' || !expected.runtimeId) return null;
+  if (expected.type !== 'docker' || expected.orchestrator === 'swarm' || swarmRuntimeOf(expected) || !expected.serverId || expected.status !== 'running' || !expected.runtimeId ||
+    expected.asleepAt != null) return null;
   return db.transaction(async tx => {
     const fresh = await tx.query.services.findFirst({ where: eq(services.id, expected.id) });
-    if (!fresh || snapshot(fresh) !== snapshot(expected)) return null;
+    if (!fresh || snapshot(fresh) !== snapshot(expected) || fresh.asleepAt != null) return null;
+    // R2: a limits owner would supersede a sleeping or in-flight sleep/wake
+    // journal while its domains stay on the catcher, so visitor demand could
+    // never wake the service again. The saved limits apply on the next deploy.
+    const sleep = await tx.query.nodeSleepTransitions.findFirst({ where: eq(nodeSleepTransitions.serviceId, fresh.id) });
+    if (sleep && !['completed', 'superseded'].includes(sleep.phase)) return null;
     const [active, lifecycle, primary, fanout, autoscale] = await Promise.all([
       tx.select({ id: deployments.id }).from(deployments).where(and(eq(deployments.serviceId, fresh.id), inArray(deployments.status, ['queued', 'building', 'deploying']))).limit(1),
       tx.select({ id: nodeLifecycleIntents.id }).from(nodeLifecycleIntents).where(and(eq(nodeLifecycleIntents.serviceId, fresh.id), notInArray(nodeLifecycleIntents.phase, ['completed', 'superseded']))).limit(1),

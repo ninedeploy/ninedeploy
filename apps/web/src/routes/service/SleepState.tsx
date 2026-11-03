@@ -80,7 +80,13 @@ export function SleepActions({ svc, command }: { svc: SleepFields & Pick<Service
     },
   });
   const busyCommand = command?.current === true && !['completed', 'superseded'].includes(command.phase);
-  const automaticWake = status.data?.phase === 'waking';
+  // Only a running node controller performs the wake; with automatic node
+  // recovery off a "waking" or "held" journal waits for this button.
+  const automaticWake = status.data?.phase === 'waking' && status.data.nodeControllerActive;
+  // R2: a node sleep interrupted before Stop keeps the domains on the wake
+  // catcher with asleepAt null; with recovery off, only Wake settles it.
+  const heldOnCatcher = svc.serverId != null && status.data != null && !status.data.nodeControllerActive &&
+    (status.data.phase === 'held' || status.data.phase === 'waking');
   const wakingCurrent = wake.isPending && wake.variables === svc.id || busyCommand && command?.action === 'start' || automaticWake;
   const sleep = useMutation({
     mutationFn: () => sleepApi.sleep(svc.id),
@@ -92,7 +98,7 @@ export function SleepActions({ svc, command }: { svc: SleepFields & Pick<Service
   });
 
   if (svc.status !== 'running') return null;
-  if (isAsleep(svc)) {
+  if (isAsleep(svc) || heldOnCatcher) {
     return (
       <Button variant="secondary" size="md" onClick={() => wake.mutate(svc.id)} disabled={wakingCurrent || busyCommand} title={t('Start the containers and route the domains back')}>
         <Sun size={15} /> {wakingCurrent ? t('Waking…') : t('Wake now')}

@@ -54,7 +54,7 @@ import { autoscaleStatus, resetAutoscaleState } from '../lib/autoscaler.js';
 import { sizingHints } from '../lib/sizingHints.js';
 import { putToSleep, wakeService } from '../lib/sleep.js';
 import { sleepDeps } from '../lib/sleepRuntime.js';
-import { readServiceSleepStatus } from '../lib/serviceSleepStatus.js';
+import { nodeCatcherFallbackHeld, readServiceSleepStatus } from '../lib/serviceSleepStatus.js';
 import { wakeUnreachableReason } from '../lib/panelUpstream.js';
 import {
   assertServiceRole,
@@ -1394,7 +1394,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/wake', async (req, reply) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
-    if (svc.asleepAt == null) throw badRequest('The service is not asleep', 'not_asleep');
+    // R2: a node sleep interrupted before Stop and held in `restoring` keeps the
+    // domains on the catcher with asleepAt null. With automatic node recovery off
+    // (NINEDEPLOY_NODE_SLEEP_AUTOMATION=off) nothing else settles it, so Wake
+    // accepts it and the explicit Start puts the app's routing back.
+    if (svc.asleepAt == null && !(await nodeCatcherFallbackHeld(app.db, svc))) throw badRequest('The service is not asleep', 'not_asleep');
     if (svc.serverId != null) {
       if (!orderedNode(svc)) throw new HttpError(422, 'node_lifecycle_unsupported', 'Manual node wake requires an ordinary Docker service');
       return reply.code(202).send(await requestLifecycle(svc, 'start', req));
