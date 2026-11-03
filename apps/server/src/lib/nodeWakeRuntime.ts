@@ -8,7 +8,7 @@ export function nodeWakeRuntime(db: DB, options: { signal?: AbortSignal; log?: (
   return {
     agent: (nodeId, op, params, callOptions) => agentOp(db, nodeId, op, params, () => undefined, callOptions),
     sealed: nodeId => agentTransportSealed(db, nodeId, options.signal),
-    route: (nodeId, wakePromotion, signal) => writeDynamicConfig(db, { requireNode: nodeId, confirmNodeRouting: true, requireOrderedNode: true, wakePromotion, signal }),
+    route: (nodeId, wakePromotion, signal, settle) => writeDynamicConfig(db, { requireNode: nodeId, confirmNodeRouting: true, requireOrderedNode: true, wakePromotion, signal, onWakeConfirmed: settle }),
     ...options,
   };
 }

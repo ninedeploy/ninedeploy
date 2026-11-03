@@ -1,4 +1,4 @@
-import { eq, nodeSleepTransitions, services, type DB } from '@ninedeploy/db';
+import { eq, nodeSleepTransitions, services, type DB, type NodeProxyWriteHead } from '@ninedeploy/db';
 import { containerStartSetRequest, runtimeFenceRequest, runtimeFenceReply } from '@ninedeploy/schemas';
 import type { AgentOpResult } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
@@ -10,8 +10,8 @@ import type { NodeWakeRoutePromotion } from './nodeWakeRoutePromotion.js';
 export interface NodeWakeControllerDeps {
   agent: (nodeId: number, op: string, params: Record<string, unknown>, options: { signal?: AbortSignal; timeoutMs: number }) => Promise<AgentOpResult>;
   sealed: (nodeId: number) => Promise<boolean>;
-  /** Must resolve only after exact ordered routing acknowledgement. */
-  route: (nodeId: number, promotion: NodeWakeRoutePromotion, signal?: AbortSignal) => Promise<void>;
+  /** Invoke settlement after exact ordered ACK, before releasing the routing queue slot. */
+  route: (nodeId: number, promotion: NodeWakeRoutePromotion, signal: AbortSignal | undefined, settle: (authority: NodeProxyWriteHead) => Promise<void>) => Promise<void>;
   signal?: AbortSignal;
   log?: (line: string) => void;
 }
@@ -73,8 +73,12 @@ export async function executeNodeWake(db: DB, admission: NodeSleepAdmission, dep
       } else if (current.phase === 'publishing') {
         if (!readyThisRun) await ready();
         const promotion = await prepareNodeWakeRouting(db, admission);
-        await checkpoint(); await deps.route(current.serverId, promotion, deps.signal); await checkpoint();
-        await completeNodeWake(db, admission);
+        await checkpoint();
+        let settled = false;
+        await deps.route(current.serverId, promotion, deps.signal, async authority => {
+          await checkpoint(); await completeNodeWake(db, admission, authority); settled = true;
+        });
+        if (!settled) throw new Error('Node wake routing was not settled');
         return { state: 'completed' };
       } else throw new Error('Node wake phase is invalid');
     }

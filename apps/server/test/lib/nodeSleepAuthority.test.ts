@@ -8,6 +8,7 @@ import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js'
 import { readServiceRuntimeOwner, reserveServiceRuntimeOwner } from '../../src/lib/serviceRuntimeOwner.js';
 import type { NodeIdleEvidence } from '../../src/lib/nodeIdleCoverage.js';
 import { beginCanary, endCanary } from '../../src/engine/canaryState.js';
+import { reserveNodeProxyWrite, bindNodeProxyWrite } from '../../src/lib/nodeProxyAuthority.js';
 
 let f: Awaited<ReturnType<typeof servingReceiptFixture>>;
 const selected = async () => (await f.c.db.query.services.findFirst({ where: eq(services.id, 1) }))!;
@@ -129,7 +130,8 @@ it('admits one fresh pinned-catcher demand and completes wake only after ordered
   const sleeping = await asleep(), incoming = await demand(), wake = (await admitNodeWake(f.c.db, await selected(), incoming))!;
   expect(wake).not.toBeNull(); expect(wake.owner.epoch).toBeGreaterThan(sleeping.owner.epoch);
   expect(await admitNodeWake(f.c.db, await selected(), incoming)).toBeNull();
-  await expect(completeNodeWake(f.c.db, wake)).rejects.toThrow();
+  const head = await bindNodeProxyWrite(f.c.db, (await reserveNodeProxyWrite(f.c.db, 4, { adopt: true }))!, 'acknowledged fixture');
+  await expect(completeNodeWake(f.c.db, wake, head)).rejects.toThrow();
   await advanceNodeSleep(f.c.db, wake, 'accepted', 'fencing');
   await advanceNodeSleep(f.c.db, wake, 'fencing', 'starting');
   await expect(advanceNodeSleep(f.c.db, wake, 'starting', 'readiness')).rejects.toThrow();
@@ -138,7 +140,7 @@ it('admits one fresh pinned-catcher demand and completes wake only after ordered
   await recordNodeWakeStarted(f.c.db, wake, await receipt(wake, 'start'));
   await advanceNodeSleep(f.c.db, wake, 'readiness', 'publishing');
   expect((await selected()).asleepAt).not.toBeNull();
-  await completeNodeWake(f.c.db, wake);
+  await completeNodeWake(f.c.db, wake, head);
   expect((await selected()).asleepAt).toBeNull(); expect((await journal()).phase).toBe('completed');
   expect((await journal()).fallbackRouting).toBe(false);
 });
