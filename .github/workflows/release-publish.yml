@@ -319,7 +319,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases, node-infrastructure]
+        suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases, node-infrastructure, swarm-artifacts]
     permissions:
       # releases API read (previous release) + pulling the GHCR images.
       contents: read
@@ -581,6 +581,31 @@ jobs:
         if: matrix.suite == 'node-infrastructure'
         timeout-minutes: 20
         run: node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --swarm-only
+
+      - name: Verify Swarm pinned artifacts, readiness-held restart recovery and recorded rollback
+        if: matrix.suite == 'swarm-artifacts'
+        timeout-minutes: 15
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --swarm-runtime-only --proof=.temp_files/release-swarm-runtime
+
+      - name: Preserve public Swarm artifact recovery receipts
+        if: always() && matrix.suite == 'swarm-artifacts'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-swarm-runtime
+          path: |
+            .temp_files/release-swarm-runtime/runtime-result.json
+            .temp_files/release-swarm-runtime/runtime-cleanup.json
+            .temp_files/release-swarm-runtime/swarm-source-traffic.json
+            .temp_files/release-swarm-runtime/swarm-target-traffic.json
+            .temp_files/release-swarm-runtime/swarm-failure-traffic.json
+            .temp_files/release-swarm-runtime/swarm-failure-state.json
+            .temp_files/release-swarm-runtime/cases.json
+            .temp_files/release-swarm-runtime/failure-state.json
+          include-hidden-files: true
+          if-no-files-found: warn
 
       # Only synthetic fixture summaries and container names: raw logs may
       # contain sensitive configuration and are deliberately not uploaded.
