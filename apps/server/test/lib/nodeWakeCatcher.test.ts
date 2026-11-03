@@ -13,14 +13,15 @@ vi.mock('../../src/lib/exec.js', () => ({ capture: vi.fn(async (_cmd: string, ar
   if (args[0] === 'logs') return docker.logs;
   if (args[0] === 'run') {
     const keyHash = args.find(arg => arg.startsWith('ninedeploy.wake.key='))!.split('=')[1];
-    docker.containers.set('ninedeploy-wake', `${'c'.repeat(64)}|${AGENT_IMAGE}|true|wake|2026-11-02T10:00:00Z|${keyHash}`);
+    docker.containers.set(args[args.indexOf('--name') + 1]!, `${'c'.repeat(64)}|${args.at(-2)}|true|wake|2026-11-02T10:00:00Z|${keyHash}`);
     return 'c'.repeat(64);
   }
   if (args[0] === 'rm') { for (const [name, row] of docker.containers) if (row.startsWith(args[2]!)) docker.containers.delete(name); return ''; }
+  if (args[0] === 'start') { for (const [name, row] of docker.containers) if (row.startsWith(args[1]!)) docker.containers.set(name, row.replace('|false|', '|true|')); return args[1]; }
   throw new Error(`unexpected docker ${args.join(' ')}`);
 }) }));
 const AGENT_IMAGE = `sha256:${'a'.repeat(64)}`;
-const { ensureWakeCatcher, readWakeDemand, removeWakeCatcher, wakeCatcherRunArgs } = await import('../../src/lib/nodeWakeCatcher.js');
+const { ensureWakeCatcher, prepareWakeCatcher, readWakeDemand, removeWakeCatcher, wakeCatcherRunArgs } = await import('../../src/lib/nodeWakeCatcher.js');
 const TOKEN = '0123456789abcdef'.repeat(2), KEY = 'b'.repeat(64), OTHER_KEY = 'd'.repeat(64);
 const catcherRow = (fields: { id?: string; image?: string; running?: boolean; managed?: string; key?: string } = {}) => {
   const run = wakeCatcherRunArgs(fields.image ?? AGENT_IMAGE, fields.key ?? KEY);
@@ -79,6 +80,72 @@ describe('wake catcher replies', () => {
 });
 
 describe('agent-managed wake catcher', () => {
+  it('prepares a distinct generation while the old backend remains present throughout creation', async () => {
+    const old = catcherRow({ id: 'd'.repeat(64), image: `sha256:${'b'.repeat(64)}` });
+    docker.containers.set('ninedeploy-wake', old);
+    let observed = false;
+    docker.before = async args => {
+      if (args[0] !== 'run') return;
+      observed = true;
+      expect(docker.containers.get('ninedeploy-wake'), 'old backend must survive the real creation boundary').toBe(old);
+    };
+    const prepared = await prepareWakeCatcher({ key: KEY });
+    expect(observed).toBe(true);
+    expect(prepared.name).toMatch(/^ninedeploy-wake-g-[a-f0-9]{32}$/);
+    expect(prepared).toMatchObject({ id: 'c'.repeat(64), image: AGENT_IMAGE, created: true });
+    expect(docker.containers.get('ninedeploy-wake')).toBe(old);
+    expect(docker.calls.some(args => args[0] === 'rm')).toBe(false);
+    docker.calls = [];
+    expect(await prepareWakeCatcher({ key: KEY })).toEqual({ ...prepared, created: false });
+    expect(docker.calls.some(args => args[0] === 'run' || args[0] === 'rm')).toBe(false);
+  });
+  it('keeps the legacy catcher and previous generations when the image or key changes', async () => {
+    const old = catcherRow({ id: 'd'.repeat(64) });
+    docker.containers.set('ninedeploy-wake', old);
+    const first = await prepareWakeCatcher({ key: KEY });
+    const rekeyed = await prepareWakeCatcher({ key: OTHER_KEY });
+    docker.containers.set('ninedeploy-agent', `${'f'.repeat(64)}|sha256:${'e'.repeat(64)}|true||2026-11-02T09:00:00Z|`);
+    const upgraded = await prepareWakeCatcher({ key: KEY });
+    expect(new Set([first.name, rekeyed.name, upgraded.name]).size).toBe(3);
+    expect(docker.containers.has(first.name)).toBe(true);
+    expect(docker.containers.has(rekeyed.name)).toBe(true);
+    expect(docker.containers.get('ninedeploy-wake')).toBe(old);
+    expect(docker.calls.some(args => args[0] === 'rm')).toBe(false);
+  });
+  it('restarts the same stopped candidate without removing any backend', async () => {
+    const prepared = await prepareWakeCatcher({ key: KEY });
+    docker.containers.set(prepared.name, docker.containers.get(prepared.name)!.replace('|true|', '|false|'));
+    docker.calls = [];
+    expect(await prepareWakeCatcher({ key: KEY })).toEqual({ ...prepared, created: false });
+    expect(docker.calls).toContainEqual(['start', prepared.id]);
+    expect(docker.calls.some(args => args[0] === 'run' || args[0] === 'rm')).toBe(false);
+  });
+  it('does not delete a conflicting generation, including a foreign or credential-drifted candidate', async () => {
+    const prepared = await prepareWakeCatcher({ key: KEY });
+    for (const bad of [catcherRow({ managed: '' }), catcherRow({ image: `sha256:${'e'.repeat(64)}` }), catcherRow({ key: OTHER_KEY })]) {
+      docker.containers.set(prepared.name, bad); docker.calls = [];
+      await expect(prepareWakeCatcher({ key: KEY })).rejects.toThrow(/did not create|unexpected image or credential/);
+      expect(docker.containers.get(prepared.name)).toBe(bad);
+      expect(docker.calls.some(args => ['run', 'start', 'rm'].includes(args[0]!))).toBe(false);
+    }
+  });
+  it('leaves the old backend intact when creation fails and rejects caller-selected images or names', async () => {
+    const old = catcherRow({ id: 'd'.repeat(64) }); docker.containers.set('ninedeploy-wake', old);
+    docker.before = async args => { if (args[0] === 'run') throw new Error('daemon unavailable'); };
+    await expect(prepareWakeCatcher({ key: KEY })).rejects.toThrow('daemon unavailable');
+    expect(docker.containers.get('ninedeploy-wake')).toBe(old);
+    expect(docker.calls.some(args => args[0] === 'rm')).toBe(false);
+    docker.calls = [];
+    for (const params of [{}, { key: 'short' }, { key: KEY, name: 'chosen' }, { key: KEY, image: 'chosen' }]) {
+      await expect(prepareWakeCatcher(params)).rejects.toThrow();
+    }
+    expect(docker.calls).toEqual([]);
+  });
+  it('coalesces concurrent preparation into the same generation', async () => {
+    const [first, second] = await Promise.all([prepareWakeCatcher({ key: KEY }), prepareWakeCatcher({ key: KEY })]);
+    expect(second).toEqual({ ...first, created: false });
+    expect(docker.calls.filter(args => args[0] === 'run')).toHaveLength(1);
+  });
   it('serializes concurrent ensures of the one shared catcher', async () => {
     let enter!: () => void, release!: () => void;
     const started = new Promise<void>(resolve => { enter = resolve; });

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { DB } from '@ninedeploy/db';
-import { ensureNodeWakeCatcher, readNodeWakeDemand } from '../../src/lib/nodeWakeCatcherClient.js';
+import { ensureNodeWakeCatcher, prepareNodeWakeCatcher, readNodeWakeDemand } from '../../src/lib/nodeWakeCatcherClient.js';
 
 const io = vi.hoisted(() => ({ agent: vi.fn(), sealed: vi.fn() }));
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: io.agent, agentTransportSealed: io.sealed }));
@@ -29,6 +29,28 @@ it('ensures a catcher only through a sealed capability-checked exchange with a v
   expect(await ensureNodeWakeCatcher(db, 4, key)).toEqual(reply);
   expect(io.agent.mock.calls.at(-1)![3]).toEqual({ key });
   io.agent.mockClear(); await expect(ensureNodeWakeCatcher(db, 4, 'bad')).rejects.toThrow(); expect(io.agent).not.toHaveBeenCalled();
+});
+it('requires the separate preparation capability and a generation name rather than a legacy ensure receipt', async () => {
+  reply = { id: catcher, name: `ninedeploy-wake-g-${'b'.repeat(32)}`, image: `sha256:${'f'.repeat(64)}`, created: true };
+  await expect(prepareNodeWakeCatcher(db, 4, key)).rejects.toThrow();
+  expect(io.agent.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
+  caps.push('wake.catcher.prepare'); io.agent.mockClear();
+  expect(await prepareNodeWakeCatcher(db, 4, key)).toEqual(reply);
+  expect(io.agent.mock.calls.at(-1)![2]).toBe('wake.catcher.prepare');
+  expect(io.agent.mock.calls.at(-1)![3]).toEqual({ key });
+  for (const name of ['ninedeploy-wake', 'another-container', 'ninedeploy-wake-g-bad', undefined]) {
+    reply.name = name; await expect(prepareNodeWakeCatcher(db, 4, key)).rejects.toThrow();
+  }
+});
+it('never prepares over plaintext or after cancellation and validates the credential before I/O', async () => {
+  caps.push('wake.catcher.prepare'); io.sealed.mockResolvedValue(false);
+  await expect(prepareNodeWakeCatcher(db, 4, key)).rejects.toThrow();
+  expect(io.agent.mock.calls.some(call => call[2] === 'wake.catcher.prepare')).toBe(false);
+  io.agent.mockClear(); io.sealed.mockClear();
+  await expect(prepareNodeWakeCatcher(db, 4, 'bad')).rejects.toThrow();
+  const abort = new AbortController(); abort.abort(new Error('cancelled'));
+  await expect(prepareNodeWakeCatcher(db, 4, key, abort.signal)).rejects.toThrow('cancelled');
+  expect(io.agent).not.toHaveBeenCalled(); expect(io.sealed).not.toHaveBeenCalled();
 });
 it.each(['foreign', 'truncated', 'cursor regression', 'future cursor', 'future item', 'before process', 'duplicates', 'oversized count'] as const)('refuses %s demand', async kind => {
   const start = since();
