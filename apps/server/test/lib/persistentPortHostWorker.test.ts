@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -39,6 +40,14 @@ describe('persistent port web acknowledgement', () => {
     const controller = new AbortController(); let received!: AbortSignal;
     const pending = confirmPersistentPortWebPublication(first, async (_challenge, signal) => { received = signal; return new Promise(() => {}); }, { signal: controller.signal });
     await Promise.resolve(); const rejected = expect(pending).rejects.toThrow('control channel closed'); controller.abort('sensitive-fixture-reason'); await rejected; expect(received.aborted).toBe(true);
+  });
+  it('cleans the original cancellation signal when the caller reuses its options object', async () => {
+    const original = new AbortController(), replacement = new AbortController(), options = { signal: original.signal };
+    let release!: (value: unknown) => void, captured!: PersistentPortWebChallenge;
+    const pending = confirmPersistentPortWebPublication(first, challenge => { captured = challenge; return new Promise(resolve => { release = resolve; }); }, options);
+    await Promise.resolve(); options.signal = replacement.signal; release({ ...captured, loaded: true }); await pending;
+    try { expect(getEventListeners(original.signal, 'abort')).toHaveLength(0); }
+    finally { original.abort(); }
   });
   it('does not invoke the coordinator for an already canceled request or invalid deadline', async () => {
     const confirm = vi.fn(acknowledge), controller = new AbortController(); controller.abort();
@@ -96,6 +105,13 @@ describe('target-host publication worker', () => {
     it('does not mutate kernel state when cancellation arrives during readiness', async () => {
       const h = host(), controller = new AbortController(); h.runtime.ready = async () => { controller.abort(); };
       await expect(h.run('promote', first, acknowledge, controller.signal)).rejects.toThrow('control channel closed'); expect(h.events).toEqual([]); expect((await h.run('inspect')).journal).toBeNull();
+    });
+    it('keeps the original controller authoritative when its options object is reused during readiness', async () => {
+      const h = host(), original = new AbortController(), replacement = new AbortController();
+      const options = { directory: h.directory, request: { version: 1 as const, kind: 'promote' as const, spec: first }, runtime: h.runtime, confirmWeb: acknowledge, signal: original.signal };
+      h.runtime.ready = async () => { options.signal = replacement.signal; original.abort(); };
+      await expect(runPersistentPortHostWorker(options)).rejects.toThrow('control channel closed');
+      expect(h.events).toEqual([]); expect((await h.run('inspect')).journal).toBeNull();
     });
     it('refuses malformed action/target requests before creating authority state', async () => {
       const h = host(); await expect(runPersistentPortHostWorker({ directory: h.directory, request: { version: 1, kind: 'retire', spec: first, targetId: 'unsafe' }, runtime: h.runtime, confirmWeb: acknowledge })).rejects.toThrow('Invalid'); expect(h.events).toEqual([]);

@@ -45,8 +45,9 @@ export async function confirmPersistentPortWebPublication(
   confirm: PersistentPortWebConfirmer,
   options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<void> {
+  const signal = options.signal;
   const spec = structuredClone(input), timeout = options.timeoutMs ?? 10_000;
-  persistentPortRules(spec); deadline(timeout); control(options.signal);
+  persistentPortRules(spec); deadline(timeout); control(signal);
   const challenge: PersistentPortWebChallenge = Object.freeze({ version: 1, token: randomBytes(16).toString('hex'),
     serviceId: spec.serviceId, owner: spec.owner, revision: spec.revision, targetId: spec.target.id, fingerprint: persistentPortFingerprint(spec) });
   await new Promise<void>((resolve, reject) => {
@@ -54,11 +55,11 @@ export async function confirmPersistentPortWebPublication(
     let timer: ReturnType<typeof setTimeout> | undefined;
     const finish = (error?: unknown) => {
       if (settled) return;
-      settled = true; clearTimeout(timer); options.signal?.removeEventListener('abort', canceled);
+      settled = true; clearTimeout(timer); signal?.removeEventListener('abort', canceled);
       if (error) { controller.abort(); reject(error); } else resolve();
     };
     const canceled = () => finish(new Error('Persistent port worker control channel closed'));
-    options.signal?.addEventListener('abort', canceled, { once: true });
+    signal?.addEventListener('abort', canceled, { once: true });
     timer = setTimeout(() => finish(new Error('Persistent port web acknowledgement timed out')), timeout);
     Promise.resolve().then(() => {
       if (settled) return undefined;
@@ -89,30 +90,31 @@ export async function runPersistentPortHostWorker(options: {
   acknowledgementTimeoutMs?: number;
   signal?: AbortSignal;
 }): Promise<{ version: 1; kind: PersistentPortWorkerRequest['kind']; journal: PersistentPortJournal | null; retired?: boolean }> {
+  const { directory, runtime, confirmWeb, signal } = options;
   const request = structuredClone(options.request), timeout = options.acknowledgementTimeoutMs ?? 10_000;
   if (!request || request.version !== 1 || !['promote', 'recover', 'rollback', 'retire', 'recover-retirement', 'inspect'].includes(request.kind) ||
     Object.keys(request).some(key => !['version', 'kind', 'spec', 'targetId'].includes(key)) ||
     (request.kind === 'retire' ? !/^[a-f0-9]{64}$/.test(request.targetId ?? '') : request.targetId !== undefined)) {
     throw new Error('Invalid persistent port worker request');
   }
-  persistentPortRules(request.spec); deadline(timeout); control(options.signal);
-  return withPersistentPortJournalStore(options.directory, request.spec, async store => {
-    control(options.signal);
+  persistentPortRules(request.spec); deadline(timeout); control(signal);
+  return withPersistentPortJournalStore(directory, request.spec, async store => {
+    control(signal);
     const invoke = async <T>(operation: () => Promise<T>): Promise<T> => {
-      control(options.signal); const result = await operation(); control(options.signal); return result;
+      control(signal); const result = await operation(); control(signal); return result;
     };
-    const runtime = options.runtime, context = store.context;
+    const context = store.context;
     const publisher = new PersistentPortPublisher({
       // Host authority is already held by the outer journal scope. No second
       // process-local mutex substitutes for the target worker's OS lock.
       exclusive: async operation => operation(),
-      readJournal: async () => { control(options.signal); return store.read(); },
-      saveJournal: async state => { control(options.signal); store.save(state); },
+      readJournal: async () => { control(signal); return store.read(); },
+      saveJournal: async state => { control(signal); store.save(state); },
       installed: table => invoke(() => runtime.installed(context, table)),
       ready: spec => invoke(() => runtime.ready(context, spec)),
       prepare: (spec, retained) => invoke(() => runtime.prepare(context, spec, retained)),
       publish: (spec, replace) => invoke(() => runtime.publish(context, spec, replace)),
-      confirmWeb: spec => confirmPersistentPortWebPublication(spec, options.confirmWeb, { timeoutMs: timeout, signal: options.signal }),
+      confirmWeb: spec => confirmPersistentPortWebPublication(spec, confirmWeb, { timeoutMs: timeout, signal: signal }),
       drained: target => invoke(() => runtime.drained(context, target)),
       retire: target => invoke(() => runtime.retire(context, target)),
     });
