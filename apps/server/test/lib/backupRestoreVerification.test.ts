@@ -3,12 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ calls: [] as string[][], fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', logs: [] as string[] | null, helpers: [] as Array<{ id: string; created: string; name: string }> }));
+const state = vi.hoisted(() => ({ calls: [] as string[][], timeouts: [] as Array<{ args: string[]; timeoutMs: number }>, fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', logs: [] as string[] | null, helpers: [] as Array<{ id: string; created: string; name: string }> }));
+const MONGO_PING = 'db.adminCommand({ ping: 1 }).ok';
 vi.mock('../../src/lib/fileCommandInput.js', () => ({
-  streamFileToCommand: async (_cmd: string, args: string[], file: string) => {
-    state.calls.push(args); state.copied = file;
+  streamFileToCommand: async (_cmd: string, args: string[], file: string, timeoutMs: number) => {
+    state.calls.push(args); state.copied = file; state.timeouts.push({ args, timeoutMs });
     expect(await readFile(file, 'utf8')).toContain(state.custom ? 'PGDMP' : 'CREATE TABLE');
     if (state.fail === 'copy') throw new Error('copy error');
+    if (args.includes('mongorestore') && state.fail === 'restore') throw new Error('File input command did not complete');
   },
 }));
 vi.mock('../../src/lib/exec.js', () => {
@@ -22,7 +24,7 @@ vi.mock('../../src/lib/exec.js', () => {
       for (const line of state.logs) sink(line);
     }),
     capture: vi.fn(async (_cmd: string, args: string[], options: { timeoutMs: number }) => {
-      state.calls.push(args);
+      state.calls.push(args); state.timeouts.push({ args, timeoutMs: options.timeoutMs });
       expect(options.timeoutMs).toBeGreaterThan(0);
       if (args[0] === 'image') {
         if (state.fail === 'image') throw new Error('private daemon error');
@@ -38,7 +40,11 @@ vi.mock('../../src/lib/exec.js', () => {
         expect(await readFile(args[1]!, 'utf8')).toContain(state.custom ? 'PGDMP' : 'CREATE TABLE');
         if (state.fail === 'copy') throw new Error('copy error');
       }
-      if ((args.includes('pg_isready') || args.includes('ping')) && state.fail === 'ready') throw new Error('not ready');
+      if ((args.includes('pg_isready') || args.includes('ping') || args.includes(MONGO_PING)) && state.fail === 'ready') throw new Error('not ready');
+      if (args[0] === 'exec' && args.includes('mongosh') && !args.includes(MONGO_PING)) {
+        if (state.fail === 'query') throw new Error('SECRET_QUERY_RESULT');
+        return state.fail === 'mismatch' ? 'wrong private value\n' : 'known-row\n';
+      }
       if (args[0] === 'exec' && args.includes('restore')) {
         // mysql-family: sh -c <stdin script> restore <dump> <client> …
         if (state.fail === 'restore') throw new Error('SECRET_SQL_DUMP_CONTENT');
@@ -79,7 +85,7 @@ import { pruneRestoreVerificationHelpers, RESTORE_VERIFICATION_MAX_DUMP_BYTES, v
 let directory: string;
 let file: string;
 beforeEach(async () => {
-  state.calls = []; state.fail = ''; state.custom = false; state.copied = ''; state.name = '';
+  state.calls = []; state.timeouts = []; state.fail = ''; state.custom = false; state.copied = ''; state.name = '';
   state.image = `sha256:${'a'.repeat(64)}`; state.oom = ''; state.logs = []; state.helpers = [];
   directory = await mkdtemp(join(tmpdir(), 'nd-restore-test-'));
   file = join(directory, 'source.sql');
@@ -271,6 +277,59 @@ describe('MySQL and MariaDB restore helpers', () => {
   it('refuses an engine without an adapter before any Docker work', async () => {
     await expect(verifyRestore('redis' as never, { file, image: 'redis:8', query: 'GET k', expected: 'v' })).rejects.toThrow(/Unsupported/);
     expect(state.calls).toEqual([]);
+  });
+});
+
+describe('MongoDB restore helper', () => {
+  const query = "db.getSiblingDB('shop').orders.countDocuments()";
+  const run = () => verifyRestore('mongo', { file, image: 'mongo:8.0', query, expected: 'known-row' });
+  const restoreArgv = () => ['exec', '-i', state.name, 'mongorestore', '--host', '127.0.0.1', '--archive', '--gzip', '--stopOnError', '--quiet'];
+  it('streams the archive straight into mongorestore in a hardened helper, with the whole scratch for data', async () => {
+    const result = await run();
+    expect(result).toMatchObject({ status: 'passed', engine: 'mongo', format: 'archive', queryMatched: true, cleanupConfirmed: true });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    for (const flag of ['--read-only', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '--cpus']) expect(create).toContain(flag);
+    expect(create.slice(create.indexOf('--user'), create.indexOf('--user') + 2)).toEqual(['--user', 'mongodb']);
+    expect(create.slice(create.indexOf('--pids-limit'), create.indexOf('--pids-limit') + 2)).toEqual(['--pids-limit', '256']);
+    // The image's VOLUMEs are tmpfs: the 1 GiB scratch holds the data, configdb gets 1 MiB.
+    const tmpfs = create.flatMap((arg, index) => (create[index - 1] === '--tmpfs' ? [arg] : []));
+    expect(tmpfs).toEqual([
+      '/data/db:rw,nosuid,nodev,mode=1777,size=1024m',
+      '/data/configdb:rw,nosuid,nodev,mode=1777,size=1m',
+      '/tmp:rw,nosuid,nodev,mode=1777,size=64m',
+    ]);
+    // No MONGO_INITDB_* variables: no temporary initialization server, no access control.
+    expect(create.filter(arg => arg.startsWith('MONGO'))).toEqual([]);
+    expect(create).toEqual(expect.arrayContaining(['--env', 'HOME=/tmp']));
+    expect(create.at(-1)).toBe(state.image);
+    expect(create.some(arg => ['--mount', '-v', '--volume', '-p', '--publish', '--privileged'].includes(arg))).toBe(false);
+    // mongosh needs about a second to start: a longer readiness budget.
+    expect(state.timeouts.find(entry => entry.args.includes(MONGO_PING))?.timeoutMs).toBe(5000);
+    // Streamed: no copy into the helper, and the restore has the long budget.
+    expect(state.calls.some(args => args.includes('restore-copy'))).toBe(false);
+    expect(state.timeouts.find(entry => entry.args.includes('mongorestore'))).toEqual({ args: restoreArgv(), timeoutMs: 300_000 });
+    expect(state.copied).toBe(file);
+    expect(state.calls.find(args => args.includes('mongosh') && !args.includes(MONGO_PING))).toEqual(['exec', state.name, 'mongosh', '--quiet', '--norc', '--host', '127.0.0.1', '--eval', query]);
+    expect(result.restoreMs).not.toBeNull();
+    expect(state.calls.find(args => args[0] === 'rm')).toEqual(['rm', '-f', '-v', state.name]);
+  });
+  it('fails a corrupt archive on a healthy helper, and a probe mismatch, without exposing either', async () => {
+    state.fail = 'restore';
+    expect(await run()).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore', restoreMs: null, cleanupConfirmed: true });
+    state.fail = 'mismatch';
+    const mismatch = await run();
+    expect(mismatch).toMatchObject({ status: 'failed', queryMatched: false });
+    expect(JSON.stringify(mismatch)).not.toMatch(/wrong private value|getSiblingDB/);
+  });
+  it('is unverifiable when the streamed restore ends with a stopped helper', async () => {
+    state.fail = 'restore'; state.oom = 'stopped';
+    expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+  });
+  it('is unverifiable when mongod never answers the readiness ping', async () => {
+    state.fail = 'ready';
+    expect((await run()).status).toBe('unverifiable');
+    expect(state.calls.filter(args => args.includes(MONGO_PING))).toHaveLength(60);
+    expect(state.calls.some(args => args.includes('mongorestore'))).toBe(false);
   });
 });
 

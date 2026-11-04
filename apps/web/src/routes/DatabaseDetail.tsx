@@ -63,7 +63,7 @@ import { fill, msg, useT } from '../lib/i18n.js';
 /** Engines with an interactive client (`mode: 'client'`); the others get a shell only. */
 export const CLIENT_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb', 'dragonfly']);
 /** R3: engines the panel can restore into an isolated helper (server: RESTORE_VERIFICATION_ENGINES). */
-const RESTORE_VERIFY_ENGINES = new Set(['postgres', 'mysql', 'mariadb']);
+const RESTORE_VERIFY_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'mongo']);
 
 const ENGINE_LABEL: Record<string, string> = {
   postgres: 'PostgreSQL',

@@ -6134,7 +6134,9 @@ export const TR: Readonly<Record<string, string>> = {
   'Attempt {n}': '{n}. deneme',
   'Could not read the log: {error}': 'Log okunamadı: {error}',
   'No output yet.': 'Henüz çıktı yok.',
-  // R3: isolated restore verification of a PostgreSQL, MySQL or MariaDB backup.
+  // R3: isolated restore verification of a PostgreSQL, MySQL, MariaDB or MongoDB backup.
+  "One value is easiest, for example: db.getSiblingDB('shop').orders.countDocuments()": "Tek bir değer en kolayıdır, örneğin: db.getSiblingDB('shop').orders.countDocuments()",
+  'Exactly what mongosh prints for the last expression. EJSON.stringify(…) prints one stable line. The default database is test; address yours with db.getSiblingDB(…).': 'mongosh\'un son ifade için yazdırdığının birebir aynısı. EJSON.stringify(…) tek ve kararlı bir satır yazdırır. Varsayılan veritabanı test\'tir; kendi veritabanınızı db.getSiblingDB(…) ile belirtin.',
   'Exactly what psql prints, without headers. Separate rows with new lines; leave empty for no rows.': 'psql\'in başlıksız olarak yazdırdığının birebir aynısı. Satırları yeni satırla ayırın; satır yoksa boş bırakın.',
   'Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.': 'İstemcinin batch modunda başlıksız olarak yazdırdığının birebir aynısı: sütunlar arasında sekme, her satır ayrı bir satırda, NULL değerler NULL olarak. Veritabanı belirtilmeyen tablo adları app veritabanında aranır; satır yoksa boş bırakın.',
   'Expected output': 'Beklenen çıktı',

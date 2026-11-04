@@ -11,10 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Restore verification for MySQL and MariaDB backups (R3).** **Verify restore** and `backups drill --restore-query … --expect …` now also restore a MySQL or MariaDB backup into an isolated container of the database's own engine image and run your query there.
+- **Restore verification for MySQL, MariaDB and MongoDB backups (R3).** **Verify restore** and `backups drill --restore-query … --expect …` now also restore a MySQL, MariaDB or MongoDB backup into an isolated container of the database's own engine image and run your query there.
   - **Isolation:** the same as PostgreSQL. No network, all capabilities dropped, a read-only root, bounded tmpfs, and the container is removed afterwards.
-  - **Restore:** the whole `--all-databases` dump is restored. The query runs in the `app` database.
-  - **Expected output:** the client's batch output without headers. Columns are separated by a tab, and NULL prints as `NULL`.
+  - **MySQL and MariaDB:** the whole `--all-databases` dump is restored, and the query runs in the `app` database. The expected output is the client's batch output without headers. Columns are separated by a tab, and NULL prints as `NULL`.
+  - **MongoDB:** the archive is streamed into `mongorestore --stopOnError`, so no copy of it lands in the container. The query is a mongosh script, and the expected value is what mongosh prints for its last expression.
 
 ### Fixed
 

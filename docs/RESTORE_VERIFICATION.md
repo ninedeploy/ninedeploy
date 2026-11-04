@@ -1,6 +1,32 @@
 # Isolated restore verification
 
-Status, 2026-11-04: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL and MariaDB. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it. The PostgreSQL adapter passed its real hosted acceptance again on cd3a2a6d. The MySQL-family adapter passed real local checks (below); its hosted cohort must still pass before it counts as native acceptance. The structural `backup drill` is unchanged, and its validators still do not prove a real restore. MongoDB and the other engines, PITR and real recovery-duration reporting remain open, so R3 is not closed.
+Status, 2026-11-04: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB and MongoDB. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
+- **Hosted acceptance, PostgreSQL:** passed again on cd3a2a6d.
+- **Hosted acceptance, MySQL and MariaDB:** passed on 1151cc49 ([run 41901004999](https://github.com/ninedeploy/ninedeploy/actions/runs/41901004999)). The run had 11 cases: PostgreSQL 5, `mysql:9.7` 3 and `mariadb:12.3` 3. Every source was untouched, the dump bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
+- **MongoDB:** passed real local checks (below). Its hosted cohort must still pass before it counts as native acceptance.
+- The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
+- The Redis family and the remaining engines, PITR and real recovery-duration reporting remain open, so R3 is not closed.
+
+**MongoDB (2026-11-04)**
+- **Helper:**
+  - It is the database's own engine image, run as user `mongodb`, with 256 PIDs. mongod, mongorestore's workers and mongosh each run many threads.
+  - The 1 GiB scratch tmpfs is mounted over `/data/db` itself, and `/data/configdb` gets 1 MiB. `/tmp` is a small tmpfs, set as `HOME`, for mongosh's history and logs.
+  - There are no `MONGO_INITDB_*` variables. So there is no temporary initialization server, and no access control. The archive's own admin users are restored as data only.
+- **Restore:** the panel streams the `mongodump --archive --gzip` backup straight into `mongorestore --archive --gzip --stopOnError` on the helper's stdin.
+  - No copy lands in the helper, so the whole scratch is left for data.
+  - `restoreMs` is the streamed restore.
+  - A truncated or corrupt archive makes mongorestore exit non-zero, which is `failed` on a healthy helper.
+- **Readiness** is a mongosh `ping` with a 5 s budget per attempt, because mongosh alone takes about a second to start.
+- **Probe:** the query is a mongosh script, run as `mongosh --quiet --norc --eval`. The expected value is what mongosh prints for the script's last expression.
+  - `EJSON.stringify(…)` gives one stable line.
+  - The default database is `test`; address yours with `db.getSiblingDB(…)`.
+- **Local real checks** used `mongo:8.0` (8.0.34) with a real authenticated `mongodump --archive --gzip`:
+  - the restore returned the known data;
+  - a wrong expected value, a truncated archive and a malformed script were each `failed`;
+  - every helper was confirmed removed.
+  
+  The capacity path is not exercised on MongoDB. A full scratch or memory limit is handled by the shared rule: an OOM kill, or a stopped helper whose log reports no space, is `unverifiable`.
+- **Hosted cohort:** the hosted fixture also covers `mongo:8.0`. It creates a root user like production's, dumps with `dumpCommands`, mutates the source, then verifies the restore, a wrong value and a truncated archive.
 
 **MySQL and MariaDB (2026-11-04)**
 - **One adapter, engine profiles.** `verifyRestore(engine, probe)` runs every engine through the same hardened helper:

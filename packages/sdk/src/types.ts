@@ -201,12 +201,16 @@ export interface BackupDrillResult {
 
 /**
  * R3: the known-data probe of a restore verification. The backup is restored
- * into an isolated, networkless helper of its own engine (PostgreSQL, MySQL or
- * MariaDB) on the panel host and `query` runs there; the drill passes only when
- * the client's output (final newline removed) equals `expected` exactly:
+ * into an isolated, networkless helper of its own engine (PostgreSQL, MySQL,
+ * MariaDB or MongoDB) on the panel host and `query` runs there; the drill
+ * passes only when the client's output (final newline removed) equals
+ * `expected` exactly:
  * - PostgreSQL: psql unaligned, tuples only (`|` between columns).
  * - MySQL/MariaDB: batch mode without headers (a tab between columns, values
  *   unescaped, NULL as `NULL`); unqualified names resolve in the `app` database.
+ * - MongoDB: `query` is a mongosh script; what mongosh prints for its last
+ *   expression (`EJSON.stringify(…)` gives one stable line). The default
+ *   database is `test`; address others with `db.getSiblingDB(…)`.
  * Neither value is stored, logged or audited. At most 16384 bytes each.
  */
 export interface BackupRestoreProbe {

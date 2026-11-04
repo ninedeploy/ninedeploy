@@ -358,7 +358,20 @@ describe('DatabaseDetail', () => {
     expect(api.databases.drillBackup).not.toHaveBeenCalled();
   });
 
-  it('offers restore verification only for PostgreSQL, MySQL and MariaDB databases', async () => {
+  it('explains the MongoDB helper, its mongosh output and how to address a database', async () => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'mongo', name: 'prod-mongo' } as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify restore of backup 101' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Verify restore of backup #101' });
+    expect(dialog).toHaveTextContent('restored into an isolated MongoDB container');
+    expect(dialog).toHaveTextContent("db.getSiblingDB('shop').orders.countDocuments()");
+    expect(dialog).toHaveTextContent('Exactly what mongosh prints for the last expression');
+    expect(dialog).not.toHaveTextContent('SELECT count(*)');
+  });
+
+  it('offers restore verification only for PostgreSQL, MySQL, MariaDB and MongoDB databases', async () => {
     mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'redis', name: 'cache' } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
     mockOf(api.databases.drills).mockResolvedValue([] as any);

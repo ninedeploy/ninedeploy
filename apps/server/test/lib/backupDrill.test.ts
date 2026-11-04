@@ -155,7 +155,7 @@ const restoreCheck = vi.hoisted(() => ({
   blockCleanup: false,
 }));
 vi.mock('../../src/lib/backupRestoreVerification.js', () => ({
-  isRestoreVerificationEngine: (engine: string) => ['postgres', 'mysql', 'mariadb'].includes(engine),
+  isRestoreVerificationEngine: (engine: string) => ['postgres', 'mysql', 'mariadb', 'mongo'].includes(engine),
   verifyRestore: vi.fn(async (engine: string, input: { file: string; image: string; query: string; expected: string }) => {
     restoreCheck.calls.push(input); restoreCheck.engines.push(engine);
     expect(existsSync(input.file)).toBe(true);
@@ -349,6 +349,7 @@ describe('real restore drill staging and history', () => {
     ['mysql', null, 'mysql:9.7'],
     ['mariadb', null, 'mariadb:12.3'],
     ['mysql', '8.4', 'mysql:8.4'],
+    ['mongo', null, 'mongo:8.0'],
   ])('verifies a %s backup (version %s) in its own engine image %s', async (engine, version, image) => {
     const file = await dumpFile('restore-mysql.sql', '-- MySQL dump 10.13\nCREATE TABLE t (id INT);\n-- Dump completed on 2026-11-04 10:00:00\n');
     seed(engine, file, version); complete();
@@ -362,7 +363,7 @@ describe('real restore drill staging and history', () => {
   it('refuses an unsupported engine before inserting history or invoking an engine', async () => {
     seed('redis', join(TMP, 'not-read')); complete();
     const onAdmitted = vi.fn();
-    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/PostgreSQL, MySQL or MariaDB/);
+    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/PostgreSQL, MySQL, MariaDB or MongoDB/);
     expect(dbState.drills.size).toBe(0); expect(restoreCheck.calls).toEqual([]);
     expect(onAdmitted).not.toHaveBeenCalled();
   });

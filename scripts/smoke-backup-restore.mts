@@ -13,6 +13,7 @@ const MYSQL_FAMILY = [
   { engine: 'mysql', image: 'mysql:9.7', client: 'mysql', rootEnv: 'MYSQL_ROOT_PASSWORD', dbEnv: 'MYSQL_DATABASE' },
   { engine: 'mariadb', image: 'mariadb:12.3', client: 'mariadb', rootEnv: 'MARIADB_ROOT_PASSWORD', dbEnv: 'MARIADB_DATABASE' },
 ] as const;
+const MONGO_IMAGE = 'mongo:8.0';
 
 // Every guard precedes the first Docker call. Never run against a local or self-hosted daemon.
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Use an isolated GitHub Actions runner');
@@ -29,7 +30,7 @@ const docker = (args: string[], timeoutMs = 30_000) => capture('docker', args, {
 const query = (sql: string) => docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '-c', sql]);
 const hash = async (file: string) => createHash('sha256').update(await readFile(file)).digest('hex');
 const report: { source: string | undefined; publicApi: boolean; engines: string[]; images: Record<string, string>; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string; cleanupError?: string } = {
-  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine)], images: {}, cases: [], sourceUntouched: false,
+  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo'], images: {}, cases: [], sourceUntouched: false,
   backupBytesUnchanged: false, helperInventoryUnchanged: false, cleanup: false,
 };
 let scratch: string | undefined;
@@ -143,6 +144,58 @@ try {
     assert.equal((await familySql('SELECT value FROM restore_sentinel WHERE id=1')).trim(), 'after');
     assert.equal(await hash(familyDump), digest);
   }
+  {
+    // MongoDB: the managed default image, a root user like production's, and
+    // the panel's own `mongodump --archive --gzip` argv.
+    const mongoSource = `nd-restore-source-mongo-${owner}`;
+    const mongoPassword = randomUUID();
+    const mongoEval = (script: string) => docker(['exec', mongoSource, 'mongosh', '--quiet', '--norc', '--host', '127.0.0.1', '--eval', script]);
+    phase = 'mongo-image-pull';
+    await docker(['pull', MONGO_IMAGE], 300_000);
+    const mongoImage = (await docker(['image', 'inspect', '--format', '{{.Id}}', MONGO_IMAGE])).trim();
+    assert.match(mongoImage, /^sha256:[a-f0-9]{64}$/); report.images.mongo = mongoImage;
+    phase = 'mongo-source-create';
+    familySources.push(mongoSource);
+    // No MONGO_INITDB_* variables: an initialization server would also listen
+    // on 127.0.0.1 and race the readiness ping. The root user production's
+    // dump authenticates as is created below, so the archive carries it too.
+    await docker(['run', '-d', '--name', mongoSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none', mongoImage]);
+    phase = 'mongo-source-readiness';
+    let mongoReady = false;
+    for (let attempt = 0; attempt < 90; attempt++) {
+      try { if ((await mongoEval('db.adminCommand({ ping: 1 }).ok')).trim() === '1') { mongoReady = true; break; } } catch { /* not ready yet */ }
+      await sleep(2000);
+    }
+    assert.equal(mongoReady, true, 'mongo source did not become ready');
+    phase = 'mongo-source-seed';
+    await mongoEval(`db.getSiblingDB('admin').createUser({ user: 'nine', pwd: '${mongoPassword}', roles: ['root'] })`);
+    await mongoEval("db.getSiblingDB('shop').orders.insertMany([{ _id: 1, v: 'before' }, { _id: 2, v: null }])");
+    phase = 'mongo-source-dump';
+    const plan = dumpCommands('mongo', mongoSource, '/tmp/nd-backup.archive', mongoPassword);
+    await docker(plan.dump, 180_000);
+    const mongoDump = join(scratch, 'mongo.archive'); files.push(mongoDump);
+    await docker(['cp', `${mongoSource}:${plan.file}`, mongoDump], 120_000);
+    const digest = await hash(mongoDump);
+    phase = 'mongo-source-mutate';
+    await mongoEval("db.getSiblingDB('shop').orders.updateOne({ _id: 1 }, { $set: { v: 'after' } })");
+    const probe = "EJSON.stringify(db.getSiblingDB('shop').orders.find().sort({ _id: 1 }).toArray())";
+    phase = 'mongo-restore';
+    const restored = await verifyRestore('mongo', { file: mongoDump, image: mongoImage, query: probe, expected: '[{"_id":1,"v":"before"},{"_id":2,"v":null}]' });
+    report.cases.push({ case: phase, verification: restored });
+    assert.equal(restored.status, 'passed'); assert.equal(restored.cleanupConfirmed, true);
+    phase = 'mongo-wrong-data-refusal';
+    const wrong = await verifyRestore('mongo', { file: mongoDump, image: mongoImage, query: probe, expected: '[{"_id":1,"v":"after"},{"_id":2,"v":null}]' });
+    report.cases.push({ case: phase, verification: wrong }); assert.equal(wrong.status, 'failed');
+    phase = 'mongo-truncated-archive-refusal';
+    const truncated = join(scratch, 'mongo-truncated.archive'); files.push(truncated);
+    const archive = await readFile(mongoDump);
+    await writeFile(truncated, archive.subarray(0, Math.floor(archive.length / 2)), { mode: 0o600 });
+    const refused = await verifyRestore('mongo', { file: truncated, image: mongoImage, query: probe, expected: '[]' });
+    report.cases.push({ case: phase, verification: refused }); assert.equal(refused.status, 'failed');
+    phase = 'mongo-source-verification';
+    assert.equal((await mongoEval("db.getSiblingDB('shop').orders.findOne({ _id: 1 }).v")).trim(), 'after');
+    assert.equal(await hash(mongoDump), digest);
+  }
   phase = 'helper-inventory-verification';
   report.sourceUntouched = true;
   report.backupBytesUnchanged = true;
@@ -152,7 +205,7 @@ try {
   report.failure = phase;
   // Only fixed synthetic source commands are eligible: never retain the
   // verifier's SQL, data, probe output or any production database diagnostic.
-  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-1000);
+  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-1000);
 } finally {
   let cleanup = true;
   for (const owned of [...(created ? [name] : []), ...familySources]) {

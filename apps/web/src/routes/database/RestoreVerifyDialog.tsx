@@ -5,11 +5,11 @@ import { useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Field, Modal, Textarea } from '../../components/ui.js';
 
-const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB' };
+const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB' };
 
 /**
- * R3: start an isolated restore verification of one PostgreSQL, MySQL or
- * MariaDB backup. The panel restores it into a networkless helper, runs the
+ * R3: start an isolated restore verification of one PostgreSQL, MySQL,
+ * MariaDB or MongoDB backup. The panel restores it into a networkless helper, runs the
  * operator's query there and compares the output with the expected value. It
  * answers at once (the verdict lands on the drill row the backups table
  * polls), so this dialog closes as soon as the verification is admitted.
@@ -55,7 +55,14 @@ export function RestoreVerifyDialog({ dbId, backupId, engine, onClose }: { dbId:
         <p className="text-sm text-slate-400">
           {t('The backup is restored into an isolated {engine} container on the panel host, with no network. Your query runs there, and the check passes only when its output equals the expected value exactly. The live database is not touched; the query and the value are not stored.', { engine: ENGINE_NAME[engine] ?? engine })}
         </p>
-        <Field label={t('Query')} hint={t('One value is easiest, for example: SELECT count(*) FROM users')}>
+        <Field
+          label={t('Query')}
+          hint={
+            engine === 'mongo'
+              ? t("One value is easiest, for example: db.getSiblingDB('shop').orders.countDocuments()")
+              : t('One value is easiest, for example: SELECT count(*) FROM users')
+          }
+        >
           <Textarea
             required
             rows={3}
@@ -70,7 +77,9 @@ export function RestoreVerifyDialog({ dbId, backupId, engine, onClose }: { dbId:
           hint={
             engine === 'postgres'
               ? t('Exactly what psql prints, without headers. Separate rows with new lines; leave empty for no rows.')
-              : t('Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.')
+              : engine === 'mongo'
+                ? t('Exactly what mongosh prints for the last expression. EJSON.stringify(…) prints one stable line. The default database is test; address yours with db.getSiblingDB(…).')
+                : t('Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.')
           }
         >
           <Textarea

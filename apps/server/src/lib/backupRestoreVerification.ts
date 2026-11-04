@@ -5,7 +5,7 @@ import { capture, ExecOutputTooLargeError, ExecTimeoutError, run, sleep } from '
 import { streamFileToCommand } from './fileCommandInput.js';
 
 /** Engines with an isolated restore adapter. */
-export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb'] as const;
+export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo'] as const;
 export type RestoreVerificationEngine = (typeof RESTORE_VERIFICATION_ENGINES)[number];
 export function isRestoreVerificationEngine(engine: string): engine is RestoreVerificationEngine {
   return (RESTORE_VERIFICATION_ENGINES as readonly string[]).includes(engine);
@@ -23,8 +23,9 @@ export interface RestoreProbe {
 export interface RestoreVerificationResult {
   status: 'passed' | 'failed' | 'unverifiable';
   engine: RestoreVerificationEngine;
-  /** postgres: plain SQL or a custom archive. mysql/mariadb dumps are always plain SQL. */
-  format: 'plain' | 'custom' | null;
+  /** postgres: plain SQL or a custom archive. mysql/mariadb dumps are always
+   *  plain SQL; mongo backups are a gzipped mongodump archive. */
+  format: 'plain' | 'custom' | 'archive' | null;
   imageId: string | null;
   durationMs: number;
   restoreMs: number | null;
@@ -52,15 +53,23 @@ const LOST_SERVER = /Lost connection to (?:MySQL |MariaDB )?server|server has go
 
 interface HelperProfile {
   user: string;
-  /** tmpfs mounts besides the scratch: the socket directory, and 1 MiB mounts
-   *  over the image's VOLUMEs so no anonymous volume ever holds restored data. */
+  /** Where the bounded scratch tmpfs goes: the restored data, and the dump
+   *  copy unless the restore streams it. */
+  scratch: string;
+  /** Other tmpfs mounts: the socket directory, and 1 MiB mounts over the
+   *  image's VOLUMEs so no anonymous volume ever holds restored data. */
   mounts: string[];
   env: string[];
   /** After the image. Both MySQL-family entrypoints prepend their daemon to leading flags. */
   args: string[];
+  pidsLimit: number;
   readyAttempts: number;
+  readyTimeoutMs: number;
   ready: string[];
-  restore(format: 'plain' | 'custom'): string[];
+  /** `stdin`: the panel streams the dump straight into this client, so no
+   *  copy lands in the helper. `file`: the dump is copied into the scratch
+   *  (`DUMP`) first. */
+  restore: { stdin: string[] } | { file(format: 'plain' | 'custom'): string[] };
   query(sql: string): string[];
 }
 const PG_CONNECTION = ['-h', '127.0.0.1', '-U', 'nine', '-d', 'app'];
@@ -72,6 +81,7 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
   if (engine === 'postgres') {
     return {
       user: 'postgres',
+      scratch: '/tmp',
       mounts: [
         '/var/run/postgresql:rw,nosuid,nodev,mode=1777,size=16m',
         '/var/lib/postgresql:rw,nosuid,nodev,mode=1777,size=1m',
@@ -79,15 +89,47 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
       ],
       env: ['PGDATA=/tmp/nd-restore/data', 'POSTGRES_HOST_AUTH_METHOD=trust', 'POSTGRES_USER=nine', 'POSTGRES_DB=app'],
       args: [],
+      pidsLimit: 128,
       readyAttempts: 60,
+      readyTimeoutMs: 1000,
       // The entrypoint's temporary initialization server listens on a Unix
       // socket only. Require TCP so it cannot race the final server startup.
       ready: ['pg_isready', ...PG_CONNECTION],
-      restore: (format) => format === 'custom'
-        ? ['pg_restore', '--exit-on-error', '--single-transaction', ...PG_CONNECTION, DUMP]
-        : ['psql', '-X', '-v', 'ON_ERROR_STOP=1', '--single-transaction', ...PG_CONNECTION, '-f', DUMP],
+      restore: {
+        file: (format) => format === 'custom'
+          ? ['pg_restore', '--exit-on-error', '--single-transaction', ...PG_CONNECTION, DUMP]
+          : ['psql', '-X', '-v', 'ON_ERROR_STOP=1', '--single-transaction', ...PG_CONNECTION, '-f', DUMP],
+      },
       // Unaligned, tuples only: `|` between columns, one line per row.
       query: (sql) => ['psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', ...PG_CONNECTION, '-c', sql],
+    };
+  }
+  if (engine === 'mongo') {
+    // No MONGO_INITDB_* variables: the entrypoint starts mongod directly (no
+    // temporary initialization server) and without access control. The
+    // archive's admin users are restored as data only.
+    const host = ['--host', '127.0.0.1'];
+    return {
+      user: 'mongodb',
+      scratch: '/data/db',
+      mounts: [
+        '/data/configdb:rw,nosuid,nodev,mode=1777,size=1m',
+        // mongosh keeps its history and logs under HOME.
+        '/tmp:rw,nosuid,nodev,mode=1777,size=64m',
+      ],
+      env: ['HOME=/tmp'],
+      args: [],
+      // mongod, mongorestore's workers and mongosh each run many threads.
+      pidsLimit: 256,
+      readyAttempts: 60,
+      // mongosh alone takes about a second to start.
+      readyTimeoutMs: 5000,
+      ready: ['mongosh', '--quiet', '--norc', ...host, '--eval', 'db.adminCommand({ ping: 1 }).ok'],
+      // mongodump --archive --gzip on stdin: the whole scratch is left for data.
+      restore: { stdin: ['mongorestore', ...host, '--archive', '--gzip', '--stopOnError', '--quiet'] },
+      // What mongosh prints for the script's last expression; the default
+      // database is `test`, so address others with db.getSiblingDB(…).
+      query: (sql) => ['mongosh', '--quiet', '--norc', ...host, '--eval', sql],
     };
   }
   const mysql = engine === 'mysql';
@@ -98,6 +140,7 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
   const tcp = ['-uroot', '-h', '127.0.0.1', '--protocol=tcp'];
   return {
     user: 'mysql',
+    scratch: '/tmp',
     mounts: [
       `${mysql ? '/var/run/mysqld' : '/run/mysqld'}:rw,nosuid,nodev,mode=1777,size=16m`,
       '/var/lib/mysql:rw,nosuid,nodev,mode=1777,size=1m',
@@ -106,11 +149,13 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
     // tmpfs does not take native AIO reliably. MySQL's binary log (on by
     // default since 8.0) would only add to the restore's footprint.
     args: ['--datadir=/tmp/nd-restore/data', '--innodb-use-native-aio=0', ...(mysql ? ['--skip-log-bin'] : [])],
+    pidsLimit: 128,
     readyAttempts: 120,
+    readyTimeoutMs: 1000,
     // Both entrypoints initialize with --skip-networking: TCP means the final server.
     ready: [mysql ? 'mysqladmin' : 'mariadb-admin', 'ping', ...tcp],
     // A batch-mode client stops at the first failing statement and exits non-zero.
-    restore: () => ['sh', '-c', STDIN_FROM_FILE, 'restore', DUMP, client, ...tcp],
+    restore: { file: () => ['sh', '-c', STDIN_FROM_FILE, 'restore', DUMP, client, ...tcp] },
     // Tab between columns, one line per row, values unescaped, NULL as `NULL`.
     // Unqualified names resolve in `app`, the managed database.
     query: (sql) => [client, ...tcp, '--batch', '--raw', '--skip-column-names', '--database=app', '-e', sql],
@@ -162,7 +207,9 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       }
       const header = Buffer.alloc(5);
       const { bytesRead } = await handle.read(header, 0, 5, 0);
-      result.format = engine === 'postgres' && bytesRead === 5 && header.toString('ascii') === 'PGDMP' ? 'custom' : 'plain';
+      result.format = engine === 'mongo'
+        ? 'archive'
+        : engine === 'postgres' && bytesRead === 5 && header.toString('ascii') === 'PGDMP' ? 'custom' : 'plain';
     } finally { await handle.close(); }
     // The caller's private staged file is streamed through exec stdin, read by
     // this process: no second plaintext copy on the panel's disk (a crash
@@ -172,8 +219,8 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
     await docker([
       'create', '--name', name, '--label', HELPER_ROLE,
       '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-      '--read-only', '--user', profile.user, '--pids-limit', '128', '--memory', '1536m', '--cpus', '1',
-      '--tmpfs', `/tmp:rw,nosuid,nodev,mode=1777,size=${SCRATCH_MIB}m`,
+      '--read-only', '--user', profile.user, '--pids-limit', String(profile.pidsLimit), '--memory', '1536m', '--cpus', '1',
+      '--tmpfs', `${profile.scratch}:rw,nosuid,nodev,mode=1777,size=${SCRATCH_MIB}m`,
       ...profile.mounts.flatMap((mount) => ['--tmpfs', mount]),
       ...profile.env.flatMap((entry) => ['--env', entry]),
       '--pull', 'never', imageId, ...profile.args,
@@ -182,16 +229,23 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
     let ready = false;
     for (let attempt = 0; attempt < profile.readyAttempts; attempt++) {
       try {
-        await docker(['exec', name, ...profile.ready], 1000);
+        await docker(['exec', name, ...profile.ready], profile.readyTimeoutMs);
         ready = true; break;
       } catch { await sleep(1000); }
     }
     if (!ready) throw new Error('Restore helper did not become ready');
-    await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', DUMP], input.file, 60_000);
-    phase = 'restore';
-    const restoreStarted = Date.now();
-    await docker(['exec', name, ...profile.restore(result.format)], 300_000, 64 * 1024);
-    result.restoreMs = Date.now() - restoreStarted;
+    if ('stdin' in profile.restore) {
+      phase = 'restore';
+      const restoreStarted = Date.now();
+      await streamFileToCommand('docker', ['exec', '-i', name, ...profile.restore.stdin], input.file, 300_000);
+      result.restoreMs = Date.now() - restoreStarted;
+    } else {
+      await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', DUMP], input.file, 60_000);
+      phase = 'restore';
+      const restoreStarted = Date.now();
+      await docker(['exec', name, ...profile.restore.file(result.format === 'custom' ? 'custom' : 'plain')], 300_000, 64 * 1024);
+      result.restoreMs = Date.now() - restoreStarted;
+    }
     phase = 'query';
     const queryStarted = Date.now();
     const output = await docker(['exec', name, ...profile.query(input.query)], 15_000, 16_386);

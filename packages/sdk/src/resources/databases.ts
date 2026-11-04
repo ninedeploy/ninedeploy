@@ -65,7 +65,7 @@ export interface DatabasesApi {
      * a warning. `unverifiable` (r356) means the check could
      * not run at all. Requires the `member` role on the database.
      *
-     * R3: with `restore` (PostgreSQL, MySQL or MariaDB; `admin` role — the probe reads the
+     * R3: with `restore` (PostgreSQL, MySQL, MariaDB or MongoDB; `admin` role — the probe reads the
      * backup like a download does) the backup is really restored into an
      * isolated helper and checked with a known-data query. That takes minutes,
      * so the panel answers at once with `status: 'running'` and
