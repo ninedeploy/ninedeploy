@@ -1,0 +1,44 @@
+name: Host port candidate preparation
+on:
+  pull_request:
+    paths:
+      - 'apps/server/src/engine/builders/docker.ts'
+      - 'scripts/smoke-host-port-preparation.mjs'
+      - 'scripts/fixtures/host-port-preparation-worker.mjs'
+      - '.github/workflows/host-port-preparation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preparation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_CONTEXT: default
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node scripts/smoke-host-port-preparation.mjs
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: host-port-preparation-${{ github.run_id }}
+          path: |
+            .temp_files/host-port-preparation/result.json
+            .temp_files/host-port-preparation/cleanup.json
+            .temp_files/host-port-preparation/*/candidate.json
+            .temp_files/host-port-preparation/*/traffic.json
+            .temp_files/host-port-preparation/*/worker-result.json
+            .temp_files/host-port-preparation/*/worker.log
+            .temp_files/host-port-preparation/*/commands.jsonl
+            .temp_files/host-port-preparation/*/build.log
+            .temp_files/host-port-preparation/*/failure-*.json
+            .temp_files/host-port-preparation/*/failure-*.log
+          include-hidden-files: true
