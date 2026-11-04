@@ -20,6 +20,7 @@ import {
 import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { pruneDrillLeftovers } from '../lib/backupDrill.js';
+import { pruneRestoreVerificationHelpers } from '../lib/backupRestoreVerification.js';
 import { deleteLog, pruneOldLogs } from '../engine/logs.js';
 import { pruneResetTokens } from '../lib/passwordReset.js';
 import { executeAutoPrune, getAutoPruneStatus } from '../engine/autoPrune.js';
@@ -113,6 +114,12 @@ const COLD_CACHE_ROW_MAX_AGE_MS = AUDIT_MAX_AGE_MS;
  * cleanup ran. Short, but far longer than any drill validates a dump.
  */
 const DRILL_LEFTOVER_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+/**
+ * R3: a restore-verification helper (decrypted dump + restored database in its
+ * tmpfs) lives at most ~10 minutes while its verifier runs; one older than this
+ * belongs to a panel process that died before its cleanup.
+ */
+const RESTORE_HELPER_MAX_AGE_MS = 60 * 60 * 1000;
 /**
  * Never swept, whatever their age:
  *   • the in-flight statuses — the worker and the pipeline still write to them;
@@ -518,6 +525,7 @@ export default fp(
           failInterruptedJobRuns(fastify.db, new Date(now - INTERRUPTED_OPERATION_MAX_AGE_MS)),
         );
         await step('drill-leftovers', () => pruneDrillLeftovers([config.paths.backupsDir, tmpdir()], DRILL_LEFTOVER_MAX_AGE_MS));
+        await step('restore-verification-helpers', () => pruneRestoreVerificationHelpers(RESTORE_HELPER_MAX_AGE_MS));
         await step('export-leftovers', () => pruneExportLeftovers(EXPORT_LEFTOVER_MAX_AGE_MS));
         await step('metric-history', () => pruneMetricHistory(fastify));
         await step('resource-metric-history', () => pruneServiceMetrics(fastify.db, new Date(now)));

@@ -27,3 +27,17 @@ Remaining work includes encrypted/remote backup staging and persisted drill hist
 The internal drill runner now accepts an explicit restore probe and reuses encrypted/remote staging plus persisted history. It refuses non-PostgreSQL engines and incomplete/non-database backups before inserting a row. Restore mode records coarse verdicts, immutable image identity and timings, never probe SQL, expected values or restored output. Its private staging cleanup is mandatory. Ten new behavior checks initially failed or exposed missing cleanup, then the covering five-file suite passed **124 tests**, server typecheck, lint and diff checks. These staging/history checks use real temporary files with mocked remote/crypto/adapter boundaries; a real encrypted/remote public flow is not yet accepted. The existing public structural drill remains unchanged.
 
 A partial remote download also exposed a real staging leak: fetch ran before the protected cleanup block. The unchanged regression observed the partial file remaining, then passed after fetch moved inside that block. Restore/setup exceptions become a sanitized `unverifiable` result, and a failed plaintext cleanup prevents success. The SDK's normal 30-second request budget requires asynchronous public admission and polling rather than a long synchronous restore request; that API, permission and client integration remains next.
+
+### Crash leftovers and capacity verdicts — 2026-11-04
+
+These pre-wiring fixes came out of a code review of the adapter. Its public route still never passes a restore probe.
+- **No second plaintext copy.** The verifier no longer copies the decrypted dump into `<tmpdir>/nd-restore-verification-*/`. It streams the caller's private staged file directly. Before, a panel crash between the copy and cleanup left a plaintext dump that `pruneDrillLeftovers` never matched.
+- **Leftover helpers are swept.** Housekeeping step `restore-verification-helpers` removes leftover helpers hourly. A helper holds the decrypted dump and restored data in its tmpfs. The step only removes containers that meet all three conditions:
+  - they carry the `ninedeploy.role=restore-verification` label;
+  - they have the exact generated `ninedeploy-restore-check-<uuid>` name;
+  - they are older than one hour, far above one verification's bounded lifetime.
+- **Capacity is `unverifiable`, not `failed`.** Before, running out of the helper's bounds returned `failed`, which reads as "this backup does not restore". Now a dump larger than half of the 1 GiB scratch is refused before any helper exists. A restore or query error is also `unverifiable` in three cases:
+  - an engine out-of-space or out-of-memory message, used only as a boolean;
+  - a cgroup OOM kill;
+  - unreadable helper state.
+- **Tests.** Seven new or changed unit cases failed on the previous source and pass now. These are mocked-Docker component checks. The hosted `restore_verification` cohort must be re-run on this source before it counts as native acceptance.

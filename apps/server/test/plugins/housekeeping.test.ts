@@ -43,6 +43,9 @@ const previewCopies = vi.hoisted(() => ({ sweepOrphanPreviewCopies: vi.fn(async 
 vi.mock('../../src/lib/previewDatabases.js', () => previewCopies);
 const drillMock = vi.hoisted(() => ({ pruneDrillLeftovers: vi.fn(async () => 0) }));
 vi.mock('../../src/lib/backupDrill.js', () => drillMock);
+// R3 restore-helper sweep (tested in test/lib/backupRestoreVerification.test.ts).
+const restoreHelpers = vi.hoisted(() => ({ pruneRestoreVerificationHelpers: vi.fn(async (..._a: unknown[]) => 0) }));
+vi.mock('../../src/lib/backupRestoreVerification.js', () => restoreHelpers);
 vi.mock('../../src/engine/autoPrune.js', () => ({
   getAutoPruneStatus: autoPruneMock.getAutoPruneStatus,
   executeAutoPrune: autoPruneMock.executeAutoPrune,
@@ -172,6 +175,9 @@ describe('housekeeping plugin', () => {
       expect.arrayContaining([expect.stringContaining('backups')]),
       expect.any(Number),
     );
+    // R3: crashed restore-verification helpers (plaintext dump in tmpfs) go
+    // too, with an age floor far above one verification's bounded lifetime.
+    expect(restoreHelpers.pruneRestoreVerificationHelpers).toHaveBeenCalledWith(60 * 60 * 1000);
     await app.close();
   });
 

@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ calls: [] as string[][], fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}` }));
+const state = vi.hoisted(() => ({ calls: [] as string[][], fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', helpers: [] as Array<{ id: string; created: string; name: string }> }));
 vi.mock('../../src/lib/fileCommandInput.js', () => ({
   streamFileToCommand: async (_cmd: string, args: string[], file: string) => {
     state.calls.push(args); state.copied = file;
@@ -36,6 +36,7 @@ vi.mock('../../src/lib/exec.js', () => {
       if (args.includes('pg_isready') && state.fail === 'ready') throw new Error('not ready');
       if (args[0] === 'exec' && (args.includes('-f') || args.includes('pg_restore'))) {
         if (state.fail === 'restore') throw new Error('SECRET_SQL_DUMP_CONTENT');
+        if (state.fail === 'enospc') throw new Error('`docker` exited 1: ERROR:  could not extend file "base/16384/16390": No space left on device');
         if (state.fail === 'timeout') throw new ExecTimeoutError('secret');
       }
       if (args.includes('-c')) {
@@ -43,19 +44,29 @@ vi.mock('../../src/lib/exec.js', () => {
         if (state.fail === 'output') throw new ExecOutputTooLargeError('secret');
         return state.fail === 'mismatch' ? 'wrong private value\n' : 'known-row\n';
       }
+      if (args[0] === 'inspect' && args.includes('{{.State.OOMKilled}}')) {
+        if (state.oom === 'unreadable') throw new Error('daemon hiccup');
+        return `${state.oom === 'killed'}\n`;
+      }
+      if (args[0] === 'inspect' && args.includes('{{.Created}} {{.Name}}')) {
+        const helper = state.helpers.find(h => h.id === args.at(-1));
+        if (!helper || helper.name === 'VANISHED') throw new Error('No such object');
+        return `${helper.created} ${helper.name}\n`;
+      }
+      if (args[0] === 'ps' && args.includes('label=ninedeploy.role=restore-verification')) return state.helpers.map(h => h.id).join('\n');
       if (args[0] === 'rm' && state.fail === 'cleanup') throw new Error('offline');
       if (args[0] === 'ps') return state.fail === 'retained' ? `${'b'.repeat(64)}\n` : '';
       return '';
     }),
   };
 });
-import { verifyPostgresRestore } from '../../src/lib/backupRestoreVerification.js';
+import { pruneRestoreVerificationHelpers, RESTORE_VERIFICATION_MAX_DUMP_BYTES, verifyPostgresRestore } from '../../src/lib/backupRestoreVerification.js';
 
 let directory: string;
 let file: string;
 beforeEach(async () => {
   state.calls = []; state.fail = ''; state.custom = false; state.copied = ''; state.name = '';
-  state.image = `sha256:${'a'.repeat(64)}`;
+  state.image = `sha256:${'a'.repeat(64)}`; state.oom = ''; state.helpers = [];
   directory = await mkdtemp(join(tmpdir(), 'nd-restore-test-'));
   file = join(directory, 'source.sql');
   await writeFile(file, 'CREATE TABLE known(id text);');
@@ -79,7 +90,9 @@ describe('isolated real PostgreSQL restore verifier orchestration', () => {
     expect(state.calls.find(args => args.includes('-f'))).toEqual(expect.arrayContaining(['-X', 'ON_ERROR_STOP=1', '--single-transaction']));
     expect(state.calls.find(args => args[0] === 'rm')).toEqual(['rm', '-f', '-v', state.name]);
     expect(state.calls.at(-1)?.[0]).toBe('ps');
-    await expect(readFile(state.copied)).rejects.toMatchObject({ code: 'ENOENT' });
+    // The caller's private staged file is streamed as-is: no second plaintext
+    // copy on the panel's disk for a crash to leave behind.
+    expect(state.copied).toBe(file);
   });
   it('uses the archive restore tool for custom dumps with strict error handling', async () => {
     state.custom = true; await writeFile(file, 'PGDMP custom fixture');
@@ -110,5 +123,63 @@ describe('isolated real PostgreSQL restore verifier orchestration', () => {
     state.image = 'not-an-immutable-image';
     expect((await verify()).status).toBe('unverifiable');
     expect(state.calls.some(args => args[0] === 'create')).toBe(false);
+  });
+});
+
+describe('bounded helper capacity is never reported as a broken backup', () => {
+  const capacity = 'Backup exceeds the bounded restore verification capacity';
+  it('refuses a dump too large for the scratch before any helper or copy exists', async () => {
+    const handle = await open(file, 'r+');
+    try { await handle.truncate(RESTORE_VERIFICATION_MAX_DUMP_BYTES + 1); } finally { await handle.close(); }
+    const result = await verify();
+    expect(result).toMatchObject({ status: 'unverifiable', error: capacity, cleanupConfirmed: true });
+    expect(state.calls.some(args => args[0] === 'create')).toBe(false);
+    expect(state.copied).toBe('');
+  });
+  it('reports an out-of-space restore as unverifiable, without keeping the engine message', async () => {
+    state.fail = 'enospc';
+    const result = await verify();
+    expect(result).toMatchObject({ status: 'unverifiable', error: capacity, cleanupConfirmed: true });
+    expect(JSON.stringify(result)).not.toMatch(/base\/16384|No space/);
+  });
+  it('reports a cgroup OOM kill during restore as unverifiable', async () => {
+    state.fail = 'restore'; state.oom = 'killed';
+    const result = await verify();
+    expect(result).toMatchObject({ status: 'unverifiable', error: capacity });
+    expect(JSON.stringify(result)).not.toMatch(/SECRET/);
+  });
+  it('does not blame the backup when the helper state cannot be read', async () => {
+    state.fail = 'restore'; state.oom = 'unreadable';
+    expect((await verify()).status).toBe('unverifiable');
+  });
+  it('still fails a genuine restore error on a healthy helper', async () => {
+    state.fail = 'restore'; state.oom = 'healthy';
+    expect(await verify()).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore' });
+  });
+});
+
+describe('crashed restore helpers are swept', () => {
+  const uuid = '0f1e2d3c-4b5a-4968-8776-655443322110';
+  const now = Date.parse('2026-11-04T12:00:00Z');
+  it('removes only labelled helpers with the generated name that outlived the age floor', async () => {
+    state.helpers = [
+      { id: 'a'.repeat(64), created: '2026-11-04T10:00:00.123456789Z', name: `/ninedeploy-restore-check-${uuid}` },
+      { id: 'b'.repeat(64), created: '2026-11-04T11:55:00Z', name: `/ninedeploy-restore-check-${uuid}` },
+      { id: 'c'.repeat(64), created: '2026-11-04T09:00:00Z', name: '/someone-elses-container' },
+      { id: 'd'.repeat(64), created: 'not-a-date', name: `/ninedeploy-restore-check-${uuid}` },
+    ];
+    expect(await pruneRestoreVerificationHelpers(60 * 60 * 1000, now)).toBe(1);
+    const removed = state.calls.filter(args => args[0] === 'rm');
+    expect(removed).toEqual([['rm', '-f', '-v', 'a'.repeat(64)]]);
+  });
+  it('keeps sweeping after one container vanishes mid-scan, and ignores non-id lines', async () => {
+    state.helpers = [
+      { id: 'f'.repeat(64), created: '', name: 'VANISHED' },
+      { id: 'not-a-container-id', created: '2026-11-04T08:00:00Z', name: `/ninedeploy-restore-check-${uuid}` },
+      { id: 'e'.repeat(64), created: '2026-11-04T08:00:00Z', name: `/ninedeploy-restore-check-${uuid}` },
+    ];
+    expect(await pruneRestoreVerificationHelpers(60 * 60 * 1000, now)).toBe(1);
+    expect(state.calls.filter(args => args[0] === 'rm')).toEqual([['rm', '-f', '-v', 'e'.repeat(64)]]);
+    expect(state.calls.some(args => args.includes('not-a-container-id'))).toBe(false);
   });
 });
