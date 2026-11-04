@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   activityList, alertsCreate, alertsList, alertsRemove,
-  backupsCreate, backupsList, backupsRestore,
+  backupsCreate, backupsDrill, backupsList, backupsRestore,
   deploysWatch, domainsAdd, domainsList, domainsRemove, domainsVerify,
   envList, envRemove, envSet, networksCreate, networksList, networksRemove,
   sessionsList, sessionsRevoke, systemExport, systemImport,
@@ -305,6 +305,76 @@ describe('sessions commands', () => {
     const client = { auth: { sessions: { revoke: vi.fn().mockResolvedValue({ ok: true }) } } };
     await sessionsRevoke(client as never, '7');
     expect(client.auth.sessions.revoke).toHaveBeenCalledWith(7);
+  });
+});
+
+describe('backups drill — R3 restore verification', () => {
+  const admitted = { ok: true, pending: true, drillId: 41, status: 'running', durationMs: 0, details: null, error: null };
+  const drillRow = (status: string, error: string | null = null) => ({
+    id: 41, databaseId: 2, backupId: 8, status, engine: 'postgres', durationMs: 1500, error, details: { verification: 'restore' }, startedAt: 1, completedAt: 2,
+  });
+
+  it('sends the probe, polls the drill until its verdict and exits 0 on a pass', async () => {
+    const drill = vi.fn().mockResolvedValueOnce(drillRow('running')).mockResolvedValueOnce(drillRow('passed'));
+    const client = { databases: { drillBackup: vi.fn().mockResolvedValue(admitted), drill } };
+    await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1', expect: '1', pollMs: 1 });
+    expect(client.databases.drillBackup).toHaveBeenCalledWith(2, { backupId: 8, restore: { query: 'SELECT 1', expected: '1' } });
+    expect(drill).toHaveBeenCalledTimes(2);
+    expect(drill).toHaveBeenCalledWith(2, 41);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('passed the drill'));
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('keeps an empty --expect (a query with no rows) and exits 1 on a failed verdict', async () => {
+    const client = { databases: { drillBackup: vi.fn().mockResolvedValue(admitted), drill: vi.fn().mockResolvedValue(drillRow('failed', 'Restored data did not match the expected probe result')) } };
+    await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1 WHERE false', expect: '', pollMs: 1 });
+    expect(client.databases.drillBackup).toHaveBeenCalledWith(2, { backupId: 8, restore: { query: 'SELECT 1 WHERE false', expected: '' } });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('did not match'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('exits 2 when the verification could not run', async () => {
+    const client = { databases: { drillBackup: vi.fn().mockResolvedValue(admitted), drill: vi.fn().mockResolvedValue(drillRow('unverifiable', 'Backup exceeds the bounded restore verification capacity')) } };
+    await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1', expect: '1', pollMs: 1 });
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('could not be verified'));
+    expect(process.exitCode).toBe(2);
+  });
+
+  it('--no-wait returns after admission without polling', async () => {
+    const client = { databases: { drillBackup: vi.fn().mockResolvedValue(admitted), drill: vi.fn() } };
+    await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1', expect: '1', wait: false });
+    expect(client.databases.drill).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('drill #41'));
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('gives up waiting at the deadline and names the drill to check later', async () => {
+    const client = { databases: { drillBackup: vi.fn().mockResolvedValue(admitted), drill: vi.fn().mockResolvedValue(drillRow('running')) } };
+    await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1', expect: '1', pollMs: 1, timeoutMs: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('drill #41 is still running'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('refuses --restore-query without --expect (and the reverse) before calling the panel', async () => {
+    const client = { databases: { drillBackup: vi.fn() } };
+    await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1' });
+    await backupsDrill(client as never, '2', '8', { expect: '1' });
+    expect(client.databases.drillBackup).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports a refused admission (e.g. busy, or not a PostgreSQL database)', async () => {
+    const client = { databases: { drillBackup: vi.fn().mockRejectedValue(new Error('Another restore verification is running on this panel.')) } };
+    await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1', expect: '1' });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Another restore verification'));
+  });
+
+  it('runs the structural drill unchanged without restore options', async () => {
+    const client = { databases: { drillBackup: vi.fn().mockResolvedValue({ ok: true, drillId: 9, status: 'passed', durationMs: 12, details: null, error: null }), drill: vi.fn() } };
+    await backupsDrill(client as never, '2', '8');
+    expect(client.databases.drillBackup).toHaveBeenCalledWith(2, { backupId: 8 });
+    expect(client.databases.drill).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(0);
   });
 });
 

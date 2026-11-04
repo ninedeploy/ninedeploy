@@ -35,6 +35,7 @@ export type {
   ApplyManifestInput,
   BackupDrillResult,
   BackupDrillEntry,
+  BackupRestoreProbe,
   LogSearchInput,
   LogSearchLine,
   LogSearchResult,

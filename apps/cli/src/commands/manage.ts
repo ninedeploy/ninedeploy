@@ -373,14 +373,54 @@ export async function backupsRestore(client: NineDeployClient, idStr: string, ba
  * (pg_restore --list, redis-check-rdb, mysqldump header parse,
  * ...) and is safe to run on production backups because it
  * never touches the live container.
+ *
+ * R3: `--restore-query <sql> --expect <value>` (PostgreSQL, database admin)
+ * restores the backup into an isolated, networkless helper and runs the
+ * query there; the panel answers at once and the CLI polls the drill until
+ * its verdict (`--no-wait` returns right after admission).
  */
-export async function backupsDrill(client: NineDeployClient, idStr: string, backupIdStr: string): Promise<void> {
+export async function backupsDrill(
+  client: NineDeployClient,
+  idStr: string,
+  backupIdStr: string,
+  opts: { restoreQuery?: string; expect?: string; wait?: boolean; pollMs?: number; timeoutMs?: number } = {},
+): Promise<void> {
   const id = num(idStr, 'Usage: ninedeploy backups drill <databaseId> <backupId>');
   const backupId = num(backupIdStr, 'Usage: ninedeploy backups drill <databaseId> <backupId>');
+  // R3: --restore-query really restores the backup into an isolated PostgreSQL
+  // helper and compares the query's output with --expect (empty allowed).
+  if ((opts.restoreQuery === undefined) !== (opts.expect === undefined)) {
+    error('--restore-query and --expect go together: the drill passes only when the query prints exactly the expected value.');
+    process.exitCode = 1;
+    return;
+  }
+  const restore = opts.restoreQuery !== undefined ? { query: opts.restoreQuery, expected: opts.expect! } : undefined;
   let result: Awaited<ReturnType<NineDeployClient['databases']['drillBackup']>>;
   try {
-    result = await spinner('Drilling', () => client.databases.drillBackup(id, { backupId }));
+    result = await spinner(restore ? 'Starting restore verification' : 'Drilling', () =>
+      client.databases.drillBackup(id, restore ? { backupId, restore } : { backupId }));
   } catch (err) { fail(err); return; }
+  if (result.status === 'running') {
+    if (opts.wait === false) {
+      info(`Restore verification started as drill #${result.drillId}. See it with: ninedeploy backups drills ${id}`);
+      return;
+    }
+    // The verdict is not in the 202 answer: poll the drill until it settles.
+    const pollMs = opts.pollMs ?? 3000;
+    const deadline = Date.now() + (opts.timeoutMs ?? 20 * 60_000);
+    try {
+      result = await spinner(`Restoring backup #${backupId} into an isolated helper`, async () => {
+        for (;;) {
+          const drill = await client.databases.drill(id, result.drillId);
+          if (drill.status !== 'running' && drill.status !== 'pending') {
+            return { ok: true, drillId: drill.id, status: drill.status, durationMs: drill.durationMs, details: drill.details, error: drill.error } as typeof result;
+          }
+          if (Date.now() >= deadline) throw new Error(`drill #${result.drillId} is still running; see it with: ninedeploy backups drills ${id}`);
+          await new Promise((resolve) => setTimeout(resolve, pollMs));
+        }
+      });
+    } catch (err) { fail(err); return; }
+  }
   if (result.status === 'passed') {
     success(`Backup #${backupId} passed the drill in ${result.durationMs} ms.`);
   } else if (result.status === 'unverifiable') {

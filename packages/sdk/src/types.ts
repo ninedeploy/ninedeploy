@@ -188,11 +188,27 @@ export interface BackupDrillResult {
   drillId: number;
   ok: true;
   /** `unverifiable` (r356): the check could not run — docker, the engine
-   *  image or its tool unavailable, or a timeout. Not a verdict on the backup. */
-  status: 'passed' | 'failed' | 'unverifiable';
+   *  image or its tool unavailable, or a timeout. Not a verdict on the backup.
+   *  `running` (R3): a restore verification was admitted (HTTP 202) and is
+   *  still running — poll `databases.drill(id, drillId)` for its verdict. */
+  status: 'passed' | 'failed' | 'unverifiable' | 'running';
+  /** R3: set when the verdict is not in this response (restore verification). */
+  pending?: true;
   durationMs: number;
   details: Record<string, unknown> | null;
   error: string | null;
+}
+
+/**
+ * R3: the known-data probe of a restore verification. The backup is restored
+ * into an isolated, networkless PostgreSQL helper on the panel host and
+ * `query` runs there; the drill passes only when psql's unaligned, tuples-only
+ * output (final newline removed) equals `expected` exactly. Neither value is
+ * stored, logged or audited. At most 16384 bytes each.
+ */
+export interface BackupRestoreProbe {
+  query: string;
+  expected: string;
 }
 
 /** History row from `GET /v1/databases/:id/drills`. */

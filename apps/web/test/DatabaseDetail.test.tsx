@@ -311,6 +311,60 @@ describe('DatabaseDetail', () => {
     expect(await screen.findByText('Backup not found')).toBeInTheDocument();
   });
 
+  // R3: isolated restore verification of a PostgreSQL backup.
+  it('starts a restore verification with the probe and closes once it is admitted', async () => {
+    mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([] as any);
+    mockOf(api.databases.drillBackup)
+      .mockRejectedValueOnce(new Error('Another restore verification is running on this panel.'))
+      .mockResolvedValueOnce({ ok: true, pending: true, drillId: 9, status: 'running', durationMs: 0, details: null, error: null } as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify restore of backup 101' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Verify restore of backup #101' });
+    const start = screen.getByRole('button', { name: 'Start verification' });
+    // No query, no verification.
+    expect(start).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Query'), { target: { value: 'SELECT count(*) FROM users' } });
+    fireEvent.change(screen.getByLabelText('Expected output'), { target: { value: '42' } });
+    // A refusal keeps the dialog open with the panel's reason.
+    fireEvent.click(start);
+    expect(await screen.findByText('Another restore verification is running on this panel.')).toBeInTheDocument();
+    expect(dialog).toBeInTheDocument();
+    fireEvent.click(start);
+    await waitFor(() => expect(api.databases.drillBackup).toHaveBeenLastCalledWith(1, { backupId: 101, restore: { query: 'SELECT count(*) FROM users', expected: '42' } }));
+    expect(await screen.findByText('Restore verification started')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('polls a running verification, holds new ones until it settles and labels the restore verdict', async () => {
+    mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    const drill = (status: string) => ({ id: 9, databaseId: 1, backupId: 101, status, engine: 'postgres', durationMs: 900, error: null, details: { verification: 'restore' }, startedAt: Date.parse('2026-08-17T15:00:00.000Z'), completedAt: null });
+    mockOf(api.databases.drills).mockResolvedValueOnce([drill('running')] as any).mockResolvedValue([drill('passed')] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    const verify = await screen.findByRole('button', { name: 'Verify restore of backup 101' });
+    await waitFor(() => expect(verify).toBeDisabled());
+    // The 3-second poll picks up the verdict without a reload.
+    await waitFor(() => expect(screen.getByText('passed')).toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.getByText('passed').closest('[title]')?.getAttribute('title')).toMatch(/^Restore verified /);
+    expect(verify).not.toBeDisabled();
+    // The dialog's Cancel closes it without starting anything.
+    fireEvent.click(verify);
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.databases.drillBackup).not.toHaveBeenCalled();
+  });
+
+  it('offers restore verification only for PostgreSQL databases', async () => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'redis', name: 'cache' } as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    expect(await screen.findByRole('button', { name: 'Check backup 101' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verify restore of backup 101' })).not.toBeInTheDocument();
+  });
+
   it('handles restore failure and download error responses', async () => {
     mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);

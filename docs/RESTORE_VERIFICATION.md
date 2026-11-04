@@ -1,6 +1,20 @@
 # Isolated restore verification
 
-Status, 2026-11-03: the internal PostgreSQL restore adapter passed its real hosted acceptance and independent receipt verification. Public API/SDK/CLI/panel integration is pending. Existing `backup drill` behavior is unchanged: its structural validators do not prove a real restore. This increment does not implement PITR or close R3.
+Status, 2026-11-04: PostgreSQL restore verification is public. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it. The adapter passed its real hosted acceptance again on cd3a2a6d. The structural `backup drill` is unchanged, and its validators still do not prove a real restore. Other engines, PITR and real recovery-duration reporting remain open, so R3 is not closed.
+
+**Public integration (2026-11-04)**
+- **Endpoint:** `POST /v1/databases/:id/backups/drill` accepts `restore: { query, expected }`.
+  - **Role:** this needs the `admin` role on the database, because the probe is a yes/no oracle over the backup's contents, like a download. The structural drill still needs only `member`.
+  - **Validation:** the body is validated before any work: an object with exactly `query` (non-empty) and `expected`, each at most 16,384 bytes.
+  - **Response:** the panel answers `202 { pending: true, status: 'running', drillId }` as soon as the `running` row exists, through `runBackupDrill`'s `onAdmitted`. The restore then finishes in the background.
+  - **Concurrency:** one verification runs per panel process at a time; a second gets 409 `restore_verification_busy`. A refusal before admission frees the slot, and so does a failure after it.
+  - **Audit:** the start and the verdict are both audited as `backup.drill`, never with the probe.
+- **Polling:** the new endpoint `GET /v1/databases/:id/drills/:drillId` returns one drill (viewer). Another database's drill reads as 404.
+- **Panel restarts:** the boot sweep marks a drill that was `running` when the panel restarted as `unverifiable`. The `restore-verification-helpers` step removes its helper.
+- **Engine image:** before staging, the runner calls `ensureDockerImage` on the PostgreSQL engine image, because a node database's image may exist only on its node. If the pull fails, the drill is `unverifiable` before anything is decrypted.
+- **SDK:** `drillBackup(id, { backupId, restore })`, `drill(id, drillId)` and the `BackupRestoreProbe` type; `BackupDrillResult.status` now also takes `running`.
+- **CLI:** `backups drill … --restore-query <sql> --expect <value> [--no-wait]` polls until the verdict. Exit codes are 0 for passed, 1 for failed or a timed-out wait, and 2 for unverifiable.
+- **Panel:** the Backups tab has **Verify restore** for PostgreSQL. It polls every 3 s while a drill is running, and labels a passed restore verdict "Restore verified".
 
 Accepted component evidence: [run 41649048270](https://github.com/ninedeploy/ninedeploy/actions/runs/41649048270), frozen source `608fe3f094d952d0aff4b9073a340e2d708b2bee`; its tree matches local `34c3c4ad896c6c5fb6955dbad265d9419bab166f` before this documentation update. Both real plain/custom restores returned the known earlier value after the separate source had changed. Wrong expected data, invalid SQL and an unavailable extension produced the required failed verdicts. All five helpers confirmed cleanup; the source retained its newer value, original dump hashes and helper inventory were unchanged, and owned source/scratch cleanup passed. Independent receipt verification is retained at `.temp_files/restore-verification-41649048270/restore-verification-41649048270/independent-verification.json`; verifier: `.temp_files/verify-restore-41649048270.mjs`.
 

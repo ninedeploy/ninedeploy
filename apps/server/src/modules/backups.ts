@@ -9,7 +9,7 @@ import { config } from '../config.js';
 import { createBackupReadStream } from '../engine/database.js';
 import { databaseRuntime, isNodeDatabase } from '../lib/databaseRuntime.js';
 import { deleteRemoteBackup, deleteRemoteBackupForRetention, fetchRemoteBackup, uploadBackup } from '../lib/backupRemote.js';
-import { listBackupDrills, runBackupDrill } from '../lib/backupDrill.js';
+import { findDrillById, listBackupDrills, runBackupDrill } from '../lib/backupDrill.js';
 import { assertDatabaseRole, type AuthedUser, loadDatabaseForUser, visibleDatabaseIds } from '../lib/resourceAccess.js';
 import { badRequest, forbidden, HttpError, notFound, parseId as num } from '../lib/errors.js';
 
@@ -170,16 +170,19 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
   // route is intentionally NOT background: the validators
   // cap at a few seconds and the panel polls the result
   // row when the operator opens the detail view.
-  app.post<{ Params: { id: string }; Body: { backupId?: number } }>(
+  app.post<{ Params: { id: string }; Body: { backupId?: number; restore?: unknown } }>(
     '/:id/backups/drill',
-    async (req) => {
+    async (req, reply) => {
       const id = num((req.params as { id: string }).id);
       const d = await getDb(app, id, req.user!);
+      const body = (req.body ?? {}) as { backupId?: number; restore?: unknown };
+      const restore = parseRestoreProbe(body.restore);
       // Member can read but the drill mutates state (creates
       // a backup_drills row) — gate at member so a viewer
-      // cannot fill the table with no-ops.
-      await assertDatabaseRole(app.db, d, req.user!, 'member');
-      const body = (req.body ?? {}) as { backupId?: number };
+      // cannot fill the table with no-ops. R3: a restore probe answers
+      // yes/no about the backup's CONTENTS — repeated probes read it out — so
+      // it needs the role that may download the backup (admin), not member.
+      await assertDatabaseRole(app.db, d, req.user!, restore ? 'admin' : 'member');
       if (!body.backupId || typeof body.backupId !== 'number') {
         throw badRequest('backupId is required');
       }
@@ -189,6 +192,36 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
       // ids (a missing id read differently: "Backup <id> not found").
       const backup = await app.db.query.backups.findFirst({ where: eq(backups.id, body.backupId) });
       if (!backup || backup.databaseId !== d.id) throw notFound('Backup not found');
+      if (restore) {
+        // R3: a real restore takes minutes, past any client's request budget.
+        // Answer 202 once the `running` row exists; clients poll
+        // GET /:id/drills/:drillId. A panel restart mid-run leaves the row
+        // `running` until the boot sweep marks it `unverifiable`.
+        if (activeRestoreVerifications >= MAX_RESTORE_VERIFICATIONS) {
+          throw new HttpError(409, 'restore_verification_busy', 'Another restore verification is running on this panel. Try again when it finishes.');
+        }
+        activeRestoreVerifications++;
+        let admitted!: (drillId: number) => void;
+        const admission = new Promise<number>((resolve) => { admitted = resolve; });
+        const backupId = body.backupId;
+        const running = runBackupDrill(app.db, d.id, backupId, restore, (drillId) => admitted(drillId));
+        const release = () => { activeRestoreVerifications--; };
+        void running.then(release, release);
+        let drillId: number;
+        try {
+          drillId = await Promise.race([admission, running.then((r) => r.drillId)]);
+        } catch (err) {
+          throw badRequest(`Drill failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        const actor = req.user!.id;
+        void audit(app.db, actor, 'backup.drill', `${d.name}: backup=${backupId} restore verification started (drill #${drillId})`);
+        void running.then(
+          (result) => audit(app.db, actor, 'backup.drill', `${d.name}: backup=${backupId} status=${result.status} (restore verification, drill #${drillId})`),
+          (err: unknown) => req.log.error({ err, drillId }, 'restore verification could not record its result'),
+        );
+        reply.code(202);
+        return { ok: true, pending: true, drillId, status: 'running', durationMs: 0, details: null, error: null };
+      }
       let result: Awaited<ReturnType<typeof runBackupDrill>>;
       try {
         result = await runBackupDrill(app.db, d.id, body.backupId);
@@ -219,7 +252,38 @@ export const databaseBackupRoutes: FastifyPluginAsync = async (app) => {
     const d = await getDb(app, id, req.user!);
     return listBackupDrills(app.db, d.id, 25);
   });
+
+  // R3: one drill — what a client polls while a restore verification runs.
+  app.get<{ Params: { id: string; drillId: string } }>('/:id/drills/:drillId', async (req) => {
+    const params = req.params as { id: string; drillId: string };
+    const d = await getDb(app, num(params.id), req.user!);
+    const drill = await findDrillById(app.db, num(params.drillId));
+    // Another database's drill reads as missing: no cross-tenant id oracle.
+    if (!drill || drill.databaseId !== d.id) throw notFound('Drill not found');
+    return drill;
+  });
 };
+
+/** R3: the restore helper reserves 1.5 GiB of memory and a CPU on the panel
+ *  host — one verification at a time per panel process. */
+const MAX_RESTORE_VERIFICATIONS = 1;
+let activeRestoreVerifications = 0;
+
+/** Optional `restore` body of the drill route. Bounds match the verifier's;
+ *  the query and expected value are never persisted, logged or audited. */
+function parseRestoreProbe(raw: unknown): { query: string; expected: string } | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw badRequest('restore must be an object with query and expected');
+  const { query, expected, ...rest } = raw as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) throw badRequest('restore accepts only query and expected');
+  if (typeof query !== 'string' || !query.trim() || Buffer.byteLength(query) > 16_384) {
+    throw badRequest('restore.query must be a non-empty SQL query of at most 16384 bytes');
+  }
+  if (typeof expected !== 'string' || Buffer.byteLength(expected) > 16_384) {
+    throw badRequest('restore.expected must be a string of at most 16384 bytes');
+  }
+  return { query, expected };
+}
 
 /** Global backup list + delete + download. Mounted under /backups. */
 export const backupRoutes: FastifyPluginAsync = async (app) => {

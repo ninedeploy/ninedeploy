@@ -6134,4 +6134,18 @@ export const TR: Readonly<Record<string, string>> = {
   'Attempt {n}': '{n}. deneme',
   'Could not read the log: {error}': 'Log okunamadı: {error}',
   'No output yet.': 'Henüz çıktı yok.',
+  // R3: isolated restore verification of a PostgreSQL backup.
+  'Exactly what psql prints, without headers. Separate rows with new lines; leave empty for no rows.': 'psql\'in başlıksız olarak yazdırdığının birebir aynısı. Satırları yeni satırla ayırın; satır yoksa boş bırakın.',
+  'Expected output': 'Beklenen çıktı',
+  'One value is easiest, for example: SELECT count(*) FROM users': 'Tek bir değer en kolayıdır, örneğin: SELECT count(*) FROM users',
+  'Query': 'Sorgu',
+  'Restore this backup into an isolated container and check known data': 'Bu yedeği yalıtılmış bir container\'a geri yükle ve bilinen veriyi kontrol et',
+  'Restore verification could not start': 'Geri yükleme doğrulaması başlatılamadı',
+  'Restore verification started': 'Geri yükleme doğrulaması başladı',
+  'Restore verified {time}': 'Geri yükleme doğrulandı: {time}',
+  'Start verification': 'Doğrulamayı başlat',
+  'The backup is restored into an isolated PostgreSQL container on the panel host, with no network. Your query runs there, and the check passes only when its output equals the expected value exactly. The live database is not touched; the query and the value are not stored.': 'Yedek, panel sunucusunda ağ erişimi olmayan yalıtılmış bir PostgreSQL container\'ına geri yüklenir. Sorgunuz orada çalışır; kontrol yalnızca çıktısı beklenen değerle birebir aynıysa başarılı olur. Canlı veritabanına dokunulmaz; sorgu ve değer saklanmaz.',
+  'Verify restore': 'Geri yüklemeyi doğrula',
+  'Verify restore of backup #{id}': '#{id} numaralı yedeğin geri yüklemesini doğrula',
+  'Verify restore of backup {id}': '{id} numaralı yedeğin geri yüklemesini doğrula',
 };

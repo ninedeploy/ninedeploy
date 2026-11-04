@@ -505,6 +505,9 @@ function paramValue(url: string, param: string, r: Res): string {
     case 'issueId':
       // G5.4: no error issue is seeded; the floor is checked before the lookup.
       return '999999';
+    case 'drillId':
+      // R3: no drill is seeded; the database's floor is checked before the lookup.
+      return '999999';
     case 'token':
       return at('/v1/invitations') ? r.inviteToken : r.transferToken;
     case 'slug':
@@ -1006,9 +1009,10 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/databases/:id/backups/:bid/restore': R('admin'),
   'POST /v1/databases/:id/backups/drill': R('member', {
     body: (r) => ({ backupId: r.backup }),
-    note: 'member may drill (restore into a scratch container) a backup only an admin may take or download',
+    note: 'member may run the structural drill; the R3 `restore` probe (a yes/no oracle over the backup contents) needs admin, like download — covered by test/modules/backups.test.ts',
   }),
   'GET /v1/databases/:id/drills': R('viewer'),
+  'GET /v1/databases/:id/drills/:drillId': R('viewer', { allow404: 'no drill is seeded; the lookup is covered by test/modules/backups.test.ts' }),
   // 0.12 per-database backup policy: read follows the backups list, write the backup routes.
   'GET /v1/databases/:id/backup-policy': R('viewer'),
   'PUT /v1/databases/:id/backup-policy': R('admin', { body: () => ({ enabled: true, cron: '0 3 * * *', retainCount: 7 }) }),

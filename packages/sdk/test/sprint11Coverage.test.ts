@@ -305,6 +305,23 @@ describe('Sprint 11 SDK surface (G-13 / G-15 / G-30 / G-24 / G-47 / G-16)', () =
       expect(JSON.parse(calls[0]?.init.body ?? '{}')).toEqual({ backupId: 2 });
     });
 
+    it('R3: drillBackup sends the restore probe and drill polls one drill', async () => {
+      const { fetchMock, calls } = makeFetch((url) =>
+        url.endsWith('/drills/41')
+          ? ok({ id: 41, databaseId: 1, backupId: 2, status: 'passed', engine: 'postgres', durationMs: 1500, error: null, details: null, startedAt: 1, completedAt: 2 })
+          : ok({ ok: true, pending: true, drillId: 41, status: 'running', durationMs: 0, details: null, error: null }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const client = createClient({ baseUrl: 'https://panel.test', token: 't' });
+      const admitted = await client.databases.drillBackup(1, { backupId: 2, restore: { query: 'SELECT 1', expected: '1' } });
+      expect(admitted).toMatchObject({ pending: true, status: 'running', drillId: 41 });
+      expect(JSON.parse(calls[0]?.init.body ?? '{}')).toEqual({ backupId: 2, restore: { query: 'SELECT 1', expected: '1' } });
+      const drill = await client.databases.drill(1, 41);
+      expect(drill.status).toBe('passed');
+      expect(calls[1]?.url).toBe('/v1/databases/1/drills/41');
+      expect(calls[1]?.init.method ?? 'GET').toBe('GET');
+    });
+
     it('drills lists /v1/databases/<id>/drills', async () => {
       const { fetchMock, calls } = makeFetch(() => ok([]));
       vi.stubGlobal('fetch', fetchMock);

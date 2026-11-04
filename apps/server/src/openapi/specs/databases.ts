@@ -108,10 +108,10 @@ export const databasesSpecs: RouteSpecMap = {
     responseType: '{ ok: boolean }',
   },
   'POST /v1/databases/:id/backups/drill': {
-    summary: 'Run a restore drill of a backup into a scratch container',
+    summary: 'Check a backup: a structural drill, or (with `restore`, admin, PostgreSQL) a real isolated restore verified by a known-data query — answered 202 and polled',
     tag: 'backups',
     floor: 'member',
-    bodyType: '{ backupId?: number }',
+    bodyType: '{ backupId?: number; restore?: { query: string; expected: string } }',
     responseType: 'BackupDrillResult',
     validation: 'handler',
   },
@@ -120,6 +120,12 @@ export const databasesSpecs: RouteSpecMap = {
     tag: 'backups',
     floor: 'viewer',
     responseType: 'BackupDrillEntry[]',
+  },
+  'GET /v1/databases/:id/drills/:drillId': {
+    summary: 'One drill of a database — poll it while a restore verification is running',
+    tag: 'backups',
+    floor: 'viewer',
+    responseType: 'BackupDrillEntry',
   },
   'GET /v1/databases/:id/backup-policy': {
     summary: "A database's backup schedule, retention and destination",

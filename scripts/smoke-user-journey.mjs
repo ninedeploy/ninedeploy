@@ -380,6 +380,48 @@ async function importChecks(token, databaseId) {
   step(`import: ${sql.length}-byte plain SQL in one chunk → completed; smoke_t holds ${rows} rows in ${container}; pre-import backup #${safety.id} completed`);
 }
 
+/** R3 (0.18.20): a real isolated restore verification of a fresh backup through the public API. */
+const RESTORE_VERIFY_IN = [0, 18, 20];
+async function restoreVerificationChecks(token, databaseId) {
+  // Taken after importChecks, so the backup holds smoke_t's three rows.
+  const backup = await api(`/v1/databases/${databaseId}/backups`, { method: 'POST', token, body: {} });
+  if (backup.status !== 200 || backup.json?.status !== 'completed') fail(`restore verification backup: ${backup.status} ${backup.text.slice(0, 300)}`);
+  const start = (expected) => api(`/v1/databases/${databaseId}/backups/drill`, {
+    method: 'POST', token, body: { backupId: backup.json.id, restore: { query: 'select count(*) from smoke_t', expected } },
+  });
+  const settle = async (drillId) => {
+    let row = null;
+    for (let i = 0; i < 240; i++) {
+      row = (await api(`/v1/databases/${databaseId}/drills/${drillId}`, { token })).json;
+      if (row && row.status !== 'running' && row.status !== 'pending') return row;
+      await sleep(1000);
+    }
+    return fail(`restore verification drill #${drillId} did not settle: ${JSON.stringify(row).slice(0, 300)}`);
+  };
+  const first = await start('3');
+  if (first.status !== 202 || first.json?.status !== 'running' || first.json?.pending !== true) {
+    fail(`restore verification answered ${first.status} ${first.text.slice(0, 300)} (wanted 202 running)`);
+  }
+  // One helper at a time per panel: a second start while the first restores is refused.
+  const busy = await start('3');
+  if (busy.status !== 409 || errorCode(busy) !== 'restore_verification_busy') {
+    fail(`a concurrent restore verification answered ${busy.status} ${busy.text.slice(0, 200)} (wanted 409 restore_verification_busy)`);
+  }
+  const passed = await settle(first.json.drillId);
+  if (passed.status !== 'passed' || passed.details?.verification !== 'restore' || passed.details?.cleanupConfirmed !== true) {
+    fail(`restore verification of the known rows: ${JSON.stringify(passed).slice(0, 400)} (wanted passed with confirmed cleanup)`);
+  }
+  const second = await start('4');
+  if (second.status !== 202) fail(`second restore verification answered ${second.status} ${second.text.slice(0, 300)} (wanted 202)`);
+  const mismatch = await settle(second.json.drillId);
+  if (mismatch.status !== 'failed') fail(`a wrong expectation ended as ${JSON.stringify(mismatch).slice(0, 300)} (wanted failed)`);
+  const history = JSON.stringify((await api(`/v1/databases/${databaseId}/drills`, { token })).json);
+  if (history.includes('smoke_t')) fail('the drill history stored the restore probe query');
+  const helpers = dindRun(['ps', '-a', '-q', '--filter', 'label=ninedeploy.role=restore-verification']);
+  if (helpers.status !== 0 || helpers.stdout !== '') fail(`restore helpers left behind: ${helpers.all.slice(0, 200)}`);
+  step(`restore verification: backup #${backup.json.id} restored in isolation, count(*)=3 passed (${passed.durationMs} ms), a wrong expectation failed, a concurrent start got 409, no helper left`);
+}
+
 /** Secret managers: supported kinds unconfigured, a Vault on a reserved host tests ok:false, a bad AWS region is refused. */
 async function secretProviderChecks(token, version) {
   const p = '/v1/settings/secret-providers';
@@ -1816,6 +1858,7 @@ async function main() {
       if (has014) {
         await publicAccessChecks(token, db.id);
         await importChecks(token, db.id);
+        if (!olderThan(String(health.version), RESTORE_VERIFY_IN)) await restoreVerificationChecks(token, db.id);
       }
     }
     const del = await api(`/v1/databases/${db.id}`, { method: 'DELETE', token });

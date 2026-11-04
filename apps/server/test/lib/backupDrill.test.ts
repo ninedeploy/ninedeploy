@@ -138,6 +138,15 @@ import {
 } from '../../src/lib/backupDrill.js';
 import { createFakeDb } from '../helpers.js';
 
+// R3: the restore helper's engine image is made present on the panel host first.
+const imagePull = vi.hoisted(() => ({ images: [] as string[], fail: false }));
+vi.mock('../../src/lib/dockerPull.js', () => ({
+  ensureDockerImage: vi.fn(async (image: string) => {
+    imagePull.images.push(image);
+    if (imagePull.fail) throw new Error('pull access denied');
+  }),
+}));
+
 const restoreCheck = vi.hoisted(() => ({
   status: 'passed' as 'passed' | 'failed' | 'unverifiable',
   calls: [] as Array<{ file: string; image: string; query: string; expected: string }>,
@@ -251,6 +260,7 @@ function mongoArchive(opts: { terminator?: boolean } = {}): Buffer {
 
 beforeEach(async () => {
   restoreCheck.status = 'passed'; restoreCheck.calls = []; restoreCheck.throwError = false; restoreCheck.blockCleanup = false;
+  imagePull.images = []; imagePull.fail = false;
   remoteState.failAfterWrite = false;
   await mkdir(TMP, { recursive: true });
   dbState.databases.clear();
@@ -305,10 +315,40 @@ describe('real restore drill staging and history', () => {
     expect(result.status).toBe('unverifiable'); expect(JSON.stringify(result)).not.toContain('private SQL');
     expect(existsSync(restoreCheck.calls[0]!.file)).toBe(false);
   });
+  it('makes the engine image present on the panel host before verifying (a node database may lack it)', async () => {
+    const file = await dumpFile('restore.sql', PG_PLAIN); seed('postgres', file); complete();
+    expect((await runBackupDrill(buildDb(), 1, 1, probe)).status).toBe('passed');
+    expect(imagePull.images).toEqual(['postgres:18']);
+  });
+  it('is unverifiable, before decrypting anything, when the engine image cannot be pulled', async () => {
+    const file = await dumpFile('restore-encrypted.dump', 'NDBK1:encrypted'); seed('postgres', file); complete();
+    cryptoState.encryptedPaths.add(file); imagePull.fail = true;
+    const result = await runBackupDrill(buildDb(), 1, 1, probe);
+    expect(result).toMatchObject({ status: 'unverifiable', error: 'The PostgreSQL engine image is not on the panel host and could not be pulled' });
+    expect(dbState.drills.get(result.drillId)?.status).toBe('unverifiable');
+    expect(restoreCheck.calls).toEqual([]);
+    expect(cryptoState.decryptedTo.size).toBe(0);
+  });
+  it('does not pull images for the structural drill', async () => {
+    const file = await dumpFile('plain.sql', PG_PLAIN); seed('postgres', file);
+    await runBackupDrill(buildDb(), 1, 1);
+    expect(imagePull.images).toEqual([]);
+  });
+  it('admits once the running row exists, before any staging or verification', async () => {
+    const file = await dumpFile('restore.sql', PG_PLAIN); seed('postgres', file); complete();
+    const admitted: Array<{ id: number; status: unknown; verifierCalls: number }> = [];
+    const result = await runBackupDrill(buildDb(), 1, 1, probe, (id) => {
+      admitted.push({ id, status: dbState.drills.get(id)?.status, verifierCalls: restoreCheck.calls.length });
+    });
+    expect(admitted).toEqual([{ id: result.drillId, status: 'running', verifierCalls: 0 }]);
+    expect(result.status).toBe('passed');
+  });
   it('refuses an unsupported engine before inserting history or invoking an engine', async () => {
     seed('mysql', join(TMP, 'not-read')); complete();
-    await expect(runBackupDrill(buildDb(), 1, 1, probe)).rejects.toThrow(/PostgreSQL/);
+    const onAdmitted = vi.fn();
+    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/PostgreSQL/);
     expect(dbState.drills.size).toBe(0); expect(restoreCheck.calls).toEqual([]);
+    expect(onAdmitted).not.toHaveBeenCalled();
   });
   it('refuses incomplete backups before invoking the verifier', async () => {
     seed('postgres', join(TMP, 'not-read'));

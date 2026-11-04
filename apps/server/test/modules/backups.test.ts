@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
     { id: 1, databaseId: 1, status: 'ok', durationMs: 12, error: null, ts: new Date('2026-01-01') },
   ]),
   audit: vi.fn(async () => undefined),
+  findDrillById: vi.fn(async (): Promise<Record<string, unknown> | null> => null),
 }));
 
 vi.mock('../../src/engine/database.js', () => ({
@@ -52,6 +53,7 @@ vi.mock('../../src/lib/backupRemote.js', () => ({
 vi.mock('../../src/lib/backupDrill.js', () => ({
   runBackupDrill: mocks.runBackupDrill,
   listBackupDrills: mocks.listBackupDrills,
+  findDrillById: mocks.findDrillById,
 }));
 vi.mock('../../src/lib/audit.js', () => ({ audit: mocks.audit }));
 
@@ -370,6 +372,139 @@ describe('database backup routes (per-database)', () => {
     // The lib passes the cap (25) to the helper as the 3rd arg.
     const cap = mocks.listBackupDrills.mock.calls[0]?.[2];
     expect(cap).toBe(25);
+  });
+});
+
+describe('R3: asynchronous restore verification through the drill route', () => {
+  const probe = { query: 'SELECT value FROM sentinel', expected: 'before' };
+  // A member seat in the database's workspace (no operator, no ownership).
+  const memberDb = () => createFakeDb({
+    findFirst: {
+      databases: { ...dbRow(), projectId: 5 },
+      projects: { id: 5, workspaceId: 100 },
+      workspaceMembers: { workspaceId: 100, userId: 3, role: 'member' },
+      backups: backupRow({ id: 7 }),
+    },
+  });
+  /** A drill that admits its row, then waits for the test to finish it. */
+  function heldDrill(drillId = 41) {
+    let finish!: (status: 'passed' | 'failed' | 'unverifiable') => void;
+    const done = new Promise<'passed' | 'failed' | 'unverifiable'>((resolve) => { finish = resolve; });
+    mocks.runBackupDrill.mockImplementationOnce((async (_db: unknown, _d: number, _b: number, _probe: unknown, onAdmitted?: (id: number) => void) => {
+      onAdmitted?.(drillId);
+      const status = await done;
+      return { drillId, status, durationMs: 1500, details: { verification: 'restore' }, error: null };
+    }) as never);
+    return finish;
+  }
+  const post = (app: Awaited<ReturnType<typeof buildApp>>, payload: unknown, headers = asUser()) =>
+    app.inject({ method: 'POST', url: '/1/backups/drill', headers, payload: payload as object });
+
+  it('answers 202 once the running row exists, then audits the verdict without the probe', async () => {
+    const finish = heldDrill(41);
+    const app = await buildApp({ db: createFakeDb({ findFirst: { databases: dbRow(), backups: backupRow({ id: 7 }) } }) });
+    await app.register(databaseBackupRoutes);
+    const res = await post(app, { backupId: 7, restore: probe });
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ ok: true, pending: true, drillId: 41, status: 'running', durationMs: 0, details: null, error: null });
+    expect(mocks.runBackupDrill).toHaveBeenCalledWith(expect.anything(), 1, 7, probe, expect.any(Function));
+    finish('passed');
+    await vi.waitFor(() => expect(mocks.audit).toHaveBeenCalledWith(
+      expect.anything(), 1, 'backup.drill', expect.stringContaining('status=passed (restore verification, drill #41)'),
+    ));
+    // Neither the probe SQL nor its expected value reaches the audit trail.
+    expect(JSON.stringify(mocks.audit.mock.calls)).not.toMatch(/sentinel|before/);
+  });
+
+  it('refuses a restore probe to a member — it reads the backup like a download does', async () => {
+    const app = await buildApp({ db: memberDb() });
+    await app.register(databaseBackupRoutes);
+    const res = await post(app, { backupId: 7, restore: probe }, asUser({ id: 3, isOperator: false, role: 'member' }));
+    expect(res.statusCode).toBe(403);
+    expect(mocks.runBackupDrill).not.toHaveBeenCalled();
+    // The structural drill stays available to that member.
+    expect((await post(app, { backupId: 7 }, asUser({ id: 3, isOperator: false, role: 'member' }))).statusCode).toBe(200);
+  });
+
+  it.each([
+    ['an array', []],
+    ['a string', 'SELECT 1'],
+    ['an extra key', { ...probe, image: 'evil:latest' }],
+    ['an empty query', { query: '  ', expected: '' }],
+    ['a non-string expected value', { query: 'SELECT 1', expected: 1 }],
+    ['an oversized query', { query: 'x'.repeat(16_385), expected: '' }],
+    ['an oversized expected value', { query: 'SELECT 1', expected: 'x'.repeat(16_385) }],
+  ])('rejects %s as the restore probe before any work', async (_label, restore) => {
+    const app = await buildApp({ db: createFakeDb({ findFirst: { databases: dbRow(), backups: backupRow({ id: 7 }) } }) });
+    await app.register(databaseBackupRoutes);
+    expect((await post(app, { backupId: 7, restore })).statusCode).toBe(400);
+    expect(mocks.runBackupDrill).not.toHaveBeenCalled();
+  });
+
+  it('runs one verification at a time and frees the slot when it ends', async () => {
+    const finish = heldDrill(41);
+    const app = await buildApp({ db: createFakeDb({ findFirst: { databases: dbRow(), backups: backupRow({ id: 7 }) } }) });
+    await app.register(databaseBackupRoutes);
+    expect((await post(app, { backupId: 7, restore: probe })).statusCode).toBe(202);
+    const busy = await post(app, { backupId: 7, restore: probe });
+    expect(busy.statusCode).toBe(409);
+    expect(busy.json().error.code).toBe('restore_verification_busy');
+    // A structural drill is not held behind the restore helper.
+    expect((await post(app, { backupId: 7 })).statusCode).toBe(200);
+    finish('unverifiable');
+    await vi.waitFor(() => expect(mocks.audit).toHaveBeenCalledWith(expect.anything(), 1, 'backup.drill', expect.stringContaining('status=unverifiable')));
+    const next = heldDrill(42);
+    expect((await post(app, { backupId: 7, restore: probe })).statusCode).toBe(202);
+    next('passed');
+    await vi.waitFor(() => expect(mocks.audit).toHaveBeenCalledWith(expect.anything(), 1, 'backup.drill', expect.stringContaining('drill #42)')));
+  });
+
+  it('reports a refusal before admission as 400 and frees the slot', async () => {
+    mocks.runBackupDrill.mockRejectedValueOnce(new Error('Isolated restore verification currently requires PostgreSQL'));
+    const app = await buildApp({ db: createFakeDb({ findFirst: { databases: dbRow({ engine: 'mysql' }), backups: backupRow({ id: 7 }) } }) });
+    await app.register(databaseBackupRoutes);
+    const res = await post(app, { backupId: 7, restore: probe });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/requires PostgreSQL/);
+    const finish = heldDrill(43);
+    expect((await post(app, { backupId: 7, restore: probe })).statusCode).toBe(202);
+    finish('passed');
+    await vi.waitFor(() => expect(mocks.audit).toHaveBeenCalledWith(expect.anything(), 1, 'backup.drill', expect.stringContaining('drill #43)')));
+  });
+
+  it('logs, rather than crashes on, a run that fails after admission', async () => {
+    mocks.runBackupDrill.mockImplementationOnce((async (_db: unknown, _d: number, _b: number, _p: unknown, onAdmitted?: (id: number) => void) => {
+      onAdmitted?.(44);
+      throw new Error('database is closed');
+    }) as never);
+    const app = await buildApp({ db: createFakeDb({ findFirst: { databases: dbRow(), backups: backupRow({ id: 7 }) } }) });
+    await app.register(databaseBackupRoutes);
+    expect((await post(app, { backupId: 7, restore: probe })).statusCode).toBe(202);
+    // The slot is released: the next verification is admitted.
+    const finish = heldDrill(45);
+    await vi.waitFor(async () => expect((await post(app, { backupId: 7, restore: probe })).statusCode).toBe(202));
+    finish('passed');
+    await vi.waitFor(() => expect(mocks.audit).toHaveBeenCalledWith(expect.anything(), 1, 'backup.drill', expect.stringContaining('drill #45)')));
+  });
+
+  it('GET /:id/drills/:drillId returns one drill of this database, 404 otherwise', async () => {
+    const drill = { id: 41, databaseId: 1, backupId: 7, status: 'running', engine: 'postgres', durationMs: 0, error: null, details: null, startedAt: 1, completedAt: null };
+    mocks.findDrillById
+      .mockResolvedValueOnce(drill)
+      .mockResolvedValueOnce(null)
+      // Another database's drill: the same 404, no cross-tenant id oracle.
+      .mockResolvedValueOnce({ ...drill, id: 50, databaseId: 2 });
+    const app = await buildApp({ db: createFakeDb({ findFirst: { databases: dbRow() } }) });
+    await app.register(databaseBackupRoutes);
+    const found = await app.inject({ method: 'GET', url: '/1/drills/41', headers: asUser() });
+    expect(found.statusCode).toBe(200);
+    expect(found.json()).toEqual(drill);
+    expect(mocks.findDrillById).toHaveBeenCalledWith(expect.anything(), 41);
+    for (const url of ['/1/drills/999', '/1/drills/50']) {
+      const missing = await app.inject({ method: 'GET', url, headers: asUser() });
+      expect(missing.statusCode).toBe(404);
+      expect(missing.json().error.message).toBe('Drill not found');
+    }
   });
 });
 

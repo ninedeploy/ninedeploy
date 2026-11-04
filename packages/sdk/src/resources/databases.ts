@@ -20,7 +20,7 @@ import type {
   BackupReplicasView,
 } from '@ninedeploy/schemas';
 import type { ImportWaitOptions, ImportFileData, ImportFileOptions } from '../databaseImport.js';
-import type { BackupDrillResult, BackupDrillEntry, PgbouncerStatus, DatabaseCredentialsWithPublic } from '../types.js';
+import type { BackupDrillResult, BackupDrillEntry, BackupRestoreProbe, PgbouncerStatus, DatabaseCredentialsWithPublic } from '../types.js';
 import type { Transport } from '../transport.js';
 import { createImportHelpers } from '../databaseImport.js';
 
@@ -64,10 +64,19 @@ export interface DatabasesApi {
      * signal that the backup cannot be restored cleanly, not
      * a warning. `unverifiable` (r356) means the check could
      * not run at all. Requires the `member` role on the database.
+     *
+     * R3: with `restore` (PostgreSQL only, `admin` role — the probe reads the
+     * backup like a download does) the backup is really restored into an
+     * isolated helper and checked with a known-data query. That takes minutes,
+     * so the panel answers at once with `status: 'running'` and
+     * `pending: true`; poll `drill(id, drillId)` for the verdict. One
+     * verification runs at a time per panel (409 `restore_verification_busy`).
      */
-    drillBackup: (id: number, input: { backupId: number }) => Promise<BackupDrillResult>;
+    drillBackup: (id: number, input: { backupId: number; restore?: BackupRestoreProbe }) => Promise<BackupDrillResult>;
     /** List the most recent drills for a database, newest first. */
     drills: (id: number) => Promise<BackupDrillEntry[]>;
+    /** R3: one drill of a database — poll it while a restore verification is `running`. */
+    drill: (id: number, drillId: number) => Promise<BackupDrillEntry>;
     /**
      * 0.14: public access through a per-database Traefik TCP sidecar. Reading
      * needs `admin` on the database; `set` and `disable` are operator-only.
@@ -175,6 +184,7 @@ export function databasesApi(t: Transport): DatabasesApi {
       drillBackup: (id, input) =>
         send<BackupDrillResult>('POST', `/v1/databases/${id}/backups/drill`, input),
       drills: (id) => get<BackupDrillEntry[]>(`/v1/databases/${id}/drills`),
+      drill: (id, drillId) => get<BackupDrillEntry>(`/v1/databases/${id}/drills/${drillId}`),
       pgbouncerStatus: (id) => get<PgbouncerStatus>(`/v1/databases/${id}/pgbouncer`),
       enablePgbouncer: (id, input) =>
         send<PgbouncerStatus>('POST', `/v1/databases/${id}/pgbouncer/enable`, input ?? {}),

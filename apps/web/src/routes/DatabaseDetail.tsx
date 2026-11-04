@@ -50,6 +50,7 @@ import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
 import { BackupScheduleCard } from './database/BackupScheduleCard.js';
 import { BackupReplicasCard } from './database/BackupReplicasCard.js';
 import { ImportCard } from './database/ImportCard.js';
+import { RestoreVerifyDialog } from './database/RestoreVerifyDialog.js';
 import { PublicAccessCard } from './database/PublicAccessCard.js';
 import { TunnelHintCard } from './database/TunnelHintCard.js';
 import { PgbouncerCard } from './database/PgbouncerCard.js';
@@ -344,7 +345,7 @@ export function DatabaseDetail() {
           <BackupScheduleCard dbId={db.id} />
           <BackupReplicasCard dbId={db.id} />
           <ImportCard db={db} />
-          <BackupsPanel dbId={db.id} dbName={db.name} />
+          <BackupsPanel dbId={db.id} dbName={db.name} engine={db.engine} />
         </div>
       )}
       {activeTab === 'logs' && <LogsPanel dbId={db.id} isRunning={isRunning} />}
@@ -696,11 +697,13 @@ function OverviewPanel({
 }
 
 // ── Backups Tab ──────────────────────────────────────────────────────────────
-function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
+function BackupsPanel({ dbId, dbName, engine }: { dbId: number; dbName: string; engine: string }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [pendingRestore, setPendingRestore] = useState<{ id: number; createdAt: string } | null>(null);
+  // R3: the backup whose isolated restore verification dialog is open.
+  const [verifyBackup, setVerifyBackup] = useState<number | null>(null);
 
   const backupsQuery = useQuery({
     queryKey: ['backups'],
@@ -716,7 +719,11 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
   const drillsQuery = useQuery({
     queryKey: ['database-drills', dbId],
     queryFn: () => api.databases.drills(dbId),
+    // R3: a restore verification answers at once and settles in the
+    // background — poll until no drill is still running.
+    refetchInterval: (q) => ((q.state.data ?? []).some((d) => d.status === 'running' || d.status === 'pending') ? 3000 : false),
   });
+  const verificationRunning = (drillsQuery.data ?? []).some((d) => d.status === 'running' || d.status === 'pending');
   const latestDrill = useMemo(() => {
     const byBackup = new Map<number, BackupDrillEntry>();
     for (const d of drillsQuery.data ?? []) {
@@ -797,7 +804,9 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
                   {latestDrill.get(b.id) ? (
                     <StatusBadge
                       status={latestDrill.get(b.id)!.status}
-                      title={latestDrill.get(b.id)!.error ?? t('Checked {time}', { time: formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString()) })}
+                      title={latestDrill.get(b.id)!.error ?? (latestDrill.get(b.id)!.details?.verification === 'restore'
+                        ? t('Restore verified {time}', { time: formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString()) })
+                        : t('Checked {time}', { time: formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString()) }))}
                     />
                   ) : (
                     <span className="text-xs text-slate-600">{t('never')}</span>
@@ -816,6 +825,19 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
                     >
                       <ShieldCheck size={12} /> {drillMutation.isPending && drillMutation.variables === b.id ? t('Checking…') : t('Check')}
                     </Button>
+                    {engine === 'postgres' && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setVerifyBackup(b.id)}
+                        disabled={verificationRunning || b.status !== 'completed'}
+                        className="text-xs"
+                        title={t('Restore this backup into an isolated container and check known data')}
+                        aria-label={t('Verify restore of backup {id}', { id: b.id })}
+                      >
+                        <Database size={12} /> {t('Verify restore')}
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -840,6 +862,10 @@ function BackupsPanel({ dbId, dbName }: { dbId: number; dbName: string }) {
             ))}
           </tbody>
         </table>
+      )}
+
+      {verifyBackup !== null && (
+        <RestoreVerifyDialog dbId={dbId} backupId={verifyBackup} onClose={() => setVerifyBackup(null)} />
       )}
 
       {pendingRestore && (

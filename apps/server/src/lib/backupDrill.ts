@@ -15,9 +15,9 @@
  * in a throwaway, network-less container of the database's own
  * image (r356), never as host binaries.
  *
- * R3's optional internal restore probe instead restores into an isolated real
- * PostgreSQL helper and records the known-data verdict. The existing public
- * drill route does not enable this option; asynchronous admission is separate.
+ * R3's optional restore probe instead restores into an isolated real
+ * PostgreSQL helper and records the known-data verdict. The public drill route
+ * admits it asynchronously (`onAdmitted`), for database admins only.
  * The drill never deletes or modifies the source backup.
  * Encrypted envelopes are decrypted to a sibling temp file
  * (and deleted on the way out) via the same flow
@@ -39,6 +39,7 @@ import { decryptBackupFile, isEncryptedBackupFile } from './backupCrypto.js';
 import { capture, ExecTimeoutError, run } from './exec.js';
 import { ENGINES, readBackupBytes } from '../engine/database.js';
 import { verifyPostgresRestore, type PostgresRestoreProbe } from './backupRestoreVerification.js';
+import { ensureDockerImage } from './dockerPull.js';
 
 /** Every status a drill row can hold (pending/running/passed/failed, and
  *  r356's `unverifiable`). */
@@ -87,6 +88,10 @@ export async function runBackupDrill(
   databaseId: number,
   backupId: number,
   restoreProbe?: Pick<PostgresRestoreProbe, 'query' | 'expected'>,
+  /** Called once the `running` row exists, before any staging or restore
+   *  work: the public route answers the client at this point and lets a long
+   *  restore verification finish in the background. */
+  onAdmitted?: (drillId: number) => void,
 ): Promise<DrillResult> {
   const dRow = await db.query.databases.findFirst({ where: eq(databases.id, databaseId) });
   if (!dRow) throw new Error(`Database ${databaseId} not found`);
@@ -119,13 +124,32 @@ export async function runBackupDrill(
     })
     .returning();
   if (!row) throw new Error('Failed to insert backup_drills row');
+  onAdmitted?.(row.id);
 
   const startedAt = Date.now();
   let result: ValidationResult;
   // r356: the image the database runs — engine tools execute inside it.
   const image = ENGINES[dRow.engine]?.image(dRow.version ?? undefined) ?? null;
+  // R3: the helper runs on the panel host, but a node database's engine image
+  // may only exist on its node. Make it present BEFORE decrypting anything; a
+  // failed pull is no verdict on the backup.
+  let imageReady = !restoreProbe;
+  if (restoreProbe && image) {
+    try {
+      await ensureDockerImage(image, () => undefined);
+      imageReady = true;
+    } catch {
+      /* reported below as unverifiable */
+    }
+  }
 
-  try {
+  if (!imageReady) {
+    result = {
+      outcome: 'unverifiable',
+      error: 'The PostgreSQL engine image is not on the panel host and could not be pulled',
+      details: { verification: 'restore', stagingCleanupConfirmed: true },
+    };
+  } else try {
     // F133: scratch names carry this drill's row id — concurrent drills (same
     // backup, or the same millisecond) must never share or unlink each other's.
     const ctx = await stageForDrill(db, bRow.path, bRow, dRow.engine, `${process.pid}-${row.id}`, !!restoreProbe);
