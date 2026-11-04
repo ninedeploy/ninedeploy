@@ -1,12 +1,12 @@
 // Kernel acceptance only. Never run against a developer or production Docker daemon.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { persistentPortForwardRules, renderPersistentPortNft } from '../apps/server/src/lib/persistentPortNft.ts';
-import { PersistentPortPublisher, PersistentPortPublicationPending } from '../apps/server/src/lib/persistentPortPublication.ts';
-import { withPersistentPortJournalStore } from '../apps/server/src/lib/persistentPortJournalStore.ts';
+import { assertPersistentPortNftState, persistentPortFingerprint } from '../apps/server/src/lib/persistentPortNft.ts';
+import { PersistentPortPublicationPending } from '../apps/server/src/lib/persistentPortPublication.ts';
 
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
 assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
@@ -49,7 +49,6 @@ try {
   inside('iptables', '-S', 'DOCKER-FORWARD'); // Refuse unsupported Docker forwarding topology.
   inside('iptables', '-N', 'NDPI_TEST');
   inside('iptables', '-I', 'DOCKER-FORWARD', '1', '-j', 'NDPI_TEST');
-  const publish = (next, replace) => { writeFileSync(resolve(proof, 'rules.nft'), renderPersistentPortNft(next, replace)); inside('nft', '-f', '/proof/rules.nft'); };
   const route = target => {
     writeFileSync(resolve(proof, 'dynamic.next'), `http:\n  routers:\n    web:\n      rule: Host(\`pbx.test\`)\n      service: web\n  services:\n    web:\n      loadBalancer:\n        servers:\n          - url: http://${target}:3000\n`);
     renameSync(resolve(proof, 'dynamic.next'), resolve(proof, 'dynamic.yml'));
@@ -77,48 +76,58 @@ try {
   const webTarget = expected => innerDocker('exec', 'client', 'node', fixture, 'web-probe', expected);
   await until(() => webTarget('old'));
   let loseWebAck = false, loseKernelAck = false;
-  const stateDirectory = resolve(proof, 'state');
-  let activeStore;
-  // Journal access uses real runner-scoped host authority. Kernel callbacks
-  // still use Docker RPC into this single-writer disposable daemon: target-host
-  // nft child-descriptor fencing is a separate production integration gate.
-  const authority = {
-    exclusive: operation => withPersistentPortJournalStore(stateDirectory, spec, async store => {
-      assert.equal(activeStore, undefined); activeStore = store;
-      try { return await operation(); } finally { activeStore = undefined; }
-    }),
-    readJournal: async () => activeStore ? activeStore.read() : withPersistentPortJournalStore(stateDirectory, spec, async store => store.read()),
-    saveJournal: async state => { assert.ok(activeStore, 'Journal write escaped host authority'); activeStore.save(state); },
-    installed: async table => {
-      const list = JSON.parse(inside('nft', '-j', 'list', 'tables'));
-      if (!list.nftables.some(entry => entry.table?.family === 'ip' && entry.table?.name === table)) return null;
-      return JSON.parse(inside('nft', '-j', 'list', 'table', 'ip', table));
-    },
-    ready: async desired => {
-      const runtime = JSON.parse(innerDocker('inspect', desired.target.id))[0];
-      assert.equal(runtime.Id, desired.target.id); assert.equal(runtime.State.Running, true);
-      assert.equal(runtime.NetworkSettings.Networks.backend.IPAddress, desired.target.ipv4);
-      const status = innerDocker('exec', desired.target.id, 'node', '-e', "fetch('http://127.0.0.1:3000/ready').then(r=>console.log(r.status))");
-      assert.equal(status, '200', 'Candidate is not ready');
-    },
-    prepare: async (desired, retained) => {
-      for (const rule of persistentPortForwardRules(desired, retained)) {
-        try { inside('iptables', '-C', 'NDPI_TEST', ...rule); }
-        catch { inside('iptables', '-A', 'NDPI_TEST', ...rule); }
+  innerDocker('run', '-d', '--name', 'port-worker', '--network', 'host', '--cap-add=NET_ADMIN', '-e', 'ND_PORT_WORKER_FIXTURE=1', '-v', '/workspace:/workspace:ro', '-v', '/proof:/proof', '-v', '/var/run/docker.sock:/var/run/docker.sock', nodeImage, 'sleep', '360');
+  innerDocker('exec', 'port-worker', 'apk', 'add', '--no-cache', 'nftables', 'iptables', 'util-linux', 'conntrack-tools', 'docker-cli');
+  const hostNamespace = inside('readlink', '/proc/self/ns/net');
+  const workerNamespaces = [], workerCalls = [];
+  const worker = (kind, desired, targetId, controls = {}) => new Promise((accept, reject) => {
+    const trace = controls.trace ?? randomBytes(8).toString('hex');
+    const child = spawn('docker', ['exec', '-i', name, 'docker', 'exec', '-i', 'port-worker', 'node', '/workspace/scripts/fixtures/persistent-port-host-worker.mjs'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let buffer = '', result, failure, completed = false;
+    const timer = setTimeout(() => { child.stdin.destroy(); child.kill('SIGTERM'); reject(new Error('Host worker response deadline')); }, 40000);
+    child.stdin.on('error', () => {});
+    child.on('error', error => { clearTimeout(timer); reject(error); });
+    child.stderr.on('data', data => appendFileSync(resolve(proof, 'worker-stderr.log'), data));
+    child.stdout.on('data', data => {
+      buffer += data.toString();
+      if (buffer.length > 262144) { failure = new Error('Oversized worker response'); child.stdin.destroy(); return; }
+      let index;
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index); buffer = buffer.slice(index + 1); let message;
+        try { message = JSON.parse(line); } catch { failure = new Error('Invalid worker response'); child.stdin.destroy(); return; }
+        if (message.type === 'web') {
+          const c = message.challenge;
+          try { assert.equal(c.version, 1); assert.match(c.token, /^[a-f0-9]{32}$/); assert.equal(c.serviceId, desired.serviceId); assert.equal(c.owner, desired.owner); assert.equal(c.revision, desired.revision); assert.equal(c.targetId, desired.target.id); assert.equal(c.fingerprint, persistentPortFingerprint(desired)); }
+          catch (error) { failure = error; child.stdin.destroy(); continue; }
+          (async () => {
+            route(desired.target.ipv4); await until(() => webTarget(desired.target.id === candidate.id ? 'new' : 'old'));
+            if (loseWebAck) child.stdin.end();
+            else if (!completed && !child.stdin.destroyed) child.stdin.write(JSON.stringify({ type: 'ack', ack: { ...c, loaded: true } }) + '\n');
+          })().catch(error => { failure = error; child.stdin.destroy(); });
+        } else if (message.type === 'done') {
+          try { assert.equal(message.networkNamespace, hostNamespace); } catch (error) { failure = error; }
+          workerNamespaces.push(message.networkNamespace); result = message.result; child.stdin.end();
+        } else if (message.type === 'error') failure = message.pending ? new PersistentPortPublicationPending(message.message) : new Error(message.message);
+        else { failure = new Error('Unknown worker response'); child.stdin.destroy(); }
       }
+    });
+    child.on('close', () => { completed = true; clearTimeout(timer); workerCalls.push({ kind, trace, completed: !!result, pending: failure instanceof PersistentPortPublicationPending }); if (failure) reject(failure); else if (!result) reject(new PersistentPortPublicationPending('Worker exited without a completion acknowledgement')); else accept(result); });
+    child.stdin.write(JSON.stringify({ type: 'start', trace, directory: controls.directory, fault: controls.fault ?? (loseKernelAck ? 'kernel-ack' : undefined), request: { version: 1, kind, spec: desired, ...(targetId === undefined ? {} : { targetId }) } }) + '\n');
+  });
+  const authority = {
+    readJournal: async () => (await worker('inspect', spec)).journal,
+    ready: async desired => {
+      const runtime = JSON.parse(innerDocker('inspect', desired.target.id))[0]; assert.equal(runtime.Id, desired.target.id); assert.equal(runtime.State.Running, true);
+      const status = innerDocker('exec', desired.target.id, 'node', '-e', "fetch('http://127.0.0.1:3000/ready').then(r=>console.log(r.status))"); assert.equal(status, '200', 'Candidate is not ready');
     },
-    publish: async (desired, replace) => {
-      publish(desired, replace);
-      if (loseKernelAck) throw new Error('Injected lost kernel acknowledgement after actual commit');
-    },
-    confirmWeb: async desired => {
-      route(desired.target.ipv4); await until(() => webTarget(desired.target.id === candidate.id ? 'new' : 'old'));
-      if (loseWebAck) throw new Error('Injected lost Traefik acknowledgement after actual route load');
-    },
-    drained: async target => !inside('conntrack', '-L').split('\n').some(line => line.includes(`mark=${spec.mark}`) && line.includes(`src=${target.ipv4} `)),
-    retire: async () => { throw new Error('A target with active native flows must never be retired'); },
   };
-  const publisher = new PersistentPortPublisher(authority);
+  const createPublisher = () => ({
+    promote: async desired => (await worker('promote', desired)).journal,
+    recover: async desired => (await worker('recover', desired)).journal,
+    rollbackPending: async desired => (await worker('rollback', desired)).journal,
+    retireDrained: async (desired, targetId) => (await worker('retire', desired, targetId)).retired,
+  });
+  const publisher = createPublisher();
   await until(() => authority.ready(spec));
   await publisher.promote(spec);
   observations.push(await until(() => probe('old')));
@@ -138,7 +147,7 @@ try {
   await assert.rejects(() => publisher.retireDrained(next, spec.target.id), PersistentPortPublicationPending);
   observations.push(probe('new'));
   loseWebAck = false;
-  const recovered = new PersistentPortPublisher(authority);
+  const recovered = createPublisher();
   await recovered.recover(next);
   assert.equal(await recovered.retireDrained(next, spec.target.id), false);
   await recovered.promote({ ...spec, revision: 3 });
@@ -156,11 +165,42 @@ try {
   innerDocker('exec', '-d', 'client', 'node', fixture, 'hold', 'new', '172.28.0.2', 'candidate');
   await until(() => assert.ok(existsSync(resolve(proof, 'candidate-hold-ready'))));
   innerDocker('exec', 'new', 'node', '-e', 'require("node:fs").unlinkSync("/tmp/ready")');
-  await assert.rejects(() => new PersistentPortPublisher(authority).recover(interrupted), PersistentPortPublicationPending);
+  await assert.rejects(() => createPublisher().recover(interrupted), PersistentPortPublicationPending);
   const rollback = { ...spec, revision: 5 };
-  await new PersistentPortPublisher(authority).rollbackPending(rollback);
+  await createPublisher().rollbackPending(rollback);
   observations.push(probe('old')); await until(() => webTarget('old'));
-  assert.equal(await new PersistentPortPublisher(authority).retireDrained(rollback, candidate.id), false);
+  assert.equal(await createPublisher().retireDrained(rollback, candidate.id), false);
+
+  // Kill a real target-host worker while its local nft child survives. The
+  // unfenced control must let a competing worker inspect before nft commits.
+  inside('ip', 'addr', 'add', '10.6.6.8/32', 'dev', 'lo');
+  const workerFenceResults = [];
+  for (const kind of ['fenced', 'unfenced']) {
+    const directory = '/proof/worker-fence-' + kind, trace = randomBytes(8).toString('hex'), inspectTrace = randomBytes(8).toString('hex');
+    const claim = { ...spec, serviceId: kind === 'fenced' ? 2 : 3, owner: 'd'.repeat(32), revision: 1, mark: kind === 'fenced' ? 0x4e440002 : 0x4e440003,
+      bindings: [{ hostIp: '10.6.6.8', hostPort: kind === 'fenced' ? 15060 : 25060, containerPort: 5060, protocol: 'udp' }] };
+    const table = 'ndpi_s' + claim.serviceId;
+    const parent = worker('promote', claim, undefined, { directory, trace, fault: kind === 'fenced' ? 'fenced-child' : 'unfenced-child' }).catch(error => error);
+    await until(() => innerDocker('exec', 'port-worker', 'test', '-f', directory + '/child-ready'));
+    const pid = innerDocker('exec', 'port-worker', 'cat', directory + '/' + trace + '.pid'); assert.match(pid, /^[1-9][0-9]*$/); assert.ok(Number(pid) > 1);
+    innerDocker('exec', 'port-worker', 'kill', '-KILL', pid);
+    assert.ok(await parent instanceof PersistentPortPublicationPending);
+    const successor = worker('inspect', claim, undefined, { directory, trace: inspectTrace });
+    await until(() => innerDocker('exec', 'port-worker', 'test', '-f', directory + '/' + inspectTrace + '.pid'));
+    if (kind === 'fenced') assert.throws(() => innerDocker('exec', 'port-worker', 'flock', '--nonblock', directory + '/authority.lock', 'true'));
+    else {
+      const before = await successor; assert.equal(before.journal.pending.revision, 1);
+      const tables = JSON.parse(inside('nft', '-j', 'list', 'tables')); assert.ok(!tables.nftables.some(x => x.table?.name === table));
+    }
+    innerDocker('exec', 'port-worker', 'touch', directory + '/release');
+    await until(() => assert.ok(innerDocker('exec', 'port-worker', 'cat', directory + '/events.log').includes('mutator-finish')));
+    const inspected = await successor; assert.equal(inspected.journal.pending.revision, 1); assert.equal(inspected.journal.committed, null);
+    const events = innerDocker('exec', 'port-worker', 'cat', directory + '/events.log').trim().split('\n');
+    assert.deepEqual(events, kind === 'fenced' ? ['mutator-enter', 'mutator-finish', 'competitor-finish'] : ['mutator-enter', 'competitor-finish', 'mutator-finish']);
+    assertPersistentPortNftState(claim, JSON.parse(inside('nft', '-j', 'list', 'table', 'ip', table)));
+    workerFenceResults.push({ kind, events, actualNftChildCommitted: true, recoveredPendingIntent: true });
+  }
+  writeFileSync(resolve(proof, 'target-host-worker.json'), JSON.stringify({ hostNamespace, workerNamespaces, workerCalls, workerFenceResults }, null, 2));
 
   // Prove that a surviving mutator, rather than its killed parent, owns the
   // OS lock. The unfenced control must let a competing writer enter early.
@@ -205,7 +245,7 @@ try {
   assert.ok(held.count > 10); assert.ok(web.count > 10);
   assert.ok(candidateHeld.count > 5);
   writeFileSync(resolve(proof, 'publication.json'), JSON.stringify(await authority.readJournal()));
-  writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, durableJournalStore: true, kernelAuthorityIntegration: false, observations, held, candidateHeld, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, unconfirmedRollback: true, rollbackCandidateWasUnready: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
+  writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, durableJournalStore: true, kernelAuthorityIntegration: true, targetHostWorker: true, workerFenceResults, observations, held, candidateHeld, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, unconfirmedRollback: true, rollbackCandidateWasUnready: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
 } finally {
   if (created) {
     for (const kind of ['fenced', 'unfenced']) {

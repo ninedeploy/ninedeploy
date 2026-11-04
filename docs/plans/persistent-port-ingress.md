@@ -66,15 +66,27 @@ candidate remains retained while its existing flows drain; rollback does not
 authorize immediately stopping it. An unresolved first deploy has no invented
 fallback target and remains held for recovery.
 
-The hosted acceptance adapter writes and fsyncs a real journal, injects a lost
-Traefik acknowledgement after the route actually loads, reconstructs the
-publisher from that journal and checks active-flow retirement refusal. The runner
-is the only writer in its owned daemon. The native publisher uses the journal
-store under runner-scoped OS authority, while its kernel callbacks still traverse
-Docker RPC into that isolated daemon. This does not certify target-host fencing:
-the production adapter still needs non-stealable host authority, durable ownership
-and pipeline cleanup integration. A process-local queue or stale-heartbeat lock
-alone must not be used to fence firewall mutation.
+The hosted acceptance adapter runs compiled worker modules inside the target
+Docker host network namespace. The worker holds its own OS authority and durable
+journal scope, and executes nft/iptables mutations locally through inherited
+descriptor 3. A bounded confirmation challenge binds a fresh token, service,
+owner, revision, immutable target and publication fingerprint. The existing
+fixture coordinator writes Traefik configuration, observes the loaded target,
+and only then acknowledges that exact challenge. EOF, stale/mismatched ACK,
+timeout and cancellation leave unresolved intent rather than authorizing cleanup.
+
+The native process-death check kills that worker while its local nft child
+survives. A competing worker must remain fenced until the child commits the
+actual table and finishes. In the unfenced control the competitor completes
+before that same child commits. Both cases retain the pending durable intent.
+The native fixture also checks held TCP/UDP flows, source tuples, disk recovery,
+uncertain acknowledgements, rollback and refusal to retire active targets.
+
+This worker engine and its hosted IPC fixture are not a production deployment
+mode. Owned helper/keeper image provisioning, full lifecycle integration, trusted
+routing-controller adoption, host reboot restoration and shared-state policy
+remain required. Never substitute a Docker API exec child for a local kernel
+mutator that inherits the target worker's locked descriptor.
 
 `withPersistentPortHostAuthority` provides the Linux worker lock primitive. It
 locks an owned private state directory's regular lock file through `flock`, keeps
@@ -101,8 +113,8 @@ publisher, managed host namespace or service cleanup paths.
 The native process-death acceptance kills the worker while a child is still
 running. In the fenced case the competitor enters only after the child finishes;
 in the unfenced control it enters before the child finishes. This validates lock
-lifetime, not the complete production worker: the target-host network namespace,
-trusted helper image, managed state-volume ownership and publisher callbacks still
+lifetime, not the complete production worker: production target-host provisioning,
+trusted helper image, managed state-volume ownership and pipeline callbacks still
 need wiring. Every kernel mutator must use the inherited-descriptor command path.
 
 1. Persist binding ownership, service generation, immutable Docker IDs, backend

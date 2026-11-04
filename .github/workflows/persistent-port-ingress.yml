@@ -5,6 +5,9 @@ on:
       - 'apps/server/src/lib/persistentPortNft.ts'
       - 'apps/server/src/lib/persistentPortPublication.ts'
       - 'apps/server/src/lib/persistentPortJournalStore.ts'
+      - 'apps/server/src/lib/persistentPortHostWorker.ts'
+      - 'apps/server/test/lib/persistentPortHostWorker.test.ts'
+      - 'scripts/fixtures/persistent-port-host-worker.mjs'
       - 'apps/server/test/lib/persistentPortJournalStore.test.ts'
       - 'scripts/fixtures/persistent-port-journal.mjs'
       - 'apps/server/src/lib/persistentPortHostAuthority.ts'
@@ -31,7 +34,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Verify actual Linux host locks and durable journal crash boundaries
-        run: pnpm --filter @ninedeploy/server exec vitest run test/lib/persistentPortNft.test.ts test/lib/persistentPortPublication.test.ts test/lib/persistentPortHostAuthority.test.ts test/lib/persistentPortJournalStore.test.ts --no-coverage --maxWorkers=1
+        run: pnpm --filter @ninedeploy/server exec vitest run test/lib/persistentPortNft.test.ts test/lib/persistentPortPublication.test.ts test/lib/persistentPortHostAuthority.test.ts test/lib/persistentPortJournalStore.test.ts test/lib/persistentPortHostWorker.test.ts --no-coverage --maxWorkers=1
+      - name: Build the actual target worker modules and dependencies
+        run: pnpm turbo run build --filter=@ninedeploy/server
       - run: pnpm --filter @ninedeploy/server exec tsx ../../scripts/smoke-persistent-port-ingress.mjs
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
