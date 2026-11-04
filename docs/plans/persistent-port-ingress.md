@@ -64,6 +64,20 @@ the production adapter still needs non-stealable host authority, durable ownersh
 and pipeline cleanup integration. A process-local queue or stale-heartbeat lock
 alone must not be used to fence firewall mutation.
 
+`withPersistentPortHostAuthority` provides the Linux worker lock primitive. It
+locks an owned private state directory's regular lock file through `flock`, keeps
+the open file description in the worker and passes it to each mutator as file
+descriptor 3. It closes its reference without explicitly unlocking a surviving
+child's reference. Unsupported platforms, writable state directories, hard-linked
+lock files, invalid deadlines and escaped command contexts are refused.
+
+The native process-death acceptance kills the worker while a child is still
+running. In the fenced case the competitor enters only after the child finishes;
+in the unfenced control it enters before the child finishes. This validates lock
+lifetime, not the complete production worker: the target-host network namespace,
+trusted helper image, managed state-volume ownership and publisher callbacks still
+need wiring. Every kernel mutator must use the inherited-descriptor command path.
+
 1. Persist binding ownership, service generation, immutable Docker IDs, backend
    addresses, keeper identity, firewall capability and publication revision.
    Serialize per-service operations and reject stale revisions. Reconcile kernel
@@ -150,3 +164,4 @@ Primary references:
 - [MonoSIP v1.8.0 ARI client](https://github.com/MonoSIP/MonoSIP/blob/v1.8.0/apps/api/src/asterisk/ari.ts)
 - [nftables stateful NAT](https://wiki.nftables.org/wiki-nftables/index.php/Performing_Network_Address_Translation_(NAT))
 - [PostgreSQL server startup and data-directory ownership](https://www.postgresql.org/docs/17/server-start.html)
+- [util-linux flock descriptor and child-lifetime semantics](https://github.com/util-linux/util-linux/blob/master/sys-utils/flock.1.adoc)

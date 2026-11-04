@@ -140,6 +140,43 @@ try {
   await recovered.promote({ ...spec, revision: 3 });
   observations.push(probe('old'));
   await until(() => webTarget('old'));
+
+  // Prove that a surviving mutator, rather than its killed parent, owns the
+  // OS lock. The unfenced control must let a competing writer enter early.
+  innerDocker('run', '-d', '--name', 'authority', '-v', '/workspace:/workspace:ro', '-v', '/proof:/proof', nodeImage, 'sleep', '180');
+  innerDocker('exec', 'authority', 'apk', 'add', '--no-cache', 'util-linux');
+  const lockFixture = '/workspace/scripts/fixtures/persistent-port-lock.mjs';
+  const lockResults = [];
+  const existsInHelper = path => innerDocker('exec', 'authority', 'node', '-e', 'if(!require("node:fs").existsSync(process.argv[1]))process.exit(1)', path);
+  for (const kind of ['fenced', 'unfenced']) {
+    const dir = `/proof/locks/${kind}`;
+    innerDocker('exec', '-d', 'authority', 'node', lockFixture, 'parent', dir, kind);
+    await until(() => existsInHelper(`${dir}/mutator-ready`));
+    const pid = innerDocker('exec', 'authority', 'cat', `${dir}/parent.pid`);
+    assert.match(pid, /^[1-9][0-9]*$/); assert.ok(Number(pid) > 1);
+    innerDocker('exec', 'authority', 'kill', '-KILL', pid);
+    innerDocker('exec', '-d', 'authority', 'node', lockFixture, 'competitor', dir);
+    await until(() => existsInHelper(`${dir}/competitor-attempt`));
+    if (kind === 'unfenced') await until(() => existsInHelper(`${dir}/competitor-entered`));
+    else {
+      await delay(250);
+      assert.throws(() => existsInHelper(`${dir}/competitor-entered`));
+    }
+    innerDocker('exec', 'authority', 'touch', `${dir}/release`);
+    await until(() => existsInHelper(`${dir}/competitor-entered`));
+    const events = await until(() => {
+      const lines = innerDocker('exec', 'authority', 'cat', `${dir}/events.log`).split('\n');
+      assert.ok(lines.includes('mutator-finish')); return lines;
+    });
+    assert.equal(events.indexOf('mutator-finish') < events.indexOf('competitor-enter'), kind === 'fenced');
+    lockResults.push({ kind, events });
+  }
+  innerDocker('exec', 'authority', 'node', lockFixture, 'guards', '/proof/locks/guards');
+  const guards = JSON.parse(innerDocker('exec', 'authority', 'cat', '/proof/locks/guards/guards.json'));
+  writeFileSync(resolve(proof, 'host-authority.json'), JSON.stringify({ lockResults, guards }, null, 2));
+  // Remove only this fixture's private root-owned directories so the runner
+  // can archive the public proof files without weakening lock permissions.
+  innerDocker('exec', 'authority', 'node', '-e', 'require("node:fs").rmSync("/proof/locks",{recursive:true,force:true})');
   writeFileSync(resolve(proof, 'finish'), 'finish');
   await until(() => { assert.ok(existsSync(resolve(proof, 'hold-result.json'))); assert.ok(existsSync(resolve(proof, 'web-result.json'))); });
   const held = JSON.parse(readFileSync(resolve(proof, 'hold-result.json'))), web = JSON.parse(readFileSync(resolve(proof, 'web-result.json')));
@@ -147,10 +184,14 @@ try {
   writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, observations, held, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
 } finally {
   if (created) {
+    for (const kind of ['fenced', 'unfenced']) {
+      try { writeFileSync(resolve(proof, `lock-${kind}-events.log`), innerDocker('exec', 'authority', 'cat', `/proof/locks/${kind}/events.log`)); } catch {}
+    }
+    try { innerDocker('exec', 'authority', 'node', '-e', 'require("node:fs").rmSync("/proof/locks",{recursive:true,force:true})'); } catch {}
     for (const [file, args] of [['nft.json', ['nft', '-j', 'list', 'ruleset']], ['iptables.txt', ['iptables-save', '-c']], ['conntrack.txt', ['conntrack', '-L']], ['routes.txt', ['ip', 'route']]]) {
       try { writeFileSync(resolve(proof, file), inside(...args)); } catch {}
     }
-    for (const container of ['old', 'new', 'keeper', 'proxy', 'client']) { try { writeFileSync(resolve(proof, `${container}.log`), innerDocker('logs', container)); } catch {} }
+    for (const container of ['old', 'new', 'keeper', 'proxy', 'client', 'authority']) { try { writeFileSync(resolve(proof, `${container}.log`), innerDocker('logs', container)); } catch {} }
     docker('rm', '-f', '-v', name);
     assert.ok(!docker('ps', '-a', '--filter', `name=^/${name}$`, '--format', '{{.ID}}'));
     writeFileSync(resolve(proof, 'cleanup.json'), JSON.stringify({ ownedDaemonRemoved: name }));

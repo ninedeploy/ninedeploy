@@ -4,8 +4,10 @@ on:
     paths:
       - 'apps/server/src/lib/persistentPortNft.ts'
       - 'apps/server/src/lib/persistentPortPublication.ts'
+      - 'apps/server/src/lib/persistentPortHostAuthority.ts'
       - 'scripts/smoke-persistent-port-ingress.mjs'
       - 'scripts/fixtures/persistent-port-runtime.mjs'
+      - 'scripts/fixtures/persistent-port-lock.mjs'
       - '.github/workflows/persistent-port-ingress.yml'
   workflow_dispatch:
 permissions:
