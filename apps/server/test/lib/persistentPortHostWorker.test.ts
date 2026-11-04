@@ -100,5 +100,31 @@ describe('target-host publication worker', () => {
     it('refuses malformed action/target requests before creating authority state', async () => {
       const h = host(); await expect(runPersistentPortHostWorker({ directory: h.directory, request: { version: 1, kind: 'retire', spec: first, targetId: 'unsafe' }, runtime: h.runtime, confirmWeb: acknowledge })).rejects.toThrow('Invalid'); expect(h.events).toEqual([]);
     });
+    it('rolls an unresolved unhealthy candidate back through a fresh worker revision', async () => {
+      const h = host(); await h.run('promote');
+      await expect(h.run('promote', next, async () => ({}))).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+      h.runtime.ready = async (_context, spec) => { if (spec.target.id === next.target.id) throw new Error('Candidate is not ready'); };
+      const reverted = { ...first, revision: 3 };
+      const result = await h.run('rollback', reverted);
+      expect(result.journal?.committed).toEqual(reverted); expect(result.journal?.pending).toBeNull(); expect(result.journal?.retained).toHaveLength(2);
+    });
+    it('refuses active retirement and reports a completed drain only after durable retirement intent', async () => {
+      const h = host(); await h.run('promote'); await h.run('promote', next);
+      const request = { version: 1 as const, kind: 'retire' as const, spec: next, targetId: first.target.id };
+      const run = () => runPersistentPortHostWorker({ directory: h.directory, request, runtime: h.runtime, confirmWeb: acknowledge });
+      expect((await run()).retired).toBe(false);
+      const retired: string[] = []; h.runtime.drained = async () => true;
+      h.runtime.retire = async (_context, target) => { expect(h.journal().retiring).toEqual(first.target); retired.push(target.id); };
+      const result = await run(); expect(result.retired).toBe(true); expect(retired).toEqual([first.target.id]); expect(result.journal?.retained).toEqual([next.target]);
+    });
+    it('reconstructs a lost retirement acknowledgement without removing the serving target', async () => {
+      const h = host(); await h.run('promote'); await h.run('promote', next); let loseAck = true; const retired: string[] = [];
+      h.runtime.drained = async () => true;
+      h.runtime.retire = async (_context, target) => { expect(h.journal().retiring).toEqual(first.target); retired.push(target.id); if (loseAck) throw new Error('Lost stop acknowledgement'); };
+      await expect(runPersistentPortHostWorker({ directory: h.directory, request: { version: 1, kind: 'retire', spec: next, targetId: first.target.id }, runtime: h.runtime, confirmWeb: acknowledge })).rejects.toBeInstanceOf(PersistentPortPublicationPending);
+      expect(h.journal().retiring).toEqual(first.target); expect(h.journal().retained).toHaveLength(2); loseAck = false;
+      const result = await runPersistentPortHostWorker({ directory: h.directory, request: { version: 1, kind: 'recover-retirement', spec: next }, runtime: h.runtime, confirmWeb: acknowledge });
+      expect(retired).toEqual([first.target.id, first.target.id]); expect(result.journal?.retiring).toBeNull(); expect(result.journal?.retained).toEqual([next.target]);
+    });
   }
 });

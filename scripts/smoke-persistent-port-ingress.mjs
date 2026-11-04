@@ -199,7 +199,7 @@ try {
     assert.deepEqual(events, kind === 'fenced' ? ['mutator-enter', 'mutator-finish', 'competitor-finish'] : ['mutator-enter', 'competitor-finish', 'mutator-finish']);
     const nftState = JSON.parse(inside('nft', '-j', 'list', 'table', 'ip', table)); assertPersistentPortNftState(claim, nftState);
     writeFileSync(resolve(proof, 'worker-fence-' + kind + '-nft.json'), JSON.stringify(nftState));
-    workerFenceResults.push({ kind, events, claim, actualNftChildCommitted: true, recoveredPendingIntent: true });
+    workerFenceResults.push({ kind, events, claim, pendingIntent: inspected.journal, actualNftChildCommitted: true, recoveredPendingIntent: true });
   }
   writeFileSync(resolve(proof, 'target-host-worker.json'), JSON.stringify({ hostNamespace, workerNamespaces, workerCalls, workerFenceResults }, null, 2));
 
