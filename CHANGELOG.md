@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.18] - 2026-11-04
+
 ### Fixed
 
 - A sleeping node service could not be woken by visitors after one of its domains was edited. Adding a header, turning SSL on or off, or any other domain change made every wake demand fail, and visitors saw "Waking up" until someone pressed Wake or redeployed. Changing a health setting (path, check, command or timeout) had the same effect. Wake now goes through after either kind of edit. Sleep admission already binds the routes to the idle evidence, and readiness uses the current health settings. Services that went to sleep on 0.18.17 still wake after the upgrade (R2).
@@ -17,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changing the CPU or memory limits of a sleeping node service left it unable to wake on visits: the waking page stayed up and the status said "waking" until someone pressed Wake. While a node service sleeps, or is going to sleep or waking, new limits are now saved and apply on the next deploy (R2).
 - With `NINEDEPLOY_NODE_SLEEP_AUTOMATION=off`, a node sleep interrupted before its containers stopped (for example by a panel restart) left the running service's domains on the waking page with no way back: Wake answered "not asleep" and the panel showed no Wake button. Wake now accepts that state and the panel offers it (R2).
 - Terminal & exec explains why it closes when the panel is opened at an address other than its configured one. Before, the terminal only showed "Access was refused: the session was revoked, or this page is not a panel origin." Now it names the page's address and says to use the address in `NINEDEPLOY_PUBLIC_URL`, or to add this address there or to `NINEDEPLOY_CORS_ORIGINS`.
+- Port mappings under Service → Network showed only the starting container port of a saved range. They now show the complete range, a typed starting port expands to the range on blur, and an explicit range that does not match the host range is refused. The field is wider so both ends stay visible.
 
 ## [0.18.17] - 2026-11-03
 

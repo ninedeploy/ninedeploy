@@ -502,11 +502,14 @@ describe('dockerBuilder.buildAndRun', () => {
 
     const argvs = h.run.mock.calls.map((c) => c[1] as unknown as string[]);
     const stopPrevIdx = argvs.findIndex((a) => a[0] === 'stop' && a.includes('x-3'));
-    const runIdx = argvs.findIndex((a) => a[0] === 'run');
+    const createIdx = argvs.findIndex((a) => a[0] === 'create');
+    const startIdx = argvs.findIndex((a) => a[0] === 'start');
     expect(stopPrevIdx).toBeGreaterThanOrEqual(0);
-    expect(runIdx).toBeGreaterThan(stopPrevIdx);
+    expect(createIdx).toBeGreaterThanOrEqual(0);
+    expect(createIdx).toBeLessThan(stopPrevIdx);
+    expect(startIdx).toBeGreaterThan(stopPrevIdx);
     expect(argvs.some((a) => a[0] === 'rm' && a.includes('x-3'))).toBe(false);
-    expect(argvs[runIdx]!).toContain('-p');
+    expect(argvs[createIdx]!).toContain('-p');
   });
 
   it('does NOT retire the previous runtime for non-host-port (Traefik-routed) services', async () => {

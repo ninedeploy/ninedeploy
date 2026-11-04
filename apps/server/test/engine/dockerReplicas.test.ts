@@ -138,16 +138,16 @@ describe('docker builder candidate ownership on failure', () => {
 
   // F524: a failed primary start leaves the created container behind and the
   // pipeline never learns its id — the builder removes exactly that name.
-  it('removes only its own candidate when the primary fails to start and rethrows', async () => {
+  it.each([false, true])('removes only its own failed primary and rethrows (previous runtime: %s)', async previous => {
     execMocks.run.mockImplementation(async (_cmd: string, args: string[]) => {
-      if (args[0] === 'run' && args[1] === '-d' && args[3] === 'web-7') throw new Error('port is already allocated');
+      if ((args[0] === 'run' && args[1] === '-d' && args[3] === 'web-7') || (args[0] === 'start' && args[1] === 'web-7')) throw new Error('port is already allocated');
       return undefined;
     });
     await expect(
-      dockerBuilder.buildAndRun(ctx(3) as never, { runtimeId: 'web-6', port: 80, healthPath: '/' } as never),
+      dockerBuilder.buildAndRun(ctx(3) as never, previous ? { runtimeId: 'web-6', port: 80, healthPath: '/' } as never : undefined),
     ).rejects.toThrow('port is already allocated');
     const all = runArgs();
-    const startIdx = all.findIndex((a) => a[0] === 'run' && a[1] === '-d' && a[3] === 'web-7');
+    const startIdx = all.findIndex((a) => previous ? a[0] === 'start' && a[1] === 'web-7' : a[0] === 'run' && a[1] === '-d' && a[3] === 'web-7');
     expect(all.slice(startIdx + 1)).toEqual([['rm', '-f', 'web-7']]);
   });
 
