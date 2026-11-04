@@ -162,11 +162,21 @@ try {
     await docker(['run', '-d', '--name', mongoSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none', mongoImage]);
     phase = 'mongo-source-readiness';
     let mongoReady = false;
+    let lastPing = '';
     for (let attempt = 0; attempt < 90; attempt++) {
-      try { if ((await mongoEval('db.adminCommand({ ping: 1 }).ok')).trim() === '1') { mongoReady = true; break; } } catch { /* not ready yet */ }
+      try {
+        lastPing = (await mongoEval('db.adminCommand({ ping: 1 }).ok')).trim();
+        if (lastPing === '1') { mongoReady = true; break; }
+      } catch (error) { lastPing = error instanceof Error ? error.message : String(error); }
       await sleep(2000);
     }
-    assert.equal(mongoReady, true, 'mongo source did not become ready');
+    if (!mongoReady) {
+      // A synthetic source with no data or credentials yet: its state and
+      // log tail are safe to keep in the public receipt.
+      const state = await docker(['inspect', '--format', '{{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} {{.State.Error}}', mongoSource]).catch((error: unknown) => String(error));
+      const logs = await docker(['logs', '--tail', '25', mongoSource]).catch((error: unknown) => String(error));
+      throw new Error(`mongo source did not become ready; log tail: ${logs.slice(-1800)}; state: ${state.trim()}; last ping: ${lastPing.slice(-400)}`);
+    }
     phase = 'mongo-source-seed';
     await mongoEval(`db.getSiblingDB('admin').createUser({ user: 'nine', pwd: '${mongoPassword}', roles: ['root'] })`);
     await mongoEval("db.getSiblingDB('shop').orders.insertMany([{ _id: 1, v: 'before' }, { _id: 2, v: null }])");
@@ -205,7 +215,7 @@ try {
   report.failure = phase;
   // Only fixed synthetic source commands are eligible: never retain the
   // verifier's SQL, data, probe output or any production database diagnostic.
-  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-1000);
+  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
 } finally {
   let cleanup = true;
   for (const owned of [...(created ? [name] : []), ...familySources]) {
