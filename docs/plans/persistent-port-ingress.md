@@ -69,7 +69,9 @@ fallback target and remains held for recovery.
 The hosted acceptance adapter writes and fsyncs a real journal, injects a lost
 Traefik acknowledgement after the route actually loads, reconstructs the
 publisher from that journal and checks active-flow retirement refusal. The runner
-is the only writer in its owned daemon. This does not certify production locking:
+is the only writer in its owned daemon. The native publisher uses the journal
+store under runner-scoped OS authority, while its kernel callbacks still traverse
+Docker RPC into that isolated daemon. This does not certify target-host fencing:
 the production adapter still needs non-stealable host authority, durable ownership
 and pipeline cleanup integration. A process-local queue or stale-heartbeat lock
 alone must not be used to fence firewall mutation.
