@@ -421,7 +421,11 @@ export async function backupsDrill(
       });
     } catch (err) { fail(err); return; }
   }
-  if (result.status === 'passed') {
+  const restoreMs = result.details?.verification === 'restore' ? result.details.restoreMs : undefined;
+  if (result.status === 'passed' && typeof restoreMs === 'number') {
+    // R3: the measured recovery time of the real restore, apart from setup.
+    success(`Backup #${backupId} restored and matched the expected data: the restore took ${restoreMs} ms (${result.durationMs} ms with setup and cleanup).`);
+  } else if (result.status === 'passed') {
     success(`Backup #${backupId} passed the drill in ${result.durationMs} ms.`);
   } else if (result.status === 'unverifiable') {
     // r356: the check could not run (docker / engine image / tool missing) —

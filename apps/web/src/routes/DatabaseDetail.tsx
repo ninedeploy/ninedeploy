@@ -44,7 +44,7 @@ import {
   cn,
 } from '../components/ui.js';
 import { PluginSlot } from '../components/PluginSlot.js';
-import { downloadBlob, formatBytes, formatDateTime, useCopy } from '../lib/format.js';
+import { downloadBlob, formatBytes, formatDateTime, formatDuration, useCopy } from '../lib/format.js';
 import { ContainerFileBrowser } from '../components/ContainerFileBrowser.js';
 import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
 import { BackupScheduleCard } from './database/BackupScheduleCard.js';
@@ -64,6 +64,13 @@ import { fill, msg, useT } from '../lib/i18n.js';
 export const CLIENT_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb', 'dragonfly']);
 /** R3: engines the panel can restore into an isolated helper (server: RESTORE_VERIFICATION_ENGINES). */
 const RESTORE_VERIFY_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'mongo']);
+
+/** R3: the measured restore time of a restore verification ("850 ms", "1m 05s"), or null for a structural check or a restore that never finished. */
+function restoreDuration(details: Record<string, unknown> | null | undefined): string | null {
+  const ms = details?.verification === 'restore' ? details.restoreMs : undefined;
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return null;
+  return ms < 1000 ? `${Math.round(ms)} ms` : formatDuration(ms / 1000);
+}
 
 const ENGINE_LABEL: Record<string, string> = {
   postgres: 'PostgreSQL',
@@ -804,12 +811,19 @@ function BackupsPanel({ dbId, dbName, engine }: { dbId: number; dbName: string; 
                 <td className="px-5 py-3 text-xs text-slate-500">{formatDateTime(b.createdAt)}</td>
                 <td className="px-5 py-3">
                   {latestDrill.get(b.id) ? (
-                    <StatusBadge
-                      status={latestDrill.get(b.id)!.status}
-                      title={latestDrill.get(b.id)!.error ?? (latestDrill.get(b.id)!.details?.verification === 'restore'
-                        ? t('Restore verified {time}', { time: formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString()) })
-                        : t('Checked {time}', { time: formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString()) }))}
-                    />
+                    <div className="flex items-center gap-2">
+                      <StatusBadge
+                        status={latestDrill.get(b.id)!.status}
+                        title={latestDrill.get(b.id)!.error ?? (latestDrill.get(b.id)!.details?.verification === 'restore'
+                          ? t('Restore verified {time}', { time: formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString()) })
+                          : t('Checked {time}', { time: formatDateTime(new Date(latestDrill.get(b.id)!.startedAt).toISOString()) }))}
+                      />
+                      {restoreDuration(latestDrill.get(b.id)!.details) !== null && (
+                        <span className="text-xs text-slate-500" title={t('How long the real restore took in the isolated container')}>
+                          {t('restored in {duration}', { duration: restoreDuration(latestDrill.get(b.id)!.details)! })}
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-xs text-slate-600">{t('never')}</span>
                   )}

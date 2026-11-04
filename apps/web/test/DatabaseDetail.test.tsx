@@ -342,20 +342,39 @@ describe('DatabaseDetail', () => {
   it('polls a running verification, holds new ones until it settles and labels the restore verdict', async () => {
     mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
-    const drill = (status: string) => ({ id: 9, databaseId: 1, backupId: 101, status, engine: 'postgres', durationMs: 900, error: null, details: { verification: 'restore' }, startedAt: Date.parse('2026-08-17T15:00:00.000Z'), completedAt: null });
-    mockOf(api.databases.drills).mockResolvedValueOnce([drill('running')] as any).mockResolvedValue([drill('passed')] as any);
+    const drill = (status: string, details: Record<string, unknown>) => ({ id: 9, databaseId: 1, backupId: 101, status, engine: 'postgres', durationMs: 900, error: null, details, startedAt: Date.parse('2026-08-17T15:00:00.000Z'), completedAt: null });
+    mockOf(api.databases.drills)
+      .mockResolvedValueOnce([drill('running', { verification: 'restore', restoreMs: null })] as any)
+      .mockResolvedValue([drill('passed', { verification: 'restore', restoreMs: 65_400 })] as any);
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
     const verify = await screen.findByRole('button', { name: 'Verify restore of backup 101' });
     await waitFor(() => expect(verify).toBeDisabled());
+    // No restore time until the restore finished.
+    expect(screen.queryByText(/^restored in /)).not.toBeInTheDocument();
     // The 3-second poll picks up the verdict without a reload.
     await waitFor(() => expect(screen.getByText('passed')).toBeInTheDocument(), { timeout: 5000 });
     expect(screen.getByText('passed').closest('[title]')?.getAttribute('title')).toMatch(/^Restore verified /);
+    // R3: the measured recovery duration of the real restore is shown with the verdict.
+    expect(screen.getByText('restored in 1m 05s')).toBeInTheDocument();
     expect(verify).not.toBeDisabled();
     // The dialog's Cancel closes it without starting anything.
     fireEvent.click(verify);
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.databases.drillBackup).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ verification: 'restore', restoreMs: 850 }, 'restored in 850 ms'],
+    [{ tool: 'pg_restore', mode: 'custom' }, null],
+  ])('shows a sub-second restore time, and none for a structural check (%o)', async (details, label) => {
+    mockOf(api.databases.get).mockResolvedValue(sampleDb as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([{ id: 9, databaseId: 1, backupId: 101, status: 'passed', engine: 'postgres', durationMs: 900, error: null, details, startedAt: Date.parse('2026-08-17T15:00:00.000Z'), completedAt: null }] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    expect(await screen.findByText('passed')).toBeInTheDocument();
+    if (label) expect(screen.getByText(label)).toBeInTheDocument();
+    else expect(screen.queryByText(/^restored in /)).not.toBeInTheDocument();
   });
 
   it('explains the MongoDB helper, its mongosh output and how to address a database', async () => {

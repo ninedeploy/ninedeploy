@@ -325,6 +325,15 @@ describe('backups drill — R3 restore verification', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('reports the measured restore time of a passed restore verification', async () => {
+    const passed = { ...drillRow('passed'), details: { verification: 'restore', restoreMs: 820, queryMs: 60 } };
+    const drill = vi.fn().mockResolvedValueOnce(passed);
+    const client = { databases: { drillBackup: vi.fn().mockResolvedValue(admitted), drill } };
+    await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1', expect: '1', pollMs: 1 });
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('the restore took 820 ms (1500 ms with setup and cleanup)'));
+    expect(process.exitCode).toBe(0);
+  });
+
   it('keeps an empty --expect (a query with no rows) and exits 1 on a failed verdict', async () => {
     const client = { databases: { drillBackup: vi.fn().mockResolvedValue(admitted), drill: vi.fn().mockResolvedValue(drillRow('failed', 'Restored data did not match the expected probe result')) } };
     await backupsDrill(client as never, '2', '8', { restoreQuery: 'SELECT 1 WHERE false', expect: '', pollMs: 1 });

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Isolation:** the same as PostgreSQL. No network, all capabilities dropped, a read-only root, bounded tmpfs, and the container is removed afterwards.
   - **MySQL and MariaDB:** the whole `--all-databases` dump is restored, and the query runs in the `app` database. The expected output is the client's batch output without headers. Columns are separated by a tab, and NULL prints as `NULL`.
   - **MongoDB:** the archive is streamed into `mongorestore --stopOnError`, so no copy of it lands in the container. The query is a mongosh script, and the expected value is what mongosh prints for its last expression.
+- **Recovery duration of a restore verification.** The Backups tab shows how long the real restore took next to the verdict, for example "restored in 1m 05s". `backups drill --restore-query` prints it on a pass.
 
 ### Fixed
 

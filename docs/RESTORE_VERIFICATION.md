@@ -5,7 +5,8 @@ Status, 2026-11-04: restore verification is public for PostgreSQL, and since 0.1
 - **Hosted acceptance, MySQL and MariaDB:** passed on 1151cc49 ([run 41901004999](https://github.com/ninedeploy/ninedeploy/actions/runs/41901004999)). The run had 11 cases: PostgreSQL 5, `mysql:9.7` 3 and `mariadb:12.3` 3. Every source was untouched, the dump bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
 - **MongoDB:** passed real local checks (below). Its hosted cohort must still pass before it counts as native acceptance.
 - The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
-- The Redis family and the remaining engines, PITR and real recovery-duration reporting remain open, so R3 is not closed.
+- **Recovery duration** is recorded and reported. Every restore verification stores the measured `restoreMs` (with `queryMs` and the total `durationMs`) on its drill row. The panel's Backups tab shows it next to the verdict ("restored in 1m 05s"). The CLI's pass line reads "the restore took N ms (M ms with setup and cleanup)". These are measurements of the bounded helper on the panel host, not an RTO commitment for a production restore.
+- The Redis family and the remaining engines, and PostgreSQL PITR, remain open, so R3 is not closed.
 
 **MongoDB (2026-11-04)**
 - **Helper:**

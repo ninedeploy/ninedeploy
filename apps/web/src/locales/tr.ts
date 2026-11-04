@@ -6135,6 +6135,8 @@ export const TR: Readonly<Record<string, string>> = {
   'Could not read the log: {error}': 'Log okunamadı: {error}',
   'No output yet.': 'Henüz çıktı yok.',
   // R3: isolated restore verification of a PostgreSQL, MySQL, MariaDB or MongoDB backup.
+  'restored in {duration}': '{duration} içinde geri yüklendi',
+  'How long the real restore took in the isolated container': 'Yalıtılmış container\'daki gerçek geri yüklemenin ne kadar sürdüğü',
   "One value is easiest, for example: db.getSiblingDB('shop').orders.countDocuments()": "Tek bir değer en kolayıdır, örneğin: db.getSiblingDB('shop').orders.countDocuments()",
   'Exactly what mongosh prints for the last expression. EJSON.stringify(…) prints one stable line. The default database is test; address yours with db.getSiblingDB(…).': 'mongosh\'un son ifade için yazdırdığının birebir aynısı. EJSON.stringify(…) tek ve kararlı bir satır yazdırır. Varsayılan veritabanı test\'tir; kendi veritabanınızı db.getSiblingDB(…) ile belirtin.',
   'Exactly what psql prints, without headers. Separate rows with new lines; leave empty for no rows.': 'psql\'in başlıksız olarak yazdırdığının birebir aynısı. Satırları yeni satırla ayırın; satır yoksa boş bırakın.',
