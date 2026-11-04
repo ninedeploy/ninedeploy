@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.18.19",
+    "date": "2026-11-04",
+    "title": "Safer preparation for fixed-port deployments",
+    "changes": [
+      "Fixed-port Docker deployments now prepare the stopped candidate before stopping the serving runtime. Creation failures keep the previous application running.",
+      "Cancelling during candidate preparation preserves the serving runtime and removes only the interrupted candidate.",
+      "Multiline environment deployments use the same guarded preparation and handoff while preserving environment values and attached volumes.",
+      "Direct host-port deployments remain sequential during application startup. Persistent TCP/UDP ingress is not enabled by this patch."
+    ]
+  },
+  {
     "version": "0.18.18",
     "date": "2026-11-04",
     "title": "Node sleep/wake fixes: sleeping services wake reliably",
