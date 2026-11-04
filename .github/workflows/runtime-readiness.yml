@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       restore_verification:
-        description: Verify isolated PostgreSQL restore, known data and source preservation
+        description: Verify isolated PostgreSQL, MySQL and MariaDB restores, known data and source preservation
         type: boolean
         default: false
 
@@ -58,7 +58,7 @@ jobs:
   restore-verification:
     if: github.event.inputs.restore_verification == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       DOCKER_HOST: unix:///var/run/docker.sock
       DOCKER_CONTEXT: default
@@ -72,7 +72,7 @@ jobs:
       - name: Verify Node security baseline
         run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
       - run: pnpm install --frozen-lockfile
-      - name: Verify real isolated PostgreSQL restore and query
+      - name: Verify real isolated PostgreSQL, MySQL and MariaDB restores and queries
         run: pnpm --filter @ninedeploy/server exec tsx ../../scripts/smoke-backup-restore.mts --proof=.temp_files/restore-verification
       - name: Preserve public restore receipts only
         if: always()

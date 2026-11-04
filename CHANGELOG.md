@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Restore verification for MySQL and MariaDB backups (R3).** **Verify restore** and `backups drill --restore-query … --expect …` now also restore a MySQL or MariaDB backup into an isolated container of the database's own engine image and run your query there.
+  - **Isolation:** the same as PostgreSQL. No network, all capabilities dropped, a read-only root, bounded tmpfs, and the container is removed afterwards.
+  - **Restore:** the whole `--all-databases` dump is restored. The query runs in the `app` database.
+  - **Expected output:** the client's batch output without headers. Columns are separated by a tab, and NULL prints as `NULL`.
+
+### Fixed
+
+- **A restore verification whose database engine stopped is `unverifiable`, not `failed`.** This applies to every engine. Examples are a lost connection to the server, or a helper that is no longer running.
+  - MariaDB aborts outright when its scratch space fills up. The helper's own log is now checked for that, so the verdict names the capacity limit.
+  - MySQL's "The table … is full" is also recognized as the capacity limit.
+
 ## [0.18.20] - 2026-11-04
 
 ### Added

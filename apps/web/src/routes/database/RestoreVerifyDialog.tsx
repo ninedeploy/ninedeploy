@@ -5,14 +5,16 @@ import { useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Field, Modal, Textarea } from '../../components/ui.js';
 
+const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB' };
+
 /**
- * R3: start an isolated restore verification of one PostgreSQL backup. The
- * panel restores it into a networkless helper, runs the operator's query
- * there and compares the output with the expected value. It answers at once
- * (the verdict lands on the drill row the backups table polls), so this
- * dialog closes as soon as the verification is admitted.
+ * R3: start an isolated restore verification of one PostgreSQL, MySQL or
+ * MariaDB backup. The panel restores it into a networkless helper, runs the
+ * operator's query there and compares the output with the expected value. It
+ * answers at once (the verdict lands on the drill row the backups table
+ * polls), so this dialog closes as soon as the verification is admitted.
  */
-export function RestoreVerifyDialog({ dbId, backupId, onClose }: { dbId: number; backupId: number; onClose: () => void }) {
+export function RestoreVerifyDialog({ dbId, backupId, engine, onClose }: { dbId: number; backupId: number; engine: string; onClose: () => void }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -51,7 +53,7 @@ export function RestoreVerifyDialog({ dbId, backupId, onClose }: { dbId: number;
         }}
       >
         <p className="text-sm text-slate-400">
-          {t('The backup is restored into an isolated PostgreSQL container on the panel host, with no network. Your query runs there, and the check passes only when its output equals the expected value exactly. The live database is not touched; the query and the value are not stored.')}
+          {t('The backup is restored into an isolated {engine} container on the panel host, with no network. Your query runs there, and the check passes only when its output equals the expected value exactly. The live database is not touched; the query and the value are not stored.', { engine: ENGINE_NAME[engine] ?? engine })}
         </p>
         <Field label={t('Query')} hint={t('One value is easiest, for example: SELECT count(*) FROM users')}>
           <Textarea
@@ -63,7 +65,14 @@ export function RestoreVerifyDialog({ dbId, backupId, onClose }: { dbId: number;
             maxLength={16384}
           />
         </Field>
-        <Field label={t('Expected output')} hint={t('Exactly what psql prints, without headers. Separate rows with new lines; leave empty for no rows.')}>
+        <Field
+          label={t('Expected output')}
+          hint={
+            engine === 'postgres'
+              ? t('Exactly what psql prints, without headers. Separate rows with new lines; leave empty for no rows.')
+              : t('Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.')
+          }
+        >
           <Textarea
             rows={2}
             value={expected}

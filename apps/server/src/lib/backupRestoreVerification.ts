@@ -1,21 +1,29 @@
-/** Internal R3 adapter. Public drill integration and native acceptance are separate gates. */
+/** R3: restore a backup into an isolated, networkless engine helper and run a known-data probe there. */
 import { randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
-import { capture, ExecOutputTooLargeError, ExecTimeoutError, sleep } from './exec.js';
+import { capture, ExecOutputTooLargeError, ExecTimeoutError, run, sleep } from './exec.js';
 import { streamFileToCommand } from './fileCommandInput.js';
 
-export interface PostgresRestoreProbe {
+/** Engines with an isolated restore adapter. */
+export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb'] as const;
+export type RestoreVerificationEngine = (typeof RESTORE_VERIFICATION_ENGINES)[number];
+export function isRestoreVerificationEngine(engine: string): engine is RestoreVerificationEngine {
+  return (RESTORE_VERIFICATION_ENGINES as readonly string[]).includes(engine);
+}
+
+export interface RestoreProbe {
   /** Already decrypted, caller-owned backup. Never modified or removed here. */
   file: string;
   /** Managed engine image; resolved to its immutable config ID before use. */
   image: string;
   query: string;
-  /** Exact unaligned psql output, excluding its final newline. Never persisted by this adapter. */
+  /** Exact client output (see `helperProfile`'s `query`), excluding its final newline. Never persisted by this adapter. */
   expected: string;
 }
 export interface RestoreVerificationResult {
   status: 'passed' | 'failed' | 'unverifiable';
-  engine: 'postgres';
+  engine: RestoreVerificationEngine;
+  /** postgres: plain SQL or a custom archive. mysql/mariadb dumps are always plain SQL. */
   format: 'plain' | 'custom' | null;
   imageId: string | null;
   durationMs: number;
@@ -35,24 +43,102 @@ export const RESTORE_VERIFICATION_MAX_DUMP_BYTES = (SCRATCH_MIB / 2) * 1024 * 10
 const HELPER_ROLE = 'ninedeploy.role=restore-verification';
 const HELPER_NAME = /^\/?ninedeploy-restore-check-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Engine messages that mean the bounded helper ran out of room, not that the
- * backup is bad. Only this boolean is used; stderr itself is never kept. */
-const CAPACITY_ERROR = /No space left on device|could not extend file|out of memory|Cannot allocate memory/i;
+ * backup is bad. Only this boolean is used; stderr itself is never kept.
+ * MySQL reports a full tmpfs as "The table '…' is full" (ER_RECORD_FILE_FULL). */
+const CAPACITY_ERROR = /No space left on device|could not extend file|out of memory|Cannot allocate memory|The table '[^']*' is full|Got error 28\b|Errcode: 28\b|failed with error 28\b|Out of disk space/i;
+/** The client lost its server mid-operation: the engine died, which no dump
+ * statement does on a healthy server. Only this boolean is used. */
+const LOST_SERVER = /Lost connection to (?:MySQL |MariaDB )?server|server has gone away|server closed the connection unexpectedly/i;
+
+interface HelperProfile {
+  user: string;
+  /** tmpfs mounts besides the scratch: the socket directory, and 1 MiB mounts
+   *  over the image's VOLUMEs so no anonymous volume ever holds restored data. */
+  mounts: string[];
+  env: string[];
+  /** After the image. Both MySQL-family entrypoints prepend their daemon to leading flags. */
+  args: string[];
+  readyAttempts: number;
+  ready: string[];
+  restore(format: 'plain' | 'custom'): string[];
+  query(sql: string): string[];
+}
+const PG_CONNECTION = ['-h', '127.0.0.1', '-U', 'nine', '-d', 'app'];
+/** The staged dump on the client's stdin. Positional arguments only: neither
+ *  the path nor any byte of the dump ever becomes shell code. */
+const STDIN_FROM_FILE = 'f="$1"; shift; exec "$@" < "$f"';
+
+function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
+  if (engine === 'postgres') {
+    return {
+      user: 'postgres',
+      mounts: [
+        '/var/run/postgresql:rw,nosuid,nodev,mode=1777,size=16m',
+        '/var/lib/postgresql:rw,nosuid,nodev,mode=1777,size=1m',
+        '/var/lib/postgresql/data:rw,nosuid,nodev,mode=1777,size=1m',
+      ],
+      env: ['PGDATA=/tmp/nd-restore/data', 'POSTGRES_HOST_AUTH_METHOD=trust', 'POSTGRES_USER=nine', 'POSTGRES_DB=app'],
+      args: [],
+      readyAttempts: 60,
+      // The entrypoint's temporary initialization server listens on a Unix
+      // socket only. Require TCP so it cannot race the final server startup.
+      ready: ['pg_isready', ...PG_CONNECTION],
+      restore: (format) => format === 'custom'
+        ? ['pg_restore', '--exit-on-error', '--single-transaction', ...PG_CONNECTION, DUMP]
+        : ['psql', '-X', '-v', 'ON_ERROR_STOP=1', '--single-transaction', ...PG_CONNECTION, '-f', DUMP],
+      // Unaligned, tuples only: `|` between columns, one line per row.
+      query: (sql) => ['psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', ...PG_CONNECTION, '-c', sql],
+    };
+  }
+  const mysql = engine === 'mysql';
+  const client = mysql ? 'mysql' : 'mariadb';
+  // The helper's own root has no password and no network; the dump's
+  // `mysql` schema replaces the grant tables on disk, never in memory (the
+  // panel's dumps carry no FLUSH PRIVILEGES), so the probe still connects.
+  const tcp = ['-uroot', '-h', '127.0.0.1', '--protocol=tcp'];
+  return {
+    user: 'mysql',
+    mounts: [
+      `${mysql ? '/var/run/mysqld' : '/run/mysqld'}:rw,nosuid,nodev,mode=1777,size=16m`,
+      '/var/lib/mysql:rw,nosuid,nodev,mode=1777,size=1m',
+    ],
+    env: [mysql ? 'MYSQL_ALLOW_EMPTY_PASSWORD=yes' : 'MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=1'],
+    // tmpfs does not take native AIO reliably. MySQL's binary log (on by
+    // default since 8.0) would only add to the restore's footprint.
+    args: ['--datadir=/tmp/nd-restore/data', '--innodb-use-native-aio=0', ...(mysql ? ['--skip-log-bin'] : [])],
+    readyAttempts: 120,
+    // Both entrypoints initialize with --skip-networking: TCP means the final server.
+    ready: [mysql ? 'mysqladmin' : 'mariadb-admin', 'ping', ...tcp],
+    // A batch-mode client stops at the first failing statement and exits non-zero.
+    restore: () => ['sh', '-c', STDIN_FROM_FILE, 'restore', DUMP, client, ...tcp],
+    // Tab between columns, one line per row, values unescaped, NULL as `NULL`.
+    // Unqualified names resolve in `app`, the managed database.
+    query: (sql) => [client, ...tcp, '--batch', '--raw', '--skip-column-names', '--database=app', '-e', sql],
+  };
+}
+
+/** PostgreSQL entry point (the hosted acceptance fixture's). */
+export function verifyPostgresRestore(input: RestoreProbe): Promise<RestoreVerificationResult> {
+  return verifyRestore('postgres', input);
+}
 
 /**
- * Restore and query a backup inside an ephemeral, networkless PostgreSQL server.
+ * Restore and query a backup inside an ephemeral, networkless engine server.
  * No source database identity/credentials enter this API. Its only writable
  * filesystems are bounded tmpfs mounts. No bind mounts, sockets or published
  * ports; anonymous image volumes are removed as well. A cleanup failure cannot
  * produce a passing result. This verifies the supplied probe, not all data.
  */
-export async function verifyPostgresRestore(input: PostgresRestoreProbe): Promise<RestoreVerificationResult> {
+export async function verifyRestore(engine: RestoreVerificationEngine, input: RestoreProbe): Promise<RestoreVerificationResult> {
+  if (!isRestoreVerificationEngine(engine)) throw new Error('Unsupported restore verification engine');
   if (!input.query.trim() || Buffer.byteLength(input.query) > 16_384 || Buffer.byteLength(input.expected) > 16_384) {
     throw new Error('A restore probe requires a query and an expected result of at most 16384 bytes each');
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9./:_@-]*$/.test(input.image)) throw new Error('Invalid restore engine image');
+  const profile = helperProfile(engine);
   const started = Date.now();
   const result: RestoreVerificationResult = {
-    status: 'unverifiable', engine: 'postgres', format: null, imageId: null,
+    status: 'unverifiable', engine, format: null, imageId: null,
     durationMs: 0, restoreMs: null, queryMs: null, queryMatched: false,
     cleanupConfirmed: false, error: 'Restore verification did not complete',
   };
@@ -76,7 +162,7 @@ export async function verifyPostgresRestore(input: PostgresRestoreProbe): Promis
       }
       const header = Buffer.alloc(5);
       const { bytesRead } = await handle.read(header, 0, 5, 0);
-      result.format = bytesRead === 5 && header.toString('ascii') === 'PGDMP' ? 'custom' : 'plain';
+      result.format = engine === 'postgres' && bytesRead === 5 && header.toString('ascii') === 'PGDMP' ? 'custom' : 'plain';
     } finally { await handle.close(); }
     // The caller's private staged file is streamed through exec stdin, read by
     // this process: no second plaintext copy on the panel's disk (a crash
@@ -84,24 +170,19 @@ export async function verifyPostgresRestore(input: PostgresRestoreProbe): Promis
     // and Docker's archive API never resolves a path inside the helper's tmpfs.
     createAttempted = true;
     await docker([
-      'create', '--name', name, '--label', 'ninedeploy.role=restore-verification',
+      'create', '--name', name, '--label', HELPER_ROLE,
       '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-      '--read-only', '--user', 'postgres', '--pids-limit', '128', '--memory', '1536m', '--cpus', '1',
+      '--read-only', '--user', profile.user, '--pids-limit', '128', '--memory', '1536m', '--cpus', '1',
       '--tmpfs', `/tmp:rw,nosuid,nodev,mode=1777,size=${SCRATCH_MIB}m`,
-      '--tmpfs', '/var/run/postgresql:rw,nosuid,nodev,mode=1777,size=16m',
-      '--tmpfs', '/var/lib/postgresql:rw,nosuid,nodev,mode=1777,size=1m',
-      '--tmpfs', '/var/lib/postgresql/data:rw,nosuid,nodev,mode=1777,size=1m',
-      '--env', 'PGDATA=/tmp/nd-restore/data', '--env', 'POSTGRES_HOST_AUTH_METHOD=trust',
-      '--env', 'POSTGRES_USER=nine', '--env', 'POSTGRES_DB=app',
-      '--pull', 'never', imageId,
+      ...profile.mounts.flatMap((mount) => ['--tmpfs', mount]),
+      ...profile.env.flatMap((entry) => ['--env', entry]),
+      '--pull', 'never', imageId, ...profile.args,
     ]);
     await docker(['start', name]);
     let ready = false;
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < profile.readyAttempts; attempt++) {
       try {
-        // The entrypoint's temporary initialization server listens on a Unix
-        // socket only. Require TCP so it cannot race the final server startup.
-        await docker(['exec', name, 'pg_isready', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app'], 1000);
+        await docker(['exec', name, ...profile.ready], 1000);
         ready = true; break;
       } catch { await sleep(1000); }
     }
@@ -109,27 +190,24 @@ export async function verifyPostgresRestore(input: PostgresRestoreProbe): Promis
     await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', DUMP], input.file, 60_000);
     phase = 'restore';
     const restoreStarted = Date.now();
-    const connection = ['-h', '127.0.0.1', '-U', 'nine', '-d', 'app'];
-    const restore = result.format === 'custom'
-      ? ['pg_restore', '--exit-on-error', '--single-transaction', ...connection, DUMP]
-      : ['psql', '-X', '-v', 'ON_ERROR_STOP=1', '--single-transaction', ...connection, '-f', DUMP];
-    await docker(['exec', name, ...restore], 300_000, 64 * 1024);
+    await docker(['exec', name, ...profile.restore(result.format)], 300_000, 64 * 1024);
     result.restoreMs = Date.now() - restoreStarted;
     phase = 'query';
     const queryStarted = Date.now();
-    const output = await docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', ...connection, '-c', input.query], 15_000, 16_386);
+    const output = await docker(['exec', name, ...profile.query(input.query)], 15_000, 16_386);
     result.queryMs = Date.now() - queryStarted;
     result.queryMatched = output.replace(/\r?\n$/, '') === input.expected;
     result.status = result.queryMatched ? 'passed' : 'failed';
     result.error = result.queryMatched ? null : 'Restored data did not match the expected probe result';
   } catch (error) {
-    // Exhausting the bounded helper (scratch or memory) is not evidence that
-    // the backup is broken: an operator reads 'failed' as "does not restore".
-    const exhausted = phase !== 'setup' && !(error instanceof ExecTimeoutError) && !(error instanceof ExecOutputTooLargeError)
-      && await helperExhausted(error, name, docker);
-    const unavailable = phase === 'setup' || exhausted || error instanceof ExecTimeoutError || error instanceof ExecOutputTooLargeError;
+    // Exhausting the bounded helper (scratch or memory) or losing its engine
+    // is not evidence that the backup is broken: an operator reads 'failed'
+    // as "does not restore". Only a healthy helper's error is the backup's.
+    const bounded = error instanceof ExecTimeoutError || error instanceof ExecOutputTooLargeError;
+    const helper = phase !== 'setup' && !bounded ? await helperState(error, name, docker) : null;
+    const unavailable = phase === 'setup' || bounded || (helper !== null && helper !== 'healthy');
     result.status = unavailable ? 'unverifiable' : 'failed';
-    result.error = oversized || exhausted
+    result.error = oversized || helper === 'exhausted'
       ? 'Backup exceeds the bounded restore verification capacity'
       : unavailable ? `Restore verification could not complete during ${phase}` : `Restore verification failed during ${phase}`;
   } finally {
@@ -152,21 +230,41 @@ export async function verifyPostgresRestore(input: PostgresRestoreProbe): Promis
   return result;
 }
 
-/** True when a restore/query failure is explained by the helper's bounds:
- * an engine out-of-space/out-of-memory message, or a cgroup OOM kill. If the
- * helper's state cannot be read, it cannot be shown to have been healthy, so
- * the failure is not attributed to the backup either. */
-async function helperExhausted(
+/**
+ * What a restore/query failure says about the helper rather than the backup.
+ * - `exhausted`: an engine out-of-space/out-of-memory message, or a cgroup OOM kill.
+ * - `stopped`: the client lost its server, or the helper is no longer running.
+ *   Unreadable helper state also lands here: the helper cannot be shown to
+ *   have been healthy. MariaDB aborts outright when InnoDB cannot extend a
+ *   file on a full tmpfs and its client sees only a lost connection, so a
+ *   stopped helper's own log is checked for the same capacity messages.
+ * - `healthy`: only then is the failure attributed to the backup.
+ */
+async function helperState(
   error: unknown,
   name: string,
   docker: (args: string[], timeoutMs?: number, maxOutputBytes?: number) => Promise<string>,
-): Promise<boolean> {
-  if (error instanceof Error && CAPACITY_ERROR.test(error.message)) return true;
+): Promise<'exhausted' | 'stopped' | 'healthy'> {
+  const message = error instanceof Error ? error.message : '';
+  if (CAPACITY_ERROR.test(message)) return 'exhausted';
   try {
-    return (await docker(['inspect', '--format', '{{.State.OOMKilled}}', name])).trim() === 'true';
+    const [running, oomKilled] = (await docker(['inspect', '--format', '{{.State.Running}} {{.State.OOMKilled}}', name])).trim().split(' ');
+    if (oomKilled === 'true') return 'exhausted';
+    if (running === 'true' && !LOST_SERVER.test(message)) return 'healthy';
   } catch {
-    return true;
+    /* unreadable: not healthy; the log may still say why */
   }
+  let capacity = false;
+  try {
+    // Each line is only tested, never kept: an engine's crash report can
+    // quote the statement it was running, i.e. restored data.
+    await run('docker', ['logs', '--tail', '200', name], { timeoutMs: QUICK_MS }, (line) => {
+      if (CAPACITY_ERROR.test(line)) capacity = true;
+    });
+  } catch {
+    /* no log: stopped, without a capacity claim */
+  }
+  return capacity ? 'exhausted' : 'stopped';
 }
 
 /**

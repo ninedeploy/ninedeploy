@@ -1,6 +1,38 @@
 # Isolated restore verification
 
-Status, 2026-11-04: PostgreSQL restore verification is public. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it. The adapter passed its real hosted acceptance again on cd3a2a6d. The structural `backup drill` is unchanged, and its validators still do not prove a real restore. Other engines, PITR and real recovery-duration reporting remain open, so R3 is not closed.
+Status, 2026-11-04: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL and MariaDB. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it. The PostgreSQL adapter passed its real hosted acceptance again on cd3a2a6d. The MySQL-family adapter passed real local checks (below); its hosted cohort must still pass before it counts as native acceptance. The structural `backup drill` is unchanged, and its validators still do not prove a real restore. MongoDB and the other engines, PITR and real recovery-duration reporting remain open, so R3 is not closed.
+
+**MySQL and MariaDB (2026-11-04)**
+- **One adapter, engine profiles.** `verifyRestore(engine, probe)` runs every engine through the same hardened helper:
+  - no network, all capabilities dropped and a read-only root;
+  - CPU, PID and memory limits, and 1 GiB of tmpfs scratch;
+  - removal and a confirmed absence check afterwards.
+  
+  Each engine profile supplies only:
+  - the user and the socket/volume tmpfs mounts;
+  - the empty-root variable and the daemon flags;
+  - the readiness, restore and query commands.
+  
+  `verifyPostgresRestore` remains the PostgreSQL entry point.
+- **Helper:**
+  - It is the database's own engine image, run as user `mysql`.
+  - The datadir is on the scratch tmpfs (`--datadir=/tmp/nd-restore/data`). Native AIO is off, because tmpfs does not take it reliably. MySQL also gets `--skip-log-bin`, since its binary log is on by default.
+  - A 1 MiB tmpfs over `/var/lib/mysql` keeps an anonymous volume from ever holding restored data.
+  - Root has no password and no network.
+  - **Readiness** is `mysqladmin`/`mariadb-admin ping` over TCP. Both entrypoints initialize with `--skip-networking`, so TCP means the final server.
+- **Restore:** the panel's `--all-databases` dump goes into the batch client on stdin through a fixed positional script. The client stops at the first failing statement.
+  - The dump's `mysql` schema replaces the grant tables on disk, but not the server's in-memory privileges, because the panel's dumps carry no `FLUSH PRIVILEGES`. So the probe still connects as the helper's root.
+- **Probe:** the client runs with `--batch --raw --skip-column-names --database=app`. Columns are tab-separated, values unescaped, and NULL is printed as `NULL`.
+- **Engine failures are no longer blamed on the backup.** This applies to PostgreSQL as well.
+  - **Lost server:** the client lost its server ("Lost connection", "server has gone away", "server closed the connection unexpectedly"), or the helper is not running. The verdict is `unverifiable`, not `failed`.
+  - **MariaDB on a full tmpfs:** it aborts with signal 6, and its client then only sees a lost connection. So the helper's own log tail (`docker logs --tail 200`) is checked for capacity messages before the helper is removed. Each line is only tested, never kept: a crash report quotes the running statement.
+  - **MySQL on a full tmpfs:** it stays up and returns "The table '…' is full". This is now a capacity message too.
+- **Local real checks** used Docker Desktop with `mysql:8` (8.4.13) and `mariadb:11` (11.8.9), with real `--all-databases` dumps taken by the panel's flags.
+  - **Passed:** the restore returned the older value with tabs and `NULL`, while the source held the newer one.
+  - **Failed:** a wrong expected value, and invalid SQL under strict mode.
+  - **Capacity:** a 480 MB dump was `unverifiable` with the capacity message on both engines.
+  - **Cleanup:** every helper was confirmed removed.
+- **Hosted cohort:** the hosted fixture now also seeds, dumps (`dumpCommands`, the panel's own argv), mutates and verifies `mysql:9.7` and `mariadb:12.3`. Run it with `restore_verification=true`.
 
 **Public integration (2026-11-04)**
 - **Endpoint:** `POST /v1/databases/:id/backups/drill` accepts `restore: { query, expected }`.

@@ -62,6 +62,8 @@ import { fill, msg, useT } from '../lib/i18n.js';
 
 /** Engines with an interactive client (`mode: 'client'`); the others get a shell only. */
 export const CLIENT_ENGINES = new Set(['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb', 'dragonfly']);
+/** R3: engines the panel can restore into an isolated helper (server: RESTORE_VERIFICATION_ENGINES). */
+const RESTORE_VERIFY_ENGINES = new Set(['postgres', 'mysql', 'mariadb']);
 
 const ENGINE_LABEL: Record<string, string> = {
   postgres: 'PostgreSQL',
@@ -825,7 +827,7 @@ function BackupsPanel({ dbId, dbName, engine }: { dbId: number; dbName: string; 
                     >
                       <ShieldCheck size={12} /> {drillMutation.isPending && drillMutation.variables === b.id ? t('Checking…') : t('Check')}
                     </Button>
-                    {engine === 'postgres' && (
+                    {RESTORE_VERIFY_ENGINES.has(engine) && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -865,7 +867,7 @@ function BackupsPanel({ dbId, dbName, engine }: { dbId: number; dbName: string; 
       )}
 
       {verifyBackup !== null && (
-        <RestoreVerifyDialog dbId={dbId} backupId={verifyBackup} onClose={() => setVerifyBackup(null)} />
+        <RestoreVerifyDialog dbId={dbId} backupId={verifyBackup} engine={engine} onClose={() => setVerifyBackup(null)} />
       )}
 
       {pendingRestore && (

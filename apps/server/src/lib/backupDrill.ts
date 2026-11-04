@@ -16,7 +16,7 @@
  * image (r356), never as host binaries.
  *
  * R3's optional restore probe instead restores into an isolated real
- * PostgreSQL helper and records the known-data verdict. The public drill route
+ * PostgreSQL, MySQL or MariaDB helper and records the known-data verdict. The public drill route
  * admits it asynchronously (`onAdmitted`), for database admins only.
  * The drill never deletes or modifies the source backup.
  * Encrypted envelopes are decrypted to a sibling temp file
@@ -38,7 +38,7 @@ import { fetchRemoteBackup, type RemoteBackupRef } from './backupRemote.js';
 import { decryptBackupFile, isEncryptedBackupFile } from './backupCrypto.js';
 import { capture, ExecTimeoutError, run } from './exec.js';
 import { ENGINES, readBackupBytes } from '../engine/database.js';
-import { verifyPostgresRestore, type PostgresRestoreProbe } from './backupRestoreVerification.js';
+import { isRestoreVerificationEngine, verifyRestore, type RestoreProbe } from './backupRestoreVerification.js';
 import { ensureDockerImage } from './dockerPull.js';
 
 /** Every status a drill row can hold (pending/running/passed/failed, and
@@ -87,7 +87,7 @@ export async function runBackupDrill(
   db: DB,
   databaseId: number,
   backupId: number,
-  restoreProbe?: Pick<PostgresRestoreProbe, 'query' | 'expected'>,
+  restoreProbe?: Pick<RestoreProbe, 'query' | 'expected'>,
   /** Called once the `running` row exists, before any staging or restore
    *  work: the public route answers the client at this point and lets a long
    *  restore verification finish in the background. */
@@ -101,7 +101,7 @@ export async function runBackupDrill(
     throw new Error(`Backup ${backupId} does not belong to database ${databaseId}`);
   }
   if (restoreProbe) {
-    if (dRow.engine !== 'postgres') throw new Error('Isolated restore verification currently requires PostgreSQL');
+    if (!isRestoreVerificationEngine(dRow.engine)) throw new Error('Isolated restore verification currently requires PostgreSQL, MySQL or MariaDB');
     if (bRow.status !== 'completed' || bRow.scope !== 'db') throw new Error('Restore verification requires a completed database backup');
     if (!restoreProbe.query.trim() || Buffer.byteLength(restoreProbe.query) > 16_384 || Buffer.byteLength(restoreProbe.expected) > 16_384) {
       throw new Error('Restore verification requires a bounded query and expected result');
@@ -146,7 +146,7 @@ export async function runBackupDrill(
   if (!imageReady) {
     result = {
       outcome: 'unverifiable',
-      error: 'The PostgreSQL engine image is not on the panel host and could not be pulled',
+      error: 'The database engine image is not on the panel host and could not be pulled',
       details: { verification: 'restore', stagingCleanupConfirmed: true },
     };
   } else try {
@@ -155,8 +155,8 @@ export async function runBackupDrill(
     const ctx = await stageForDrill(db, bRow.path, bRow, dRow.engine, `${process.pid}-${row.id}`, !!restoreProbe);
     try {
       if (restoreProbe) {
-        if (!image) throw new Error('Restore engine image is unavailable');
-        const { status, error, ...details } = await verifyPostgresRestore({ file: ctx.file, image, ...restoreProbe });
+        if (!image || !isRestoreVerificationEngine(dRow.engine)) throw new Error('Restore engine image is unavailable');
+        const { status, error, ...details } = await verifyRestore(dRow.engine, { file: ctx.file, image, ...restoreProbe });
         result = status === 'passed'
           ? { outcome: 'passed', details: { verification: 'restore', ...details } }
           : { outcome: status, error: error ?? 'Restore verification did not complete', details: { verification: 'restore', ...details } };

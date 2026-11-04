@@ -762,8 +762,8 @@ backupsCmd.command('restore <databaseId> <backupId>').description('Restore a bac
 backupsCmd
   .command('drill <databaseId> <backupId>')
   .description('Smoke-test a backup without restoring it into a live database')
-  .option('--restore-query <sql>', 'PostgreSQL: restore into an isolated helper and run this query there (database admin)')
-  .option('--expect <value>', 'The exact output --restore-query must print (unaligned, tuples only)')
+  .option('--restore-query <sql>', 'PostgreSQL, MySQL, MariaDB: restore into an isolated helper and run this query there (database admin)')
+  .option('--expect <value>', 'The exact output --restore-query must print (no headers; psql: | between columns, MySQL/MariaDB: a tab)')
   .option('--no-wait', 'Return once the restore verification is admitted, without waiting for its verdict')
   .action((id: string, bId: string, o: { restoreQuery?: string; expect?: string; wait?: boolean }) =>
     backupsDrill(getClient(), id, bId, { restoreQuery: o.restoreQuery, expect: o.expect, wait: o.wait }));

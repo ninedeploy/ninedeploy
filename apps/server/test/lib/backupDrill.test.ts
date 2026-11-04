@@ -150,17 +150,19 @@ vi.mock('../../src/lib/dockerPull.js', () => ({
 const restoreCheck = vi.hoisted(() => ({
   status: 'passed' as 'passed' | 'failed' | 'unverifiable',
   calls: [] as Array<{ file: string; image: string; query: string; expected: string }>,
+  engines: [] as string[],
   throwError: false,
   blockCleanup: false,
 }));
 vi.mock('../../src/lib/backupRestoreVerification.js', () => ({
-  verifyPostgresRestore: vi.fn(async (input: { file: string; image: string; query: string; expected: string }) => {
-    restoreCheck.calls.push(input);
+  isRestoreVerificationEngine: (engine: string) => ['postgres', 'mysql', 'mariadb'].includes(engine),
+  verifyRestore: vi.fn(async (engine: string, input: { file: string; image: string; query: string; expected: string }) => {
+    restoreCheck.calls.push(input); restoreCheck.engines.push(engine);
     expect(existsSync(input.file)).toBe(true);
     if (restoreCheck.throwError) throw new Error('private SQL or staging credential');
     if (restoreCheck.blockCleanup) { await rm(input.file); await mkdir(input.file); }
     return {
-      status: restoreCheck.status, engine: 'postgres', format: 'plain', imageId: `sha256:${'a'.repeat(64)}`,
+      status: restoreCheck.status, engine, format: 'plain', imageId: `sha256:${'a'.repeat(64)}`,
       durationMs: 35, restoreMs: 20, queryMs: 5, queryMatched: restoreCheck.status === 'passed',
       cleanupConfirmed: true, error: restoreCheck.status === 'passed' ? null : 'Restored data did not match the expected probe result',
     };
@@ -259,7 +261,7 @@ function mongoArchive(opts: { terminator?: boolean } = {}): Buffer {
 }
 
 beforeEach(async () => {
-  restoreCheck.status = 'passed'; restoreCheck.calls = []; restoreCheck.throwError = false; restoreCheck.blockCleanup = false;
+  restoreCheck.status = 'passed'; restoreCheck.calls = []; restoreCheck.engines = []; restoreCheck.throwError = false; restoreCheck.blockCleanup = false;
   imagePull.images = []; imagePull.fail = false;
   remoteState.failAfterWrite = false;
   await mkdir(TMP, { recursive: true });
@@ -324,7 +326,7 @@ describe('real restore drill staging and history', () => {
     const file = await dumpFile('restore-encrypted.dump', 'NDBK1:encrypted'); seed('postgres', file); complete();
     cryptoState.encryptedPaths.add(file); imagePull.fail = true;
     const result = await runBackupDrill(buildDb(), 1, 1, probe);
-    expect(result).toMatchObject({ status: 'unverifiable', error: 'The PostgreSQL engine image is not on the panel host and could not be pulled' });
+    expect(result).toMatchObject({ status: 'unverifiable', error: 'The database engine image is not on the panel host and could not be pulled' });
     expect(dbState.drills.get(result.drillId)?.status).toBe('unverifiable');
     expect(restoreCheck.calls).toEqual([]);
     expect(cryptoState.decryptedTo.size).toBe(0);
@@ -343,10 +345,24 @@ describe('real restore drill staging and history', () => {
     expect(admitted).toEqual([{ id: result.drillId, status: 'running', verifierCalls: 0 }]);
     expect(result.status).toBe('passed');
   });
+  it.each([
+    ['mysql', null, 'mysql:9.7'],
+    ['mariadb', null, 'mariadb:12.3'],
+    ['mysql', '8.4', 'mysql:8.4'],
+  ])('verifies a %s backup (version %s) in its own engine image %s', async (engine, version, image) => {
+    const file = await dumpFile('restore-mysql.sql', '-- MySQL dump 10.13\nCREATE TABLE t (id INT);\n-- Dump completed on 2026-11-04 10:00:00\n');
+    seed(engine, file, version); complete();
+    const result = await runBackupDrill(buildDb(), 1, 1, probe);
+    expect(result.status).toBe('passed');
+    expect(restoreCheck.engines).toEqual([engine]);
+    expect(restoreCheck.calls).toEqual([{ file, image, ...probe }]);
+    expect(imagePull.images).toEqual([image]);
+    expect(dbState.drills.get(result.drillId)).toMatchObject({ status: 'passed', engine });
+  });
   it('refuses an unsupported engine before inserting history or invoking an engine', async () => {
-    seed('mysql', join(TMP, 'not-read')); complete();
+    seed('redis', join(TMP, 'not-read')); complete();
     const onAdmitted = vi.fn();
-    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/PostgreSQL/);
+    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/PostgreSQL, MySQL or MariaDB/);
     expect(dbState.drills.size).toBe(0); expect(restoreCheck.calls).toEqual([]);
     expect(onAdmitted).not.toHaveBeenCalled();
   });

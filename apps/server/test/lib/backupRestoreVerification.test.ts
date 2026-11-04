@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ calls: [] as string[][], fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', helpers: [] as Array<{ id: string; created: string; name: string }> }));
+const state = vi.hoisted(() => ({ calls: [] as string[][], fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', logs: [] as string[] | null, helpers: [] as Array<{ id: string; created: string; name: string }> }));
 vi.mock('../../src/lib/fileCommandInput.js', () => ({
   streamFileToCommand: async (_cmd: string, args: string[], file: string) => {
     state.calls.push(args); state.copied = file;
@@ -16,6 +16,11 @@ vi.mock('../../src/lib/exec.js', () => {
   class ExecOutputTooLargeError extends Error {}
   return {
     ExecTimeoutError, ExecOutputTooLargeError, sleep: async () => undefined,
+    run: vi.fn(async (_cmd: string, args: string[], _options: { timeoutMs: number }, sink: (line: string) => void) => {
+      state.calls.push(args);
+      if (state.logs === null) throw new Error('No such container');
+      for (const line of state.logs) sink(line);
+    }),
     capture: vi.fn(async (_cmd: string, args: string[], options: { timeoutMs: number }) => {
       state.calls.push(args);
       expect(options.timeoutMs).toBeGreaterThan(0);
@@ -33,20 +38,29 @@ vi.mock('../../src/lib/exec.js', () => {
         expect(await readFile(args[1]!, 'utf8')).toContain(state.custom ? 'PGDMP' : 'CREATE TABLE');
         if (state.fail === 'copy') throw new Error('copy error');
       }
-      if (args.includes('pg_isready') && state.fail === 'ready') throw new Error('not ready');
+      if ((args.includes('pg_isready') || args.includes('ping')) && state.fail === 'ready') throw new Error('not ready');
+      if (args[0] === 'exec' && args.includes('restore')) {
+        // mysql-family: sh -c <stdin script> restore <dump> <client> …
+        if (state.fail === 'restore') throw new Error('SECRET_SQL_DUMP_CONTENT');
+        if (state.fail === 'tablefull') throw new Error("`docker` exited 1: ERROR 1114 (HY000) at line 9: The table 'private_orders' is full");
+        if (state.fail === 'lost') throw new Error('`docker` exited 1: ERROR 2013 (HY000) at line 3: Lost connection to server during query');
+        return '';
+      }
       if (args[0] === 'exec' && (args.includes('-f') || args.includes('pg_restore'))) {
         if (state.fail === 'restore') throw new Error('SECRET_SQL_DUMP_CONTENT');
         if (state.fail === 'enospc') throw new Error('`docker` exited 1: ERROR:  could not extend file "base/16384/16390": No space left on device');
+        if (state.fail === 'lost') throw new Error('`docker` exited 2: psql: server closed the connection unexpectedly');
         if (state.fail === 'timeout') throw new ExecTimeoutError('secret');
       }
-      if (args.includes('-c')) {
+      if (args.includes('-c') || args.includes('-e')) {
         if (state.fail === 'query') throw new Error('SECRET_QUERY_RESULT');
         if (state.fail === 'output') throw new ExecOutputTooLargeError('secret');
         return state.fail === 'mismatch' ? 'wrong private value\n' : 'known-row\n';
       }
-      if (args[0] === 'inspect' && args.includes('{{.State.OOMKilled}}')) {
+      if (args[0] === 'inspect' && args.includes('{{.State.Running}} {{.State.OOMKilled}}')) {
         if (state.oom === 'unreadable') throw new Error('daemon hiccup');
-        return `${state.oom === 'killed'}\n`;
+        // An OOM kill of the engine (PID 1) stops the helper as well.
+        return `${state.oom !== 'killed' && state.oom !== 'stopped'} ${state.oom === 'killed'}\n`;
       }
       if (args[0] === 'inspect' && args.includes('{{.Created}} {{.Name}}')) {
         const helper = state.helpers.find(h => h.id === args.at(-1));
@@ -60,13 +74,13 @@ vi.mock('../../src/lib/exec.js', () => {
     }),
   };
 });
-import { pruneRestoreVerificationHelpers, RESTORE_VERIFICATION_MAX_DUMP_BYTES, verifyPostgresRestore } from '../../src/lib/backupRestoreVerification.js';
+import { pruneRestoreVerificationHelpers, RESTORE_VERIFICATION_MAX_DUMP_BYTES, verifyPostgresRestore, verifyRestore } from '../../src/lib/backupRestoreVerification.js';
 
 let directory: string;
 let file: string;
 beforeEach(async () => {
   state.calls = []; state.fail = ''; state.custom = false; state.copied = ''; state.name = '';
-  state.image = `sha256:${'a'.repeat(64)}`; state.oom = ''; state.helpers = [];
+  state.image = `sha256:${'a'.repeat(64)}`; state.oom = ''; state.logs = []; state.helpers = [];
   directory = await mkdtemp(join(tmpdir(), 'nd-restore-test-'));
   file = join(directory, 'source.sql');
   await writeFile(file, 'CREATE TABLE known(id text);');
@@ -155,6 +169,108 @@ describe('bounded helper capacity is never reported as a broken backup', () => {
   it('still fails a genuine restore error on a healthy helper', async () => {
     state.fail = 'restore'; state.oom = 'healthy';
     expect(await verify()).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore' });
+  });
+  it('does not blame the backup when the helper stopped during the restore', async () => {
+    state.fail = 'restore'; state.oom = 'stopped';
+    expect(await verify()).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+  });
+  it('does not blame the backup when the client lost its server, even before Docker reports the helper stopped', async () => {
+    state.fail = 'lost';
+    const result = await verify();
+    expect(result).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore', cleanupConfirmed: true });
+    expect(JSON.stringify(result)).not.toMatch(/closed the connection/);
+  });
+});
+
+describe('MySQL and MariaDB restore helpers', () => {
+  const run = (engine: 'mysql' | 'mariadb') => verifyRestore(engine, { file, image: `${engine}:latest`, query: 'SELECT id FROM known', expected: 'known-row' });
+  const stdinScript = 'f="$1"; shift; exec "$@" < "$f"';
+  const tcp = ['-uroot', '-h', '127.0.0.1', '--protocol=tcp'];
+  it('restores a mysqldump into a hardened, networkless MySQL helper and probes the managed database', async () => {
+    const result = await run('mysql');
+    expect(result).toMatchObject({ status: 'passed', engine: 'mysql', format: 'plain', queryMatched: true, cleanupConfirmed: true });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    for (const flag of ['--read-only', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '--memory', '--cpus']) expect(create).toContain(flag);
+    expect(create.slice(create.indexOf('--user'), create.indexOf('--user') + 2)).toEqual(['--user', 'mysql']);
+    expect(create).toEqual(expect.arrayContaining([
+      '--tmpfs', '/var/run/mysqld:rw,nosuid,nodev,mode=1777,size=16m',
+      '--tmpfs', '/var/lib/mysql:rw,nosuid,nodev,mode=1777,size=1m',
+      '--env', 'MYSQL_ALLOW_EMPTY_PASSWORD=yes',
+    ]));
+    // The daemon flags follow the immutable image id: the entrypoint prepends mysqld.
+    expect(create.slice(create.indexOf(state.image))).toEqual([state.image, '--datadir=/tmp/nd-restore/data', '--innodb-use-native-aio=0', '--skip-log-bin']);
+    expect(create.some(arg => arg.startsWith('PGDATA=') || (arg.includes('PASSWORD=') && !arg.includes('EMPTY')))).toBe(false);
+    expect(create.some(arg => ['--mount', '-v', '--volume', '-p', '--publish', '--privileged'].includes(arg))).toBe(false);
+    expect(state.calls.find(args => args.includes('ping'))).toEqual(['exec', state.name, 'mysqladmin', 'ping', ...tcp]);
+    expect(state.calls.find(args => args.includes('restore'))).toEqual(['exec', state.name, 'sh', '-c', stdinScript, 'restore', '/tmp/nd-restore-source.dump', 'mysql', ...tcp]);
+    expect(state.calls.find(args => args.includes('-e'))).toEqual(['exec', state.name, 'mysql', ...tcp, '--batch', '--raw', '--skip-column-names', '--database=app', '-e', 'SELECT id FROM known']);
+    expect(state.calls.find(args => args[0] === 'rm')).toEqual(['rm', '-f', '-v', state.name]);
+    expect(state.copied).toBe(file);
+  });
+  it('uses the MariaDB client, admin tool, socket directory and empty-root variable', async () => {
+    const result = await run('mariadb');
+    expect(result).toMatchObject({ status: 'passed', engine: 'mariadb', format: 'plain' });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    expect(create).toEqual(expect.arrayContaining(['--tmpfs', '/run/mysqld:rw,nosuid,nodev,mode=1777,size=16m', '--env', 'MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=1']));
+    // MariaDB keeps its binary log off by default; no flag a pinned version might not know.
+    expect(create.slice(create.indexOf(state.image))).toEqual([state.image, '--datadir=/tmp/nd-restore/data', '--innodb-use-native-aio=0']);
+    expect(state.calls.find(args => args.includes('ping'))?.[2]).toBe('mariadb-admin');
+    expect(state.calls.find(args => args.includes('restore'))?.[7]).toBe('mariadb');
+    expect(state.calls.find(args => args.includes('-e'))?.[2]).toBe('mariadb');
+  });
+  it('never reads a MySQL dump as a PostgreSQL custom archive', async () => {
+    await writeFile(file, 'PGDMP CREATE TABLE known(id text);');
+    expect((await run('mysql')).format).toBe('plain');
+  });
+  it('fails a genuine restore error or a probe mismatch on a healthy helper without exposing either', async () => {
+    state.fail = 'restore';
+    expect(await run('mysql')).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore' });
+    state.fail = 'mismatch';
+    const mismatch = await run('mariadb');
+    expect(mismatch).toMatchObject({ status: 'failed', queryMatched: false });
+    expect(JSON.stringify(mismatch)).not.toMatch(/wrong private value|SELECT id/);
+  });
+  it('reports a full scratch ("The table … is full") as capacity, without the table name', async () => {
+    state.fail = 'tablefull';
+    const result = await run('mysql');
+    expect(result).toMatchObject({ status: 'unverifiable', error: 'Backup exceeds the bounded restore verification capacity', cleanupConfirmed: true });
+    expect(JSON.stringify(result)).not.toMatch(/private_orders/);
+  });
+  it('treats a MariaDB server that aborted mid-restore (lost connection) as unverifiable', async () => {
+    state.fail = 'lost';
+    expect(await run('mariadb')).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+    // The stopped helper's own log was consulted (bounded tail), before removal.
+    const logs = state.calls.findIndex(args => args[0] === 'logs');
+    expect(state.calls[logs]).toEqual(['logs', '--tail', '200', state.name]);
+    expect(logs).toBeLessThan(state.calls.findIndex(args => args[0] === 'rm'));
+  });
+  it('names capacity when the aborted MariaDB helper logged a full tmpfs, keeping no log text', async () => {
+    state.fail = 'lost'; state.oom = 'stopped';
+    state.logs = [
+      "2026-11-04 18:56:29 9 [ERROR] InnoDB: preallocating 901775360 bytes for file ./app/private_orders.ibd failed with error 28",
+      "Query (0x7f): INSERT INTO private_orders VALUES ('SECRET_ROW')",
+    ];
+    const result = await run('mariadb');
+    expect(result).toMatchObject({ status: 'unverifiable', error: 'Backup exceeds the bounded restore verification capacity', cleanupConfirmed: true });
+    expect(JSON.stringify(result)).not.toMatch(/private_orders|SECRET_ROW|preallocating/);
+  });
+  it('stays unverifiable without a capacity claim when the stopped helper log cannot be read', async () => {
+    state.fail = 'restore'; state.oom = 'stopped'; state.logs = null;
+    expect(await run('mariadb')).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+  });
+  it('does not read logs when a healthy helper reports a genuine restore error', async () => {
+    state.fail = 'restore'; state.logs = ['failed with error 28'];
+    expect(await run('mysql')).toMatchObject({ status: 'failed' });
+    expect(state.calls.some(args => args[0] === 'logs')).toBe(false);
+  });
+  it('is unverifiable when the MySQL helper never accepts TCP connections', async () => {
+    state.fail = 'ready';
+    expect((await run('mysql')).status).toBe('unverifiable');
+    expect(state.calls.filter(args => args.includes('ping'))).toHaveLength(120);
+  });
+  it('refuses an engine without an adapter before any Docker work', async () => {
+    await expect(verifyRestore('redis' as never, { file, image: 'redis:8', query: 'GET k', expected: 'v' })).rejects.toThrow(/Unsupported/);
+    expect(state.calls).toEqual([]);
   });
 });
 

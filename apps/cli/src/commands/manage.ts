@@ -374,7 +374,7 @@ export async function backupsRestore(client: NineDeployClient, idStr: string, ba
  * ...) and is safe to run on production backups because it
  * never touches the live container.
  *
- * R3: `--restore-query <sql> --expect <value>` (PostgreSQL, database admin)
+ * R3: `--restore-query <sql> --expect <value>` (PostgreSQL, MySQL or MariaDB; database admin)
  * restores the backup into an isolated, networkless helper and runs the
  * query there; the panel answers at once and the CLI polls the drill until
  * its verdict (`--no-wait` returns right after admission).
@@ -387,8 +387,8 @@ export async function backupsDrill(
 ): Promise<void> {
   const id = num(idStr, 'Usage: ninedeploy backups drill <databaseId> <backupId>');
   const backupId = num(backupIdStr, 'Usage: ninedeploy backups drill <databaseId> <backupId>');
-  // R3: --restore-query really restores the backup into an isolated PostgreSQL
-  // helper and compares the query's output with --expect (empty allowed).
+  // R3: --restore-query really restores the backup into an isolated helper of
+  // its own engine and compares the query's output with --expect (empty allowed).
   if ((opts.restoreQuery === undefined) !== (opts.expect === undefined)) {
     error('--restore-query and --expect go together: the drill passes only when the query prints exactly the expected value.');
     process.exitCode = 1;

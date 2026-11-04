@@ -322,6 +322,8 @@ describe('DatabaseDetail', () => {
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
     fireEvent.click(await screen.findByRole('button', { name: 'Verify restore of backup 101' }));
     const dialog = await screen.findByRole('dialog', { name: 'Verify restore of backup #101' });
+    expect(dialog).toHaveTextContent('restored into an isolated PostgreSQL container');
+    expect(dialog).toHaveTextContent('Exactly what psql prints');
     const start = screen.getByRole('button', { name: 'Start verification' });
     // No query, no verification.
     expect(start).toBeDisabled();
@@ -356,13 +358,28 @@ describe('DatabaseDetail', () => {
     expect(api.databases.drillBackup).not.toHaveBeenCalled();
   });
 
-  it('offers restore verification only for PostgreSQL databases', async () => {
+  it('offers restore verification only for PostgreSQL, MySQL and MariaDB databases', async () => {
     mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'redis', name: 'cache' } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
     mockOf(api.databases.drills).mockResolvedValue([] as any);
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
     expect(await screen.findByRole('button', { name: 'Check backup 101' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Verify restore of backup 101' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['mysql', 'MySQL'],
+    ['mariadb', 'MariaDB'],
+  ])('explains the %s helper and its batch-mode output in the verification dialog', async (engine, label) => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine, name: `prod-${engine}` } as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify restore of backup 101' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Verify restore of backup #101' });
+    expect(dialog).toHaveTextContent(`restored into an isolated ${label} container`);
+    expect(dialog).toHaveTextContent('a tab between columns');
+    expect(dialog).not.toHaveTextContent('psql');
   });
 
   it('handles restore failure and download error responses', async () => {
