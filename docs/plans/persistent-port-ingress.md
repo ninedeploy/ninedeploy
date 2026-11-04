@@ -69,7 +69,9 @@ fallback target and remains held for recovery.
 The hosted acceptance adapter writes and fsyncs a real journal, injects a lost
 Traefik acknowledgement after the route actually loads, reconstructs the
 publisher from that journal and checks active-flow retirement refusal. The runner
-is the only writer in its owned daemon. This does not certify production locking:
+is the only writer in its owned daemon. The native publisher uses the journal
+store under runner-scoped OS authority, while its kernel callbacks still traverse
+Docker RPC into that isolated daemon. This does not certify target-host fencing:
 the production adapter still needs non-stealable host authority, durable ownership
 and pipeline cleanup integration. A process-local queue or stale-heartbeat lock
 alone must not be used to fence firewall mutation.
@@ -80,6 +82,21 @@ the open file description in the worker and passes it to each mutator as file
 descriptor 3. It closes its reference without explicitly unlocking a surviving
 child's reference. Unsupported platforms, writable state directories, hard-linked
 lock files, invalid deadlines and escaped command contexts are refused.
+
+`withPersistentPortJournalStore` scopes one service journal to that same host
+lock. It snapshots the service claim before waiting, refuses foreign or unsafe
+existing entries, bounds decoded state, and commits through a private exclusive
+nonce file, file fsync, atomic rename and directory fsync. Reads and writes cannot
+escape the authority scope or follow a replaced state directory. FIFO entries
+are opened nonblocking and rejected by type. Uncertain failures preserve the
+installed intent and never authorize runtime deletion; private orphan files are
+left for separately owned recovery when cleanup cannot be proved safe.
+
+The Linux filesystem acceptance exercises process death before and after rename,
+lost durable acknowledgement, reload under fresh authority, sync ordering,
+malformed/oversized state and alias/ownership guards. Process-death tests do not
+simulate storage-device power loss. This store is not yet wired to the production
+publisher, managed host namespace or service cleanup paths.
 
 The native process-death acceptance kills the worker while a child is still
 running. In the fenced case the competitor enters only after the child finishes;

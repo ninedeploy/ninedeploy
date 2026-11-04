@@ -1,11 +1,12 @@
 // Kernel acceptance only. Never run against a developer or production Docker daemon.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, openSync, fsyncSync, closeSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { persistentPortForwardRules, renderPersistentPortNft } from '../apps/server/src/lib/persistentPortNft.ts';
 import { PersistentPortPublisher, PersistentPortPublicationPending } from '../apps/server/src/lib/persistentPortPublication.ts';
+import { withPersistentPortJournalStore } from '../apps/server/src/lib/persistentPortJournalStore.ts';
 
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
 assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
@@ -76,18 +77,18 @@ try {
   const webTarget = expected => innerDocker('exec', 'client', 'node', fixture, 'web-probe', expected);
   await until(() => webTarget('old'));
   let loseWebAck = false, loseKernelAck = false;
-  const journalPath = resolve(proof, 'publication.json');
-  // This runner is the sole writer in its disposable daemon. A production
-  // adapter additionally needs non-stealable cross-process host authority.
+  const stateDirectory = resolve(proof, 'state');
+  let activeStore;
+  // Journal access uses real runner-scoped host authority. Kernel callbacks
+  // still use Docker RPC into this single-writer disposable daemon: target-host
+  // nft child-descriptor fencing is a separate production integration gate.
   const authority = {
-    exclusive: operation => operation(),
-    readJournal: async () => existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, 'utf8')) : null,
-    saveJournal: async state => {
-      const temp = journalPath + '.next', fd = openSync(temp, 'w', 0o600);
-      try { writeFileSync(fd, JSON.stringify(state)); fsyncSync(fd); } finally { closeSync(fd); }
-      renameSync(temp, journalPath);
-      const dir = openSync(proof, 'r'); try { fsyncSync(dir); } finally { closeSync(dir); }
-    },
+    exclusive: operation => withPersistentPortJournalStore(stateDirectory, spec, async store => {
+      assert.equal(activeStore, undefined); activeStore = store;
+      try { return await operation(); } finally { activeStore = undefined; }
+    }),
+    readJournal: async () => activeStore ? activeStore.read() : withPersistentPortJournalStore(stateDirectory, spec, async store => store.read()),
+    saveJournal: async state => { assert.ok(activeStore, 'Journal write escaped host authority'); activeStore.save(state); },
     installed: async table => {
       const list = JSON.parse(inside('nft', '-j', 'list', 'tables'));
       if (!list.nftables.some(entry => entry.table?.family === 'ip' && entry.table?.name === table)) return null;
@@ -203,7 +204,8 @@ try {
   const candidateHeld = JSON.parse(readFileSync(resolve(proof, 'candidate-hold-result.json')));
   assert.ok(held.count > 10); assert.ok(web.count > 10);
   assert.ok(candidateHeld.count > 5);
-  writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, observations, held, candidateHeld, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, unconfirmedRollback: true, rollbackCandidateWasUnready: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
+  writeFileSync(resolve(proof, 'publication.json'), JSON.stringify(await authority.readJournal()));
+  writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, durableJournalStore: true, kernelAuthorityIntegration: false, observations, held, candidateHeld, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, unconfirmedRollback: true, rollbackCandidateWasUnready: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
 } finally {
   if (created) {
     for (const kind of ['fenced', 'unfenced']) {

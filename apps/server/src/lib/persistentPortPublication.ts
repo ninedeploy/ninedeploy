@@ -49,7 +49,7 @@ function sameClaim(a: PersistentPortNftSpec, b: PersistentPortNftSpec): boolean 
     JSON.stringify(persistentPortRules(a)) === JSON.stringify(persistentPortRules(b));
 }
 
-function journalCheck(journal: PersistentPortJournal, desired: PersistentPortNftSpec): void {
+export function assertPersistentPortJournal(journal: PersistentPortJournal, desired: PersistentPortNftSpec): void {
   persistentPortRules(desired);
   if (journal.version !== 3 || journal.source === undefined || journal.retiring === undefined || !Array.isArray(journal.retained) || journal.retained.length > 3) throw new Error('Invalid persistent port journal');
   if (!journal.committed && !journal.pending && journal.retained.length) throw new Error('Unowned retained runtimes in journal');
@@ -81,7 +81,7 @@ export class PersistentPortPublisher {
     const desired = structuredClone(input);
     return this.authority.exclusive(async () => {
       const state = await this.authority.readJournal() ?? { version: 3 as const, committed: null, pending: null, source: null, retiring: null, retained: [] };
-      journalCheck(state, desired);
+      assertPersistentPortJournal(state, desired);
       if (state.pending || state.retiring) throw new PersistentPortPublicationPending('Recover the existing intent before another deploy');
       if (desired.revision !== (state.committed?.revision ?? 0) + 1) throw new Error('Stale persistent port publication revision');
       await this.assertInstalled(state.committed, desired);
@@ -90,7 +90,7 @@ export class PersistentPortPublisher {
       if (!retained.some(target => target.id === desired.target.id && target.ipv4 === desired.target.ipv4)) retained.push({ ...desired.target });
       if (retained.length > 3) throw new Error('Retained runtimes must drain before another publication');
       const pending: PersistentPortJournal = { ...state, pending: desired, source: state.committed, retained };
-      journalCheck(pending, desired);
+      assertPersistentPortJournal(pending, desired);
       try {
         // Even an ambiguous journal-write acknowledgement requires retention.
         await this.authority.saveJournal(pending);
@@ -107,7 +107,7 @@ export class PersistentPortPublisher {
     return this.authority.exclusive(async () => {
       const state = await this.authority.readJournal();
       if (!state) throw new Error('Persistent port journal is missing');
-      journalCheck(state, desired);
+      assertPersistentPortJournal(state, desired);
       if (!state.pending || !state.committed || state.retiring) throw new Error('Rollback requires an unresolved publication and a committed target');
       if (desired.target.id !== state.committed.target.id || desired.target.ipv4 !== state.committed.target.ipv4) throw new Error('Rollback must select the committed target');
       if (desired.revision !== state.pending.revision + 1) throw new Error('Stale rollback publication revision');
@@ -119,7 +119,7 @@ export class PersistentPortPublisher {
         else throw new Error('Unknown persistent port kernel state; rollback cannot mutate it');
         await this.authority.ready(desired);
         const rollback = { ...state, pending: desired, source };
-        journalCheck(rollback, desired);
+        assertPersistentPortJournal(rollback, desired);
         await this.authority.saveJournal(rollback);
         return await this.complete(rollback, desired);
       } catch (error) { throw new PersistentPortPublicationPending(error); }
@@ -131,7 +131,7 @@ export class PersistentPortPublisher {
     return this.authority.exclusive(async () => {
       const state = await this.authority.readJournal();
       if (!state) throw new Error('Persistent port journal is missing');
-      journalCheck(state, desired);
+      assertPersistentPortJournal(state, desired);
       if (state.retiring) throw new PersistentPortPublicationPending('Recover the pending retirement first');
       if (!state.pending && identity(state.committed) === identity(desired)) {
         try {
@@ -173,7 +173,7 @@ export class PersistentPortPublisher {
     return this.authority.exclusive(async () => {
       const state = await this.authority.readJournal();
       if (!state) throw new Error('Persistent port journal is missing');
-      journalCheck(state, desired);
+      assertPersistentPortJournal(state, desired);
       if (state.pending || state.retiring) throw new PersistentPortPublicationPending('Retirement is blocked by an unresolved operation');
       if (identity(state.committed) !== identity(desired)) throw new Error('Retirement publication revision changed');
       if (targetId === desired.target.id) throw new Error('Cannot retire the serving runtime');
@@ -196,7 +196,7 @@ export class PersistentPortPublisher {
     return this.authority.exclusive(async () => {
       const state = await this.authority.readJournal();
       if (!state) throw new Error('Persistent port journal is missing');
-      journalCheck(state, desired);
+      assertPersistentPortJournal(state, desired);
       if (state.pending || identity(state.committed) !== identity(desired)) throw new Error('Recovery does not own the retirement generation');
       try {
         await this.assertInstalled(desired, desired);
