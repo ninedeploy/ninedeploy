@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.20] - 2026-11-04
+
+### Added
+
+- **Restore verification for PostgreSQL backups (R3).** It restores a backup into an isolated PostgreSQL container on the panel host and runs your query there. The check passes only when psql's output equals the expected value exactly.
+  - **Where to start it:** the Backups tab (**Verify restore**), the CLI (`ninedeploy backups drill <db> <backup> --restore-query <sql> --expect <value> [--no-wait]`), or the API (`POST /v1/databases/:id/backups/drill` with `restore: { query, expected }`).
+  - **Isolation:** the container has no network, no published ports and no host mounts. All capabilities are dropped, the root filesystem is read-only, and storage is bounded tmpfs. The container is removed afterwards.
+  - **What is never touched or kept:** the live database is never touched. The query and the expected value are not stored, logged or audited.
+  - **Permissions:** the probe reveals the backup's contents, so it needs the `admin` role on the database, the same as a download. The structural drill stays at `member`.
+  - **Asynchronous:** the request answers `202` with `status: "running"`, and clients poll `GET /v1/databases/:id/drills/:drillId`. The SDK adds `databases.drill(id, drillId)`, and the CLI waits for the verdict. One verification runs at a time per panel; another start gets `409 restore_verification_busy`.
+  - **Node databases:** the panel pulls the PostgreSQL engine image on the panel host first when it is missing there.
+
+### Fixed
+
+- A panel that crashed or restarted during a restore verification left two things behind:
+  - a second decrypted copy of the backup in its temp directory, which no cleanup matched;
+  - the helper container, holding the dump and the restored data.
+
+  The copy is gone, because the dump is now streamed straight into the helper. Housekeeping now removes helpers older than an hour.
+- Running out of the helper's bounds no longer reports the backup as `failed`. This covers the 1 GiB scratch, the memory limit, a dump over 512 MiB, and an engine image that cannot be pulled. The verdict is now `unverifiable`; `failed` means the restore or the data itself failed.
+
+### Verification
+
+- Hosted real-PostgreSQL restore acceptance passed on the fixed adapter (run 41840272687). It covered plain and custom dumps, a wrong expected value, invalid SQL, a missing extension, cleanup and source preservation.
+- The release user-journey smoke now runs the public flow on the published image. It takes a fresh backup of imported rows, checks that `count(*)=3` passes and that a wrong expectation fails, checks that a concurrent start gets 409, and checks that no helper is left behind.
+- Local results:
+  - full server suite: 13,354 tests passed, with the coverage gates met;
+  - web: 2,770 passed;
+  - SDK: 100% coverage;
+  - CLI: 1,057 passed.
+
 ## [0.18.19] - 2026-11-04
 
 ### Fixed

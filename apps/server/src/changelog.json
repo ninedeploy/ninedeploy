@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.18.20",
+    "date": "2026-11-04",
+    "title": "Verify PostgreSQL backups by really restoring them",
+    "changes": [
+      "Verify restore (Backups tab, `ninedeploy backups drill … --restore-query … --expect …`, or the API) restores a PostgreSQL backup into an isolated, networkless container on the panel host and checks a query of yours against the value you expect. The live database is never touched; the query and value are not stored.",
+      "A restore verification needs the admin role on the database, like a backup download. It answers at once and the panel, CLI and SDK follow it to its verdict; one runs at a time per panel.",
+      "Running out of the helper's 1 GiB scratch or its memory, a backup over 512 MiB, or an engine image that cannot be pulled is reported as unverifiable, never as a broken backup.",
+      "A panel that crashes during a verification no longer leaves a decrypted copy of the backup on disk, and housekeeping removes a helper container left behind."
+    ]
+  },
+  {
     "version": "0.18.19",
     "date": "2026-11-04",
     "title": "Safer preparation for fixed-port deployments",
