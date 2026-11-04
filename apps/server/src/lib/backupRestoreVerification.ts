@@ -5,7 +5,7 @@ import { capture, ExecOutputTooLargeError, ExecTimeoutError, run, sleep } from '
 import { streamFileToCommand } from './fileCommandInput.js';
 
 /** Engines with an isolated restore adapter. */
-export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo'] as const;
+export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb'] as const;
 export type RestoreVerificationEngine = (typeof RESTORE_VERIFICATION_ENGINES)[number];
 export function isRestoreVerificationEngine(engine: string): engine is RestoreVerificationEngine {
   return (RESTORE_VERIFICATION_ENGINES as readonly string[]).includes(engine);
@@ -24,8 +24,9 @@ export interface RestoreVerificationResult {
   status: 'passed' | 'failed' | 'unverifiable';
   engine: RestoreVerificationEngine;
   /** postgres: plain SQL or a custom archive. mysql/mariadb dumps are always
-   *  plain SQL; mongo backups are a gzipped mongodump archive. */
-  format: 'plain' | 'custom' | 'archive' | null;
+   *  plain SQL; mongo backups are a gzipped mongodump archive; the Redis
+   *  family's are the server's own RDB file. */
+  format: 'plain' | 'custom' | 'archive' | 'rdb' | null;
   imageId: string | null;
   durationMs: number;
   restoreMs: number | null;
@@ -60,19 +61,38 @@ interface HelperProfile {
    *  image's VOLUMEs so no anonymous volume ever holds restored data. */
   mounts: string[];
   env: string[];
+  /** Replaces the image's entrypoint (the Redis family's start gate). */
+  entrypoint?: string;
   /** After the image. Both MySQL-family entrypoints prepend their daemon to leading flags. */
   args: string[];
   pidsLimit: number;
   readyAttempts: number;
   readyTimeoutMs: number;
   ready: string[];
-  /** `stdin`: the panel streams the dump straight into this client, so no
-   *  copy lands in the helper. `file`: the dump is copied into the scratch
-   *  (`DUMP`) first. */
-  restore: { stdin: string[] } | { file(format: 'plain' | 'custom'): string[] };
+  /**
+   * - `stdin`: the panel streams the dump straight into this client, so no
+   *   copy lands in the helper.
+   * - `file`: the dump is copied into the scratch (`DUMP`) first.
+   * - `preload`: the engine only reads its data file at startup. The dump is
+   *   copied to `path`, then `START_MARKER` releases the gated server, which
+   *   either answers `loaded` with `PONG` or exits. An exit whose log matches
+   *   `rejects` is the backup's failure.
+   */
+  restore:
+    | { stdin: string[] }
+    | { file(format: 'plain' | 'custom'): string[] }
+    | { preload: { path: string; loaded: string[]; rejects: RegExp } };
   query(sql: string): string[];
+  /** The probe goes to the client on stdin instead of argv (redis-cli reads commands per line). */
+  queryOnStdin?: boolean;
 }
 const PG_CONNECTION = ['-h', '127.0.0.1', '-U', 'nine', '-d', 'app'];
+/** Redis-family start gate: PID 1 waits for this marker, then becomes the server. */
+const START_MARKER = '/data/.nd-start';
+const START_GATE = `while [ ! -e ${START_MARKER} ]; do sleep 0.2; done; exec "$@"`;
+/** A Redis-family server that exits with one of these in its log refused the
+ *  file itself: a wrong signature, a short or corrupt RDB, an unknown version. */
+const RDB_REJECTED = /Wrong signature trying to load DB|Short read or OOM loading DB|RDB ERROR DETECTED|Unexpected EOF reading RDB|Can't handle RDB format version|Bad file format|Fatal error loading the DB/i;
 /** The staged dump on the client's stdin. Positional arguments only: neither
  *  the path nor any byte of the dump ever becomes shell code. */
 const STDIN_FROM_FILE = 'f="$1"; shift; exec "$@" < "$f"';
@@ -117,7 +137,12 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
         // mongosh keeps its history and logs under HOME.
         '/tmp:rw,nosuid,nodev,mode=1777,size=64m',
       ],
-      env: ['HOME=/tmp'],
+      // The image sets glibc.pthread.rseq=0 so TCMalloc can use per-CPU
+      // caches. On Linux 6.19 through 7.0.13 that crashes, and mongod refuses
+      // to start at all. rseq=1 makes TCMalloc fall back to per-thread caches,
+      // which start on every kernel; a short-lived helper does not need the
+      // per-CPU speed-up.
+      env: ['HOME=/tmp', 'GLIBC_TUNABLES=glibc.pthread.rseq=1'],
       args: [],
       // mongod, mongorestore's workers and mongosh each run many threads.
       pidsLimit: 256,
@@ -130,6 +155,32 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
       // What mongosh prints for the script's last expression; the default
       // database is `test`, so address others with db.getSiblingDB(…).
       query: (sql) => ['mongosh', '--quiet', '--norc', ...host, '--eval', sql],
+    };
+  }
+  if (engine === 'redis' || engine === 'valkey' || engine === 'keydb') {
+    const server = `${engine === 'redis' ? 'redis' : engine}-server`;
+    const cli = [`${engine === 'redis' ? 'redis' : engine}-cli`, '-h', '127.0.0.1'];
+    return {
+      user: engine,
+      // The RDB file and the loaded dataset's working files.
+      scratch: '/data',
+      mounts: [],
+      env: [],
+      // The image's entrypoint would start the server at once, before the
+      // backup is in place: a gate holds PID 1 until the file is copied.
+      entrypoint: 'sh',
+      args: ['-c', START_GATE, 'nd-restore', server, '--dir', '/data', '--dbfilename', 'dump.rdb',
+        '--save', '', '--appendonly', 'no', '--bind', '127.0.0.1', '--port', '6379'],
+      pidsLimit: 128,
+      readyAttempts: 30,
+      readyTimeoutMs: 2000,
+      // Only that the gated helper runs; the server itself starts in `restore`.
+      ready: ['true'],
+      restore: { preload: { path: '/data/dump.rdb', loaded: [...cli, 'ping'], rejects: RDB_REJECTED } },
+      // One command per line on stdin. Replies print raw: one line per value
+      // or array element, an empty line for nil.
+      query: () => cli,
+      queryOnStdin: true,
     };
   }
   const mysql = engine === 'mysql';
@@ -191,8 +242,8 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
   let createAttempted = false;
   let phase: 'setup' | 'restore' | 'query' = 'setup';
   let oversized = false;
-  const docker = (args: string[], timeoutMs = QUICK_MS, maxOutputBytes = 4096) =>
-    capture('docker', args, { timeoutMs, maxOutputBytes });
+  const docker = (args: string[], timeoutMs = QUICK_MS, maxOutputBytes = 4096, stdin?: Buffer) =>
+    capture('docker', args, { timeoutMs, maxOutputBytes }, stdin);
   try {
     const imageId = (await docker(['image', 'inspect', '--format', '{{.Id}}', input.image])).trim();
     if (!/^sha256:[a-f0-9]{64}$/.test(imageId)) throw new Error('Missing immutable image identity');
@@ -209,7 +260,9 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       const { bytesRead } = await handle.read(header, 0, 5, 0);
       result.format = engine === 'mongo'
         ? 'archive'
-        : engine === 'postgres' && bytesRead === 5 && header.toString('ascii') === 'PGDMP' ? 'custom' : 'plain';
+        : 'preload' in profile.restore
+          ? 'rdb'
+          : engine === 'postgres' && bytesRead === 5 && header.toString('ascii') === 'PGDMP' ? 'custom' : 'plain';
     } finally { await handle.close(); }
     // The caller's private staged file is streamed through exec stdin, read by
     // this process: no second plaintext copy on the panel's disk (a crash
@@ -223,6 +276,7 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       '--tmpfs', `${profile.scratch}:rw,nosuid,nodev,mode=1777,size=${SCRATCH_MIB}m`,
       ...profile.mounts.flatMap((mount) => ['--tmpfs', mount]),
       ...profile.env.flatMap((entry) => ['--env', entry]),
+      ...(profile.entrypoint ? ['--entrypoint', profile.entrypoint] : []),
       '--pull', 'never', imageId, ...profile.args,
     ]);
     await docker(['start', name]);
@@ -239,6 +293,28 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       const restoreStarted = Date.now();
       await streamFileToCommand('docker', ['exec', '-i', name, ...profile.restore.stdin], input.file, 300_000);
       result.restoreMs = Date.now() - restoreStarted;
+    } else if ('preload' in profile.restore) {
+      const { path, loaded } = profile.restore.preload;
+      await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', path], input.file, 60_000);
+      phase = 'restore';
+      const restoreStarted = Date.now();
+      await docker(['exec', name, 'touch', START_MARKER]);
+      // The released server reads the file while it starts: it answers PONG
+      // once the dataset is loaded (LOADING until then), or it exits.
+      for (;;) {
+        let reply = '';
+        try {
+          reply = (await docker(['exec', name, ...loaded], 2000)).trim();
+        } catch {
+          if ((await docker(['inspect', '--format', '{{.State.Running}}', name])).trim() !== 'true') {
+            throw new Error('The engine stopped while loading the backup');
+          }
+        }
+        if (reply === 'PONG') break;
+        if (Date.now() - restoreStarted >= 300_000) throw new ExecTimeoutError('restore load', 300_000);
+        await sleep(250);
+      }
+      result.restoreMs = Date.now() - restoreStarted;
     } else {
       await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', DUMP], input.file, 60_000);
       phase = 'restore';
@@ -248,7 +324,9 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
     }
     phase = 'query';
     const queryStarted = Date.now();
-    const output = await docker(['exec', name, ...profile.query(input.query)], 15_000, 16_386);
+    const output = profile.queryOnStdin
+      ? await docker(['exec', '-i', name, ...profile.query(input.query)], 15_000, 16_386, Buffer.from(`${input.query}\n`))
+      : await docker(['exec', name, ...profile.query(input.query)], 15_000, 16_386);
     result.queryMs = Date.now() - queryStarted;
     result.queryMatched = output.replace(/\r?\n$/, '') === input.expected;
     result.status = result.queryMatched ? 'passed' : 'failed';
@@ -258,8 +336,9 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
     // is not evidence that the backup is broken: an operator reads 'failed'
     // as "does not restore". Only a healthy helper's error is the backup's.
     const bounded = error instanceof ExecTimeoutError || error instanceof ExecOutputTooLargeError;
-    const helper = phase !== 'setup' && !bounded ? await helperState(error, name, docker) : null;
-    const unavailable = phase === 'setup' || bounded || (helper !== null && helper !== 'healthy');
+    const rejects = 'preload' in profile.restore ? profile.restore.preload.rejects : undefined;
+    const helper = phase !== 'setup' && !bounded ? await helperState(error, name, docker, rejects) : null;
+    const unavailable = phase === 'setup' || bounded || (helper !== null && helper !== 'healthy' && helper !== 'rejected');
     result.status = unavailable ? 'unverifiable' : 'failed';
     result.error = oversized || helper === 'exhausted'
       ? 'Backup exceeds the bounded restore verification capacity'
@@ -292,13 +371,17 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
  *   have been healthy. MariaDB aborts outright when InnoDB cannot extend a
  *   file on a full tmpfs and its client sees only a lost connection, so a
  *   stopped helper's own log is checked for the same capacity messages.
+ * - `rejected`: the stopped engine's log says it refused the file itself
+ *   (`rejects`, for engines that load their data file at startup). The
+ *   failure is the backup's, as on a healthy helper.
  * - `healthy`: only then is the failure attributed to the backup.
  */
 async function helperState(
   error: unknown,
   name: string,
   docker: (args: string[], timeoutMs?: number, maxOutputBytes?: number) => Promise<string>,
-): Promise<'exhausted' | 'stopped' | 'healthy'> {
+  rejects?: RegExp,
+): Promise<'exhausted' | 'stopped' | 'rejected' | 'healthy'> {
   const message = error instanceof Error ? error.message : '';
   if (CAPACITY_ERROR.test(message)) return 'exhausted';
   try {
@@ -309,16 +392,19 @@ async function helperState(
     /* unreadable: not healthy; the log may still say why */
   }
   let capacity = false;
+  let rejected = false;
   try {
     // Each line is only tested, never kept: an engine's crash report can
     // quote the statement it was running, i.e. restored data.
     await run('docker', ['logs', '--tail', '200', name], { timeoutMs: QUICK_MS }, (line) => {
       if (CAPACITY_ERROR.test(line)) capacity = true;
+      if (rejects?.test(line)) rejected = true;
     });
   } catch {
     /* no log: stopped, without a capacity claim */
   }
-  return capacity ? 'exhausted' : 'stopped';
+  // Capacity wins: "Short read or OOM loading DB" is also logged when memory ran out.
+  return capacity ? 'exhausted' : rejected ? 'rejected' : 'stopped';
 }
 
 /**

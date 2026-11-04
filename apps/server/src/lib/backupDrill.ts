@@ -16,7 +16,7 @@
  * image (r356), never as host binaries.
  *
  * R3's optional restore probe instead restores into an isolated real
- * PostgreSQL, MySQL, MariaDB or MongoDB helper and records the known-data verdict. The public drill route
+ * PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey or KeyDB helper and records the known-data verdict. The public drill route
  * admits it asynchronously (`onAdmitted`), for database admins only.
  * The drill never deletes or modifies the source backup.
  * Encrypted envelopes are decrypted to a sibling temp file
@@ -101,7 +101,7 @@ export async function runBackupDrill(
     throw new Error(`Backup ${backupId} does not belong to database ${databaseId}`);
   }
   if (restoreProbe) {
-    if (!isRestoreVerificationEngine(dRow.engine)) throw new Error('Isolated restore verification currently requires PostgreSQL, MySQL, MariaDB or MongoDB');
+    if (!isRestoreVerificationEngine(dRow.engine)) throw new Error('Isolated restore verification currently requires PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey or KeyDB');
     if (bRow.status !== 'completed' || bRow.scope !== 'db') throw new Error('Restore verification requires a completed database backup');
     if (!restoreProbe.query.trim() || Buffer.byteLength(restoreProbe.query) > 16_384 || Buffer.byteLength(restoreProbe.expected) > 16_384) {
       throw new Error('Restore verification requires a bounded query and expected result');

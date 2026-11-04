@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ calls: [] as string[][], timeouts: [] as Array<{ args: string[]; timeoutMs: number }>, fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', logs: [] as string[] | null, helpers: [] as Array<{ id: string; created: string; name: string }> }));
+const state = vi.hoisted(() => ({ calls: [] as string[][], timeouts: [] as Array<{ args: string[]; timeoutMs: number }>, stdin: [] as string[], loadPolls: 0, fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', logs: [] as string[] | null, helpers: [] as Array<{ id: string; created: string; name: string }> }));
+const REDIS_CLIS = ['redis-cli', 'valkey-cli', 'keydb-cli'];
 const MONGO_PING = 'db.adminCommand({ ping: 1 }).ok';
 vi.mock('../../src/lib/fileCommandInput.js', () => ({
   streamFileToCommand: async (_cmd: string, args: string[], file: string, timeoutMs: number) => {
@@ -23,9 +24,25 @@ vi.mock('../../src/lib/exec.js', () => {
       if (state.logs === null) throw new Error('No such container');
       for (const line of state.logs) sink(line);
     }),
-    capture: vi.fn(async (_cmd: string, args: string[], options: { timeoutMs: number }) => {
+    capture: vi.fn(async (_cmd: string, args: string[], options: { timeoutMs: number }, input?: Buffer) => {
       state.calls.push(args); state.timeouts.push({ args, timeoutMs: options.timeoutMs });
+      if (input) state.stdin.push(input.toString());
       expect(options.timeoutMs).toBeGreaterThan(0);
+      // Redis family: the load poll (`<cli> -h 127.0.0.1 ping`) and the
+      // stdin probe (`exec -i … <cli> -h 127.0.0.1`).
+      if (args[0] === 'exec' && REDIS_CLIS.some(cli => args.includes(cli))) {
+        if (args.at(-1) === 'ping') {
+          state.loadPolls++;
+          if (state.fail === 'rdb-exit') throw new Error('Error response from daemon: container is not running');
+          // Still loading on the first poll: the server answers LOADING, not PONG.
+          return state.loadPolls === 1 ? 'LOADING Redis is loading the dataset in memory\n' : 'PONG\n';
+        }
+        if (state.fail === 'query') throw new Error('SECRET_QUERY_RESULT');
+        return state.fail === 'mismatch' ? 'wrong private value\n' : 'known-row\n';
+      }
+      if (args[0] === 'inspect' && args.join(' ') === `inspect --format {{.State.Running}} ${state.name}`) {
+        return `${state.fail !== 'rdb-exit'}\n`;
+      }
       if (args[0] === 'image') {
         if (state.fail === 'image') throw new Error('private daemon error');
         return state.image;
@@ -85,7 +102,7 @@ import { pruneRestoreVerificationHelpers, RESTORE_VERIFICATION_MAX_DUMP_BYTES, v
 let directory: string;
 let file: string;
 beforeEach(async () => {
-  state.calls = []; state.timeouts = []; state.fail = ''; state.custom = false; state.copied = ''; state.name = '';
+  state.calls = []; state.timeouts = []; state.stdin = []; state.loadPolls = 0; state.fail = ''; state.custom = false; state.copied = ''; state.name = '';
   state.image = `sha256:${'a'.repeat(64)}`; state.oom = ''; state.logs = []; state.helpers = [];
   directory = await mkdtemp(join(tmpdir(), 'nd-restore-test-'));
   file = join(directory, 'source.sql');
@@ -275,7 +292,7 @@ describe('MySQL and MariaDB restore helpers', () => {
     expect(state.calls.filter(args => args.includes('ping'))).toHaveLength(120);
   });
   it('refuses an engine without an adapter before any Docker work', async () => {
-    await expect(verifyRestore('redis' as never, { file, image: 'redis:8', query: 'GET k', expected: 'v' })).rejects.toThrow(/Unsupported/);
+    await expect(verifyRestore('clickhouse' as never, { file, image: 'clickhouse:25', query: 'SELECT 1', expected: '1' })).rejects.toThrow(/Unsupported/);
     expect(state.calls).toEqual([]);
   });
 });
@@ -300,7 +317,7 @@ describe('MongoDB restore helper', () => {
     ]);
     // No MONGO_INITDB_* variables: no temporary initialization server, no access control.
     expect(create.filter(arg => arg.startsWith('MONGO'))).toEqual([]);
-    expect(create).toEqual(expect.arrayContaining(['--env', 'HOME=/tmp']));
+    expect(create).toEqual(expect.arrayContaining(['--env', 'HOME=/tmp', '--env', 'GLIBC_TUNABLES=glibc.pthread.rseq=1']));
     expect(create.at(-1)).toBe(state.image);
     expect(create.some(arg => ['--mount', '-v', '--volume', '-p', '--publish', '--privileged'].includes(arg))).toBe(false);
     // mongosh needs about a second to start: a longer readiness budget.
@@ -356,5 +373,72 @@ describe('crashed restore helpers are swept', () => {
     expect(await pruneRestoreVerificationHelpers(60 * 60 * 1000, now)).toBe(1);
     expect(state.calls.filter(args => args[0] === 'rm')).toEqual([['rm', '-f', '-v', 'e'.repeat(64)]]);
     expect(state.calls.some(args => args.includes('not-a-container-id'))).toBe(false);
+  });
+});
+
+describe('Redis-family restore helpers (the server loads its RDB at startup)', () => {
+  const gate = 'while [ ! -e /data/.nd-start ]; do sleep 0.2; done; exec "$@"';
+  const run = (engine: 'redis' | 'valkey' | 'keydb' = 'redis') => verifyRestore(engine, { file, image: `${engine}:latest`, query: 'GET greeting', expected: 'known-row' });
+  it('copies the RDB into a gated, hardened helper, releases the server, waits for the load and probes on stdin', async () => {
+    const result = await run();
+    expect(result).toMatchObject({ status: 'passed', engine: 'redis', format: 'rdb', queryMatched: true, cleanupConfirmed: true });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    for (const flag of ['--read-only', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '--cpus']) expect(create).toContain(flag);
+    expect(create.slice(create.indexOf('--user'), create.indexOf('--user') + 2)).toEqual(['--user', 'redis']);
+    const tmpfs = create.flatMap((arg, index) => (create[index - 1] === '--tmpfs' ? [arg] : []));
+    expect(tmpfs).toEqual(['/data:rw,nosuid,nodev,mode=1777,size=1024m']);
+    // The image's entrypoint is replaced by the start gate; the server's flags follow it.
+    expect(create.slice(create.indexOf('--entrypoint'), create.indexOf('--entrypoint') + 2)).toEqual(['--entrypoint', 'sh']);
+    expect(create.slice(create.indexOf(state.image))).toEqual([state.image, '-c', gate, 'nd-restore', 'redis-server',
+      '--dir', '/data', '--dbfilename', 'dump.rdb', '--save', '', '--appendonly', 'no', '--bind', '127.0.0.1', '--port', '6379']);
+    expect(create.some(arg => ['--mount', '-v', '--volume', '-p', '--publish', '--privileged'].includes(arg))).toBe(false);
+    // Order: the copy lands, THEN the marker releases the server, THEN the load is polled.
+    const copy = state.calls.findIndex(args => args.includes('restore-copy'));
+    const release = state.calls.findIndex(args => args.join(' ') === `exec ${state.name} touch /data/.nd-start`);
+    const firstPoll = state.calls.findIndex(args => args.at(-1) === 'ping');
+    expect(state.calls[copy]).toEqual(['exec', '-i', state.name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', '/data/dump.rdb']);
+    expect(copy).toBeLessThan(release);
+    expect(release).toBeLessThan(firstPoll);
+    // LOADING is not PONG: the load is polled until the server answers.
+    expect(state.loadPolls).toBe(2);
+    expect(state.calls.find(args => args.at(-1) === 'ping')).toEqual(['exec', state.name, 'redis-cli', '-h', '127.0.0.1', 'ping']);
+    // The probe goes to the client on stdin, one command per line, never in argv.
+    expect(state.calls.find(args => args[1] === '-i' && args.includes('redis-cli'))).toEqual(['exec', '-i', state.name, 'redis-cli', '-h', '127.0.0.1']);
+    expect(state.stdin).toEqual(['GET greeting\n']);
+    expect(result.restoreMs).not.toBeNull();
+    expect(state.calls.find(args => args[0] === 'rm')).toEqual(['rm', '-f', '-v', state.name]);
+  });
+  it.each([
+    ['valkey', 'valkey-server', 'valkey-cli'],
+    ['keydb', 'keydb-server', 'keydb-cli'],
+  ] as const)('runs %s with its own user, server and client', async (engine, server, cli) => {
+    expect(await run(engine)).toMatchObject({ status: 'passed', engine, format: 'rdb' });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    expect(create.slice(create.indexOf('--user'), create.indexOf('--user') + 2)).toEqual(['--user', engine]);
+    expect(create[create.indexOf('nd-restore') + 1]).toBe(server);
+    expect(state.calls.find(args => args.at(-1) === 'ping')?.[2]).toBe(cli);
+    expect(state.calls.find(args => args[1] === '-i' && args.includes(cli))).toBeDefined();
+  });
+  it('fails a backup whose RDB the engine refused while loading, keeping no log text', async () => {
+    state.fail = 'rdb-exit'; state.oom = 'stopped';
+    state.logs = ['1:M 05 Nov 2026 # Wrong signature trying to load DB from file', "[additional info] Reading key 'private:session:42'"];
+    const result = await run();
+    expect(result).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore', restoreMs: null, cleanupConfirmed: true });
+    expect(JSON.stringify(result)).not.toMatch(/Wrong signature|private:session/);
+  });
+  it('names capacity when the engine ran out of memory loading the RDB, even beside a short-read line', async () => {
+    state.fail = 'rdb-exit'; state.oom = 'stopped';
+    state.logs = ['zmalloc: Out of memory trying to allocate 1073741824 bytes', 'Short read or OOM loading DB. Unrecoverable error, aborting now.'];
+    expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Backup exceeds the bounded restore verification capacity' });
+  });
+  it('is unverifiable when the server exits while loading without saying the file was bad', async () => {
+    state.fail = 'rdb-exit'; state.oom = 'stopped'; state.logs = ['1:M 05 Nov 2026 * Server initialized'];
+    expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+  });
+  it('fails a probe mismatch on a loaded dataset without exposing it', async () => {
+    state.fail = 'mismatch';
+    const result = await run('valkey');
+    expect(result).toMatchObject({ status: 'failed', queryMatched: false, error: 'Restored data did not match the expected probe result' });
+    expect(JSON.stringify(result)).not.toMatch(/wrong private value|GET greeting/);
   });
 });

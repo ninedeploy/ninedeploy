@@ -14,6 +14,12 @@ const MYSQL_FAMILY = [
   { engine: 'mariadb', image: 'mariadb:12.3', client: 'mariadb', rootEnv: 'MARIADB_ROOT_PASSWORD', dbEnv: 'MARIADB_DATABASE' },
 ] as const;
 const MONGO_IMAGE = 'mongo:8.0';
+/** The Redis family's default images; hosted runners are x86_64 (KeyDB's tags are per architecture). */
+const REDIS_FAMILY = [
+  { engine: 'redis', image: 'redis:8.8', server: 'redis-server', cli: 'redis-cli' },
+  { engine: 'valkey', image: 'valkey/valkey:9.1', server: 'valkey-server', cli: 'valkey-cli' },
+  { engine: 'keydb', image: 'eqalpha/keydb:x86_64_v6.3.4', server: 'keydb-server', cli: 'keydb-cli' },
+] as const;
 
 // Every guard precedes the first Docker call. Never run against a local or self-hosted daemon.
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Use an isolated GitHub Actions runner');
@@ -30,7 +36,7 @@ const docker = (args: string[], timeoutMs = 30_000) => capture('docker', args, {
 const query = (sql: string) => docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '-c', sql]);
 const hash = async (file: string) => createHash('sha256').update(await readFile(file)).digest('hex');
 const report: { source: string | undefined; publicApi: boolean; engines: string[]; images: Record<string, string>; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string; cleanupError?: string } = {
-  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo'], images: {}, cases: [], sourceUntouched: false,
+  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo', ...REDIS_FAMILY.map(f => f.engine)], images: {}, cases: [], sourceUntouched: false,
   backupBytesUnchanged: false, helperInventoryUnchanged: false, cleanup: false,
 };
 let scratch: string | undefined;
@@ -159,7 +165,11 @@ try {
     // No MONGO_INITDB_* variables: an initialization server would also listen
     // on 127.0.0.1 and race the readiness ping. The root user production's
     // dump authenticates as is created below, so the archive carries it too.
-    await docker(['run', '-d', '--name', mongoSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none', mongoImage]);
+    // rseq=1: hosted runners run Linux 6.19+, where mongod 8.0 refuses to
+    // start with the image's own rseq=0 (SERVER-121912). Run 41926197835's
+    // source exited with exactly that message.
+    await docker(['run', '-d', '--name', mongoSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none',
+      '-e', 'GLIBC_TUNABLES=glibc.pthread.rseq=1', mongoImage]);
     phase = 'mongo-source-readiness';
     let mongoReady = false;
     let lastPing = '';
@@ -206,6 +216,58 @@ try {
     assert.equal((await mongoEval("db.getSiblingDB('shop').orders.findOne({ _id: 1 }).v")).trim(), 'after');
     assert.equal(await hash(mongoDump), digest);
   }
+  for (const { engine, image, server, cli } of REDIS_FAMILY) {
+    // A password like production's (`--requirepass`), the panel's own SAVE
+    // argv, and its fixed RDB path.
+    const redisSource = `nd-restore-source-${engine}-${owner}`;
+    const redisPassword = randomUUID();
+    const redisCli = (...command: string[]) => docker(['exec', redisSource, cli, '-a', redisPassword, '--no-auth-warning', ...command]);
+    phase = `${engine}-image-pull`;
+    await docker(['pull', image], 300_000);
+    const redisImage = (await docker(['image', 'inspect', '--format', '{{.Id}}', image])).trim();
+    assert.match(redisImage, /^sha256:[a-f0-9]{64}$/); report.images[engine] = redisImage;
+    phase = `${engine}-source-create`;
+    familySources.push(redisSource);
+    await docker(['run', '-d', '--name', redisSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none',
+      '--entrypoint', server, redisImage, '--requirepass', redisPassword, '--dir', '/data']);
+    phase = `${engine}-source-readiness`;
+    let redisReady = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      try { if ((await redisCli('ping')).trim() === 'PONG') { redisReady = true; break; } } catch { /* not ready yet */ }
+      await sleep(1000);
+    }
+    assert.equal(redisReady, true, `${engine} source did not become ready`);
+    phase = `${engine}-source-seed`;
+    await redisCli('SET', 'greeting', 'before');
+    await redisCli('RPUSH', 'queue', 'a', 'b', 'c');
+    phase = `${engine}-source-dump`;
+    const plan = dumpCommands(engine, redisSource, '', redisPassword);
+    assert.equal((await docker(plan.dump, 120_000)).trim(), 'OK');
+    const redisDump = join(scratch, `${engine}.rdb`); files.push(redisDump);
+    await docker(['cp', `${redisSource}:${plan.file}`, redisDump], 120_000);
+    const digest = await hash(redisDump);
+    phase = `${engine}-source-mutate`;
+    await redisCli('SET', 'greeting', 'after');
+    // One command per line; replies print raw, an empty line for nil.
+    const probe = ['GET greeting', 'LRANGE queue 0 -1', 'GET missing'].join('\n');
+    const known = ['before', 'a', 'b', 'c', ''].join('\n');
+    phase = `${engine}-restore`;
+    const restored = await verifyRestore(engine, { file: redisDump, image: redisImage, query: probe, expected: known });
+    report.cases.push({ case: phase, verification: restored });
+    assert.equal(restored.status, 'passed'); assert.equal(restored.cleanupConfirmed, true);
+    phase = `${engine}-wrong-data-refusal`;
+    const wrong = await verifyRestore(engine, { file: redisDump, image: redisImage, query: probe, expected: known.replace('before', 'after') });
+    report.cases.push({ case: phase, verification: wrong }); assert.equal(wrong.status, 'failed');
+    phase = `${engine}-truncated-rdb-refusal`;
+    const truncated = join(scratch, `${engine}-truncated.rdb`); files.push(truncated);
+    const rdb = await readFile(redisDump);
+    await writeFile(truncated, rdb.subarray(0, Math.floor(rdb.length / 2)), { mode: 0o600 });
+    const refused = await verifyRestore(engine, { file: truncated, image: redisImage, query: probe, expected: known });
+    report.cases.push({ case: phase, verification: refused }); assert.equal(refused.status, 'failed');
+    phase = `${engine}-source-verification`;
+    assert.equal((await redisCli('GET', 'greeting')).trim(), 'after');
+    assert.equal(await hash(redisDump), digest);
+  }
   phase = 'helper-inventory-verification';
   report.sourceUntouched = true;
   report.backupBytesUnchanged = true;
@@ -215,7 +277,7 @@ try {
   report.failure = phase;
   // Only fixed synthetic source commands are eligible: never retain the
   // verifier's SQL, data, probe output or any production database diagnostic.
-  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
+  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness', 'redis-image-pull', 'valkey-image-pull', 'keydb-image-pull', 'redis-source-create', 'valkey-source-create', 'keydb-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
 } finally {
   let cleanup = true;
   for (const owned of [...(created ? [name] : []), ...familySources]) {

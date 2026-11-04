@@ -5,7 +5,8 @@ import { useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Field, Modal, Textarea } from '../../components/ui.js';
 
-const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB' };
+const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB', redis: 'Redis', valkey: 'Valkey', keydb: 'KeyDB' };
+const REDIS_FAMILY = new Set(['redis', 'valkey', 'keydb']);
 
 /**
  * R3: start an isolated restore verification of one PostgreSQL, MySQL,
@@ -20,6 +21,22 @@ export function RestoreVerifyDialog({ dbId, backupId, engine, onClose }: { dbId:
   const { toast } = useToast();
   const [query, setQuery] = useState('');
   const [expected, setExpected] = useState('');
+  // What the engine's own client prints decides how the expected value reads.
+  const redisFamily = REDIS_FAMILY.has(engine);
+  const queryHint =
+    engine === 'mongo'
+      ? t("One value is easiest, for example: db.getSiblingDB('shop').orders.countDocuments()")
+      : redisFamily
+        ? t('One command per line, for example: GET greeting')
+        : t('One value is easiest, for example: SELECT count(*) FROM users');
+  const expectedHint =
+    engine === 'postgres'
+      ? t('Exactly what psql prints, without headers. Separate rows with new lines; leave empty for no rows.')
+      : engine === 'mongo'
+        ? t('Exactly what mongosh prints for the last expression. EJSON.stringify(…) prints one stable line. The default database is test; address yours with db.getSiblingDB(…).')
+        : redisFamily
+          ? t('Exactly what the command-line client prints: one line per value or list element, an empty line for nil.')
+          : t('Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.');
   const start = useMutation({
     mutationFn: () => api.databases.drillBackup(dbId, { backupId, restore: { query, expected } }),
     onSuccess: () => {
@@ -55,14 +72,7 @@ export function RestoreVerifyDialog({ dbId, backupId, engine, onClose }: { dbId:
         <p className="text-sm text-slate-400">
           {t('The backup is restored into an isolated {engine} container on the panel host, with no network. Your query runs there, and the check passes only when its output equals the expected value exactly. The live database is not touched; the query and the value are not stored.', { engine: ENGINE_NAME[engine] ?? engine })}
         </p>
-        <Field
-          label={t('Query')}
-          hint={
-            engine === 'mongo'
-              ? t("One value is easiest, for example: db.getSiblingDB('shop').orders.countDocuments()")
-              : t('One value is easiest, for example: SELECT count(*) FROM users')
-          }
-        >
+        <Field label={t('Query')} hint={queryHint}>
           <Textarea
             required
             rows={3}
@@ -72,16 +82,7 @@ export function RestoreVerifyDialog({ dbId, backupId, engine, onClose }: { dbId:
             maxLength={16384}
           />
         </Field>
-        <Field
-          label={t('Expected output')}
-          hint={
-            engine === 'postgres'
-              ? t('Exactly what psql prints, without headers. Separate rows with new lines; leave empty for no rows.')
-              : engine === 'mongo'
-                ? t('Exactly what mongosh prints for the last expression. EJSON.stringify(…) prints one stable line. The default database is test; address yours with db.getSiblingDB(…).')
-                : t('Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.')
-          }
-        >
+        <Field label={t('Expected output')} hint={expectedHint}>
           <Textarea
             rows={2}
             value={expected}

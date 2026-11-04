@@ -377,6 +377,23 @@ describe('DatabaseDetail', () => {
     else expect(screen.queryByText(/^restored in /)).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['redis', 'Redis'],
+    ['valkey', 'Valkey'],
+    ['keydb', 'KeyDB'],
+  ])('explains the %s helper and its command-line output in the verification dialog', async (engine, label) => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine, name: `cache-${engine}` } as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify restore of backup 101' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Verify restore of backup #101' });
+    expect(dialog).toHaveTextContent(`restored into an isolated ${label} container`);
+    expect(dialog).toHaveTextContent('One command per line, for example: GET greeting');
+    expect(dialog).toHaveTextContent('an empty line for nil');
+    expect(dialog).not.toHaveTextContent('SELECT count(*)');
+  });
+
   it('explains the MongoDB helper, its mongosh output and how to address a database', async () => {
     mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'mongo', name: 'prod-mongo' } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
@@ -390,8 +407,8 @@ describe('DatabaseDetail', () => {
     expect(dialog).not.toHaveTextContent('SELECT count(*)');
   });
 
-  it('offers restore verification only for PostgreSQL, MySQL, MariaDB and MongoDB databases', async () => {
-    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'redis', name: 'cache' } as any);
+  it('does not offer restore verification for an engine without an adapter', async () => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'clickhouse', name: 'analytics' } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
     mockOf(api.databases.drills).mockResolvedValue([] as any);
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });

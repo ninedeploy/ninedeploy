@@ -1,18 +1,49 @@
 # Isolated restore verification
 
-Status, 2026-11-04: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB and MongoDB. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
+Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, Redis, Valkey and KeyDB. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
 - **Hosted acceptance, PostgreSQL:** passed again on cd3a2a6d.
 - **Hosted acceptance, MySQL and MariaDB:** passed on 1151cc49 ([run 41901004999](https://github.com/ninedeploy/ninedeploy/actions/runs/41901004999)). The run had 11 cases: PostgreSQL 5, `mysql:9.7` 3 and `mariadb:12.3` 3. Every source was untouched, the dump bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
-- **MongoDB:** passed real local checks (below). Its hosted cohort must still pass before it counts as native acceptance.
+- **MongoDB:** passed real local checks (below). Its first hosted cohort ([run 41926197835](https://github.com/ninedeploy/ninedeploy/actions/runs/41926197835)) never reached the verifier. The fixture's own `mongo:8.0` **source** exited at startup with "MongoDB cannot start: Linux kernel versions 6.19 and newer has a known incompatibility" (SERVER-121912), because the hosted runner's kernel is 6.19 or later. The source and the helper now run with `GLIBC_TUNABLES=glibc.pthread.rseq=1` (see MongoDB below). The hosted cohort must still pass before it counts as native acceptance.
+- **Redis, Valkey and KeyDB:** passed real local checks (below). Their hosted cohort must still pass before it counts as native acceptance.
 - The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
 - **Recovery duration** is recorded and reported. Every restore verification stores the measured `restoreMs` (with `queryMs` and the total `durationMs`) on its drill row. The panel's Backups tab shows it next to the verdict ("restored in 1m 05s"). The CLI's pass line reads "the restore took N ms (M ms with setup and cleanup)". These are measurements of the bounded helper on the panel host, not an RTO commitment for a production restore.
-- The Redis family and the remaining engines, and PostgreSQL PITR, remain open, so R3 is not closed.
+- Dragonfly, ClickHouse, Meilisearch and RabbitMQ, and PostgreSQL PITR, remain open, so R3 is not closed.
+
+**Redis, Valkey and KeyDB (2026-11-05)**
+- **Why a start gate.** These engines read their RDB file only while the server starts. The helper therefore replaces the image's entrypoint with a gate: PID 1 waits for `/data/.nd-start`, then becomes the server through `exec`. The flags are:
+  - `--dir /data --dbfilename dump.rdb`;
+  - `--save '' --appendonly no`, so the server never writes over the backup;
+  - `--bind 127.0.0.1 --port 6379`.
+- **Helper:**
+  - It is the database's own engine image, run as `redis`, `valkey` or `keydb`.
+  - The 1 GiB scratch tmpfs is `/data` itself.
+  - There is no password and no network.
+- **Restore:**
+  1. The RDB is copied to `/data/dump.rdb`.
+  2. The marker releases the server.
+  3. The load is polled with `<cli> ping`. `LOADING` is not yet loaded; the load ends at `PONG`, or when the server exits.
+  
+  `restoreMs` is the load.
+- **Verdicts:** a server that exits while loading is judged by its own log tail. Lines are only tested, never kept: a load report can name a key.
+  - **`failed`:** the log contains "Wrong signature trying to load DB", "RDB ERROR DETECTED", "Unexpected EOF reading RDB", "Short read or OOM loading DB" or an unknown RDB version. The engine refused the file itself.
+  - **`unverifiable`, capacity:** an out-of-memory line takes precedence, because "Short read or OOM" is also logged when memory ran out.
+  - **`unverifiable`:** any other exit.
+- **Probe:** the query goes to `<cli> -h 127.0.0.1` on stdin, one command per line, so no command text is in an argv. Replies print raw: one line per value or list element, and an empty line for nil.
+- **Local real checks** used real `SAVE` backups from password-protected sources: `redis:8-alpine` (8.10.3), `valkey/valkey:9.1` and `eqalpha/keydb:x86_64_v6.3.4`. Each engine had four cases:
+  - **Restore:** `GET`, `LRANGE` and a nil `GET` returned the known values.
+  - **Failed:** a wrong expected value, a truncated RDB, and a file that is not an RDB.
+  - **Cleanup:** every helper was confirmed removed.
+- **Hosted cohort:** the hosted fixture covers `redis:8.8`, `valkey/valkey:9.1` and `eqalpha/keydb:x86_64_v6.3.4`. Each source has a production-like `--requirepass` and is dumped with the panel's `dumpCommands` (`SAVE`) and RDB path.
+- **Dragonfly** is not covered yet. It loads its snapshot with its own rules.
 
 **MongoDB (2026-11-04)**
 - **Helper:**
   - It is the database's own engine image, run as user `mongodb`, with 256 PIDs. mongod, mongorestore's workers and mongosh each run many threads.
   - The 1 GiB scratch tmpfs is mounted over `/data/db` itself, and `/data/configdb` gets 1 MiB. `/tmp` is a small tmpfs, set as `HOME`, for mongosh's history and logs.
   - There are no `MONGO_INITDB_*` variables. So there is no temporary initialization server, and no access control. The archive's own admin users are restored as data only.
+  - `GLIBC_TUNABLES=glibc.pthread.rseq=1` overrides the image's own `rseq=0`.
+    - **Why:** with `rseq=0`, TCMalloc uses per-CPU caches. On Linux 6.19 through 7.0.13 these crash, so mongod 8.0 refuses to start at all. MongoDB's [8.0 release notes](https://www.mongodb.com/docs/manual/release-notes/8.0/) say kernel 7.0.14 resolves it.
+    - **Effect:** with `rseq=1`, TCMalloc falls back to per-thread caches, which start on every kernel. A short-lived helper does not need the per-CPU speed-up.
 - **Restore:** the panel streams the `mongodump --archive --gzip` backup straight into `mongorestore --archive --gzip --stopOnError` on the helper's stdin.
   - No copy lands in the helper, so the whole scratch is left for data.
   - `restoreMs` is the streamed restore.

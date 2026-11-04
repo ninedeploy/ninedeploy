@@ -6134,7 +6134,9 @@ export const TR: Readonly<Record<string, string>> = {
   'Attempt {n}': '{n}. deneme',
   'Could not read the log: {error}': 'Log okunamadı: {error}',
   'No output yet.': 'Henüz çıktı yok.',
-  // R3: isolated restore verification of a PostgreSQL, MySQL, MariaDB or MongoDB backup.
+  // R3: isolated restore verification of a PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey or KeyDB backup.
+  'One command per line, for example: GET greeting': 'Her satırda bir komut, örneğin: GET greeting',
+  'Exactly what the command-line client prints: one line per value or list element, an empty line for nil.': 'Komut satırı istemcisinin yazdırdığının birebir aynısı: her değer ya da liste öğesi için bir satır, nil için boş bir satır.',
   'restored in {duration}': '{duration} içinde geri yüklendi',
   'How long the real restore took in the isolated container': 'Yalıtılmış container\'daki gerçek geri yüklemenin ne kadar sürdüğü',
   "One value is easiest, for example: db.getSiblingDB('shop').orders.countDocuments()": "Tek bir değer en kolayıdır, örneğin: db.getSiblingDB('shop').orders.countDocuments()",
