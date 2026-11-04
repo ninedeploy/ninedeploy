@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
+import { copyFileSync, readdirSync, appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertPersistentPortNftState, persistentPortFingerprint } from '../apps/server/src/lib/persistentPortNft.ts';
@@ -111,7 +111,7 @@ try {
         else { failure = new Error('Unknown worker response'); child.stdin.destroy(); }
       }
     });
-    child.on('close', () => { completed = true; clearTimeout(timer); workerCalls.push({ kind, trace, completed: !!result, pending: failure instanceof PersistentPortPublicationPending }); if (failure) reject(failure); else if (!result) reject(new PersistentPortPublicationPending('Worker exited without a completion acknowledgement')); else accept(result); });
+    child.on('close', () => { completed = true; clearTimeout(timer); const error = failure ?? (!result ? new PersistentPortPublicationPending('Worker exited without a completion acknowledgement') : undefined); workerCalls.push({ kind, trace, completed: !!result, pending: error instanceof PersistentPortPublicationPending }); if (error) reject(error); else accept(result); });
     child.stdin.write(JSON.stringify({ type: 'start', trace, directory: controls.directory, fault: controls.fault ?? (loseKernelAck ? 'kernel-ack' : undefined), request: { version: 1, kind, spec: desired, ...(targetId === undefined ? {} : { targetId }) } }) + '\n');
   });
   const authority = {
@@ -197,8 +197,9 @@ try {
     const inspected = await successor; assert.equal(inspected.journal.pending.revision, 1); assert.equal(inspected.journal.committed, null);
     const events = innerDocker('exec', 'port-worker', 'cat', directory + '/events.log').trim().split('\n');
     assert.deepEqual(events, kind === 'fenced' ? ['mutator-enter', 'mutator-finish', 'competitor-finish'] : ['mutator-enter', 'competitor-finish', 'mutator-finish']);
-    assertPersistentPortNftState(claim, JSON.parse(inside('nft', '-j', 'list', 'table', 'ip', table)));
-    workerFenceResults.push({ kind, events, actualNftChildCommitted: true, recoveredPendingIntent: true });
+    const nftState = JSON.parse(inside('nft', '-j', 'list', 'table', 'ip', table)); assertPersistentPortNftState(claim, nftState);
+    writeFileSync(resolve(proof, 'worker-fence-' + kind + '-nft.json'), JSON.stringify(nftState));
+    workerFenceResults.push({ kind, events, claim, actualNftChildCommitted: true, recoveredPendingIntent: true });
   }
   writeFileSync(resolve(proof, 'target-host-worker.json'), JSON.stringify({ hostNamespace, workerNamespaces, workerCalls, workerFenceResults }, null, 2));
 
@@ -247,6 +248,7 @@ try {
   writeFileSync(resolve(proof, 'publication.json'), JSON.stringify(await authority.readJournal()));
   writeFileSync(resolve(proof, 'result.json'), JSON.stringify({ passed: true, durableJournalStore: true, kernelAuthorityIntegration: true, targetHostWorker: true, workerFenceResults, observations, held, candidateHeld, web, unreadyHeld: true, uncertainAckRetained: true, recoveryFromDisk: true, activeFlowRetirementBlocked: true, unconfirmedRollback: true, rollbackCandidateWasUnready: true, productionIntegration: false, monosipDatabaseMigration: false }, null, 2));
 } finally {
+  try {
   if (created) {
     for (const kind of ['fenced', 'unfenced']) {
       try { writeFileSync(resolve(proof, `lock-${kind}-events.log`), innerDocker('exec', 'authority', 'cat', `/proof/locks/${kind}/events.log`)); } catch {}
@@ -259,5 +261,14 @@ try {
     docker('rm', '-f', '-v', name);
     assert.ok(!docker('ps', '-a', '--filter', `name=^/${name}$`, '--format', '{{.ID}}'));
     writeFileSync(resolve(proof, 'cleanup.json'), JSON.stringify({ ownedDaemonRemoved: name }));
+  }
+  } finally {
+    // Preserve private 0700 worker state. Only regular, top-level synthetic
+    // proof files are eligible for the runner-owned upload directory.
+    const exported = resolve(root, '.temp_files/persistent-port-native-public');
+    mkdirSync(exported, { recursive: true, mode: 0o700 });
+    for (const entry of readdirSync(proof, { withFileTypes: true })) {
+      if (entry.isFile() && /\.(json|log|txt|nft|yml)$/.test(entry.name)) copyFileSync(resolve(proof, entry.name), resolve(exported, entry.name));
+    }
   }
 }
