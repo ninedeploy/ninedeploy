@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.19] - 2026-11-04
+
+### Fixed
+
+- Prepare fixed-host-port Docker candidates before stopping the serving runtime. A creation failure leaves the previous application serving; a successful preparation hands off ports immediately before candidate start.
+- Preserve the serving runtime when cancellation arrives during candidate preparation. Cleanup removes only the interrupted candidate.
+- Apply the guarded handoff to multiline environment deployments through Compose create/start, preserving decoded environment values and named volumes.
+
+### Deployment behavior
+
+- Application startup with direct host ports remains sequential. This patch does not enable persistent TCP/UDP ingress or remove the startup interruption of all-in-one stateful applications.
+
+### Verification
+
+- The actual builder, Docker and Traefik acceptance preserved 131 successful HTTP responses across injected creation-acknowledgement failures in plain and multiline environment cases. The stopped candidate, serving old runtime, prepared successful start and persistent-volume marker were checked.
+- 200 local tests across seven covering suites passed, including four assertion-based before/after regressions. Full hosted CI and primary-network readiness passed before release preparation.
+
 ## [0.18.18] - 2026-11-04
 
 ### Fixed
