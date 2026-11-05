@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.18.21",
+    "date": "2026-11-05",
+    "title": "Restore verification for every engine, and PostgreSQL point-in-time recovery",
+    "changes": [
+      "Verify restore now works for every managed engine: MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, RabbitMQ, Redis, Valkey, KeyDB and Dragonfly, as well as PostgreSQL. The backup is restored into an isolated container of the database's own image, and your query (or command, API path or rabbitmqctl listing) is compared with the value you expect.",
+      "The Backups tab and the CLI show how long the real restore took next to the verdict.",
+      "Point-in-time recovery for PostgreSQL databases on the panel host (Backups tab, `ninedeploy databases pitr`). It is off until you enable it. The database then archives every change, a base backup is taken daily, and you can recover to any second inside the window, or to the latest archived point, into a new database. Your database is never touched.",
+      "A recovery the archive cannot deliver (a missing or damaged segment, or a time not archived yet) is refused with a reason instead of silently stopping at an earlier point.",
+      "MongoDB databases start on Linux kernels 6.19 to 7.0.13. Existing MongoDB databases pick the fix up on their next Stop and Start.",
+      "A restore verification whose database engine stopped, or that ran out of its scratch space, is reported as unverifiable, not as a broken backup."
+    ]
+  },
+  {
     "version": "0.18.20",
     "date": "2026-11-04",
     "title": "Verify PostgreSQL backups by really restoring them",

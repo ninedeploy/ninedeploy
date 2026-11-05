@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.21] - 2026-11-05
+
 ### Added
 
 - **Restore verification for MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, RabbitMQ, Redis, Valkey, KeyDB and Dragonfly backups (R3).** **Verify restore** and `backups drill --restore-query … --expect …` now also restore a backup of these engines into an isolated container of the database's own engine image and run your query there.
