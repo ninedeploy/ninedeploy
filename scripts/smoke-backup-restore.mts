@@ -362,9 +362,11 @@ try {
     await docker(['cp', seedFile, `${rabbitSource}:/tmp/nd-seed.json`]);
     await rabbitCtl('import_definitions', '/tmp/nd-seed.json');
     const seeded = rabbitmqExpected(seed);
+    // rabbitmqMissing takes an absolute deadline (epoch ms) and throws past it.
+    const seedDeadline = Date.now() + 120_000;
     let applied = false;
-    for (let attempt = 0; attempt < 60 && !applied; attempt++) {
-      applied = (await rabbitmqMissing(rabbitSource, seeded, 30_000)).length === 0;
+    while (!applied && Date.now() < seedDeadline) {
+      try { applied = (await rabbitmqMissing(rabbitSource, seeded, seedDeadline)).length === 0; } catch { break; }
       if (!applied) await sleep(1000);
     }
     assert.equal(applied, true, 'rabbitmq seed definitions were not applied');
