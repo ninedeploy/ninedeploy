@@ -21,6 +21,7 @@ import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import { pruneDrillLeftovers } from '../lib/backupDrill.js';
 import { pruneRestoreVerificationHelpers } from '../lib/backupRestoreVerification.js';
+import { prunePitrRecoveries, prunePitrRecoveryHelpers } from '../lib/pitrHousekeeping.js';
 import { deleteLog, pruneOldLogs } from '../engine/logs.js';
 import { pruneResetTokens } from '../lib/passwordReset.js';
 import { executeAutoPrune, getAutoPruneStatus } from '../engine/autoPrune.js';
@@ -120,6 +121,8 @@ const DRILL_LEFTOVER_MAX_AGE_MS = 6 * 60 * 60 * 1000;
  * belongs to a panel process that died before its cleanup.
  */
 const RESTORE_HELPER_MAX_AGE_MS = 60 * 60 * 1000;
+/** Longer than a point-in-time replay may run (PITR_RECOVERY_TIMEOUT_MS, 6 h). */
+const PITR_RECOVERY_HELPER_MAX_AGE_MS = 7 * 60 * 60 * 1000;
 /**
  * Never swept, whatever their age:
  *   • the in-flight statuses — the worker and the pipeline still write to them;
@@ -526,6 +529,9 @@ export default fp(
         );
         await step('drill-leftovers', () => pruneDrillLeftovers([config.paths.backupsDir, tmpdir()], DRILL_LEFTOVER_MAX_AGE_MS));
         await step('restore-verification-helpers', () => pruneRestoreVerificationHelpers(RESTORE_HELPER_MAX_AGE_MS));
+        // R3: point-in-time recovery helpers a crashed process left, and old recovery rows.
+        await step('pitr-recovery-helpers', () => prunePitrRecoveryHelpers(PITR_RECOVERY_HELPER_MAX_AGE_MS));
+        await step('pitr-recoveries', () => prunePitrRecoveries(fastify.db, now));
         await step('export-leftovers', () => pruneExportLeftovers(EXPORT_LEFTOVER_MAX_AGE_MS));
         await step('metric-history', () => pruneMetricHistory(fastify));
         await step('resource-metric-history', () => pruneServiceMetrics(fastify.db, new Date(now)));

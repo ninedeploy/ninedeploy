@@ -46,6 +46,9 @@ vi.mock('../../src/lib/backupDrill.js', () => drillMock);
 // R3 restore-helper sweep (tested in test/lib/backupRestoreVerification.test.ts).
 const restoreHelpers = vi.hoisted(() => ({ pruneRestoreVerificationHelpers: vi.fn(async (..._a: unknown[]) => 0) }));
 vi.mock('../../src/lib/backupRestoreVerification.js', () => restoreHelpers);
+// R3 point-in-time recovery sweeps (tested in test/engine/postgresPitr.test.ts and test/lib/pitr.test.ts).
+const pitrSweeps = vi.hoisted(() => ({ prunePitrRecoveryHelpers: vi.fn(async (..._a: unknown[]) => 0), prunePitrRecoveries: vi.fn(async (..._a: unknown[]) => undefined) }));
+vi.mock('../../src/lib/pitrHousekeeping.js', () => pitrSweeps);
 vi.mock('../../src/engine/autoPrune.js', () => ({
   getAutoPruneStatus: autoPruneMock.getAutoPruneStatus,
   executeAutoPrune: autoPruneMock.executeAutoPrune,
@@ -178,6 +181,8 @@ describe('housekeeping plugin', () => {
     // R3: crashed restore-verification helpers (plaintext dump in tmpfs) go
     // too, with an age floor far above one verification's bounded lifetime.
     expect(restoreHelpers.pruneRestoreVerificationHelpers).toHaveBeenCalledWith(60 * 60 * 1000);
+    expect(pitrSweeps.prunePitrRecoveryHelpers).toHaveBeenCalledWith(7 * 60 * 60 * 1000);
+    expect(pitrSweeps.prunePitrRecoveries).toHaveBeenCalledWith(expect.anything(), expect.any(Number));
     await app.close();
   });
 

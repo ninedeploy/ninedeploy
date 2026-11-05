@@ -140,7 +140,7 @@ async function authorizeVolume(
   // ── 0.16 T5 node volumes ── (null = the panel host, today's check)
   serverId: number | null = null,
   // ── end 0.16 T5 ──
-): Promise<{ serviceIds: number[]; databaseContainer: string | null }> {
+): Promise<{ serviceIds: number[]; databaseContainer: string | null; pitrDatabase: string | null }> {
   if (!volumeName.startsWith('nd-svc-') && !volumeName.startsWith('nd-db-')) {
     throw badRequest('not a managed volume');
   }
@@ -160,9 +160,10 @@ async function authorizeVolume(
   // legacy `nd-svc-<slug>-data` heuristic. Members must own at least one;
   // admins bypass.
   const allAtts = await app.db.select().from(serviceVolumeAttachments);
+  const dbRows = await app.db.select().from(databases);
   const resolved = resolveVolumeOwnerWithSharing(
     await app.db.select().from(services),
-    await app.db.select().from(databases),
+    dbRows,
     volumeName,
     allAtts,
   );
@@ -179,7 +180,10 @@ async function authorizeVolume(
   const sharing = allAtts.filter((a) => a.volumeName === volumeName).map((a) => a.serviceId);
   const serviceIds = [...new Set([...(ownerId != null ? [ownerId] : []), ...sharing])];
   const databaseContainer = resolved?.owner.kind === 'database' ? (resolved.owner.containerName ?? null) : null;
-  return { serviceIds, databaseContainer };
+  // R3: the data or WAL archive volume of a database with point-in-time recovery on.
+  const owningDatabase = resolved?.owner.kind === 'database' ? dbRows.find((d) => d.id === resolved.owner.refId) : undefined;
+  const pitrDatabase = owningDatabase?.pitrEnabled ? owningDatabase.name : null;
+  return { serviceIds, databaseContainer, pitrDatabase };
 }
 
 /** Per-volume backup management. Mounted under /v1/volumes/:name/backups. */
@@ -299,7 +303,17 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
     const host = volumeHostId(req.query);
     const acrossHosts = (req.query as { acrossHosts?: unknown }).acrossHosts === 'true';
     // ── end 0.16 T5 ──
-    const { serviceIds, databaseContainer } = await authorizeVolume(app, req.user!, name, true, host);
+    const { serviceIds, databaseContainer, pitrDatabase } = await authorizeVolume(app, req.user!, name, true, host);
+    // R3: an older data directory (or archive) under a live WAL archive makes the
+    // two disagree: PostgreSQL would write segment names the archive already holds
+    // with other contents, archiving would stall and the disk would fill.
+    if (pitrDatabase) {
+      throw new HttpError(
+        409,
+        'pitr_volume_restore_refused',
+        `Point-in-time recovery is on for "${pitrDatabase}": restoring this volume would make its WAL archive inconsistent. Disable point-in-time recovery first (this deletes the archive), or recover to a point in time into a new database instead.`,
+      );
+    }
 
     const b = await app.db.query.backups.findFirst({
       where: and(eq(backups.id, bid), eq(backups.volumeName, name), eq(backups.scope, 'volumes')),

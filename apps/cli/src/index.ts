@@ -37,6 +37,7 @@ import {
   notificationsTest as _notifTest,
 } from './commands/notifications.js';
 import { databasePgbouncer } from './commands/pgbouncer.js';
+import { pitrBaseBackup, pitrDisable, pitrEnable, pitrRecover, pitrRecoveries, pitrStatus } from './commands/pitr.js';
 import { backupPolicyGet, backupPolicySet } from './commands/backupPolicy.js';
 import { logsSearch } from './commands/logs.js';
 import {
@@ -356,6 +357,28 @@ databases
   .action((dbId: string, action: string, opts: { port?: number }) =>
     databasePgbouncer(getClient(), dbId, action, opts),
   );
+
+// ── PostgreSQL point-in-time recovery (R3) ───────────────────────────────
+const pitrCmd = databases
+  .command('pitr')
+  .description('PostgreSQL point-in-time recovery: WAL archiving, base backups, recovery into a new database');
+pitrCmd.command('status <dbId>').description('Settings, archiving health, recoverable window and base backups')
+  .action((dbId: string) => pitrStatus(getClient(), dbId));
+pitrCmd.command('enable <dbId>').description('Restart the database with WAL archiving; the first base backup follows (database admin)')
+  .option('--retention <days>', 'Keep base backups (and the WAL they need) this many days, 1–35 (default 7)')
+  .action((dbId: string, o: { retention?: string }) => pitrEnable(getClient(), dbId, o));
+pitrCmd.command('disable <dbId>').description('Restart the database without archiving and DELETE its archive (database admin)')
+  .option('-y, --yes', 'Skip the confirmation prompt')
+  .action((dbId: string, o: { yes?: boolean }) => pitrDisable(getClient(), dbId, o));
+pitrCmd.command('base-backup <dbId>').description('Take a base backup now (database admin)')
+  .action((dbId: string) => pitrBaseBackup(getClient(), dbId));
+pitrCmd.command('recover <dbId>').description('Recover into a NEW database, to a time or to the latest archived point (database admin)')
+  .requiredOption('--name <name>', 'Name of the new database')
+  .option('--to <time>', 'ISO 8601 time with a zone (e.g. 2026-11-05T09:30:00Z); omitted: the latest archived point')
+  .option('--no-wait', 'Return once the recovery is admitted, without waiting for it')
+  .action((dbId: string, o: { name?: string; to?: string; wait?: boolean }) => pitrRecover(getClient(), dbId, o));
+pitrCmd.command('recoveries <dbId>').description('Recovery history of a database')
+  .action((dbId: string) => pitrRecoveries(getClient(), dbId));
 
 // ── Per-database backup policy (0.12) ────────────────────────────────────
 const backupPolicyCmd = databases

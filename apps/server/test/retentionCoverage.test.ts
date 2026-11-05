@@ -65,6 +65,8 @@ const RETENTION: Record<string, Retention> = {
   ci_jobs: { swept: 'ci-jobs' },
   ci_attempts: { swept: 'ci-jobs' },
   ci_runners: { config: 'operator configuration: one row per runner an operator enrolled; a revoked runner stays listed for its attempts' },
+  // R3 (migration 0123)
+  pitr_recoveries: { swept: 'pitr-recoveries' },
 };
 
 /** The tables of v0.14.0 (migrations through 0070), frozen. */

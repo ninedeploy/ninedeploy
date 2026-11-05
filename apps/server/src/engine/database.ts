@@ -20,6 +20,7 @@ import { backupClickhouse, backupMeilisearch, backupRabbitmq, restoreClickhouse,
 import { redisStudioConfig, studioImageForEngine } from '../lib/databaseStudioImages.js';
 export { studioImageForEngine } from '../lib/databaseStudioImages.js';
 import { NETWORK } from './proxy.js';
+import { ensurePitrArchive, PITR_ARCHIVE_MOUNT, pitrArchiveVolume, pitrArchiving, pitrServerArgs } from './pitrArchive.js';
 
 const swallow = () => {};
 const withDatabaseBackupOperation = createKeyedOperationGuard<number>();
@@ -527,6 +528,11 @@ export async function startDatabase(
     await createDockerVolume(d.volumeName, log, databaseVolumeLabels(d, opts.labels));
   }
 
+  // R3: a PostgreSQL database with point-in-time recovery on archives its WAL
+  // into a second volume (engine/pitrArchive.ts).
+  const archiving = pitrArchiving(d);
+  if (archiving) await ensurePitrArchive(d, image, log, volumeExists);
+
   // Remove any stale (stopped) container of the same name so `docker run` does
   // not fail with a name conflict; the retained volume preserves the data.
   await run('docker', ['rm', '-f', d.containerName], {}, swallow).catch(() => undefined);
@@ -539,6 +545,7 @@ export async function startDatabase(
   if (d.cpuLimitMilli > 0) args.push('--cpus', String(d.cpuLimitMilli / 1000));
   if (d.memLimitMb > 0) args.push('--memory', `${d.memLimitMb}m`, '--memory-swap', `${d.memLimitMb}m`);
   args.push('-v', `${d.volumeName}:${resolveVolumePath(cfg, d.version)}`);
+  if (archiving) args.push('-v', `${pitrArchiveVolume(d.volumeName)}:${PITR_ARCHIVE_MOUNT}`);
   // Pass secrets via a 0600 env-file instead of `-e KEY=value` on the argv —
   // argv is visible to every local user via `ps`.
   const vars = cfg.env(password);
@@ -547,6 +554,8 @@ export async function startDatabase(
     : null;
   if (envFile) args.push('--env-file', envFile.path);
   args.push(image);
+  // The image's entrypoint prepends `postgres` to leading `-c` flags.
+  if (archiving) args.push(...pitrServerArgs());
   // redis/valkey have no password env var — the password is passed as the
   // container command's `--requirepass` argument (visible via docker inspect,
   // but the container refuses unauthenticated connections on the shared
@@ -629,7 +638,7 @@ const MANAGED_VOLUME_LABEL = 'ninedeploy.managed';
 
 /** Labels describing the database that created a volume. `extra` carries
  *  caller-specific provenance (e.g. the provisioning template id). */
-function databaseVolumeLabels(d: Database, extra: Record<string, string> = {}): Record<string, string> {
+export function databaseVolumeLabels(d: Database, extra: Record<string, string> = {}): Record<string, string> {
   const cfg = ENGINES[d.engine];
   if (!cfg) throw new Error(`Unknown engine: ${d.engine}`);
   return {

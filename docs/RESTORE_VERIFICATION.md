@@ -13,6 +13,11 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
     - Archiving: gzip-compressed `archive_command`, which never overwrites a different file, into a `<data volume>-wal` volume; `archive_timeout` 60 s.
     - Base backups: `pg_basebackup -Ft -z -X none` into the same volume, one a day, with retention by base backup plus `pg_archivecleanup`.
     - Recovery: a base backup restored into a new database's volume, `restore_command` replay in a networkless helper, `recovery_target_time` or the end of the archive, then a promote, a re-key of the role and a clean stop.
+  - **Isolation:** the archive is writable by the database's own superuser, who can run programs as `postgres` in its container. So its names and contents are not trusted.
+    - Every helper that touches it has no network, all capabilities dropped, no privilege gain and a PID limit.
+    - The root step that restores a base backup keeps only CHOWN, DAC_OVERRIDE and FOWNER, to own the files it writes.
+    - The recovery server runs as `postgres` from the start.
+    - Only file names in PostgreSQL's own patterns ever reach a command.
   - **Refusal on missing or damaged WAL:**
     - Every segment the replay needs is `gzip -t` checked first.
     - A "latest" recovery must end (`redo done at`) in the newest archived segment. PostgreSQL itself promotes silently at a gap: in the experiment, a truncated segment 4 recovered only the first of four rows without any error.

@@ -16,6 +16,7 @@ import { attachRouteRegistry } from './lib/routeRegistry.js';
 import { websocketServerOptions } from './lib/websocketOptions.js';
 import authPlugin from './plugins/auth.js';
 import backupSchedulerPlugin from './plugins/backupScheduler.js';
+import pitrSchedulerPlugin from './plugins/pitrScheduler.js';
 import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
 import githubRunnerSchedulerPlugin from './plugins/githubRunnerScheduler.js';
 import ciSchedulerPlugin from './plugins/ciScheduler.js';
@@ -191,6 +192,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(sleeperPlugin);
   // Scheduled database backups
   await app.register(backupSchedulerPlugin);
+  // R3: point-in-time recovery upkeep (idle until a PostgreSQL database turns it on)
+  await app.register(pitrSchedulerPlugin);
   // Image auto-update (watchtower-style digest watch, opt-in per service)
   await app.register(autoUpdateSchedulerPlugin);
   // Self-hosted GitHub Actions runners (G4.5): idle until an App turns them on

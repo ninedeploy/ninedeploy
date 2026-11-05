@@ -333,6 +333,25 @@ describe('volume backup routes', () => {
     expect(engineMocks.restoreVolume).not.toHaveBeenCalled();
   });
 
+  it('R3: refuses to restore the data or archive volume of a database with point-in-time recovery on', async () => {
+    for (const volume of ['nd-db-pg-data', 'nd-db-pg-data-wal']) {
+      inventoryMocks.listManagedVolumeNames.mockResolvedValue([volume]);
+      inventoryMocks.resolveVolumeOwnerWithSharing.mockReturnValue({
+        owner: { kind: 'database', refId: 4, name: 'pg', containerName: 'nd-db-pg' },
+        sharedWith: 0,
+      } as never);
+      // Stopped, as a volume restore requires: the archive would still disagree.
+      const app = await appWith({
+        findFirst: { backups: backupRow({ volumeName: volume }) },
+        select: { databases: [{ id: 4, name: 'pg', pitrEnabled: true }] },
+      });
+      const res = await app.inject({ method: 'POST', url: `/volumes/${volume}/backups/10/restore`, headers: asUser() });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toMatchObject({ code: 'pitr_volume_restore_refused', message: expect.stringMatching(/Point-in-time recovery is on for "pg"/) });
+    }
+    expect(engineMocks.restoreVolume).not.toHaveBeenCalled();
+  });
+
   it('r164: refuses to restore while a service that SHARES the volume runs', async () => {
     inventoryMocks.containerRunning.mockImplementation(async (name: string | null | undefined) => name === 'c-worker');
     const app = await appWith({

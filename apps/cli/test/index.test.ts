@@ -427,8 +427,8 @@ describe('program registration', () => {
     // Ordered node command status and same-command retry.
     expect(findCommand('services').children).toHaveLength(20);
     expect(findCommand('services').children.find(c => c.cmdName === 'lifecycle <id>')?.opts.flags).toBe('--retry');
-    // 0.14: + public-access, import, imports.
-    expect(findCommand('databases').children).toHaveLength(7);
+    // 0.14: + public-access, import, imports. R3: + pitr.
+    expect(findCommand('databases').children).toHaveLength(8);
     expect(findCommand('templates').children).toHaveLength(4);
     // 0.16.16: + `deploys diagnose`.
     expect(findCommand('deploys').children).toHaveLength(7);
@@ -473,7 +473,8 @@ describe('program registration', () => {
     // Node volume files: list, read, write, mkdir, delete-file.
     // G5.8: tunnel + tunnel db + tunnel service.
     // R5: `ci` with `runners` (3) and 7 more.
-    expect(h.FakeCommand.instances).toHaveLength(341);
+    // R3: `databases pitr` with status, enable, disable, base-backup, recover and recoveries.
+    expect(h.FakeCommand.instances).toHaveLength(348);
     expect(findCommand('ci').children.map((c) => c.cmdName)).toEqual([
       'runners', 'pipeline <service>', 'set <service> <file>', 'jobs <service>', 'run <service>', 'log <service> <job>', 'approve <service> <job>', 'cancel <service> <job>',
     ]);

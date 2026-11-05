@@ -322,6 +322,38 @@ describe('Sprint 11 SDK surface (G-13 / G-15 / G-30 / G-24 / G-47 / G-16)', () =
       expect(calls[1]?.init.method ?? 'GET').toBe('GET');
     });
 
+    it('R3: pitr reads, sets, takes a base backup, recovers to a time or the latest point and polls recoveries', async () => {
+      const { fetchMock, calls } = makeFetch((url) =>
+        url.endsWith('/recover') ? { status: 202, body: { recoveryId: 5, databaseId: 9 } } : url.endsWith('/base-backup') ? { status: 202, body: { started: true } } : ok({ enabled: true }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const client = createClient({ baseUrl: 'https://panel.test', token: 't' });
+      await client.databases.pitr.get(1);
+      await client.databases.pitr.set(1, { enabled: true, retentionDays: 14 });
+      expect(await client.databases.pitr.baseBackup(1)).toEqual({ started: true });
+      expect(await client.databases.pitr.recover(1, { name: 'copy', targetTime: new Date('2026-11-05T09:03:30Z') })).toEqual({ recoveryId: 5, databaseId: 9 });
+      await client.databases.pitr.recover(1, { name: 'latest' });
+      await client.databases.pitr.recover(1, { name: 'iso', targetTime: '2026-11-05T10:03:30+01:00' });
+      await client.databases.pitr.recoveries(1);
+      await client.databases.pitr.recovery(1, 5);
+      expect(calls.map((c) => `${c.init.method ?? 'GET'} ${c.url}`)).toEqual([
+        'GET /v1/databases/1/pitr',
+        'PUT /v1/databases/1/pitr',
+        'POST /v1/databases/1/pitr/base-backup',
+        'POST /v1/databases/1/pitr/recover',
+        'POST /v1/databases/1/pitr/recover',
+        'POST /v1/databases/1/pitr/recover',
+        'GET /v1/databases/1/pitr/recoveries',
+        'GET /v1/databases/1/pitr/recoveries/5',
+      ]);
+      expect(JSON.parse(calls[1]?.init.body ?? '{}')).toEqual({ enabled: true, retentionDays: 14 });
+      expect(calls.slice(3, 6).map((c) => JSON.parse(c.init.body ?? '{}'))).toEqual([
+        { name: 'copy', targetTime: '2026-11-05T09:03:30.000Z' },
+        { name: 'latest', targetTime: null },
+        { name: 'iso', targetTime: '2026-11-05T10:03:30+01:00' },
+      ]);
+    });
+
     it('drills lists /v1/databases/<id>/drills', async () => {
       const { fetchMock, calls } = makeFetch(() => ok([]));
       vi.stubGlobal('fetch', fetchMock);

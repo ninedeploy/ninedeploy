@@ -279,3 +279,37 @@ ClickHouse database names must consist of letters, digits and `_`; a backup or r
 
 ClickHouse restore refuses to overwrite an existing `<name>__nd_restore` or `<name>__nd_old` database. A failed or interrupted restore can leave recovery databases behind; inspect their contents and resolve them manually before retrying. A failed promotion may require restoring the original name manually, and a partially completed multi-database restore is not an atomic transaction.
 
+## ⏱️ 11. Point-in-time recovery (PostgreSQL, R3)
+
+A dump restores the database as it was when the dump was taken. Point-in-time recovery restores it as it was at **any second** inside its window: just before a bad migration ran, or before a table was dropped. It is off by default; an upgrade changes nothing until you turn it on.
+
+**Turning it on.** In the database's **Backups** tab, **Point-in-time recovery → Enable**. The CLI is `ninedeploy databases pitr enable <dbId> [--retention <days>]`, and the API is `PUT /v1/databases/:id/pitr` with `{ "enabled": true, "retentionDays": 7 }`. It needs `admin` on the database, and the database must be running.
+- The database restarts once, now with WAL archiving on.
+- Every finished WAL segment (PostgreSQL's change log) is gzip-compressed into a second volume, `<data volume>-wal`, on the panel host.
+- At most **one minute** of committed work waits in a segment that is not archived yet (`archive_timeout` = 60 s). That minute is the most a recovery can miss.
+- The first **base backup** (`pg_basebackup`) is taken right away. After that the panel takes one a day, and you can take one at any time with **Take base backup** (`ninedeploy databases pitr base-backup <dbId>`).
+
+**Retention.** Base backups older than the retention (1–35 days, default 7) are deleted, together with the WAL only they need. The newest base backup is always kept. The window therefore reaches back about the retention, and forward to the newest archived segment. A gap in the archive splits the window.
+
+**Status.** The card, `ninedeploy databases pitr status <dbId>` and `GET /v1/databases/:id/pitr` show:
+- the recoverable window, the base backups and the archive size;
+- whether archiving works: a failure newer than the last success is shown as **failing**, also lands on `lastError` and in the audit log, and the scheduler skips base backups until archiving works again.
+
+**Recovering.** **Recover to a point in time…** in the card. The CLI is `ninedeploy databases pitr recover <dbId> --name <new database> [--to 2026-11-05T09:30:00Z]`, and the API is `POST /v1/databases/:id/pitr/recover` with `{ "name": "…", "targetTime": "…" }`. Without a time, the database is recovered to the latest archived point. The recovery needs `admin` on the database.
+- **The database itself is never touched.** The recovery creates a **new** database in the same project, with its own credentials. You point your app at it, or copy what you need out of it.
+- A base backup that finished before the target is restored into the new database's volume. The archived WAL is replayed up to the target in a networkless helper container. Only then is the new database started normally.
+- It answers at once (202). The card polls the recovery, and the CLI waits for it, unless you pass `--no-wait`. `GET /v1/databases/:id/pitr/recoveries` keeps the history: the target, what PostgreSQL replayed to (the commit time of the first transaction **not** applied, or the end of the archive), the base backup it started from and the replay time.
+- One recovery runs at a time on a panel.
+
+**What is refused, and why.** A refused recovery keeps no new database behind; the reason is on the recovery row.
+- **A time with nothing archived after it.** PostgreSQL stops a time recovery at the first transaction after the target, so it needs that transaction archived. "Nothing after … has been archived yet": recover to the latest archived point, or try again a minute later.
+- **A time before the oldest base backup finished.** The answer names the earliest recoverable point.
+- **A missing or damaged segment.** Every segment the replay needs is checked (`gzip -t`) before anything is created. A recovery to the latest point also checks that the replay really ended in the newest archived segment, because PostgreSQL itself would otherwise stop early at a gap without any error. A time before the damage can still be recovered.
+
+**Limits.**
+- **Panel-host PostgreSQL databases only.** Databases on nodes and preview copies answer 422 `pitr_unavailable`. The cluster must use the default 16 MB WAL segments and must not run with `wal_level = minimal`; enabling checks both.
+- **The archive lives on the panel host, next to the database.** It protects against bad writes and deleted data, not against losing the host. Keep off-site dumps (section 3) for that.
+- **Disabling deletes the archive and the base backups** (the database restarts without archiving). Deleting the database keeps the archive volume, like the data volume, until you remove it in **Volumes**. Enabling again later refuses to reuse such a left-over archive (409 `pitr_archive_exists`).
+- **Restoring the data volume or the archive volume of a database with PITR on is refused** (409 `pitr_volume_restore_refused`). An older data directory under a live archive would write segment names the archive already holds with other contents. Disable PITR first, or recover to a point in time instead. A dump restore (`pg_restore` into the running database) is fine: it is just more WAL.
+- **Rolling back the panel** to a version without PITR keeps the database archiving, because the container keeps its flags until it is recreated. Nothing prunes the archive in that version. Disable PITR before rolling back.
+

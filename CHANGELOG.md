@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **RabbitMQ:** the definitions export is imported, and the restore counts as done only once every vhost, queue, exchange and binding it names exists. The query is one `rabbitmqctl list_…` command; its rows compare in any order. A definitions backup holds no messages.
   - **Redis, Valkey, KeyDB and Dragonfly:** the server loads the RDB backup as it starts, and an RDB the engine rejects is `failed`. The query is one command per line, and the expected value is what the command-line client prints.
 - **Recovery duration of a restore verification.** The Backups tab shows how long the real restore took next to the verdict, for example "restored in 1m 05s". `backups drill --restore-query` prints it on a pass.
+- **Point-in-time recovery for PostgreSQL (R3).** It is off by default; an upgrade changes nothing until an admin turns it on for a database (Backups tab, `ninedeploy databases pitr enable`, `PUT /v1/databases/:id/pitr`).
+  - **Archiving:** the database restarts once with WAL archiving into a second volume on the panel host. At most a minute of committed work waits in an unarchived segment.
+  - **Base backups and retention:** the panel takes a base backup a day (and on demand) and keeps them for the retention, 1–35 days, default 7.
+  - **Recovering:** recover to any second inside the window, or to the latest archived point, into a **new** database. The source is never touched. The history records what PostgreSQL replayed to and how long it took.
+  - **Refusals:** a missing or damaged segment, or a target the archive cannot reach yet, is refused with a reason instead of recovering silently to an earlier point.
+  - **Limits:** panel-host databases only. Disabling deletes the archive. Restoring the volumes of a database with it on is refused.
 
 ### Fixed
 

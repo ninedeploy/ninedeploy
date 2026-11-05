@@ -17,6 +17,7 @@ import { databaseBackupPolicyRoutes } from './backupPolicy.js';
 import { databasePublicAccessRoutes } from './databasePublicAccess.js';
 import { databaseImportRoutes } from './databaseImports.js';
 import { pgbouncerRoutes } from './pgbouncer.js';
+import { pitrRoutes } from './pitr.js';
 import { logSearchRoutes } from './logSearch.js';
 import { backupDestinationRoutes } from './backupDestinations.js';
 import { buildCacheRoutes } from './buildCache.js';
@@ -190,6 +191,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   // disable / status. Mounted under the same /databases
   // prefix as the rest of the per-DB routes.
   await app.register(pgbouncerRoutes, { prefix: '/databases' });
+  // R3: PostgreSQL point-in-time recovery (WAL archive, base backups, recover into a new database).
+  await app.register(pitrRoutes, { prefix: '/databases' });
   await app.register(backupRoutes, { prefix: '/backups' });
   await app.register(backupDestinationRoutes, { prefix: '/backup-destinations' });
   await app.register(domainIndexRoutes, { prefix: '/domains' });

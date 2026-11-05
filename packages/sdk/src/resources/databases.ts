@@ -20,7 +20,7 @@ import type {
   BackupReplicasView,
 } from '@ninedeploy/schemas';
 import type { ImportWaitOptions, ImportFileData, ImportFileOptions } from '../databaseImport.js';
-import type { BackupDrillResult, BackupDrillEntry, BackupRestoreProbe, PgbouncerStatus, DatabaseCredentialsWithPublic } from '../types.js';
+import type { BackupDrillResult, BackupDrillEntry, BackupRestoreProbe, PgbouncerStatus, DatabaseCredentialsWithPublic, PitrRecovery, PitrRecoveryAdmission, PitrStatus } from '../types.js';
 import type { Transport } from '../transport.js';
 import { createImportHelpers } from '../databaseImport.js';
 
@@ -77,6 +77,33 @@ export interface DatabasesApi {
     drills: (id: number) => Promise<BackupDrillEntry[]>;
     /** R3: one drill of a database — poll it while a restore verification is `running`. */
     drill: (id: number, drillId: number) => Promise<BackupDrillEntry>;
+    /**
+     * R3: PostgreSQL point-in-time recovery (panel-host databases). Reading
+     * follows the backups list; changing it, a base backup and a recovery
+     * need `admin` on the database.
+     */
+    pitr: {
+      get: (id: number) => Promise<PitrStatus>;
+      /**
+       * Enabling (the database must be running) restarts it with WAL
+       * archiving into a second volume and takes the first base backup in the
+       * background; disabling restarts it without and DELETES the archive.
+       * `retentionDays` is 1–35 (default 7).
+       */
+      set: (id: number, input: { enabled: boolean; retentionDays?: number }) => Promise<PitrStatus>;
+      /** Take a base backup now (202); the outcome lands on `get` (`lastBaseBackupAt` / `lastError`). */
+      baseBackup: (id: number) => Promise<{ started: true }>;
+      /**
+       * Recover into a NEW database named `name`, to `targetTime` (an ISO
+       * timestamp with a zone, or a Date) or, without one, to the latest
+       * archived point. Answers at once (202); poll `recovery(id, recoveryId)`
+       * until it is `completed` or `failed`. One recovery runs at a time per
+       * panel (409 `pitr_recovery_busy`).
+       */
+      recover: (id: number, input: { name: string; targetTime?: string | Date | null }) => Promise<PitrRecoveryAdmission>;
+      recoveries: (id: number) => Promise<PitrRecovery[]>;
+      recovery: (id: number, recoveryId: number) => Promise<PitrRecovery>;
+    };
     /**
      * 0.14: public access through a per-database Traefik TCP sidecar. Reading
      * needs `admin` on the database; `set` and `disable` are operator-only.
@@ -185,6 +212,18 @@ export function databasesApi(t: Transport): DatabasesApi {
         send<BackupDrillResult>('POST', `/v1/databases/${id}/backups/drill`, input),
       drills: (id) => get<BackupDrillEntry[]>(`/v1/databases/${id}/drills`),
       drill: (id, drillId) => get<BackupDrillEntry>(`/v1/databases/${id}/drills/${drillId}`),
+      pitr: {
+        get: (id) => get<PitrStatus>(`/v1/databases/${id}/pitr`),
+        set: (id, input) => send<PitrStatus>('PUT', `/v1/databases/${id}/pitr`, input),
+        baseBackup: (id) => send<{ started: true }>('POST', `/v1/databases/${id}/pitr/base-backup`, {}),
+        recover: (id, input) =>
+          send<PitrRecoveryAdmission>('POST', `/v1/databases/${id}/pitr/recover`, {
+            name: input.name,
+            targetTime: input.targetTime instanceof Date ? input.targetTime.toISOString() : (input.targetTime ?? null),
+          }),
+        recoveries: (id) => get<PitrRecovery[]>(`/v1/databases/${id}/pitr/recoveries`),
+        recovery: (id, recoveryId) => get<PitrRecovery>(`/v1/databases/${id}/pitr/recoveries/${recoveryId}`),
+      },
       pgbouncerStatus: (id) => get<PgbouncerStatus>(`/v1/databases/${id}/pgbouncer`),
       enablePgbouncer: (id, input) =>
         send<PgbouncerStatus>('POST', `/v1/databases/${id}/pgbouncer/enable`, input ?? {}),

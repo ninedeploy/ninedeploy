@@ -330,6 +330,63 @@ export interface PgbouncerStatus {
 }
 
 /**
+ * R3: a PostgreSQL database's point-in-time recovery (`GET /v1/databases/:id/pitr`).
+ * With it on, the database archives every finished WAL segment (at most a
+ * minute of work waits in an unarchived one) and the panel takes a base
+ * backup a day; `recoverable` is what a recovery can reach right now — a gap
+ * in the archive splits it. `to` is when the newest segment was archived, an
+ * upper bound of the last transaction it holds.
+ */
+export interface PitrStatus {
+  databaseId: number;
+  /** False for other engines, databases on a node and preview copies (`unavailableReason`). */
+  available: boolean;
+  unavailableReason: string | null;
+  enabled: boolean;
+  /** Base backups older than this are pruned with the WAL only they need; the newest stays. */
+  retentionDays: number;
+  lastBaseBackupAt: string | null;
+  /** The last failure of the scheduler (a base backup, or archiving itself); cleared by the next success. */
+  lastError: string | null;
+  baseBackupRunning: boolean;
+  recoveryRunning: boolean;
+  /** pg_stat_archiver of the running database; `failing` when the last failure is newer than the last success. */
+  archiving: { failing: boolean; archivedCount: number; lastArchivedAt: string | null; failedCount: number; lastFailedAt: string | null } | null;
+  recoverable: Array<{ from: string; to: string }>;
+  baseBackups: Array<{ label: string; startedAt: string; finishedAt: string; sizeBytes: number }>;
+  archiveBytes: number;
+  segmentCount: number;
+}
+
+/**
+ * R3: one recovery of a database to a point in time, into a NEW database.
+ * `targetTime` null = the latest archived point. `recoveredTo` is
+ * PostgreSQL's own report: the commit time of the first transaction not
+ * replayed, or the end of the archive. `error` is a fixed reason (the archive
+ * cannot reach the target, a segment is missing or damaged, …); a failed
+ * recovery removes its new database (`databaseId` null).
+ */
+export interface PitrRecovery {
+  id: number;
+  sourceDatabaseId: number | null;
+  databaseId: number | null;
+  targetTime: string | null;
+  status: 'running' | 'completed' | 'failed';
+  error: string | null;
+  baseBackup: string | null;
+  recoveredTo: string | null;
+  restoreMs: number | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+/** R3: the answer of `POST /v1/databases/:id/pitr/recover` (202): poll the recovery. */
+export interface PitrRecoveryAdmission {
+  recoveryId: number;
+  databaseId: number;
+}
+
+/**
  * Single image row from `GET /v1/housekeeping/images`. Both
  * the human-readable `size` ("1.2GB") and a parsed byte
  * count are returned so the panel can sort without

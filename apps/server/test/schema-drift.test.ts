@@ -66,6 +66,11 @@ describe('databases table — schema/migration drift guard', () => {
       'server_id',
       'node_container_name',
       'node_volume_name',
+      // R3 point-in-time recovery (migration 0123).
+      'pitr_enabled',
+      'pitr_retention_days',
+      'pitr_base_backup_at',
+      'pitr_last_error',
       // 0.16.12 (0090): a PR preview's copy of another database.
       'preview_copy_of',
       'preview_service_id',

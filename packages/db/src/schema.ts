@@ -2142,6 +2142,19 @@ export const databases = sqliteTable(
     serverId: integer('server_id').references((): AnySQLiteColumn => servers.id),
     nodeContainerName: text('node_container_name'),
     nodeVolumeName: text('node_volume_name'),
+    // ── 0.18.21 R3: PostgreSQL continuous archiving / point-in-time recovery
+    // (engine/postgresPitr.ts). Off on every existing row: an upgrade changes
+    // nothing until an admin enables it. When on, the container runs with
+    // archive_mode and a second volume `<volume>-wal` holds the WAL archive
+    // and the base backups. Panel-host databases only.
+    pitrEnabled: integer('pitr_enabled', { mode: 'boolean' }).notNull().default(false),
+    // Base backups older than this many days are pruned, with the WAL only
+    // they need; the newest base backup is always kept.
+    pitrRetentionDays: integer('pitr_retention_days').notNull().default(7),
+    // The last base backup that completed, and the last scheduler failure
+    // (a fixed message; cleared by the next success).
+    pitrBaseBackupAt: integer('pitr_base_backup_at', { mode: 'timestamp' }),
+    pitrLastError: text('pitr_last_error'),
     createdAt: ts('created_at'),
     updatedAt: tsUpdatable('updated_at'),
   },
@@ -2150,6 +2163,36 @@ export const databases = sqliteTable(
     // SQLite does not auto-index FK columns; project listings join on it.
     projectIdx: index('databases_project_idx').on(t.projectId),
     serverIdx: index('databases_server_idx').on(t.serverId),
+  }),
+);
+
+// ─── R3: PostgreSQL point-in-time recoveries (engine/postgresPitr.ts) ──────
+// One row per recovery of a PITR-enabled database into a NEW database: the
+// evidence of what was asked, what PostgreSQL replayed to and how long it took.
+// The source and the result outlive each other, so both are SET NULL.
+// Housekeeping prunes old rows (lib/housekeeping.ts).
+export const pitrRecoveryStatus = ['running', 'completed', 'failed'] as const;
+export const pitrRecoveries = sqliteTable(
+  'pitr_recoveries',
+  {
+    id: id(),
+    sourceDatabaseId: integer('source_database_id').references((): AnySQLiteColumn => databases.id, { onDelete: 'set null' }),
+    databaseId: integer('database_id').references((): AnySQLiteColumn => databases.id, { onDelete: 'set null' }),
+    // The requested target; NULL = the latest archived point.
+    targetTime: integer('target_time', { mode: 'timestamp_ms' }),
+    status: text('status', { enum: pitrRecoveryStatus }).notNull().default('running'),
+    // A fixed diagnostic; never PostgreSQL's own log lines.
+    error: text('error'),
+    // The base backup replay started from, and where PostgreSQL stopped.
+    baseBackup: text('base_backup'),
+    recoveredTo: text('recovered_to'),
+    restoreMs: integer('restore_ms'),
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    startedAt: ts('started_at'),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+  },
+  (t) => ({
+    sourceIdx: index('pitr_recoveries_source_idx').on(t.sourceDatabaseId, t.startedAt),
   }),
 );
 

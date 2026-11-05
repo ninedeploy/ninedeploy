@@ -67,6 +67,13 @@ describe('lib/inventory', () => {
     expect(resolveVolumeOwner(svcs, [], 'nd-db-oldpg-data')).toBeNull();
   });
 
+  it('R3: a database owns its WAL archive volume (<volumeName>-wal) like its data volume', () => {
+    const dbs = [dbRow({ id: 5, slug: 'orders', name: 'Orders DB', engine: 'postgres', volumeName: 'nd-db-orders-data', containerName: 'nd-db-orders' })];
+    expect(resolveVolumeOwner([], dbs, 'nd-db-orders-data-wal')).toEqual({ kind: 'database', refId: 5, name: 'Orders DB', engine: 'postgres', containerName: 'nd-db-orders' });
+    // Retained after the row is deleted: an orphan, like the data volume.
+    expect(resolveVolumeOwner([], [], 'nd-db-orders-data-wal')).toBeNull();
+  });
+
   it('resolveVolumeOwnerWithSharing reports how many other services also attach the volume', () => {
     const svcs = [
       svcRow({ id: 2, slug: 'web', name: 'web', runtimeId: 'web-2' }),

@@ -505,6 +505,7 @@ function paramValue(url: string, param: string, r: Res): string {
     case 'issueId':
       // G5.4: no error issue is seeded; the floor is checked before the lookup.
       return '999999';
+    case 'recoveryId':
     case 'drillId':
       // R3: no drill is seeded; the database's floor is checked before the lookup.
       return '999999';
@@ -1018,6 +1019,13 @@ export const MATRIX: Record<string, Rule> = {
   'PUT /v1/databases/:id/backup-policy': R('admin', { body: () => ({ enabled: true, cron: '0 3 * * *', retainCount: 7 }) }),
   'GET /v1/databases/:id/backup-replicas': R('viewer'),
   'PUT /v1/databases/:id/backup-replicas': R('operator', { body: () => ({ replicas: [] }) }),
+  // R3 point-in-time recovery: reads follow the backups list, writes are database admin (like a download).
+  'GET /v1/databases/:id/pitr': R('viewer'),
+  'PUT /v1/databases/:id/pitr': R('admin', { body: () => ({ enabled: false, retentionDays: 7 }), note: 'PITR is off on the matrix database, so the at-floor call is a no-op; enabling is covered by test/modules/pitr.test.ts' }),
+  'POST /v1/databases/:id/pitr/base-backup': R('admin', { note: 'PITR is off on the matrix database, so the at-floor call is a 422; covered by test/modules/pitr.test.ts' }),
+  'POST /v1/databases/:id/pitr/recover': R('admin', { body: (r) => ({ name: uniq(r, 'pitr') }), note: 'PITR is off on the matrix database, so the at-floor call is a 422; covered by test/modules/pitr.test.ts' }),
+  'GET /v1/databases/:id/pitr/recoveries': R('viewer'),
+  'GET /v1/databases/:id/pitr/recoveries/:recoveryId': R('viewer', { allow404: 'no recovery is seeded; the lookup is covered by test/modules/pitr.test.ts' }),
   'GET /v1/databases/:id/pgbouncer': R('member'),
   'POST /v1/databases/:id/pgbouncer/enable': OP,
   'POST /v1/databases/:id/pgbouncer/disable': OP,

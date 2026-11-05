@@ -108,7 +108,7 @@ export const databasesSpecs: RouteSpecMap = {
     responseType: '{ ok: boolean }',
   },
   'POST /v1/databases/:id/backups/drill': {
-    summary: 'Check a backup: a structural drill, or (with `restore`, admin, PostgreSQL) a real isolated restore verified by a known-data query — answered 202 and polled',
+    summary: 'Check a backup: a structural drill, or (with `restore`, admin, any engine) a real isolated restore verified by a known-data query — answered 202 and polled',
     tag: 'backups',
     floor: 'member',
     bodyType: '{ backupId?: number; restore?: { query: string; expected: string } }',
@@ -158,6 +158,50 @@ export const databasesSpecs: RouteSpecMap = {
     body: backupReplicasInput,
     responseType: 'BackupReplicasView',
     validation: 'zod',
+  },
+  'GET /v1/databases/:id/pitr': {
+    summary: "A PostgreSQL database's point-in-time recovery: settings, archiving health, recoverable window and base backups",
+    tag: 'backups',
+    floor: 'viewer',
+    responseType: 'PitrStatus',
+  },
+  'PUT /v1/databases/:id/pitr': {
+    summary: 'Turn point-in-time recovery on or off, or change its retention',
+    tag: 'backups',
+    description:
+      'R3. Enabling (the database must be running, on the panel host) restarts it with WAL archiving into a second volume and takes the first base backup in the background. Disabling restarts it without archiving and deletes the archive. Audited database.pitr_enable / database.pitr_disable / database.pitr_retention.',
+    floor: 'admin',
+    localBody: 'pitr.ts#settingsBody',
+    responseType: 'PitrStatus',
+    validation: 'zod',
+  },
+  'POST /v1/databases/:id/pitr/base-backup': {
+    summary: 'Take a point-in-time recovery base backup now (answered 202)',
+    tag: 'backups',
+    floor: 'admin',
+    responseType: '{ started: true }',
+  },
+  'POST /v1/databases/:id/pitr/recover': {
+    summary: 'Recover the database to a point in time into a NEW database (answered 202; poll the recovery)',
+    tag: 'backups',
+    description:
+      'R3. `targetTime` (ISO 8601 with a zone) or omitted for the latest archived point. The source is never touched: a base backup is restored into the new database and the archived WAL replayed in an isolated helper. A target the archive cannot reach, or a missing or damaged segment, fails the recovery with a fixed reason and removes the new database again.',
+    floor: 'admin',
+    localBody: 'pitr.ts#recoverBody',
+    responseType: 'PitrRecoveryAdmission',
+    validation: 'zod',
+  },
+  'GET /v1/databases/:id/pitr/recoveries': {
+    summary: "A database's point-in-time recovery history",
+    tag: 'backups',
+    floor: 'viewer',
+    responseType: 'PitrRecovery[]',
+  },
+  'GET /v1/databases/:id/pitr/recoveries/:recoveryId': {
+    summary: 'One point-in-time recovery — poll it while it runs',
+    tag: 'backups',
+    floor: 'viewer',
+    responseType: 'PitrRecovery',
   },
   'GET /v1/databases/:id/pgbouncer': {
     summary: 'PgBouncer sidecar status',

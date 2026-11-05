@@ -331,6 +331,18 @@ export function createFakeApiModule() {
       disablePgbouncer: vi.fn(),
       drills: vi.fn().mockResolvedValue([]),
       drillBackup: vi.fn(),
+      // R3: point-in-time recovery is off by default.
+      pitr: {
+        get: vi.fn().mockResolvedValue({
+          databaseId: 1, available: true, unavailableReason: null, enabled: false, retentionDays: 7, lastBaseBackupAt: null, lastError: null,
+          baseBackupRunning: false, recoveryRunning: false, archiving: null, recoverable: [], baseBackups: [], archiveBytes: 0, segmentCount: 0,
+        }),
+        set: vi.fn(),
+        baseBackup: vi.fn(),
+        recover: vi.fn(),
+        recoveries: vi.fn().mockResolvedValue([]),
+        recovery: vi.fn(),
+      },
     },
     attachments: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     env: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },

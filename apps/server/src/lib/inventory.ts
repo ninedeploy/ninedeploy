@@ -48,6 +48,12 @@ export function resolveVolumeOwner(
   if (claimant) {
     return { kind: 'database', refId: claimant.id, name: claimant.name, engine: claimant.engine, containerName: claimant.containerName };
   }
+  // R3: a PostgreSQL database's WAL archive (`<volumeName>-wal`, engine/pitrArchive.ts)
+  // belongs to it like its data volume: never an orphan while the row exists.
+  const archiveOf = dbs.find((d) => d.volumeName != null && name === `${d.volumeName}-wal`);
+  if (archiveOf) {
+    return { kind: 'database', refId: archiveOf.id, name: archiveOf.name, engine: archiveOf.engine, containerName: archiveOf.containerName };
+  }
   // 1) explicit attachment link (any service may own the volume).
   for (const att of attachments) {
     if (att.volumeName !== name) continue;
