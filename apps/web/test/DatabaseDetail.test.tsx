@@ -395,6 +395,18 @@ describe('DatabaseDetail', () => {
     expect(dialog).not.toHaveTextContent('SELECT count(*)');
   });
 
+  it('explains the ClickHouse helper and its TabSeparated output', async () => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'clickhouse', name: 'analytics' } as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify restore of backup 101' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Verify restore of backup #101' });
+    expect(dialog).toHaveTextContent('restored into an isolated ClickHouse container');
+    expect(dialog).toHaveTextContent('Exactly what clickhouse-client prints (TabSeparated)');
+    expect(dialog).toHaveTextContent('NULL as \\N');
+  });
+
   it('explains the MongoDB helper, its mongosh output and how to address a database', async () => {
     mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'mongo', name: 'prod-mongo' } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
@@ -409,7 +421,7 @@ describe('DatabaseDetail', () => {
   });
 
   it('does not offer restore verification for an engine without an adapter', async () => {
-    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'clickhouse', name: 'analytics' } as any);
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'rabbitmq', name: 'broker' } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
     mockOf(api.databases.drills).mockResolvedValue([] as any);
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });

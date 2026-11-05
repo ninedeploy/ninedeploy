@@ -6136,6 +6136,7 @@ export const TR: Readonly<Record<string, string>> = {
   'No output yet.': 'Henüz çıktı yok.',
   // R3: isolated restore verification of a PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey or KeyDB backup.
   'One command per line, for example: GET greeting': 'Her satırda bir komut, örneğin: GET greeting',
+  'Exactly what clickhouse-client prints (TabSeparated): a tab between columns, one row per line, NULL as \\N. Unqualified table names resolve in the app database; leave empty for no rows.': 'clickhouse-client\'ın yazdırdığının birebir aynısı (TabSeparated): sütunlar arasında sekme, her satır ayrı bir satırda, NULL değerler \\N olarak. Veritabanı belirtilmeyen tablo adları app veritabanında aranır; satır yoksa boş bırakın.',
   'Exactly what the command-line client prints: one line per value or list element, an empty line for nil.': 'Komut satırı istemcisinin yazdırdığının birebir aynısı: her değer ya da liste öğesi için bir satır, nil için boş bir satır.',
   'restored in {duration}': '{duration} içinde geri yüklendi',
   'How long the real restore took in the isolated container': 'Yalıtılmış container\'daki gerçek geri yüklemenin ne kadar sürdüğü',

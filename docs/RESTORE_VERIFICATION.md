@@ -1,6 +1,6 @@
 # Isolated restore verification
 
-Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, Redis, Valkey, KeyDB and Dragonfly. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
+Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, ClickHouse, Redis, Valkey, KeyDB and Dragonfly. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
 - **Hosted acceptance, PostgreSQL:** passed again on cd3a2a6d.
 - **Hosted acceptance, MySQL and MariaDB:** passed on 1151cc49 ([run 41901004999](https://github.com/ninedeploy/ninedeploy/actions/runs/41901004999)). The run had 11 cases: PostgreSQL 5, `mysql:9.7` 3 and `mariadb:12.3` 3. Every source was untouched, the dump bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
 - **Hosted acceptance, every adapter:** passed on fc62112e ([run 41988812024](https://github.com/ninedeploy/ninedeploy/actions/runs/41988812024)). The run had 23 cases on the managed default images: PostgreSQL 5, plus a restore, a wrong-value refusal and an invalid-file refusal each for `mysql:9.7`, `mariadb:12.3`, `mongo:8.0`, `redis:8.8`, `valkey/valkey:9.1` and `eqalpha/keydb:x86_64_v6.3.4`. Every source was untouched, every dump's bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
@@ -8,7 +8,26 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
   - **Measured restores:** about 0.1 s for MongoDB, 0.25 s for MariaDB, 0.4 s for the Redis family and 0.75 s for MySQL. These are tiny fixtures, not an RTO commitment.
 - The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
 - **Recovery duration** is recorded and reported. Every restore verification stores the measured `restoreMs` (with `queryMs` and the total `durationMs`) on its drill row. The panel's Backups tab shows it next to the verdict ("restored in 1m 05s"). The CLI's pass line reads "the restore took N ms (M ms with setup and cleanup)". These are measurements of the bounded helper on the panel host, not an RTO commitment for a production restore.
-- ClickHouse, Meilisearch and RabbitMQ, and PostgreSQL PITR, remain open, so R3 is not closed.
+- Meilisearch and RabbitMQ, and PostgreSQL PITR, remain open, so R3 is not closed.
+
+**ClickHouse (2026-11-05)**
+- **Helper:**
+  - It is the database's own engine image, run as `clickhouse`.
+  - The 1 GiB scratch tmpfs is the data path `/var/lib/clickhouse`. The logs and `/tmp` get small tmpfs mounts.
+  - `CLICKHOUSE_SKIP_USER_SETUP=1`: the entrypoint would otherwise write user settings under the read-only `/etc`. The image's default user, local only, is all the helper needs.
+  - The PID limit is 4096. ClickHouse starts about 700 threads at once, and its schedule pool alone asks for 512. It aborts outright under a 256 limit ("Couldn't get 512 threads from global thread pool"). 4096 is still a bound.
+- **Restore:**
+  1. `prepare` creates `/var/lib/clickhouse/backups`, the image's `<backups><allowed_path>`.
+  2. The panel's `BACKUP DATABASE … TO File(…)` zip is copied there as `nd-restore.zip`.
+  3. `RESTORE ALL FROM File('nd-restore.zip')` restores every database the archive holds. The panel's backups carry the user databases only. An empty `default` that already exists does not stop it.
+  
+  A truncated or non-zip archive is refused with `CANNOT_UNPACK_ARCHIVE`, and the server keeps running, so the verdict is `failed`. `NOT_ENOUGH_SPACE` and `MEMORY_LIMIT_EXCEEDED` are capacity verdicts.
+- **Probe:** `clickhouse-client --database app -q`. The output is TabSeparated: a tab between columns, one line per row, and NULL printed as `\N`.
+- **Local real check:** `clickhouse/clickhouse-server:25.8` (25.8.33.6), with a real backup from a source configured like production (`CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB=app`) and the panel's `BACKUP` statement.
+  - **Restore:** passed in 0.25 s and returned `1\tbefore` and `2\t\N`.
+  - **Failed:** a wrong value, a truncated zip, and a file that is not a zip.
+  - **Cleanup:** every helper was confirmed removed.
+- **Hosted cohort:** the hosted fixture covers it. It calls the panel's own `backupClickhouse`.
 
 **Redis, Valkey and KeyDB (2026-11-05)**
 - **Why a start gate.** These engines read their RDB file only while the server starts. The helper therefore replaces the image's entrypoint with a gate: PID 1 waits for `/data/.nd-start`, then becomes the server through `exec`. The flags are:

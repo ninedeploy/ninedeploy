@@ -58,6 +58,20 @@ vi.mock('../../src/lib/exec.js', () => {
         if (state.fail === 'copy') throw new Error('copy error');
       }
       if ((args.includes('pg_isready') || args.includes('ping') || args.includes(MONGO_PING)) && state.fail === 'ready') throw new Error('not ready');
+      // ClickHouse: readiness, RESTORE and the probe all go through clickhouse-client.
+      if (args[0] === 'exec' && args.includes('clickhouse-client')) {
+        if (args.at(-1) === 'SELECT 1') {
+          if (state.fail === 'ready') throw new Error('not ready');
+          return '1\n';
+        }
+        if (args.at(-1)?.startsWith('RESTORE ALL')) {
+          if (state.fail === 'restore') throw new Error("`docker` exited 131: Code: 643. DB::Exception: Couldn't open zip archive 'nd-restore.zip'. (CANNOT_UNPACK_ARCHIVE)");
+          if (state.fail === 'chspace') throw new Error('`docker` exited 243: Code: 243. DB::Exception: Cannot reserve 1.00 GiB, not enough space. (NOT_ENOUGH_SPACE)');
+          return `${'c'.repeat(8)}\tRESTORED\n`;
+        }
+        if (state.fail === 'query') throw new Error('SECRET_QUERY_RESULT');
+        return state.fail === 'mismatch' ? 'wrong private value\n' : 'known-row\n';
+      }
       if (args[0] === 'exec' && args.includes('mongosh') && !args.includes(MONGO_PING)) {
         if (state.fail === 'query') throw new Error('SECRET_QUERY_RESULT');
         return state.fail === 'mismatch' ? 'wrong private value\n' : 'known-row\n';
@@ -292,7 +306,7 @@ describe('MySQL and MariaDB restore helpers', () => {
     expect(state.calls.filter(args => args.includes('ping'))).toHaveLength(120);
   });
   it('refuses an engine without an adapter before any Docker work', async () => {
-    await expect(verifyRestore('clickhouse' as never, { file, image: 'clickhouse:25', query: 'SELECT 1', expected: '1' })).rejects.toThrow(/Unsupported/);
+    await expect(verifyRestore('no-such-engine' as never, { file, image: 'nginx:1', query: 'SELECT 1', expected: '1' })).rejects.toThrow(/Unsupported/);
     expect(state.calls).toEqual([]);
   });
 });
@@ -373,6 +387,52 @@ describe('crashed restore helpers are swept', () => {
     expect(await pruneRestoreVerificationHelpers(60 * 60 * 1000, now)).toBe(1);
     expect(state.calls.filter(args => args[0] === 'rm')).toEqual([['rm', '-f', '-v', 'e'.repeat(64)]]);
     expect(state.calls.some(args => args.includes('not-a-container-id'))).toBe(false);
+  });
+});
+
+describe('ClickHouse restore helper', () => {
+  const run = () => verifyRestore('clickhouse', { file, image: 'clickhouse/clickhouse-server:25.8', query: 'SELECT count() FROM events', expected: 'known-row' });
+  it('copies the BACKUP archive under the allowed backups path, restores ALL and probes the managed database', async () => {
+    const result = await run();
+    expect(result).toMatchObject({ status: 'passed', engine: 'clickhouse', format: 'archive', queryMatched: true, cleanupConfirmed: true });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    for (const flag of ['--read-only', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '--cpus']) expect(create).toContain(flag);
+    expect(create.slice(create.indexOf('--user'), create.indexOf('--user') + 2)).toEqual(['--user', 'clickhouse']);
+    // Several hundred threads at start: a 256 or 128 limit makes ClickHouse abort.
+    expect(create.slice(create.indexOf('--pids-limit'), create.indexOf('--pids-limit') + 2)).toEqual(['--pids-limit', '4096']);
+    const tmpfs = create.flatMap((arg, index) => (create[index - 1] === '--tmpfs' ? [arg] : []));
+    expect(tmpfs).toEqual([
+      '/var/lib/clickhouse:rw,nosuid,nodev,mode=1777,size=1024m',
+      '/var/log/clickhouse-server:rw,nosuid,nodev,mode=1777,size=64m',
+      '/tmp:rw,nosuid,nodev,mode=1777,size=64m',
+    ]);
+    // No users written under the read-only /etc; no CLICKHOUSE_USER/PASSWORD/DB.
+    expect(create.filter(arg => arg.startsWith('CLICKHOUSE_'))).toEqual(['CLICKHOUSE_SKIP_USER_SETUP=1']);
+    expect(create.at(-1)).toBe(state.image);
+    // The backups directory exists before the copy lands in it.
+    const prepare = state.calls.findIndex(args => args.join(' ') === `exec ${state.name} mkdir -p /var/lib/clickhouse/backups`);
+    const copy = state.calls.findIndex(args => args.includes('restore-copy'));
+    expect(prepare).toBeGreaterThan(-1);
+    expect(prepare).toBeLessThan(copy);
+    expect(state.calls[copy]?.at(-1)).toBe('/var/lib/clickhouse/backups/nd-restore.zip');
+    expect(state.calls.find(args => args.at(-1)?.startsWith('RESTORE'))).toEqual(['exec', state.name, 'clickhouse-client', '-q', "RESTORE ALL FROM File('nd-restore.zip')"]);
+    expect(state.calls.find(args => args.at(-1) === 'SELECT count() FROM events')).toEqual(['exec', state.name, 'clickhouse-client', '--database', 'app', '-q', 'SELECT count() FROM events']);
+    expect(result.restoreMs).not.toBeNull();
+  });
+  it('fails an archive ClickHouse cannot open on a healthy helper, without the engine message', async () => {
+    state.fail = 'restore';
+    const result = await run();
+    expect(result).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore', cleanupConfirmed: true });
+    expect(JSON.stringify(result)).not.toMatch(/zip archive|CANNOT_UNPACK/);
+  });
+  it('reports NOT_ENOUGH_SPACE during RESTORE as capacity', async () => {
+    state.fail = 'chspace';
+    expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Backup exceeds the bounded restore verification capacity' });
+  });
+  it('is unverifiable when the server never answers', async () => {
+    state.fail = 'ready';
+    expect((await run()).status).toBe('unverifiable');
+    expect(state.calls.some(args => args.includes('restore-copy'))).toBe(false);
   });
 });
 

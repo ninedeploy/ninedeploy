@@ -5,7 +5,7 @@ import { capture, ExecOutputTooLargeError, ExecTimeoutError, run, sleep } from '
 import { streamFileToCommand } from './fileCommandInput.js';
 
 /** Engines with an isolated restore adapter. */
-export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly'] as const;
+export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse'] as const;
 export type RestoreVerificationEngine = (typeof RESTORE_VERIFICATION_ENGINES)[number];
 export function isRestoreVerificationEngine(engine: string): engine is RestoreVerificationEngine {
   return (RESTORE_VERIFICATION_ENGINES as readonly string[]).includes(engine);
@@ -24,8 +24,8 @@ export interface RestoreVerificationResult {
   status: 'passed' | 'failed' | 'unverifiable';
   engine: RestoreVerificationEngine;
   /** postgres: plain SQL or a custom archive. mysql/mariadb dumps are always
-   *  plain SQL; mongo backups are a gzipped mongodump archive; the Redis
-   *  family's are the server's own RDB file. */
+   *  plain SQL; mongo backups are a gzipped mongodump archive, ClickHouse's a
+   *  BACKUP zip archive; the Redis family's are the server's own RDB file. */
   format: 'plain' | 'custom' | 'archive' | 'rdb' | null;
   imageId: string | null;
   durationMs: number;
@@ -46,8 +46,9 @@ const HELPER_ROLE = 'ninedeploy.role=restore-verification';
 const HELPER_NAME = /^\/?ninedeploy-restore-check-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Engine messages that mean the bounded helper ran out of room, not that the
  * backup is bad. Only this boolean is used; stderr itself is never kept.
- * MySQL reports a full tmpfs as "The table '…' is full" (ER_RECORD_FILE_FULL). */
-const CAPACITY_ERROR = /No space left on device|could not extend file|out of memory|Cannot allocate memory|The table '[^']*' is full|Got error 28\b|Errcode: 28\b|failed with error 28\b|Out of disk space/i;
+ * MySQL reports a full tmpfs as "The table '…' is full" (ER_RECORD_FILE_FULL);
+ * ClickHouse as NOT_ENOUGH_SPACE / MEMORY_LIMIT_EXCEEDED. */
+const CAPACITY_ERROR = /No space left on device|could not extend file|out of memory|Cannot allocate memory|The table '[^']*' is full|Got error 28\b|Errcode: 28\b|failed with error 28\b|Out of disk space|NOT_ENOUGH_SPACE|MEMORY_LIMIT_EXCEEDED/i;
 /** The client lost its server mid-operation: the engine died, which no dump
  * statement does on a healthy server. Only this boolean is used. */
 const LOST_SERVER = /Lost connection to (?:MySQL |MariaDB )?server|server has gone away|server closed the connection unexpectedly/i;
@@ -72,7 +73,9 @@ interface HelperProfile {
   /**
    * - `stdin`: the panel streams the dump straight into this client, so no
    *   copy lands in the helper.
-   * - `file`: the dump is copied into the scratch (`DUMP`) first.
+   * - `file`: the dump is copied into the scratch first: to `path` (default
+   *   `DUMP`), after `prepare` (e.g. creating the directory the engine reads
+   *   backups from).
    * - `preload`: the engine only reads its data file at startup. The dump is
    *   copied to `path`, then `START_MARKER` releases the gated server, which
    *   either answers `loaded` with `PONG` or exits. An exit whose log matches
@@ -80,7 +83,7 @@ interface HelperProfile {
    */
   restore:
     | { stdin: string[] }
-    | { file(format: 'plain' | 'custom'): string[] }
+    | { file(format: 'plain' | 'custom'): string[]; path?: string; prepare?: string[] }
     | { preload: { path: string; loaded: string[]; rejects: RegExp } };
   query(sql: string): string[];
   /** The probe goes to the client on stdin instead of argv (redis-cli reads commands per line). */
@@ -156,6 +159,38 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
       // What mongosh prints for the script's last expression; the default
       // database is `test`, so address others with db.getSiblingDB(…).
       query: (sql) => ['mongosh', '--quiet', '--norc', ...host, '--eval', sql],
+    };
+  }
+  if (engine === 'clickhouse') {
+    return {
+      user: 'clickhouse',
+      // The data path; the image's `<backups><allowed_path>backups</allowed_path>`
+      // makes File('…') resolve under its `backups/` directory.
+      scratch: '/var/lib/clickhouse',
+      mounts: [
+        '/var/log/clickhouse-server:rw,nosuid,nodev,mode=1777,size=64m',
+        '/tmp:rw,nosuid,nodev,mode=1777,size=64m',
+      ],
+      // The entrypoint would write user settings under /etc, which is
+      // read-only here. The default user, local only, is all the helper needs.
+      env: ['CLICKHOUSE_SKIP_USER_SETUP=1'],
+      args: [],
+      // ClickHouse starts several hundred threads at once (its schedule pool
+      // alone asks for 512) and aborts when it cannot.
+      pidsLimit: 4096,
+      readyAttempts: 60,
+      readyTimeoutMs: 2000,
+      ready: ['clickhouse-client', '-q', 'SELECT 1'],
+      restore: {
+        // Every database the archive holds: the panel's backups carry the
+        // user databases only. A .zip name makes ClickHouse read it as an archive.
+        file: () => ['clickhouse-client', '-q', "RESTORE ALL FROM File('nd-restore.zip')"],
+        path: '/var/lib/clickhouse/backups/nd-restore.zip',
+        prepare: ['mkdir', '-p', '/var/lib/clickhouse/backups'],
+      },
+      // TabSeparated: a tab between columns, one line per row, NULL as \N.
+      // Unqualified names resolve in `app`, the managed database.
+      query: (sql) => ['clickhouse-client', '--database', 'app', '-q', sql],
     };
   }
   if (engine === 'redis' || engine === 'valkey' || engine === 'keydb' || engine === 'dragonfly') {
@@ -264,7 +299,7 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       }
       const header = Buffer.alloc(5);
       const { bytesRead } = await handle.read(header, 0, 5, 0);
-      result.format = engine === 'mongo'
+      result.format = engine === 'mongo' || engine === 'clickhouse'
         ? 'archive'
         : 'preload' in profile.restore
           ? 'rdb'
@@ -322,7 +357,8 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       }
       result.restoreMs = Date.now() - restoreStarted;
     } else {
-      await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', DUMP], input.file, 60_000);
+      if (profile.restore.prepare) await docker(['exec', name, ...profile.restore.prepare]);
+      await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', profile.restore.path ?? DUMP], input.file, 60_000);
       phase = 'restore';
       const restoreStarted = Date.now();
       await docker(['exec', name, ...profile.restore.file(result.format === 'custom' ? 'custom' : 'plain')], 300_000, 64 * 1024);

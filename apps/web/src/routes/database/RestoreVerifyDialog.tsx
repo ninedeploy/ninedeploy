@@ -5,7 +5,7 @@ import { useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Field, Modal, Textarea } from '../../components/ui.js';
 
-const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB', redis: 'Redis', valkey: 'Valkey', keydb: 'KeyDB', dragonfly: 'Dragonfly' };
+const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB', redis: 'Redis', valkey: 'Valkey', keydb: 'KeyDB', dragonfly: 'Dragonfly', clickhouse: 'ClickHouse' };
 const REDIS_FAMILY = new Set(['redis', 'valkey', 'keydb', 'dragonfly']);
 
 /**
@@ -36,7 +36,9 @@ export function RestoreVerifyDialog({ dbId, backupId, engine, onClose }: { dbId:
         ? t('Exactly what mongosh prints for the last expression. EJSON.stringify(…) prints one stable line. The default database is test; address yours with db.getSiblingDB(…).')
         : redisFamily
           ? t('Exactly what the command-line client prints: one line per value or list element, an empty line for nil.')
-          : t('Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.');
+          : engine === 'clickhouse'
+            ? t('Exactly what clickhouse-client prints (TabSeparated): a tab between columns, one row per line, NULL as \\N. Unqualified table names resolve in the app database; leave empty for no rows.')
+            : t('Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.');
   const start = useMutation({
     mutationFn: () => api.databases.drillBackup(dbId, { backupId, restore: { query, expected } }),
     onSuccess: () => {

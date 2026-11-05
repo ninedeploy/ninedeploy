@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { capture, sleep } from '../apps/server/src/lib/exec.js';
 import { verifyPostgresRestore, verifyRestore, type RestoreVerificationResult } from '../apps/server/src/lib/backupRestoreVerification.js';
 import { dumpCommands } from '../apps/server/src/lib/databaseCommands.js';
+import { backupClickhouse } from '../apps/server/src/engine/extraEngineBackups.js';
 
 /** The managed engines' default images (ENGINES in engine/database.ts). */
 const MYSQL_FAMILY = [
@@ -15,6 +16,7 @@ const MYSQL_FAMILY = [
 ] as const;
 const MONGO_IMAGE = 'mongo:8.0';
 /** The Redis family's default images; hosted runners are x86_64 (KeyDB's tags are per architecture). */
+const CLICKHOUSE_IMAGE = 'clickhouse/clickhouse-server:25.8';
 const REDIS_FAMILY = [
   { engine: 'redis', image: 'redis:8.8', server: 'redis-server', cli: 'redis-cli', flags: ['--dir', '/data'] },
   { engine: 'valkey', image: 'valkey/valkey:9.1', server: 'valkey-server', cli: 'valkey-cli', flags: ['--dir', '/data'] },
@@ -38,7 +40,7 @@ const docker = (args: string[], timeoutMs = 30_000) => capture('docker', args, {
 const query = (sql: string) => docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '-c', sql]);
 const hash = async (file: string) => createHash('sha256').update(await readFile(file)).digest('hex');
 const report: { source: string | undefined; publicApi: boolean; engines: string[]; images: Record<string, string>; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string; cleanupError?: string } = {
-  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo', ...REDIS_FAMILY.map(f => f.engine)], images: {}, cases: [], sourceUntouched: false,
+  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo', 'clickhouse', ...REDIS_FAMILY.map(f => f.engine)], images: {}, cases: [], sourceUntouched: false,
   backupBytesUnchanged: false, helperInventoryUnchanged: false, cleanup: false,
 };
 let scratch: string | undefined;
@@ -218,6 +220,55 @@ try {
     assert.equal((await mongoEval("db.getSiblingDB('shop').orders.findOne({ _id: 1 }).v")).trim(), 'after');
     assert.equal(await hash(mongoDump), digest);
   }
+  {
+    // ClickHouse: configured like a managed database (CLICKHOUSE_USER /
+    // PASSWORD / DB=app) and backed up by the panel's own `backupClickhouse`.
+    const chSource = `nd-restore-source-clickhouse-${owner}`;
+    const chPassword = randomUUID();
+    const chClient = (query: string) => docker(['exec', chSource, 'clickhouse-client', '-u', 'nine', `--password=${chPassword}`, '-q', query]);
+    phase = 'clickhouse-image-pull';
+    await docker(['pull', CLICKHOUSE_IMAGE], 300_000);
+    const chImage = (await docker(['image', 'inspect', '--format', '{{.Id}}', CLICKHOUSE_IMAGE])).trim();
+    assert.match(chImage, /^sha256:[a-f0-9]{64}$/); report.images.clickhouse = chImage;
+    phase = 'clickhouse-source-create';
+    familySources.push(chSource);
+    await docker(['run', '-d', '--name', chSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none',
+      '-e', 'CLICKHOUSE_USER=nine', '-e', `CLICKHOUSE_PASSWORD=${chPassword}`, '-e', 'CLICKHOUSE_DB=app', chImage]);
+    phase = 'clickhouse-source-readiness';
+    let chReady = false;
+    for (let attempt = 0; attempt < 90; attempt++) {
+      try { if ((await chClient('SELECT 1')).trim() === '1') { chReady = true; break; } } catch { /* not ready yet */ }
+      await sleep(2000);
+    }
+    assert.equal(chReady, true, 'clickhouse source did not become ready');
+    phase = 'clickhouse-source-seed';
+    await chClient('CREATE TABLE app.sentinel (id UInt32, v Nullable(String)) ENGINE = MergeTree ORDER BY id');
+    await chClient("INSERT INTO app.sentinel VALUES (1, 'before'), (2, NULL)");
+    phase = 'clickhouse-source-dump';
+    const chDump = join(scratch, 'clickhouse.zip'); files.push(chDump);
+    await backupClickhouse({ cn: chSource, password: chPassword, username: 'nine' }, chDump, () => undefined);
+    const digest = await hash(chDump);
+    phase = 'clickhouse-source-mutate';
+    await chClient("ALTER TABLE app.sentinel UPDATE v = 'after' WHERE id = 1 SETTINGS mutations_sync = 1");
+    const probe = 'SELECT id, v FROM sentinel ORDER BY id';
+    const known = '1\tbefore\n2\t\\N';
+    phase = 'clickhouse-restore';
+    const restored = await verifyRestore('clickhouse', { file: chDump, image: chImage, query: probe, expected: known });
+    report.cases.push({ case: phase, verification: restored });
+    assert.equal(restored.status, 'passed'); assert.equal(restored.cleanupConfirmed, true);
+    phase = 'clickhouse-wrong-data-refusal';
+    const wrong = await verifyRestore('clickhouse', { file: chDump, image: chImage, query: probe, expected: known.replace('before', 'after') });
+    report.cases.push({ case: phase, verification: wrong }); assert.equal(wrong.status, 'failed');
+    phase = 'clickhouse-truncated-archive-refusal';
+    const truncated = join(scratch, 'clickhouse-truncated.zip'); files.push(truncated);
+    const zip = await readFile(chDump);
+    await writeFile(truncated, zip.subarray(0, Math.floor(zip.length / 2)), { mode: 0o600 });
+    const refused = await verifyRestore('clickhouse', { file: truncated, image: chImage, query: probe, expected: known });
+    report.cases.push({ case: phase, verification: refused }); assert.equal(refused.status, 'failed');
+    phase = 'clickhouse-source-verification';
+    assert.equal((await chClient("SELECT v FROM app.sentinel WHERE id = 1")).trim(), 'after');
+    assert.equal(await hash(chDump), digest);
+  }
   for (const { engine, image, server, cli, flags } of REDIS_FAMILY) {
     // A password like production's (`--requirepass`), the panel's own SAVE
     // argv, and its fixed RDB path.
@@ -279,7 +330,7 @@ try {
   report.failure = phase;
   // Only fixed synthetic source commands are eligible: never retain the
   // verifier's SQL, data, probe output or any production database diagnostic.
-  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness', 'redis-image-pull', 'valkey-image-pull', 'keydb-image-pull', 'redis-source-create', 'valkey-source-create', 'keydb-source-create', 'dragonfly-image-pull', 'dragonfly-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
+  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness', 'redis-image-pull', 'valkey-image-pull', 'keydb-image-pull', 'redis-source-create', 'valkey-source-create', 'keydb-source-create', 'dragonfly-image-pull', 'dragonfly-source-create', 'clickhouse-image-pull', 'clickhouse-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
 } finally {
   let cleanup = true;
   for (const owned of [...(created ? [name] : []), ...familySources]) {

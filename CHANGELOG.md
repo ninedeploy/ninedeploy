@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Restore verification for MySQL, MariaDB, MongoDB, Redis, Valkey, KeyDB and Dragonfly backups (R3).** **Verify restore** and `backups drill --restore-query … --expect …` now also restore a backup of these engines into an isolated container of the database's own engine image and run your query there.
+- **Restore verification for MySQL, MariaDB, MongoDB, ClickHouse, Redis, Valkey, KeyDB and Dragonfly backups (R3).** **Verify restore** and `backups drill --restore-query … --expect …` now also restore a backup of these engines into an isolated container of the database's own engine image and run your query there.
   - **Isolation:** the same as PostgreSQL. No network, all capabilities dropped, a read-only root, bounded tmpfs, and the container is removed afterwards.
   - **MySQL and MariaDB:** the whole `--all-databases` dump is restored, and the query runs in the `app` database. The expected output is the client's batch output without headers. Columns are separated by a tab, and NULL prints as `NULL`.
   - **MongoDB:** the archive is streamed into `mongorestore --stopOnError`, so no copy of it lands in the container. The query is a mongosh script, and the expected value is what mongosh prints for its last expression.
+  - **ClickHouse:** the panel's `BACKUP` archive is restored with `RESTORE ALL`. The query runs in the `app` database, and the expected value is `clickhouse-client`'s TabSeparated output.
   - **Redis, Valkey, KeyDB and Dragonfly:** the server loads the RDB backup as it starts, and an RDB the engine rejects is `failed`. The query is one command per line, and the expected value is what the command-line client prints.
 - **Recovery duration of a restore verification.** The Backups tab shows how long the real restore took next to the verdict, for example "restored in 1m 05s". `backups drill --restore-query` prints it on a pass.
 

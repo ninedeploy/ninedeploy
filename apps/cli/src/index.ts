@@ -762,8 +762,8 @@ backupsCmd.command('restore <databaseId> <backupId>').description('Restore a bac
 backupsCmd
   .command('drill <databaseId> <backupId>')
   .description('Smoke-test a backup without restoring it into a live database')
-  .option('--restore-query <query>', 'PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, KeyDB, Dragonfly: restore into an isolated helper and run this query (SQL, a mongosh script, or one Redis command per line) there (database admin)')
-  .option('--expect <value>', 'The exact output --restore-query must print (no headers; psql: | between columns, MySQL/MariaDB: a tab, mongosh: its printed result, Redis: one line per value)')
+  .option('--restore-query <query>', 'PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Redis, Valkey, KeyDB, Dragonfly: restore into an isolated helper and run this query (SQL, a mongosh script, or one Redis command per line) there (database admin)')
+  .option('--expect <value>', 'The exact output --restore-query must print (no headers; psql: | between columns, MySQL/MariaDB/ClickHouse: a tab, mongosh: its printed result, Redis: one line per value)')
   .option('--no-wait', 'Return once the restore verification is admitted, without waiting for its verdict')
   .action((id: string, bId: string, o: { restoreQuery?: string; expect?: string; wait?: boolean }) =>
     backupsDrill(getClient(), id, bId, { restoreQuery: o.restoreQuery, expect: o.expect, wait: o.wait }));
