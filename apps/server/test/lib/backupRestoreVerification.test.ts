@@ -75,6 +75,8 @@ vi.mock('../../src/lib/exec.js', () => {
           state.loadPolls++;
           const applied = state.fail !== 'never-applied' && state.loadPolls >= state.rabbitReady;
           const listing = args[args.indexOf('--no-table-headers') + 1];
+          // Every vhost exists, but no queue ever appears.
+          if (state.fail === 'queues-never') return listing === 'list_vhosts' ? Array.from({ length: 50 }, (_, i) => `v${i}`).join('\n') : '';
           if (!applied) return '';
           if (listing === 'list_vhosts') return '/\nshop\n';
           if (listing === 'list_queues') return 'orders\n';
@@ -490,6 +492,26 @@ describe('RabbitMQ restore helper (a definitions export, applied asynchronously)
     try {
       expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
     } finally { now.mockRestore(); }
+  });
+  it('bounds the whole settle wait by its deadline, however many vhosts the file names', async () => {
+    // 50 vhosts are 1 + 150 listings per round; each may take up to 30 s.
+    await writeFile(file, JSON.stringify({
+      vhosts: Array.from({ length: 50 }, (_, i) => ({ name: `v${i}` })),
+      queues: Array.from({ length: 50 }, (_, i) => ({ name: 'q', vhost: `v${i}` })),
+    }));
+    state.fail = 'queues-never';
+    let clock = Date.parse('2026-11-05T09:00:00Z');
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 7_000));
+    try {
+      expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+    } finally { now.mockRestore(); }
+    const settle = state.timeouts.filter(entry => entry.args.includes('-u') && entry.args.includes('rabbitmqctl'));
+    // Every listing got at most the time left, and the deadline stopped the round.
+    expect(settle.length).toBeGreaterThan(1);
+    expect(settle.length).toBeLessThan(20);
+    for (const entry of settle) expect(entry.timeoutMs).toBeGreaterThan(0);
+    expect(settle.map(entry => entry.timeoutMs).reduce((a, b) => a + b, 0)).toBeLessThan(150 * 30_000);
+    expect(settle.at(-1)!.timeoutMs).toBeLessThan(30_000);
   });
   it.each(['eval rabbit:stop()', 'list_queues; reboot', 'LIST_QUEUES name', 'status', 'list_queues  name'])('refuses %j before any Docker work: it is not one list command', async (q) => {
     await expect(run(q)).rejects.toThrow(/rabbitmqctl list command/);

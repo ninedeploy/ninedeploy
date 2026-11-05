@@ -271,10 +271,11 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
         // there before the probe runs (the panel's restore waits the same way).
         settle: async (name, file) => {
           const expected = rabbitmqExpected(JSON.parse(await readFile(file, 'utf8')));
-          const started = Date.now();
-          // Each listing starts an Erlang VM; bound every call, not just the loop.
-          while ((await rabbitmqMissing(name, expected, 30_000)).length > 0) {
-            if (Date.now() - started >= RABBITMQ_SETTLE_MS) throw new ExecTimeoutError('definitions import', RABBITMQ_SETTLE_MS);
+          // Each listing starts an Erlang VM, and a file naming many vhosts
+          // means many listings: the deadline bounds every call, not just the loop.
+          const deadline = Date.now() + RABBITMQ_SETTLE_MS;
+          while ((await rabbitmqMissing(name, expected, deadline)).length > 0) {
+            if (Date.now() >= deadline) throw new ExecTimeoutError('definitions import', RABBITMQ_SETTLE_MS);
             await sleep(500);
           }
         },

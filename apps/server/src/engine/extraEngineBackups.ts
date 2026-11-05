@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { lstatSync, readFileSync, rmSync } from 'node:fs';
-import { capture, run, sleep } from '../lib/exec.js';
+import { capture, ExecTimeoutError, run, sleep } from '../lib/exec.js';
 import { writeSecretFile } from '../lib/secretFile.js';
 
 /**
@@ -232,25 +232,38 @@ export function rabbitmqExpected(defs: unknown): RabbitmqExpected {
   };
 }
 
-/** `rabbitmqctl -q --no-table-headers <list command>` as trimmed lines; `timeoutMs` bounds each call (default: exec's own). */
-async function rabbitmqList(cn: string, timeoutMs: number | undefined, ...args: string[]): Promise<string[]> {
-  const out = await capture('docker', ['exec', '-u', RABBITMQ_USER, cn, 'rabbitmqctl', '-q', '--no-table-headers', ...args], timeoutMs ? { timeoutMs } : {});
+/** One listing call may take this long when a deadline bounds the whole check. */
+const RABBITMQ_LIST_MS = 30_000;
+
+/**
+ * `rabbitmqctl -q --no-table-headers <list command>` as trimmed lines. With a
+ * `deadline` (epoch ms) each call gets at most the time left before it, so a
+ * file naming many vhosts cannot stretch the check past the deadline.
+ */
+async function rabbitmqList(cn: string, deadline: number | undefined, ...args: string[]): Promise<string[]> {
+  const left = deadline === undefined ? undefined : Math.min(RABBITMQ_LIST_MS, deadline - Date.now());
+  if (left !== undefined && left <= 0) throw new ExecTimeoutError('rabbitmqctl', 0);
+  const out = await capture('docker', ['exec', '-u', RABBITMQ_USER, cn, 'rabbitmqctl', '-q', '--no-table-headers', ...args], left === undefined ? {} : { timeoutMs: left });
   return out.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.trim());
 }
 
-/** What is still missing on the server, as readable items; empty once the import is applied. R3's restore verifier bounds each listing with `timeoutMs`. */
-export async function rabbitmqMissing(cn: string, expected: RabbitmqExpected, timeoutMs?: number): Promise<string[]> {
+/**
+ * What is still missing on the server, as readable items; empty once the
+ * import is applied. R3's restore verifier passes a `deadline` (epoch ms):
+ * every listing is bounded by it, and a check past it throws ExecTimeoutError.
+ */
+export async function rabbitmqMissing(cn: string, expected: RabbitmqExpected, deadline?: number): Promise<string[]> {
   const missing: string[] = [];
-  const vhosts = new Set(await rabbitmqList(cn, timeoutMs, 'list_vhosts', 'name'));
+  const vhosts = new Set(await rabbitmqList(cn, deadline, 'list_vhosts', 'name'));
   for (const v of expected.vhosts) if (!vhosts.has(v)) missing.push(`vhost ${v}`);
   if (missing.length) return missing;
   const byVhost = new Set([...expected.queues, ...expected.exchanges, ...expected.bindings].map((k) => k.split('\t')[0] as string));
   for (const v of byVhost) {
-    const queues = new Set((await rabbitmqList(cn, timeoutMs, 'list_queues', '-p', v, 'name')).map((n) => `${v}\t${n}`));
+    const queues = new Set((await rabbitmqList(cn, deadline, 'list_queues', '-p', v, 'name')).map((n) => `${v}\t${n}`));
     for (const q of expected.queues) if (q.startsWith(`${v}\t`) && !queues.has(q)) missing.push(`queue ${q.replace('\t', '/')}`);
-    const exchanges = new Set((await rabbitmqList(cn, timeoutMs, 'list_exchanges', '-p', v, 'name')).map((n) => `${v}\t${n}`));
+    const exchanges = new Set((await rabbitmqList(cn, deadline, 'list_exchanges', '-p', v, 'name')).map((n) => `${v}\t${n}`));
     for (const e of expected.exchanges) if (e.startsWith(`${v}\t`) && !exchanges.has(e)) missing.push(`exchange ${e.replace('\t', '/')}`);
-    const bindings = new Set((await rabbitmqList(cn, timeoutMs, 'list_bindings', '-p', v, 'source_name', 'destination_name', 'routing_key')).map((l) => `${v}\t${l}`));
+    const bindings = new Set((await rabbitmqList(cn, deadline, 'list_bindings', '-p', v, 'source_name', 'destination_name', 'routing_key')).map((l) => `${v}\t${l}`));
     for (const b of expected.bindings) if (b.startsWith(`${v}\t`) && !bindings.has(b)) missing.push(`binding ${b.split('\t').slice(1).join(' → ')}`);
   }
   return missing;
