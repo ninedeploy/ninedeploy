@@ -74,6 +74,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Verify real isolated restores and queries for every managed engine
         run: pnpm --filter @ninedeploy/server exec tsx ../../scripts/smoke-backup-restore.mts --proof=.temp_files/restore-verification
+      # The PITR fixture loads the database engine, which imports the built
+      # workspace packages (the restore fixture never did).
+      - name: Build the server's workspace packages
+        run: pnpm --filter "@ninedeploy/server^..." build
       - name: Verify real PostgreSQL point-in-time recovery
         env:
           NINEDEPLOY_DATA_DIR: ${{ runner.temp }}/nd-pitr-data
