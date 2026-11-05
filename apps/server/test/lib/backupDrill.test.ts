@@ -155,8 +155,8 @@ const restoreCheck = vi.hoisted(() => ({
   blockCleanup: false,
 }));
 vi.mock('../../src/lib/backupRestoreVerification.js', () => ({
-  isRestoreVerificationEngine: (engine: string) => ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse', 'meilisearch'].includes(engine),
-  restoreProbeProblem: (engine: string, query: string) => (engine === 'meilisearch' && !query.startsWith('/') ? 'A Meilisearch probe is an API path' : null),
+  isRestoreVerificationEngine: (engine: string) => ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse', 'meilisearch', 'rabbitmq'].includes(engine),
+  restoreProbeProblem: (engine: string, query: string) => (engine === 'meilisearch' && !query.startsWith('/') ? 'A Meilisearch probe is an API path' : engine === 'rabbitmq' && !query.startsWith('list_') ? 'A RabbitMQ probe is one rabbitmqctl list command' : null),
   verifyRestore: vi.fn(async (engine: string, input: { file: string; image: string; query: string; expected: string }) => {
     restoreCheck.calls.push(input); restoreCheck.engines.push(engine);
     expect(existsSync(input.file)).toBe(true);
@@ -366,9 +366,9 @@ describe('real restore drill staging and history', () => {
     expect(dbState.drills.get(result.drillId)).toMatchObject({ status: 'passed', engine });
   });
   it('refuses an unsupported engine before inserting history or invoking an engine', async () => {
-    seed('rabbitmq', join(TMP, 'not-read')); complete();
+    seed('cassandra', join(TMP, 'not-read')); complete();
     const onAdmitted = vi.fn();
-    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB or Dragonfly/);
+    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/not available for the cassandra engine/);
     expect(dbState.drills.size).toBe(0); expect(restoreCheck.calls).toEqual([]);
     expect(onAdmitted).not.toHaveBeenCalled();
   });
@@ -379,6 +379,15 @@ describe('real restore drill staging and history', () => {
     expect(result.status).toBe('passed');
     expect(restoreCheck.engines).toEqual(['meilisearch']);
     expect(restoreCheck.calls).toEqual([{ file, image: 'getmeili/meilisearch:v1.53', ...meiliProbe }]);
+  });
+  it('verifies RabbitMQ definitions with a rabbitmqctl list probe in its own engine image', async () => {
+    const file = await dumpFile('restore-defs.json', '{"rabbitmq_version":"4.4.0"}'); seed('rabbitmq', file); complete();
+    const rabbitProbe = { query: 'list_queues -p shop name durable', expected: 'orders true' };
+    expect((await runBackupDrill(buildDb(), 1, 1, rabbitProbe)).status).toBe('passed');
+    expect(restoreCheck.engines).toEqual(['rabbitmq']);
+    expect(restoreCheck.calls).toEqual([{ file, image: expect.stringMatching(/^rabbitmq:/), ...rabbitProbe }]);
+    seed('rabbitmq', file); complete();
+    await expect(runBackupDrill(buildDb(), 1, 1, probe)).rejects.toThrow(/RabbitMQ probe is one rabbitmqctl list command/);
   });
   it('refuses a probe the engine cannot take before admitting it (no row, no verifier)', async () => {
     seed('meilisearch', join(TMP, 'not-read')); complete();

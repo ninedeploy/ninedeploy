@@ -5,7 +5,7 @@ import { useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Field, Modal, Textarea } from '../../components/ui.js';
 
-const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB', redis: 'Redis', valkey: 'Valkey', keydb: 'KeyDB', dragonfly: 'Dragonfly', clickhouse: 'ClickHouse', meilisearch: 'Meilisearch' };
+const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB', redis: 'Redis', valkey: 'Valkey', keydb: 'KeyDB', dragonfly: 'Dragonfly', clickhouse: 'ClickHouse', meilisearch: 'Meilisearch', rabbitmq: 'RabbitMQ' };
 const REDIS_FAMILY = new Set(['redis', 'valkey', 'keydb', 'dragonfly']);
 
 /** What the engine's own client takes and prints decides how the query and the expected value read. */
@@ -32,14 +32,19 @@ function probeHints(t: ReturnType<typeof useT>, engine: string): { queryHint: st
         queryHint: t('An API path, for example: /indexes/movies/documents/1?fields=title'),
         expectedHint: t('Exactly the JSON body a GET on that path returns. Search results carry a processing time, so prefer documents and stats.'),
       };
+    case 'rabbitmq':
+      return {
+        queryHint: t('One rabbitmqctl list command, for example: list_queues -p shop name durable'),
+        expectedHint: t('Exactly what rabbitmqctl prints without headers: a tab between columns, one row per line, in any order. A definitions backup holds no messages, so list names and settings, not message counts.'),
+      };
     default:
       return { queryHint: sqlQuery, expectedHint: t('Exactly what the client prints in batch mode, without headers: a tab between columns, one row per line, NULL as NULL. Unqualified table names resolve in the app database; leave empty for no rows.') };
   }
 }
 
 /**
- * R3: start an isolated restore verification of one PostgreSQL, MySQL,
- * MariaDB or MongoDB backup. The panel restores it into a networkless helper, runs the
+ * R3: start an isolated restore verification of one backup in its own
+ * engine image. The panel restores it into a networkless helper, runs the
  * operator's query there and compares the output with the expected value. It
  * answers at once (the verdict lands on the drill row the backups table
  * polls), so this dialog closes as soon as the verification is admitted.

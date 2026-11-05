@@ -202,7 +202,7 @@ export interface BackupDrillResult {
 /**
  * R3: the known-data probe of a restore verification. The backup is restored
  * into an isolated, networkless helper of its own engine (PostgreSQL, MySQL,
- * MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB or Dragonfly) on the panel host and `query` runs there; the drill
+ * MariaDB, MongoDB, ClickHouse, Meilisearch, RabbitMQ, Redis, Valkey, KeyDB or Dragonfly) on the panel host and `query` runs there; the drill
  * passes only when the client's output (final newline removed) equals
  * `expected` exactly:
  * - PostgreSQL: psql unaligned, tuples only (`|` between columns).
@@ -215,6 +215,10 @@ export interface BackupDrillResult {
  *   `\N`); unqualified names resolve in the `app` database.
  * - Meilisearch: `query` is an API path (e.g. `/indexes/movies/documents/1`);
  *   `expected` is the JSON body a GET on it returns.
+ * - RabbitMQ: `query` is one `rabbitmqctl list_…` command (e.g.
+ *   `list_queues -p shop name durable`); rows print without headers, a tab
+ *   between columns, and compare in any order. A definitions backup holds no
+ *   messages.
  * - Redis, Valkey, KeyDB, Dragonfly: one command per line (sent on the client's stdin);
  *   replies print raw, one line per value or list element, an empty line for nil.
  * Neither value is stored, logged or audited. At most 16384 bytes each.

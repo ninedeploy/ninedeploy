@@ -1,6 +1,6 @@
 # Isolated restore verification
 
-Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB and Dragonfly. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
+Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, RabbitMQ, Redis, Valkey, KeyDB and Dragonfly: every managed engine. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
 - **Hosted acceptance, PostgreSQL:** passed again on cd3a2a6d.
 - **Hosted acceptance, MySQL and MariaDB:** passed on 1151cc49 ([run 41901004999](https://github.com/ninedeploy/ninedeploy/actions/runs/41901004999)). The run had 11 cases: PostgreSQL 5, `mysql:9.7` 3 and `mariadb:12.3` 3. Every source was untouched, the dump bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
 - **Hosted acceptance, every adapter:** passed on fc62112e ([run 41988812024](https://github.com/ninedeploy/ninedeploy/actions/runs/41988812024)). The run had 23 cases on the managed default images: PostgreSQL 5, plus a restore, a wrong-value refusal and an invalid-file refusal each for `mysql:9.7`, `mariadb:12.3`, `mongo:8.0`, `redis:8.8`, `valkey/valkey:9.1` and `eqalpha/keydb:x86_64_v6.3.4`. Every source was untouched, every dump's bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
@@ -8,7 +8,30 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
   - **Measured restores:** about 0.1 s for MongoDB, 0.25 s for MariaDB, 0.4 s for the Redis family and 0.75 s for MySQL. These are tiny fixtures, not an RTO commitment.
 - The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
 - **Recovery duration** is recorded and reported. Every restore verification stores the measured `restoreMs` (with `queryMs` and the total `durationMs`) on its drill row. The panel's Backups tab shows it next to the verdict ("restored in 1m 05s"). The CLI's pass line reads "the restore took N ms (M ms with setup and cleanup)". These are measurements of the bounded helper on the panel host, not an RTO commitment for a production restore.
-- RabbitMQ (a definitions export, not data) and PostgreSQL PITR remain open, so R3 is not closed.
+- PostgreSQL PITR remains open, so R3 is not closed.
+
+**RabbitMQ (2026-11-05)**
+- **What is restored.** The panel's RabbitMQ backup is `rabbitmqctl export_definitions`: users, vhosts, permissions, policies, queues, exchanges and bindings. It holds no messages, so the verification proves that the topology comes back, not that queued messages do.
+- **Helper:**
+  - It is the database's own engine image, run as `rabbitmq`.
+  - The 1 GiB scratch tmpfs is `/var/lib/rabbitmq`. The logs and `/tmp` get small tmpfs mounts.
+  - The PID limit is 512: the Erlang VM and each `rabbitmqctl` call start their own schedulers.
+  - Readiness is `rabbitmq-diagnostics -q check_running`, so the broker application is up, not just the Erlang node. Each CLI call starts a VM, so readiness polls up to 90 times with a 5 s timeout.
+- **Restore:**
+  1. The definitions file is copied to `/var/lib/rabbitmq/nd-restore.json`.
+  2. `rabbitmqctl -q import_definitions` imports it.
+  3. The import is applied asynchronously, so the restore counts as done only once every vhost, queue, exchange and binding the file names is listed. This uses the same check as the panel's own restore. It gives up after 120 s as `unverifiable`.
+
+  `restoreMs` covers the import and that settle wait.
+- **Verdicts:** a file RabbitMQ cannot import (truncated JSON, not JSON at all) makes `import_definitions` fail. That is `failed`, and the engine's message is not returned.
+- **Probe:** one `rabbitmqctl` list command, such as `list_queues -p shop name durable`. It runs as `rabbitmqctl -q --no-table-headers …`.
+  - The expected value is the tab-separated rows. rabbitmqctl lists rows in no fixed order, so rows compare as a set of lines; a missing or an extra row still fails.
+  - Anything else (another subcommand, shell punctuation, an upper-case subcommand, double spaces) is refused before admission, as a 400. The command is split on single spaces and passed as argv, never through a shell.
+- **Local real check:** `rabbitmq:4-management` (4.4.0), with a real definitions export from a source holding a vhost, a durable queue, a topic exchange and a binding.
+  - **Restore:** passed in 6.2 s, which is the import and the settle wait. The probe took 1.2 s, most of it the CLI's VM start.
+  - **Failed:** a wrong value, a truncated JSON file, and a file that is not JSON.
+  - **Cleanup:** every helper was confirmed removed.
+- **Hosted cohort:** the hosted fixture covers it. It calls the panel's own `backupRabbitmq`.
 
 **Meilisearch (2026-11-05)**
 - **Why a start gate.** A Meilisearch dump is imported only at startup (`--import-dump`), so it uses the same start gate as the Redis family.

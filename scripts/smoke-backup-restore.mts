@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { capture, sleep } from '../apps/server/src/lib/exec.js';
 import { verifyPostgresRestore, verifyRestore, type RestoreVerificationResult } from '../apps/server/src/lib/backupRestoreVerification.js';
 import { dumpCommands } from '../apps/server/src/lib/databaseCommands.js';
-import { backupClickhouse, backupMeilisearch } from '../apps/server/src/engine/extraEngineBackups.js';
+import { backupClickhouse, backupMeilisearch, backupRabbitmq, rabbitmqExpected, rabbitmqMissing } from '../apps/server/src/engine/extraEngineBackups.js';
 
 /** The managed engines' default images (ENGINES in engine/database.ts). */
 const MYSQL_FAMILY = [
@@ -18,6 +18,7 @@ const MONGO_IMAGE = 'mongo:8.0';
 /** The Redis family's default images; hosted runners are x86_64 (KeyDB's tags are per architecture). */
 const CLICKHOUSE_IMAGE = 'clickhouse/clickhouse-server:25.8';
 const MEILISEARCH_IMAGE = 'getmeili/meilisearch:v1.53';
+const RABBITMQ_IMAGE = 'rabbitmq:4-management';
 const REDIS_FAMILY = [
   { engine: 'redis', image: 'redis:8.8', server: 'redis-server', cli: 'redis-cli', flags: ['--dir', '/data'] },
   { engine: 'valkey', image: 'valkey/valkey:9.1', server: 'valkey-server', cli: 'valkey-cli', flags: ['--dir', '/data'] },
@@ -41,7 +42,7 @@ const docker = (args: string[], timeoutMs = 30_000) => capture('docker', args, {
 const query = (sql: string) => docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '-c', sql]);
 const hash = async (file: string) => createHash('sha256').update(await readFile(file)).digest('hex');
 const report: { source: string | undefined; publicApi: boolean; engines: string[]; images: Record<string, string>; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string; cleanupError?: string } = {
-  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo', 'clickhouse', 'meilisearch', ...REDIS_FAMILY.map(f => f.engine)], images: {}, cases: [], sourceUntouched: false,
+  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo', 'clickhouse', 'meilisearch', 'rabbitmq', ...REDIS_FAMILY.map(f => f.engine)], images: {}, cases: [], sourceUntouched: false,
   backupBytesUnchanged: false, helperInventoryUnchanged: false, cleanup: false,
 };
 let scratch: string | undefined;
@@ -327,6 +328,69 @@ try {
     phase = 'meilisearch-source-verification';
     assert.equal((await meiliApi('http://localhost:7700/indexes/movies/documents/1?fields=title')).trim(), '{"title":"after"}');
     assert.equal(await hash(meiliDump), digest);
+  }
+  {
+    // RabbitMQ: a default user like a managed broker's, a topology seeded
+    // through definitions, and the panel's own `backupRabbitmq` export.
+    const rabbitSource = `nd-restore-source-rabbitmq-${owner}`;
+    const rabbitCtl = (...args: string[]) => docker(['exec', '-u', 'rabbitmq', rabbitSource, 'rabbitmqctl', '-q', ...args], 60_000);
+    const seed = {
+      vhosts: [{ name: 'shop' }],
+      permissions: [{ user: 'nine', vhost: 'shop', configure: '.*', write: '.*', read: '.*' }],
+      queues: [{ name: 'orders', vhost: 'shop', durable: true, auto_delete: false, arguments: { 'x-queue-type': 'classic' } }],
+      exchanges: [{ name: 'events', vhost: 'shop', type: 'topic', durable: true, auto_delete: false, internal: false, arguments: {} }],
+      bindings: [{ source: 'events', vhost: 'shop', destination: 'orders', destination_type: 'queue', routing_key: 'order.created', arguments: {} }],
+    };
+    phase = 'rabbitmq-image-pull';
+    await docker(['pull', RABBITMQ_IMAGE], 300_000);
+    const rabbitImage = (await docker(['image', 'inspect', '--format', '{{.Id}}', RABBITMQ_IMAGE])).trim();
+    assert.match(rabbitImage, /^sha256:[a-f0-9]{64}$/); report.images.rabbitmq = rabbitImage;
+    phase = 'rabbitmq-source-create';
+    familySources.push(rabbitSource);
+    await docker(['run', '-d', '--name', rabbitSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none',
+      '-e', 'RABBITMQ_DEFAULT_USER=nine', '-e', `RABBITMQ_DEFAULT_PASS=${randomUUID()}`, rabbitImage]);
+    phase = 'rabbitmq-source-readiness';
+    let rabbitReady = false;
+    for (let attempt = 0; attempt < 90; attempt++) {
+      try { await docker(['exec', '-u', 'rabbitmq', rabbitSource, 'rabbitmq-diagnostics', '-q', 'check_running']); rabbitReady = true; break; } catch { /* not ready yet */ }
+      await sleep(1000);
+    }
+    assert.equal(rabbitReady, true, 'rabbitmq source did not become ready');
+    phase = 'rabbitmq-source-seed';
+    const seedFile = join(scratch, 'rabbitmq-seed.json'); files.push(seedFile);
+    await writeFile(seedFile, JSON.stringify(seed), { mode: 0o644 });
+    await docker(['cp', seedFile, `${rabbitSource}:/tmp/nd-seed.json`]);
+    await rabbitCtl('import_definitions', '/tmp/nd-seed.json');
+    const seeded = rabbitmqExpected(seed);
+    let applied = false;
+    for (let attempt = 0; attempt < 60 && !applied; attempt++) {
+      applied = (await rabbitmqMissing(rabbitSource, seeded, 30_000)).length === 0;
+      if (!applied) await sleep(1000);
+    }
+    assert.equal(applied, true, 'rabbitmq seed definitions were not applied');
+    phase = 'rabbitmq-source-dump';
+    const rabbitDump = join(scratch, 'rabbitmq.json'); files.push(rabbitDump);
+    await backupRabbitmq({ cn: rabbitSource }, rabbitDump, () => undefined);
+    const digest = await hash(rabbitDump);
+    phase = 'rabbitmq-source-mutate';
+    await rabbitCtl('delete_queue', '-p', 'shop', 'orders');
+    const probe = 'list_queues -p shop name durable';
+    phase = 'rabbitmq-restore';
+    const restored = await verifyRestore('rabbitmq', { file: rabbitDump, image: rabbitImage, query: probe, expected: 'orders\ttrue' });
+    report.cases.push({ case: phase, verification: restored });
+    assert.equal(restored.status, 'passed'); assert.equal(restored.cleanupConfirmed, true);
+    phase = 'rabbitmq-wrong-data-refusal';
+    const wrong = await verifyRestore('rabbitmq', { file: rabbitDump, image: rabbitImage, query: probe, expected: 'orders\tfalse' });
+    report.cases.push({ case: phase, verification: wrong }); assert.equal(wrong.status, 'failed');
+    phase = 'rabbitmq-truncated-definitions-refusal';
+    const truncated = join(scratch, 'rabbitmq-truncated.json'); files.push(truncated);
+    const defsBytes = await readFile(rabbitDump);
+    await writeFile(truncated, defsBytes.subarray(0, Math.floor(defsBytes.length / 2)), { mode: 0o600 });
+    const refused = await verifyRestore('rabbitmq', { file: truncated, image: rabbitImage, query: probe, expected: 'orders\ttrue' });
+    report.cases.push({ case: phase, verification: refused }); assert.equal(refused.status, 'failed');
+    phase = 'rabbitmq-source-verification';
+    assert.equal((await rabbitCtl('--no-table-headers', 'list_queues', '-p', 'shop', 'name')).trim(), '');
+    assert.equal(await hash(rabbitDump), digest);
   }
   for (const { engine, image, server, cli, flags } of REDIS_FAMILY) {
     // A password like production's (`--requirepass`), the panel's own SAVE

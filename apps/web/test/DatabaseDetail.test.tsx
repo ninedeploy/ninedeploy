@@ -432,8 +432,21 @@ describe('DatabaseDetail', () => {
     expect(dialog).not.toHaveTextContent('SELECT count(*)');
   });
 
-  it('does not offer restore verification for an engine without an adapter', async () => {
+  it('explains the RabbitMQ helper: one list command, rows in any order, no messages', async () => {
     mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'rabbitmq', name: 'broker' } as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify restore of backup 101' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Verify restore of backup #101' });
+    expect(dialog).toHaveTextContent('restored into an isolated RabbitMQ container');
+    expect(dialog).toHaveTextContent('One rabbitmqctl list command, for example: list_queues -p shop name durable');
+    expect(dialog).toHaveTextContent('one row per line, in any order');
+    expect(dialog).not.toHaveTextContent('SELECT count(*)');
+  });
+
+  it('does not offer restore verification for an engine without an adapter', async () => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'cassandra', name: 'ring' } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
     mockOf(api.databases.drills).mockResolvedValue([] as any);
     renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });

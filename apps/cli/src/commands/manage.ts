@@ -374,7 +374,7 @@ export async function backupsRestore(client: NineDeployClient, idStr: string, ba
  * ...) and is safe to run on production backups because it
  * never touches the live container.
  *
- * R3: `--restore-query <query> --expect <value>` (PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB or Dragonfly; database admin)
+ * R3: `--restore-query <query> --expect <value>` (PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, RabbitMQ, Redis, Valkey, KeyDB or Dragonfly; database admin)
  * restores the backup into an isolated, networkless helper and runs the
  * query there; the panel answers at once and the CLI polls the drill until
  * its verdict (`--no-wait` returns right after admission).

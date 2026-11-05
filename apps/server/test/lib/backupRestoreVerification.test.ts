@@ -3,13 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ calls: [] as string[][], timeouts: [] as Array<{ args: string[]; timeoutMs: number }>, stdin: [] as string[], loadPolls: 0, fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', logs: [] as string[] | null, helpers: [] as Array<{ id: string; created: string; name: string }> }));
+const state = vi.hoisted(() => ({ calls: [] as string[][], timeouts: [] as Array<{ args: string[]; timeoutMs: number }>, stdin: [] as string[], loadPolls: 0, content: '', rabbitReady: 2, fail: '', custom: false, copied: '', name: '', image: `sha256:${'a'.repeat(64)}`, oom: '', logs: [] as string[] | null, helpers: [] as Array<{ id: string; created: string; name: string }> }));
 const REDIS_CLIS = ['redis-cli', 'valkey-cli', 'keydb-cli'];
 const MONGO_PING = 'db.adminCommand({ ping: 1 }).ok';
 vi.mock('../../src/lib/fileCommandInput.js', () => ({
   streamFileToCommand: async (_cmd: string, args: string[], file: string, timeoutMs: number) => {
     state.calls.push(args); state.copied = file; state.timeouts.push({ args, timeoutMs });
-    expect(await readFile(file, 'utf8')).toContain(state.custom ? 'PGDMP' : 'CREATE TABLE');
+    expect(await readFile(file, 'utf8')).toContain(state.custom ? 'PGDMP' : state.content || 'CREATE TABLE');
     if (state.fail === 'copy') throw new Error('copy error');
     if (args.includes('mongorestore') && state.fail === 'restore') throw new Error('File input command did not complete');
   },
@@ -59,6 +59,33 @@ vi.mock('../../src/lib/exec.js', () => {
         if (state.fail === 'copy') throw new Error('copy error');
       }
       if ((args.includes('pg_isready') || args.includes('ping') || args.includes(MONGO_PING)) && state.fail === 'ready') throw new Error('not ready');
+      // RabbitMQ: readiness, the definitions import, the settle listings
+      // (`exec -u rabbitmq … rabbitmqctl -q --no-table-headers list_…`) and the probe.
+      if (args[0] === 'exec' && args.includes('rabbitmq-diagnostics')) {
+        if (state.fail === 'ready') throw new Error('not ready');
+        return '';
+      }
+      if (args[0] === 'exec' && args.includes('rabbitmqctl')) {
+        if (args.includes('import_definitions')) {
+          if (state.fail === 'restore') throw new Error('`docker` exited 65: Error: Failed to deserialise input (format: JSON) (error: :unexpected_end)');
+          return '';
+        }
+        if (args.includes('-u')) {
+          // The settle check: nothing listed until the import has applied.
+          state.loadPolls++;
+          const applied = state.fail !== 'never-applied' && state.loadPolls >= state.rabbitReady;
+          const listing = args[args.indexOf('--no-table-headers') + 1];
+          if (!applied) return '';
+          if (listing === 'list_vhosts') return '/\nshop\n';
+          if (listing === 'list_queues') return 'orders\n';
+          if (listing === 'list_exchanges') return 'events\namq.direct\n';
+          if (listing === 'list_bindings') return '\torders\torders\nevents\torders\torder.created\n';
+          return '';
+        }
+        if (state.fail === 'query') throw new Error('SECRET_QUERY_RESULT');
+        if (args.includes('list_exchanges')) return 'events\ttopic\namq.direct\tdirect\n';
+        return state.fail === 'mismatch' ? 'wrong private value\n' : 'known-row\n';
+      }
       // Meilisearch: the import poll (`curl … /health`) and the GET probe.
       if (args[0] === 'exec' && args.includes('curl')) {
         if (args.at(-1)?.endsWith('/health')) {
@@ -128,7 +155,7 @@ import { pruneRestoreVerificationHelpers, RESTORE_VERIFICATION_MAX_DUMP_BYTES, v
 let directory: string;
 let file: string;
 beforeEach(async () => {
-  state.calls = []; state.timeouts = []; state.stdin = []; state.loadPolls = 0; state.fail = ''; state.custom = false; state.copied = ''; state.name = '';
+  state.calls = []; state.timeouts = []; state.stdin = []; state.loadPolls = 0; state.content = ''; state.rabbitReady = 2; state.fail = ''; state.custom = false; state.copied = ''; state.name = '';
   state.image = `sha256:${'a'.repeat(64)}`; state.oom = ''; state.logs = []; state.helpers = [];
   directory = await mkdtemp(join(tmpdir(), 'nd-restore-test-'));
   file = join(directory, 'source.sql');
@@ -399,6 +426,74 @@ describe('crashed restore helpers are swept', () => {
     expect(await pruneRestoreVerificationHelpers(60 * 60 * 1000, now)).toBe(1);
     expect(state.calls.filter(args => args[0] === 'rm')).toEqual([['rm', '-f', '-v', 'e'.repeat(64)]]);
     expect(state.calls.some(args => args.includes('not-a-container-id'))).toBe(false);
+  });
+});
+
+describe('RabbitMQ restore helper (a definitions export, applied asynchronously)', () => {
+  const definitions = JSON.stringify({
+    vhosts: [{ name: 'shop' }],
+    queues: [{ name: 'orders', vhost: 'shop', durable: true }],
+    exchanges: [{ name: 'events', vhost: 'shop', type: 'topic' }],
+    bindings: [{ source: 'events', vhost: 'shop', destination: 'orders', destination_type: 'queue', routing_key: 'order.created' }],
+  });
+  const query = 'list_queues -p shop name durable';
+  const run = (q = query) => verifyRestore('rabbitmq', { file, image: 'rabbitmq:4-management', query: q, expected: 'known-row' });
+  beforeEach(async () => { state.content = '"vhosts"'; await writeFile(file, definitions); });
+  it('imports the definitions, waits until every named object exists, then runs the list probe', async () => {
+    const result = await run();
+    expect(result).toMatchObject({ status: 'passed', engine: 'rabbitmq', format: 'definitions', queryMatched: true, cleanupConfirmed: true });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    for (const flag of ['--read-only', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '--cpus']) expect(create).toContain(flag);
+    expect(create.slice(create.indexOf('--user'), create.indexOf('--user') + 2)).toEqual(['--user', 'rabbitmq']);
+    expect(create.slice(create.indexOf('--pids-limit'), create.indexOf('--pids-limit') + 2)).toEqual(['--pids-limit', '512']);
+    const tmpfs = create.flatMap((arg, index) => (create[index - 1] === '--tmpfs' ? [arg] : []));
+    expect(tmpfs).toEqual([
+      '/var/lib/rabbitmq:rw,nosuid,nodev,mode=1777,size=1024m',
+      '/var/log/rabbitmq:rw,nosuid,nodev,mode=1777,size=16m',
+      '/tmp:rw,nosuid,nodev,mode=1777,size=64m',
+    ]);
+    expect(create.at(-1)).toBe(state.image);
+    // The broker, not just the Erlang node, must be running; each CLI call starts a VM.
+    expect(state.calls.find(args => args.includes('rabbitmq-diagnostics'))).toEqual(['exec', state.name, 'rabbitmq-diagnostics', '-q', 'check_running']);
+    expect(state.timeouts.find(entry => entry.args.includes('rabbitmq-diagnostics'))?.timeoutMs).toBe(5000);
+    expect(state.calls.find(args => args.includes('restore-copy'))?.at(-1)).toBe('/var/lib/rabbitmq/nd-restore.json');
+    const imported = state.calls.findIndex(args => args.includes('import_definitions'));
+    expect(state.calls[imported]).toEqual(['exec', state.name, 'rabbitmqctl', '-q', 'import_definitions', '/var/lib/rabbitmq/nd-restore.json']);
+    // The settle check polled until the import applied (empty listings first).
+    const settle = state.calls.filter(args => args.includes('-u'));
+    expect(settle.length).toBeGreaterThan(1);
+    expect(settle[0]).toEqual(['exec', '-u', 'rabbitmq', state.name, 'rabbitmqctl', '-q', '--no-table-headers', 'list_vhosts', 'name']);
+    const probe = state.calls.findIndex(args => args.includes('list_queues') && !args.includes('-u'));
+    expect(state.calls[probe]).toEqual(['exec', state.name, 'rabbitmqctl', '-q', '--no-table-headers', 'list_queues', '-p', 'shop', 'name', 'durable']);
+    // The probe runs only after the import settled.
+    expect(probe).toBeGreaterThan(state.calls.lastIndexOf(settle.at(-1)!));
+    expect(result.restoreMs).not.toBeNull();
+  });
+  it('compares listed rows as a set: rabbitmqctl lists them in no fixed order', async () => {
+    const probe = (expected: string) => verifyRestore('rabbitmq', { file, image: 'rabbitmq:4-management', query: 'list_exchanges -p shop name type', expected });
+    expect(await probe('amq.direct\tdirect\nevents\ttopic')).toMatchObject({ status: 'passed', queryMatched: true });
+    expect(await probe('events\ttopic\namq.direct\tdirect')).toMatchObject({ status: 'passed', queryMatched: true });
+    // A missing or an extra row still fails.
+    expect(await probe('events\ttopic')).toMatchObject({ status: 'failed', queryMatched: false });
+    expect(await probe('events\ttopic\namq.direct\tdirect\namq.fanout\tfanout')).toMatchObject({ status: 'failed', queryMatched: false });
+  });
+  it('fails a definitions file RabbitMQ cannot import, without the engine message', async () => {
+    state.fail = 'restore';
+    const result = await run();
+    expect(result).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore', cleanupConfirmed: true });
+    expect(JSON.stringify(result)).not.toMatch(/deserialise|unexpected_end/);
+  });
+  it('is unverifiable when the imported definitions never all appear', async () => {
+    state.fail = 'never-applied';
+    let clock = Date.parse('2026-11-05T09:00:00Z');
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 30_000));
+    try {
+      expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+    } finally { now.mockRestore(); }
+  });
+  it.each(['eval rabbit:stop()', 'list_queues; reboot', 'LIST_QUEUES name', 'status', 'list_queues  name'])('refuses %j before any Docker work: it is not one list command', async (q) => {
+    await expect(run(q)).rejects.toThrow(/rabbitmqctl list command/);
+    expect(state.calls).toEqual([]);
   });
 });
 

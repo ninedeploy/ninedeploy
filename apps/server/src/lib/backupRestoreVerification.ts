@@ -1,11 +1,12 @@
 /** R3: restore a backup into an isolated, networkless engine helper and run a known-data probe there. */
 import { randomUUID } from 'node:crypto';
-import { open } from 'node:fs/promises';
+import { open, readFile } from 'node:fs/promises';
 import { capture, ExecOutputTooLargeError, ExecTimeoutError, run, sleep } from './exec.js';
 import { streamFileToCommand } from './fileCommandInput.js';
+import { rabbitmqExpected, rabbitmqMissing } from '../engine/extraEngineBackups.js';
 
 /** Engines with an isolated restore adapter. */
-export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse', 'meilisearch'] as const;
+export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse', 'meilisearch', 'rabbitmq'] as const;
 export type RestoreVerificationEngine = (typeof RESTORE_VERIFICATION_ENGINES)[number];
 export function isRestoreVerificationEngine(engine: string): engine is RestoreVerificationEngine {
   return (RESTORE_VERIFICATION_ENGINES as readonly string[]).includes(engine);
@@ -26,7 +27,7 @@ export interface RestoreVerificationResult {
   /** postgres: plain SQL or a custom archive. mysql/mariadb dumps are always
    *  plain SQL; mongo backups are a gzipped mongodump archive, ClickHouse's a
    *  BACKUP zip archive; the Redis family's are the server's own RDB file. */
-  format: 'plain' | 'custom' | 'archive' | 'rdb' | null;
+  format: 'plain' | 'custom' | 'archive' | 'rdb' | 'definitions' | null;
   imageId: string | null;
   durationMs: number;
   restoreMs: number | null;
@@ -75,7 +76,9 @@ interface HelperProfile {
    *   copy lands in the helper.
    * - `file`: the dump is copied into the scratch first: to `path` (default
    *   `DUMP`), after `prepare` (e.g. creating the directory the engine reads
-   *   backups from).
+   *   backups from). `settle` then waits for an engine that applies the
+   *   restore asynchronously (RabbitMQ's definitions import), so the probe
+   *   never races it.
    * - `preload`: the engine only reads its data file at startup. The dump is
    *   copied to `path`, then the `marker` file releases the gated server
    *   (`startGate`), which either answers `loaded` with output matching
@@ -84,19 +87,32 @@ interface HelperProfile {
    */
   restore:
     | { stdin: string[] }
-    | { file(format: 'plain' | 'custom'): string[]; path?: string; prepare?: string[] }
+    | { file(format: 'plain' | 'custom'): string[]; path?: string; prepare?: string[]; settle?(name: string, file: string): Promise<void> }
     | { preload: { path: string; marker: string; loaded: string[]; answer: RegExp; rejects: RegExp } };
   query(sql: string): string[];
   /** The probe goes to the client on stdin instead of argv (redis-cli reads commands per line). */
   queryOnStdin?: boolean;
   /** Why this engine's client cannot take `query` at all, or null. Checked before any work. */
   queryProblem?(query: string): string | null;
+  /** The client lists rows in no fixed order, so rows compare as a set of lines. */
+  unorderedRows?: boolean;
+}
+
+/** One row per line, sorted, so a listing in no fixed order compares stably. */
+function sortedRows(text: string): string {
+  return text.split('\n').sort().join('\n');
 }
 const PG_CONNECTION = ['-h', '127.0.0.1', '-U', 'nine', '-d', 'app'];
 /** A preloading engine's start gate: PID 1 waits for `marker`, then becomes the server. */
 const startGate = (marker: string) => `while [ ! -e ${marker} ]; do sleep 0.2; done; exec "$@"`;
 /** A Meilisearch probe is a GET path on its own HTTP API, appended to the base URL. */
 const MEILI_PROBE = /^\/[\x21-\x7e]*$/;
+/** A RabbitMQ probe is one `rabbitmqctl list_…` command: the listing, then
+ *  options and column names such as `-p shop name durable`. */
+const RABBITMQ_PROBE = /^list_[a-z_]+(?: [A-Za-z0-9_./:-]+)*$/;
+/** RabbitMQ applies an import asynchronously; this long is the wait for every
+ *  definition the file names to appear, before the probe may run. */
+const RABBITMQ_SETTLE_MS = 120_000;
 /** A Meilisearch that exits with one of these in its log refused the dump itself. */
 const MEILI_DUMP_REJECTED = /failed to iterate over archive|invalid gzip header|unexpected end of file|failed to import the dump|dump .*(version|corrupt|invalid)/i;
 /** A Redis-family server that exits with one of these in its log refused the
@@ -231,6 +247,47 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
       queryOnStdin: true,
     };
   }
+  if (engine === 'rabbitmq') {
+    const definitions = '/var/lib/rabbitmq/nd-restore.json';
+    return {
+      user: 'rabbitmq',
+      // Mnesia, the Erlang cookie and the copied definitions export.
+      scratch: '/var/lib/rabbitmq',
+      mounts: ['/var/log/rabbitmq:rw,nosuid,nodev,mode=1777,size=16m', '/tmp:rw,nosuid,nodev,mode=1777,size=64m'],
+      env: [],
+      args: [],
+      pidsLimit: 512,
+      // The Erlang node answers before the broker has booted: wait for the
+      // running application, not a ping. Each CLI call starts an Erlang VM.
+      readyAttempts: 90,
+      readyTimeoutMs: 5000,
+      ready: ['rabbitmq-diagnostics', '-q', 'check_running'],
+      restore: {
+        // The panel's backups are `rabbitmqctl export_definitions`: users,
+        // vhosts, permissions, queues, exchanges, bindings, policies; not messages.
+        file: () => ['rabbitmqctl', '-q', 'import_definitions', definitions],
+        path: definitions,
+        // Every vhost, queue, exchange and binding the file names must be
+        // there before the probe runs (the panel's restore waits the same way).
+        settle: async (name, file) => {
+          const expected = rabbitmqExpected(JSON.parse(await readFile(file, 'utf8')));
+          const started = Date.now();
+          // Each listing starts an Erlang VM; bound every call, not just the loop.
+          while ((await rabbitmqMissing(name, expected, 30_000)).length > 0) {
+            if (Date.now() - started >= RABBITMQ_SETTLE_MS) throw new ExecTimeoutError('definitions import', RABBITMQ_SETTLE_MS);
+            await sleep(500);
+          }
+        },
+      },
+      // Tab-separated rows without headers, e.g. `list_queues -p shop name durable`.
+      query: (command) => ['rabbitmqctl', '-q', '--no-table-headers', ...command.split(' ')],
+      // rabbitmqctl lists queues, exchanges and bindings in no fixed order.
+      unorderedRows: true,
+      queryProblem: (command) => (RABBITMQ_PROBE.test(command)
+        ? null
+        : 'A RabbitMQ probe is one rabbitmqctl list command, such as list_queues -p shop name durable'),
+    };
+  }
   if (engine === 'meilisearch') {
     const api = 'http://127.0.0.1:7700';
     return {
@@ -345,7 +402,9 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       }
       const header = Buffer.alloc(5);
       const { bytesRead } = await handle.read(header, 0, 5, 0);
-      result.format = engine === 'mongo' || engine === 'clickhouse' || engine === 'meilisearch'
+      result.format = engine === 'rabbitmq'
+        ? 'definitions'
+        : engine === 'mongo' || engine === 'clickhouse' || engine === 'meilisearch'
         ? 'archive'
         : 'preload' in profile.restore
           ? 'rdb'
@@ -409,6 +468,8 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       phase = 'restore';
       const restoreStarted = Date.now();
       await docker(['exec', name, ...profile.restore.file(result.format === 'custom' ? 'custom' : 'plain')], 300_000, 64 * 1024);
+      // An asynchronously applied restore counts as done once it has settled.
+      await profile.restore.settle?.(name, input.file);
       result.restoreMs = Date.now() - restoreStarted;
     }
     phase = 'query';
@@ -417,7 +478,8 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       ? await docker(['exec', '-i', name, ...profile.query(input.query)], 15_000, 16_386, Buffer.from(`${input.query}\n`))
       : await docker(['exec', name, ...profile.query(input.query)], 15_000, 16_386);
     result.queryMs = Date.now() - queryStarted;
-    result.queryMatched = output.replace(/\r?\n$/, '') === input.expected;
+    const printed = output.replace(/\r?\n$/, '');
+    result.queryMatched = profile.unorderedRows ? sortedRows(printed) === sortedRows(input.expected) : printed === input.expected;
     result.status = result.queryMatched ? 'passed' : 'failed';
     result.error = result.queryMatched ? null : 'Restored data did not match the expected probe result';
   } catch (error) {
