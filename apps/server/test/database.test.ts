@@ -160,7 +160,8 @@ describe('ENGINES metadata', () => {
     expect(E.mysql.env('p')).toEqual({ MYSQL_ROOT_PASSWORD: 'p', MYSQL_DATABASE: 'app' });
     expect(E.mariadb.env('p')).toEqual({ MARIADB_ROOT_PASSWORD: 'p', MARIADB_DATABASE: 'app' });
     expect(E.redis.env('p')).toEqual({});
-    expect(E.mongo.env('p')).toEqual({ MONGO_INITDB_ROOT_USERNAME: 'nine', MONGO_INITDB_ROOT_PASSWORD: 'p' });
+    // GLIBC_TUNABLES: mongod 8.0 refuses Linux 6.19–7.0.13 with the image's rseq=0 (SERVER-121912).
+    expect(E.mongo.env('p')).toEqual({ MONGO_INITDB_ROOT_USERNAME: 'nine', MONGO_INITDB_ROOT_PASSWORD: 'p', GLIBC_TUNABLES: 'glibc.pthread.rseq=1' });
     expect(E.redis.authViaArg).toBe(true);
     expect(E.valkey.authViaArg).toBe(true);
     expect(E.postgres.authViaArg).toBeUndefined();

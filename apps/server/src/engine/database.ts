@@ -395,7 +395,13 @@ export const ENGINES: Record<string, EngineConfig> = {
     image: (v) => `mongo:${v || '8.0'}`,
     port: 27017,
     volumePath: '/data/db',
-    env: (p) => ({ MONGO_INITDB_ROOT_USERNAME: 'nine', MONGO_INITDB_ROOT_PASSWORD: p }),
+    // GLIBC_TUNABLES: the mongo:8 images set glibc.pthread.rseq=0 so the
+    // upgraded TCMalloc can use per-CPU caches. On Linux 6.19 through 7.0.13
+    // that crashes, so mongod 8.0 refuses to start at all ("Linux kernel
+    // versions 6.19 and newer has a known incompatibility", SERVER-121912).
+    // rseq=1 falls back to per-thread caches (MongoDB 7's behaviour), which
+    // start on every kernel. Seen on hosted runners in R3 run 41926197835.
+    env: (p) => ({ MONGO_INITDB_ROOT_USERNAME: 'nine', MONGO_INITDB_ROOT_PASSWORD: p, GLIBC_TUNABLES: 'glibc.pthread.rseq=1' }),
     username: () => 'nine',
     dbName: () => undefined,
     connectionString: (h, prt, u, p) => `mongodb://${enc(u)}:${enc(p)}@${h}:${prt}`,

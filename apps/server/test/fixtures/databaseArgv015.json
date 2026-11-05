@@ -4560,7 +4560,7 @@
         "fn": "writeSecretFile",
         "prefix": "nd-db",
         "name": "database.env",
-        "contents": "MONGO_INITDB_ROOT_USERNAME=nine\nMONGO_INITDB_ROOT_PASSWORD=pw-secret\n"
+        "contents": "MONGO_INITDB_ROOT_USERNAME=nine\nMONGO_INITDB_ROOT_PASSWORD=pw-secret\nGLIBC_TUNABLES=glibc.pthread.rseq=1\n"
       },
       {
         "fn": "run",
@@ -4631,7 +4631,7 @@
         "fn": "writeSecretFile",
         "prefix": "nd-db",
         "name": "database.env",
-        "contents": "MONGO_INITDB_ROOT_USERNAME=nine\nMONGO_INITDB_ROOT_PASSWORD=pw-secret\n"
+        "contents": "MONGO_INITDB_ROOT_USERNAME=nine\nMONGO_INITDB_ROOT_PASSWORD=pw-secret\nGLIBC_TUNABLES=glibc.pthread.rseq=1\n"
       },
       {
         "fn": "run",

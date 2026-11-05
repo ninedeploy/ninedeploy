@@ -14,10 +14,12 @@ NineDeploy provides provisioning and lifecycle management for databases, encrypt
 | **Redis / Valkey** | 7.x | Low-latency in-memory caching and message pub/sub |
 | **KeyDB** | 6.3 (`eqalpha/keydb`) | Multithreaded Redis-compatible server (section 9) |
 | **Dragonfly** | 1.x (`ghcr.io/dragonflydb/dragonfly`) | Multi-core Redis-compatible in-memory store (section 9) |
-| **MongoDB** | 7.0 Community | Document-oriented NoSQL database |
+| **MongoDB** | 8.0 Community (pin `7.0` for the previous LTS) | Document-oriented NoSQL database; starts on Linux 6.19–7.0.13 too (below) |
 | **ClickHouse** | 25.8 (`clickhouse/clickhouse-server`) | High-performance columnar analytics; backups since G1.8 (section 10) |
 | **Meilisearch** | v1.53 (`getmeili/meilisearch`) | Full-text search engine; backups since G1.8 (section 10) |
 | **RabbitMQ** | 4 Management (`rabbitmq:4-management`) | Message broker with AMQP; definitions backups since G1.8 (section 10) |
+
+**MongoDB on Linux 6.19 through 7.0.13.** MongoDB 8.0 refuses to start on these kernels with the `mongo:8` image's own setting, `glibc.pthread.rseq=0`. The error is "Linux kernel versions 6.19 and newer has a known incompatibility" (SERVER-121912). The image's setting turns on TCMalloc's per-CPU caches, which crash there. NineDeploy starts MongoDB containers with `GLIBC_TUNABLES=glibc.pthread.rseq=1`, so TCMalloc uses per-thread caches, as in MongoDB 7. It starts on every kernel. Kernel 7.0.14 and later also fixes the incompatibility. An existing database picks the setting up the next time it is started (Stop, then Start); Restart keeps the container's old settings.
 
 ---
 

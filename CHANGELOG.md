@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MongoDB databases start on Linux 6.19 through 7.0.13.**
+  - **Problem:** on these kernels MongoDB 8.0 refuses to start ("Linux kernel versions 6.19 and newer has a known incompatibility", SERVER-121912). The cause is the `mongo:8` image's own `GLIBC_TUNABLES=glibc.pthread.rseq=0`, which turns on TCMalloc's per-CPU caches; they crash on these kernels.
+  - **Fix:** MongoDB containers now set `glibc.pthread.rseq=1`, which starts on every kernel. TCMalloc falls back to per-thread caches, as in MongoDB 7. This applies to databases on the panel host and on nodes.
+  - **Existing databases:** an existing MongoDB database picks this up the next time it is started, with Stop and then Start. Restart keeps the container's old settings.
 - **A restore verification whose database engine stopped is `unverifiable`, not `failed`.** This applies to every engine. Examples are a lost connection to the server, or a helper that is no longer running.
   - MariaDB aborts outright when its scratch space fills up. The helper's own log is now checked for that, so the verdict names the capacity limit.
   - MySQL's "The table … is full" is also recognized as the capacity limit.
