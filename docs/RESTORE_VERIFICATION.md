@@ -1,6 +1,6 @@
 # Isolated restore verification
 
-Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, Redis, Valkey and KeyDB. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
+Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, Redis, Valkey, KeyDB and Dragonfly. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
 - **Hosted acceptance, PostgreSQL:** passed again on cd3a2a6d.
 - **Hosted acceptance, MySQL and MariaDB:** passed on 1151cc49 ([run 41901004999](https://github.com/ninedeploy/ninedeploy/actions/runs/41901004999)). The run had 11 cases: PostgreSQL 5, `mysql:9.7` 3 and `mariadb:12.3` 3. Every source was untouched, the dump bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
 - **Hosted acceptance, every adapter:** passed on fc62112e ([run 41988812024](https://github.com/ninedeploy/ninedeploy/actions/runs/41988812024)). The run had 23 cases on the managed default images: PostgreSQL 5, plus a restore, a wrong-value refusal and an invalid-file refusal each for `mysql:9.7`, `mariadb:12.3`, `mongo:8.0`, `redis:8.8`, `valkey/valkey:9.1` and `eqalpha/keydb:x86_64_v6.3.4`. Every source was untouched, every dump's bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
@@ -8,7 +8,7 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
   - **Measured restores:** about 0.1 s for MongoDB, 0.25 s for MariaDB, 0.4 s for the Redis family and 0.75 s for MySQL. These are tiny fixtures, not an RTO commitment.
 - The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
 - **Recovery duration** is recorded and reported. Every restore verification stores the measured `restoreMs` (with `queryMs` and the total `durationMs`) on its drill row. The panel's Backups tab shows it next to the verdict ("restored in 1m 05s"). The CLI's pass line reads "the restore took N ms (M ms with setup and cleanup)". These are measurements of the bounded helper on the panel host, not an RTO commitment for a production restore.
-- Dragonfly, ClickHouse, Meilisearch and RabbitMQ, and PostgreSQL PITR, remain open, so R3 is not closed.
+- ClickHouse, Meilisearch and RabbitMQ, and PostgreSQL PITR, remain open, so R3 is not closed.
 
 **Redis, Valkey and KeyDB (2026-11-05)**
 - **Why a start gate.** These engines read their RDB file only while the server starts. The helper therefore replaces the image's entrypoint with a gate: PID 1 waits for `/data/.nd-start`, then becomes the server through `exec`. The flags are:
@@ -35,7 +35,7 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
   - **Failed:** a wrong expected value, a truncated RDB, and a file that is not an RDB.
   - **Cleanup:** every helper was confirmed removed.
 - **Hosted cohort:** the hosted fixture covers `redis:8.8`, `valkey/valkey:9.1` and `eqalpha/keydb:x86_64_v6.3.4`. Each source has a production-like `--requirepass` and is dumped with the panel's `dumpCommands` (`SAVE`) and RDB path.
-- **Dragonfly** is not covered yet. It loads its snapshot with its own rules.
+- **Dragonfly (2026-11-05)** uses the same gate and load poll, run as `dfly`. Its flags are the managed database's own snapshot flags: `--dir=/data --dbfilename=dump --df_snapshot_format=false`, so it loads `/data/dump.rdb`. Dragonfly reports every refused file as "Rdb load failed: …", which counts as `failed`. Its probe uses the image's `redis-cli`. A local real check on `ghcr.io/dragonflydb/dragonfly:v1.34.2` with a real `SAVE RDB` backup gave the right verdicts: restore passed; a wrong value, a truncated RDB and a non-RDB file were `failed`; cleanup was confirmed. The hosted fixture covers it too.
 
 **MongoDB (2026-11-04)**
 - **Helper:**

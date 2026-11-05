@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       restore_verification:
-        description: Verify isolated PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey and KeyDB restores, known data and source preservation
+        description: Verify isolated PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, KeyDB and Dragonfly restores, known data and source preservation
         type: boolean
         default: false
 

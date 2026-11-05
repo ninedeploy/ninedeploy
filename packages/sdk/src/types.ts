@@ -202,7 +202,7 @@ export interface BackupDrillResult {
 /**
  * R3: the known-data probe of a restore verification. The backup is restored
  * into an isolated, networkless helper of its own engine (PostgreSQL, MySQL,
- * MariaDB, MongoDB, Redis, Valkey or KeyDB) on the panel host and `query` runs there; the drill
+ * MariaDB, MongoDB, Redis, Valkey, KeyDB or Dragonfly) on the panel host and `query` runs there; the drill
  * passes only when the client's output (final newline removed) equals
  * `expected` exactly:
  * - PostgreSQL: psql unaligned, tuples only (`|` between columns).
@@ -211,7 +211,7 @@ export interface BackupDrillResult {
  * - MongoDB: `query` is a mongosh script; what mongosh prints for its last
  *   expression (`EJSON.stringify(…)` gives one stable line). The default
  *   database is `test`; address others with `db.getSiblingDB(…)`.
- * - Redis, Valkey, KeyDB: one command per line (sent on the client's stdin);
+ * - Redis, Valkey, KeyDB, Dragonfly: one command per line (sent on the client's stdin);
  *   replies print raw, one line per value or list element, an empty line for nil.
  * Neither value is stored, logged or audited. At most 16384 bytes each.
  */

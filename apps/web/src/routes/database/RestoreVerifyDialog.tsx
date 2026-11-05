@@ -5,8 +5,8 @@ import { useT } from '../../lib/i18n.js';
 import { useToast } from '../../components/Toast.js';
 import { Button, Field, Modal, Textarea } from '../../components/ui.js';
 
-const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB', redis: 'Redis', valkey: 'Valkey', keydb: 'KeyDB' };
-const REDIS_FAMILY = new Set(['redis', 'valkey', 'keydb']);
+const ENGINE_NAME: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB', redis: 'Redis', valkey: 'Valkey', keydb: 'KeyDB', dragonfly: 'Dragonfly' };
+const REDIS_FAMILY = new Set(['redis', 'valkey', 'keydb', 'dragonfly']);
 
 /**
  * R3: start an isolated restore verification of one PostgreSQL, MySQL,

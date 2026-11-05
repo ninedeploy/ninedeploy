@@ -5,7 +5,7 @@ import { capture, ExecOutputTooLargeError, ExecTimeoutError, run, sleep } from '
 import { streamFileToCommand } from './fileCommandInput.js';
 
 /** Engines with an isolated restore adapter. */
-export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb'] as const;
+export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly'] as const;
 export type RestoreVerificationEngine = (typeof RESTORE_VERIFICATION_ENGINES)[number];
 export function isRestoreVerificationEngine(engine: string): engine is RestoreVerificationEngine {
   return (RESTORE_VERIFICATION_ENGINES as readonly string[]).includes(engine);
@@ -91,8 +91,9 @@ const PG_CONNECTION = ['-h', '127.0.0.1', '-U', 'nine', '-d', 'app'];
 const START_MARKER = '/data/.nd-start';
 const START_GATE = `while [ ! -e ${START_MARKER} ]; do sleep 0.2; done; exec "$@"`;
 /** A Redis-family server that exits with one of these in its log refused the
- *  file itself: a wrong signature, a short or corrupt RDB, an unknown version. */
-const RDB_REJECTED = /Wrong signature trying to load DB|Short read or OOM loading DB|RDB ERROR DETECTED|Unexpected EOF reading RDB|Can't handle RDB format version|Bad file format|Fatal error loading the DB/i;
+ *  file itself: a wrong signature, a short or corrupt RDB, an unknown version.
+ *  Dragonfly reports every such refusal as "Rdb load failed: …". */
+const RDB_REJECTED = /Wrong signature trying to load DB|Short read or OOM loading DB|RDB ERROR DETECTED|Unexpected EOF reading RDB|Can't handle RDB format version|Bad file format|Fatal error loading the DB|Rdb load failed/i;
 /** The staged dump on the client's stdin. Positional arguments only: neither
  *  the path nor any byte of the dump ever becomes shell code. */
 const STDIN_FROM_FILE = 'f="$1"; shift; exec "$@" < "$f"';
@@ -157,11 +158,17 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
       query: (sql) => ['mongosh', '--quiet', '--norc', ...host, '--eval', sql],
     };
   }
-  if (engine === 'redis' || engine === 'valkey' || engine === 'keydb') {
-    const server = `${engine === 'redis' ? 'redis' : engine}-server`;
-    const cli = [`${engine === 'redis' ? 'redis' : engine}-cli`, '-h', '127.0.0.1'];
+  if (engine === 'redis' || engine === 'valkey' || engine === 'keydb' || engine === 'dragonfly') {
+    const dragonfly = engine === 'dragonfly';
+    // Dragonfly ships redis-cli; the forks ship their own server and client names.
+    const cli = [dragonfly || engine === 'redis' ? 'redis-cli' : `${engine}-cli`, '-h', '127.0.0.1'];
+    const server = dragonfly
+      // The managed database's own snapshot flags (`ENGINES.dragonfly`): it
+      // loads `/data/dump.rdb`, a Redis-format RDB, while it starts.
+      ? ['dragonfly', '--logtostderr', '--dir=/data', '--dbfilename=dump', '--df_snapshot_format=false', '--bind=127.0.0.1', '--port=6379']
+      : [`${engine}-server`, '--dir', '/data', '--dbfilename', 'dump.rdb', '--save', '', '--appendonly', 'no', '--bind', '127.0.0.1', '--port', '6379'];
     return {
-      user: engine,
+      user: dragonfly ? 'dfly' : engine,
       // The RDB file and the loaded dataset's working files.
       scratch: '/data',
       mounts: [],
@@ -169,8 +176,7 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
       // The image's entrypoint would start the server at once, before the
       // backup is in place: a gate holds PID 1 until the file is copied.
       entrypoint: 'sh',
-      args: ['-c', START_GATE, 'nd-restore', server, '--dir', '/data', '--dbfilename', 'dump.rdb',
-        '--save', '', '--appendonly', 'no', '--bind', '127.0.0.1', '--port', '6379'],
+      args: ['-c', START_GATE, 'nd-restore', ...server],
       pidsLimit: 128,
       readyAttempts: 30,
       readyTimeoutMs: 2000,

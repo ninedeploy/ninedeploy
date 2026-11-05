@@ -16,9 +16,11 @@ const MYSQL_FAMILY = [
 const MONGO_IMAGE = 'mongo:8.0';
 /** The Redis family's default images; hosted runners are x86_64 (KeyDB's tags are per architecture). */
 const REDIS_FAMILY = [
-  { engine: 'redis', image: 'redis:8.8', server: 'redis-server', cli: 'redis-cli' },
-  { engine: 'valkey', image: 'valkey/valkey:9.1', server: 'valkey-server', cli: 'valkey-cli' },
-  { engine: 'keydb', image: 'eqalpha/keydb:x86_64_v6.3.4', server: 'keydb-server', cli: 'keydb-cli' },
+  { engine: 'redis', image: 'redis:8.8', server: 'redis-server', cli: 'redis-cli', flags: ['--dir', '/data'] },
+  { engine: 'valkey', image: 'valkey/valkey:9.1', server: 'valkey-server', cli: 'valkey-cli', flags: ['--dir', '/data'] },
+  { engine: 'keydb', image: 'eqalpha/keydb:x86_64_v6.3.4', server: 'keydb-server', cli: 'keydb-cli', flags: ['--dir', '/data'] },
+  // Dragonfly ships redis-cli and needs the managed snapshot flags to write /data/dump.rdb.
+  { engine: 'dragonfly', image: 'ghcr.io/dragonflydb/dragonfly:v1.34.2', server: 'dragonfly', cli: 'redis-cli', flags: ['--logtostderr', '--dir=/data', '--dbfilename=dump', '--df_snapshot_format=false'] },
 ] as const;
 
 // Every guard precedes the first Docker call. Never run against a local or self-hosted daemon.
@@ -216,7 +218,7 @@ try {
     assert.equal((await mongoEval("db.getSiblingDB('shop').orders.findOne({ _id: 1 }).v")).trim(), 'after');
     assert.equal(await hash(mongoDump), digest);
   }
-  for (const { engine, image, server, cli } of REDIS_FAMILY) {
+  for (const { engine, image, server, cli, flags } of REDIS_FAMILY) {
     // A password like production's (`--requirepass`), the panel's own SAVE
     // argv, and its fixed RDB path.
     const redisSource = `nd-restore-source-${engine}-${owner}`;
@@ -229,7 +231,7 @@ try {
     phase = `${engine}-source-create`;
     familySources.push(redisSource);
     await docker(['run', '-d', '--name', redisSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none',
-      '--entrypoint', server, redisImage, '--requirepass', redisPassword, '--dir', '/data']);
+      '--entrypoint', server, redisImage, '--requirepass', redisPassword, ...flags]);
     phase = `${engine}-source-readiness`;
     let redisReady = false;
     for (let attempt = 0; attempt < 60; attempt++) {
@@ -277,7 +279,7 @@ try {
   report.failure = phase;
   // Only fixed synthetic source commands are eligible: never retain the
   // verifier's SQL, data, probe output or any production database diagnostic.
-  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness', 'redis-image-pull', 'valkey-image-pull', 'keydb-image-pull', 'redis-source-create', 'valkey-source-create', 'keydb-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
+  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness', 'redis-image-pull', 'valkey-image-pull', 'keydb-image-pull', 'redis-source-create', 'valkey-source-create', 'keydb-source-create', 'dragonfly-image-pull', 'dragonfly-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
 } finally {
   let cleanup = true;
   for (const owned of [...(created ? [name] : []), ...familySources]) {

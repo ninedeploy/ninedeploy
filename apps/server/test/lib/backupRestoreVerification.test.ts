@@ -378,7 +378,7 @@ describe('crashed restore helpers are swept', () => {
 
 describe('Redis-family restore helpers (the server loads its RDB at startup)', () => {
   const gate = 'while [ ! -e /data/.nd-start ]; do sleep 0.2; done; exec "$@"';
-  const run = (engine: 'redis' | 'valkey' | 'keydb' = 'redis') => verifyRestore(engine, { file, image: `${engine}:latest`, query: 'GET greeting', expected: 'known-row' });
+  const run = (engine: 'redis' | 'valkey' | 'keydb' | 'dragonfly' = 'redis') => verifyRestore(engine, { file, image: `${engine}:latest`, query: 'GET greeting', expected: 'known-row' });
   it('copies the RDB into a gated, hardened helper, releases the server, waits for the load and probes on stdin', async () => {
     const result = await run();
     expect(result).toMatchObject({ status: 'passed', engine: 'redis', format: 'rdb', queryMatched: true, cleanupConfirmed: true });
@@ -434,6 +434,21 @@ describe('Redis-family restore helpers (the server loads its RDB at startup)', (
   it('is unverifiable when the server exits while loading without saying the file was bad', async () => {
     state.fail = 'rdb-exit'; state.oom = 'stopped'; state.logs = ['1:M 05 Nov 2026 * Server initialized'];
     expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+  });
+  it('runs Dragonfly as dfly with the managed snapshot flags and probes it with redis-cli', async () => {
+    expect(await run('dragonfly')).toMatchObject({ status: 'passed', engine: 'dragonfly', format: 'rdb' });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    expect(create.slice(create.indexOf('--user'), create.indexOf('--user') + 2)).toEqual(['--user', 'dfly']);
+    expect(create.slice(create.indexOf('nd-restore') + 1)).toEqual(['dragonfly', '--logtostderr', '--dir=/data', '--dbfilename=dump',
+      '--df_snapshot_format=false', '--bind=127.0.0.1', '--port=6379']);
+    expect(state.calls.find(args => args.includes('restore-copy'))?.at(-1)).toBe('/data/dump.rdb');
+    expect(state.calls.find(args => args.at(-1) === 'ping')).toEqual(['exec', state.name, 'redis-cli', '-h', '127.0.0.1', 'ping']);
+    expect(state.stdin).toEqual(['GET greeting\n']);
+  });
+  it('fails a Dragonfly backup whose RDB it refused ("Rdb load failed")', async () => {
+    state.fail = 'rdb-exit'; state.oom = 'stopped';
+    state.logs = ['E20261105 07:44:10.807642 26 server_family.cc:1380] Rdb load failed: Wrong signature while trying to load from rdb file'];
+    expect(await run('dragonfly')).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore' });
   });
   it('fails a probe mismatch on a loaded dataset without exposing it', async () => {
     state.fail = 'mismatch';

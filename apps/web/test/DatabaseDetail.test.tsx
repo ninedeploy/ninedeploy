@@ -381,6 +381,7 @@ describe('DatabaseDetail', () => {
     ['redis', 'Redis'],
     ['valkey', 'Valkey'],
     ['keydb', 'KeyDB'],
+    ['dragonfly', 'Dragonfly'],
   ])('explains the %s helper and its command-line output in the verification dialog', async (engine, label) => {
     mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine, name: `cache-${engine}` } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
