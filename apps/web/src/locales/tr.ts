@@ -6136,6 +6136,8 @@ export const TR: Readonly<Record<string, string>> = {
   'No output yet.': 'Henüz çıktı yok.',
   // R3: isolated restore verification of a PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey or KeyDB backup.
   'One command per line, for example: GET greeting': 'Her satırda bir komut, örneğin: GET greeting',
+  'An API path, for example: /indexes/movies/documents/1?fields=title': 'Bir API yolu, örneğin: /indexes/movies/documents/1?fields=title',
+  'Exactly the JSON body a GET on that path returns. Search results carry a processing time, so prefer documents and stats.': 'O yola yapılan bir GET isteğinin döndürdüğü JSON gövdesinin birebir aynısı. Arama sonuçları bir işlem süresi içerir; bu yüzden belgeleri ve istatistikleri tercih edin.',
   'Exactly what clickhouse-client prints (TabSeparated): a tab between columns, one row per line, NULL as \\N. Unqualified table names resolve in the app database; leave empty for no rows.': 'clickhouse-client\'ın yazdırdığının birebir aynısı (TabSeparated): sütunlar arasında sekme, her satır ayrı bir satırda, NULL değerler \\N olarak. Veritabanı belirtilmeyen tablo adları app veritabanında aranır; satır yoksa boş bırakın.',
   'Exactly what the command-line client prints: one line per value or list element, an empty line for nil.': 'Komut satırı istemcisinin yazdırdığının birebir aynısı: her değer ya da liste öğesi için bir satır, nil için boş bir satır.',
   'restored in {duration}': '{duration} içinde geri yüklendi',

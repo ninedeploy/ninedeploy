@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       restore_verification:
-        description: Verify isolated PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Redis, Valkey, KeyDB and Dragonfly restores, known data and source preservation
+        description: Verify isolated PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB and Dragonfly restores, known data and source preservation
         type: boolean
         default: false
 
@@ -72,7 +72,7 @@ jobs:
       - name: Verify Node security baseline
         run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
       - run: pnpm install --frozen-lockfile
-      - name: Verify real isolated PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse and Redis-family restores and queries
+      - name: Verify real isolated PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch and Redis-family restores and queries
         run: pnpm --filter @ninedeploy/server exec tsx ../../scripts/smoke-backup-restore.mts --proof=.temp_files/restore-verification
       - name: Preserve public restore receipts only
         if: always()

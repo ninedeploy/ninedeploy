@@ -202,7 +202,7 @@ export interface BackupDrillResult {
 /**
  * R3: the known-data probe of a restore verification. The backup is restored
  * into an isolated, networkless helper of its own engine (PostgreSQL, MySQL,
- * MariaDB, MongoDB, ClickHouse, Redis, Valkey, KeyDB or Dragonfly) on the panel host and `query` runs there; the drill
+ * MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB or Dragonfly) on the panel host and `query` runs there; the drill
  * passes only when the client's output (final newline removed) equals
  * `expected` exactly:
  * - PostgreSQL: psql unaligned, tuples only (`|` between columns).
@@ -213,6 +213,8 @@ export interface BackupDrillResult {
  *   database is `test`; address others with `db.getSiblingDB(…)`.
  * - ClickHouse: clickhouse-client TabSeparated (a tab between columns, NULL as
  *   `\N`); unqualified names resolve in the `app` database.
+ * - Meilisearch: `query` is an API path (e.g. `/indexes/movies/documents/1`);
+ *   `expected` is the JSON body a GET on it returns.
  * - Redis, Valkey, KeyDB, Dragonfly: one command per line (sent on the client's stdin);
  *   replies print raw, one line per value or list element, an empty line for nil.
  * Neither value is stored, logged or audited. At most 16384 bytes each.

@@ -395,6 +395,18 @@ describe('DatabaseDetail', () => {
     expect(dialog).not.toHaveTextContent('SELECT count(*)');
   });
 
+  it('explains the Meilisearch helper: an API path probe and its JSON body', async () => {
+    mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'meilisearch', name: 'search' } as any);
+    mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);
+    mockOf(api.databases.drills).mockResolvedValue([] as any);
+    renderRoute(<DatabaseDetail />, { path: '/databases/:id', route: '/databases/1?tab=backups' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify restore of backup 101' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Verify restore of backup #101' });
+    expect(dialog).toHaveTextContent('restored into an isolated Meilisearch container');
+    expect(dialog).toHaveTextContent('An API path, for example: /indexes/movies/documents/1?fields=title');
+    expect(dialog).toHaveTextContent('Exactly the JSON body a GET on that path returns');
+  });
+
   it('explains the ClickHouse helper and its TabSeparated output', async () => {
     mockOf(api.databases.get).mockResolvedValue({ ...sampleDb, engine: 'clickhouse', name: 'analytics' } as any);
     mockOf(api.backups.list).mockResolvedValue(sampleBackups as any);

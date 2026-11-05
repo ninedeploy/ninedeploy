@@ -40,8 +40,9 @@ vi.mock('../../src/lib/exec.js', () => {
         if (state.fail === 'query') throw new Error('SECRET_QUERY_RESULT');
         return state.fail === 'mismatch' ? 'wrong private value\n' : 'known-row\n';
       }
+      // The load poll's "is the gated server still running?" check.
       if (args[0] === 'inspect' && args.join(' ') === `inspect --format {{.State.Running}} ${state.name}`) {
-        return `${state.fail !== 'rdb-exit'}\n`;
+        return `${state.fail !== 'rdb-exit' && state.fail !== 'dump-exit'}\n`;
       }
       if (args[0] === 'image') {
         if (state.fail === 'image') throw new Error('private daemon error');
@@ -58,6 +59,17 @@ vi.mock('../../src/lib/exec.js', () => {
         if (state.fail === 'copy') throw new Error('copy error');
       }
       if ((args.includes('pg_isready') || args.includes('ping') || args.includes(MONGO_PING)) && state.fail === 'ready') throw new Error('not ready');
+      // Meilisearch: the import poll (`curl … /health`) and the GET probe.
+      if (args[0] === 'exec' && args.includes('curl')) {
+        if (args.at(-1)?.endsWith('/health')) {
+          state.loadPolls++;
+          if (state.fail === 'dump-exit') throw new Error('Error response from daemon: container is not running');
+          // Still importing on the first poll: no answer yet.
+          return state.loadPolls === 1 ? '' : '{"status":"available"}';
+        }
+        if (state.fail === 'query') throw new Error('SECRET_QUERY_RESULT');
+        return state.fail === 'mismatch' ? 'wrong private value' : 'known-row';
+      }
       // ClickHouse: readiness, RESTORE and the probe all go through clickhouse-client.
       if (args[0] === 'exec' && args.includes('clickhouse-client')) {
         if (args.at(-1) === 'SELECT 1') {
@@ -387,6 +399,54 @@ describe('crashed restore helpers are swept', () => {
     expect(await pruneRestoreVerificationHelpers(60 * 60 * 1000, now)).toBe(1);
     expect(state.calls.filter(args => args[0] === 'rm')).toEqual([['rm', '-f', '-v', 'e'.repeat(64)]]);
     expect(state.calls.some(args => args.includes('not-a-container-id'))).toBe(false);
+  });
+});
+
+describe('Meilisearch restore helper (the dump is imported at startup)', () => {
+  const path = '/indexes/movies/documents/1?fields=title';
+  const run = (query = path) => verifyRestore('meilisearch', { file, image: 'getmeili/meilisearch:v1.53', query, expected: 'known-row' });
+  it('copies the dump into a gated helper, releases the import, waits for health and GETs the probe path', async () => {
+    const result = await run();
+    expect(result).toMatchObject({ status: 'passed', engine: 'meilisearch', format: 'archive', queryMatched: true, cleanupConfirmed: true });
+    const create = state.calls.find(args => args[0] === 'create')!;
+    for (const flag of ['--read-only', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '--cpus']) expect(create).toContain(flag);
+    // The image has no service user: an unprivileged id.
+    expect(create.slice(create.indexOf('--user'), create.indexOf('--user') + 2)).toEqual(['--user', '65534:65534']);
+    const tmpfs = create.flatMap((arg, index) => (create[index - 1] === '--tmpfs' ? [arg] : []));
+    expect(tmpfs).toEqual(['/meili_data:rw,nosuid,nodev,mode=1777,size=1024m', '/tmp:rw,nosuid,nodev,mode=1777,size=64m']);
+    // No master key and no MEILI_* settings: the helper serves the probe only.
+    expect(create.some(arg => arg.startsWith('MEILI_'))).toBe(false);
+    expect(create.slice(create.indexOf(state.image))).toEqual([state.image, '-c', 'while [ ! -e /meili_data/.nd-start ]; do sleep 0.2; done; exec "$@"', 'nd-restore',
+      'meilisearch', '--db-path', '/meili_data/data.ms', '--import-dump', '/meili_data/nd-restore.dump', '--http-addr', '127.0.0.1:7700', '--no-analytics']);
+    const copy = state.calls.findIndex(args => args.includes('restore-copy'));
+    const release = state.calls.findIndex(args => args.join(' ') === `exec ${state.name} touch /meili_data/.nd-start`);
+    expect(state.calls[copy]?.at(-1)).toBe('/meili_data/nd-restore.dump');
+    expect(copy).toBeLessThan(release);
+    // An empty answer is not healthy yet: the import is polled until it is.
+    expect(state.loadPolls).toBe(2);
+    expect(state.calls.find(args => args.at(-1)?.endsWith('/health'))).toEqual(['exec', state.name, 'curl', '-s', 'http://127.0.0.1:7700/health']);
+    expect(state.calls.find(args => args.at(-1)?.includes('/indexes/'))).toEqual(['exec', state.name, 'curl', '-s', '-g', '--max-time', '10', `http://127.0.0.1:7700${path}`]);
+  });
+  it('fails a dump Meilisearch refused to import, keeping no log text', async () => {
+    state.fail = 'dump-exit'; state.oom = 'stopped';
+    state.logs = ['Error: failed to iterate over archive', '', 'Caused by:', '    invalid gzip header'];
+    const result = await run();
+    expect(result).toMatchObject({ status: 'failed', error: 'Restore verification failed during restore', restoreMs: null, cleanupConfirmed: true });
+    expect(JSON.stringify(result)).not.toMatch(/gzip|iterate/);
+  });
+  it('is unverifiable when Meilisearch exits during the import without naming the dump', async () => {
+    state.fail = 'dump-exit'; state.oom = 'stopped'; state.logs = ['INFO starting'];
+    expect(await run()).toMatchObject({ status: 'unverifiable', error: 'Restore verification could not complete during restore' });
+  });
+  it.each(['GET /indexes', 'indexes/movies', '/indexes/movies documents', ''])('refuses %j as a probe before any Docker work: it is not an API path', async (query) => {
+    await expect(run(query)).rejects.toThrow();
+    expect(state.calls).toEqual([]);
+  });
+  it('fails a probe mismatch without exposing the response', async () => {
+    state.fail = 'mismatch';
+    const result = await run();
+    expect(result).toMatchObject({ status: 'failed', queryMatched: false });
+    expect(JSON.stringify(result)).not.toMatch(/wrong private value|indexes\/movies/);
   });
 });
 

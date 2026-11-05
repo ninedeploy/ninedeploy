@@ -155,7 +155,8 @@ const restoreCheck = vi.hoisted(() => ({
   blockCleanup: false,
 }));
 vi.mock('../../src/lib/backupRestoreVerification.js', () => ({
-  isRestoreVerificationEngine: (engine: string) => ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse'].includes(engine),
+  isRestoreVerificationEngine: (engine: string) => ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse', 'meilisearch'].includes(engine),
+  restoreProbeProblem: (engine: string, query: string) => (engine === 'meilisearch' && !query.startsWith('/') ? 'A Meilisearch probe is an API path' : null),
   verifyRestore: vi.fn(async (engine: string, input: { file: string; image: string; query: string; expected: string }) => {
     restoreCheck.calls.push(input); restoreCheck.engines.push(engine);
     expect(existsSync(input.file)).toBe(true);
@@ -367,7 +368,22 @@ describe('real restore drill staging and history', () => {
   it('refuses an unsupported engine before inserting history or invoking an engine', async () => {
     seed('rabbitmq', join(TMP, 'not-read')); complete();
     const onAdmitted = vi.fn();
-    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Redis, Valkey, KeyDB or Dragonfly/);
+    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB or Dragonfly/);
+    expect(dbState.drills.size).toBe(0); expect(restoreCheck.calls).toEqual([]);
+    expect(onAdmitted).not.toHaveBeenCalled();
+  });
+  it('verifies a Meilisearch dump with an API-path probe in its own engine image', async () => {
+    const file = await dumpFile('restore-meili.dump', 'meilisearch dump fixture'); seed('meilisearch', file); complete();
+    const meiliProbe = { query: '/indexes/movies/documents/1?fields=title', expected: '{"title":"before"}' };
+    const result = await runBackupDrill(buildDb(), 1, 1, meiliProbe);
+    expect(result.status).toBe('passed');
+    expect(restoreCheck.engines).toEqual(['meilisearch']);
+    expect(restoreCheck.calls).toEqual([{ file, image: 'getmeili/meilisearch:v1.53', ...meiliProbe }]);
+  });
+  it('refuses a probe the engine cannot take before admitting it (no row, no verifier)', async () => {
+    seed('meilisearch', join(TMP, 'not-read')); complete();
+    const onAdmitted = vi.fn();
+    await expect(runBackupDrill(buildDb(), 1, 1, probe, onAdmitted)).rejects.toThrow(/Meilisearch probe is an API path/);
     expect(dbState.drills.size).toBe(0); expect(restoreCheck.calls).toEqual([]);
     expect(onAdmitted).not.toHaveBeenCalled();
   });

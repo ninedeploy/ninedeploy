@@ -16,7 +16,7 @@
  * image (r356), never as host binaries.
  *
  * R3's optional restore probe instead restores into an isolated real
- * PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse or Redis-family helper and records the known-data verdict. The public drill route
+ * PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch or Redis-family helper and records the known-data verdict. The public drill route
  * admits it asynchronously (`onAdmitted`), for database admins only.
  * The drill never deletes or modifies the source backup.
  * Encrypted envelopes are decrypted to a sibling temp file
@@ -38,7 +38,7 @@ import { fetchRemoteBackup, type RemoteBackupRef } from './backupRemote.js';
 import { decryptBackupFile, isEncryptedBackupFile } from './backupCrypto.js';
 import { capture, ExecTimeoutError, run } from './exec.js';
 import { ENGINES, readBackupBytes } from '../engine/database.js';
-import { isRestoreVerificationEngine, verifyRestore, type RestoreProbe } from './backupRestoreVerification.js';
+import { isRestoreVerificationEngine, restoreProbeProblem, verifyRestore, type RestoreProbe } from './backupRestoreVerification.js';
 import { ensureDockerImage } from './dockerPull.js';
 
 /** Every status a drill row can hold (pending/running/passed/failed, and
@@ -101,11 +101,15 @@ export async function runBackupDrill(
     throw new Error(`Backup ${backupId} does not belong to database ${databaseId}`);
   }
   if (restoreProbe) {
-    if (!isRestoreVerificationEngine(dRow.engine)) throw new Error('Isolated restore verification currently requires PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Redis, Valkey, KeyDB or Dragonfly');
+    if (!isRestoreVerificationEngine(dRow.engine)) throw new Error('Isolated restore verification currently requires PostgreSQL, MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB or Dragonfly');
     if (bRow.status !== 'completed' || bRow.scope !== 'db') throw new Error('Restore verification requires a completed database backup');
     if (!restoreProbe.query.trim() || Buffer.byteLength(restoreProbe.query) > 16_384 || Buffer.byteLength(restoreProbe.expected) > 16_384) {
       throw new Error('Restore verification requires a bounded query and expected result');
     }
+    // An engine-specific shape (a Meilisearch probe is an API path): refused
+    // here, before admission, as a 400 rather than after it as a verdict.
+    const problem = restoreProbeProblem(dRow.engine, restoreProbe.query);
+    if (problem) throw new Error(problem);
   }
 
   // Insert a 'running' row first so the operator sees the

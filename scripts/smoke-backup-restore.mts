@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { capture, sleep } from '../apps/server/src/lib/exec.js';
 import { verifyPostgresRestore, verifyRestore, type RestoreVerificationResult } from '../apps/server/src/lib/backupRestoreVerification.js';
 import { dumpCommands } from '../apps/server/src/lib/databaseCommands.js';
-import { backupClickhouse } from '../apps/server/src/engine/extraEngineBackups.js';
+import { backupClickhouse, backupMeilisearch } from '../apps/server/src/engine/extraEngineBackups.js';
 
 /** The managed engines' default images (ENGINES in engine/database.ts). */
 const MYSQL_FAMILY = [
@@ -17,6 +17,7 @@ const MYSQL_FAMILY = [
 const MONGO_IMAGE = 'mongo:8.0';
 /** The Redis family's default images; hosted runners are x86_64 (KeyDB's tags are per architecture). */
 const CLICKHOUSE_IMAGE = 'clickhouse/clickhouse-server:25.8';
+const MEILISEARCH_IMAGE = 'getmeili/meilisearch:v1.53';
 const REDIS_FAMILY = [
   { engine: 'redis', image: 'redis:8.8', server: 'redis-server', cli: 'redis-cli', flags: ['--dir', '/data'] },
   { engine: 'valkey', image: 'valkey/valkey:9.1', server: 'valkey-server', cli: 'valkey-cli', flags: ['--dir', '/data'] },
@@ -40,7 +41,7 @@ const docker = (args: string[], timeoutMs = 30_000) => capture('docker', args, {
 const query = (sql: string) => docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '-c', sql]);
 const hash = async (file: string) => createHash('sha256').update(await readFile(file)).digest('hex');
 const report: { source: string | undefined; publicApi: boolean; engines: string[]; images: Record<string, string>; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string; cleanupError?: string } = {
-  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo', 'clickhouse', ...REDIS_FAMILY.map(f => f.engine)], images: {}, cases: [], sourceUntouched: false,
+  source, publicApi: false, engines: ['postgres', ...MYSQL_FAMILY.map(f => f.engine), 'mongo', 'clickhouse', 'meilisearch', ...REDIS_FAMILY.map(f => f.engine)], images: {}, cases: [], sourceUntouched: false,
   backupBytesUnchanged: false, helperInventoryUnchanged: false, cleanup: false,
 };
 let scratch: string | undefined;
@@ -269,6 +270,64 @@ try {
     assert.equal((await chClient("SELECT v FROM app.sentinel WHERE id = 1")).trim(), 'after');
     assert.equal(await hash(chDump), digest);
   }
+  {
+    // Meilisearch: a master key like a managed database's, and the panel's
+    // own `backupMeilisearch` (POST /dumps, then the dump file).
+    const meiliSource = `nd-restore-source-meilisearch-${owner}`;
+    const meiliKey = randomUUID().replaceAll('-', '');
+    const meiliApi = (...args: string[]) => docker(['exec', meiliSource, 'curl', '-s', '-H', `Authorization: Bearer ${meiliKey}`, '-H', 'Content-Type: application/json', ...args]);
+    const waitForTask = async (body: string) => {
+      const uid = (JSON.parse(body) as { taskUid?: number }).taskUid;
+      assert.equal(typeof uid, 'number');
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const task = JSON.parse(await meiliApi(`http://localhost:7700/tasks/${uid}`)) as { status?: string };
+        if (task.status === 'succeeded') return;
+        assert.notEqual(task.status, 'failed');
+        await sleep(1000);
+      }
+      assert.fail('Meilisearch task did not finish');
+    };
+    phase = 'meilisearch-image-pull';
+    await docker(['pull', MEILISEARCH_IMAGE], 300_000);
+    const meiliImage = (await docker(['image', 'inspect', '--format', '{{.Id}}', MEILISEARCH_IMAGE])).trim();
+    assert.match(meiliImage, /^sha256:[a-f0-9]{64}$/); report.images.meilisearch = meiliImage;
+    phase = 'meilisearch-source-create';
+    familySources.push(meiliSource);
+    await docker(['run', '-d', '--name', meiliSource, '--label', `ninedeploy.restore-proof=${owner}`, '--network', 'none',
+      '-e', `MEILI_MASTER_KEY=${meiliKey}`, '-e', 'MEILI_NO_ANALYTICS=true', meiliImage]);
+    phase = 'meilisearch-source-readiness';
+    let meiliReady = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      try { if ((await docker(['exec', meiliSource, 'curl', '-s', 'http://localhost:7700/health'])).includes('"available"')) { meiliReady = true; break; } } catch { /* not ready yet */ }
+      await sleep(1000);
+    }
+    assert.equal(meiliReady, true, 'meilisearch source did not become ready');
+    phase = 'meilisearch-source-seed';
+    await waitForTask(await meiliApi('-X', 'POST', 'http://localhost:7700/indexes/movies/documents', '--data', '[{"id":1,"title":"before"},{"id":2,"title":null}]'));
+    phase = 'meilisearch-source-dump';
+    const meiliDump = join(scratch, 'meilisearch.dump'); files.push(meiliDump);
+    await backupMeilisearch({ cn: meiliSource, password: meiliKey }, meiliDump, () => undefined);
+    const digest = await hash(meiliDump);
+    phase = 'meilisearch-source-mutate';
+    await waitForTask(await meiliApi('-X', 'PUT', 'http://localhost:7700/indexes/movies/documents', '--data', '[{"id":1,"title":"after"}]'));
+    const probe = '/indexes/movies/documents/1?fields=title';
+    phase = 'meilisearch-restore';
+    const restored = await verifyRestore('meilisearch', { file: meiliDump, image: meiliImage, query: probe, expected: '{"title":"before"}' });
+    report.cases.push({ case: phase, verification: restored });
+    assert.equal(restored.status, 'passed'); assert.equal(restored.cleanupConfirmed, true);
+    phase = 'meilisearch-wrong-data-refusal';
+    const wrong = await verifyRestore('meilisearch', { file: meiliDump, image: meiliImage, query: probe, expected: '{"title":"after"}' });
+    report.cases.push({ case: phase, verification: wrong }); assert.equal(wrong.status, 'failed');
+    phase = 'meilisearch-truncated-dump-refusal';
+    const truncated = join(scratch, 'meilisearch-truncated.dump'); files.push(truncated);
+    const dumpBytes = await readFile(meiliDump);
+    await writeFile(truncated, dumpBytes.subarray(0, Math.floor(dumpBytes.length / 2)), { mode: 0o600 });
+    const refused = await verifyRestore('meilisearch', { file: truncated, image: meiliImage, query: probe, expected: '{"title":"before"}' });
+    report.cases.push({ case: phase, verification: refused }); assert.equal(refused.status, 'failed');
+    phase = 'meilisearch-source-verification';
+    assert.equal((await meiliApi('http://localhost:7700/indexes/movies/documents/1?fields=title')).trim(), '{"title":"after"}');
+    assert.equal(await hash(meiliDump), digest);
+  }
   for (const { engine, image, server, cli, flags } of REDIS_FAMILY) {
     // A password like production's (`--requirepass`), the panel's own SAVE
     // argv, and its fixed RDB path.
@@ -330,7 +389,7 @@ try {
   report.failure = phase;
   // Only fixed synthetic source commands are eligible: never retain the
   // verifier's SQL, data, probe output or any production database diagnostic.
-  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness', 'redis-image-pull', 'valkey-image-pull', 'keydb-image-pull', 'redis-source-create', 'valkey-source-create', 'keydb-source-create', 'dragonfly-image-pull', 'dragonfly-source-create', 'clickhouse-image-pull', 'clickhouse-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
+  if (['image-pull', 'source-create', 'source-dump-plain', 'source-dump-custom', 'mysql-image-pull', 'mysql-source-create', 'mariadb-image-pull', 'mariadb-source-create', 'mongo-image-pull', 'mongo-source-create', 'mongo-source-readiness', 'redis-image-pull', 'valkey-image-pull', 'keydb-image-pull', 'redis-source-create', 'valkey-source-create', 'keydb-source-create', 'dragonfly-image-pull', 'dragonfly-source-create', 'clickhouse-image-pull', 'clickhouse-source-create', 'meilisearch-image-pull', 'meilisearch-source-create'].includes(phase) && error instanceof Error) report.setupError = error.message.slice(-2500);
 } finally {
   let cleanup = true;
   for (const owned of [...(created ? [name] : []), ...familySources]) {

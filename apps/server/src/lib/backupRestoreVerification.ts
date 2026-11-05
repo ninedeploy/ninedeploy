@@ -5,7 +5,7 @@ import { capture, ExecOutputTooLargeError, ExecTimeoutError, run, sleep } from '
 import { streamFileToCommand } from './fileCommandInput.js';
 
 /** Engines with an isolated restore adapter. */
-export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse'] as const;
+export const RESTORE_VERIFICATION_ENGINES = ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly', 'clickhouse', 'meilisearch'] as const;
 export type RestoreVerificationEngine = (typeof RESTORE_VERIFICATION_ENGINES)[number];
 export function isRestoreVerificationEngine(engine: string): engine is RestoreVerificationEngine {
   return (RESTORE_VERIFICATION_ENGINES as readonly string[]).includes(engine);
@@ -77,22 +77,28 @@ interface HelperProfile {
    *   `DUMP`), after `prepare` (e.g. creating the directory the engine reads
    *   backups from).
    * - `preload`: the engine only reads its data file at startup. The dump is
-   *   copied to `path`, then `START_MARKER` releases the gated server, which
-   *   either answers `loaded` with `PONG` or exits. An exit whose log matches
-   *   `rejects` is the backup's failure.
+   *   copied to `path`, then the `marker` file releases the gated server
+   *   (`startGate`), which either answers `loaded` with output matching
+   *   `answer` or exits. An exit whose log matches `rejects` is the backup's
+   *   failure.
    */
   restore:
     | { stdin: string[] }
     | { file(format: 'plain' | 'custom'): string[]; path?: string; prepare?: string[] }
-    | { preload: { path: string; loaded: string[]; rejects: RegExp } };
+    | { preload: { path: string; marker: string; loaded: string[]; answer: RegExp; rejects: RegExp } };
   query(sql: string): string[];
   /** The probe goes to the client on stdin instead of argv (redis-cli reads commands per line). */
   queryOnStdin?: boolean;
+  /** Why this engine's client cannot take `query` at all, or null. Checked before any work. */
+  queryProblem?(query: string): string | null;
 }
 const PG_CONNECTION = ['-h', '127.0.0.1', '-U', 'nine', '-d', 'app'];
-/** Redis-family start gate: PID 1 waits for this marker, then becomes the server. */
-const START_MARKER = '/data/.nd-start';
-const START_GATE = `while [ ! -e ${START_MARKER} ]; do sleep 0.2; done; exec "$@"`;
+/** A preloading engine's start gate: PID 1 waits for `marker`, then becomes the server. */
+const startGate = (marker: string) => `while [ ! -e ${marker} ]; do sleep 0.2; done; exec "$@"`;
+/** A Meilisearch probe is a GET path on its own HTTP API, appended to the base URL. */
+const MEILI_PROBE = /^\/[\x21-\x7e]*$/;
+/** A Meilisearch that exits with one of these in its log refused the dump itself. */
+const MEILI_DUMP_REJECTED = /failed to iterate over archive|invalid gzip header|unexpected end of file|failed to import the dump|dump .*(version|corrupt|invalid)/i;
 /** A Redis-family server that exits with one of these in its log refused the
  *  file itself: a wrong signature, a short or corrupt RDB, an unknown version.
  *  Dragonfly reports every such refusal as "Rdb load failed: …". */
@@ -211,17 +217,48 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
       // The image's entrypoint would start the server at once, before the
       // backup is in place: a gate holds PID 1 until the file is copied.
       entrypoint: 'sh',
-      args: ['-c', START_GATE, 'nd-restore', ...server],
+      args: ['-c', startGate('/data/.nd-start'), 'nd-restore', ...server],
       pidsLimit: 128,
       readyAttempts: 30,
       readyTimeoutMs: 2000,
       // Only that the gated helper runs; the server itself starts in `restore`.
       ready: ['true'],
-      restore: { preload: { path: '/data/dump.rdb', loaded: [...cli, 'ping'], rejects: RDB_REJECTED } },
+      // LOADING until the dataset is in memory, then PONG.
+      restore: { preload: { path: '/data/dump.rdb', marker: '/data/.nd-start', loaded: [...cli, 'ping'], answer: /^PONG$/, rejects: RDB_REJECTED } },
       // One command per line on stdin. Replies print raw: one line per value
       // or array element, an empty line for nil.
       query: () => cli,
       queryOnStdin: true,
+    };
+  }
+  if (engine === 'meilisearch') {
+    const api = 'http://127.0.0.1:7700';
+    return {
+      // The image has no service user; any unprivileged id owns the tmpfs data.
+      user: '65534:65534',
+      scratch: '/meili_data',
+      mounts: ['/tmp:rw,nosuid,nodev,mode=1777,size=64m'],
+      env: [],
+      // A dump is imported only at startup (`--import-dump`), so the server
+      // waits behind the gate until the dump is in place. No master key: the
+      // helper has no network and serves the probe only.
+      entrypoint: 'sh',
+      args: ['-c', startGate('/meili_data/.nd-start'), 'nd-restore', 'meilisearch',
+        '--db-path', '/meili_data/data.ms', '--import-dump', '/meili_data/nd-restore.dump', '--http-addr', '127.0.0.1:7700', '--no-analytics'],
+      pidsLimit: 256,
+      readyAttempts: 30,
+      readyTimeoutMs: 2000,
+      ready: ['true'],
+      // The import finishes before the server answers /health.
+      restore: {
+        preload: {
+          path: '/meili_data/nd-restore.dump', marker: '/meili_data/.nd-start',
+          loaded: ['curl', '-s', `${api}/health`], answer: /"status":"available"/, rejects: MEILI_DUMP_REJECTED,
+        },
+      },
+      // The response body of a GET on that path, e.g. /indexes/movies/documents/1?fields=title.
+      query: (path) => ['curl', '-s', '-g', '--max-time', '10', `${api}${path}`],
+      queryProblem: (path) => (MEILI_PROBE.test(path) ? null : 'A Meilisearch probe is an API path such as /indexes/movies/documents/1, without spaces'),
     };
   }
   const mysql = engine === 'mysql';
@@ -254,6 +291,13 @@ function helperProfile(engine: RestoreVerificationEngine): HelperProfile {
   };
 }
 
+/** Why `engine`'s client cannot take this probe query at all, or null. The
+ *  drill runner asks before admitting a verification, so a malformed probe is
+ *  a 400 instead of a verdict. */
+export function restoreProbeProblem(engine: RestoreVerificationEngine, query: string): string | null {
+  return helperProfile(engine).queryProblem?.(query) ?? null;
+}
+
 /** PostgreSQL entry point (the hosted acceptance fixture's). */
 export function verifyPostgresRestore(input: RestoreProbe): Promise<RestoreVerificationResult> {
   return verifyRestore('postgres', input);
@@ -272,6 +316,8 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
     throw new Error('A restore probe requires a query and an expected result of at most 16384 bytes each');
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9./:_@-]*$/.test(input.image)) throw new Error('Invalid restore engine image');
+  const problem = restoreProbeProblem(engine, input.query);
+  if (problem) throw new Error(problem);
   const profile = helperProfile(engine);
   const started = Date.now();
   const result: RestoreVerificationResult = {
@@ -299,7 +345,7 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       }
       const header = Buffer.alloc(5);
       const { bytesRead } = await handle.read(header, 0, 5, 0);
-      result.format = engine === 'mongo' || engine === 'clickhouse'
+      result.format = engine === 'mongo' || engine === 'clickhouse' || engine === 'meilisearch'
         ? 'archive'
         : 'preload' in profile.restore
           ? 'rdb'
@@ -335,13 +381,14 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
       await streamFileToCommand('docker', ['exec', '-i', name, ...profile.restore.stdin], input.file, 300_000);
       result.restoreMs = Date.now() - restoreStarted;
     } else if ('preload' in profile.restore) {
-      const { path, loaded } = profile.restore.preload;
+      const { path, marker, loaded, answer } = profile.restore.preload;
       await streamFileToCommand('docker', ['exec', '-i', name, 'sh', '-c', 'umask 077; cat > "$1"', 'restore-copy', path], input.file, 60_000);
       phase = 'restore';
       const restoreStarted = Date.now();
-      await docker(['exec', name, 'touch', START_MARKER]);
-      // The released server reads the file while it starts: it answers PONG
-      // once the dataset is loaded (LOADING until then), or it exits.
+      await docker(['exec', name, 'touch', marker]);
+      // The released server reads the file while it starts: it gives the
+      // loaded answer once the data is in (PONG, or Meilisearch's healthy
+      // status), or it exits.
       for (;;) {
         let reply = '';
         try {
@@ -351,7 +398,7 @@ export async function verifyRestore(engine: RestoreVerificationEngine, input: Re
             throw new Error('The engine stopped while loading the backup');
           }
         }
-        if (reply === 'PONG') break;
+        if (answer.test(reply)) break;
         if (Date.now() - restoreStarted >= 300_000) throw new ExecTimeoutError('restore load', 300_000);
         await sleep(250);
       }

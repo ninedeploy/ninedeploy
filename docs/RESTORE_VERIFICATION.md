@@ -1,6 +1,6 @@
 # Isolated restore verification
 
-Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, ClickHouse, Redis, Valkey, KeyDB and Dragonfly. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
+Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.18.21 for MySQL, MariaDB, MongoDB, ClickHouse, Meilisearch, Redis, Valkey, KeyDB and Dragonfly. It is available through the API (asynchronous admission and polling), the SDK, the CLI and the panel; see [Databases and backups](DATABASES_BACKUPS.md) for how to use it.
 - **Hosted acceptance, PostgreSQL:** passed again on cd3a2a6d.
 - **Hosted acceptance, MySQL and MariaDB:** passed on 1151cc49 ([run 41901004999](https://github.com/ninedeploy/ninedeploy/actions/runs/41901004999)). The run had 11 cases: PostgreSQL 5, `mysql:9.7` 3 and `mariadb:12.3` 3. Every source was untouched, the dump bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
 - **Hosted acceptance, every adapter:** passed on fc62112e ([run 41988812024](https://github.com/ninedeploy/ninedeploy/actions/runs/41988812024)). The run had 23 cases on the managed default images: PostgreSQL 5, plus a restore, a wrong-value refusal and an invalid-file refusal each for `mysql:9.7`, `mariadb:12.3`, `mongo:8.0`, `redis:8.8`, `valkey/valkey:9.1` and `eqalpha/keydb:x86_64_v6.3.4`. Every source was untouched, every dump's bytes were unchanged, the helper inventory was unchanged, and cleanup was confirmed.
@@ -8,7 +8,29 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
   - **Measured restores:** about 0.1 s for MongoDB, 0.25 s for MariaDB, 0.4 s for the Redis family and 0.75 s for MySQL. These are tiny fixtures, not an RTO commitment.
 - The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
 - **Recovery duration** is recorded and reported. Every restore verification stores the measured `restoreMs` (with `queryMs` and the total `durationMs`) on its drill row. The panel's Backups tab shows it next to the verdict ("restored in 1m 05s"). The CLI's pass line reads "the restore took N ms (M ms with setup and cleanup)". These are measurements of the bounded helper on the panel host, not an RTO commitment for a production restore.
-- Meilisearch and RabbitMQ, and PostgreSQL PITR, remain open, so R3 is not closed.
+- RabbitMQ (a definitions export, not data) and PostgreSQL PITR remain open, so R3 is not closed.
+
+**Meilisearch (2026-11-05)**
+- **Why a start gate.** A Meilisearch dump is imported only at startup (`--import-dump`), so it uses the same start gate as the Redis family.
+- **Helper:**
+  - It is the database's own engine image. The image has no service user, so the helper runs as the unprivileged `65534:65534`.
+  - The 1 GiB scratch tmpfs is `/meili_data`, plus a small `/tmp`.
+  - The server runs with `--db-path /meili_data/data.ms --import-dump /meili_data/nd-restore.dump --http-addr 127.0.0.1:7700 --no-analytics` and no master key: the helper has no network and serves only the probe.
+- **Restore:**
+  1. The panel's `POST /dumps` file is copied in.
+  2. `/meili_data/.nd-start` releases the server.
+  3. `curl /health` is polled until `"status":"available"`; the import finishes before the server answers.
+  
+  `restoreMs` is the import.
+- **Verdicts:** a dump Meilisearch refuses ("failed to iterate over archive", "invalid gzip header", "unexpected end of file") makes it exit. That exit is `failed`; any other exit is `unverifiable`.
+- **Probe:** an API path, such as `/indexes/movies/documents/1?fields=title`. The expected value is the JSON body of a GET on it.
+  - Search responses carry a processing time, so documents and stats make stable probes.
+  - A query that is not a path (`/` followed by printable characters, no spaces) is refused before admission, as a 400.
+- **Local real check:** `getmeili/meilisearch:v1.53` (1.53.3), with a real dump from a master-keyed source.
+  - **Restore:** passed with a 0.9 s import.
+  - **Failed:** a wrong value, a truncated dump, and a file that is not a dump.
+  - **Cleanup:** every helper was confirmed removed.
+- **Hosted cohort:** the hosted fixture covers it. It calls the panel's own `backupMeilisearch`.
 
 **ClickHouse (2026-11-05)**
 - **Helper:**
