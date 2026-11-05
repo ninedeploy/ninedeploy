@@ -16,7 +16,12 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
   - **Earlier hosted runs:** two of them stopped on fixture bugs, not adapter bugs. Run 42002932605 passed a timeout where `rabbitmqMissing` takes a deadline. Run 42009985629 halved the Dragonfly file, which cut only zero padding.
 - The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
 - **Recovery duration** is recorded and reported. Every restore verification stores the measured `restoreMs` (with `queryMs` and the total `durationMs`) on its drill row. The panel's Backups tab shows it next to the verdict ("restored in 1m 05s"). The CLI's pass line reads "the restore took N ms (M ms with setup and cleanup)". These are measurements of the bounded helper on the panel host, not an RTO commitment for a production restore.
-- **PostgreSQL point-in-time recovery (2026-11-05)** is implemented; see section 11 of [Databases and backups](DATABASES_BACKUPS.md). Its hosted acceptance is the last step before R3 closes.
+- **PostgreSQL point-in-time recovery (2026-11-05)** is implemented and hosted-accepted, so **R3 is closed**. See section 11 of [Databases and backups](DATABASES_BACKUPS.md).
+  - **Hosted acceptance:** passed on 81e7155a ([run 42029003391](https://github.com/ninedeploy/ninedeploy/actions/runs/42029003391)), in the same run as all 35 restore-verification cases. The fixture drives the panel's own functions against a real `postgres:18` with WAL archiving.
+    - **Recovered:** a recovery to a time stopped before the transaction committed at 12:42:48.806877. A recovery to the latest point reached the end of the archive (0/40028C8). Each took about 2.3 s of replay. The new password worked, and no recovery settings were left.
+    - **Refused:** a time after the archive, a time before the first base backup, and a damaged segment.
+    - **Retention:** kept only the newest base backup and one segment.
+    - **Preservation:** the source was untouched, no helper was left, and cleanup was confirmed.
   - **Mechanics:**
     - Archiving: gzip-compressed `archive_command`, which never overwrites a different file, into a `<data volume>-wal` volume; `archive_timeout` 60 s.
     - Base backups: `pg_basebackup -Ft -z -X none` into the same volume, one a day, with retention by base backup plus `pg_archivecleanup`.
