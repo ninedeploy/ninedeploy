@@ -439,7 +439,12 @@ try {
     phase = `${engine}-truncated-rdb-refusal`;
     const truncated = join(scratch, `${engine}-truncated.rdb`); files.push(truncated);
     const rdb = await readFile(redisDump);
-    await writeFile(truncated, rdb.subarray(0, Math.floor(rdb.length / 2)), { mode: 0o600 });
+    // Dragonfly zero-pads its RDB to 4 KiB after the checksum; cutting half the
+    // FILE removed only padding (hosted run 42009985629 "passed" it, rightly).
+    // Cut half of the content instead.
+    let content = rdb.length;
+    while (content > 0 && rdb[content - 1] === 0) content--;
+    await writeFile(truncated, rdb.subarray(0, Math.floor(content / 2)), { mode: 0o600 });
     const refused = await verifyRestore(engine, { file: truncated, image: redisImage, query: probe, expected: known });
     report.cases.push({ case: phase, verification: refused }); assert.equal(refused.status, 'failed');
     phase = `${engine}-source-verification`;

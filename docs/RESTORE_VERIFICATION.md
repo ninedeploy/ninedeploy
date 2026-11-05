@@ -8,7 +8,20 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
   - **Measured restores:** about 0.1 s for MongoDB, 0.25 s for MariaDB, 0.4 s for the Redis family and 0.75 s for MySQL. These are tiny fixtures, not an RTO commitment.
 - The structural `backup drill` is unchanged, and its validators still do not prove a real restore.
 - **Recovery duration** is recorded and reported. Every restore verification stores the measured `restoreMs` (with `queryMs` and the total `durationMs`) on its drill row. The panel's Backups tab shows it next to the verdict ("restored in 1m 05s"). The CLI's pass line reads "the restore took N ms (M ms with setup and cleanup)". These are measurements of the bounded helper on the panel host, not an RTO commitment for a production restore.
-- PostgreSQL PITR remains open, so R3 is not closed.
+- **PostgreSQL point-in-time recovery (2026-11-05)** is implemented; see section 11 of [Databases and backups](DATABASES_BACKUPS.md). Its hosted acceptance is the last step before R3 closes.
+  - **Mechanics:**
+    - Archiving: gzip-compressed `archive_command`, which never overwrites a different file, into a `<data volume>-wal` volume; `archive_timeout` 60 s.
+    - Base backups: `pg_basebackup -Ft -z -X none` into the same volume, one a day, with retention by base backup plus `pg_archivecleanup`.
+    - Recovery: a base backup restored into a new database's volume, `restore_command` replay in a networkless helper, `recovery_target_time` or the end of the archive, then a promote, a re-key of the role and a clean stop.
+  - **Refusal on missing or damaged WAL:**
+    - Every segment the replay needs is `gzip -t` checked first.
+    - A "latest" recovery must end (`redo done at`) in the newest archived segment. PostgreSQL itself promotes silently at a gap: in the experiment, a truncated segment 4 recovered only the first of four rows without any error.
+    - A time with no transaction archived after it is PostgreSQL's own refusal ("recovery ended before configured recovery target was reached").
+  - **Local real check:** `postgres:18`, with real archiving and a base backup taken through the panel's functions.
+    - **Passed:** a recovery to a time returned the two rows committed before it; a recovery to the latest point returned all four. The new password worked, and no recovery settings were left in `postgresql.auto.conf`.
+    - **Refused:** a time after the archive, a time before the first base backup, and a damaged segment.
+    - **Retention:** a 0-day retention kept only the newest base backup and removed the WAL before it.
+    - **Cleanup:** no helper was left behind.
 
 **RabbitMQ (2026-11-05)**
 - **What is restored.** The panel's RabbitMQ backup is `rabbitmqctl export_definitions`: users, vhosts, permissions, policies, queues, exchanges and bindings. It holds no messages, so the verification proves that the topology comes back, not that queued messages do.
@@ -99,7 +112,7 @@ Status, 2026-11-05: restore verification is public for PostgreSQL, and since 0.1
   - **Failed:** a wrong expected value, a truncated RDB, and a file that is not an RDB.
   - **Cleanup:** every helper was confirmed removed.
 - **Hosted cohort:** the hosted fixture covers `redis:8.8`, `valkey/valkey:9.1` and `eqalpha/keydb:x86_64_v6.3.4`. Each source has a production-like `--requirepass` and is dumped with the panel's `dumpCommands` (`SAVE`) and RDB path.
-- **Dragonfly (2026-11-05)** uses the same gate and load poll, run as `dfly`. Its flags are the managed database's own snapshot flags: `--dir=/data --dbfilename=dump --df_snapshot_format=false`, so it loads `/data/dump.rdb`. Dragonfly reports every refused file as "Rdb load failed: …", which counts as `failed`. Its probe uses the image's `redis-cli`. A local real check on `ghcr.io/dragonflydb/dragonfly:v1.34.2` with a real `SAVE RDB` backup gave the right verdicts: restore passed; a wrong value, a truncated RDB and a non-RDB file were `failed`; cleanup was confirmed. The hosted fixture covers it too.
+- **Dragonfly (2026-11-05)** uses the same gate and load poll, run as `dfly`. Its flags are the managed database's own snapshot flags: `--dir=/data --dbfilename=dump --df_snapshot_format=false`, so it loads `/data/dump.rdb`. Dragonfly reports every refused file as "Rdb load failed: …", which counts as `failed`. Its probe uses the image's `redis-cli`. A local real check on `ghcr.io/dragonflydb/dragonfly:v1.34.2` with a real `SAVE RDB` backup gave the right verdicts: restore passed; a wrong value, a truncated RDB and a non-RDB file were `failed`; cleanup was confirmed. The hosted fixture covers it too. Dragonfly zero-pads its RDB to 4 KiB after the EOF marker and checksum. Hosted run 42009985629 cut half of the *file*, which removed only padding, so the restore rightly passed. A cut anywhere inside the content (keys, EOF or checksum) is `failed`, and the fixture now cuts half of the content.
 
 **MongoDB (2026-11-04)**
 - **Helper:**
