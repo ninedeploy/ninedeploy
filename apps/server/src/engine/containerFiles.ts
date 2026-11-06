@@ -222,7 +222,10 @@ export interface ContainerInspectResult {
 /** Inspect container metadata and parsed labels/traefik tags. */
 export async function inspectContainer(container: string, execute: typeof capture = capture): Promise<ContainerInspectResult> {
   assertManagedContainer(container);
-  const out = await execute('docker', ['inspect', container]);
+  // R2: containers only. Untyped, `docker inspect nd-<slug>_web` on a Swarm
+  // manager answers with the Swarm SERVICE object, which rendered as a
+  // container with no env, labels or mounts and status `unknown`.
+  const out = await execute('docker', ['inspect', '--type', 'container', container]);
   const parsed = JSON.parse(out);
   const data = parsed[0];
   if (!data) throw new Error('container inspect empty');

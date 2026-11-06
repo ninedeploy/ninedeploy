@@ -142,6 +142,27 @@ describe('dashboard routes', () => {
     );
   });
 
+  it('R2: through the mesh a 4xx is up and a 5xx is down, as for the direct probe (every Swarm service is probed this way)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('route unreachable'); }) as unknown as typeof fetch);
+    const health = async (wgetError: string) => {
+      execMocks.capture.mockImplementation(async (_c: unknown, args: unknown[]) => {
+        const a = args as string[];
+        if (a[0] === 'inspect') return 'running|172.18.0.2';
+        if (a[0] === 'exec') throw new Error(wgetError);
+        throw new Error('no netns probe');
+      });
+      const app = await buildTestApp({ db: createFakeDb({ select: { services: [svcRow({ id: 1, status: 'running', port: 3000, runtimeId: 'c1' })] }, counts: {} }) });
+      await app.register(dashboardRoutes);
+      const res = await app.inject({ method: 'GET', url: '/', headers: asUser() });
+      await app.close();
+      return res.json().health[0].healthy;
+    };
+    expect(await health('wget: server returned error: HTTP/1.1 401 Unauthorized')).toBe(true);
+    expect(await health('wget: server returned error: HTTP/1.1 404 Not Found')).toBe(true);
+    expect(await health('wget: server returned error: HTTP/1.1 503 Service Unavailable')).toBe(false);
+    expect(await health('wget: can’t connect to remote host: Connection refused')).toBe(false);
+  });
+
   it('falls back to a netns-sharing probe for containers outside the mesh', async () => {
     // Compose-style service: not reachable from traefik's network, but the
     // throwaway curl container sharing its netns gets a 200 from loopback.

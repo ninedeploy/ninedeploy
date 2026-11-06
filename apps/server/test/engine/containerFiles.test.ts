@@ -255,6 +255,8 @@ describe('containerFiles operations (docker exec)', () => {
 
     execMocks.capture.mockResolvedValueOnce(JSON.stringify(fakeInspect));
     const result = await inspectContainer('nd-svc-web-1');
+    // R2: containers only; untyped, a Swarm service of the same name answered with its service object.
+    expect(execMocks.capture).toHaveBeenLastCalledWith('docker', ['inspect', '--type', 'container', 'nd-svc-web-1']);
     expect(result.id).toBe('cid123');
     expect(result.name).toBe('nd-svc-web-1');
     expect(result.image).toBe('node:20-alpine');

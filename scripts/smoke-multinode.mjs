@@ -1298,6 +1298,8 @@ async function swarmChecks(ctx) {
   if (!mounted.includes(`"Name":"${filePath}"`) || !mounted.includes('"Mode":292')) fail(`${label} files: the service spec mounts ${mounted}`);
   step(`${label}: ${filePath} as a Swarm secret, read-only (0444): v1 → v2 → v3 each read back from both running tasks (${versions.join('; ')}); the secret older than the rollback target was removed`);
 
+  await swarmSupportChecks({ svcId, stack, hostname, filePath });
+
   // The node's owner opts in; then join and leave.
   startAgent(CANDIDATE_IMAGE, ctx.tokenSha256, { NINEDEPLOY_AGENT_SWARM_MANAGER: `${ctx.panelDindIp}:2377` });
   await waitAgent(ctx.serverId, `${label}: agent restart with the opt-in`);
@@ -1323,6 +1325,111 @@ async function swarmChecks(ctx) {
   await routeServes(DIND, hostname, `${label} route after the leave`);
   step(`${label}: agent restarted with NINEDEPLOY_AGENT_SWARM_MANAGER=${ctx.panelDindIp}:2377; joined as worker ${join.json.nodeId} (second join 409, member delete 409); left (drained: ${leave.json.drained}; second leave 409); the node is out of Swarm and the route still answers`);
   return { svcId, hostname, stack };
+}
+
+/**
+ * R2: the Swarm support matrix (docs/DEPLOYMENTS.md §7) on real tasks, with
+ * the panel's own routes: logs, lifecycle, the status patrol, the container
+ * tools, readiness, metrics and the honest refusals. Each case below failed,
+ * or was silently wrong, before the matrix was closed.
+ */
+async function swarmSupportChecks({ svcId, stack, hostname, filePath }) {
+  const label = 'Swarm support';
+  const runtime = `${stack}_web`;
+  const counts = async () => (await api(`/v1/services/${svcId}/swarm`)).json;
+  const converged = (want, ms = 120_000) => until(async () => {
+    const c = await counts();
+    return c?.running === want && c.desired === want ? c : null;
+  }, { ms, every: 3000 });
+  const timeKey = (ts) => ts.replace(/(?:\.(\d+))?Z$/, (_m, f) => `.${(f ?? '').padEnd(9, '0')}Z`);
+
+  // Logs: every task through the manager, put back in time order.
+  const logs = await api(`/v1/services/${svcId}/logs?tail=200`);
+  const lines = String(logs.json?.lines ?? '').split('\n').filter(Boolean);
+  const keys = lines.map((l) => timeKey(l.split(' ')[0] ?? ''));
+  const tasksSeen = new Set(lines.map((l) => /^\S+ (\S+?\.\d+)\.\w+@/.exec(l)?.[1]).filter(Boolean));
+  if (logs.status !== 200 || lines.length === 0) fail(`${label}: GET /v1/services/${svcId}/logs answered ${short(logs)}`);
+  if (keys.some((k, i) => i > 0 && k < keys[i - 1])) fail(`${label}: the log history is not in time order:\n${lines.slice(0, 12).join('\n')}`);
+  step(`${label}: logs: ${lines.length} lines from ${tasksSeen.size} task(s) (${[...tasksSeen].join(', ')}), in time order`);
+
+  // Stop, then Restart: the tasks come back (a forced update alone kept the service at 0 tasks while the panel said running).
+  const stop = await api(`/v1/services/${svcId}/stop`, { method: 'POST' });
+  if (stop.status !== 200 || !(await converged(0))) fail(`${label}: Stop answered ${short(stop)}; the service reads ${JSON.stringify(await counts())} (wanted 0/0)`);
+  const restart = await api(`/v1/services/${svcId}/restart`, { method: 'POST' });
+  if (restart.status !== 200 || restart.json?.status !== 'running') fail(`${label}: Restart after Stop answered ${short(restart)}`);
+  if (!(await converged(2))) fail(`${label}: a Restart after a Stop left ${JSON.stringify(await counts())} (wanted 2/2: the tasks come back)`);
+  await routeServes(DIND, hostname, `${label}: route after Stop → Restart`);
+  step(`${label}: Stop → 0/0; Restart → 2/2 and ${hostname} serves again`);
+
+  // The patrol: a service scaled to 0 behind the panel's back is scaled back to its replicas.
+  panelDaemon(['service', 'scale', '--detach', `${runtime}=0`]);
+  // The desired count drops at once; the patrol may revive it before every task has stopped.
+  if (!(await until(async () => ((await counts())?.desired === 0 ? true : null), { ms: 30_000, every: 1000 }))) {
+    fail(`${label}: docker service scale ${runtime}=0 did not take: ${JSON.stringify(await counts())}`);
+  }
+  if (!(await converged(2, 200_000))) fail(`${label}: the runtime patrol did not scale ${runtime} back to 2 within 200 s: ${JSON.stringify(await counts())}`);
+  if ((await serviceRow(svcId)).status !== 'running') fail(`${label}: the service is '${(await serviceRow(svcId)).status}' after the patrol revived it`);
+  step(`${label}: patrol: ${runtime} scaled to 0 outside the panel came back to 2/2, still running`);
+
+  // Container tools reach a task on the panel host (the service name is no container: a bare 500 before).
+  const inspect = await api(`/v1/containers/${runtime}/inspect`);
+  if (inspect.status !== 200 || !String(inspect.json?.name ?? '').startsWith(`${runtime}.`)) fail(`${label}: inspect of ${runtime} answered ${short(inspect)} (wanted one of its tasks)`);
+  const dir = filePath.slice(0, filePath.lastIndexOf('/'));
+  const files = await api(`/v1/containers/${runtime}/files?path=${encodeURIComponent(dir)}`);
+  const fileName = filePath.slice(filePath.lastIndexOf('/') + 1);
+  if (files.status !== 200 || !files.json?.entries?.some((e) => e.name === fileName)) fail(`${label}: the File Browser on ${runtime}:${dir} answered ${short(files)} (wanted ${fileName})`);
+  step(`${label}: inspect and File Browser on ${runtime} reached task ${inspect.json.name} (${files.json.entries.length} entries in ${dir})`);
+
+  // Metrics are one task's worth: the per-task limit, not the sum of two.
+  const limits = await api(`/v1/services/${svcId}/limits`, { method: 'PATCH', body: { memLimitMb: 128 } });
+  if (limits.status !== 200) fail(`${label}: PATCH limits answered ${short(limits)}`);
+  await deploy(svcId, `${label}: deploy with a 128 MiB limit`);
+  if (!(await converged(2))) fail(`${label}: the redeploy with a limit did not converge: ${JSON.stringify(await counts())}`);
+  const stat = await until(async () => (await api('/v1/stats')).json?.containers?.find((c) => c.kind === 'service' && c.refId === svcId) ?? null, { ms: 60_000, every: 3000 });
+  if (!stat || stat.memLimitMb !== 128) fail(`${label}: /v1/stats reports ${JSON.stringify(stat)} for the service (wanted memLimitMb 128, one task's limit)`);
+  step(`${label}: /v1/stats: ${stat.memMb} MiB of a ${stat.memLimitMb} MiB per-task limit (two tasks averaged)`);
+
+  // The dashboard treats a 4xx health path as up, as the deploy does.
+  const missing = await api(`/v1/services/${svcId}`, { method: 'PATCH', body: { healthPath: '/nd-no-such-page' } });
+  if (missing.status !== 200) fail(`${label}: PATCH healthPath answered ${short(missing)}`);
+  const health = await until(async () => {
+    const h = (await api('/v1/dashboard')).json?.health?.find((e) => e.serviceId === svcId);
+    return h?.healthy === true ? h : null;
+  }, { ms: 30_000, every: 3000 });
+  if (!health) fail(`${label}: the dashboard reads ${JSON.stringify((await api('/v1/dashboard')).json?.health?.find((e) => e.serviceId === svcId))} for a 404 health path (wanted healthy)`);
+  await api(`/v1/services/${svcId}`, { method: 'PATCH', body: { healthPath: '/' } });
+  step(`${label}: dashboard: a 404 health path through Traefik reads healthy`);
+
+  // Honest refusals.
+  const volume = await api(`/v1/services/${svcId}/volumes`, { method: 'POST', body: { create: { label: 'media' }, containerPath: '/media' } });
+  if (volume.status !== 422 || errorCode(volume) !== 'swarm_unsupported') fail(`${label}: a volume attachment answered ${short(volume)} (wanted 422 swarm_unsupported)`);
+  const leftover = panelDaemon(['volume', 'ls', '--filter', 'name=media', '--format', '{{.Name}}']).stdout.trim();
+  if (leftover) fail(`${label}: the refused volume attachment left the volume ${leftover}`);
+  const tcp = await api(`/v1/services/${svcId}`, { method: 'PATCH', body: { healthCheck: 'tcp' } });
+  if (tcp.status !== 400) fail(`${label}: TCP readiness on Swarm answered ${short(tcp)} (wanted 400)`);
+  const sleepNow = await api(`/v1/services/${svcId}/sleep`, { method: 'POST' });
+  if (sleepNow.status !== 400 || errorCode(sleepNow) !== 'cannot_sleep') fail(`${label}: sleep answered ${short(sleepNow)} (wanted 400 cannot_sleep)`);
+  const autoscale = await api(`/v1/services/${svcId}/autoscale`);
+  if (autoscale.status !== 200 || (autoscale.json?.supportedMetrics ?? []).length !== 0) fail(`${label}: autoscale status answered ${short(autoscale)} (wanted no supported metric)`);
+  step(`${label}: refused: volume attachment 422 swarm_unsupported (nothing created), TCP readiness 400, sleep 400 cannot_sleep; autoscaling supports no metric`);
+
+  // `running` readiness waits for the tasks only: a service whose port answers nothing deploys.
+  const workerId = await createService({ name: `mn-swarm-run-${suffix}`, type: 'docker', image: APP_IMAGE, port: 9, replicas: 1 }, `${label} worker`);
+  const mode = await api(`/v1/services/${workerId}`, { method: 'PATCH', body: { healthCheck: 'running', healthTimeoutSeconds: 60 } });
+  if (mode.status !== 200) fail(`${label}: PATCH healthCheck running answered ${short(mode)}`);
+  const place = await api(`/v1/services/${workerId}/placement`, { method: 'PUT', body: { orchestrator: 'swarm' } });
+  if (place.status !== 200) fail(`${label}: Swarm placement of the worker answered ${short(place)}`);
+  const workerDep = await deploy(workerId, `${label}: running readiness with no port answering`);
+  const worker = await serviceRow(workerId);
+  step(`${label}: Container running readiness: ${worker.runtimeId} deployed (#${workerDep.id}) although port 9 answers nothing`);
+
+  // The patrol: a Swarm service that no longer exists is marked down.
+  panelDaemon(['service', 'rm', worker.runtimeId]);
+  const down = await until(async () => ((await serviceRow(workerId)).status === 'error' ? true : null), { ms: 200_000, every: 5000 });
+  if (!down) fail(`${label}: the patrol left the removed Swarm service ${worker.runtimeId} as '${(await serviceRow(workerId)).status}' for 200 s (wanted error)`);
+  const del = await api(`/v1/services/${workerId}`, { method: 'DELETE' });
+  if (del.status !== 200 && del.status !== 204) fail(`${label}: deleting the worker answered ${short(del)}`);
+  step(`${label}: patrol: ${worker.runtimeId} removed behind the panel's back was marked error; the worker service was deleted`);
 }
 
 /** Everything a current agent can do (mode a, and mode b after the agent update). */

@@ -118,6 +118,21 @@ describe('Build arguments field', () => {
     await waitFor(() => expect(apiMock.api.services.update).toHaveBeenCalledWith(1, expect.objectContaining({ healthCheck: mode })), { timeout: 30_000 });
   }, TIMEOUT);
 
+  it('R2: a Swarm service is not offered HTTP or TCP readiness (the server refuses both), and says what its modes do', async () => {
+    renderTab({ ...serviceWith({}), healthCheck: 'running', healthCommand: null, orchestrator: 'swarm' } as ReturnType<typeof serviceWith>);
+    const selector = await screen.findByRole('combobox', { name: 'Healthcheck' });
+    const values = Array.from(selector.querySelectorAll('option')).map((o) => o.getAttribute('value'));
+    expect(values).toEqual(['http', 'running', 'command']);
+    expect(screen.getByText(/On Swarm: Container running waits for every task to run, with no port probe/)).toBeInTheDocument();
+  }, TIMEOUT);
+
+  it('R2: a Swarm service already set to TCP readiness still shows its stored value', async () => {
+    renderTab({ ...serviceWith({}), healthCheck: 'tcp', orchestrator: 'swarm' } as ReturnType<typeof serviceWith>);
+    const selector = await screen.findByRole('combobox', { name: 'Healthcheck' });
+    expect(selector).toHaveValue('tcp');
+    expect(Array.from(selector.querySelectorAll('option')).map((o) => o.getAttribute('value'))).not.toContain('http-strict');
+  }, TIMEOUT);
+
   it("offers the service's variables as chips; a click adds one", async () => {
     renderTab(serviceWith({ buildArgs: [] }));
     const chip = await screen.findByRole('button', { name: /NODE_VERSION/ });

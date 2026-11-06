@@ -8,7 +8,7 @@ import { capture } from '../lib/exec.js';
 import { replicaNames } from '../engine/dockerNames.js';
 import { agentOp } from '../lib/agentClient.js';
 import { serviceTargets } from '@ninedeploy/db';
-import { swarmRuntimeOf } from '../lib/swarm.js';
+import { scaleSwarmService, swarmRuntimeOf, swarmServiceReplicas } from '../lib/swarm.js';
 import { acceptNodeLifecycleIntent } from '../lib/nodeLifecycleIntent.js';
 import { assertNodeLifecycleAvailable, publicNodeLifecycle } from '../lib/nodeLifecycleRuntime.js';
 import { createNodeRecoveryNotifier } from '../lib/nodeLifecycleAlerts.js';
@@ -17,6 +17,12 @@ import { createNodeRecoveryNotifier } from '../lib/nodeLifecycleAlerts.js';
 // own"): the first pass runs at startup, and anything it cannot fix — e.g. a
 // Docker daemon still warming up — is retried a minute later, not five.
 const RECONCILE_INTERVAL_MS = 60_000;
+/**
+ * Consecutive passes a `running` Swarm service may have no running task
+ * before it is recorded as down: a node restart or a rescheduled task is
+ * Swarm's own work and takes a pass or two; five minutes with no task is not.
+ */
+export const SWARM_DOWN_PASSES = 5;
 
 /**
  * Self-healing runtime reconciliation. `services.status` records desired
@@ -402,6 +408,52 @@ export function createRuntimeStateReconciler(fastify: FastifyInstance) {
       }
     };
 
+    /**
+     * A `running` Swarm service, checked against the manager's task counts.
+     * Swarm restarts and reschedules its own tasks, so the patrol never
+     * starts one; it only stops the row from claiming a runtime that is gone:
+     *  - the service no longer exists: `error`, a redeploy recreates it;
+     *  - it was scaled to 0 outside the panel (a Stop records `stopped`
+     *    first): scaled back to the service's replicas, as a stopped
+     *    container is started again;
+     *  - no task has run for SWARM_DOWN_PASSES consecutive passes (a crash
+     *    loop, an image no node can pull, no node that fits the
+     *    constraints): `error`, with the same service-down alert. Fewer
+     *    running tasks than desired, but at least one, is Swarm converging.
+     * A manager that cannot answer is never a judgement on the service.
+     */
+    const swarmDownPasses = new Map<number, number>();
+    const patrolSwarm = async (svc: { id: number; name: string; replicas: number | null }, runtimeId: string) => {
+      let counts: { running: number; desired: number } | null;
+      try {
+        counts = await swarmServiceReplicas(runtimeId);
+      } catch (err) {
+        fastify.log.debug({ err, serviceId: svc.id }, 'Swarm manager unreadable; skipping this service');
+        return;
+      }
+      const owned = () => stillRunning({ id: svc.id, runtimeId });
+      if (counts && counts.running > 0) {
+        swarmDownPasses.delete(svc.id);
+        return;
+      }
+      if (counts && counts.desired === 0) {
+        swarmDownPasses.delete(svc.id);
+        if (!(await owned())) return;
+        await scaleSwarmService(runtimeId, svc.replicas ?? 1);
+        fastify.log.warn({ serviceId: svc.id, name: svc.name, runtimeId }, 'scaled a Swarm service found at 0 replicas back to its replica count');
+        return;
+      }
+      if (counts) {
+        const passes = (swarmDownPasses.get(svc.id) ?? 0) + 1;
+        if (passes < SWARM_DOWN_PASSES) {
+          swarmDownPasses.set(svc.id, passes);
+          return;
+        }
+      }
+      swarmDownPasses.delete(svc.id);
+      await setStatus({ ...svc, runtimeId }, 'error');
+    };
+
     /** Record an OOM kill in the activity trail + notification fan-out. */
     const alertOom = (serviceId: number, name: string, runtimeId: string, exitCode: number) => {
       const now = Date.now();
@@ -424,8 +476,14 @@ export function createRuntimeStateReconciler(fastify: FastifyInstance) {
           if (abort.signal.aborted) return;
           const runtimeId = svc.runtimeId;
           if (!runtimeId) continue;
-          // ── 0.16 T7 swarm ── Swarm restarts its own tasks; a Swarm service has no container to inspect or revive here.
-          if (swarmRuntimeOf(svc)) continue;
+          // ── 0.16 T7 swarm ── Swarm restarts its own tasks; the patrol only checks the row against the manager's counts.
+          const swarmRuntime = swarmRuntimeOf(svc);
+          if (swarmRuntime) {
+            // One service's failure (a scale the manager refused) never costs the others their pass.
+            await patrolSwarm(svc, swarmRuntime).catch((err: unknown) =>
+              fastify.log.warn({ err, serviceId: svc.id }, 'Swarm runtime check failed'));
+            continue;
+          }
           // ── end 0.16 T7 ──
           // 0.16.11: a sleeping service's containers are stopped on purpose; its next request wakes it.
           if (svc.asleepAt != null) continue;

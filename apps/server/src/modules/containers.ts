@@ -5,6 +5,7 @@ import { containerFileWrite, containerPathCreate } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { badRequest, forbidden, HttpError, parseId } from '../lib/errors.js';
 import { nodeContainerTool } from '../lib/nodeContainerTools.js';
+import { isSwarmRuntimeId, localSwarmTaskFor, swarmRuntimeOf } from '../lib/swarm.js';
 import {
   deleteContainerPath,
   getContainerComposeManifest,
@@ -34,6 +35,19 @@ export const containerRoutes: FastifyPluginAsync<{ nodeRoute?: boolean }> = asyn
    */
   const guardLocalContainer = async (raw: string): Promise<string> => {
     const container = guardContainer(raw);
+    // R2: a Swarm service's runtime id names the service, which no container
+    // has: `docker exec nd-<slug>_web` answered a bare 500. Its first task on
+    // the panel host stands in, as for the terminal; else the reason.
+    if (isSwarmRuntimeId(container)) {
+      const swarmRow = await app.db.query.services.findFirst({ where: eq(services.runtimeId, container) });
+      if (swarmRow && swarmRuntimeOf(swarmRow) === container) {
+        const task = await localSwarmTaskFor(container);
+        if ('refusal' in task) {
+          throw new HttpError(422, 'swarm_task_elsewhere', `${task.refusal.replace(/; open a node terminal.*$/, '')}. Inspect, compose and file access only reach containers on the panel host.`);
+        }
+        return task.container;
+      }
+    }
     const primary = container.replace(/-r\d+$/, '');
     const svc = await app.db.query.services.findFirst({
       where: and(inArray(services.runtimeId, [container, primary]), isNotNull(services.serverId)),

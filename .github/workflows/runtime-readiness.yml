@@ -14,6 +14,10 @@ on:
         description: Verify isolated restores of every managed engine (known data, source preservation) and PostgreSQL point-in-time recovery
         type: boolean
         default: false
+      swarm_support:
+        description: Verify the Swarm support matrix (logs, lifecycle, status patrol, container tools, readiness, metrics, refusals) on real tasks
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,7 +29,7 @@ concurrency:
 
 jobs:
   primary-network:
-    if: github.event.inputs.restore_verification != 'true'
+    if: github.event.inputs.restore_verification != 'true' && github.event.inputs.swarm_support != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -92,3 +96,27 @@ jobs:
             apps/server/.temp_files/pitr/postgres-pitr.json
           include-hidden-files: true
           if-no-files-found: warn
+
+  # R2: the Swarm support matrix (docs/DEPLOYMENTS.md §7) on real tasks,
+  # against a candidate built from this commit, before a release runs it on
+  # the pushed image.
+  swarm-support:
+    if: github.event.inputs.swarm_support == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_CONTEXT: default
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build candidate
+        run: docker build -t ninedeploy:swarm-support .
+      - name: Verify Swarm routing, rolling file secrets and the Swarm support matrix
+        timeout-minutes: 30
+        run: node scripts/smoke-multinode.mjs --image=ninedeploy:swarm-support --swarm-only

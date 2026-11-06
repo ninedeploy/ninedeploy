@@ -65,7 +65,7 @@ export function nodeRpsAutoscalingAccepted(): boolean {
 }
 export const NODE_RPS_HOLDING = 'node request-rate autoscaling is not available yet';
 
-/** The metrics the autoscaler can act on for this placement; Swarm scales by itself. */
+/** The metrics the autoscaler can act on for this placement; none for Swarm, which keeps its configured replicas. */
 export function autoscaleSupportedMetrics(svc: Pick<Service, 'serverId' | 'orchestrator'>, rpsAccepted = nodeRpsAutoscalingAccepted()): AutoscaleMetric[] {
   if (svc.orchestrator === 'swarm') return [];
   if (svc.serverId != null) return rpsAccepted ? [...AUTOSCALE_METRICS] : ['cpu', 'memory'];
@@ -311,7 +311,7 @@ export async function scaleService(deps: AutoscaleDeps, svc: Service, from: numb
 /** Why an autoscaled service is not measured now, or null when it is. */
 export function holdReason(svc: Service, inFlight: ReadonlySet<number>, canaryRunning: boolean): string | null {
   if (svc.serverId != null) return 'autoscaling runs on the panel host only for now; this service runs on a node';
-  if (svc.orchestrator === 'swarm') return 'a Swarm service scales with its own replicas';
+  if (svc.orchestrator === 'swarm') return 'Swarm services are not autoscaled; they run the replica count set on the service';
   if (svc.status !== 'running' || !svc.runtimeId) return 'the service is not running';
   if (svc.asleepAt != null) return 'the service is asleep (scale to zero)';
   if (inFlight.has(svc.id)) return 'a deploy is in progress';

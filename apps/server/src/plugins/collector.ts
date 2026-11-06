@@ -80,7 +80,7 @@ export default fp(
         const rows: Array<{ serviceId: number; kind: string; value: number; ts: Date }> = [];
         for (const s of all) {
           if (s.serverId != null) continue;
-          // 0.16 T7: a Swarm service's metrics are its local tasks summed (design §7.4).
+          // 0.16 T7, R2: a Swarm service's metrics are one task's worth, its local tasks averaged (design §7.4).
           const swarmRuntime = swarmRuntimeOf(s);
           const st = swarmRuntime
             ? swarmContainerStat(containers, swarmRuntime)

@@ -577,9 +577,9 @@ jobs:
         timeout-minutes: 20
         run: node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --new-node-features --no-swarm
 
-      - name: Swarm routing and rolling file secrets
-        if: matrix.suite == 'node-infrastructure'
-        timeout-minutes: 20
+      - name: Swarm routing, rolling file secrets and the Swarm support matrix
+        if: matrix.suite == 'swarm-artifacts'
+        timeout-minutes: 30
         run: node scripts/smoke-multinode.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --swarm-only
 
       - name: Verify Swarm pinned artifacts, readiness-held restart recovery and recorded rollback

@@ -165,7 +165,7 @@ export function AutoscaleCard({ svc }: { svc: ServiceDetail }) {
               : t('Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.')}
           </p>
         ) : svc.placement?.orchestrator === 'swarm' ? (
-          <p className="mt-1.5 text-xs text-amber-300">{t('This service runs on Swarm, which scales with its own replicas; the autoscaler holds for it.')}</p>
+          <p className="mt-1.5 text-xs text-amber-300">{t('This service runs on Swarm, which is not autoscaled: it runs the replica count set in Settings.')}</p>
         ) : null}
         <form
           onSubmit={(e) => {

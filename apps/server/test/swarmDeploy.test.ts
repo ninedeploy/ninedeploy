@@ -88,6 +88,7 @@ const {
   createSwarmBuilder,
   isSwarmService,
   swarmDeployRefusal,
+  swarmHealthMode,
   swarmServiceRefusal,
   withSwarmRetirement,
 } = await import('../src/engine/swarmDeploy.js');
@@ -492,6 +493,26 @@ describe('health and rollback (design §7.4 step 6)', () => {
     const builder = createSwarmBuilder(db, 'web');
     expect(await builder.isHealthy({ ...runtime }, 60_000, 0, vi.fn())).toBe(true);
     expect(h.docker).toContainEqual(['exec', 'ninedeploy-traefik', 'wget', '-q', '-O', '/dev/null', '-T', '3', 'http://nd-web_web:80/health']);
+  });
+
+  it('R2: `running` and command readiness are the converged tasks, never a probe through Traefik (a non-HTTP port would fail it)', async () => {
+    h.probe = 'down';
+    for (const mode of [{ healthCheck: 'running' as const }, { healthCheck: 'command' as const, healthCommand: 'true' }]) {
+      h.replicas = ['nd-web_web 1/2', 'nd-web_web 2/2'];
+      h.docker = [];
+      const builder = createSwarmBuilder(db, 'web');
+      expect(await builder.isHealthy({ ...runtime, ...mode }, 60_000, 0, vi.fn()), mode.healthCheck).toBe(true);
+      expect(h.docker.filter((a) => a[0] === 'exec'), mode.healthCheck).toEqual([]);
+    }
+  });
+
+  it('R2: the deployed runtime carries the service’s `running` mode (it used to be dropped, so the deploy probed HTTP)', () => {
+    expect(swarmHealthMode({ healthCheck: 'running' })).toEqual({ healthCheck: 'running' });
+    expect(swarmHealthMode({ healthCheck: 'command', healthCommand: '  pg_isready  ' })).toEqual({ healthCheck: 'command', healthCommand: 'pg_isready' });
+    // A command mode without a command is the HTTP probe, as before.
+    expect(swarmHealthMode({ healthCheck: 'command', healthCommand: ' ' })).toEqual({});
+    expect(swarmHealthMode({ healthCheck: 'http' })).toEqual({});
+    expect(swarmHealthMode({ healthCheck: null })).toEqual({});
   });
 
   it('a probe that never answers fails, and an in-place update is rolled back to the previous spec', async () => {

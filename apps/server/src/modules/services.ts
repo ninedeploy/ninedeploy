@@ -1764,7 +1764,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const swarmRuntime = swarmRuntimeOf(svc);
     if (swarmRuntime) {
       const swarmId = swarmRuntime;
-      await restartSwarmService(swarmId).catch(async (err: unknown) => {
+      await restartSwarmService(swarmId, svc.replicas ?? 1).catch(async (err: unknown) => {
         if (isDaemonDown(err)) throw daemonUnavailable(err);
         if (isMissingRuntime(err)) {
           await app.db.update(services).set({ status: 'error' }).where(eq(services.id, svc.id));

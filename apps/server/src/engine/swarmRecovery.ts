@@ -173,7 +173,8 @@ function lease(db: DB, initial: SwarmTransition, token: string, signal?: AbortSi
         await sleep(500); continue;
       }
       const { swarmHealthy } = await import('./swarmDeploy.js');
-      const runtime: DeployRuntime = { runtimeId: row.runtimeId, port: group.port, healthPath: group.healthPath, ...(group.healthCheck === 'command' ? { healthCheck: 'command' } : {}) };
+      const runtime: DeployRuntime = { runtimeId: row.runtimeId, port: group.port, healthPath: group.healthPath,
+        ...(group.healthCheck === 'command' || group.healthCheck === 'running' ? { healthCheck: group.healthCheck } : {}) };
       if (await swarmHealthy(runtime, Math.min(10_000, Math.max(1, deadline - Date.now())), () => undefined)) {
         group.knownImageIds = ids; await patch({}, true); await check(); return;
       }

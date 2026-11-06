@@ -393,14 +393,99 @@ export async function scaleSwarmService(runtimeId: string, replicas: number): Pr
   await capture('docker', ['service', 'scale', '--detach', `${runtimeId}=${n}`], { timeoutMs: 120_000 });
 }
 
-/** Restart every task (design §7.4: `docker service update --force`). */
-export async function restartSwarmService(runtimeId: string): Promise<void> {
-  await capture('docker', ['service', 'update', '--force', '--detach', runtimeId], { timeoutMs: 120_000 });
+/**
+ * Restart every task (design §7.4: `docker service update --force`), at the
+ * service's replica count: a Stop scaled it to 0, and `--force` alone keeps
+ * a scaled-down service at 0 tasks while the panel would record it running.
+ */
+export async function restartSwarmService(runtimeId: string, replicas: number): Promise<void> {
+  const n = Math.max(1, Math.min(Math.floor(replicas), MAX_REPLICAS));
+  await capture('docker', ['service', 'update', '--force', '--replicas', String(n), '--detach', runtimeId], { timeoutMs: 120_000 });
 }
 
-/** `docker service logs` — every task, wherever it runs (design §7.4). */
+/**
+ * The running and desired task counts of a Swarm service, from the manager;
+ * null when the service does not exist. Throws when the manager cannot
+ * answer (daemon down, or the panel host left the swarm), so a caller never
+ * judges a service on an unreadable cluster.
+ */
+export async function swarmServiceReplicas(runtimeId: string): Promise<{ running: number; desired: number } | null> {
+  const out = await capture('docker', ['service', 'ls', '--filter', `name=${runtimeId}`, '--format', '{{.Name}} {{.Replicas}}'], { timeoutMs: READ_TIMEOUT_MS });
+  for (const line of out.split('\n')) {
+    const [name, replicas] = line.trim().split(/\s+/);
+    const m = /^(\d+)\/(\d+)/.exec(replicas ?? '');
+    if (name === runtimeId && m) return { running: Number(m[1]), desired: Number(m[2]) };
+  }
+  return null;
+}
+
+/**
+ * `docker service logs` — every task, wherever it runs (design §7.4). The
+ * CLI applies `--tail` to each task and prints the tasks one after another,
+ * so the lines are put back in time order and the newest `tail` kept: the
+ * history a container service shows, not the first task's lines followed by
+ * the second's.
+ */
 export async function swarmServiceLogs(runtimeId: string, tail = 300): Promise<string> {
-  return capture('docker', ['service', 'logs', '--tail', String(tail), '--timestamps', runtimeId], { maxOutputBytes: 8 * 1024 * 1024, timeoutMs: 60_000 });
+  const out = await capture('docker', ['service', 'logs', '--tail', String(tail), '--timestamps', runtimeId], { maxOutputBytes: 8 * 1024 * 1024, timeoutMs: 60_000 });
+  return newestLogLines(out, tail);
+}
+
+/** A log timestamp as a sortable key: the CLI trims trailing zeros from the nanoseconds. */
+const logTimeKey = (ts: string): string => ts.replace(/(?:\.(\d+))?Z$/, (_m, fraction: string | undefined) => `.${(fraction ?? '').padEnd(9, '0')}Z`);
+const RE_LOG_TIME = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z) /;
+
+/**
+ * Lines of several tasks, each prefixed with its timestamp, in time order
+ * (stable; a line without a timestamp stays after the line before it), the
+ * newest `tail` of them.
+ */
+export function newestLogLines(out: string, tail: number): string {
+  let key = '';
+  const lines = out
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line, index) => {
+      const ts = RE_LOG_TIME.exec(line)?.[1];
+      if (ts) key = logTimeKey(ts);
+      return { line, index, key };
+    });
+  lines.sort((a, b) => a.key.localeCompare(b.key) || a.index - b.index);
+  return lines.slice(-Math.max(0, tail)).map((l) => l.line).join('\n');
+}
+
+/** A Swarm task id as the manager prints it with `--no-trunc`. */
+const RE_SWARM_TASK_ID = /^[a-z0-9]{25}$/;
+
+/**
+ * The tasks of a Swarm service that should be running, wherever they run:
+ * `{ id, name }` with the name in the form the task containers carry
+ * (`nd-<slug>_web.<slot>.<short id>`). Throws when the manager cannot answer.
+ */
+export async function runningSwarmTasks(runtimeId: string): Promise<Array<{ id: string; name: string }>> {
+  const out = await capture('docker', ['service', 'ps', '--filter', 'desired-state=running', '--no-trunc', '--format', '{{.ID}} {{.Name}}', runtimeId], {
+    timeoutMs: READ_TIMEOUT_MS,
+  });
+  const tasks: Array<{ id: string; name: string }> = [];
+  for (const line of out.split('\n')) {
+    const [id, name] = line.trim().split(/\s+/);
+    if (id && name && RE_SWARM_TASK_ID.test(id) && name.startsWith(`${runtimeId}.`)) tasks.push({ id, name: `${name}.${id.slice(0, 12)}` });
+  }
+  return tasks;
+}
+
+/**
+ * One task's log lines since `since`, read through the manager wherever the
+ * task runs, as `<timestamp> <line>` like `docker logs --timestamps` prints
+ * them (`--raw` drops the `<task>@<node> |` context). At most `max` lines.
+ */
+export async function swarmTaskLogsSince(taskId: string, since: string, max: number): Promise<string[]> {
+  if (!RE_SWARM_TASK_ID.test(taskId)) throw new Error('not a Swarm task id');
+  const lines: string[] = [];
+  await run('docker', ['service', 'logs', '--raw', '--timestamps', '--since', since, taskId], { timeoutMs: 10_000 }, (line) => {
+    if (lines.length < max) lines.push(line);
+  });
+  return lines;
 }
 
 /** The running task containers of a Swarm service on the PANEL host, in task-slot order. */
@@ -437,16 +522,27 @@ export async function localSwarmTaskFor(runtimeId: string, replica = 1): Promise
   };
 }
 
-/** Stats of a Swarm service: its local tasks summed (design §7.4: local tasks only). */
+/**
+ * Stats of a Swarm service: one task's worth, the average of its tasks on
+ * the panel host (design §7.4: local tasks only). A container service
+ * reports its primary container, and the limits, alerts and sizing hints
+ * that read this compare it with a per-task limit; a sum of three tasks
+ * against one task's memory limit raised false "raise the limit" hints.
+ */
 export function swarmContainerStat(containers: ReadonlyMap<string, ContainerStat>, runtimeId: string): ContainerStat | undefined {
-  let found: ContainerStat | undefined;
+  let n = 0;
+  let cpuPct = 0;
+  let memBytes = 0;
+  let memLimitBytes = 0;
   for (const [name, st] of containers) {
     if (!name.startsWith(`${runtimeId}.`)) continue;
-    found = found
-      ? { name: runtimeId, cpuPct: found.cpuPct + st.cpuPct, memBytes: found.memBytes + st.memBytes, memLimitBytes: found.memLimitBytes + st.memLimitBytes }
-      : { ...st, name: runtimeId };
+    n += 1;
+    cpuPct += st.cpuPct;
+    memBytes += st.memBytes;
+    memLimitBytes += st.memLimitBytes;
   }
-  return found;
+  if (n === 0) return undefined;
+  return { name: runtimeId, cpuPct: cpuPct / n, memBytes: Math.round(memBytes / n), memLimitBytes: Math.round(memLimitBytes / n) };
 }
 
 /** `GET /v1/services/:id/swarm` (design §7.5). A service not on Swarm has no stack. */

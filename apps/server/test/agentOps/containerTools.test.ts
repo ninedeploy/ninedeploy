@@ -6,7 +6,7 @@ const op = containerToolOps.ops['docker.containerTool']!;
 const CID = 'a'.repeat(64);
 const raw = [{ Id: CID, Name: '/same-name', Config: { Image: 'fixture:1', Env: ['SECRET=fixture-only'] }, State: { Status: 'running' } }];
 beforeEach(() => {
-  h.capture.mockReset().mockImplementation(async (_exe, args: string[]) => args.includes('--type') ? CID : args[0] === 'inspect' ? JSON.stringify(raw) : '');
+  h.capture.mockReset().mockImplementation(async (_exe, args: string[]) => args.includes('--format') ? CID : args[0] === 'inspect' ? JSON.stringify(raw) : '');
   h.run.mockReset().mockResolvedValue(undefined);
 });
 async function execute(action: string, extra: Record<string, unknown> = {}) {
@@ -23,7 +23,7 @@ describe('sealed node container tools', () => {
     const { exitCode, reply } = await execute(action);
     expect(exitCode).toBe(0); expect(reply.ok).toBe(true);
     expect(h.capture.mock.calls[0]?.[1]).toEqual(['inspect', '--type', 'container', '--format', '{{.Id}}', 'same-name']);
-    expect(h.capture.mock.calls[1]?.[1]).toEqual(['inspect', CID]);
+    expect(h.capture.mock.calls[1]?.[1]).toEqual(['inspect', '--type', 'container', CID]);
     expect(h.capture.mock.calls[0]?.[2]).toEqual({ timeoutMs: 10000, maxOutputBytes: 128 });
     expect(h.capture.mock.calls.slice(1).every(call => call[2]?.timeoutMs === 30000 && call[2]?.maxOutputBytes === 2 * 1024 * 1024)).toBe(true);
     expect(action === 'inspect' ? reply.result.id : reply.result.inspect.id).toBe(CID);

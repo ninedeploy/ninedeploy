@@ -173,6 +173,7 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
     enabled: isAdmin,
   });
   const svc = service.data;
+  const onSwarm = svc?.orchestrator === 'swarm' || svc?.placement?.orchestrator === 'swarm';
 
   // Auto-update is a standalone toggle (not part of the big form): flipping
   // it takes effect immediately, like the server's other watchdogs.
@@ -412,12 +413,15 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
           {svc.type === 'docker' && svc.healthCheck !== undefined && (
             <Field
               label={t('Healthcheck')}
-              hint={t('Container running: the deploy only waits for the container to stay up 10 s, for services with no HTTP or TCP port (UDP game servers, VoIP, workers).')}
+              hint={onSwarm
+                ? t('On Swarm: Container running waits for every task to run, with no port probe; a command runs as each task’s healthcheck. HTTP and TCP readiness are not available.')
+                : t('Container running: the deploy only waits for the container to stay up 10 s, for services with no HTTP or TCP port (UDP game servers, VoIP, workers).')}
             >
               <Select value={form.healthCheck} onChange={set('healthCheck')} className="h-9" aria-label={t('Healthcheck')}>
                 <option value="http">{t('Default healthcheck (legacy behaviour)')}</option>
-                <option value="http-strict">{t('HTTP readiness (2xx / 3xx response)')}</option>
-                <option value="tcp">{t('TCP readiness (port accepts connections)')}</option>
+                {/* R2: the server refuses HTTP/TCP readiness for Swarm; a stored value stays visible. */}
+                {(!onSwarm || form.healthCheck === 'http-strict') && <option value="http-strict">{t('HTTP readiness (2xx / 3xx response)')}</option>}
+                {(!onSwarm || form.healthCheck === 'tcp') && <option value="tcp">{t('TCP readiness (port accepts connections)')}</option>}
                 <option value="running">{t('Container running (no port probe)')}</option>
                 {/* 0.16.3, nodes and Swarm 0.16.4; shown once the panel reports the field. */}
                 {svc.healthCommand !== undefined && (

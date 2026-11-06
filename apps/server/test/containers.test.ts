@@ -13,6 +13,11 @@ const engineMocks = vi.hoisted(() => ({
 }));
 const nodeTools = vi.hoisted(() => ({ run: vi.fn() }));
 vi.mock('../src/lib/nodeContainerTools.js', () => ({ nodeContainerTool: nodeTools.run }));
+const swarmTasks = vi.hoisted(() => ({ localSwarmTaskFor: vi.fn() }));
+vi.mock('../src/lib/swarm.js', async (original) => ({
+  ...(await original<typeof import('../src/lib/swarm.js')>()),
+  localSwarmTaskFor: swarmTasks.localSwarmTaskFor,
+}));
 
 vi.mock('../src/engine/containerFiles.js', async () => {
   const actual = await vi.importActual<typeof import('../src/engine/containerFiles.js')>(
@@ -377,5 +382,52 @@ describe('r665: containers of node-pinned services', () => {
     const res = await app.inject({ method: 'GET', url: '/web-1-17/inspect', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(engineMocks.inspectContainer).toHaveBeenCalledWith('web-1-17');
+  });
+});
+
+/**
+ * R2: a Swarm service's runtime id names the Swarm service, which no
+ * container has. The File Browser and Manifest tabs pass it, and `docker exec
+ * nd-<slug>_web` answered a bare 500 (inspect, untyped, read the SERVICE
+ * object). Its first task on the panel host stands in, as for the terminal.
+ */
+describe('R2: containers of Swarm services', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    swarmTasks.localSwarmTaskFor.mockReset();
+  });
+  const swarmRow = { id: 1, slug: 'web', type: 'docker', orchestrator: 'swarm', runtimeId: 'nd-web_web', serverId: null };
+
+  it('reaches the service’s task on the panel host', async () => {
+    swarmTasks.localSwarmTaskFor.mockResolvedValue({ container: 'nd-web_web.1.abcdef' });
+    engineMocks.inspectContainer.mockResolvedValueOnce({ id: 'task' });
+    engineMocks.listContainerDir.mockResolvedValueOnce([]);
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: swarmRow } }) });
+    await app.register(containerRoutes);
+    expect((await app.inject({ method: 'GET', url: '/nd-web_web/inspect', headers: asUser() })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/nd-web_web/files?path=/', headers: asUser() })).statusCode).toBe(200);
+    expect(engineMocks.inspectContainer).toHaveBeenCalledWith('nd-web_web.1.abcdef');
+    expect(engineMocks.listContainerDir).toHaveBeenCalledWith('nd-web_web.1.abcdef', '/');
+    expect(swarmTasks.localSwarmTaskFor).toHaveBeenCalledWith('nd-web_web');
+  });
+
+  it('no task on the panel host: 422 swarm_task_elsewhere naming the node, nothing run', async () => {
+    swarmTasks.localSwarmTaskFor.mockResolvedValue({ refusal: 'Replica 1 of this Swarm service runs on node edge-1, not on the panel host; open a node terminal there.' });
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: swarmRow } }) });
+    await app.register(containerRoutes);
+    const res = await app.inject({ method: 'GET', url: '/nd-web_web/compose', headers: asUser() });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe('swarm_task_elsewhere');
+    expect(res.json().error.message).toBe('Replica 1 of this Swarm service runs on node edge-1, not on the panel host. Inspect, compose and file access only reach containers on the panel host.');
+    expect(engineMocks.getContainerComposeManifest).not.toHaveBeenCalled();
+  });
+
+  it('review L1: a compose container named like another service’s stack is that container, not a Swarm task', async () => {
+    engineMocks.inspectContainer.mockResolvedValueOnce({ id: 'compose' });
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: { ...swarmRow, slug: 'attacker', type: 'compose', orchestrator: null } } }) });
+    await app.register(containerRoutes);
+    expect((await app.inject({ method: 'GET', url: '/nd-web_web/inspect', headers: asUser() })).statusCode).toBe(200);
+    expect(swarmTasks.localSwarmTaskFor).not.toHaveBeenCalled();
+    expect(engineMocks.inspectContainer).toHaveBeenCalledWith('nd-web_web');
   });
 });

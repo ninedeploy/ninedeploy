@@ -97,16 +97,69 @@ describe('the runtime helpers (lib/swarm.ts)', () => {
   it('scale / restart / logs', async () => {
     await swarm.scaleSwarmService('nd-web_web', 0);
     await swarm.scaleSwarmService('nd-web_web', 50);
-    await swarm.restartSwarmService('nd-web_web');
+    await swarm.restartSwarmService('nd-web_web', 3);
+    await swarm.restartSwarmService('nd-web_web', 0);
     await swarm.swarmServiceLogs('nd-web_web');
     await swarm.swarmServiceLogs('nd-web_web', 2000);
     expect(h.docker).toEqual([
       ['service', 'scale', '--detach', 'nd-web_web=0'],
       ['service', 'scale', '--detach', 'nd-web_web=10'],
-      ['service', 'update', '--force', '--detach', 'nd-web_web'],
+      // A restart after a Stop must bring the tasks back, not force an update of 0 tasks.
+      ['service', 'update', '--force', '--replicas', '3', '--detach', 'nd-web_web'],
+      ['service', 'update', '--force', '--replicas', '1', '--detach', 'nd-web_web'],
       ['service', 'logs', '--tail', '300', '--timestamps', 'nd-web_web'],
       ['service', 'logs', '--tail', '2000', '--timestamps', 'nd-web_web'],
     ]);
+  });
+
+  it('R2: the log history is in time order, newest `tail` lines (the CLI tails each task and prints them one after another)', async () => {
+    // Captured from `docker service logs --timestamps --tail 3` on a real two-task service.
+    h.answers.set(
+      'service logs',
+      [
+        '2026-11-06T13:51:40.215274259Z nd-web_web.2.z2qbzmghn2j6@65e06693ce6c    | tick 2 from aa7e3c7f63f6',
+        '2026-11-06T13:51:42.216499096Z nd-web_web.2.z2qbzmghn2j6@65e06693ce6c    | tick 3 from aa7e3c7f63f6',
+        '2026-11-06T13:51:44.218084204Z nd-web_web.2.z2qbzmghn2j6@65e06693ce6c    | tick 4 from aa7e3c7f63f6',
+        '2026-11-06T13:51:40.05085Z nd-web_web.1.t5uaffpngm06@65e06693ce6c    | tick 2 from 2e5d531a5ecc',
+        '2026-11-06T13:51:42.052050205Z nd-web_web.1.t5uaffpngm06@65e06693ce6c    | tick 3 from 2e5d531a5ecc',
+        '2026-11-06T13:51:44.05355639Z nd-web_web.1.t5uaffpngm06@65e06693ce6c    | tick 4 from 2e5d531a5ecc',
+        '',
+      ].join('\n'),
+    );
+    const out = (await swarm.swarmServiceLogs('nd-web_web', 3)).split('\n');
+    expect(out.map((l) => l.replace(/^\S+ (\S+?)\.\w+@\S+ +\| /, '$1 '))).toEqual([
+      'nd-web_web.2 tick 3 from aa7e3c7f63f6',
+      'nd-web_web.1 tick 4 from 2e5d531a5ecc',
+      'nd-web_web.2 tick 4 from aa7e3c7f63f6',
+    ]);
+    // A trimmed nanosecond field sorts as its padded value; a line without a timestamp stays after the line before it.
+    expect(swarm.newestLogLines('2026-01-01T00:00:00.5Z b\n2026-01-01T00:00:00.123456789Z a\ncontinued\n', 10).split('\n')).toEqual([
+      '2026-01-01T00:00:00.123456789Z a',
+      'continued',
+      '2026-01-01T00:00:00.5Z b',
+    ]);
+    expect(swarm.newestLogLines('', 10)).toBe('');
+  });
+
+  it('R2: the running tasks wherever they run, and one task’s lines through the manager', async () => {
+    h.answers.set('service ps --filter desired-state=running', [
+      '9fdlsd9o34fxax3sserg36aj0 nd-web_web.1',
+      'rdjoppwox65cdgiy5zx2r7t4m nd-web_web.2',
+      'tooshort nd-web_web.3',
+      'zzzzzzzzzzzzzzzzzzzzzzzzz nd-other_web.1',
+    ].join('\n'));
+    expect(await swarm.runningSwarmTasks('nd-web_web')).toEqual([
+      { id: '9fdlsd9o34fxax3sserg36aj0', name: 'nd-web_web.1.9fdlsd9o34fx' },
+      { id: 'rdjoppwox65cdgiy5zx2r7t4m', name: 'nd-web_web.2.rdjoppwox65c' },
+    ]);
+    const { run } = await import('../src/lib/exec.js');
+    vi.mocked(run).mockImplementationOnce(async (_c, args, _o, onLine) => {
+      h.docker.push(args);
+      for (const l of ['2026-11-06T13:52:48.361895352Z a', '2026-11-06T13:52:50Z b', '2026-11-06T13:52:52Z c']) onLine?.(l);
+    });
+    expect(await swarm.swarmTaskLogsSince('9fdlsd9o34fxax3sserg36aj0', '2026-11-06T13:52:00Z', 2)).toEqual(['2026-11-06T13:52:48.361895352Z a', '2026-11-06T13:52:50Z b']);
+    expect(h.docker).toContainEqual(['service', 'logs', '--raw', '--timestamps', '--since', '2026-11-06T13:52:00Z', '9fdlsd9o34fxax3sserg36aj0']);
+    await expect(swarm.swarmTaskLogsSince('nd-web_web', 'x', 1)).rejects.toThrow(/not a Swarm task id/);
   });
 
   it('the terminal / job task: a local task by slot, else where the replica runs', async () => {
@@ -119,13 +172,14 @@ describe('the runtime helpers (lib/swarm.ts)', () => {
     expect(await swarm.localSwarmTaskFor('nd-web_web')).toEqual({ refusal: expect.stringMatching(/No replica of this Swarm service runs on the panel host/) });
   });
 
-  it('stats: the local tasks summed; nothing for a service with no local task', () => {
+  it('stats: one task’s worth, the average of the local tasks; nothing for a service with no local task', () => {
     const containers = new Map([
       ['nd-web_web.1.a', { name: 'nd-web_web.1.a', cpuPct: 1.5, memBytes: 100, memLimitBytes: 1000 }],
       ['nd-web_web.2.b', { name: 'nd-web_web.2.b', cpuPct: 2, memBytes: 50, memLimitBytes: 1000 }],
       ['nd-web_webx.1.c', { name: 'x', cpuPct: 9, memBytes: 9, memLimitBytes: 9 }],
     ]);
-    expect(swarm.swarmContainerStat(containers, 'nd-web_web')).toEqual({ name: 'nd-web_web', cpuPct: 3.5, memBytes: 150, memLimitBytes: 2000 });
+    // Compared with the per-task limit by alerts and sizing hints, like a container's primary.
+    expect(swarm.swarmContainerStat(containers, 'nd-web_web')).toEqual({ name: 'nd-web_web', cpuPct: 1.75, memBytes: 75, memLimitBytes: 1000 });
     expect(swarm.swarmContainerStat(containers, 'nd-api_web')).toBeUndefined();
   });
 
@@ -159,7 +213,7 @@ describe('service routes on a Swarm runtime (modules/services.ts)', () => {
     return app;
   }
 
-  it('stop scales to 0, start back to the replicas, restart forces a rolling update, logs read every task', async () => {
+  it('stop scales to 0, start back to the replicas, restart forces a rolling update at the replicas, logs read every task', async () => {
     const app = await appFor(swarmSvc());
     expect((await app.inject({ method: 'POST', url: '/1/stop', headers: asUser() })).statusCode).toBe(200);
     expect((await app.inject({ method: 'POST', url: '/1/start', headers: asUser() })).statusCode).toBe(200);
@@ -169,7 +223,7 @@ describe('service routes on a Swarm runtime (modules/services.ts)', () => {
     expect(h.docker).toEqual([
       ['service', 'scale', '--detach', 'nd-web_web=0'],
       ['service', 'scale', '--detach', 'nd-web_web=2'],
-      ['service', 'update', '--force', '--detach', 'nd-web_web'],
+      ['service', 'update', '--force', '--replicas', '2', '--detach', 'nd-web_web'],
       ['service', 'logs', '--tail', '300', '--timestamps', 'nd-web_web'],
     ]);
     // Never the container CLI against a name no container has.
@@ -245,7 +299,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'engine/swarmRecovery.ts': { exempt: 'verifies native service ID, exact spec and manager before version-fenced Engine operations; previous Docker generations are delegated to their captured-ID controller' },
   'engine/swarmArtifact.ts': { exempt: 'Swarm-only verifier resolves a native service into immutable task/container IDs and sealed node reads; never uses the service runtime ID as a container' },
   'engine/interruptedRuntime.ts': { exempt: 'removes containers by their deployment label; Swarm task containers carry none (the labels are on the service)' },
-  'engine/logShipper.ts': { exempt: 'ships local container logs; Swarm service logs are read with `docker service logs` (shipping them is deferred)' },
+  'engine/logShipper.ts': { branch: true },
   'engine/proxy.ts': { exempt: 'renders runtimeId:port — the Swarm VIP resolves on the overlay Traefik joined, so no change is needed (design §7.4 step 7)' },
   'engine/types.ts': { exempt: 'types only' },
   'lib/imageScan.ts': { exempt: 'scans only docker services on the panel host that are not on Swarm (scannableOnPanel)' },
@@ -289,7 +343,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'modules/ai.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
   'lib/alertInvestigation.ts': { exempt: 'checks only that the service runs; lib/runtimeLogs.ts reads the logs and branches on Swarm' },
   'lib/swarmFileSecrets.ts': { exempt: 'Swarm only: reads the native service spec by its Swarm service name (`docker service inspect`) to keep the secrets it mounts' },
-  'modules/containers.ts': { exempt: 'node container access; Swarm services are never node-pinned' },
+  'modules/containers.ts': { branch: true },
   'modules/databases.ts': { exempt: 'node database networks; Swarm services cannot attach databases' },
   'modules/demo.ts': { exempt: 'the legacy demo rows' },
   'modules/domainIndex.ts': { exempt: 'display only' },

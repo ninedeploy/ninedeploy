@@ -228,7 +228,7 @@ describe('AutoscaleCard', () => {
     expect(screen.getByText(/Node autoscaling requires confirmed replica capacity/)).toBeInTheDocument();
     cleanup();
     renderCard(serviceWith({ placement: { orchestrator: 'swarm' } }));
-    expect(screen.getByText(/runs on Swarm, which scales with its own replicas/)).toBeInTheDocument();
+    expect(screen.getByText(/runs on Swarm, which is not autoscaled: it runs the replica count set in Settings/)).toBeInTheDocument();
   });
 
   it('marks a metric the placement cannot act on, from the panel status', async () => {

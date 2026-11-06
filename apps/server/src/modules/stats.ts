@@ -92,7 +92,7 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       // belongs to /servers/:id/stats and the service's own history route.
       if (s.serverId != null) continue;
       const cname = s.runtimeId ?? `nd-app-${s.slug}`;
-      // 0.16 T7: a Swarm service's figure is its local tasks summed (design §7.4).
+      // 0.16 T7, R2: a Swarm service's figure is one task's worth, its local tasks averaged (design §7.4).
       const swarmRuntime = swarmRuntimeOf(s);
       const st = swarmRuntime
         ? swarmContainerStat(containers, swarmRuntime)
@@ -158,7 +158,7 @@ export const metricRoutes: FastifyPluginAsync = async (app) => {
       const { containers } = app.stats.raw();
       const svc = await app.db.query.services.findFirst({ where: eq(services.id, id) });
       if (svc) {
-        // 0.16 T7: a Swarm service's figure is its local tasks summed.
+        // 0.16 T7, R2: a Swarm service's figure is its local tasks averaged.
         const swarmRuntime = swarmRuntimeOf(svc);
         const st = svc.serverId != null ? nodeServiceStat(svc, app.stats.raw().nodeContainers?.get(svc.serverId)) : swarmRuntime
           ? swarmContainerStat(containers, swarmRuntime)

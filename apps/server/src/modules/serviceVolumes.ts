@@ -267,6 +267,12 @@ export const serviceVolumesRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     ensureSupportsVolumes(svc);
+    // R2: refused before anything is created. The cluster places Swarm
+    // replicas and a named volume is per node, so the queued redeploy failed
+    // after the volume and the attachment row already existed.
+    if (svc.orchestrator === 'swarm') {
+      throw new HttpError(422, 'swarm_unsupported', 'Volume attachments cannot follow Swarm replicas: named volumes are per node. Switch the service to plain containers to attach a volume.');
+    }
     const input = createServiceVolumeAttachment.parse(req.body);
     // r640: the attach ends in a redeploy — refuse up front, before any row or
     // docker volume is created, when the caller may not redeploy this service.

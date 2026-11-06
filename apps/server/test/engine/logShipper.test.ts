@@ -194,3 +194,57 @@ describe('durable log-drain shipper', () => {
     expect(body.streams[0].stream).toMatchObject({ service: 'web', job: 'ninedeploy' });
   });
 });
+
+describe('R2: a Swarm service ships the lines of every task, wherever it runs', () => {
+  const T1 = 'aaaaaaaaaaaaaaaaaaaaaaaaa', T2 = 'bbbbbbbbbbbbbbbbbbbbbbbbb';
+  async function swarmSetup() {
+    const f = await setup();
+    await f.db.update(services).set({ runtimeId: 'nd-web_web', orchestrator: 'swarm', replicas: 2, runtimeReplicas: 1 }).where(eq(services.id, 1));
+    const tasks = [{ id: T1, name: 'nd-web_web.1.aaaaaaaaaaaa' }, { id: T2, name: 'nd-web_web.2.bbbbbbbbbbbb' }];
+    const listSwarmTasks = vi.fn<NonNullable<ShipperDeps['listSwarmTasks']>>(async () => tasks);
+    const readSwarmTaskLogs = vi.fn<NonNullable<ShipperDeps['readSwarmTaskLogs']>>(async (id) =>
+      id === T1 ? ['2026-10-22T15:00:03Z first task'] : ['2026-10-22T15:00:02.5Z second task']);
+    const tick = () => shipLogsOnce(f.db, { ...f.deps, listSwarmTasks, readSwarmTaskLogs });
+    return { ...f, tasks, tick, listSwarmTasks, readSwarmTaskLogs };
+  }
+
+  it('one cursor per task; never `docker logs` against the Swarm service name, which no container has', async () => {
+    const f = await swarmSetup();
+    await f.tick();
+    expect((await f.db.select().from(logDrainCursors)).map((c) => c.runtimeKey).sort()).toEqual([`swarm:${T1}`, `swarm:${T2}`]);
+    f.time();
+    expect(await f.tick()).toMatchObject({ shipped: 2, queued: 2 });
+    expect(f.readLogs).not.toHaveBeenCalled();
+    expect(f.readSwarmTaskLogs.mock.calls.map((c) => c[0]).sort()).toEqual([T1, T2]);
+    const shipped = f.dispatch.mock.calls.flatMap((c) => c[1]);
+    expect(shipped).toEqual(expect.arrayContaining([
+      expect.objectContaining({ service: 'web', container: 'nd-web_web.1.aaaaaaaaaaaa', line: 'first task' }),
+      expect.objectContaining({ service: 'web', container: 'nd-web_web.2.bbbbbbbbbbbb', line: 'second task' }),
+    ]));
+  });
+
+  it('no destination takes the service: the manager is not asked for its tasks', async () => {
+    const f = await swarmSetup();
+    await f.db.update(logDrains).set({ enabled: false });
+    await f.tick();
+    await f.db.insert(services).values({ id: 2, name: 'Other', slug: 'other', ownerUserId: 1, type: 'docker', status: 'stopped', runtimeId: 'other-1' });
+    await f.db.update(logDrains).set({ enabled: true, serviceId: 2 });
+    await f.tick();
+    expect(f.listSwarmTasks).not.toHaveBeenCalled();
+  });
+
+  it('a manager that cannot list the tasks skips the service this round, without a cursor', async () => {
+    const f = await swarmSetup();
+    f.listSwarmTasks.mockRejectedValue(new Error('This node is not a swarm manager.'));
+    expect(await f.tick()).toMatchObject({ shipped: 0, queued: 0 });
+    expect(await f.db.select().from(logDrainCursors)).toEqual([]);
+  });
+
+  it('a compose service whose runtime id looks like a Swarm service is read as containers (review L1)', async () => {
+    const f = await swarmSetup();
+    await f.db.update(services).set({ type: 'compose', orchestrator: null, slug: 'attacker' }).where(eq(services.id, 1));
+    await f.tick(); f.time(); await f.tick();
+    expect(f.listSwarmTasks).not.toHaveBeenCalled();
+    expect(f.readLogs).toHaveBeenCalledWith('nd-web_web', expect.any(String));
+  });
+});

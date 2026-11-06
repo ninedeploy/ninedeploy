@@ -261,6 +261,17 @@ describe('service volume attachments', () => {
       expect(body.deploymentId).toBe(42);
     });
 
+    it('R2: a Swarm service is refused before any volume or attachment row exists (the redeploy used to fail after both)', async () => {
+      const db = createFakeDb({ findFirst: { services: svcRow({ id: 1, slug: 'web', orchestrator: 'swarm', runtimeId: 'nd-web_web' }) } });
+      const insert = vi.spyOn(db, 'insert');
+      const app = await buildTestApp({ db });
+      await app.register(serviceVolumesRoutes);
+      const res = await app.inject({ method: 'POST', url: '/1/volumes', headers: asUser(), payload: { create: { label: 'media' }, containerPath: '/media' } });
+      expect(res.statusCode).toBe(422);
+      expect(res.json().error).toMatchObject({ code: 'swarm_unsupported', message: expect.stringMatching(/named volumes are per node/) });
+      expect(insert).not.toHaveBeenCalled();
+    });
+
     it('provisions a fresh volume and attaches it when create.label is given', async () => {
       const app = await buildTestApp({
         db: createFakeDb({

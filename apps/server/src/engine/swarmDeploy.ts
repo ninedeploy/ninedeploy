@@ -67,6 +67,23 @@ export function swarmContainerOptions(options: ServiceRuntimeOptions | null | un
   return Object.keys(out).length > 0 ? out : null;
 }
 
+/**
+ * The readiness a Swarm runtime carries. `command` becomes the task's own
+ * healthcheck, which Swarm gates every task on. `running` asks for the tasks
+ * only: the replicas converge, through Swarm's 30 s update monitor, with no
+ * port probe, as a container's `running` mode does without one. Anything else
+ * is the HTTP probe through Traefik. HTTP-strict and TCP are refused for
+ * Swarm before a deploy starts.
+ */
+export function swarmHealthMode(service: { healthCheck?: string | null; healthCommand?: string | null }): Pick<DeployRuntime, 'healthCheck' | 'healthCommand'> {
+  if (service.healthCheck === 'command' && service.healthCommand?.trim()) return { healthCheck: 'command', healthCommand: service.healthCommand.trim() };
+  if (service.healthCheck === 'running') return { healthCheck: 'running' };
+  return {};
+}
+
+/** A runtime whose readiness is its converged tasks, without the probe through Traefik. */
+const tasksOnly = (runtime: Pick<DeployRuntime, 'healthCheck'>): boolean => runtime.healthCheck === 'command' || runtime.healthCheck === 'running';
+
 type SwarmCandidate = {
   healthCheck?: string | null;
   id: number;
@@ -225,7 +242,7 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
       const transition = ctx.prepareSwarmTransition ? await ctx.prepareSwarmTransition(spec, {
         runtimeId, port: ctx.service.port ?? null, healthPath: ctx.service.healthPath ?? '/',
         ...(image.imageId ? { imageDigest: image.imageId } : {}),
-        ...(service.healthCheck === 'command' && service.healthCommand?.trim() ? { healthCheck: 'command' as const, healthCommand: service.healthCommand.trim() } : {}),
+        ...swarmHealthMode(service),
       }, image.auth) : undefined;
       if (!transition && !deps.driver) throw new SwarmRecoveryPending('Managed Swarm deployment requires a durable transition journal');
       journalled = transition !== undefined;
@@ -279,8 +296,8 @@ export function createSwarmBuilder(db: DB, slug: string, deps: SwarmBuilderDeps 
         replicas: 1,
         ...(imageDigest ? { imageDigest } : {}),
         ...(image.artifactBuild ? { artifactBuild: image.artifactBuild } : {}),
-        // 0.16.4: Swarm gated each task on the command; no HTTP probe after it.
-        ...(service.healthCheck === 'command' && service.healthCommand?.trim() ? { healthCheck: 'command' as const, healthCommand: service.healthCommand.trim() } : {}),
+        // 0.16.4: Swarm gated each task on the command; no HTTP probe after it. `running`: the tasks only.
+        ...swarmHealthMode(service),
       };
     },
 
@@ -536,7 +553,7 @@ export async function swarmHealthy(runtime: DeployRuntime, timeoutMs: number, lo
   do {
     const counts = await replicaCounts(runtime.runtimeId);
     if (counts && counts.desired > 0 && counts.running >= counts.desired) {
-      if (!runtime.port || runtime.healthCheck === 'command' || (await probeViaTraefik(runtime.runtimeId, runtime.port, path))) return true;
+      if (!runtime.port || tasksOnly(runtime) || (await probeViaTraefik(runtime.runtimeId, runtime.port, path))) return true;
       if (noted !== 'port') log(`Swarm: ${counts.running}/${counts.desired} replicas running; waiting for port ${runtime.port} to answer through Traefik …`);
       noted = 'port';
     } else if (counts && noted !== `${counts.running}/${counts.desired}`) {

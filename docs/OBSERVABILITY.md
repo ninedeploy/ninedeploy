@@ -27,8 +27,9 @@ setting. Reducing retention deletes older summaries during the next cleanup.
 The existing per-service visibility checks still apply.
 
 This covers currently collected local and ordinary node-service CPU/memory.
-Remote Swarm task aggregation, fan-out destination history and node-only database
-history remain separate work. Monitoring's panel-host totals stay local.
+A Swarm service records the average of its tasks on the panel host; tasks on
+worker nodes are not measured. Remote Swarm task aggregation, fan-out
+destination history and node-only database history remain separate work. Monitoring's panel-host totals stay local.
 
 ## Prometheus
 
@@ -105,7 +106,9 @@ their backend settings do not configure this exporter.
 ## Durable captured-log delivery
 
 Each log drain now has an encrypted SQLite queue and persistent cursor per
-runtime, host and destination binding. Capture commits a batch and cursor
+runtime, host and destination binding. A Swarm service's runtimes are its
+tasks: each task's lines are read through the manager wherever the task runs,
+with a cursor per task. Capture commits a batch and cursor
 together. A stopped source container does not prevent delivery of an already
 captured batch, including after a panel restart. A failing destination retries
 with exponential backoff (10 seconds up to five minutes); another successful

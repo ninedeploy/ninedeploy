@@ -166,7 +166,7 @@ Notes:
 - Turning autoscaling on applies fully at the next deploy, which creates the spare containers; until then it can only scale down. Turning it off keeps the containers that serve now until the next deploy, which runs `replicas` containers again.
 - As with replicas, a host port reaches the first container only; the others serve through the domain.
 - On a node, autoscaling acts on `cpu`, `memory` and `rps` once a deploy has prepared confirmed replica capacity. For `rps` the node agent must run with `NINEDEPLOY_AGENT_PROXY_TRAFFIC=on`, an agent version that advertises `proxy.servingTraffic`, and a routed domain on the node. Each 30 s evaluation counts the requests the node proxy served to the replicas over a 10 s window. With an older or non-opted-in agent, a deploy keeps the existing path, and the status says why it holds, with no value. A missing measurement is never shown as zero requests and never scales down. See [NODE_RPS_AUTOSCALING.md](NODE_RPS_AUTOSCALING.md).
-- Autoscaling holds for Swarm services, which scale with their own replicas; their `supportedMetrics` is empty.
+- Autoscaling holds for Swarm services: they are not autoscaled and run the replica count set on the service. Their `supportedMetrics` is empty.
 - Stopped spare containers take disk space only. With `--restart always`, a Docker restart starts them again; the autoscaler stops them at its next look.
 
 #### Scheduled minimums (G5.6)
@@ -834,10 +834,28 @@ example with a leaked token, never runs a NineDeploy task.
   persistent volume and volume attachments (named volumes are per node), the
   Docker socket, a published host port or port mappings, managed databases, and fan-out targets.
   A PR preview of a Swarm service runs as a normal container.
-- **Logs** come from `docker service logs`; **restart** is a rolling restart;
-  **stop/start** scale the service to 0 and back; the **terminal** opens a task
-  on the panel host, or says which node runs the replica; **stats** cover the
-  tasks on the panel host.
+- **What works on Swarm, and how** (R2 support matrix, checked against a real
+  swarm). "Panel host only" means a task the cluster placed on the panel host;
+  each of those features names the node when no task runs there.
+
+  | Feature | On Swarm |
+  | --- | --- |
+  | Readiness: default HTTP | The tasks converge (Swarm's 30 s update monitor), then the port answers through Traefik; any status below 500 is up |
+  | Readiness: Container running | The tasks converge, with no port probe (for workers and non-HTTP ports) |
+  | Readiness: Command | Becomes each task's own Docker healthcheck, which Swarm gates every task on; no port probe |
+  | Readiness: image `HEALTHCHECK` | Used by Swarm as it is |
+  | Readiness: HTTP-strict, TCP | **Refused** (400 on save, 422 `swarm_unsupported` on switching to Swarm); the Settings tab does not offer them |
+  | Runtime logs (Logs tab, API, CLI, AI analysis) | `docker service logs` for every task wherever it runs, put in time order, newest lines kept |
+  | Log drains | Each task's lines through the manager, wherever the task runs, with one cursor per task |
+  | Status | The patrol checks a `running` service against the manager each minute: a service scaled to 0 outside the panel is scaled back, one that no longer exists is marked `error`, and one with **no running task for 5 minutes** is marked `error` with the service-down alert. Swarm itself restarts and reschedules tasks. A manager that cannot answer is never a verdict |
+  | Stop / Start | Scale to 0 and back to the service's replicas |
+  | Restart | A rolling restart at the service's replica count, so a Restart after a Stop brings the tasks back |
+  | Metrics, alerts, sizing hints | **Panel host only**: the average of the service's tasks on the panel host, compared with the per-task limits. Tasks on worker nodes are not measured; with none on the panel host the service has no metrics |
+  | Terminal, File Browser, Manifest tab | **Panel host only**: a task on the panel host; otherwise 422 `swarm_task_elsewhere` naming the node |
+  | Dashboard health | The port through Traefik; any status below 500 is up |
+  | Canary | **Skipped**: the deploy log says so; Swarm's start-first rolling update with automatic rollback applies |
+  | Autoscaling, scale to zero | **Not available**: the service runs the replica count set on it; the status and the panel say so |
+  | Volume attachments, persistent volume, Docker socket, host ports, managed databases, fan-out, restart limit, tunnels | **Refused** (volume attachments with 422 `swarm_unsupported` before anything is created) |
 
 **Network and firewall.** NineDeploy's overlays always encrypt their traffic
 (IPsec), and there is no setting to turn that off. Between all swarm hosts

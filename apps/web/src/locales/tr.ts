@@ -784,6 +784,8 @@ export const TR: Readonly<Record<string, string>> = {
   'Healthcheck': 'Sağlık kontrolü',
   'Container running: the deploy only waits for the container to stay up 10 s, for services with no HTTP or TCP port (UDP game servers, VoIP, workers).':
     'Konteyner çalışıyor: dağıtım yalnızca konteynerin 10 sn ayakta kalmasını bekler; HTTP ya da TCP portu olmayan servisler için (UDP oyun sunucuları, VoIP, worker’lar).',
+  'On Swarm: Container running waits for every task to run, with no port probe; a command runs as each task’s healthcheck. HTTP and TCP readiness are not available.':
+    'Swarm’da: Konteyner çalışıyor seçeneği port yoklaması yapmadan tüm görevlerin çalışmasını bekler; komut her görevin kendi sağlık kontrolü olarak çalışır. HTTP ve TCP hazırlık kontrolleri kullanılamaz.',
   'Default healthcheck (legacy behaviour)': 'Varsayılan sağlık kontrolü (eski davranış)',
   'HTTP readiness (2xx / 3xx response)': 'HTTP hazırlığı (2xx / 3xx yanıtı)',
   'TCP readiness (port accepts connections)': 'TCP hazırlığı (port bağlantı kabul ediyor)',
@@ -1356,8 +1358,8 @@ export const TR: Readonly<Record<string, string>> = {
   '{metric} — not available here': '{metric} — burada kullanılamaz',
   'Node autoscaling requires confirmed replica capacity and supports CPU or memory; request-rate scaling is not available yet.':
     'Düğümde otomatik ölçekleme doğrulanmış kopya kapasitesi gerektirir ve CPU veya belleği destekler; istek hızına göre ölçekleme henüz kullanılamıyor.',
-  'This service runs on Swarm, which scales with its own replicas; the autoscaler holds for it.':
-    'Bu servis, kendi kopyalarıyla ölçeklenen Swarm üzerinde çalışıyor; otomatik ölçekleyici onun için bekliyor.',
+  'This service runs on Swarm, which is not autoscaled: it runs the replica count set in Settings.':
+    'Bu servis Swarm üzerinde çalışıyor ve otomatik ölçeklenmiyor: Ayarlar’da belirlenen kopya sayısıyla çalışır.',
   'Min containers': 'En az konteyner',
   'Never fewer, 1–{max}.': 'Asla daha az değil, 1–{max}.',
   'Max containers': 'En çok konteyner',

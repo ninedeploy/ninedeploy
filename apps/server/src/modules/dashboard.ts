@@ -82,8 +82,12 @@ async function probeViaMesh(runtimeId: string, port: number, path: string, timeo
       `http://${runtimeId}:${port}${path}`,
     ], { timeoutMs });
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    // A status below 500 is up, as for the direct probe and the deploy's
+    // readiness: busybox wget exits non-zero on a 4xx and says so. Through
+    // the mesh (every Swarm service, and containers on hosts that cannot
+    // route bridge IPs) a 401 or 404 health path painted a serving app red.
+    return /server returned error: HTTP\/[\d.]+ [1-4]\d\d/.test(err instanceof Error ? err.message : String(err));
   }
 }
 

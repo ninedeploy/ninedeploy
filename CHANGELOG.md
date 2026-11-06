@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Swarm services: what each feature does, made true (R2).** [Deployments §7](docs/DEPLOYMENTS.md) now has a support matrix for Swarm services, checked on a real swarm. The cases that were silently wrong:
+  - **Restart after Stop** left the service at 0 tasks while the panel showed it running. Restart now runs every task at the service's replica count.
+  - **Status was never checked.** The runtime patrol skipped Swarm services, so a crash loop, an image no node could pull or a removed stack stayed "running". The patrol now checks a running Swarm service each minute. A service scaled to 0 outside the panel is scaled back, and one that no longer exists is marked down at once. One with no running task for five minutes is marked down too, with the service-down alert. Swarm still restarts its own tasks, and a manager that cannot answer is never a verdict.
+  - **Log drains** never received Swarm logs, because they read a container named after the service, which does not exist. They now read each task through the manager, wherever it runs.
+  - **The Logs tab** listed one task's lines, then the next task's. They are now in time order, newest kept.
+  - **The `Container running` healthcheck** probed HTTP through Traefik, so a worker or a non-HTTP port failed its deploy. It now waits for the tasks only.
+  - **The File Browser** answered a bare 500, and **the Manifest tab** showed the Swarm service object as an empty container. Both now open a task on the panel host, or name the node that runs it (422 `swarm_task_elsewhere`).
+  - **Metrics** summed the tasks on the panel host and compared the sum with one task's limit, which gave false "raise the limit" hints. They now report one task's worth: the average.
+  - **The dashboard** marked a 4xx health path through Traefik as down, unlike the deploy. This also affected containers on hosts that cannot route bridge IPs.
+  - **A volume attachment** was accepted, then its redeploy failed and left the volume and the attachment behind. It is now refused (422 `swarm_unsupported`) before anything is created.
+  - **The Settings tab** no longer offers HTTP or TCP readiness to a Swarm service, which the server refuses. The autoscaling notice no longer suggests Swarm scales by itself.
+
 ## [0.18.21] - 2026-11-05
 
 ### Added

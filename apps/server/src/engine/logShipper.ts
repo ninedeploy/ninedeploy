@@ -8,6 +8,7 @@ import { dispatchLogBatch, type LogPayloadEntry } from './logDrainManager.js';
 import { replicaNames } from './dockerNames.js';
 import { agentOp } from '../lib/agentClient.js';
 import { readObservabilitySettings } from '../lib/observabilitySettings.js';
+import { runningSwarmTasks, swarmRuntimeOf, swarmTaskLogsSince } from '../lib/swarm.js';
 
 export const MAX_LINES_PER_RUNTIME = 1000;
 const MAX_BATCH_BYTES = 256 * 1024;
@@ -16,6 +17,9 @@ const MAX_DELIVERIES = 20;
 export interface ShipperDeps {
   readRemoteLogs?: (serverId: number, container: string, since: string) => Promise<string[]>;
   readLogs: (container: string, since: string) => Promise<string[]>;
+  /** R2: the tasks of a Swarm service, wherever they run, and one task's lines (both through the manager). */
+  listSwarmTasks?: (service: string) => Promise<Array<{ id: string; name: string }>>;
+  readSwarmTaskLogs?: (taskId: string, since: string) => Promise<string[]>;
   dispatch: typeof dispatchLogBatch;
   now: () => Date;
   signal?: AbortSignal;
@@ -27,6 +31,8 @@ const defaultDeps: ShipperDeps = {
       { timeoutMs: 10_000 }, (line) => { if (lines.length < MAX_LINES_PER_RUNTIME * 2) lines.push(line); });
     return lines;
   },
+  listSwarmTasks: runningSwarmTasks,
+  readSwarmTaskLogs: (taskId, since) => swarmTaskLogsSince(taskId, since, MAX_LINES_PER_RUNTIME * 2),
   dispatch: dispatchLogBatch,
   now: () => new Date(),
 };
@@ -144,10 +150,34 @@ export async function shipLogsOnce(
   await deliver();
   const running = await db.select().from(services)
     .where(and(eq(services.status, 'running'), inArray(services.type, ['docker', 'compose'])));
+  /**
+   * Where a service's lines come from: each container of its generation, or,
+   * for a Swarm service, each of its tasks through the manager, wherever the
+   * task runs (one cursor per task, as per container; there is no
+   * `nd-<slug>_web` container to read).
+   */
+  const sourcesOf = async (svc: (typeof running)[number], runtimeId: string) => {
+    const swarmRuntime = swarmRuntimeOf(svc);
+    if (swarmRuntime) {
+      const list = deps.listSwarmTasks ?? runningSwarmTasks;
+      const read = deps.readSwarmTaskLogs ?? ((taskId: string, since: string) => swarmTaskLogsSince(taskId, since, MAX_LINES_PER_RUNTIME * 2));
+      const tasks = await list(swarmRuntime).catch(() => []);
+      return tasks.map((task) => ({ container: task.name, runtimeKey: 'swarm:' + task.id, read: (since: string) => read(task.id, since) }));
+    }
+    return replicaNames(runtimeId, svc.runtimeReplicas ?? svc.replicas).map((container) => ({
+      container,
+      runtimeKey: svc.serverId == null ? container : 'node:' + svc.serverId + ':' + container,
+      read: async (since: string) => svc.serverId == null ? await deps.readLogs(container, since)
+        : deps.readRemoteLogs ? await deps.readRemoteLogs(svc.serverId, container, since)
+          : (await agentOp(db, svc.serverId, 'docker.logsSince', { name: container, since },
+            () => undefined, { timeoutMs: 10_000, signal: deps.signal })).lines,
+    }));
+  };
   for (const svc of running) {
     if (!svc.runtimeId || deps.signal?.aborted) continue;
-    for (const container of replicaNames(svc.runtimeId, svc.runtimeReplicas ?? svc.replicas)) {
-      const runtimeKey = svc.serverId == null ? container : 'node:' + svc.serverId + ':' + container;
+    // Listing a Swarm service's tasks asks the manager: only for a service some destination takes.
+    if (![...configured.values()].some((d) => d.row.serviceId == null || d.row.serviceId === svc.id)) continue;
+    for (const { container, runtimeKey, read } of await sourcesOf(svc, svc.runtimeId)) {
       for (const d of configured.values()) {
         if (d.row.serviceId != null && d.row.serviceId !== svc.id) continue;
         if (deps.signal?.aborted) break;
@@ -161,12 +191,7 @@ export async function shipLogsOnce(
           continue; // A newly enabled destination starts now, without historical backfill.
         }
         let raw: string[];
-        try {
-          raw = svc.serverId == null ? await deps.readLogs(container, cursor.lastTimestamp)
-            : deps.readRemoteLogs ? await deps.readRemoteLogs(svc.serverId, container, cursor.lastTimestamp)
-              : (await agentOp(db, svc.serverId, 'docker.logsSince', { name: container, since: cursor.lastTimestamp },
-                () => undefined, { timeoutMs: 10_000, signal: deps.signal })).lines;
-        } catch { continue; }
+        try { raw = await read(cursor.lastTimestamp); } catch { continue; }
         const parsed = raw.map(parseDockerLogLine).filter((v): v is NonNullable<typeof v> => v !== null)
           .sort((a, b) => timestampKey(a.ts).localeCompare(timestampKey(b.ts)));
         const entries: LogPayloadEntry[] = [];
