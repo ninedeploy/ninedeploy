@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.22] - 2026-11-06
+
 ### Fixed
 
 - **Swarm services: what each feature does, made true (R2).** [Deployments §7](docs/DEPLOYMENTS.md) now has a support matrix for Swarm services, checked on a real swarm. The cases that were silently wrong:

@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.18.22",
+    "date": "2026-11-06",
+    "title": "Swarm services: Restart, status, logs, metrics and files made true",
+    "changes": [
+      "Restart after Stop brings a Swarm service back at its replica count; before, it stayed at 0 tasks while the panel showed it running.",
+      "A running Swarm service is now checked every minute. One scaled to 0 outside the panel is scaled back; one that no longer exists, or has had no running task for five minutes, is marked down with the service-down alert.",
+      "Log drains now receive Swarm logs, read from each task wherever it runs, and the Logs tab shows the tasks' lines in time order.",
+      "The Container running healthcheck on Swarm waits for the tasks only, so workers and non-HTTP services deploy.",
+      "The File Browser and the Manifest tab of a Swarm service open a task on the panel host, or name the node that runs it.",
+      "Swarm metrics report one task's worth (the average), so they no longer suggest raising a limit that is not reached.",
+      "The dashboard no longer marks a health path answering 4xx as down.",
+      "Volume attachments, HTTP/TCP readiness and autoscaling are refused or hidden for Swarm services up front, instead of failing later. See the support matrix in Deployments section 7."
+    ]
+  },
+  {
     "version": "0.18.21",
     "date": "2026-11-05",
     "title": "Restore verification for every engine, and PostgreSQL point-in-time recovery",
