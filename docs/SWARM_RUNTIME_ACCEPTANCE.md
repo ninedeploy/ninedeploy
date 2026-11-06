@@ -1,5 +1,23 @@
 # Real Swarm artifact and recovery acceptance
 
+## Support matrix on real tasks — 2026-11-06
+
+[Hosted run 42238384185](https://github.com/ninedeploy/ninedeploy/actions/runs/42238384185) (runtime-readiness, `swarm_support=true`) passed on `abd8eb45`. It builds the candidate image and runs `node scripts/smoke-multinode.mjs --swarm-only`, whose `swarmSupportChecks` exercise each row of the matrix in [DEPLOYMENTS.md §7](DEPLOYMENTS.md) against a two-task service on a real single-manager swarm in DinD:
+
+- logs: 88 lines from both tasks, in time order;
+- Stop → 0/0, Restart → 2/2, and the route serves again;
+- `docker service scale <svc>=0` outside the panel: the runtime patrol scaled it back to 2/2, status still `running`;
+- inspect and the File Browser on the service name reached a task on the panel host;
+- `/v1/stats` reported the 128 MiB per-task limit, the two tasks averaged;
+- a health path answering 404 through Traefik read healthy on the dashboard;
+- `Container running` readiness deployed a service whose port answers nothing;
+- `docker service rm` behind the panel's back: the patrol marked the service `error`;
+- refused: volume attachment (422 `swarm_unsupported`, nothing created), TCP readiness (400), sleep (400 `cannot_sleep`); autoscaling offers no metric.
+
+The same checks run in every release's `swarm-artifacts` cohort. Not covered: metrics of tasks on worker nodes (only the panel host's tasks are sampled), distributed workers, and Swarm autoscaling, which is not offered.
+
+## Artifact and restart cohort — 2026-11-03
+
 Status, 2026-11-03: the corrected hosted cohort passed, and its downloaded public receipts passed independent verification. This closes the single-manager artifact/restart cohort in R2, not the entire runtime or release program. Local Docker remains disabled.
 
 Integration checkpoint: after PR #25 passed all required checks and merged as `977390d7279268b3ab8dffd0dde133fa40668c01`, [PR #26](https://github.com/ninedeploy/ninedeploy/pull/26) opened with frozen head `817af47a4bfa17b3cdae90f4d810a61e892df5f1`. It is the only open integration PR. Its prepared source tree was unchanged when accepted main history was merged. [Full CI 41650523274](https://github.com/ninedeploy/ninedeploy/actions/runs/41650523274) and serving checks are running; real Docker/PostgreSQL integration has passed. This PR contains the Swarm cohort and release gate, not the later R3 restore adapter. No new release was created.

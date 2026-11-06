@@ -1723,7 +1723,7 @@ async function main() {
     ctx.imgId = img.id;
     if (flag('swarm-only')) {
       await swarmChecks(ctx);
-      console.log('\nPASS: Swarm routing, file-secret updates and node join/leave on isolated Docker daemons.');
+      console.log('\nPASS: Swarm routing, file-secret updates, the Swarm support matrix and node join/leave on isolated Docker daemons.');
       return;
     }
     if (flag('new-node-features')) {
