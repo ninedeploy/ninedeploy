@@ -1237,11 +1237,21 @@ async function heavyBuildChecks(ctx) {
  * workflow step's 30 minutes, so a hang fails here with the deploy log, the Swarm tasks
  * and the panel log, instead of the runner killing the step with nothing to read
  * (v0.18.22 release run 42295423571 hung on the 128 MiB redeploy and left no evidence).
+ * A journalled Swarm deploy that cannot confirm its outcome raises SwarmRecoveryPending:
+ * the deployment is then left unsettled ON PURPOSE and reconciliation retries every
+ * 60 s, which from here looks exactly like a hang. The recovery journal and the
+ * deployment rows say whether that is what happened, and why.
  */
 const SWARM_DEPLOY_MS = 5 * 60_000;
 const swarmDeploy = (serviceId, label) => deploy(serviceId, label, {
   ms: SWARM_DEPLOY_MS,
-  diagnose: () => [
+  diagnose: async () => [
+    `GET /v1/services/${serviceId}/swarm/recovery\n${(await api(`/v1/services/${serviceId}/swarm/recovery`)).text.slice(0, 2000)}`,
+    `GET /v1/services/${serviceId}/deploys (newest 3)\n${await (async () => {
+      const j = (await api(`/v1/services/${serviceId}/deploys`)).json;
+      const list = Array.isArray(j) ? j : (j?.deploys ?? []);
+      return JSON.stringify(list.slice(0, 3).map((d) => ({ id: d.id, status: d.status, createdAt: d.createdAt, finishedAt: d.finishedAt })));
+    })()}`,
     `$ docker service ls\n${panelDaemon(['service', 'ls'], 30_000).all}`,
     `$ docker service ps (all nd- services)\n${panelDaemon(['service', 'ps', '--no-trunc', ...panelDaemon(['service', 'ls', '-q', '--filter', 'name=nd-'], 30_000).stdout.split(/\s+/).filter(Boolean)], 30_000).all}`,
     `$ docker logs --tail 60 ${PANEL}\n${docker(['logs', '--tail', '60', PANEL], { allowFail: true })}`,

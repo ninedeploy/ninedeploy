@@ -43,5 +43,8 @@ describe('Swarm smoke deploy waits', () => {
     expect(helper).toMatch(/ms: SWARM_DEPLOY_MS/);
     expect(helper).toMatch(/diagnose:/);
     expect(helper).toMatch(/'service', 'ps'/);
+    // A journalled deploy left unsettled on purpose (SwarmRecoveryPending) looks like a
+    // hang from outside; the recovery journal is what tells the two apart.
+    expect(helper).toContain('/swarm/recovery');
   });
 });
