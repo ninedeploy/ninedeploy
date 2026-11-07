@@ -363,7 +363,7 @@ async function deployLogTail(serviceId, depId, n = 40) {
 }
 
 /** Wait for one deployment to settle; fail with its log tail unless it ends as `expect`. */
-async function waitDeployment(serviceId, depId, label, { expect = 'running', ms = 30 * 60_000 } = {}) {
+async function waitDeployment(serviceId, depId, label, { expect = 'running', ms = 30 * 60_000, diagnose } = {}) {
   let row = null;
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -373,7 +373,10 @@ async function waitDeployment(serviceId, depId, label, { expect = 'running', ms 
     if (row && TERMINAL_STATUSES.has(row.status)) break;
     await sleep(2000);
   }
-  if (!row || !TERMINAL_STATUSES.has(row.status)) fail(`${label}: deployment #${depId} never finished (last status ${row?.status ?? 'unknown'})\n${await deployLogTail(serviceId, depId)}`);
+  if (!row || !TERMINAL_STATUSES.has(row.status)) {
+    const extra = diagnose ? `\n--- runtime ---\n${await Promise.resolve().then(diagnose).catch((err) => `(unavailable: ${err?.message ?? err})`)}` : '';
+    fail(`${label}: deployment #${depId} never finished in ${Math.round(ms / 1000)} s (last status ${row?.status ?? 'unknown'})\n--- build log tail ---\n${await deployLogTail(serviceId, depId)}${extra}`);
+  }
   if (expect && row.status !== expect) fail(`${label}: deployment #${depId} ended as '${row.status}' (wanted ${expect})\n--- build log tail ---\n${await deployLogTail(serviceId, depId)}`);
   return row;
 }
@@ -1229,6 +1232,22 @@ async function heavyBuildChecks(ctx) {
 }
 
 /** Docker Swarm (design §7.9): opt-in on both sides, a routed 2-replica service, join and leave. */
+/**
+ * A Swarm deploy of the stock test image settles in seconds. Bound it well inside the
+ * workflow step's 30 minutes, so a hang fails here with the deploy log, the Swarm tasks
+ * and the panel log, instead of the runner killing the step with nothing to read
+ * (v0.18.22 release run 42295423571 hung on the 128 MiB redeploy and left no evidence).
+ */
+const SWARM_DEPLOY_MS = 5 * 60_000;
+const swarmDeploy = (serviceId, label) => deploy(serviceId, label, {
+  ms: SWARM_DEPLOY_MS,
+  diagnose: () => [
+    `$ docker service ls\n${panelDaemon(['service', 'ls'], 30_000).all}`,
+    `$ docker service ps (all nd- services)\n${panelDaemon(['service', 'ps', '--no-trunc', ...panelDaemon(['service', 'ls', '-q', '--filter', 'name=nd-'], 30_000).stdout.split(/\s+/).filter(Boolean)], 30_000).all}`,
+    `$ docker logs --tail 60 ${PANEL}\n${docker(['logs', '--tail', '60', PANEL], { allowFail: true })}`,
+  ].join('\n'),
+});
+
 async function swarmChecks(ctx) {
   const label = 'Swarm';
   const notYet = await api(`/v1/servers/${ctx.serverId}/swarm/join`, { method: 'POST' });
@@ -1256,7 +1275,7 @@ async function swarmChecks(ctx) {
   await addDomain(svcId, hostname);
   const put = await api(`/v1/services/${svcId}/placement`, { method: 'PUT', body: { orchestrator: 'swarm' } });
   if (put.status !== 200 || put.json?.orchestrator !== 'swarm') fail(`${label}: Swarm placement answered ${short(put)}`);
-  const dep = await deploy(svcId, `${label} deploy`);
+  const dep = await swarmDeploy(svcId, `${label} deploy`);
   const svc = await serviceRow(svcId);
   const stack = `nd-${svc.slug}`;
   if (svc.runtimeId !== `${stack}_web`) fail(`${label}: runtimeId is ${svc.runtimeId} (wanted ${stack}_web)`);
@@ -1283,7 +1302,7 @@ async function swarmChecks(ctx) {
     const content = `file-v${n}-${suffix}`;
     const put = await api(`/v1/services/${svcId}/files`, { method: 'PUT', body: { path: filePath, content } });
     if (put.status !== 200) fail(`${label} files: PUT answered ${short(put)}`);
-    const d = await deploy(svcId, `${label} deploy with file v${n}`);
+    const d = await swarmDeploy(svcId, `${label} deploy with file v${n}`);
     if (!(await until(() => fileOnEveryRequest(content), { ms: 120_000, every: 3000 }))) {
       const seen = panelDaemon(['ps', '--filter', `label=com.docker.swarm.service.name=${stack}_web`, '--format', '{{.Names}}']).stdout.split(/\s+/).filter(Boolean)
         .map((task) => `${task}: ${panelDaemon(['exec', task, 'cat', filePath]).all.slice(0, 80)}`);
@@ -1383,7 +1402,7 @@ async function swarmSupportChecks({ svcId, stack, hostname, filePath }) {
   // Metrics are one task's worth: the per-task limit, not the sum of two.
   const limits = await api(`/v1/services/${svcId}/limits`, { method: 'PATCH', body: { memLimitMb: 128 } });
   if (limits.status !== 200) fail(`${label}: PATCH limits answered ${short(limits)}`);
-  await deploy(svcId, `${label}: deploy with a 128 MiB limit`);
+  await swarmDeploy(svcId, `${label}: deploy with a 128 MiB limit`);
   if (!(await converged(2))) fail(`${label}: the redeploy with a limit did not converge: ${JSON.stringify(await counts())}`);
   const stat = await until(async () => (await api('/v1/stats')).json?.containers?.find((c) => c.kind === 'service' && c.refId === svcId) ?? null, { ms: 60_000, every: 3000 });
   if (!stat || stat.memLimitMb !== 128) fail(`${label}: /v1/stats reports ${JSON.stringify(stat)} for the service (wanted memLimitMb 128, one task's limit)`);
@@ -1419,7 +1438,7 @@ async function swarmSupportChecks({ svcId, stack, hostname, filePath }) {
   if (mode.status !== 200) fail(`${label}: PATCH healthCheck running answered ${short(mode)}`);
   const place = await api(`/v1/services/${workerId}/placement`, { method: 'PUT', body: { orchestrator: 'swarm' } });
   if (place.status !== 200) fail(`${label}: Swarm placement of the worker answered ${short(place)}`);
-  const workerDep = await deploy(workerId, `${label}: running readiness with no port answering`);
+  const workerDep = await swarmDeploy(workerId, `${label}: running readiness with no port answering`);
   const worker = await serviceRow(workerId);
   step(`${label}: Container running readiness: ${worker.runtimeId} deployed (#${workerDep.id}) although port 9 answers nothing`);
 
