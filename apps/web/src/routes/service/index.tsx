@@ -478,6 +478,7 @@ export function ServiceDetail() {
               loading={deploys.isLoading}
               activeId={activeDeploy}
               onSelect={setActiveDeploy}
+              showRuntimeRecovery={svc.type === 'docker'}
             />
           )}
           {tab === 'ci' && <CiTab key={id} serviceId={id} isPreview={svc.previewParentServiceId != null} />}

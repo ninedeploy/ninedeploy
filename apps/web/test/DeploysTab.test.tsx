@@ -475,4 +475,37 @@ describe('DeploysTab (per-service)', () => {
     await screen.findByText('#7');
     expect(screen.queryByText('AI diagnosis')).not.toBeInTheDocument();
   });
+
+  // A journalled Swarm deploy that cannot confirm its outcome is held for recovery
+  // on purpose and stays "deploying"; next to the list it must say why, and offer
+  // the retry, instead of reading as a deploy that never ends.
+  const held = {
+    id: 3, deploymentId: 12, phase: 'retained' as const, interrupted: true,
+    reason: 'Swarm transition needs reconciliation: the service did not converge within 10 minutes',
+    busy: false, attempts: 4, nextAttemptAt: '2026-11-07T12:00:00.000Z', updatedAt: '2026-11-07T11:59:00.000Z',
+  };
+
+  it('shows a held Swarm recovery, its reason and the retry beside a deployment that stays in flight', async () => {
+    mockOf(api.services.swarmRecovery).mockResolvedValue(held as never);
+    renderWithProviders(
+      <DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 12, status: 'deploying' })]} loading={false} activeId={null} onSelect={() => {}} showRuntimeRecovery />,
+    );
+    expect(await screen.findByText('Swarm runtime recovery')).toBeInTheDocument();
+    expect(screen.getByText('Deployment #12')).toBeInTheDocument();
+    expect(screen.getByText(held.reason)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry recovery' })).toBeInTheDocument();
+    expect(api.services.swarmRecovery).toHaveBeenCalledWith(1);
+  });
+
+  it('asks for no runtime recovery outside docker services', async () => {
+    mockOf(api.services.swarmRecovery).mockResolvedValue(held as never);
+    renderWithProviders(
+      <DeploysTab serviceId={1} repoUrl={null} deploys={[baseDeploy({ id: 12, status: 'deploying' })]} loading={false} activeId={null} onSelect={() => {}} />,
+    );
+    await screen.findByText('#12');
+    expect(screen.queryByText('Swarm runtime recovery')).not.toBeInTheDocument();
+    expect(api.services.swarmRecovery).not.toHaveBeenCalled();
+    expect(api.services.runtimeRecovery).not.toHaveBeenCalled();
+    expect(api.fanout.recovery).not.toHaveBeenCalled();
+  });
 });

@@ -7,7 +7,10 @@ import { useToast } from '../../components/Toast.js';
 import { Card, CardBody, Button, ConfirmDialog, Skeleton, Spinner, StatusBadge, cn } from '../../components/ui.js';
 import { AiProposalCard } from './AiProposalCard.js';
 import { ApprovalCard } from './ApprovalCard.js';
+import { FanoutRecoveryCard } from './FanoutRecoveryCard.js';
 import { ImageScanCard } from './ImageScanCard.js';
+import { PrimaryRecoveryCard } from './PrimaryRecoveryCard.js';
+import { SwarmRecoveryCard } from './SwarmRecoveryCard.js';
 import { LogPanel } from './LogPanel.js';
 import { fill, useT } from '../../lib/i18n.js';
 
@@ -32,6 +35,7 @@ export function DeploysTab({
   loading,
   activeId,
   onSelect,
+  showRuntimeRecovery = false,
 }: {
   serviceId: number;
   /** Services sharing this repository are promotion targets. */
@@ -40,6 +44,13 @@ export function DeploysTab({
   loading: boolean;
   activeId: number | null;
   onSelect: (id: number | null) => void;
+  /**
+   * Docker services: show the runtime recovery cards here too. A deployment
+   * whose outcome could not be confirmed is held for recovery on purpose and
+   * stays "deploying" in the list; without the card beside it, that reads as
+   * a deploy that never ends (the cards also live under Settings).
+   */
+  showRuntimeRecovery?: boolean;
 }) {
   const t = useT();
   const qc = useQueryClient();
@@ -162,6 +173,9 @@ export function DeploysTab({
         onClose={() => setConfirmClear(false)}
       />
       {waitingRow && <ApprovalCard serviceId={serviceId} waiting={waitingRow} />}
+      {showRuntimeRecovery && <PrimaryRecoveryCard serviceId={serviceId} />}
+      {showRuntimeRecovery && <SwarmRecoveryCard serviceId={serviceId} />}
+      {showRuntimeRecovery && <FanoutRecoveryCard serviceId={serviceId} />}
       <DeploymentsCard
         deploys={deploys}
         activeId={activeId}
