@@ -218,15 +218,32 @@ describe('buildApp', () => {
 
   it('never logs query strings (WebSocket ?token= must not reach the logs)', async () => {
     const app = await buildApp();
-    const infoSpy = vi.spyOn(app.log, 'info');
-    // Wait for startup logs, then fire a request WITH a query string.
+    // Assert what pino WRITES, after the req serializer, not the arguments a
+    // log method receives. Since fastify 5.12.6 a request child logger without
+    // a route log level inherits the root's methods, so a spy on app.log.info
+    // sees the raw request object of every request log, query string included,
+    // although the written line never carries it. Every child shares the
+    // root's destination stream.
+    const streamSym = Object.getOwnPropertySymbols(app.log).find((s) => s.description === 'pino.stream');
+    expect(streamSym).toBeDefined();
+    const stream = (app.log as unknown as Record<symbol, { write(chunk: string): unknown }>)[streamSym!]!;
     await app.ready();
-    infoSpy.mockClear();
-    await app.inject({ method: 'GET', url: '/v1/health?token=super-secret-token' });
-    for (const call of infoSpy.mock.calls) {
-      const serialized = JSON.stringify(call);
-      expect(serialized).not.toContain('super-secret-token');
-      expect(serialized).not.toContain('?token');
+    const written: string[] = [];
+    const writeSpy = vi.spyOn(stream, 'write').mockImplementation((chunk: string) => {
+      written.push(String(chunk));
+      return true;
+    });
+    try {
+      await app.inject({ method: 'GET', url: '/v1/health?token=super-secret-token' });
+    } finally {
+      writeSpy.mockRestore();
+    }
+    const incoming = written.filter((line) => line.includes('"incoming request"'));
+    expect(incoming.length).toBeGreaterThan(0);
+    expect(incoming[0]).toContain('"url":"/v1/health"');
+    for (const line of written) {
+      expect(line).not.toContain('super-secret-token');
+      expect(line).not.toContain('?token');
     }
     await app.close();
   });
