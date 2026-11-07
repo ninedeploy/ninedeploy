@@ -50,6 +50,46 @@ describe('release delivery invariants', () => {
     expect(checks).toBeGreaterThan(build);
   });
 
+  it('reuses main CI only when its full-suite job passed on the exact tagged commit', () => {
+    // The release used to re-run main CI's whole suite on the tagged commit
+    // (~39 min). It may skip that only on a completed, successful push run of
+    // ci.yml on main for the commit it checked out, judged by the job that
+    // runs the suite, and must fall back to the full checks otherwise.
+    type JobDef = { name?: string; permissions?: Record<string, string>; steps: (Step & { id?: string; if?: string })[] };
+    const job = readWorkflow('release-publish.yml').jobs['publish-image'] as unknown as JobDef;
+    expect(job.permissions?.['actions']).toBe('read');
+    const reuseAt = job.steps.findIndex((step) => step.id === 'mainci');
+    const checksAt = job.steps.findIndex((step) => step.run === 'pnpm release:check');
+    expect(reuseAt).toBeGreaterThan(-1);
+    expect(checksAt).toBeGreaterThan(reuseAt);
+    expect(job.steps[checksAt]!.if).toBe("steps.mainci.outputs.reuse != 'true'");
+    const script = job.steps[reuseAt]!.run!;
+    // A manual run's GITHUB_SHA is the dispatching branch, not the tag.
+    expect(script).toContain('sha="$(git rev-parse HEAD)"');
+    expect(script).not.toContain('GITHUB_SHA');
+    expect(script).toContain('actions/workflows/ci.yml/runs?head_sha=$sha&branch=main&event=push');
+    for (const guard of ['.head_sha == \\"$sha\\"', '.head_branch == \\"main\\"', '.event == \\"push\\"', '.status == \\"completed\\"', '.conclusion == \\"success\\"']) {
+      expect(script).toContain(guard);
+    }
+    expect(script).toContain('reuse=false');
+    expect(script).toMatch(/if \[ "\$verdict" = success \]; then\s+reuse=true/);
+
+    // The job it trusts must exist under that name and run what release:check
+    // runs, in the same order, on the same Node; otherwise the skip would
+    // publish on a weaker gate.
+    const ci = readWorkflow('ci.yml').jobs as unknown as Record<string, JobDef>;
+    const verify = Object.values(ci).find((candidate) => candidate.name === 'Typecheck · Lint · Build · Test');
+    expect(verify).toBeDefined();
+    expect(script).toContain("job='Typecheck · Lint · Build · Test'");
+    const runs = verify!.steps.map((step) => step.run);
+    const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm turbo run test --concurrency=1'].map((cmd) => runs.indexOf(cmd));
+    for (const at of order) expect(at).toBeGreaterThan(-1);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const node = verify!.steps.find((step) => String(step.uses ?? '').startsWith('actions/setup-node'));
+    const releaseNode = job.steps.find((step) => String(step.uses ?? '').startsWith('actions/setup-node'));
+    expect(node?.with?.['node-version']).toBe(releaseNode?.with?.['node-version']);
+  });
+
   it('uses lowercase OCI repository names on the main publishing path', () => {
     const steps = readWorkflow('ci.yml').jobs['publish-image']!.steps;
     const push = steps.find((step) => step.with?.['push'] === true)!;
@@ -297,7 +337,8 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
   it('the build job pushes ONLY :vX.Y.Z and verifies its manifest — no :latest, no Release', () => {
     const build = jobs()['publish-image']!;
     // r700: + the OIDC token for keyless signing and the attestation store.
-    expect(build.permissions).toEqual({ contents: 'read', packages: 'write', 'id-token': 'write', attestations: 'write' });
+    // 0.18.24: + actions: read, to find main CI's verdict on the tagged commit.
+    expect(build.permissions).toEqual({ contents: 'read', packages: 'write', 'id-token': 'write', attestations: 'write', actions: 'read' });
     const meta = build.steps.find((s) => uses(s, 'docker/metadata-action'))!;
     const tags = String(meta.with?.['tags']).split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
     expect(tags).toEqual(['type=raw,value=${{ env.RELEASE_TAG }}']);

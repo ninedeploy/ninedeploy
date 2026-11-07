@@ -86,6 +86,8 @@ jobs:
       # key exists to leak. attestations: write stores the build provenance.
       id-token: write
       attestations: write
+      # Read main CI's runs and jobs for the tagged commit (see "Reuse main CI").
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -128,6 +130,40 @@ jobs:
             exit 1
           fi
 
+      # "Release checks" below re-ran, on the tagged commit, exactly what main
+      # CI's "Typecheck · Lint · Build · Test" job runs on every push to main
+      # (Node 26.12.1, frozen lockfile, typecheck, lint, build, then the full
+      # suite with coverage): ~39 of the release's ~95 minutes in v0.18.22 and
+      # v0.18.23. When that job already passed on this very commit, its verdict
+      # is reused. Anything else runs the checks here, as before: no run, a
+      # failed or cancelled one, one still running, or a tag on a commit that
+      # never was main's head. The commit is read from the checkout, because a
+      # manual run's GITHUB_SHA is the dispatching branch, not the tag.
+      - name: Reuse main CI for this commit
+        id: mainci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          job='Typecheck · Lint · Build · Test'
+          reuse=false
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&branch=main&event=push&per_page=50" \
+            -q ".workflow_runs[] | select(.head_sha == \"$sha\" and .head_branch == \"main\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"success\") | .id")" || runs=""
+          for id in $runs; do
+            verdict="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
+              -q "[.jobs[] | select(.name == \"$job\") | .conclusion] | first // \"\"")" || verdict=""
+            if [ "$verdict" = success ]; then
+              reuse=true
+              echo "Main CI run $id passed '$job' on $sha; the release checks are not repeated." | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$id" >> "$GITHUB_STEP_SUMMARY"
+              break
+            fi
+          done
+          if [ "$reuse" != true ]; then
+            echo "No completed main CI run passed '$job' on $sha; the full release checks run here." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+
       - name: Setup pnpm
         # Derived from "packageManager" in package.json — see ci.yml.
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -153,8 +189,10 @@ jobs:
         run: pnpm build
 
       # A tag is a release artifact — never push an image that does not pass
-      # the same verification gates CI enforces on every commit.
+      # the same verification gates CI enforces on every commit. Skipped only
+      # when main CI already passed them on this exact commit (step above).
       - name: Release checks (typecheck · lint · build · test)
+        if: steps.mainci.outputs.reuse != 'true'
         run: pnpm release:check
 
       - name: Database backup integration checks

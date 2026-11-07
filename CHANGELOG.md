@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Releases no longer repeat main CI's full test suite.** The release workflow re-ran typecheck, lint, build and every test on the tagged commit, about 39 of its roughly 95 minutes. When main CI's "Typecheck · Lint · Build · Test" job already passed on that exact commit, the release reuses that verdict and links the run in its summary. Otherwise it runs the checks as before: no CI run, a failed or cancelled one, one still running, or a tag on a commit that was never main's head. The database integration checks, the image smokes and signing are unchanged.
+
 ## [0.18.23] - 2026-11-07
 
 ### Security
