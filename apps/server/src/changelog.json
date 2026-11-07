@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.18.23",
+    "date": "2026-11-07",
+    "title": "Dependency security update",
+    "changes": [
+      "Every open dependency advisory is cleared: pnpm audit now reports none, for production and development dependencies alike (it reported 14 high, 31 moderate and 10 low).",
+      "In the server: zod 4.6.7, fastify 5.12.8 with fast-uri 3.1.9 and 4.2.3, @fastify/static 10.1.10, @fastify/rate-limit 11.2.2, ip-address 10.7.4 or later, nodemailer 10.3.1, and follow-redirects 1.16.2 under PM2.",
+      "In the MCP package: the MCP SDK 1.32.2, with body-parser 2.4.0, qs 6.16.2 and @hono/node-server 2.1.4 or later.",
+      "No migration and no configuration change."
+    ]
+  },
+  {
     "version": "0.18.22",
     "date": "2026-11-06",
     "title": "Swarm services: Restart, status, logs, metrics and files made true",

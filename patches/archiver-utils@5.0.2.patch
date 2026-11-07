@@ -7,7 +7,7 @@ index 23ec1a0dbbda040f0b9171da477533924d00a617..ff3dcf2a625c7b2e63e237d7b2ff09c8
    },
    "dependencies": {
 -    "glob": "^10.0.0",
-+    "glob": "^13.0.6",
++    "glob": "^14.0.3",
      "graceful-fs": "^4.2.0",
      "is-stream": "^2.0.1",
      "lazystream": "^1.0.0",

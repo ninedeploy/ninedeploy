@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.23] - 2026-11-07
+
+### Security
+
+- **Every open dependency advisory is cleared.** `pnpm audit` reported 14 high, 31 moderate and 10 low advisories; it now reports none, for production and development dependencies alike. No migration and no configuration change.
+  - **Server:** zod 4.6.7 (memory exhaustion while validating oversized constrained collections; also in `@ninedeploy/schemas` and `@ninedeploy/mcp`). fastify 5.12.8, with fast-uri pinned to 3.1.9 and 4.2.3 (scheme spoofing, WHATWG host confusion, scheme injection, path equivalence). @fastify/static 10.1.10, which brings glob 14.0.3. @fastify/rate-limit 11.2.2 and ip-address 10.7.4 or later (quadratic zone-identifier matching). nodemailer 10.3.1. follow-redirects 1.16.2 under PM2 (credentials kept off cross-origin redirects).
+  - **MCP:** the MCP SDK 1.32.2, with body-parser 2.4.0, qs 6.16.2 and @hono/node-server 2.1.4 or later pinned. `/v1/mcp` uses none of their vulnerable paths (the SDK's express helpers are not imported, and `serveStatic` is not used), so these are defence in depth.
+  - **Development and tests only** (not in the image): undici 8.12.3 under testcontainers and jsdom, @grpc/grpc-js 1.14.6, source-map-js 1.2.2, glob 14 and minimatch 11 under testcontainers' archiver, vite 8.3.6, vitest 5.0.5 and smol-toml 1.9.1.
+  - PM2 stays on 7.0.4. Its 7.1 line replaces the file watcher, which is more than a security patch should carry.
+
+### Changed
+
+- The release smoke's Swarm checks bound each deploy wait at five minutes. When one hangs, they print the deploy log, the Swarm tasks and the panel log. v0.18.22's first release run hung there for 26 minutes and the step timed out with nothing to read.
+
 ## [0.18.22] - 2026-11-06
 
 ### Fixed

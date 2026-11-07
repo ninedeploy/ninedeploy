@@ -22,16 +22,22 @@ overrides:
   # store) kept carrying the deprecated packages the patches exist to remove.
   # Overrides cut the edges at resolution level: esm-loader is gone entirely
   # (the patched drizzle-kit never imports it) and every glob ^10 consumer
-  # resolves into the maintained 13.x line already in the tree.
+  # resolves into the maintained 14.x line @fastify/static already uses.
+  # 0.18.23: glob <=14.0.1 (GHSA-3g3m-2fjr-6pw4, AbortSignal bypass) and its
+  # minimatch 10 (GHSA-g3hv-75wg-m249, globparts DoS) — 14.0.3 fixes both and
+  # keeps the CommonJS entry and sync API archiver-utils uses.
   "@esbuild-kit/esm-loader": "-"
-  "glob@^10.0.0": "^13.0.6"
+  "glob@^10.0.0": "^14.0.3"
   # fast-uri (2026-10-01 GHSA set: host-case normalization + mailto percent-
   # injection, on top of the earlier authority/port set) arrives on BOTH
   # majors via fastify: ajv + ajv-formats declare ^3, @fastify/ajv-compiler
   # and fast-json-stringify declare ^4. Pin each major to its first patched
   # release — a blanket bump to 4.x would yank ajv's edge across a major.
-  "fast-uri@^3.0.0": "3.1.8"
-  "fast-uri@^4.0.0": "4.1.5"
+  # 0.18.23: 3.1.9 / 4.2.3 fix scheme spoofing (GHSA-w74x-v6f9-j3xg), WHATWG
+  # host confusion (GHSA-wjr9-j795-jxcr), first-segment colon scheme injection
+  # (GHSA-333x-w4r6-6crp) and relative path equivalence (GHSA-xhq7-xmqj-769h).
+  "fast-uri@^3.0.0": "3.1.9"
+  "fast-uri@^4.0.0": "4.2.3"
   # basic-ftp <=6.2.0 (quadratic CPU DoS in Client.list()'s Unix LIST parser —
   # 2026-10-01 advisory) rides apps/server > pm2 > proxy-agent > pac-proxy-agent
   # > get-uri. 6.2.1 is the patched release; scoped pin so a future pm2 that
@@ -46,12 +52,35 @@ overrides:
   # unrecognized — both SSRF / trust-boundary bypasses) arrives via
   # @fastify/rate-limit, the MCP SDK's express-rate-limit and pm2's socks
   # chain, all on the 10.x line, so a single-range pin is safe.
-  ip-address: "^10.5.1"
+  # 0.18.23: 10.7.4 bounds Address6 zone-identifier matching (GHSA-rxp7-6hxx-x8q5,
+  # quadratic time ahead of the length limit).
+  ip-address: "^10.7.4"
   # qs <6.16.0 (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g — DoS via bracket-key
   # comma parsing / attacker-controlled isBuffer) arrives solely through the
   # MCP SDK's express → body-parser edge, all on the 6.x line. Single pin is
   # safe: only one qs instance exists in the tree.
-  qs: "6.16.0"
+  # 0.18.23: 6.16.2 (GHSA-6pq8-jhm2-2vcw, stringify arrayFormat 'comma' throws).
+  qs: "6.16.2"
+  # body-parser 2.x <2.4.0 (GHSA-27r3-jxmh-p828: DoS via trailing bytes after a
+  # compressed body) arrives with the MCP SDK's express helpers. /v1/mcp mounts
+  # StreamableHTTPServerTransport on Fastify and never imports them, so this is
+  # defence in depth. express 5 accepts the 2.x line.
+  "body-parser@^2.0.0": "^2.4.0"
+  # @hono/node-server <2.1.3 (GHSA-rmxm-3fg6-px4f: serveStatic decodes the path
+  # twice). StreamableHTTPServerTransport converts /v1/mcp requests through it,
+  # but serveStatic is never used; pinned so the vulnerable copy is gone anyway.
+  "@hono/node-server": "^2.1.4"
+  # Test/dev toolchain only (testcontainers → dockerode, jsdom, @tailwindcss/vite),
+  # never in the shipped server: scoped pins to the first patched releases at
+  # least two weeks old, so a future parent that moves on stays free to.
+  # undici: TLS validation bypass, cross-origin cache poisoning, renegotiation and
+  # content-encoding DoS (GHSA-2m5v-pch6-74hx, -4w7w-5xrc-9h26, -qrxm-fqhp-jwvm,
+  # -xjj6-f33q-929c and four moderate). grpc-js: getAuthContext trusts
+  # unauthorized certificates (GHSA-m9gg-hp2v-232j). source-map-js: indexed
+  # section offset DoS (GHSA-68fv-2mgg-jv7q).
+  "undici@>=8.0.0 <8.12.2": "8.12.3"
+  "@grpc/grpc-js@>=1.14.0 <1.14.5": "1.14.6"
+  "source-map-js@<1.2.2": "1.2.2"
   # hono <4.13.5 (GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc, GHSA-crvj-82cr-hjcx)
   # arrives via the MCP SDK's @hono/node-server. Not reachable today — the MCP
   # server is stdio-only — so this is defence in depth (r098). 4.13.11 also
@@ -59,7 +88,9 @@ overrides:
   hono: "^4.13.11"
   # PM2's js-api transport: array-form credentials and sensitive-header regex
   # escaping on cross-origin redirects (GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c).
-  "follow-redirects@>=1.16.0 <1.16.1": "1.16.1"
+  # 0.18.23: 1.16.2 keeps cross-realm sensitiveHeaders arrays and custom
+  # credentials off cross-origin redirects (GHSA-mrwp-f3q8-3g9p).
+  "follow-redirects@>=1.16.0 <1.16.2": "1.16.2"
 
 # Dependencies allowed to run install scripts (pnpm 11 blocks these by default).
 # esbuild ships its native binary via postinstall; Vite/tsx need it.
