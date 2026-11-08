@@ -4,9 +4,26 @@ name: Desktop
 # panel's pnpm workspace, so the main CI never installs Electron. This
 # workflow tests it, builds the installers on each platform, launches the
 # packaged app and keeps a sign-in across a restart through the OS credential
-# store. Installers are build artifacts, not releases; they are signed only
-# when the signing secrets below are set.
+# store. The installers are build artifacts; a release run (release-publish.yml)
+# calls this workflow with its tag and attaches them to the GitHub Release,
+# covered by SHA256SUMS. They are signed only when the signing secrets below
+# are set.
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The release tag to build (vX.Y.Z).
+        required: true
+        type: string
+    # Only the signing material, passed by name: never `secrets: inherit`.
+    secrets:
+      WIN_CSC_LINK: { required: false }
+      WIN_CSC_KEY_PASSWORD: { required: false }
+      MAC_CSC_LINK: { required: false }
+      MAC_CSC_KEY_PASSWORD: { required: false }
+      APPLE_API_KEY_P8: { required: false }
+      APPLE_API_KEY_ID: { required: false }
+      APPLE_API_ISSUER: { required: false }
   push:
     branches: [main]
     paths:
@@ -41,6 +58,10 @@ jobs:
         working-directory: desktop
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The release tag when called by release-publish.yml; empty (the
+          # event's own ref) on a push, a pull request or a manual run.
+          ref: ${{ inputs.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -161,7 +182,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $setup = (Get-ChildItem 'release/NineDeploy Setup *.exe').FullName
+          $setup = (Get-ChildItem 'release/NineDeploy-Setup-*.exe').FullName
           Start-Process -FilePath $setup -ArgumentList '/S' -Wait
           # A per-user install: under %LOCALAPPDATA%\Programs, no admin rights.
           $exe = (Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter NineDeploy.exe | Select-Object -First 1).FullName

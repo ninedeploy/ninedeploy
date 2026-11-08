@@ -534,7 +534,8 @@ describe('r700/r701: the release is signed (Sigstore keyless) and published with
     expect(run).toContain('archive="ninedeploy-${RELEASE_TAG}.tar.gz"');
     // install.sh's asset IS the archive's install.sh (same bytes).
     expect(run).toContain('tar -xzf "${out}/${archive}" -O "${top}/install.sh" > "${out}/install.sh"');
-    expect(run).toContain('sha256sum "$archive" install.sh > SHA256SUMS');
+    // R6: and the desktop installers, so one signature covers every asset.
+    expect(run).toContain('sha256sum "$archive" install.sh "${nd_installers[@]}" > SHA256SUMS');
     expect(run).toContain('cosign sign-blob --yes --bundle "${out}/SHA256SUMS.sigstore.json" "${out}/SHA256SUMS"');
     // Verified with install.sh's OWN helpers before publication: if the
     // identity, bundle format or parsing were wrong, no release goes out.
@@ -564,7 +565,7 @@ describe('r700/r701: the release is signed (Sigstore keyless) and published with
       expect(attach, asset).toContain(asset);
     }
     // Every asset present, or nothing is published.
-    expect(attach).toContain('for want in "ninedeploy-${RELEASE_TAG}.tar.gz" install.sh SHA256SUMS SHA256SUMS.sigstore.json CHANGELOG.md; do');
+    expect(attach).toContain('for want in "ninedeploy-${RELEASE_TAG}.tar.gz" install.sh "${desktop[@]}" SHA256SUMS SHA256SUMS.sigstore.json CHANGELOG.md; do');
     expect(attach).toContain('not publishing it');
     // A published pre-r701 release gets SHA256SUMS LAST (never checksums
     // whose archive is not there yet); one that has them is left alone.
@@ -597,5 +598,71 @@ describe('r700/r701: the release is signed (Sigstore keyless) and published with
     const re = /RELEASE_SIGNER_IDENTITY_RE='([^']+)'/.exec(installer)?.[1];
     expect(re).toBeDefined();
     expect(readme).toContain(`--certificate-identity-regexp '${re}'`);
+  });
+});
+
+describe('R6: the desktop installers ship with the release, under its signed checksums', () => {
+  type CallJob = { needs?: string | string[]; uses?: string; with?: Record<string, string>; secrets?: unknown; permissions?: Record<string, string>; steps?: Array<Step & { if?: string }> };
+  const release = () => readWorkflow('release-publish.yml').jobs as unknown as Record<string, CallJob>;
+  const desktopWorkflow = () => load(readFileSync(new URL('../../../.github/workflows/desktop.yml', import.meta.url), 'utf8')) as {
+    on: { workflow_call?: { inputs?: Record<string, { required?: boolean; type?: string }>; secrets?: Record<string, unknown> } };
+    jobs: Record<string, { steps: Array<Step & { if?: string; shell?: string }> }>;
+  };
+  const SIGNING = ['WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD', 'MAC_CSC_LINK', 'MAC_CSC_KEY_PASSWORD', 'APPLE_API_KEY_P8', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'];
+  const INSTALLERS = ['NineDeploy-Setup-${nd_v}.exe', 'NineDeploy-${nd_v}.dmg', 'NineDeploy-${nd_v}-arm64.dmg', 'NineDeploy-${nd_v}.AppImage', 'ninedeploy-desktop_${nd_v}_amd64.deb'];
+
+  it('builds them from the release tag through desktop.yml, with only the signing secrets', () => {
+    const job = release()['desktop']!;
+    expect(job.uses).toBe('./.github/workflows/desktop.yml');
+    expect([job.needs ?? []].flat()).toEqual(['publish-image']);
+    expect(job.permissions).toEqual({ contents: 'read' });
+    // The same tag resolution as RELEASE_TAG (env is not available to a reusable call).
+    expect(job.with?.['ref']).toBe("${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}");
+    // Named, never `inherit` (that would hand NPM_TOKEN and the rest to Electron's toolchain).
+    expect(job.secrets).not.toBe('inherit');
+    expect(Object.keys(job.secrets as Record<string, string>).sort()).toEqual([...SIGNING].sort());
+
+    const call = desktopWorkflow().on.workflow_call!;
+    expect(call.inputs?.['ref']).toMatchObject({ required: true, type: 'string' });
+    expect(Object.keys(call.secrets ?? {}).sort()).toEqual([...SIGNING].sort());
+    const checkout = desktopWorkflow().jobs['package']!.steps.find((s) => String(s.uses ?? '').startsWith('actions/checkout@'));
+    expect(checkout?.with?.['ref']).toBe('${{ inputs.ref }}');
+  });
+
+  it('holds the release on them, checks each by name and puts them under SHA256SUMS', () => {
+    const promote = release()['promote-release']!;
+    expect([promote.needs ?? []].flat()).toContain('desktop');
+    const steps = promote.steps!;
+    const download = steps.findIndex((s) => String(s.uses ?? '').startsWith('actions/download-artifact@'));
+    expect(steps[download]!.with).toMatchObject({ pattern: 'ninedeploy-desktop-*', path: 'desktop-installers', 'merge-multiple': true });
+    const build = steps.findIndex((s) => s.run?.includes('git archive'));
+    expect(download).toBeLessThan(build);
+    const run = steps[build]!.run!;
+    for (const name of INSTALLERS) expect(run).toContain(`"${name}"`);
+    // A missing installer fails the promotion before anything is signed or uploaded.
+    expect(run).toMatch(/if \[ ! -s "desktop-installers\/\$\{nd_f\}" \]; then[\s\S]*?exit 1/);
+    expect(run.indexOf('exit 1\n            fi\n            cp')).toBeLessThan(run.indexOf('cosign sign-blob'));
+    // Each one verified through install.sh's own lookup after signing.
+    expect(run).toContain('sha256sums_lookup "$nd_f"');
+    // install.sh is sourced into this shell: the step's own variables stay out of its namespace.
+    expect(run).not.toMatch(/^\s+(v|installers|f)=/m);
+
+    const attach = steps.find((s) => s.run?.includes('gh release create'))!.run!;
+    expect(attach).toContain('mapfile -t desktop < desktop-installers.txt');
+    expect(attach.match(/"\$\{desktop_paths\[@\]\}"/g)?.length).toBe(3); // create, draft upload, pre-r701 upload
+    expect(attach).toContain('for want in "ninedeploy-${RELEASE_TAG}.tar.gz" install.sh "${desktop[@]}" SHA256SUMS');
+    // A release published before R6 is left as it is, and not failed for lacking them.
+    expect(attach).toMatch(/assets are left as they are\."\n\s+# [^\n]*\n\s+desktop=\(\)/);
+    expect(attach).toContain('The installers are not code-signed yet');
+  });
+
+  it('names the Windows installer without spaces, as the workflow and the release expect', () => {
+    const builder = readFileSync(new URL('../../../desktop/electron-builder.yml', import.meta.url), 'utf8');
+    const name = /^ {2}artifactName: (.+)$/m.exec(builder.slice(builder.indexOf('\nnsis:')))?.[1];
+    expect(name).toBe('${productName}-Setup-${version}.${ext}');
+    expect(name).not.toMatch(/\s/);
+    const windows = desktopWorkflow().jobs['package']!.steps.find((s) => s.name === 'Install and launch the installer (Windows)')!;
+    expect(windows.run).toContain("Get-ChildItem 'release/NineDeploy-Setup-*.exe'");
+    expect(windows.run).not.toContain('NineDeploy Setup');
   });
 });

@@ -742,10 +742,33 @@ jobs:
   # install.sh and to every installed server's update check — only once all
   # of them are present. A release can therefore never be discovered without
   # its checksums. Order: assets → draft → :latest → publish (last).
+  # R6: the desktop installers, built from the tag on each platform's own
+  # runner, unit-tested there and launched as installed (desktop.yml), in
+  # parallel with the image smokes. promote-release attaches them to the
+  # GitHub Release under SHA256SUMS; a failed build holds the release. They are
+  # unsigned until the signing secrets exist (docs/DESKTOP.md).
+  desktop:
+    needs: publish-image
+    uses: ./.github/workflows/desktop.yml
+    permissions:
+      contents: read
+    with:
+      # env.RELEASE_TAG is not available to a reusable-workflow call.
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    secrets:
+      WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
   promote-release:
-    needs: [publish-image, smoke-published-image]
+    needs: [publish-image, smoke-published-image, desktop]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Downloading and attaching ~600 MB of desktop installers (R6).
+    timeout-minutes: 30
     # publish-npm reads the r573 decision (does this tag move `latest`?).
     outputs:
       move_latest: ${{ steps.latest.outputs.move }}
@@ -790,6 +813,14 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
+      # R6: what the desktop job built from this tag and launched on each platform.
+      - name: Download the desktop installers
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: ninedeploy-desktop-*
+          path: desktop-installers
+          merge-multiple: true
+
       # r701: the archive install.sh downloads instead of GitHub's
       # auto-generated tag tarball (which GitHub may regenerate, so it cannot
       # be checksummed once and for all). Built from the TAG object, not the
@@ -821,7 +852,21 @@ jobs:
             echo "::error::${archive} contains symlinks — install.sh would refuse it"
             exit 1
           fi
-          (cd "$out" && sha256sum "$archive" install.sh > SHA256SUMS)
+          # R6: exactly the installers of this version, each named as
+          # electron-builder.yml names it (no spaces: the asset name must match).
+          # nd_-prefixed: install.sh is sourced into this shell below.
+          nd_v="${RELEASE_TAG#v}"
+          nd_installers=("NineDeploy-Setup-${nd_v}.exe" "NineDeploy-${nd_v}.dmg" "NineDeploy-${nd_v}-arm64.dmg" "NineDeploy-${nd_v}.AppImage" "ninedeploy-desktop_${nd_v}_amd64.deb")
+          for nd_f in "${nd_installers[@]}"; do
+            if [ ! -s "desktop-installers/${nd_f}" ]; then
+              echo "::error::The desktop installer ${nd_f} is missing — not publishing ${RELEASE_TAG}"
+              ls -la desktop-installers || true
+              exit 1
+            fi
+            cp "desktop-installers/${nd_f}" "${out}/${nd_f}"
+          done
+          printf '%s\n' "${nd_installers[@]}" > desktop-installers.txt
+          (cd "$out" && sha256sum "$archive" install.sh "${nd_installers[@]}" > SHA256SUMS)
           cat "${out}/SHA256SUMS"
           cosign sign-blob --yes --bundle "${out}/SHA256SUMS.sigstore.json" "${out}/SHA256SUMS"
 
@@ -830,6 +875,9 @@ jobs:
           verify_checksums_signature "${out}/SHA256SUMS" "${out}/SHA256SUMS.sigstore.json"
           test "$(sha256sums_lookup "$archive" < "${out}/SHA256SUMS")" = "$(sha256sum "${out}/${archive}" | awk '{print $1}')"
           test "$(sha256sums_lookup install.sh < "${out}/SHA256SUMS")" = "$(sha256sum "${out}/install.sh" | awk '{print $1}')"
+          for nd_f in "${nd_installers[@]}"; do
+            test "$(sha256sums_lookup "$nd_f" < "${out}/SHA256SUMS")" = "$(sha256sum "${out}/${nd_f}" | awk '{print $1}')"
+          done
           echo "Release assets for ${RELEASE_TAG} built, signed and verified with install.sh's own checks."
 
       # r701: a DRAFT is invisible to releases/latest and to every installer
@@ -843,6 +891,10 @@ jobs:
         run: |
           set -euo pipefail
           a=release-assets
+          # R6: the desktop installers listed by the step above, all under SHA256SUMS.
+          mapfile -t desktop < desktop-installers.txt
+          desktop_paths=()
+          for name in "${desktop[@]}"; do desktop_paths+=("$a/$name"); done
           state="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo none)"
           case "$state" in
             none)
@@ -850,28 +902,31 @@ jobs:
               {
                 printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for the full release notes.\n\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
                 printf '**Pull the image:**\n```\ndocker pull ghcr.io/ninedeploy/ninedeploy:%s\ndocker pull ghcr.io/ninedeploy/ninedeploy:latest\n```\n\n' "$RELEASE_TAG"
-                printf '**Verify it:** the image is signed with cosign (keyless) and carries build provenance; `SHA256SUMS` covers the source archive and `install.sh`, and `SHA256SUMS.sigstore.json` is its signature. See [Verifying a release](https://github.com/%s/blob/%s/README.md#verifying-a-release).\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
+                printf '**Verify it:** the image is signed with cosign (keyless) and carries build provenance; `SHA256SUMS` covers the source archive, `install.sh` and the desktop installers, and `SHA256SUMS.sigstore.json` is its signature. See [Verifying a release](https://github.com/%s/blob/%s/README.md#verifying-a-release).\n\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
+                printf '**Desktop app:** Windows (`.exe`), macOS (`.dmg`, Intel and Apple silicon) and Linux (`.AppImage`, `.deb`). The installers are not code-signed yet: Windows SmartScreen warns about an unknown publisher, and macOS opens the app only after you allow it under System Settings → Privacy & Security. Keeping the sign-in through the macOS Keychain is not verified yet. See [Desktop client](https://github.com/%s/blob/%s/docs/DESKTOP.md).\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
               } > "$notes"
               gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
                 --title "$RELEASE_TAG" --notes-file "$notes" \
-                "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "$a/SHA256SUMS.sigstore.json" "$a/SHA256SUMS" CHANGELOG.md
+                "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "${desktop_paths[@]}" "$a/SHA256SUMS.sigstore.json" "$a/SHA256SUMS" CHANGELOG.md
               ;;
             draft)
               gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-                "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "$a/SHA256SUMS.sigstore.json" "$a/SHA256SUMS" CHANGELOG.md
+                "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "${desktop_paths[@]}" "$a/SHA256SUMS.sigstore.json" "$a/SHA256SUMS" CHANGELOG.md
               ;;
             published)
               if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -x SHA256SUMS >/dev/null; then
                 echo "::notice::$RELEASE_TAG is already published with its checksums — its assets are left as they are."
+                # Releases published before R6 carry no installers; nothing is added to them.
+                desktop=()
               else
                 gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-                  "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "$a/SHA256SUMS.sigstore.json" CHANGELOG.md
+                  "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "${desktop_paths[@]}" "$a/SHA256SUMS.sigstore.json" CHANGELOG.md
                 gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "$a/SHA256SUMS"
               fi
               ;;
           esac
           names="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
-          for want in "ninedeploy-${RELEASE_TAG}.tar.gz" install.sh SHA256SUMS SHA256SUMS.sigstore.json CHANGELOG.md; do
+          for want in "ninedeploy-${RELEASE_TAG}.tar.gz" install.sh "${desktop[@]}" SHA256SUMS SHA256SUMS.sigstore.json CHANGELOG.md; do
             if ! printf '%s\n' "$names" | grep -x "$want" >/dev/null; then
               echo "::error::The $RELEASE_TAG release is missing its $want asset — not publishing it"
               exit 1

@@ -26,6 +26,9 @@ win:
     - target: nsis
       arch: [x64]
 nsis:
+  # No spaces: the GitHub Release renames "NineDeploy Setup 1.2.3.exe" to
+  # "NineDeploy.Setup.1.2.3.exe", and SHA256SUMS must name the asset exactly.
+  artifactName: ${productName}-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

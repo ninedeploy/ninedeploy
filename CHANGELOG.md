@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Desktop installers on every GitHub Release (R6).** Each release now carries the desktop app for Windows (`NineDeploy-Setup-<version>.exe`), macOS (`NineDeploy-<version>.dmg` for Intel, `-arm64.dmg` for Apple silicon) and Linux (`.AppImage` and `.deb`). They are built from the release tag on each platform's own runner, unit-tested there and launched as installed, in parallel with the image smokes. `SHA256SUMS` and its Sigstore signature now cover them too. A missing or failed installer holds the release. They are not code-signed yet: Windows SmartScreen warns about an unknown publisher, and macOS opens the app only after you allow it under System Settings → Privacy & Security. Keeping the sign-in through the macOS Keychain is not verified yet. See [docs/DESKTOP.md](docs/DESKTOP.md).
+
+### Changed
+
+- The Windows installer is now named `NineDeploy-Setup-<version>.exe` (no spaces), so its checksum line names the release asset exactly.
+
 ## [0.18.24] - 2026-11-08
 
 ### Changed

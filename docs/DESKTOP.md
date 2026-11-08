@@ -6,14 +6,23 @@ The code is in [`desktop/`](../desktop). It has its own lockfile and is not part
 
 ## Installing
 
+Download the installer for your platform from the assets of a [GitHub Release](https://github.com/ninedeploy/ninedeploy/releases) (0.18.25 and later). `SHA256SUMS` in the same release covers every installer, and `SHA256SUMS.sigstore.json` is its signature. Check the file before you run it, as [Verifying a release](../README.md#verifying-a-release) describes:
+
+```sh
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/(?i:ninedeploy/ninedeploy)/\.github/workflows/release-publish\.yml@refs/(tags/v[0-9]+\.[0-9]+\.[0-9]+|heads/main)$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
 | Platform | Package | Built and exercised |
 | --- | --- | --- |
-| Windows 10/11 x64 | `NineDeploy Setup <version>.exe` (NSIS, per user, no admin rights) | Yes. Silent install, sign-in, restart, uninstall. |
+| Windows 10/11 x64 | `NineDeploy-Setup-<version>.exe` (NSIS, per user, no admin rights) | Yes. Silent install, sign-in, restart, uninstall. |
 | Debian/Ubuntu x64 | `ninedeploy-desktop_<version>_amd64.deb` | Yes. Installed with apt on a clean Debian 12, then run with and without a keyring. |
 | Linux x64 | `NineDeploy-<version>.AppImage` | Built and run on CI under Xvfb, extracted rather than FUSE-mounted. |
 | macOS (Intel and Apple silicon) | `NineDeploy-<version>.dmg`, `NineDeploy-<version>-arm64.dmg` | Built and launched on CI only. On the workflow's macOS 26 Apple-silicon runner, the packaged app opened and rendered the instance list with its bridge and without Node (run 41229314336, 2026-10-31). On the same runner, a sign-in was sealed and never written in plain text, but the Keychain refused the unsigned app (`errSecAuthFailed`), so it did not survive a restart. Keeping a sign-in through the Keychain, and the installer itself, have not been verified on a Mac. |
 
-The installers built so far are **unsigned**:
+The published installers are **not code-signed** yet. `SHA256SUMS` and its signature prove that a file came from the release workflow, but the operating system does not check them:
 
 - Windows SmartScreen warns about an unknown publisher.
 - macOS Gatekeeper refuses to open the app until you allow it under System Settings → Privacy & Security.
@@ -28,7 +37,7 @@ The workflow signs them once the repository has the certificates as secrets. Pul
 
 Without them, nothing changes: the build is unsigned and the last step says so. Signing has not run yet; no certificate exists.
 
-The [Desktop workflow](../.github/workflows/desktop.yml) builds all of them on each platform's own runner and uploads them as build artifacts. Release publishing is not wired yet.
+The [Desktop workflow](../.github/workflows/desktop.yml) builds all of them on each platform's own runner and uploads them as build artifacts. The release workflow calls it with the release tag, in parallel with the image smokes. Its `promote-release` job then checks that each of the five installers is there under its exact name, adds them to `SHA256SUMS` before signing it, and attaches them to the GitHub Release. A failed or missing installer holds the release.
 
 On each runner it also launches the packaged app and keeps a sign-in across a restart. A stand-in panel on the loopback is added and opened, and its page saves a refresh token through the bridge. Then the token must not be on disk in plain text, must come back after the app quits and starts again, and must be gone once the instance is removed. Where there is no OS credential store (the Linux runner has no keyring), nothing may be written.
 
