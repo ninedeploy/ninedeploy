@@ -4,7 +4,7 @@ import { servingReceiptFixture } from '../fixtures/servingTrafficReceipt.js';
 import { nodeSleepEvidence } from '../fixtures/nodeSleepEvidence.js';
 import { admitNodeSleep, admitNodeWake, advanceNodeSleep, bindNodeSleepCatcher, completeNodeSleep, nodeSleepCommand, type NodeSleepAdmission } from '../../src/lib/nodeSleepAuthority.js';
 import { claimNodeWakeMaintenance, checkpointNodeWakeMaintenance, completeNodeWakeMaintenance, confirmNodeWakeMaintenanceRouting, holdNodeWakeMaintenance, recordNodeWakeMaintenanceCatcher,
-  rebaseNodeWakeMaintenance, completeNodeWakeRetirement } from '../../src/lib/nodeWakeMaintenance.js';
+  retainNodeWakeCatcherInventory, retainPreparedNodeWakeCatcher, prepareNodeCatcherRouting, rebaseNodeWakeMaintenance, completeNodeWakeRetirement } from '../../src/lib/nodeWakeMaintenance.js';
 import { acceptNodeLifecycleIntent } from '../../src/lib/nodeLifecycleIntent.js';
 import { nodeWakeKey } from '../../src/lib/nodeWakeKey.js';
 
@@ -40,6 +40,51 @@ async function wake(id = 1) {
   const row = await journal(id); return admitNodeWake(f.c.db, await service(id), { nodeId: 4, token: row.wakeToken, catcherId: row.catcherId!, receivedAt: Date.now(), demandAt: Date.now() });
 }
 const replacement = { id: 'e'.repeat(64), image: `sha256:${'f'.repeat(64)}`, name: `ninedeploy-wake-g-${'f'.repeat(32)}` };
+it('keeps standalone collection as an admission barrier without granting service or routing authority', async () => {
+  const current = await service(), proof = await nodeSleepEvidence(f.c.db);
+  expect(await claimNodeWakeMaintenance(f.c.db, 4)).toBeNull();
+  const claim = (await claimNodeWakeMaintenance(f.c.db, 4, { collectOrphans: true }))!;
+  expect(claim).not.toBeNull(); expect(await admitNodeSleep(f.c.db, current, proof.token)).toBeNull();
+  const retained = await retainNodeWakeCatcherInventory(f.c.db, claim, [replacement]);
+  expect(await f.c.db.query.nodeWakeMaintenance.findFirst()).toMatchObject({ phase: 'collecting', catcherId: null,
+    snapshot: [{ catcherId: replacement.id, catcherName: replacement.name, retirementOnly: true }] });
+  await expect(checkpointNodeWakeMaintenance(f.c.db, claim)).rejects.toThrow(/ownership/);
+  await expect(prepareNodeCatcherRouting(f.c.db, retained)).rejects.toThrow(/ownership/);
+  await expect(retainPreparedNodeWakeCatcher(f.c.db, retained, replacement)).rejects.toThrow(/ownership/);
+  await expect(completeNodeWakeRetirement(f.c.db, retained, [])).rejects.toThrow(/ownership/);
+  await completeNodeWakeRetirement(f.c.db, retained, [{ id: replacement.id, name: replacement.name, removed: false, fenced: true }]);
+  expect((await admit()).owner.kind).toBe('sleep');
+});
+it.each(['accepted', 'asleep'] as const)('never starts standalone collection over a %s sleep transition', async phase => {
+  if (phase === 'asleep') await asleep(); else await admit();
+  expect(await claimNodeWakeMaintenance(f.c.db, 4, { collectOrphans: true })).toBeNull();
+});
+it('persists unknown inventory under a new worker identity without routing it or allowing stale settlement', async () => {
+  await asleep(); const first = (await claimNodeWakeMaintenance(f.c.db, 4))!;
+  const retained = await retainNodeWakeCatcherInventory(f.c.db, first, [replacement]);
+  expect(retained.workerToken).not.toBe(first.workerToken);
+  const row = await checkpointNodeWakeMaintenance(f.c.db, retained);
+  expect(row.phase).toBe('preparing'); expect(row.catcherId).toBeNull();
+  expect(row.snapshot).toContainEqual(expect.objectContaining({ catcherId: replacement.id, catcherName: replacement.name, retirementOnly: true }));
+  expect((await journal()).catcherId).toBe('c'.repeat(64));
+  await expect(retainNodeWakeCatcherInventory(f.c.db, first, [])).rejects.toThrow();
+  expect(await retainNodeWakeCatcherInventory(f.c.db, retained, [replacement])).toEqual(retained);
+  await expect(retainNodeWakeCatcherInventory(f.c.db, retained, [replacement, replacement])).rejects.toThrow();
+});
+it('retains preparation without authorizing routing and refuses to overwrite it or accept an expired worker', async () => {
+  await asleep(); const first = (await claimNodeWakeMaintenance(f.c.db, 4))!;
+  await retainPreparedNodeWakeCatcher(f.c.db, first, replacement);
+  await retainPreparedNodeWakeCatcher(f.c.db, first, replacement);
+  expect(await checkpointNodeWakeMaintenance(f.c.db, first)).toMatchObject({ phase: 'preparing', catcherId: replacement.id });
+  expect((await journal()).catcherId).toBe('c'.repeat(64));
+  await expect(prepareNodeCatcherRouting(f.c.db, first)).rejects.toThrow();
+  const other = { id: '9'.repeat(64), image: `sha256:${'9'.repeat(64)}`, name: `ninedeploy-wake-g-${'9'.repeat(32)}` };
+  await expect(retainPreparedNodeWakeCatcher(f.c.db, first, other)).rejects.toThrow();
+  await f.c.db.update(nodeWakeMaintenance).set({ leaseUntil: new Date(0) });
+  const recovered = (await claimNodeWakeMaintenance(f.c.db, 4))!;
+  await expect(retainPreparedNodeWakeCatcher(f.c.db, first, replacement)).rejects.toThrow();
+  expect(await checkpointNodeWakeMaintenance(f.c.db, recovered)).toMatchObject({ phase: 'preparing', catcherId: replacement.id, workerToken: recovered.workerToken });
+});
 it('blocks new sleep and wake admission until maintenance reaches confirmed settlement', async () => {
   await asleep(); await other();
   const claim = (await claimNodeWakeMaintenance(f.c.db, 4))!; expect(claim).not.toBeNull();

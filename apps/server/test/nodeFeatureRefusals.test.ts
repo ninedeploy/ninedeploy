@@ -84,6 +84,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'proxy.idleWatch': 'watch a node service for idle traffic',
   'wake.catcher': 'wake a sleeping node service',
   'wake.catcher.prepare': 'prepare a replacement node wake catcher',
+  'wake.catcher.inventory': 'inventory prepared node wake catchers',
   'wake.catcher.retire': 'retire an unreferenced node wake catcher',
   'proxy.orderedWrite': 'order node proxy routing writes',
   'docker.readiness': 'verify candidate replica readiness',

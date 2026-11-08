@@ -157,6 +157,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   // A container on the node: the mutations switch turns it off too.
   'wake.catcher': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'wake.catcher.prepare': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
+  'wake.catcher.inventory': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'wake.catcher.retire': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS', 'NINEDEPLOY_AGENT_ORDERED_PROXY'],
   'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],
   'db.client': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_CLIENTS'],
@@ -195,6 +196,7 @@ export const AGENT_OPT_IN: Readonly<Partial<Record<MultiNodeCapability, string>>
   'proxy.idleWatch': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'wake.catcher': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'wake.catcher.prepare': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
+  'wake.catcher.inventory': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'wake.catcher.retire': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   swarm: 'NINEDEPLOY_AGENT_SWARM_MANAGER',
   // G4.5: a node runs other people's CI jobs only when its owner says so.

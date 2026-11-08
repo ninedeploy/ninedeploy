@@ -21,6 +21,7 @@ let during: ((op: string) => Promise<void>) | undefined;
 let afterRoute: (() => Promise<void>) | undefined;
 let failRetire: boolean, alreadyRemoved: boolean;
 let candidate: { id: string; name: string; image: string };
+let inventory: Array<{ id: string; name: string; image: string }>;
 const service = async () => (await f.c.db.query.services.findFirst())!;
 const sleep = async () => (await f.c.db.query.nodeSleepTransitions.findFirst())!;
 const maintenance = async () => (await f.c.db.query.nodeWakeMaintenance.findFirst())!;
@@ -37,11 +38,13 @@ beforeEach(async () => {
   claim = (await claimNodeWakeMaintenance(f.c.db, 4))!;
   trace = []; ready = true; badAck = false; failEnsure = false; failRetire = false; alreadyRemoved = false; during = undefined; afterRoute = undefined;
   candidate = { id: 'e'.repeat(64), name: `ninedeploy-wake-g-${'a'.repeat(32)}`, image: `sha256:${'f'.repeat(64)}` };
+  inventory = [];
   io.sealed.mockReset().mockResolvedValue(true); io.agent.mockReset().mockImplementation(async (_db, _node, op, params) => {
     await during?.(op);
-    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['wake.catcher', 'wake.catcher.prepare', 'wake.catcher.retire', 'docker.recovery', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite'] })}`] };
+    if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0', caps: ['wake.catcher', 'wake.catcher.inventory', 'wake.catcher.prepare', 'wake.catcher.retire', 'docker.recovery', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite'] })}`] };
+    if (op === 'wake.catcher.inventory') return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ items: inventory })}`] };
     if (op === 'wake.catcher.prepare') {
-      trace.push('ensure'); if (failEnsure) throw new Error('Catcher reply lost');
+      trace.push('ensure'); if (failEnsure) { inventory = [{ ...candidate }]; throw new Error('Catcher reply lost'); }
       return { exitCode: 0, lines: [`ND-WAKE-CATCHER ${JSON.stringify({ ...candidate, created: true })}`] };
     }
     if (op === 'docker.readiness') {
@@ -129,6 +132,31 @@ it('keeps an uncertain ensure held behind the durable admission barrier', async 
   expect(trace).toEqual(['ensure']); expect(await maintenance()).toMatchObject({ phase: 'preparing', workerToken: null });
   const row = await sleep(); expect(await admitNodeWake(f.c.db, await service(), { nodeId: 4, token: row.wakeToken, catcherId: row.catcherId!, demandAt: Date.now(), receivedAt: Date.now() })).toBeNull();
 });
+it('recovers a lost preparation reply across an image change without forgetting the unknown candidate', async () => {
+  failEnsure = true; const original = { ...candidate };
+  expect(await execute()).toMatchObject({ state: 'held' });
+  expect((await maintenance()).catcherId).toBeNull();
+  candidate = { id: '9'.repeat(64), image: `sha256:${'9'.repeat(64)}`, name: `ninedeploy-wake-g-${'9'.repeat(32)}` };
+  claim = (await claimNodeWakeMaintenance(f.c.db, 4))!; failEnsure = false;
+  expect(await execute()).toEqual({ state: 'completed', rebound: 1, retired: 2 });
+  expect(io.agent.mock.calls.filter(call => call[2] === 'wake.catcher.retire').map(call => call[3].target.id)).toEqual(['c'.repeat(64), original.id]);
+});
+it('holds agents without explicit inventory support before preparing any replacement', async () => {
+  io.agent.mockImplementationOnce(async () => ({ exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.19.0',
+    caps: ['wake.catcher.prepare', 'wake.catcher.retire', 'docker.recovery', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite'] })}`] }));
+  expect(await execute()).toMatchObject({ state: 'held', reason: expect.stringMatching(/cannot recover sleeping node routing/) });
+  expect(trace).toEqual([]); expect((await maintenance()).catcherId).toBeNull();
+});
+it('rejects inventory delayed past worker replacement without adopting its targets', async () => {
+  inventory = [{ ...candidate }]; let recovered: NodeWakeMaintenanceClaim | undefined;
+  during = async op => { if (op === 'wake.catcher.inventory') {
+    during = undefined; await f.c.db.update(nodeWakeMaintenance).set({ leaseUntil: new Date(0) });
+    recovered = (await claimNodeWakeMaintenance(f.c.db, 4))!;
+  } };
+  expect(await execute()).toMatchObject({ state: 'held' }); expect(trace).toEqual([]);
+  const row = await maintenance(); expect(row.workerToken).toBe(recovered!.workerToken);
+  expect(row.snapshot.map(item => item.catcherId)).toEqual(['c'.repeat(64)]);
+});
 it('repeats reachability and routing after an unconfirmed write without rebinding prematurely', async () => {
   badAck = true; expect(await execute()).toMatchObject({ state: 'held' });
   expect((await sleep()).catcherId).toBe('c'.repeat(64)); expect((await maintenance()).phase).toBe('routing');
@@ -163,6 +191,27 @@ it('holds an unreachable replacement without publishing or updating sleeping bin
   expect(await pending).toMatchObject({ state: 'held', reason: expect.stringMatching(/readiness/) });
   expect(trace).not.toContain('route'); expect((await sleep()).catcherId).toBe('c'.repeat(64));
   expect(await maintenance()).toMatchObject({ phase: 'preparing', workerToken: null });
+});
+it('retires a never-bound candidate after readiness failure and a changed preparation on recovery', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] }); ready = false;
+  const finish = async <T>(pending: Promise<T>) => {
+    let done = false; void pending.then(() => { done = true; }, () => { done = true; });
+    for (let i = 0; i < 200 && !done; i++) await vi.advanceTimersByTimeAsync(250);
+    expect(done).toBe(true); return pending;
+  };
+  const original = { ...candidate };
+  expect(await finish(execute())).toMatchObject({ state: 'held', reason: expect.stringMatching(/readiness/) });
+  expect(trace).not.toContain('route'); expect(trace).not.toContain('retire');
+  expect((await sleep()).catcherId).toBe('c'.repeat(64));
+  vi.useRealTimers();
+  candidate = { id: '9'.repeat(64), image: `sha256:${'9'.repeat(64)}`, name: `ninedeploy-wake-g-${'9'.repeat(32)}` };
+  ready = true; claim = (await claimNodeWakeMaintenance(f.c.db, 4))!;
+  expect(await execute()).toEqual({ state: 'completed', rebound: 1, retired: 2 });
+  expect(io.agent.mock.calls.filter(call => call[2] === 'wake.catcher.retire').map(call => call[3].target)).toEqual([
+    { id: 'c'.repeat(64), name: 'ninedeploy-wake' }, { id: original.id, name: original.name },
+  ]);
+  expect((await sleep()).catcherId).toBe(candidate.id);
+  expect((await maintenance()).snapshot).toContainEqual(expect.objectContaining({ catcherId: original.id, retirementOnly: true }));
 });
 it('keeps the retirement barrier after a lost removal reply and recovers without rebinding or republishing the sleep transition', async () => {
   failRetire = true; expect(await execute()).toMatchObject({ state: 'held', reason: expect.stringMatching(/reply lost/) });

@@ -9,6 +9,9 @@ import { withRoutingAck } from './proxyRoutingAck.js';
 const id = z.string().regex(/^[a-f0-9]{64}$/), time = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const ensured = z.object({ id, image: z.string().regex(/^sha256:[a-f0-9]{64}$/), created: z.boolean() }).strict();
 const prepared = ensured.extend({ name: z.string().length(50).regex(/^ninedeploy-wake-g-[a-f0-9]{32}$/) }).strict();
+const inventory = z.object({ items: z.array(z.object({ id, image: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  name: z.string().max(50).refine(validNodeCatcherName) }).strict()).max(64) }).strict().refine(reply =>
+  new Set(reply.items.map(item => item.id)).size === reply.items.length && new Set(reply.items.map(item => item.name)).size === reply.items.length);
 const retirement = z.object({ id, name: z.string().max(50).refine(validNodeCatcherName), removed: z.boolean(), fenced: z.literal(true),
   revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), requestId: z.string().length(32).regex(/^[a-f0-9]{32}$/),
   contentHash: z.string().length(64).regex(/^[a-f0-9]{64}$/) }).strict();
@@ -18,17 +21,18 @@ const demand = z.object({ catcherId: id, startedAt: z.string().max(128).refine(v
 }).strict().refine(reply => new Set(reply.items.map(item => item.token)).size === reply.items.length && reply.items.reduce((sum, item) => sum + item.count, 0) <= 2000, 'Invalid demand coverage');
 
 /** One sealed, bounded exchange; no response text or node credential appears in errors. */
-async function exchange(db: DB, nodeId: number, op: 'wake.demand' | 'wake.catcher.ensure' | 'wake.catcher.prepare' | 'wake.catcher.retire', params: Record<string, unknown>, parent?: AbortSignal, pinned = false) {
+async function exchange(db: DB, nodeId: number, op: 'wake.demand' | 'wake.catcher.ensure' | 'wake.catcher.prepare' | 'wake.catcher.retire' | 'wake.catcher.inventory', params: Record<string, unknown>, parent?: AbortSignal, pinned = false) {
   if (!Number.isSafeInteger(nodeId) || nodeId <= 0) throw new Error('Invalid wake node');
-  const signal = AbortSignal.any([...(parent ? [parent] : []), AbortSignal.timeout(op === 'wake.demand' ? 25_000 : op === 'wake.catcher.retire' ? 40_000 : 80_000)]);
+  const bounded = op === 'wake.catcher.retire' || op === 'wake.catcher.inventory';
+  const signal = AbortSignal.any([...(parent ? [parent] : []), AbortSignal.timeout(op === 'wake.demand' ? 25_000 : bounded ? 40_000 : 80_000)]);
   signal.throwIfAborted();
   const sealed = await agentTransportSealed(db, nodeId, signal);
   signal.throwIfAborted();
   const refusal = await capabilityRefusal((operation, input, sink) => agentOp(db, nodeId, operation, input, sink, { signal, timeoutMs: 5000 }),
-    `#${nodeId}`, sealed, { cap: op === 'wake.catcher.retire' ? ['wake.catcher.retire', 'proxy.orderedWrite', 'proxy.routingAck'] : pinned || op === 'wake.catcher.prepare' ? 'wake.catcher.prepare' : 'wake.catcher', feature: 'observe or recover the node wake catcher', sealedRequired: true });
+    `#${nodeId}`, sealed, { cap: op === 'wake.catcher.inventory' ? 'wake.catcher.inventory' : op === 'wake.catcher.retire' ? ['wake.catcher.retire', 'proxy.orderedWrite', 'proxy.routingAck'] : pinned || op === 'wake.catcher.prepare' ? 'wake.catcher.prepare' : 'wake.catcher', feature: 'observe or recover the node wake catcher', sealedRequired: true });
   if (refusal) throw new Error(refusal.message);
   signal.throwIfAborted();
-  const result = await agentOp(db, nodeId, op, params, () => undefined, { signal, timeoutMs: op === 'wake.demand' ? 15_000 : op === 'wake.catcher.retire' ? 35_000 : 65_000 });
+  const result = await agentOp(db, nodeId, op, params, () => undefined, { signal, timeoutMs: op === 'wake.demand' ? 15_000 : bounded ? 35_000 : 65_000 });
   signal.throwIfAborted();
   const frames = result.lines.filter(line => line.startsWith('ND-WAKE-CATCHER '));
   if (result.exitCode !== 0 || frames.length !== 1 || Buffer.byteLength(frames[0]!) > 262_144) throw new Error('Node wake catcher receipt unavailable');
@@ -45,6 +49,11 @@ export async function ensureNodeWakeCatcher(db: DB, nodeId: number, key: string,
 export async function prepareNodeWakeCatcher(db: DB, nodeId: number, key: string, signal?: AbortSignal) {
   if (!/^[a-f0-9]{64}$/.test(key)) throw new Error('Invalid node wake credential');
   return prepared.parse(await exchange(db, nodeId, 'wake.catcher.prepare', { key }, signal));
+}
+
+export async function inventoryNodeWakeCatchers(db: DB, nodeId: number, key: string, signal?: AbortSignal) {
+  if (!/^[a-f0-9]{64}$/.test(key)) throw new Error('Invalid node wake credential');
+  return inventory.parse(await exchange(db, nodeId, 'wake.catcher.inventory', { key }, signal)).items;
 }
 
 /** Exact sealed retirement receipt; no raw routing text or wake credential is returned. */

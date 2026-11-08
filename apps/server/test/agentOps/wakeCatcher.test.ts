@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AGENT_OPS, advertisedCapabilities, runRegisteredOp } from '../../src/agentOps/index.js';
 
 vi.mock('../../src/lib/nodeWakeCatcher.js', () => ({
+  inventoryWakeCatchers: vi.fn(async () => ({ items: [] })),
   ensureWakeCatcher: vi.fn(async () => ({ id: 'c'.repeat(64), image: `sha256:${'a'.repeat(64)}`, created: true })),
   prepareWakeCatcher: vi.fn(async () => ({ id: 'c'.repeat(64), name: `ninedeploy-wake-g-${'d'.repeat(32)}`, image: `sha256:${'a'.repeat(64)}`, created: true })),
   removeWakeCatcher: vi.fn(async () => ({ removed: true })),
@@ -10,6 +11,15 @@ vi.mock('../../src/lib/nodeWakeCatcher.js', () => ({
 vi.mock('../../src/lib/nodeWakeCatcherRetirement.js', () => ({ retireWakeCatcher: vi.fn(async () => ({ fenced: true, removed: true })) }));
 
 describe('sealed node wake catcher operations (R2 scale to zero)', () => {
+  it('separately gates read-only inventory and refuses plaintext or disabled nodes', async () => {
+    expect(AGENT_OPS.get('wake.catcher.inventory')).toMatchObject({ cap: 'wake.catcher.inventory', sealedOnly: true });
+    const env = { NINEDEPLOY_AGENT_PROXY_TRAFFIC: 'on' }, lines: string[] = [];
+    await expect(runRegisteredOp('wake.catcher.inventory', {}, () => {}, { sealed: false }, env)).rejects.toThrow(/sealed/);
+    await expect(runRegisteredOp('wake.catcher.inventory', {}, () => {}, { sealed: true }, {})).rejects.toThrow(/not opted in/);
+    await expect(runRegisteredOp('wake.catcher.inventory', {}, () => {}, { sealed: true }, { ...env, NINEDEPLOY_AGENT_CONTAINER_MUTATIONS: 'off' })).rejects.toThrow(/disabled/);
+    expect(await runRegisteredOp('wake.catcher.inventory', {}, line => lines.push(line), { sealed: true }, env)).toBe(0);
+    expect(lines).toEqual(['ND-WAKE-CATCHER {"items":[]}']);
+  });
   it('registers legacy operations and separately gates non-destructive preparation', () => {
     for (const op of ['wake.catcher.ensure', 'wake.catcher.remove', 'wake.demand']) expect(AGENT_OPS.get(op)).toMatchObject({ cap: 'wake.catcher', sealedOnly: true });
     expect(AGENT_OPS.get('wake.catcher.prepare')).toMatchObject({ cap: 'wake.catcher.prepare', sealedOnly: true });

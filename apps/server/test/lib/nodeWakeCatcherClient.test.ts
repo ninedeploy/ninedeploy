@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { DB } from '@ninedeploy/db';
-import { ensureNodeWakeCatcher, prepareNodeWakeCatcher, readNodeWakeDemand, retireNodeWakeCatcher } from '../../src/lib/nodeWakeCatcherClient.js';
+import { ensureNodeWakeCatcher, inventoryNodeWakeCatchers, prepareNodeWakeCatcher, readNodeWakeDemand, retireNodeWakeCatcher } from '../../src/lib/nodeWakeCatcherClient.js';
 import { createHash } from 'node:crypto';
 import { withRoutingAck } from '../../src/lib/proxyRoutingAck.js';
 
@@ -20,6 +20,17 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.restoreAllMocks());
+it('requires explicit sealed inventory support and refuses duplicate or incomplete discovery', async () => {
+  await expect(inventoryNodeWakeCatchers(db, 4, key)).rejects.toThrow();
+  expect(io.agent.mock.calls.every(call => call[2] === 'agent.ping')).toBe(true);
+  caps.push('wake.catcher.inventory');
+  const item = { id: catcher, name: `ninedeploy-wake-g-${'b'.repeat(32)}`, image: `sha256:${'f'.repeat(64)}` };
+  reply = { items: [item] }; expect(await inventoryNodeWakeCatchers(db, 4, key)).toEqual([item]);
+  reply = { items: [item, item] }; await expect(inventoryNodeWakeCatchers(db, 4, key)).rejects.toThrow();
+  reply = {}; await expect(inventoryNodeWakeCatchers(db, 4, key)).rejects.toThrow();
+  io.sealed.mockResolvedValue(false); reply = { items: [] };
+  await expect(inventoryNodeWakeCatchers(db, 4, key)).rejects.toThrow();
+});
 it('accepts complete fresh demand bound to the pinned catcher and returns its panel receipt time', async () => {
   const before = Date.now(), result = await readNodeWakeDemand(db, 4, catcher, since());
   expect(result.items).toEqual(reply.items); expect(result.receivedAt).toBeGreaterThanOrEqual(before);

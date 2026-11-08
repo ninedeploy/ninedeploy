@@ -398,6 +398,7 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'proxy.idleWatch': '0.19.0',
   'wake.catcher': '0.19.0',
   'wake.catcher.prepare': '0.19.0',
+  'wake.catcher.inventory': '0.19.0',
   'wake.catcher.retire': '0.19.0',
   // G4.2 OS security updates
   'host.packages': '0.18.6',
@@ -442,6 +443,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'proxy.idleWatch': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'wake.catcher': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'wake.catcher.prepare': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
+  'wake.catcher.inventory': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'wake.catcher.retire': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'proxy.orderedWrite': 'NINEDEPLOY_AGENT_ORDERED_PROXY',
   'docker.containerTools': 'NINEDEPLOY_AGENT_CONTAINER_TOOLS',

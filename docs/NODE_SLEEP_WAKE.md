@@ -1,5 +1,21 @@
 # Node scale to zero and wake (R2)
 
+## Standalone catcher collection — local development checkpoint, 2026-11-08
+
+The production sleeper's `recoverCatchers` poller also discovers never-bound candidates on nodes with an already persisted wake credential and no sleeping cohort. Collection runs after demand scheduling, at most one job at a time, with a five-minute interval per node. It creates neither a wake credential nor a replacement catcher. Unsupported, unsealed or opted-out agents are refused before a fresh admission barrier is created.
+
+A durable `collecting` maintenance phase blocks new sleep/wake admission while bounded, exact-key inventory is retained as retirement-only identities without service metadata. The existing ordered loaded-routing acknowledgement, drain and immutable-ID retirement fence still govern every removal. Lost replies keep targets in the journal for replay after restart, including targets absent from the next inventory. A foreign-key container is not an inventory member. The existing 64-entry inventory and 256-member retained-snapshot limits still apply; uncertainty holds the journal. Ordinary sleeping-cohort maintenance keeps its readiness and replacement requirements.
+
+This extends the existing text phase and JSON snapshot representation without a SQL migration. An older panel refuses the unfamiliar phase rather than completing the barrier. Local component and native collection evidence are distinct from hosted automatic idle/Stop/wake acceptance and publication; those broader requirements remain open.
+
+## Lost preparation replies — local development checkpoint, 2026-11-07
+
+Catcher maintenance now requires the separately advertised, sealed `wake.catcher.inventory` operation before preparing another generation. An agent without that capability keeps maintenance held until upgraded; ordinary demand polling and wake retain their existing requirements.
+
+Inventory reads at most 64 managed catcher identities for the exact node wake key, including older images and stopped candidates. It never starts or removes a container. The panel records unknown identities as retirement-only members of its durable maintenance intent before preparing again. Actual retirement still requires readiness, confirmed ordered routing, drain and the agent's immutable-ID fence. An uncertain or incomplete inventory holds the operation. More than 64 inventory entries or 256 retained snapshot members requires operator review.
+
+This closes the lost-reply/image-change identity gap within an existing maintenance intent. Standalone collection without a sleeping cohort is described above. Local tests and native Docker/sealed-HTTP inventory checks are separate from hosted end-to-end retirement, upgrade and release acceptance; those broader gates remain required.
+
 Current release checkpoint: [v0.18.17](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.18.17) was published from `91017c3405398666aa78f168751e0baa62a9b42f`. Its [release run](https://github.com/ninedeploy/ninedeploy/actions/runs/41666599464) completed with all nine runtime cohorts and 18,373 source tests passing. The sleep/wake cohort passed on attempt 2; the unchanged image also passed [isolated automatic acceptance](https://github.com/ninedeploy/ninedeploy/actions/runs/41683897308). The first automatic idle/Stop timeout remains unresolved. Preserve that failed attempt alongside the passing evidence.
 
 ## Diagnose an automatic idle timeout

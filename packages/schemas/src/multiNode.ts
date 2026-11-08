@@ -88,6 +88,7 @@ export const MULTI_NODE_CAPABILITIES = [
   // Non-destructive replacement preparation; promotion and retirement remain panel-owned.
   'wake.catcher.prepare',
   'wake.catcher.retire',
+  'wake.catcher.inventory',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

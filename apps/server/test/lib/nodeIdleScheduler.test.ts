@@ -140,3 +140,55 @@ it('does not let failed services reserve empty slots and starve a healthy servic
   expect(scheduler.status(rows[0]!)).toMatchObject({ idleMs: null, holding: expect.stringMatching(/no routed domain/) });
   expect(scheduler.status(rows[8]!)).toMatchObject({ idleMs: null, holding: expect.stringMatching(/complete/) });
 });
+
+it.each([false, true])('keeps the newer observation when an earlier state read settles late (failed=%s)', async failed => {
+  await scheduler.close();
+  const stale = Promise.withResolvers<Service[]>(), started = Promise.withResolvers<void>();
+  let reads = 0;
+  scheduler = createNodeIdleScheduler({ load: async () => {
+    if (++reads === 2) { started.resolve(); return stale.promise; }
+    return rows;
+  }, open, now: () => clock, onError: error => errors.push(error) });
+  await scheduler.tick();
+  const oldService = service, oldTick = scheduler.tick(); await started.promise;
+  service = { ...service, port: 4000 }; rows = [service];
+  await scheduler.tick();
+  expect(scheduler.status(service)).not.toBeNull(); expect(readers.size).toBe(1);
+  if (failed) stale.reject(new Error('earlier state read failed'));
+  else stale.resolve([oldService]);
+  await oldTick;
+  expect(scheduler.status(service), 'late state must not replace the newer watch').not.toBeNull();
+  expect(readers.size).toBe(1); expect(requests.at(-1)!.serving[0]!.port).toBe(4000);
+  expect(errors).toEqual([]);
+});
+
+it('applies sequential state reads and closes the prior configuration watch', async () => {
+  await scheduler.tick(); const oldService = service;
+  service = { ...service, port: 4000 }; rows = [service]; await scheduler.tick();
+  expect(scheduler.status(oldService)).toBeNull(); expect(scheduler.status(service)).not.toBeNull();
+  expect(readers.size).toBe(1); expect(requests.at(-1)!.serving[0]!.port).toBe(4000);
+});
+
+it('keeps an earlier successful state read usable while a newer read is still pending', async () => {
+  await scheduler.close();
+  const first = Promise.withResolvers<Service[]>(), second = Promise.withResolvers<Service[]>();
+  const started = Promise.withResolvers<void>(); let reads = 0;
+  scheduler = createNodeIdleScheduler({ load: () => {
+    if (++reads === 1) return first.promise;
+    started.resolve(); return second.promise;
+  }, open, now: () => clock });
+  const oldTick = scheduler.tick(), newTick = scheduler.tick(); await started.promise;
+  first.resolve(rows); await oldTick;
+  expect(scheduler.status(service)).not.toBeNull(); expect(readers.size).toBe(1);
+  second.resolve(rows); await newTick; expect(readers.size).toBe(1);
+});
+
+it('discards observations when the newest state read fails', async () => {
+  await scheduler.close(); let failed = false;
+  scheduler = createNodeIdleScheduler({ load: async () => {
+    if (failed) throw new Error('current state unavailable'); return rows;
+  }, open, now: () => clock, onError: error => errors.push(error) });
+  await scheduler.tick(); failed = true; await scheduler.tick();
+  expect(scheduler.status(service)).toBeNull(); expect(readers.size).toBe(0);
+  expect(errors).toHaveLength(1);
+});

@@ -1,6 +1,6 @@
 import { eq, nodeProxyWriteHeads, type DB } from '@ninedeploy/db';
 import { agentOp, agentTransportSealed } from './agentClient.js';
-import { prepareNodeWakeCatcher, retireNodeWakeCatcher } from './nodeWakeCatcherClient.js';
+import { inventoryNodeWakeCatchers, prepareNodeWakeCatcher, retireNodeWakeCatcher } from './nodeWakeCatcherClient.js';
 import { renderDynamicConfig, writeDynamicConfig } from '../engine/proxy.js';
 import { settleNodeCatcherRoutePromotion } from './nodeCatcherRoutePromotion.js';
 import type { NodeWakeMaintenanceDeps } from './nodeWakeMaintenanceController.js';
@@ -9,6 +9,7 @@ export function nodeWakeMaintenanceRuntime(db: DB, options: { signal?: AbortSign
   return {
     agent: (node, op, params, callOptions) => agentOp(db, node, op, params, () => undefined, callOptions),
     sealed: node => agentTransportSealed(db, node, options.signal),
+    inventory: (node, key, signal) => inventoryNodeWakeCatchers(db, node, key, signal),
     ensure: (node, key, signal) => prepareNodeWakeCatcher(db, node, key, signal),
     route: async (requireNode, catcherPromotion, signal) => {
       let rebound: number | undefined;

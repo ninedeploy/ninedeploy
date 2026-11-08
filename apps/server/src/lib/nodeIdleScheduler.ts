@@ -24,6 +24,8 @@ export function createNodeIdleScheduler(deps: {
   const entries = new Map<number, Entry>();
   const now = deps.now ?? (() => performance.now());
   let closed = false;
+  // Ticks may overlap; only an already applied newer read supersedes a result.
+  let loadRevision = 0, appliedRevision = 0;
   const clearWindows = async (entry: Entry) => {
     const windows = [entry.active, entry.next]; entry.active = entry.next = undefined;
     await Promise.allSettled(windows.filter((value): value is Watch => !!value).map(window => window.close()));
@@ -84,12 +86,16 @@ export function createNodeIdleScheduler(deps: {
   return {
     async tick(): Promise<void> {
       if (closed) return;
+      const revision = ++loadRevision;
       let list: Service[];
       try { list = await deps.load(); } catch (error) {
+        if (closed || revision < appliedRevision) return;
+        appliedRevision = revision;
         const previous = [...entries.values()]; entries.clear();
         await Promise.allSettled(previous.map(discard)); if (!closed) deps.onError?.(error); return;
       }
-      if (closed) return;
+      if (closed || revision < appliedRevision) return;
+      appliedRevision = revision;
       const selected = list.filter(eligible), byId = new Map(selected.map(service => [service.id, service]));
       const priority = (service: Service) => entries.get(service.id)?.active || entries.get(service.id)?.running ? 1 : 0;
       const allowed = new Set<number>(), counts = new Map<number, number>();
@@ -103,7 +109,7 @@ export function createNodeIdleScheduler(deps: {
         !allowed.has(id) && !!(entry.active || entry.running); });
       for (const [id] of removed) entries.delete(id);
       await Promise.allSettled(removed.map(([, entry]) => discard(entry)));
-      if (closed) return;
+      if (closed || revision !== appliedRevision) return;
       const tasks: Promise<void>[] = [];
       for (const service of selected) {
         let entry = entries.get(service.id);

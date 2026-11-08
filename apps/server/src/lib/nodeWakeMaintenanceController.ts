@@ -2,7 +2,7 @@ import type { DB } from '@ninedeploy/db';
 import type { AgentOpResult } from './agentClient.js';
 import { capabilityRefusal } from './agentCapabilities.js';
 import { checkpointNodeWakeMaintenance, prepareNodeCatcherRouting,
-  holdNodeWakeMaintenance, recordNodeWakeMaintenanceCatcher, completeNodeWakeRetirement, assertNodeCatcherUnreferenced, rebaseNodeWakeMaintenance, type NodeWakeMaintenanceClaim } from './nodeWakeMaintenance.js';
+  holdNodeWakeMaintenance, retainNodeWakeCatcherInventory, retainPreparedNodeWakeCatcher, recordNodeWakeMaintenanceCatcher, completeNodeWakeRetirement, assertNodeCatcherUnreferenced, rebaseNodeWakeMaintenance, type NodeWakeMaintenanceClaim } from './nodeWakeMaintenance.js';
 import type { NodeCatcherRoutePromotion } from './nodeCatcherRoutePromotion.js';
 import { nodeWakeKey } from './nodeWakeKey.js';
 import { verifyNodeReadiness } from './nodeReadiness.js';
@@ -12,6 +12,7 @@ import { z } from 'zod';
 export interface NodeWakeMaintenanceDeps {
   agent: (nodeId: number, op: string, params: Record<string, unknown>, options: { signal?: AbortSignal; timeoutMs: number }) => Promise<AgentOpResult>;
   sealed: (nodeId: number) => Promise<boolean>;
+  inventory: (nodeId: number, key: string, signal?: AbortSignal) => Promise<Array<{ id: string; image: string; name: string }>>;
   ensure: (nodeId: number, key: string, signal?: AbortSignal) => Promise<{ id: string; image: string; name: string; created: boolean }>;
   /** Exact ordered fallback routing must be loaded before this resolves. */
   route: (nodeId: number, promotion: NodeCatcherRoutePromotion, signal?: AbortSignal) => Promise<number>;
@@ -37,35 +38,44 @@ export async function executeNodeWakeMaintenance(db: DB, claim: NodeWakeMaintena
     const initial = await checkpoint();
     const sealed = await effect(() => deps.sealed(claim.serverId));
     const refusal = await capabilityRefusal((op, params) => call(op, params, 5000), `#${claim.serverId}`, sealed, {
-      cap: ['wake.catcher.prepare', 'wake.catcher.retire', 'docker.recovery', 'docker.readiness', 'proxy.routingAck', 'proxy.orderedWrite'], feature: 'recover sleeping node routing', sealedRequired: true,
+      cap: ['wake.catcher.inventory', 'wake.catcher.retire', 'proxy.routingAck', 'proxy.orderedWrite',
+        ...(initial.phase === 'collecting' ? [] : ['wake.catcher.prepare', 'docker.recovery', 'docker.readiness'] as const)],
+      feature: initial.phase === 'collecting' ? 'collect unused node wake catchers' : 'recover sleeping node routing', sealedRequired: true,
     });
     if (refusal) throw new Error(refusal.message);
     const key = await effect(() => nodeWakeKey(db, claim.serverId));
     if (!key) throw new Error('Node wake maintenance requires the persisted credential');
-    const catcher = await effect(() => deps.ensure(claim.serverId, key, deps.signal));
-    const ready = async () => verifyNodeReadiness((op, params, _sink, options) => call(op, params, options?.timeoutMs),
-      { targets: [{ id: catcher.id, name: catcher.name }], mode: 'tcp', port: 8080, path: '/' }, 15_000,
-      async () => { await checkpoint(); }, deps.log ?? (() => undefined));
-    if (!await ready()) throw new Error('Node wake catcher readiness is unconfirmed');
-    await checkpoint(); let rebound = 0, alreadyBound = initial.phase === 'retiring';
-    if (initial.catcherId && (initial.catcherId !== catcher.id || initial.catcherName !== catcher.name || initial.catcherImage !== catcher.image)) {
-      claim = await rebaseNodeWakeMaintenance(db, claim, catcher); alreadyBound = false;
-    }
-    if (!alreadyBound) {
-      await recordNodeWakeMaintenanceCatcher(db, claim, catcher);
-      const promotion = await prepareNodeCatcherRouting(db, claim);
+    const inventory = await effect(() => deps.inventory(claim.serverId, key, deps.signal));
+    claim = await retainNodeWakeCatcherInventory(db, claim, inventory);
+    let rebound = 0;
+    if (initial.phase !== 'collecting') {
+      const catcher = await effect(() => deps.ensure(claim.serverId, key, deps.signal));
+      let alreadyBound = initial.phase === 'retiring';
+      if (initial.catcherId && (initial.catcherId !== catcher.id || initial.catcherName !== catcher.name || initial.catcherImage !== catcher.image)) {
+        claim = await rebaseNodeWakeMaintenance(db, claim, catcher); alreadyBound = false;
+      }
+      if (!alreadyBound) await retainPreparedNodeWakeCatcher(db, claim, catcher);
+      const ready = async () => verifyNodeReadiness((op, params, _sink, options) => call(op, params, options?.timeoutMs),
+        { targets: [{ id: catcher.id, name: catcher.name }], mode: 'tcp', port: 8080, path: '/' }, 15_000,
+        async () => { await checkpoint(); }, deps.log ?? (() => undefined));
+      if (!await ready()) throw new Error('Node wake catcher readiness is unconfirmed');
       await checkpoint();
-      // Binding settlement retains the admission barrier until old IDs are retired.
-      rebound = await deps.route(claim.serverId, promotion, deps.signal);
-      if (!await ready()) throw new Error('Node wake catcher readiness is unconfirmed before retirement');
+      if (!alreadyBound) {
+        await recordNodeWakeMaintenanceCatcher(db, claim, catcher);
+        const promotion = await prepareNodeCatcherRouting(db, claim);
+        await checkpoint();
+        // Binding settlement retains the admission barrier until old IDs are retired.
+        rebound = await deps.route(claim.serverId, promotion, deps.signal);
+        if (!await ready()) throw new Error('Node wake catcher readiness is unconfirmed before retirement');
+      }
     }
     const row = await checkpoint();
-    if (row.phase !== 'retiring') throw new Error('Node wake retirement journal is unconfirmed');
+    if (row.phase !== 'retiring' && row.phase !== 'collecting') throw new Error('Node wake retirement journal is unconfirmed');
     const targets = new Map(row.snapshot.filter(item => item.catcherId !== row.catcherId).map(item => [item.catcherId, item.catcherName]));
     const receipts: Array<{ id: string; name: string; fenced: true; removed: boolean }> = [];
     for (const [id, capturedName] of targets) {
       const verify = async () => { const current = await checkpoint();
-        if (current.phase !== 'retiring' || current.catcherId !== catcher.id || current.catcherName !== catcher.name) throw new Error('Node wake retirement candidate changed');
+        if (current.phase !== row.phase || current.catcherId !== row.catcherId || current.catcherName !== row.catcherName) throw new Error('Node wake retirement candidate changed');
         await assertNodeCatcherUnreferenced(db, claim.serverId, id);
       };
       await verify(); let name = capturedName;

@@ -88,6 +88,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'wake.catcher',
       'wake.catcher.prepare',
       'wake.catcher.retire',
+      'wake.catcher.inventory',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     expect(multiNodeCapability.parse('docker.retireHandoff')).toBe('docker.retireHandoff');

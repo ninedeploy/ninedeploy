@@ -7,6 +7,7 @@ import { createKeyedOperationGuard } from './keyedOperationGuard.js';
 import { nodeProxyJournalDirectory } from './nodeProxyFiles.js';
 import { withNodeServiceJournal } from './nodeLifecycle.js';
 import { retiredWakeBackends } from './nodeWakeRetirementFence.js';
+import { validNodeCatcherName } from './nodeCatcherIdentity.js';
 
 /**
  * R2 node scale to zero (docs/NODE_SLEEP_WAKE.md), agent side: the legacy `ninedeploy-wake`
@@ -80,6 +81,29 @@ async function ensureWakeCatcherUnlocked(key: string): Promise<{ id: string; ima
 export async function ensureWakeCatcher(params: unknown): Promise<{ id: string; image: string; created: boolean }> {
   const { key } = wakeEnsureParams.parse(params);
   return withCatcher('wake', () => ensureWakeCatcherUnlocked(key));
+}
+
+/** Read-only discovery across image generations; no key or routing authority is returned. */
+export async function inventoryWakeCatchers(params: unknown) {
+  const { key } = wakeEnsureParams.parse(params);
+  return withCatcher('wake', () => withNodeServiceJournal(nodeProxyJournalDirectory(), 1, 30_000, journal => journal.write(async () => {
+    const timeout = () => { journal.current(); return Math.max(1, Math.min(3000, journal.remaining())); };
+    const output = await capture('docker', ['ps', '-a', '--filter', 'label=ninedeploy.managed=wake', '--filter',
+      `label=ninedeploy.wake.key=${keyLabel(key)}`, '--format', '{{.Names}}'], { timeoutMs: timeout(), maxOutputBytes: 8192 });
+    journal.current(); const names = output.trim().split(/\s+/).filter(Boolean);
+    if (names.length > 64 || new Set(names).size !== names.length || names.some(name => !validNodeCatcherName(name))) {
+      throw new HttpError(409, 'wake_catcher_conflict', 'Wake catcher inventory is unconfirmed');
+    }
+    const items: Array<{ id: string; name: string; image: string }> = [];
+    for (const name of names) {
+      const found = await inspect(name, timeout()); journal.current();
+      if (!found || found.managed !== WAKE_CATCHER_LABEL || found.keyHash !== keyLabel(key) || items.some(item => item.id === found.id)) {
+        throw new HttpError(409, 'wake_catcher_conflict', 'Wake catcher inventory identity is unconfirmed');
+      }
+      items.push({ id: found.id, name, image: found.image });
+    }
+    return { items };
+  })));
 }
 
 /** Prepare a replacement without withdrawing the backend already used by Traefik. */

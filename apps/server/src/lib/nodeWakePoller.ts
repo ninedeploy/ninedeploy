@@ -1,5 +1,5 @@
-import { eq, nodeSleepTransitions, services, type DB, type NodeSleepTransition } from '@ninedeploy/db';
-import { inArray, ne } from 'drizzle-orm';
+import { eq, nodeSleepTransitions, servers, services, settings, type DB, type NodeSleepTransition } from '@ninedeploy/db';
+import { inArray, ne, sql } from 'drizzle-orm';
 import { nodeWakeMaintenance } from '@ninedeploy/db';
 import { admitNodeWake, holdNodeSleep, recoverNodeSleep, type NodeSleepAdmission } from './nodeSleepAuthority.js';
 import { readNodeWakeDemand } from './nodeWakeCatcherClient.js';
@@ -8,9 +8,11 @@ import { nodeWakeRuntime } from './nodeWakeRuntime.js';
 import { claimNodeWakeMaintenance, holdNodeWakeMaintenance } from './nodeWakeMaintenance.js';
 import { executeNodeWakeMaintenance, type NodeWakeMaintenanceDeps } from './nodeWakeMaintenanceController.js';
 import { nodeWakeMaintenanceRuntime } from './nodeWakeMaintenanceRuntime.js';
+import { capabilityRefusal } from './agentCapabilities.js';
 
 export const NODE_WAKE_POLL_MS = 2000;
 const MAX_NODES = 4, MAX_WAKES = 4, RETRY_MS = 30_000;
+const COLLECTION_INTERVAL_MS = 5 * 60_000;
 const active = ['accepted', 'fencing', 'starting', 'readiness', 'publishing'] as const;
 
 /** Bounded coordinator. Catcher recovery requires the maintenance option and durable authority. */
@@ -29,13 +31,23 @@ export function createNodeWakePoller(db: DB, options: {
   const loads = new Set<Promise<void>>();
   const nodeRetry = new Map<string, number>(), serviceRetry = new Map<number, number>();
   const maintenanceRetry = new Map<number, number>();
-  let closed = false, loading = false, lastNode = 0;
-  const recoverCatcher = async (nodeId: number) => {
+  const collectionRetry = new Map<number, number>();
+  const collections = new Set<number>();
+  let closed = false, loading = false, lastNode = 0, lastCollectionNode = 0;
+  const recoverCatcher = async (nodeId: number, collectOrphans = false) => {
     if (closed || !options.recoverCatchers || now() < (maintenanceRetry.get(nodeId) ?? 0)) return;
-    const claim = await claimNodeWakeMaintenance(db, nodeId);
+    const runtime = options.maintenanceRuntime?.(abort.signal) ?? nodeWakeMaintenanceRuntime(db, { signal: abort.signal });
+    if (collectOrphans) {
+      // Unsupported/disabled agents must not acquire a fresh admission barrier.
+      const sealed = await runtime.sealed(nodeId);
+      const refusal = await capabilityRefusal((op, params) => runtime.agent(nodeId, op, params, { signal: abort.signal, timeoutMs: 5000 }), `#${nodeId}`, sealed,
+        { cap: ['wake.catcher.inventory', 'wake.catcher.retire', 'proxy.routingAck', 'proxy.orderedWrite'], feature: 'collect unused node wake catchers', sealedRequired: true });
+      if (refusal) throw new Error(refusal.message);
+      if (closed) return;
+    }
+    const claim = await claimNodeWakeMaintenance(db, nodeId, { collectOrphans });
     if (!claim) return;
     if (closed) { await holdNodeWakeMaintenance(db, claim, 'node wake poller stopped before maintenance'); return; }
-    const runtime = options.maintenanceRuntime?.(abort.signal) ?? nodeWakeMaintenanceRuntime(db, { signal: abort.signal });
     const result = await executeNodeWakeMaintenance(db, claim, { ...runtime, signal: abort.signal });
     if (result.state === 'held') maintenanceRetry.set(nodeId, now() + RETRY_MS);
     else maintenanceRetry.delete(nodeId);
@@ -108,6 +120,9 @@ export function createNodeWakePoller(db: DB, options: {
         const maintenanceNodes = new Set(maintenance.map(row => row.serverId));
         for (const id of maintenanceRetry.keys()) if (!maintenanceNodes.has(id)) maintenanceRetry.delete(id);
         for (const row of maintenance) {
+          if (row.phase === 'collecting') continue; // Demand gets first use of the remaining slots.
+          // An unclaimable lease must not consume a slot needed by other nodes' demand.
+          if (row.leaseUntil && row.leaseUntil.getTime() > Date.now()) continue;
           if (nodes.has(row.serverId) || nodes.size >= MAX_NODES || now() < (maintenanceRetry.get(row.serverId) ?? 0)) continue;
           const job = recoverCatcher(row.serverId).catch(error => {
             maintenanceRetry.set(row.serverId, now() + RETRY_MS); if (!closed) options.onError?.(error);
@@ -137,6 +152,32 @@ export function createNodeWakePoller(db: DB, options: {
           if (nodes.size >= MAX_NODES) break;
           const job = poll(id, grouped.get(id)!).finally(() => { if (nodes.get(id) === job) nodes.delete(id); });
           nodes.set(id, job); started.push(job); lastNode = id;
+        }
+        for (const row of maintenance) {
+          if (row.phase !== 'collecting' || collections.size || nodes.size >= MAX_NODES) continue;
+          if (nodes.has(row.serverId) || row.leaseUntil && row.leaseUntil.getTime() > Date.now() || now() < (maintenanceRetry.get(row.serverId) ?? 0)) continue;
+          const job = recoverCatcher(row.serverId).catch(error => {
+            maintenanceRetry.set(row.serverId, now() + RETRY_MS); if (!closed) options.onError?.(error);
+          }).finally(() => { collections.delete(row.serverId); if (nodes.get(row.serverId) === job) nodes.delete(row.serverId); });
+          collections.add(row.serverId); nodes.set(row.serverId, job); started.push(job);
+        }
+        if (options.recoverCatchers && !closed && !collections.size && nodes.size < MAX_NODES) {
+          // Only known credentials are eligible; discovery must never create a wake key.
+          const candidates = await db.select({ id: servers.id }).from(servers)
+            .innerJoin(settings, eq(settings.key, sql`'node_wake_key_' || ${servers.id}`)).orderBy(servers.id);
+          if (closed) return;
+          const knownNodes = new Set(candidates.map(row => row.id));
+          for (const id of collectionRetry.keys()) if (!knownNodes.has(id)) collectionRetry.delete(id);
+          const ordered = [...candidates.filter(row => row.id > lastCollectionNode), ...candidates.filter(row => row.id <= lastCollectionNode)];
+          for (const { id } of ordered) {
+            if (collections.size || nodes.size >= MAX_NODES) break;
+            if (nodes.has(id) || maintenanceNodes.has(id) || grouped.has(id) || now() < (collectionRetry.get(id) ?? 0)) continue;
+            collectionRetry.set(id, now() + COLLECTION_INTERVAL_MS); lastCollectionNode = id;
+            const job = recoverCatcher(id, true).catch(error => {
+              if (!closed) options.onError?.(error);
+            }).finally(() => { collections.delete(id); if (nodes.get(id) === job) nodes.delete(id); });
+            collections.add(id); nodes.set(id, job); started.push(job);
+          }
         }
       } catch (error) { if (!closed) options.onError?.(error); }
       finally { loading = false; finishLoad(); loads.delete(load); }
