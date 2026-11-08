@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.18.25",
+    "date": "2026-11-08",
+    "title": "Desktop installers on every release",
+    "changes": [
+      "Each GitHub Release now carries the desktop app: NineDeploy-Setup-<version>.exe for Windows, a .dmg for Intel and Apple-silicon Macs, and an .AppImage and a .deb for Linux. SHA256SUMS and its Sigstore signature cover them, and a missing installer holds the release.",
+      "The installers are not code-signed yet. Windows SmartScreen warns about an unknown publisher, and macOS opens the app only after you allow it under System Settings → Privacy & Security.",
+      "Node sleep: wake catchers left behind by a lost agent reply or an older image are now found and retired, and unused ones on a node without sleeping services are collected. This needs agents with the new wake.catcher.inventory operation; with an older agent, catcher maintenance waits for the upgrade.",
+      "No migration and no configuration change."
+    ]
+  },
+  {
     "version": "0.18.24",
     "date": "2026-11-08",
     "title": "Held deployments explained on the Deploys tab",

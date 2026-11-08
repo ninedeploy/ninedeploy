@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.25] - 2026-11-08
+
 ### Added
 
 - **Desktop installers on every GitHub Release (R6).** Each release now carries the desktop app for Windows (`NineDeploy-Setup-<version>.exe`), macOS (`NineDeploy-<version>.dmg` for Intel, `-arm64.dmg` for Apple silicon) and Linux (`.AppImage` and `.deb`). They are built from the release tag on each platform's own runner, unit-tested there and launched as installed, in parallel with the image smokes. `SHA256SUMS` and its Sigstore signature now cover them too. A missing or failed installer holds the release. They are not code-signed yet: Windows SmartScreen warns about an unknown publisher, and macOS opens the app only after you allow it under System Settings → Privacy & Security. Keeping the sign-in through the macOS Keychain is not verified yet. See [docs/DESKTOP.md](docs/DESKTOP.md).
@@ -16,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The Windows installer is now named `NineDeploy-Setup-<version>.exe` (no spaces), so its checksum line names the release asset exactly.
+
+### Fixed
+
+- **Node wake catchers left behind are found and removed (R2).** Node sleep keeps a small wake catcher on each node, and catcher maintenance replaces it with a new one. A catcher could be left behind if the agent's reply to a preparation was lost, or if it came from an older image. One prepared on a node that no longer has a sleeping service could stay too. The panel now reads the node's catcher inventory before it prepares another one. Catchers it did not know about are recorded and retired, with the same ordered routing update, drain and immutable-ID check as any other retirement.
+  - On a node with a wake key and no sleeping service, unused catchers are collected at most every five minutes, one node at a time. No replacement is created, and new sleep or wake requests on that node wait until collection finishes.
+  - This needs agents that advertise the new `wake.catcher.inventory` operation. With an older agent, catcher maintenance is held until the agent is upgraded. Ordinary demand polling and wake work as before.
+  - A maintenance job leased by another worker no longer takes one of the node poller's slots, so it cannot delay wakes on other nodes. An idle-state read that finishes after a newer one is ignored.
+  - No SQL migration. The new `collecting` maintenance phase fits the existing column; an older panel, after a downgrade, refuses that phase instead of completing it.
 
 ## [0.18.24] - 2026-11-08
 
