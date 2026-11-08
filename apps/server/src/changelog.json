@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.18.24",
+    "date": "2026-11-08",
+    "title": "Held deployments explained on the Deploys tab",
+    "changes": [
+      "When the outcome of a Swarm, primary-runtime or fan-out update cannot be confirmed, the deployment is held for recovery and retried every minute. The Deploys tab of a Docker service now shows why, when the next automatic check runs and, for operators, Retry recovery. Before, the row just stayed \"deploying\" and the explanation was only under Settings.",
+      "Releases reuse main CI's verdict on the tagged commit instead of running the whole test suite again, so a release takes about 40 minutes less.",
+      "No migration and no configuration change."
+    ]
+  },
+  {
     "version": "0.18.23",
     "date": "2026-11-07",
     "title": "Dependency security update",
