@@ -1,0 +1,4 @@
+ M .temp_files/ledger_gitopsCheck35_20261109.md
+ M CHANGELOG.md
+ M apps/server/src/plugins/imageScanScheduler.ts
+?? apps/server/test/plugins/imageScanScheduler.test.ts

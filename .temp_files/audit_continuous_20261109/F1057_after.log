@@ -1,0 +1,17 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > live control owner after a gated critical-result callback
+EXPECTED: 1 ACTUAL: 1
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > closed owner after a gated critical-result callback
+EXPECTED: 0 ACTUAL: 0
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > live control owner after a gated critical-result callback 117ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > closed owner after a gated critical-result callback 3ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  21:18:11
+   Duration  478ms (import 50%, tests 37%, transform 11%, worker 1%)

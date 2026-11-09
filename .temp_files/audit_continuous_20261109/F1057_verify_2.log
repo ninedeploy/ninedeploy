@@ -1,0 +1,22 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > independent live owner with 0 late callbacks 107ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > independent live owner with 1 late callbacks 8ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > independent live owner with 3 late callbacks 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > independent closed owner with 0 late callbacks 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > independent closed owner with 1 late callbacks 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > independent closed owner with 3 late callbacks 3ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > busy suppresses overlap and admits the next pass after completion 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > failed rescan releases busy (closed=false) 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > failed rescan releases busy (closed=true) 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > keeps a pre-close alert and suppresses a later callback from the same rescan 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1057_imageScanClose.test.ts > a replacement app receives only its own critical callback 3ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  21:18:17
+   Duration  495ms (import 48%, tests 45%, transform 5%, worker 2%)

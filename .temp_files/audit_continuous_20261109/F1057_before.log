@@ -1,0 +1,28 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > live control owner after a gated critical-result callback
+EXPECTED: 1 ACTUAL: 1
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > closed owner after a gated critical-result callback
+EXPECTED: 0 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > live control owner after a gated critical-result callback 72ms
+ × .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > closed owner after a gated critical-result callback 3ms
+   → expected "vi.fn()" to be called +0 times, but got 1 times
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts > closed owner after a gated critical-result callback
+AssertionError: expected "vi.fn()" to be called +0 times, but got 1 times
+ ❯ .temp_files/audit_continuous_20261109/prove_F1057_imageScanClose.test.ts:35:221
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  21:16:53
+   Duration  356ms (import 48%, tests 34%, transform 17%, worker 1%)

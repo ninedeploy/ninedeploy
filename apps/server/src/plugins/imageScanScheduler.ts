@@ -12,11 +12,13 @@ import { rescanRunningImages, summaryLine } from '../lib/imageScan.js';
 export default fp(
   async (fastify) => {
     let busy = false;
+    let stopped = false;
     const tick = () => {
-      if (busy) return;
+      if (stopped || busy) return;
       busy = true;
       void rescanRunningImages(fastify.db, {
         onNewCritical: (svc, result) => {
+          if (stopped) return;
           void audit(fastify.db, null, 'image_scan.critical', svc.name, {
             serviceId: svc.id,
             imageId: result.imageId,
@@ -32,7 +34,10 @@ export default fp(
     };
     const timer = setInterval(tick, 60 * 60 * 1000);
     timer.unref();
-    fastify.addHook('onClose', async () => clearInterval(timer));
+    fastify.addHook('onClose', async () => {
+      stopped = true;
+      clearInterval(timer);
+    });
   },
   { name: 'ninedeploy-image-scans' },
 );

@@ -50,5 +50,7 @@ Snapshots: audit_continuous_20261109/round35_status_before.txt and round35_statu
 
 Shared-index receipt: after the selected-content check, the other writer's a2707c3e/a832908c commits cleared the audit's staged entries while leaving their working files intact. Commit 7e0eb73b therefore recorded only this ledger. The unchanged verified source/tests/docs/proofs are re-staged with an exact owned-path guard; the next repair commit is verified by HEAD blob identity before pushing. This receipt does not attribute a product fix to the ledger-only commit.
 
+Published repair receipt: 276ce57eb0dd7bf7a75568dd9f9e3903dd9b2842 contains the actual GitOps source/tests/docs and all selected evidence. All four owned source/doc HEAD blobs and every evidence path were verified before push; origin/main matched that full commit afterward. No unrelated staged path was accepted by the commit guard.
+
 ### Next scope (if rounds continue)
 apps/server/src/plugins/imageScanScheduler.ts and nearest image-scan tests: periodic-scan ownership, overlap, failure handling and close after awaited work.

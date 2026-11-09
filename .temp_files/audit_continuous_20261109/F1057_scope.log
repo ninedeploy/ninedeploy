@@ -1,0 +1,93 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/imageScan.test.ts > parseTrivyReport > counts by severity, separates fixable findings, dedupes and sorts most severe and fixable first 198ms
+ ✓ test/lib/imageScan.test.ts > parseTrivyReport > keeps at most the cap of findings and says so; refuses what is not a report 275ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > does nothing while scanning is off 198ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > records and logs the result; the gate counts only fixable findings by default 323ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > fails the deploy on a gated finding and marks the result blocked 203ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > never blocks when the scan cannot run 271ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > the Compose gate (before the running stack is replaced) > does nothing while scanning is off, and does not restrict `up` 255ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > the Compose gate (before the running stack is replaced) > scans every image, records the deploy, passes under the gate and restricts `up` to them 248ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > the Compose gate (before the running stack is replaced) > fails the deploy on a gated finding in any image and marks the result blocked 287ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > the Compose gate (before the running stack is replaced) > with a blocking gate, an image that is not local or a list that cannot be read blocks: `up` would run it unscanned 253ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > the Compose gate (before the running stack is replaced) > report only: scans what is local, notes the rest, never blocks and leaves `up` alone 271ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > the Compose gate (before the running stack is replaced) > never blocks when Trivy cannot run, and says when some images were left out 257ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > the Compose gate (before the running stack is replaced) > covers compose stacks on the panel host 277ms
+ ✓ test/lib/imageScan.test.ts > the deploy hook > covers docker services on the panel host only 332ms
+ ✓ test/lib/imageScan.test.ts > scheduled rescans > replaces a stale clean verdict with an error when the running Compose inventory is unavailable 1022ms
+ ✓ test/lib/imageScan.test.ts > scheduled rescans > retries a failed image scan on the next sweep instead of treating it as fresh 1115ms
+ ✓ test/lib/imageScan.test.ts > scheduled rescans > rescan stale or changed images only, report new fixable criticals, and drop results of deleted services 3161ms
+ ✓ test/lib/imageScan.test.ts > compose stacks > scans each image of the stack once, merges the findings by compose service, and skips an unchanged set 1748ms
+ ✓ test/lib/imageScan.test.ts > routes > policy for operators; a service scan is readable by viewers and refused while scanning is off 913ms
+ ✓ test/lib/imageScan.coverage.test.ts > policy, results and the Trivy image > uses a configured Trivy image only when it is a plain reference 282ms
+ ✓ test/lib/imageScan.coverage.test.ts > policy, results and the Trivy image > falls back to the defaults for a damaged stored policy 276ms
+ ✓ test/lib/imageScan.coverage.test.ts > policy, results and the Trivy image > prunes results of deleted services and of keys that name no service 196ms
+ ✓ test/lib/imageScan.coverage.test.ts > parseTrivyReport tolerance > reads a report without results, OS or vulnerability lists 270ms
+ ✓ test/lib/imageScan.coverage.test.ts > parseTrivyReport tolerance > skips findings without an id or package, and defaults severity, version and target 208ms
+ ✓ test/lib/imageScan.coverage.test.ts > gateFindings and summaryLine > counts what the gate covers and nothing for a failed scan 238ms
+ ✓ test/lib/imageScan.coverage.test.ts > gateFindings and summaryLine > mentions unknown findings only when there are some 210ms
+ ✓ test/lib/imageScan.coverage.test.ts > gateFindings and summaryLine > classifies services by where they are scanned 188ms
+ ✓ test/lib/imageScan.coverage.test.ts > docker lookups > reads the image id a container runs, and refuses anything that is not one 194ms
+ ✓ test/lib/imageScan.coverage.test.ts > docker lookups > resolves a Swarm service spec image to a local image id 245ms
+ ✓ test/lib/imageScan.coverage.test.ts > docker lookups > says why a Swarm service has no scannable image 247ms
+ ✓ test/lib/imageScan.coverage.test.ts > docker lookups > lists a compose stack image set, grouped by image with sorted services 263ms
+ ✓ test/lib/imageScan.coverage.test.ts > docker lookups > refuses an incomplete or unconfirmed compose inventory 254ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanComposeStack > labels findings by image id when no compose service is known, and records every failure 257ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanComposeStack > is an error when no image could be scanned, and caps merged findings 235ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanComposeStack > records a non-Error throw from Trivy as the scan error 245ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanNodeServiceImage > runs the sealed agent op and reads its one receipt frame 305ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanNodeServiceImage > refuses a missing, doubled or failed receipt from the agent 244ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanNodeServiceImage > refuses answers that are oversized, without an image id, unconfirmed or incomplete 255ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanNodeServiceImage > confirms an unchanged image without storing anything, and caps a long report 250ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanBeforeTraffic > scans on the node, and the gate blocks a node image 248ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanBeforeTraffic > passes a clean node image and logs a node that cannot scan without blocking 222ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanBeforeTraffic > skips the scan when the container image cannot be read 249ms
+ ✓ test/lib/imageScan.coverage.test.ts > scanBeforeTraffic > blocks on one high finding with the singular wording, counting unfixable ones 248ms
+ ✓ test/lib/imageScan.coverage.test.ts > rescanRunningImages on nodes and Swarm > does nothing while the schedule is off 251ms
+ ✓ test/lib/imageScan.coverage.test.ts > rescanRunningImages on nodes and Swarm > rescans node services, passes a fresh image as known, and reports a new fixable critical 360ms
+ ✓ test/lib/imageScan.coverage.test.ts > rescanRunningImages on nodes and Swarm > reports a new fixable critical on a Swarm image 234ms
+ ✓ test/lib/imageScan.coverage.test.ts > rescanRunningImages on nodes and Swarm > records why a Swarm image cannot be scanned once per stale period 244ms
+ ✓ test/imageScans.coverage.test.ts > the policy routes > reads the defaults and the Trivy image, and audits a change 266ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > refuses members who are not admins of the service, and an unknown id 169ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > scans a Swarm service from the image its spec runs, and audits the result 192ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > refuses a Swarm service whose image is not on the panel host, and logs a failed scan 213ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > scans a node service through its agent after the capability check 178ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > does not audit an unchanged node image, and logs a failed node scan 230ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > refuses a node service that runs nothing 230ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > refuses a service type that is not scanned, and a docker service that runs nothing 347ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > scans every image of a compose stack and audits the merged result 221ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > refuses a stack whose images cannot be listed or that runs nothing, and logs a failed stack scan 237ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > scans a docker service on the panel host from its running image 269ms
+ ✓ test/imageScans.coverage.test.ts > a scan on request > refuses a container whose image cannot be read, and logs a failed scan 254ms
+ ✓ test/lib/imageScanNode.test.ts > the agent op > scans only service containers the panel started, and answers "unchanged" for a known image 190ms
+ ✓ test/lib/imageScanNode.test.ts > scanning a node service > stores the node report, skips an unchanged image and records a failure 193ms
+ ✓ test/lib/imageScanNode.test.ts > scanning a node service > is part of the scheduled rescan, which asks the node to skip an image it already scanned 260ms
+ ✓ test/lib/imageScanNode.test.ts > the deploy gate on a node > scans the candidate container on its node and fails the deploy when the gate counts findings 195ms
+ ✓ test/lib/imageScanNode.test.ts > the deploy gate on a node > does not block when the node cannot scan (an older agent), and says so 171ms
+ ✓ test/lib/imageScanNode.test.ts > Swarm services > scan the image the service spec runs on the panel host, and record why when it is not there 167ms
+ ✓ test/lib/imageScanNodeReceipts.test.ts > accepts a single successful scan receipt 234ms
+ ✓ test/lib/imageScanNodeReceipts.test.ts > records an error for duplicate receipts instead of a clean result 185ms
+ ✓ test/lib/imageScanNodeReceipts.test.ts > records an error for failed operation instead of a clean result 181ms
+ ✓ test/lib/imageScanNodeReceipts.test.ts > records an error for oversized receipt instead of a clean result 200ms
+ ✓ test/lib/imageScanNodeReceipts.test.ts > refuses an unchanged receipt that does not match the requested image 175ms
+ ✓ test/lib/imageScanNodeReceipts.test.ts > refuses an unchanged receipt that does not match the requested image 168ms
+ ✓ test/lib/imageScanConcurrency.test.ts > admits only one manual scan while image inspection is in flight 431ms
+ ✓ test/lib/imageScanConcurrency.test.ts > releases admission after an image inspection failure so the operator can retry 228ms
+ ✓ test/lib/imageScanProcesses.test.ts > rejects a failed image export even when the scanner exits successfully first 3ms
+ ✓ test/lib/imageScanProcesses.test.ts > accepts a report only after both processes succeed (save-first) 1ms
+ ✓ test/lib/imageScanProcesses.test.ts > accepts a report only after both processes succeed (scan-first) 0ms
+ ✓ test/lib/imageScanProcesses.test.ts > rejects and stops both processes when the scanner fails 0ms
+ ✓ test/lib/imageScanProcesses.test.ts > keeps the deadline active after the scanner exits while export is still pending 2ms
+ ✓ test/lib/imageScanProcesses.test.ts > propagates a save process startup failure 0ms
+ ✓ test/lib/imageScanProcesses.test.ts > propagates a scan process startup failure 0ms
+ ✓ test/plugins/imageScanScheduler.test.ts > live control owner after a gated critical-result callback 93ms
+ ✓ test/plugins/imageScanScheduler.test.ts > closed owner after a gated critical-result callback 3ms
+
+ Test Files  8 passed (8)
+      Tests  82 passed (82)
+   Start at  21:18:32
+   Duration  31.98s (tests 83%, import 15%, transform 2%)
+
+    Isolate  8 workers spawned · ~306ms startup each (spawn + environment, per file)
+             at least ~2.14s faster with isolate: false — reuses workers across files instead of one per file
