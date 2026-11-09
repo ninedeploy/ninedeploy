@@ -1,0 +1,70 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > control: unchanged policy stops the loop and records one trip 171ms
+stdout | test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+EXPECTED: no stop and maxRestarts10; ACTUAL: { stops: 0, maxRestarts: 10 }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop 205ms
+stdout | test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting
+EXPECTED: disabled/null; ACTUAL: null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting 204ms
+ × test/lib/restartLimitPolicyRace.test.ts > old stop completion preserves history started by a newly enabled policy 30192ms
+   → Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ✓ test/lib/restartLimit.test.ts > recordRestarts > counts restarts per container from a baseline, within the window 181ms
+ ✓ test/lib/restartLimit.test.ts > recordRestarts > forgets restarts older than the window, and a new container starts from its own baseline 174ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > stops a crash-looping service like the Stop button, records the trip and reports it once 172ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > stops a crash-looping PM2 service through PM2, never through docker 190ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > leaves a service alone while it deploys, and does nothing without a limit 152ms
+ ✓ test/lib/restartLimit.test.ts > routes > reads and sets the limit, refuses bad values and turns it off 247ms
+ ✓ test/lib/restartLimit.test.ts > routes > refuses turning it on where the sweep never samples: a Swarm service; off stays allowed 191ms
+ ✓ test/lib/restartLimit.test.ts > routes > names the services the sweep samples 148ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/restartLimitPolicyRace.test.ts > old stop completion preserves history started by a newly enabled policy
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/lib/restartLimitPolicyRace.test.ts:39:1
+     37| });
+     38|
+     39| it('old stop completion preserves history started by a newly enabled p…
+       | ^
+     40|  const entered = gate(); const blocked = gate();
+     41|  const run = lib.enforceRestartLimits(db, { sample: async () => new Ma…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+ReferenceError: sampleValue is not defined
+ ❯ sample test/lib/restartLimitPolicyRace.test.ts:41:65
+     39| it('old stop completion preserves history started by a newly enabled p…
+     40|  const entered = gate(); const blocked = gate();
+     41|  const run = lib.enforceRestartLimits(db, { sample: async () => new Ma…
+       |                                                                 ^
+     42|  try {
+     43|   await entered.promise; await lib.setRestartLimit(db, 5, null); await…
+ ❯ Module.enforceRestartLimits src/lib/restartLimit.ts:157:119
+ ❯ process.processTicksAndRejections node:internal/process/task_queues:104:5
+
+This error originated in "test/lib/restartLimitPolicyRace.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "old stop completion preserves history started by a newly enabled policy". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 11 passed (12)
+     Errors  1 error
+   Start at  00:29:16
+   Duration  34.16s (tests 96%, import 4%, transform 1%)

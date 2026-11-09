@@ -1,0 +1,69 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > control: unchanged policy stops the loop and records one trip 245ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+EXPECTED: no stop and maxRestarts10; ACTUAL: { stops: 1, maxRestarts: 3 }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > a raised threshold completed during sampling prevents the stale policy stop 204ms
+   → expected { stops: 1, maxRestarts: 3 } to deeply equal { stops: +0, maxRestarts: 10 }
+stdout | .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > disabling the policy during an admitted stop does not recreate its setting
+EXPECTED: disabled/null; ACTUAL: {
+  maxRestarts: 3,
+  windowMinutes: 10,
+  trippedAt: '1970-01-01T00:01:00.000Z'
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > disabling the policy during an admitted stop does not recreate its setting 221ms
+   → expected { maxRestarts: 3, …(2) } to be null
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+AssertionError: expected { stops: 1, maxRestarts: 3 } to deeply equal { stops: +0, maxRestarts: 10 }
+
+- Expected
++ Received
+
+  {
+-   "maxRestarts": 10,
+-   "stops": 0,
++   "maxRestarts": 3,
++   "stops": 1,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts:27:18
+     25|   const actual = { stops: stop.mock.calls.length, maxRestarts: (await …
+     26|   console.log('EXPECTED: no stop and maxRestarts10; ACTUAL:', actual);…
+     27|   expect(actual).toEqual({ stops: 0, maxRestarts: 10 }); expect(onTrip…
+       |                  ^
+     28|  } finally { blocked.release(); await run; }
+     29| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > disabling the policy during an admitted stop does not recreate its setting
+AssertionError: expected { maxRestarts: 3, …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "maxRestarts": 3,
+  "trippedAt": "1970-01-01T00:01:00.000Z",
+  "windowMinutes": 10,
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts:35:194
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  00:25:21
+   Duration  1.70s (import 43%, tests 43%, transform 14%)

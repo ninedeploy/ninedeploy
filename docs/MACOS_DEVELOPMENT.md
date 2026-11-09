@@ -511,3 +511,13 @@ the fix. Ten independent lifecycle/retry cases passed three times. Server typech
 and build passed with the existing child-process `GOMAXPROCS=4` bound; scoped lint
 passed. An already-admitted render can finish after close. No live ACME renewal,
 proxy deployment, full release gate or native Mac setup was exercised in this round.
+
+Round 57 (F1075) preserves restart-limit operator choices across Docker/PM2
+sampling and admitted stops. A stale sample cannot enforce an older policy;
+trip persistence cannot recreate a disabled limit or erase a replacement policy's
+new history. Four permanent tests were seen red on original source (three defects,
+one control), then 12 neighboring tests passed. Fourteen independent policy/history
+cases passed three times. Fixture promotion and initial incomplete-fix failures
+are retained in the ledger and excluded from passing results. No live container
+stop or distributed policy lock was certified; use the physical-Mac acceptance
+steps above for native behavior.

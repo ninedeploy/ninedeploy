@@ -1,0 +1,109 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > control: unchanged policy stops the loop and records one trip 270ms
+stdout | test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+EXPECTED: no stop and maxRestarts10; ACTUAL: { stops: 1, maxRestarts: 3 }
+PROBLEM CONFIRMED
+
+ × test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop 183ms
+   → expected { stops: 1, maxRestarts: 3 } to deeply equal { stops: +0, maxRestarts: 10 }
+stdout | test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting
+EXPECTED: disabled/null; ACTUAL: {
+  maxRestarts: 3,
+  windowMinutes: 10,
+  trippedAt: '1970-01-01T00:01:00.000Z'
+}
+PROBLEM CONFIRMED
+
+ × test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting 375ms
+   → expected { maxRestarts: 3, …(2) } to be null
+ × test/lib/restartLimitPolicyRace.test.ts > old stop completion preserves history started by a newly enabled policy 30213ms
+   → Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+AssertionError: expected { stops: 1, maxRestarts: 3 } to deeply equal { stops: +0, maxRestarts: 10 }
+
+- Expected
++ Received
+
+  {
+-   "maxRestarts": 10,
+-   "stops": 0,
++   "maxRestarts": 3,
++   "stops": 1,
+  }
+
+ ❯ test/lib/restartLimitPolicyRace.test.ts:27:18
+     25|   const actual = { stops: stop.mock.calls.length, maxRestarts: (await …
+     26|   console.log('EXPECTED: no stop and maxRestarts10; ACTUAL:', actual);…
+     27|   expect(actual).toEqual({ stops: 0, maxRestarts: 10 }); expect(onTrip…
+       |                  ^
+     28|  } finally { blocked.release(); await run; }
+     29| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting
+AssertionError: expected { maxRestarts: 3, …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "maxRestarts": 3,
+  "trippedAt": "1970-01-01T00:01:00.000Z",
+  "windowMinutes": 10,
+}
+
+ ❯ test/lib/restartLimitPolicyRace.test.ts:35:194
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/lib/restartLimitPolicyRace.test.ts > old stop completion preserves history started by a newly enabled policy
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/lib/restartLimitPolicyRace.test.ts:39:1
+     37| });
+     38|
+     39| it('old stop completion preserves history started by a newly enabled p…
+       | ^
+     40|  const entered = gate(); const blocked = gate();
+     41|  const run = lib.enforceRestartLimits(db, { sample: async () => sample…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+ReferenceError: sampleValue is not defined
+ ❯ sample test/lib/restartLimitPolicyRace.test.ts:41:65
+     39| it('old stop completion preserves history started by a newly enabled p…
+     40|  const entered = gate(); const blocked = gate();
+     41|  const run = lib.enforceRestartLimits(db, { sample: async () => sample…
+       |                                                                 ^
+     42|  try {
+     43|   await entered.promise; await lib.setRestartLimit(db, 5, null); await…
+ ❯ Module.enforceRestartLimits src/lib/restartLimit.ts:140:119
+ ❯ process.processTicksAndRejections node:internal/process/task_queues:104:5
+
+This error originated in "test/lib/restartLimitPolicyRace.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "old stop completion preserves history started by a newly enabled policy". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 1 passed (4)
+     Errors  1 error
+   Start at  00:28:19
+   Duration  31.97s (tests 98%, import 2%, transform 1%)

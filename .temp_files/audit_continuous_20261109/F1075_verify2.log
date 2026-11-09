@@ -1,0 +1,25 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > docker: raise during sampling abandons old owner 174ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > docker: window during sampling abandons old owner 184ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > docker: disable during sampling abandons old owner 193ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > docker: recreate during sampling abandons old owner 153ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > pm2: raise during sampling abandons old owner 241ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > pm2: window during sampling abandons old owner 193ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > pm2: disable during sampling abandons old owner 193ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > pm2: recreate during sampling abandons old owner 159ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > disable during admitted stop survives trip recording 183ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > raise during admitted stop survives trip recording 171ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > recreate during admitted stop survives trip recording 161ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > the final SQL admission checks persisted policy after a later direct update 179ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > old stop completion preserves history started by a newly enabled policy 179ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > a later fresh sweep enforces the replacement threshold 246ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  00:29:03
+   Duration  3.40s (tests 81%, import 15%, transform 4%)

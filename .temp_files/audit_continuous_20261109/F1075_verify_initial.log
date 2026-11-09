@@ -1,0 +1,48 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > docker: raise during sampling abandons old owner 170ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > docker: window during sampling abandons old owner 151ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > docker: disable during sampling abandons old owner 158ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > docker: recreate during sampling abandons old owner 183ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > pm2: raise during sampling abandons old owner 165ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > pm2: window during sampling abandons old owner 164ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > pm2: disable during sampling abandons old owner 156ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > pm2: recreate during sampling abandons old owner 184ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > disable during admitted stop survives trip recording 158ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > raise during admitted stop survives trip recording 153ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > recreate during admitted stop survives trip recording 175ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > the final SQL admission checks persisted policy after a later direct update 184ms
+ × .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > old stop completion preserves history started by a newly enabled policy 179ms
+   → expected +0 to be 2 // Object.is equality
+stdout | .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > a later fresh sweep enforces the replacement threshold 166ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts > old stop completion preserves history started by a newly enabled policy
+AssertionError: expected +0 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/verify_F1075_restartPolicy.test.ts:68:121
+     66|   await entered.promise; await lib.setRestartLimit(db, 5, null); await…
+     67|   lib.recordRestarts(5, new Map([['new', 0]]), limit, 60001); lib.reco…
+     68|   blocked.release(); await run; expect(lib.restartLimitView(await lib.…
+       |                                                                                                                         ^
+     69|  } finally { blocked.release(); await run; }
+     70| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 passed (14)
+   Start at  00:27:11
+   Duration  3.12s (tests 80%, import 16%, transform 5%)

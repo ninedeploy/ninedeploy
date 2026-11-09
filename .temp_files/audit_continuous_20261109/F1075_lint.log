@@ -1,0 +1,20 @@
+apps\server\src\lib\restartLimit.ts:43:37 lint/suspicious/noAssignInExpressions ━━━━━━━━━━━━━━━━━━━━
+
+  × The assignment should not be in an expression.
+
+    41 │ function replacePolicyOwner(db: DB, serviceId: number): void {
+    42 │   let owners = policyOwners.get(db);
+  > 43 │   if (!owners) policyOwners.set(db, owners = new Map());
+       │                                     ^^^^^^^^^^^^^^^^^^
+    44 │   owners.set(serviceId, {});
+    45 │ }
+
+  i The use of assignments in expressions is confusing.
+    Expressions are often considered as side-effect free.
+
+
+Checked 2 files in 12ms. No fixes applied.
+Found 1 error.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.

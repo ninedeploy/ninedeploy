@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > control: unchanged policy stops the loop and records one trip 250ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+EXPECTED: no stop and maxRestarts10; ACTUAL: { stops: 0, maxRestarts: 10 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > a raised threshold completed during sampling prevents the stale policy stop 162ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > disabling the policy during an admitted stop does not recreate its setting
+EXPECTED: disabled/null; ACTUAL: null
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1075_restartPolicy.test.ts > disabling the policy during an admitted stop does not recreate its setting 174ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  00:26:12
+   Duration  1.58s (tests 50%, import 38%, transform 11%)

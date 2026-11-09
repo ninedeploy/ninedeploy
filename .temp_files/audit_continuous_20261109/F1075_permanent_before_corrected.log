@@ -1,0 +1,90 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > control: unchanged policy stops the loop and records one trip 262ms
+stdout | test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+EXPECTED: no stop and maxRestarts10; ACTUAL: { stops: 1, maxRestarts: 3 }
+PROBLEM CONFIRMED
+
+ × test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop 178ms
+   → expected { stops: 1, maxRestarts: 3 } to deeply equal { stops: +0, maxRestarts: 10 }
+stdout | test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting
+EXPECTED: disabled/null; ACTUAL: {
+  maxRestarts: 3,
+  windowMinutes: 10,
+  trippedAt: '1970-01-01T00:01:00.000Z'
+}
+PROBLEM CONFIRMED
+
+ × test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting 191ms
+   → expected { maxRestarts: 3, …(2) } to be null
+ × test/lib/restartLimitPolicyRace.test.ts > old stop completion preserves history started by a newly enabled policy 241ms
+   → expected +0 to be 2 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+AssertionError: expected { stops: 1, maxRestarts: 3 } to deeply equal { stops: +0, maxRestarts: 10 }
+
+- Expected
++ Received
+
+  {
+-   "maxRestarts": 10,
+-   "stops": 0,
++   "maxRestarts": 3,
++   "stops": 1,
+  }
+
+ ❯ test/lib/restartLimitPolicyRace.test.ts:27:18
+     25|   const actual = { stops: stop.mock.calls.length, maxRestarts: (await …
+     26|   console.log('EXPECTED: no stop and maxRestarts10; ACTUAL:', actual);…
+     27|   expect(actual).toEqual({ stops: 0, maxRestarts: 10 }); expect(onTrip…
+       |                  ^
+     28|  } finally { blocked.release(); await run; }
+     29| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting
+AssertionError: expected { maxRestarts: 3, …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "maxRestarts": 3,
+  "trippedAt": "1970-01-01T00:01:00.000Z",
+  "windowMinutes": 10,
+}
+
+ ❯ test/lib/restartLimitPolicyRace.test.ts:35:194
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/lib/restartLimitPolicyRace.test.ts > old stop completion preserves history started by a newly enabled policy
+AssertionError: expected +0 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ test/lib/restartLimitPolicyRace.test.ts:45:121
+     43|   await entered.promise; await lib.setRestartLimit(db, 5, null); await…
+     44|   lib.recordRestarts(5, new Map([['new', 0]]), limit, 60001); lib.reco…
+     45|   blocked.release(); await run; expect(lib.restartLimitView(await lib.…
+       |                                                                                                                         ^
+     46|  } finally { blocked.release(); await run; }
+     47| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 1 passed (4)
+   Start at  00:30:09
+   Duration  1.68s (tests 57%, import 35%, transform 8%)

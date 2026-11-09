@@ -1,0 +1,28 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > control: unchanged policy stops the loop and records one trip 206ms
+stdout | test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+EXPECTED: no stop and maxRestarts10; ACTUAL: { stops: 0, maxRestarts: 10 }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop 167ms
+stdout | test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting
+EXPECTED: disabled/null; ACTUAL: null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting 151ms
+ ✓ test/lib/restartLimitPolicyRace.test.ts > old stop completion preserves history started by a newly enabled policy 171ms
+ ✓ test/lib/restartLimit.test.ts > recordRestarts > counts restarts per container from a baseline, within the window 189ms
+ ✓ test/lib/restartLimit.test.ts > recordRestarts > forgets restarts older than the window, and a new container starts from its own baseline 161ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > stops a crash-looping service like the Stop button, records the trip and reports it once 174ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > stops a crash-looping PM2 service through PM2, never through docker 164ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > leaves a service alone while it deploys, and does nothing without a limit 161ms
+ ✓ test/lib/restartLimit.test.ts > routes > reads and sets the limit, refuses bad values and turns it off 260ms
+ ✓ test/lib/restartLimit.test.ts > routes > refuses turning it on where the sweep never samples: a Swarm service; off stays allowed 172ms
+ ✓ test/lib/restartLimit.test.ts > routes > names the services the sweep samples 170ms
+
+ Test Files  2 passed (2)
+      Tests  12 passed (12)
+   Start at  00:30:12
+   Duration  3.69s (tests 63%, import 31%, transform 5%)

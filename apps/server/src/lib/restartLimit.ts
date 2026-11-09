@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, exists, inArray } from 'drizzle-orm';
 import { deployments, services, settings, type DB, type Service } from '@ninedeploy/db';
 import { restartLimitConfig, type RestartLimitConfig, type RestartLimitView } from '@ninedeploy/schemas';
 import { pm2RestartCounts, pm2Stop } from '../engine/builders/pm2.js';
@@ -28,20 +28,35 @@ interface Stored extends RestartLimitConfig {
   trippedAt?: string | null;
 }
 
-export async function getRestartLimit(db: DB, serviceId: number): Promise<Stored | null> {
-  const raw = await getSettingJson<Stored>(db, key(serviceId), null);
+function parseLimit(raw: Stored | null): Stored | null {
   const parsed = restartLimitConfig.safeParse(raw ? { maxRestarts: raw.maxRestarts, windowMinutes: raw.windowMinutes } : null);
   return parsed.success ? { ...parsed.data, trippedAt: raw?.trippedAt ?? null } : null;
+}
+
+export async function getRestartLimit(db: DB, serviceId: number): Promise<Stored | null> {
+  return parseLimit(await getSettingJson<Stored>(db, key(serviceId), null));
+}
+
+const policyOwners = new WeakMap<DB, Map<number, object>>();
+function replacePolicyOwner(db: DB, serviceId: number): void {
+  let owners = policyOwners.get(db);
+  if (!owners) {
+    owners = new Map();
+    policyOwners.set(db, owners);
+  }
+  owners.set(serviceId, {});
 }
 
 export async function setRestartLimit(db: DB, serviceId: number, limit: RestartLimitConfig | null): Promise<void> {
   if (limit === null) {
     await db.delete(settings).where(eq(settings.key, key(serviceId)));
+    replacePolicyOwner(db, serviceId);
     history.delete(serviceId);
     return;
   }
   const prev = await getRestartLimit(db, serviceId);
   await setSettingJson(db, key(serviceId), { ...restartLimitConfig.parse(limit), trippedAt: prev?.trippedAt ?? null });
+  replacePolicyOwner(db, serviceId);
 }
 
 /** Panel-host docker services and PM2 services; a Swarm service has no containers of its name, and nodes are not sampled. */
@@ -127,8 +142,13 @@ export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, 
   const stopped: number[] = [];
   for (const id of ids) {
     const svc = await db.query.services.findFirst({ where: eq(services.id, id) });
-    const limit = await getRestartLimit(db, id);
-    if (!svc || !limit) continue;
+    const owner = policyOwners.get(db)?.get(id);
+    const policy = await db.query.settings.findFirst({ where: eq(settings.key, key(id)) });
+    let limit: Stored | null = null;
+    try {
+      limit = parseLimit((typeof policy?.value === 'object' ? policy.value : JSON.parse(String(policy?.value))) as Stored | null);
+    } catch { /* invalid stored policy */ }
+    if (!svc || !limit || !policy) continue;
     const pm2 = svc.type === 'pm2';
     if (!restartLimitSupported(svc) || !svc.runtimeId || svc.status !== 'running') {
       history.delete(id);
@@ -138,14 +158,27 @@ export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, 
     const runtimeId = svc.runtimeId;
     const names = pm2 ? [runtimeId] : replicaNames(runtimeId, runtimeReplicaCounts(svc).capacity);
     const sample = pm2 ? await (deps.samplePm2 ?? pm2RestartCounts)(runtimeId) : await (deps.sample ?? inspectRestarts)(names);
+    if (policyOwners.get(db)?.get(id) !== owner) continue;
+    const ownsPolicy = and(eq(settings.key, key(id)), eq(settings.value, policy.value));
+    const currentPolicy = await db.select({ key: settings.key }).from(settings).where(ownsPolicy);
+    if (policyOwners.get(db)?.get(id) !== owner || currentPolicy.length === 0) continue;
     if (!recordRestarts(id, sample, limit, now)) continue;
+    const sampledHistory = history.get(id);
     const restarts = history.get(id)?.restarts.length ?? limit.maxRestarts;
     // As the Stop button: `stopped` first, so the runtime reconcile does not revive it.
-    await db.update(services).set({ status: 'stopped', asleepAt: null }).where(eq(services.id, id));
+    const admitted = await db.update(services).set({ status: 'stopped', asleepAt: null })
+      .where(and(eq(services.id, id), exists(db.select({ key: settings.key }).from(settings).where(ownsPolicy))))
+      .returning({ id: services.id });
+    if (admitted.length === 0) continue;
     if (pm2) await (deps.stopPm2 ?? pm2Stop)(runtimeId).catch(() => undefined);
     else await (deps.stop ?? (async (n: string[]) => void (await capture('docker', ['stop', '-t', '5', ...n]).catch(() => undefined))))(names);
-    await setSettingJson(db, key(id), { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes, trippedAt: new Date(now).toISOString() });
-    history.delete(id);
+    if (policyOwners.get(db)?.get(id) === owner) {
+      await db.update(settings).set({
+        value: { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes, trippedAt: new Date(now).toISOString() } as unknown as boolean,
+        updatedAt: new Date(),
+      }).where(ownsPolicy);
+    }
+    if (policyOwners.get(db)?.get(id) === owner && history.get(id) === sampledHistory) history.delete(id);
     deps.onTripped?.(svc, { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes }, restarts);
     stopped.push(id);
   }
