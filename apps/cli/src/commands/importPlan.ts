@@ -111,5 +111,5 @@ export async function importPlanAction(kind: string, opts: { url: string; json?:
   }
   header(`Import plan: ${plan.services.length} service(s), ${plan.databases.length} database(s)`);
   console.log(renderImportPlan(plan));
-  info(`${c.dim('Nothing was created or changed.')} Step 2 (apply) is not available yet.`);
+  info(`${c.dim('Nothing was created or changed.')} Save it with --out plan.json, then preview step 2 with \`ninedeploy import apply plan.json\`.`);
 }

@@ -1,11 +1,11 @@
 # Moving from Coolify, Dokploy or CapRover
 
-`ninedeploy import plan` reads another platform's API and shows what NineDeploy would create. For each item it also lists what NineDeploy cannot carry over and what needs a person. **This is step 1 of three, and it is read-only.** It creates nothing in NineDeploy and changes nothing on the source.
+`ninedeploy import plan` reads another platform's API and shows what NineDeploy would create. For each item it also lists what NineDeploy cannot carry over and what needs a person. It is read-only: it creates nothing in NineDeploy and changes nothing on the source. `ninedeploy import apply` then creates what a saved plan describes. It never touches the source.
 
 | Step | What it does | Status |
 |---|---|---|
 | 1. Plan | Read the source and list each service, domain, environment variable name, volume and database, with every unsupported option | Available (CLI) |
-| 2. Apply | Create the planned services in NineDeploy, resumably, with a receipt per item, and leave the source untouched | Not yet |
+| 2. Apply | Create the planned services and databases in NineDeploy, resumably, with a receipt per item, and leave the source untouched | Available (CLI) |
 | 3. Data | Move database contents and volumes, checksummed, then switch DNS as an explicit last step | Not yet |
 
 ## Run a plan
@@ -24,6 +24,31 @@ NINEDEPLOY_IMPORT_PASSWORD=… ninedeploy import plan caprover --url https://cap
 ```
 
 `--json` prints the plan as JSON, and `--out plan.json` also saves it. Leave the variable unset and the command asks for the credential without echoing it.
+
+## Apply a plan
+
+```bash
+ninedeploy import plan caprover --url https://captain.apps.example.com --out plan.json
+ninedeploy import apply plan.json                      # shows what it would create; creates nothing
+ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   # creates them
+```
+
+`import apply` uses the panel the CLI is signed in to (`ninedeploy login`). It reads the plan file only, so it needs no source credential. Edit the plan first if you want different names or fewer items.
+
+**What it creates**
+- Each service that has something to deploy from: an image, or a repository and branch, with its port, replicas, limits, health path and first volume.
+- Each database with a NineDeploy engine. It is created empty. The source's version is used when the source runs the same image (for example `postgres:14.5`); otherwise the panel's default is used.
+
+**What it does not do**
+- **It does not deploy anything.** Deploy each service when its environment is complete.
+- **It does not add domains.** Adding a domain makes NineDeploy request a certificate, and the request would fail while DNS still points at the old platform. With the Cloudflare integration on, adding a domain would also change your DNS. Domains move at the cutover, step 3.
+- **It does not invent environment values.** A plan holds names only. Pass `--dotenv <service>=<path>` with a `.env` file to set a service's values through the panel's `.env` import. Variables with no value are listed in the receipt; they are not created empty.
+
+**The receipt**
+- It is saved next to the plan as `plan.receipt.json` (`--receipt` to choose the file).
+- It records each item's state (`done`, `skipped`, `failed`), its NineDeploy id and notes: what still needs a person, and which domains wait for the cutover. It never contains a value.
+- Running the same command again repeats only what is not `done`. Each item is written as pending before the panel is called. Creates are sent with `reuseExisting`, so a run that stopped halfway picks up your own idle service or database of the same definition instead of failing on the name.
+- A receipt is tied to one panel and one source. Apply refuses a receipt from another one.
 
 ## What a plan contains
 

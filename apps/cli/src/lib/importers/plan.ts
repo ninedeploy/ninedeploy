@@ -6,8 +6,8 @@
  *
  * Secret hygiene is part of the type: a plan carries environment variable
  * NAMES only, never values, passwords, tokens or keys, and every URL has its
- * userinfo removed before it enters the plan. Step 2 (apply) reads values from
- * the source again at apply time.
+ * userinfo removed before it enters the plan. Step 2 (`import apply`, in
+ * commands/importApply.ts) takes values only from .env files the person passes.
  */
 import type { CreateService } from '@ninedeploy/schemas';
 

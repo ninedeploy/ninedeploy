@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The credential comes from `NINEDEPLOY_IMPORT_TOKEN` / `NINEDEPLOY_IMPORT_PASSWORD` or a hidden prompt, never from the command line, and stays on your machine.
   - A plan holds variable names only, never a value, password, token or key, and every URL loses its `user:password@`.
   - The mappings were written against Coolify v4.7.0, Dokploy v0.31.0 and CapRover v1.16.0 and are tested with fixtures derived from their source. CapRover v1.16.0 was also checked against a live instance. That run found three gaps the fixtures missed, now fixed: a never-deployed app's placeholder image, stopped apps, and the source version. Coolify and Dokploy have not been checked live yet. See [docs/IMPORTING.md](docs/IMPORTING.md).
+- **`ninedeploy import apply`: create what an import plan describes.** `import apply plan.json` shows what it would create; `--yes` creates it on the panel the CLI is signed in to. It reads the saved plan only, never the source.
+  - It creates each service that has an image or a repository, with its port, replicas, limits and first volume. Databases are created empty, on the source's version when the source ran the same image.
+  - It never deploys and never adds a domain. Adding a domain requests a certificate, and with the Cloudflare integration on it also writes DNS, both while DNS still points at the old platform. Domains move at the cutover (step 3).
+  - Environment values come only from `--dotenv <service>=<file>`, through the panel's `.env` import. The flag is not `--env-file`, because Node reads that flag itself from anywhere on the command line.
+  - A receipt next to the plan records each item's state and id, never a value. Running the command again repeats only what is not done, and a run that stopped halfway picks its items up again without duplicates.
+  - Checked live: a plan of a real CapRover v1.16.0, applied to a disposable panel, then a resume after a simulated crash.
 
 ### Fixed
 

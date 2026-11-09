@@ -129,6 +129,7 @@ import {
   egressClearAction, egressListAction, egressSetAction,
 } from './commands/egress.js';
 import { importPlanAction } from './commands/importPlan.js';
+import { importApplyAction } from './commands/importApply.js';
 import { ipsForgetAction, ipsListAction, ipsSetAction } from './commands/hostIps.js';
 import {
   ssoAddAction, ssoListAction, ssoRemoveAction,
@@ -697,7 +698,7 @@ egressCmd
   .action((projectId: string, opts: { driver?: string }) => egressClearAction(getClient(), projectId, opts));
 
 // ── Import from another platform (A1 step 1: read-only plan) ─────────────
-const importCmd = program.command('import').description('Plan a move from Coolify, Dokploy or CapRover (read-only for now)');
+const importCmd = program.command('import').description('Move from Coolify, Dokploy or CapRover: plan (read-only), then apply');
 importCmd
   .command('plan <source>')
   .description('Read a coolify | dokploy | caprover panel and print what NineDeploy would create. Nothing is created or changed. The credential comes from NINEDEPLOY_IMPORT_TOKEN (Coolify, Dokploy) or NINEDEPLOY_IMPORT_PASSWORD (CapRover, plus NINEDEPLOY_IMPORT_OTP), or a hidden prompt.')
@@ -705,6 +706,14 @@ importCmd
   .option('--json', 'Print the plan as JSON')
   .option('--out <file>', 'Also write the plan (JSON, names only) to a file')
   .action((source: string, opts: { url: string; json?: boolean; out?: string }) => importPlanAction(source, opts));
+importCmd
+  .command('apply <plan>')
+  .description('Create the services and databases of a saved plan (import plan --out) on this panel. Without --yes it only shows what it would create. Never deploys and never adds a domain; keeps a resumable receipt next to the plan.')
+  .option('--yes', 'Create them')
+  .option('--project <id>', 'Tag every created service and database with this project')
+  .option('--dotenv <service=path>', 'Environment values for a service, from a .env file (repeatable)', (v: string, prev: string[]) => [...prev, v], [] as string[])
+  .option('--receipt <file>', 'Receipt file (default: <plan>.receipt.json)')
+  .action((plan: string, opts: { yes?: boolean; project?: string; dotenv?: string[]; receipt?: string }) => importApplyAction(plan, opts));
 
 // ── SSO (G-22) ───────────────────────────────────────────────────────────
 const ssoCmd = program.command('sso').description('Manage OIDC / SAML SSO providers (G-22)');
