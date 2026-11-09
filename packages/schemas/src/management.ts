@@ -28,8 +28,21 @@ export const updateCheckResult = z.object({
   source: z.string().optional(),
   /** True when every source failed and this is the last successful answer (checkedAt = its time). */
   stale: z.boolean().optional(),
+  /** A6: the channel this answer is for; absent from panels before the stable channel. */
+  channel: z.enum(['release', 'stable']).optional(),
 });
 export type UpdateCheckResult = z.infer<typeof updateCheckResult>;
+
+// ── Update channel (A6) ────────────────────────────────────────────────────
+/**
+ * `release`: every published release (the default, as before).
+ * `stable`: the release the `stable` git tag points at — one that has been
+ * out for seven days, or a security fix (.github/workflows/stable-channel.yml).
+ */
+export const updateChannel = z.enum(['release', 'stable']);
+export type UpdateChannel = z.infer<typeof updateChannel>;
+export const updateChannelInput = z.object({ channel: updateChannel }).strict();
+export type UpdateChannelInput = z.infer<typeof updateChannelInput>;
 
 // ── Panel self-update (admin) ──────────────────────────────────────────────
 /** Body of POST /v1/system/update-start: an exact release tag, e.g. "v0.3.4". */

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A stable update channel.** Until now, the panel offered every release as soon as it was published. An operator can now choose **stable** under **Settings → System → Update channel**, or with `GET`/`PUT /v1/system/update-channel` (SDK `system.updateChannel`). Stable offers only the release the `stable` tag points at. Every release stays the default, so nothing changes until you switch.
+  - A daily workflow (`.github/workflows/stable-channel.yml`) moves the `stable` tag to the newest release that has been out for 7 days.
+  - A release whose GitHub release notes carry `<!-- stable: security -->` is promoted at once. A maintainer can also promote a tag by hand from the workflow. One marked `<!-- stable: hold -->` is never promoted.
+  - The tag never moves backwards.
+  - The installer takes the same channel: `install.sh --channel stable`. It refuses, with a clear message, while no stable release exists yet.
+  - The installer also writes `NINEDEPLOY_UPDATE_CHANNEL=stable` into `.env`, so the panel follows the same channel until an operator picks one in Settings.
 - **What a service can use, in one place.** `GET /v1/services/:id/capabilities` (SDK `services.capabilities`) answers, for nine features, whether each is available, limited, still being built, or refused where the service runs, with the reason. The features are maintenance mode, error pages, forward auth, restart limit, inline Dockerfile, file mounts, autoscaling, scale to zero and canary releases.
   - The routes now refuse through the same check, with the same messages as before.
   - The maintenance, restart-limit and forward-auth cards follow it. For example, the maintenance card no longer appears on a panel-host service that also runs on nodes, where saving was refused.
@@ -29,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Panel backup retention now rechecks the selected destination and keep count before each deletion, preserving old recovery artifacts when settings change during an upload or prune (F1050).
 - Loki log searches keep a reverse proxy's path prefix when deriving the query endpoint from a configured `/loki/api/v1/push` URL.
 - Log delivery and Loki search apply header precedence without regard to name casing, avoiding duplicate authentication and Content-Type values from differently cased custom headers.
 - Loki log searches preserve the drain's custom headers, including tenant IDs, and avoid duplicating an existing Bearer prefix, matching log delivery authentication.

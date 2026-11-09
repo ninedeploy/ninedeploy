@@ -17,6 +17,7 @@ import type {
   StatsSnapshot,
   TopologyGraph,
   UpdateCheckResult,
+  UpdateChannel,
   SelfUpdateStatus,
   AutoPruneConfigUpdateInput,
   AutoPruneStatus,
@@ -55,6 +56,11 @@ export interface SystemApi {
     exportUrl: () => string;
     /** Latest-release check (admin). updateAvailable is null when offline/disabled. */
     updateCheck: (force?: boolean) => Promise<UpdateCheckResult>;
+    /** A6: which releases the panel offers — every release, or the stable channel (operator). */
+    updateChannel: {
+      get: () => Promise<{ channel: UpdateChannel }>;
+      set: (channel: UpdateChannel) => Promise<{ channel: UpdateChannel; check: UpdateCheckResult }>;
+    };
     /** State of a panel-initiated upgrade (idle/running/success/failed/unsupported). */
     updateStatus: () => Promise<SelfUpdateStatus>;
     /**
@@ -214,6 +220,10 @@ export function systemApi(t: Transport): SystemApi {
       resources: () => get<DockerResources>('/v1/system/resources'),
       pruneImages: () => send<{ ok: boolean }>('POST', '/v1/system/prune-images'),
       updateCheck: (force) => get<UpdateCheckResult>(`/v1/system/update-check${force ? '?force=1' : ''}`),
+      updateChannel: {
+        get: () => get<{ channel: UpdateChannel }>('/v1/system/update-channel'),
+        set: (channel) => send<{ channel: UpdateChannel; check: UpdateCheckResult }>('PUT', '/v1/system/update-channel', { channel }),
+      },
       updateStatus: () => get<SelfUpdateStatus>('/v1/system/update-status'),
       updateStart: (version, opts) => send<{ ok: boolean }>('POST', '/v1/system/update-start', { version, ...opts }),
       exportUrl: () => '/v1/system/export',

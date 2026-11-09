@@ -3,9 +3,10 @@ import { eq, inArray } from 'drizzle-orm';
 import { deployments, services } from '@ninedeploy/db';
 import type { FastifyPluginAsync } from 'fastify';
 import { capture } from '../lib/exec.js';
-import { checkForUpdate } from '../lib/updateCheck.js';
+import { checkForUpdate, type UpdateChannel } from '../lib/updateCheck.js';
+import { getSettingString, setSettingString } from '../lib/settings.js';
 import { getSelfUpdateStatus, startSelfUpdate } from '../lib/selfUpdate.js';
-import { selfUpdateStart } from '@ninedeploy/schemas';
+import { selfUpdateStart, updateChannelInput } from '@ninedeploy/schemas';
 import { NETWORK } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
 import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
@@ -22,6 +23,9 @@ function parseDf(line: string): Record<string, string> | null {
   try { return JSON.parse(line) as Record<string, string>; } catch { return null; }
 }
 
+/** A6: settings key of the update channel (`release` when absent). */
+const UPDATE_CHANNEL_KEY = 'update_channel';
+
 /** Docker resource accounting + image pruning + export/import. Mounted under /system. */
 export const systemRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
@@ -30,7 +34,21 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
 
   // Latest-release check (GitHub Releases feed, 6h cache; "unknown" when
   // offline or disabled — never throws so the dashboard stays usable).
-  app.get('/update-check', async (req) => checkForUpdate((req.query as { force?: string })?.force === '1'));
+  // A6: on the stable channel the check offers the release the `stable` tag points at.
+  // A saved choice wins; without one, NINEDEPLOY_UPDATE_CHANNEL (written by
+  // install.sh --channel stable) decides.
+  const channelOf = async (): Promise<UpdateChannel> =>
+    ((await getSettingString(app.db, UPDATE_CHANNEL_KEY, null)) ?? process.env['NINEDEPLOY_UPDATE_CHANNEL']?.trim()) === 'stable' ? 'stable' : 'release';
+  app.get('/update-check', async (req) => checkForUpdate((req.query as { force?: string })?.force === '1', await channelOf()));
+
+  // A6: which releases the panel offers. `release` (default) is every release, as before.
+  app.get('/update-channel', async () => ({ channel: await channelOf() }));
+  app.put('/update-channel', { preHandler: [app.requireInteractive] }, async (req) => {
+    const { channel } = updateChannelInput.parse(req.body ?? {});
+    await setSettingString(app.db, UPDATE_CHANNEL_KEY, channel);
+    void audit(app.db, req.user!.id, 'system.update_channel', channel, { channel });
+    return { channel, check: await checkForUpdate(true, channel) };
+  });
 
   // ── Panel self-update ───────────────────────────────────────────────────
   // State/resolution of a one-click upgrade; marker files, not memory — the

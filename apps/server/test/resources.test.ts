@@ -346,10 +346,11 @@ describe('system resources routes', () => {
     const res = await app.inject({ method: 'GET', url: '/update-check', headers: asUser() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ current: '0.1.0', latest: '0.2.0', updateAvailable: true });
-    expect(updateCheckMock.checkForUpdate).toHaveBeenCalledWith(false);
+    // A6: no channel stored → the release channel, as before.
+    expect(updateCheckMock.checkForUpdate).toHaveBeenCalledWith(false, 'release');
     const forced = await app.inject({ method: 'GET', url: '/update-check?force=1', headers: asUser() });
     expect(forced.statusCode).toBe(200);
-    expect(updateCheckMock.checkForUpdate).toHaveBeenCalledWith(true);
+    expect(updateCheckMock.checkForUpdate).toHaveBeenCalledWith(true, 'release');
   });
 
 /** Wait (bounded) until pred() is true — 'close' fires a tick after the

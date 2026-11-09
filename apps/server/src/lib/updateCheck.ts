@@ -25,7 +25,12 @@ export interface UpdateCheckResult {
    * the fresh one failed). A verdict from an hour ago beats "unavailable".
    */
   stale?: boolean;
+  /** A6: the channel this answer is for. */
+  channel?: UpdateChannel;
 }
+
+/** A6: `release` follows every release (as before); `stable` follows the `stable` tag. */
+export type UpdateChannel = 'release' | 'stable';
 
 /** Successful answers are reused for an hour (GitHub's anonymous API budget is 60 req/h per IP). */
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -50,9 +55,10 @@ interface LastGood extends Found {
   source: string;
 }
 
-let cached: { result: UpdateCheckResult; at: number; isFailure: boolean } | null = null;
-let inflight: Promise<UpdateCheckResult> | null = null;
-let lastGood: LastGood | null | undefined; // undefined = not loaded from disk yet
+// A6: one cache, probe and last answer per channel, so switching channels never shows the other one's verdict.
+const cachedBy = new Map<UpdateChannel, { result: UpdateCheckResult; at: number; isFailure: boolean }>();
+const inflightBy = new Map<UpdateChannel, Promise<UpdateCheckResult>>();
+const lastGoodBy = new Map<UpdateChannel, LastGood | null>(); // absent = not loaded from disk yet
 
 /** Compare two semver strings ("v" prefix optional). Returns true when a > b. */
 export function isNewer(a: string, b: string): boolean {
@@ -93,15 +99,15 @@ export function describeError(err: unknown): string {
   return parts.filter((p, i) => p && parts.indexOf(p) === i).join(' ← ');
 }
 
-function stateFile(): string {
-  return path.join(config.paths.dataDir, 'update-check.json');
+function stateFile(channel: UpdateChannel): string {
+  return path.join(config.paths.dataDir, channel === 'stable' ? 'update-check-stable.json' : 'update-check.json');
 }
 
-function loadLastGood(): LastGood | null {
-  if (lastGood !== undefined) return lastGood;
-  lastGood = null;
+function loadLastGood(channel: UpdateChannel): LastGood | null {
+  if (lastGoodBy.has(channel)) return lastGoodBy.get(channel)!;
+  let lastGood: LastGood | null = null;
   try {
-    const raw = JSON.parse(readFileSync(stateFile(), 'utf8')) as Partial<LastGood>;
+    const raw = JSON.parse(readFileSync(stateFile(channel), 'utf8')) as Partial<LastGood>;
     if (typeof raw.latest === 'string' && RELEASE_TAG.test(raw.latest) && typeof raw.checkedAt === 'string') {
       lastGood = {
         latest: raw.latest,
@@ -113,13 +119,14 @@ function loadLastGood(): LastGood | null {
   } catch {
     /* first check on this install, or an unreadable file — nothing to fall back on */
   }
+  lastGoodBy.set(channel, lastGood);
   return lastGood;
 }
 
-function saveLastGood(value: LastGood): void {
-  lastGood = value;
+function saveLastGood(channel: UpdateChannel, value: LastGood): void {
+  lastGoodBy.set(channel, value);
   try {
-    const file = stateFile();
+    const file = stateFile(channel);
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(value, null, 2));
     renameSync(tmp, file);
@@ -128,7 +135,7 @@ function saveLastGood(value: LastGood): void {
   }
 }
 
-function verdict(found: LastGood, extra: Partial<UpdateCheckResult> = {}): UpdateCheckResult {
+function verdict(channel: UpdateChannel, found: LastGood, extra: Partial<UpdateCheckResult> = {}): UpdateCheckResult {
   // Recomputed against the RUNNING version on every read, so a persisted
   // answer from before a self-update never offers the release we are on.
   return {
@@ -138,11 +145,12 @@ function verdict(found: LastGood, extra: Partial<UpdateCheckResult> = {}): Updat
     notesUrl: found.notesUrl,
     checkedAt: found.checkedAt,
     source: found.source,
+    channel,
     ...extra,
   };
 }
 
-function unknownResult(reason: 'disabled' | 'unreachable', detail?: string): UpdateCheckResult {
+function unknownResult(channel: UpdateChannel, reason: 'disabled' | 'unreachable', detail?: string): UpdateCheckResult {
   return {
     current: VERSION,
     latest: null,
@@ -150,6 +158,7 @@ function unknownResult(reason: 'disabled' | 'unreachable', detail?: string): Upd
     notesUrl: null,
     checkedAt: new Date().toISOString(),
     reason,
+    channel,
     ...(detail !== undefined ? { detail: detail.slice(0, DETAIL_MAX) } : {}),
   };
 }
@@ -253,9 +262,67 @@ async function gitLsRemote(repo: string): Promise<Found> {
   return { latest, notesUrl: `https://github.com/${repo}/releases/tag/${latest}` };
 }
 
-function sources(url: string): Array<{ name: string; run: () => Promise<Found> }> {
+/**
+ * A6: the release the `stable` tag points at, from `git ls-remote --tags`
+ * output (annotated tags peeled through their ^{} line); the highest when
+ * several release tags share its commit. Throws when there is none.
+ */
+export function stableTagFromLsRemote(out: string): string {
+  const direct = new Map<string, string>();
+  const peeled = new Map<string, string>();
+  for (const line of out.split('\n')) {
+    const [sha, ref] = line.trim().split(/\s+/);
+    if (!sha || !ref?.startsWith('refs/tags/')) continue;
+    const name = ref.slice('refs/tags/'.length);
+    if (name.endsWith('^{}')) peeled.set(name.slice(0, -3), sha);
+    else if (!direct.has(name)) direct.set(name, sha);
+  }
+  const commitOf = (name: string) => peeled.get(name) ?? direct.get(name);
+  const stable = commitOf('stable');
+  if (!stable) throw new Error('no stable tag yet (the stable channel has no release)');
+  let best: string | null = null;
+  for (const name of new Set([...direct.keys(), ...peeled.keys()])) {
+    if (RELEASE_TAG.test(name) && commitOf(name) === stable && (!best || isNewer(name, best))) best = name;
+  }
+  return requireTag(best, 'stable tag');
+}
+
+async function stableViaGit(repo: string): Promise<Found> {
+  const out = await run('git', ['ls-remote', '--tags', `https://github.com/${repo}.git`], { ...process.env, GIT_TERMINAL_PROMPT: '0' });
+  const latest = stableTagFromLsRemote(out);
+  return { latest, notesUrl: `https://github.com/${repo}/releases/tag/${latest}` };
+}
+
+async function stableViaApi(repo: string): Promise<Found> {
+  const get = async (url: string) => {
+    const res = await fetch(url, { headers: { accept: 'application/vnd.github+json', 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (res.status === 404) throw new Error('no stable tag yet (the stable channel has no release)');
+    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+    return res.json() as Promise<unknown>;
+  };
+  const ref = (await get(`https://api.github.com/repos/${repo}/git/ref/tags/stable`)) as { object?: { sha?: unknown } };
+  const sha = typeof ref.object?.sha === 'string' ? ref.object.sha : null;
+  if (!sha) throw new Error('the stable tag has no commit');
+  const tags = (await get(`https://api.github.com/repos/${repo}/tags?per_page=100`)) as Array<{ name?: unknown; commit?: { sha?: unknown } }>;
+  let best: string | null = null;
+  for (const t of Array.isArray(tags) ? tags : []) {
+    if (typeof t.name === 'string' && RELEASE_TAG.test(t.name) && t.commit?.sha === sha && (!best || isNewer(t.name, best))) best = t.name;
+  }
+  const latest = requireTag(best, 'stable tag');
+  return { latest, notesUrl: `https://github.com/${repo}/releases/tag/${latest}` };
+}
+
+function sources(url: string, channel: UpdateChannel): Array<{ name: string; run: () => Promise<Found> }> {
   const gh = GITHUB_API_LATEST.exec(url);
   const repo = gh ? `${gh[1]}/${gh[2]}` : null;
+  if (channel === 'stable') {
+    // A custom feed names one release; the stable tag lives on GitHub only.
+    if (!repo) return [{ name: 'stable', run: async () => Promise.reject(new Error('the stable channel needs the GitHub release feed (NINEDEPLOY_UPDATE_CHECK_URL is a custom feed)')) }];
+    return [
+      { name: 'git', run: () => stableViaGit(repo) },
+      { name: 'github-api', run: () => stableViaApi(repo) },
+    ];
+  }
   // A custom (non-GitHub) feed has no release page or git remote to fall back on.
   const list: Array<{ name: string; run: () => Promise<Found> }> = [
     { name: repo ? 'github-api' : 'feed', run: () => feedViaFetch(url) },
@@ -269,15 +336,15 @@ function sources(url: string): Array<{ name: string; run: () => Promise<Found> }
   return list;
 }
 
-async function probe(): Promise<UpdateCheckResult> {
+async function probe(channel: UpdateChannel): Promise<UpdateCheckResult> {
   const failures: string[] = [];
-  for (const source of sources(config.updateCheckUrl)) {
+  for (const source of sources(config.updateCheckUrl, channel)) {
     try {
       const found = await source.run();
       const good: LastGood = { ...found, checkedAt: new Date().toISOString(), source: source.name };
-      saveLastGood(good);
-      const result = verdict(good);
-      cached = { result, at: Date.now(), isFailure: false };
+      saveLastGood(channel, good);
+      const result = verdict(channel, good);
+      cachedBy.set(channel, { result, at: Date.now(), isFailure: false });
       return result;
     } catch (err) {
       failures.push(`${source.name}: ${describeError(err)}`);
@@ -285,17 +352,19 @@ async function probe(): Promise<UpdateCheckResult> {
   }
   const detail = failures.join(' | ').slice(0, DETAIL_MAX);
   log.warn(`every release source failed — ${detail}`);
-  const previous = loadLastGood();
-  const result = previous ? verdict(previous, { stale: true, detail }) : unknownResult('unreachable', detail);
-  cached = { result, at: Date.now(), isFailure: true };
+  const previous = loadLastGood(channel);
+  const result = previous ? verdict(channel, previous, { stale: true, detail }) : unknownResult(channel, 'unreachable', detail);
+  cachedBy.set(channel, { result, at: Date.now(), isFailure: true });
   return result;
 }
 
-function refresh(): Promise<UpdateCheckResult> {
-  inflight ??= probe().finally(() => {
-    inflight = null;
-  });
-  return inflight;
+function refresh(channel: UpdateChannel): Promise<UpdateCheckResult> {
+  let running = inflightBy.get(channel);
+  if (!running) {
+    running = probe(channel).finally(() => inflightBy.delete(channel));
+    inflightBy.set(channel, running);
+  }
+  return running;
 }
 
 /**
@@ -314,26 +383,27 @@ function refresh(): Promise<UpdateCheckResult> {
  *  - an expired success is served immediately while a background refresh
  *    runs; concurrent callers share one probe.
  */
-export async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
+export async function checkForUpdate(force = false, channel: UpdateChannel = 'release'): Promise<UpdateCheckResult> {
   if (config.updateCheckUrl === 'disabled') {
-    const result = unknownResult('disabled', 'NINEDEPLOY_UPDATE_CHECK_URL=disabled');
-    cached = { result, at: Date.now(), isFailure: false };
+    const result = unknownResult(channel, 'disabled', 'NINEDEPLOY_UPDATE_CHECK_URL=disabled');
+    cachedBy.set(channel, { result, at: Date.now(), isFailure: false });
     return result;
   }
-  if (force) return refresh();
+  if (force) return refresh(channel);
+  const cached = cachedBy.get(channel);
   if (!cached) {
     // Fresh process: answer from the persisted last success right away and
     // refresh behind it, instead of making the first dashboard load wait on
     // GitHub.
-    const previous = loadLastGood();
-    if (!previous) return refresh();
-    void refresh();
-    return verdict(previous);
+    const previous = loadLastGood(channel);
+    if (!previous) return refresh(channel);
+    void refresh(channel);
+    return verdict(channel, previous);
   }
 
   const ttl = cached.isFailure ? FAILURE_CACHE_TTL_MS : CACHE_TTL_MS;
   if (Date.now() - cached.at < ttl) return cached.result;
-  if (cached.isFailure) return refresh();
-  void refresh();
+  if (cached.isFailure) return refresh(channel);
+  void refresh(channel);
   return cached.result;
 }

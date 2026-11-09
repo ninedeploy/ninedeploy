@@ -73,6 +73,7 @@ Re-running the same command is the upgrade path; it snapshots `.data` before tou
 
 ```bash
 ./install.sh --version v0.18.25     # pin an exact tag
+./install.sh --channel stable     # newest release that has soaked for 7 days (security fixes at once)
 ./install.sh --channel main       # track edge
 ./install.sh --force              # discard local edits + stale build artifacts, then rebuild
 ```

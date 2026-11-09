@@ -1,0 +1,87 @@
+name: Stable channel
+
+# A6 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): moves the lightweight
+# `stable` tag to the newest published release that has been out for seven
+# days, or at once for a release marked as a security fix. Panels set to the
+# stable update channel and `install.sh --channel stable` install the release
+# this tag points at. The rules live in scripts/stable-channel.mjs:
+#   <!-- stable: hold -->      in a release's notes keeps it off stable;
+#   <!-- stable: security -->  promotes it at once (only the marker counts).
+# Stable never moves backwards. Run it by hand with
+#   gh workflow run stable-channel.yml            (apply the rules now)
+#   gh workflow run stable-channel.yml -f tag=vX.Y.Z   (point stable at a release)
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Point stable at this published release instead of applying the rules (vX.Y.Z)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Only print what would happen'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-channel
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      FORCED_TAG: ${{ inputs.tag }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Decide the stable release
+        id: pick
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha 2>/dev/null || true)
+          current_tag=""
+          if [ -n "$current" ]; then
+            current_tag=$(gh api "repos/$REPO/tags?per_page=100" --paginate --jq ".[] | select(.commit.sha == \"$current\") | .name" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          fi
+          echo "Current stable: ${current_tag:-none}"
+          if [ -n "$FORCED_TAG" ]; then
+            printf '%s' "$FORCED_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::tag must be vX.Y.Z"; exit 1; }
+            gh api "repos/$REPO/releases/tags/$FORCED_TAG" --jq '.draft == false and .prerelease == false' | grep -q true \
+              || { echo "::error::$FORCED_TAG is not a published release"; exit 1; }
+            target="$FORCED_TAG"
+          else
+            gh api "repos/$REPO/releases?per_page=100" --paginate --slurp > "$RUNNER_TEMP/releases.json"
+            target=$(node scripts/stable-channel.mjs "$RUNNER_TEMP/releases.json" "$current_tag")
+          fi
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+
+      - name: Move the stable tag
+        if: steps.pick.outputs.target != ''
+        env:
+          TARGET: ${{ steps.pick.outputs.target }}
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.sha)
+          type=$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.type)
+          [ "$type" = "commit" ] || { echo "::error::$TARGET is not a lightweight tag on a commit ($type)"; exit 1; }
+          echo "stable → $TARGET ($sha)"
+          if [ "$DRY_RUN" = "true" ]; then exit 0; fi
+          if gh api "repos/$REPO/git/ref/tags/stable" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPO/git/refs/tags/stable" -f sha="$sha" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$REPO/git/refs" -f ref=refs/tags/stable -f sha="$sha" >/dev/null
+          fi
+          echo "### Stable is now $TARGET" >> "$GITHUB_STEP_SUMMARY"

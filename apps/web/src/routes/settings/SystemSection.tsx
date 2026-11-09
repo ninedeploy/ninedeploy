@@ -6,6 +6,7 @@ import { Card, CardBody, Skeleton } from '../../components/ui.js';
 import { fill, useT } from '../../lib/i18n.js';
 import { useAuth } from '../../lib/auth.js';
 import { OsUpdatesCard } from '../../components/OsUpdatesCard.js';
+import { UpdateChannelCard } from './UpdateChannelCard.js';
 
 /** System: instance info, host resources, image storage and update check. */
 export function SystemSection() {
@@ -70,6 +71,9 @@ export function SystemSection() {
           )}
         </CardBody>
       </Card>
+
+      {/* A6: every release, or the stable channel. */}
+      {user?.isOperator === true && <UpdateChannelCard />}
 
       {/* G4.2: the panel host's OS updates (operator-only routes). */}
       {user?.isOperator === true && (

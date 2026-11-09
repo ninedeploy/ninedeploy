@@ -169,6 +169,9 @@ jobs:
           test "$(printf '{"url":"x","tag_name": "v0.10.35","name":"v0.10.35"}' | release_tag_from_json)" = "v0.10.35"
           test -z "$(printf '{"message":"Not Found"}' | release_tag_from_json)"
           test "$(printf '[{"name":"v0.9.99"},{"name":"v0.10.36"},{"name":"latest"}]' | highest_tag_from_tags_json)" = "v0.10.36"
+          # A6: the stable channel — the highest release on the stable tag's commit, annotated tags peeled; none without a stable tag.
+          test "$(printf 'aaa\trefs/tags/v0.18.24\nccc\trefs/tags/stable\nccc\trefs/tags/v0.18.3\neee\trefs/tags/v0.18.21\nccc\trefs/tags/v0.18.21^{}\n' | stable_tag_from_ls_remote)" = "v0.18.21"
+          test -z "$(printf 'aaa\trefs/tags/v0.18.24\n' | stable_tag_from_ls_remote)"
           # Docker image tag: pinned > edge (main) > resolved release > latest.
           test "$(docker_image_tag v0.10.1 release v0.10.36)" = "v0.10.1"
           test "$(docker_image_tag '' main main)" = "edge"

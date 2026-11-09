@@ -277,7 +277,8 @@ describe('installer P3 sweep (r457–r460)', () => {
   it('r458: GitHub API fallbacks and the compose fetch retry like the tarball fetch', () => {
     const sh = installer();
     const retryApi = sh.match(/curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application\/vnd\.github\+json'/g) ?? [];
-    expect(retryApi).toHaveLength(2);
+    // latest_tag's two API fallbacks, and (A6) stable_tag's ref and tags lookups.
+    expect(retryApi).toHaveLength(4);
     expect(sh).toContain('--retry 3 --retry-delay 2 "https://raw.githubusercontent.com/NineDeploy/NineDeploy/${REF}/docker-compose.prod.yml"');
   });
 });

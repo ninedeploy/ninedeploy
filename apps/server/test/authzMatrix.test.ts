@@ -1267,6 +1267,8 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/system/import': OP,
   'POST /v1/system/prune-images': OP,
   'GET /v1/system/update-check': OP,
+  'GET /v1/system/update-channel': OP,
+  'PUT /v1/system/update-channel': OP,
   'POST /v1/system/update-start': OP,
   'GET /v1/system/update-status': OP,
   'GET /v1/system/panel-backup': OP,

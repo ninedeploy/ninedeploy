@@ -57,6 +57,15 @@ The web panel ships in English and Turkish. The English text in the source is th
 
 One-click templates are reviewed for pinned images and closed-by-default exposure, and each one is smoke-deployed before it is listed. See [docs/TEMPLATE_MIRRORS.md](docs/TEMPLATE_MIRRORS.md).
 
+## Releases and the stable channel
+
+Maintainers tag releases. Every release is offered at once to panels on the default channel. Panels on the **stable** channel get only the release that the `stable` tag points at. Once a day, `.github/workflows/stable-channel.yml` moves that tag to the newest release that has been out for 7 days. Two markers in a GitHub release's notes change that:
+
+- `<!-- stable: hold -->` keeps a release off stable, for example while a regression is investigated.
+- `<!-- stable: security -->` promotes it at the next run without waiting.
+
+The tag never moves backwards. To promote a tag by hand, run the workflow with its `tag` input. Use `dry_run` to see what it would do.
+
 ## Pull requests
 
 - Keep one change per pull request, and describe what an operator will notice.

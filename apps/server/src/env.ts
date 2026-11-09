@@ -62,6 +62,10 @@ const schema = z.object({
   // (GitHub Releases format). Defaults to the NineDeploy releases feed; set to
   // "disabled" to turn update checks off (air-gapped instances).
   NINEDEPLOY_UPDATE_CHECK_URL: z.string().optional(),
+  // A6: "stable" offers only releases on the stable tag (install.sh --channel
+  // stable writes it). Anything else is every release. A channel saved under
+  // Settings -> System wins over it.
+  NINEDEPLOY_UPDATE_CHANNEL: z.string().optional(),
   // Number of volume backups to keep per volume (1-100). Older backups
   // (file + DB row) are pruned automatically after each successful backup.
   NINEDEPLOY_BACKUP_VOLUME_RETAIN_COUNT: z.coerce.number().int().min(1).max(100).default(10),

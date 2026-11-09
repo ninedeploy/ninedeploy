@@ -6231,4 +6231,12 @@ export const TR: Readonly<Record<string, string>> = {
   'Coming': 'Yolda',
   'Not here': 'Burada yok',
   'See docs/SUPPORT_MATRIX.md for every runtime.': 'Tüm çalışma ortamları için docs/SUPPORT_MATRIX.md dosyasına bakın.',
+  // ── Settings → System: update channel (A6) ───────────────────────────
+  'Update channel': 'Güncelleme kanalı',
+  'Offer updates from': 'Güncellemelerin kaynağı',
+  'Every release': 'Her sürüm',
+  'Stable (7 days)': 'Stable (7 gün)',
+  'Stable offers a release once it has been out for seven days without a known regression, or at once when it fixes a security issue. Every release offers each patch as soon as it is published.': 'Stable, bir sürümü bilinen bir gerileme olmadan yedi gün yayında kaldıktan sonra, güvenlik açığı düzeltiyorsa hemen sunar. Her sürüm seçeneği her yamayı yayınlandığı anda sunar.',
+  'The panel now follows the stable channel': 'Panel artık stable kanalını izliyor',
+  'The panel now offers every release': 'Panel artık her sürümü sunuyor',
 };

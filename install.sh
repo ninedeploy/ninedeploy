@@ -21,6 +21,8 @@
 #
 # Version selection:
 #   --channel release   newest vX.Y.Z tag on GitHub (default)
+#   --channel stable    the release the `stable` tag points at: a release that
+#                       has been out for 7 days, or a security fix (A6)
 #   --channel main      track the main branch (edge)
 #   --version vX.Y.Z    pin an exact tag
 #   --force             discard local modifications to tracked files and drop
@@ -480,6 +482,40 @@ latest_tag() {
   printf '%s' "$_tag"
 }
 
+# A6: the vX.Y.Z release the `stable` tag points at, from `git ls-remote
+# --tags` output on stdin (annotated tags peeled through their ^{} line).
+# Empty when there is no stable tag or no release tag on its commit.
+stable_tag_from_ls_remote() {
+  awk -F'\t' '
+    { ref = $2; sub("^refs/tags/", "", ref)
+      if (ref ~ /\^\{\}$/) { sub(/\^\{\}$/, "", ref); peeled[ref] = $1 }
+      else if (!(ref in direct)) { direct[ref] = $1 } }
+    END { for (r in direct) if (!(r in peeled)) peeled[r] = direct[r]
+          s = peeled["stable"]; if (s == "") exit
+          for (r in peeled) if (r ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && peeled[r] == s) print r }
+  ' | highest_semver_tag
+}
+
+# A6: the stable channel's release. The daily stable-channel.yml workflow
+# moves the lightweight `stable` tag to a release that has been out for seven
+# days (or at once for a security fix). git ls-remote answers with every tag
+# and its commit in one request; the tags API is the fallback.
+stable_tag() {
+  local _tag=""
+  _tag=$( (git ls-remote --tags "$REPO_URL" 2>/dev/null || true) | stable_tag_from_ls_remote )
+  if [ -n "$_tag" ]; then printf '%s' "$_tag"; return 0; fi
+  warn "git ls-remote found no stable release — asking the GitHub API" >&2
+  local _sha=""
+  _sha=$( (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
+      "https://api.github.com/repos/${REPO_SLUG}/git/ref/tags/stable" 2>/dev/null || true) \
+    | grep -o '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]*"' | head -1 | sed 's/.*"\([0-9a-f]*\)"$/\1/' )
+  [ -n "$_sha" ] || return 0
+  (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
+      "https://api.github.com/repos/${REPO_SLUG}/tags?per_page=100" 2>/dev/null || true) \
+    | tr -d '\n' | sed 's/},{/}\n{/g' | grep "\"sha\"[[:space:]]*:[[:space:]]*\"$_sha\"" \
+    | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag
+}
+
 # Docker mode: the panel image tag for the resolved ref. A pinned
 # `--version vX.Y.Z` pulls `:vX.Y.Z` (r263); the main channel pulls `:edge`
 # (set by ci.yml on every push to main). r571: a release-channel run pulls
@@ -766,7 +802,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --channel)
-      [ "$#" -ge 2 ] || fail "--channel requires release or main"
+      [ "$#" -ge 2 ] || fail "--channel requires release, stable or main"
       CHANNEL="$2"
       shift 2
       ;;
@@ -789,8 +825,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$CHANNEL" in
-  release|main) ;;
-  *) fail "Unsupported channel '$CHANNEL' (expected release or main)" ;;
+  release|stable|main) ;;
+  *) fail "Unsupported channel '$CHANNEL' (expected release, stable or main)" ;;
 esac
 
 if [ -n "$PINNED_VERSION" ] && ! printf '%s' "$PINNED_VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -1506,6 +1542,10 @@ if [ -n "$PINNED_VERSION" ]; then
 elif [ "$CHANNEL" = "main" ]; then
   REF="main"
   info "Edge channel: tracking the main branch"
+elif [ "$CHANNEL" = "stable" ]; then
+  REF=$(stable_tag)
+  [ -n "$REF" ] || fail "The stable channel has no release yet (no stable tag on GitHub). Use --channel release, or pin one with --version vX.Y.Z."
+  info "Stable channel: installing $REF"
 else
   REF=$(latest_tag)
   if [ -z "$REF" ]; then
@@ -1709,6 +1749,11 @@ install_docker_mode() {
       printf '%s=%s\n' "$_var" "$_val" >> .env
     fi
   done
+  # A6: `--channel stable` also makes the panel offer stable releases. A choice
+  # saved under Settings → System wins over it; never written for a pinned run.
+  if [ "$CHANNEL" = "stable" ] && [ -z "$PINNED_VERSION" ]; then
+    upsert_env NINEDEPLOY_UPDATE_CHANNEL stable
+  fi
   # The default panel URL follows the bind: http://<server-ip>:port when the
   # port is published on 0.0.0.0 (0.16 fresh installs), localhost:port for
   # the loopback bind older installs keep. Once the operator attaches a
@@ -1960,8 +2005,10 @@ update_from_git() {
   # host keeps serving the previous release. Deepen first.
   if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
     info "Shallow checkout detected — fetching full history so tags resolve…"
-    git fetch --unshallow --tags origin 2>/dev/null \
-      || git fetch --depth=2147483647 --tags origin 2>/dev/null \
+    # --force: a moved tag (the `stable` channel tag is moved daily) would
+    # otherwise be rejected as "would clobber existing tag" and fail the fetch.
+    git fetch --force --unshallow --tags origin 2>/dev/null \
+      || git fetch --force --depth=2147483647 --tags origin 2>/dev/null \
       || warn "Could not deepen the checkout; tag resolution may be limited"
   fi
 
@@ -2544,6 +2591,16 @@ if [ ! -f ".env" ]; then
 else
   chmod 600 .env
   ok ".env already exists"
+fi
+# A6: `--channel stable` also makes the panel offer stable releases. A choice
+# saved under Settings → System wins over it; never written for a pinned run
+# (the panel's self-update pins its target and must not change the channel).
+if [ "$CHANNEL" = "stable" ] && [ -z "$PINNED_VERSION" ]; then
+  if grep -q '^NINEDEPLOY_UPDATE_CHANNEL=' .env; then
+    sed -i.bak 's|^NINEDEPLOY_UPDATE_CHANNEL=.*|NINEDEPLOY_UPDATE_CHANNEL=stable|' .env && rm -f .env.bak
+  else
+    printf 'NINEDEPLOY_UPDATE_CHANNEL=stable\n' >> .env
+  fi
 fi
 
 # r451: the data dir holds ninedeploy.db (credential hashes, sessions), the

@@ -1,4 +1,5 @@
 import {
+  updateChannelInput,
   autoPruneConfigUpdate,
   deployFreezeCreate,
   gitopsConfigInput,
@@ -113,6 +114,20 @@ export const operationsSpecs: RouteSpecMap = {
     floor: 'operator',
     queryType: '{ force?: string }',
     validation: 'handler',
+  },
+  'GET /v1/system/update-channel': {
+    summary: 'Which releases the panel offers: every release, or the stable channel (A6)',
+    tag: 'system',
+    floor: 'operator',
+    responseType: '{ channel: UpdateChannel }',
+  },
+  'PUT /v1/system/update-channel': {
+    summary: 'Choose the update channel; answers a fresh update check for it',
+    tag: 'system',
+    floor: 'operator',
+    body: updateChannelInput,
+    validation: 'zod',
+    responseType: '{ channel: UpdateChannel; check: UpdateCheckResult }',
   },
   'POST /v1/system/update-start': {
     summary: 'Start a panel self-update to an exact tag',

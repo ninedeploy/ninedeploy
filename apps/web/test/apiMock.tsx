@@ -226,7 +226,7 @@ export function createFakeApiModule() {
     // G1.5: no DNS provider registered by default, so the record card stays hidden.
     domainPresets: { list: vi.fn().mockResolvedValue({ providers: [] }), apply: vi.fn() },
     gitops: { get: vi.fn().mockResolvedValue({ config: null, lastCheck: null }), configure: vi.fn(), remove: vi.fn(), check: vi.fn(), apply: vi.fn(), export: vi.fn() },
-    system: { resources: vi.fn(), pruneImages: vi.fn(), exportUrl: vi.fn(), updateCheck: vi.fn(), updateStatus: vi.fn(), updateStart: vi.fn(), dockerEvents: vi.fn() },
+    system: { resources: vi.fn(), pruneImages: vi.fn(), exportUrl: vi.fn(), updateCheck: vi.fn(), updateChannel: { get: vi.fn().mockResolvedValue({ channel: 'release' }), set: vi.fn() }, updateStatus: vi.fn(), updateStart: vi.fn(), dockerEvents: vi.fn() },
     networks: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), attach: vi.fn(), detach: vi.fn() },
     // G1.5: Settings → Security outgoing IP card; no rules on the iptables driver by default.
     egress: { list: vi.fn().mockResolvedValue({ drivers: [{ name: 'iptables', rules: [] }] }), set: vi.fn(), clear: vi.fn() },

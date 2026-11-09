@@ -318,6 +318,7 @@ GET /v1/system/export operator nd://scope/read/health
 GET /v1/system/panel-backup operator nd://scope/read/health
 GET /v1/system/panel-backup/remote operator nd://scope/read/health
 GET /v1/system/resources operator nd://scope/read/health
+GET /v1/system/update-channel operator nd://scope/read/health
 GET /v1/system/update-check operator nd://scope/read/health
 GET /v1/system/update-status operator nd://scope/read/health
 GET /v1/templates authed -
@@ -659,6 +660,7 @@ PUT /v1/settings/vault operator nd://scope/write/settings
 PUT /v1/settings/vault/allowlist operator nd://scope/write/settings
 PUT /v1/swarm/settings operator -
 PUT /v1/system/panel-backup operator nd://scope/write/health
+PUT /v1/system/update-channel operator nd://scope/write/health
 PUT /v1/traefik/certificates/custom/:id operator -
 PUT /v1/traefik/certificates/shared operator -
 PUT /v1/traefik/custom-config operator -
