@@ -5,7 +5,8 @@ import { SESSION_FILE } from './fixtures';
 import { watch } from './support';
 
 const token = process.env.ND_SETUP_TOKEN ?? '';
-export const ADMIN = { name: 'E2E Admin', email: 'admin@e2e.example', password: 'E2e-Journey-0123!' };
+// ND_ADMIN_NAME: the README screenshots use a neutral name (it also names the workspace).
+export const ADMIN = { name: process.env.ND_ADMIN_NAME ?? 'E2E Admin', email: 'admin@e2e.example', password: 'E2e-Journey-0123!' };
 
 test('setup: the installer link pre-fills the token, and the form creates the first operator', async ({ page }) => {
   expect(token, 'ND_SETUP_TOKEN').not.toBe('');

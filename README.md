@@ -21,6 +21,8 @@ terminal CLI, a typed SDK, or an AI agent over MCP.
 
 </div>
 
+![The NineDeploy dashboard: setup checklist, system status and host resources](./docs/images/dashboard.jpg)
+
 ---
 
 ## What it is
@@ -40,6 +42,19 @@ There is no general cluster scheduler, no service mesh and no cluster consensus 
 drives Docker on one host, and optionally on a handful of remote ones. It places each service on the
 server you choose, keeps its replicas and canary steps under its own control, and can hand placement to
 Docker Swarm for stateless services.
+
+### A look around
+
+| | |
+|---|---|
+| ![Services list with three running services](./docs/images/services.jpg) | ![A service's overview: status, telemetry and runtime](./docs/images/service.jpg) |
+| **Services**, with live CPU and memory | **A service**: status, telemetry, runtime details |
+| ![A zero-downtime deployment with its stages and log](./docs/images/deploys.jpg) | ![Settings, Security: API tokens, remote MCP and the panel IP allow-list](./docs/images/security.jpg) |
+| **A deploy**: every stage, then the log | **Security**: scoped API tokens, remote MCP, panel IP allow-list |
+| ![The Hub: hundreds of one-click app templates](./docs/images/hub.jpg) | ![The dashboard on a phone](./docs/images/dashboard-phone.jpg) |
+| **The Hub**: one-click templates, verified and pinned | **On a phone** |
+
+These screenshots come from the browser journeys in [`e2e/`](./e2e), run against a real panel (`e2e/tests/screens.spec.ts`).
 
 ## Why NineDeploy
 
