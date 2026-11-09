@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Concurrent identical source archive uploads use separate temporary files, so one request cannot consume or remove another request's pending upload.
 - Failed system imports remove newly installed database, key, routing and environment files when those paths did not exist before the import, preserving the original state during rollback.
 - Inline Compose workspaces accept a repository directory configured at a filesystem root while continuing to reject invalid service IDs.
 - S3 build-cache misses cancel unused HTTP response bodies, releasing transport resources while preserving the cache-miss result if cancellation fails.

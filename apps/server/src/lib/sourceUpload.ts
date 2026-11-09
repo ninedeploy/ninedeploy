@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -303,7 +303,7 @@ export async function storeSourceUpload(serviceId: number, buf: Buffer): Promise
     writeFileSync(path.join(dir, file), buf);
   } else {
     await gunzippedSize(buf);
-    const pending = `.pending-${sha}.tar.gz`;
+    const pending = `.pending-${sha}-${randomUUID()}.tar.gz`;
     writeFileSync(path.join(dir, pending), buf);
     try {
       entries = await checkTarGz(dir, pending);

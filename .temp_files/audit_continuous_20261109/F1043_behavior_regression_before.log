@@ -1,0 +1,59 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ × .temp_files/audit_continuous_20261109/F1043_behavior_regression_before.test.ts > F1043: independent owners clean concurrent uploads (tar fails: false) 21ms
+   → expected [ 'fulfilled', 'rejected' ] to deeply equal [ 'fulfilled', 'fulfilled' ]
+ × .temp_files/audit_continuous_20261109/F1043_behavior_regression_before.test.ts > F1043: independent owners clean concurrent uploads (tar fails: true) 7ms
+   → expected [ 'rejected', 'rejected' ] to deeply equal [ 'fulfilled', 'rejected' ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/F1043_behavior_regression_before.test.ts > F1043: independent owners clean concurrent uploads (tar fails: false)
+AssertionError: expected [ 'fulfilled', 'rejected' ] to deeply equal [ 'fulfilled', 'fulfilled' ]
+
+- Expected
++ Received
+
+  [
+    "fulfilled",
+-   "fulfilled",
++   "rejected",
+  ]
+
+ ❯ .temp_files/audit_continuous_20261109/F1043_behavior_regression_before.test.ts:28:50
+     26|     const archive = gzipSync(Buffer.alloc(1024));
+     27|     const results = await Promise.allSettled([storeSourceUpload(1, arc…
+     28|     expect(results.map(result => result.status)).toEqual(fail ? ['fulf…
+       |                                                  ^
+     29|     const files = readdirSync(path.join(root, 'uploads', '1'));
+     30|     expect(files.filter(file => file.startsWith('.pending-'))).toEqual…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/F1043_behavior_regression_before.test.ts > F1043: independent owners clean concurrent uploads (tar fails: true)
+AssertionError: expected [ 'rejected', 'rejected' ] to deeply equal [ 'fulfilled', 'rejected' ]
+
+- Expected
++ Received
+
+  [
+-   "fulfilled",
++   "rejected",
+    "rejected",
+  ]
+
+ ❯ .temp_files/audit_continuous_20261109/F1043_behavior_regression_before.test.ts:28:50
+     26|     const archive = gzipSync(Buffer.alloc(1024));
+     27|     const results = await Promise.allSettled([storeSourceUpload(1, arc…
+     28|     expect(results.map(result => result.status)).toEqual(fail ? ['fulf…
+       |                                                  ^
+     29|     const files = readdirSync(path.join(root, 'uploads', '1'));
+     30|     expect(files.filter(file => file.startsWith('.pending-'))).toEqual…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  18:19:43
+   Duration  288ms (transform 45%, import 25%, tests 25%, worker 4%)

@@ -1,0 +1,42 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1043_source_upload_owners.test.ts > lets concurrent identical tar uploads each finish successfully
+CONTROL EXPECTED: two serial identical uploads succeed | ACTUAL: passed
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1043_source_upload_owners.test.ts > lets concurrent identical tar uploads each finish successfully
+EXPECTED: fulfilled, fulfilled | ACTUAL: [ 'fulfilled', 'rejected' ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1043_source_upload_owners.test.ts > lets concurrent identical tar uploads each finish successfully 26ms
+   → expected [ 'fulfilled', 'rejected' ] to deeply equal [ 'fulfilled', 'fulfilled' ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1043_source_upload_owners.test.ts > lets concurrent identical tar uploads each finish successfully
+AssertionError: expected [ 'fulfilled', 'rejected' ] to deeply equal [ 'fulfilled', 'fulfilled' ]
+
+- Expected
++ Received
+
+  [
+    "fulfilled",
+-   "fulfilled",
++   "rejected",
+  ]
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1043_source_upload_owners.test.ts:28:22
+     26|     console.log('EXPECTED: fulfilled, fulfilled | ACTUAL:', statuses);
+     27|     console.log(results.every(result => result.status === 'fulfilled')…
+     28|     expect(statuses).toEqual(['fulfilled', 'fulfilled']);
+       |                      ^
+     29|   } finally { fixture.concurrent = false; fixture.release(); rmSync(ro…
+     30| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  18:17:41
+   Duration  723ms (transform 46%, tests 28%, import 20%, worker 5%)

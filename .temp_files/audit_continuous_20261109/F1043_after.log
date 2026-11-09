@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1043_source_upload_owners.test.ts > lets concurrent identical tar uploads each finish successfully
+CONTROL EXPECTED: two serial identical uploads succeed | ACTUAL: passed
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1043_source_upload_owners.test.ts > lets concurrent identical tar uploads each finish successfully
+EXPECTED: fulfilled, fulfilled | ACTUAL: [ 'fulfilled', 'fulfilled' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1043_source_upload_owners.test.ts > lets concurrent identical tar uploads each finish successfully 31ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:19:00
+   Duration  699ms (transform 39%, tests 32%, import 25%, worker 4%)
