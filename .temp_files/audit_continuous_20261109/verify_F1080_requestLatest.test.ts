@@ -1,0 +1,23 @@
+import { afterAll, afterEach, expect, it } from 'vitest';
+import type { Service } from '@ninedeploy/db';
+import { lastServiceRequestAt, recordServiceRequest, resetRequestRates, serviceRequestRate, REQUEST_RATE_BUCKET_MS as B } from '../../apps/server/src/lib/requestRate.js';
+import { markAwake, resetSleepState, sleepHoldReason } from '../../apps/server/src/lib/sleep.js';
+let failed = false;
+afterEach(({ task }) => { if (task.result?.errors?.length) failed = true; resetRequestRates(); resetSleepState(); });
+afterAll(() => { if (!failed) console.log('FIX VERIFIED'); });
+it('empty unknown and null-service records return null', () => { expect(lastServiceRequestAt(1)).toBeNull(); recordServiceRequest(null, 123); expect(lastServiceRequestAt(1)).toBeNull(); });
+it('bucket end is conservative just before boundary', () => { recordServiceRequest(1, B - 1); expect(lastServiceRequestAt(1)).toBe(B); });
+it('exact bucket boundary enters the next bucket', () => { recordServiceRequest(1, B); expect(lastServiceRequestAt(1)).toBe(B * 2); });
+it('duplicate requests do not move latest timestamp', () => { for (let i = 0; i < 1000; i++) recordServiceRequest(1, 1); expect(lastServiceRequestAt(1)).toBe(B); });
+it('earlier out-of-order arrival cannot become latest', () => { recordServiceRequest(1, 5 * B); recordServiceRequest(1, B); expect(lastServiceRequestAt(1)).toBe(6 * B); });
+it('negative epoch buckets preserve their arithmetic', () => { recordServiceRequest(1, -2 * B); recordServiceRequest(1, -B - 1); expect(lastServiceRequestAt(1)).toBe(-B); });
+it('service histories remain isolated', () => { recordServiceRequest(1, 5 * B); recordServiceRequest(2, B); expect(lastServiceRequestAt(1)).toBe(6 * B); expect(lastServiceRequestAt(2)).toBe(2 * B); });
+it('large reverse insertion order uses numeric maximum', () => { for (let i = 200000; i >= 0; i--) recordServiceRequest(1, i * B); expect(lastServiceRequestAt(1)).toBe(200001 * B); });
+it('existing rate pruning can empty the latest-time history', () => { recordServiceRequest(1, 0); expect(serviceRequestRate(1, 60000, 25 * 3600000)).toBe(0); expect(lastServiceRequestAt(1)).toBeNull(); });
+it('reset clears a populated history', () => { for (let i = 0; i < 200000; i++) recordServiceRequest(1, i * B); resetRequestRates(); expect(lastServiceRequestAt(1)).toBeNull(); });
+it('large-history sleep decision preserves the exact idle threshold', () => {
+ for (let i = 0; i < 200000; i++) recordServiceRequest(5, i * B); const end = 200000 * B;
+ const svc = { id: 5, type: 'docker', status: 'running', serverId: null, orchestrator: null, runtimeId: 'r1', sleepAfterMinutes: 10, asleepAt: null } as Service;
+ markAwake(svc, end - 600000); const ctx = { analyticsOn: true, inFlight: new Set<number>(), routedDomains: 1, canaryRunning: false };
+ expect(sleepHoldReason(svc, { ...ctx, now: end + 599999 })).toBe('it had a request within the idle window'); expect(sleepHoldReason(svc, { ...ctx, now: end + 600000 })).toBeNull();
+});

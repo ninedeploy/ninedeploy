@@ -1,0 +1,59 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/requestRateLargeHistory.test.ts > long-running valid request history returns latest bucket without throwing
+EXPECTED: 2000000000 error null; ACTUAL: null RangeError: Maximum call stack size exceeded
+PROBLEM CONFIRMED
+
+stdout | test/lib/requestRateLargeHistory.test.ts > long-running traffic history does not abort the scale-to-zero idle decision
+EXPECTED: idle decision null without error; ACTUAL: null RangeError: Maximum call stack size exceeded
+PROBLEM CONFIRMED
+
+ ✓ test/lib/requestRateLargeHistory.test.ts > control: last timestamp works for a full day of distinct buckets 4ms
+ × test/lib/requestRateLargeHistory.test.ts > long-running valid request history returns latest bucket without throwing 35ms
+   → expected { value: null, …(1) } to deeply equal { value: 2000000000, error: null }
+ × test/lib/requestRateLargeHistory.test.ts > long-running traffic history does not abort the scale-to-zero idle decision 54ms
+   → expected { value: null, …(1) } to deeply equal { value: null, error: null }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/requestRateLargeHistory.test.ts > long-running valid request history returns latest bucket without throwing
+AssertionError: expected { value: null, …(1) } to deeply equal { value: 2000000000, error: null }
+
+- Expected
++ Received
+
+  {
+-   "error": null,
+-   "value": 2000000000,
++   "error": "RangeError: Maximum call stack size exceeded",
++   "value": null,
+  }
+
+ ❯ test/lib/requestRateLargeHistory.test.ts:13:169
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/lib/requestRateLargeHistory.test.ts > long-running traffic history does not abort the scale-to-zero idle decision
+AssertionError: expected { value: null, …(1) } to deeply equal { value: null, error: null }
+
+- Expected
++ Received
+
+  {
+-   "error": null,
++   "error": "RangeError: Maximum call stack size exceeded",
+    "value": null,
+  }
+
+ ❯ test/lib/requestRateLargeHistory.test.ts:20:178
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  00:50:43
+   Duration  758ms (import 69%, tests 17%, transform 13%, worker 1%)

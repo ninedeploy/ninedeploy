@@ -1,0 +1,22 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > empty unknown and null-service records return null 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > bucket end is conservative just before boundary 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > exact bucket boundary enters the next bucket 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > duplicate requests do not move latest timestamp 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > earlier out-of-order arrival cannot become latest 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > negative epoch buckets preserve their arithmetic 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > service histories remain isolated 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > large reverse insertion order uses numeric maximum 27ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > existing rate pruning can empty the latest-time history 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > reset clears a populated history 20ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1080_requestLatest.test.ts > large-history sleep decision preserves the exact idle threshold 23ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  00:50:45
+   Duration  561ms (import 68%, tests 17%, transform 14%, worker 1%)

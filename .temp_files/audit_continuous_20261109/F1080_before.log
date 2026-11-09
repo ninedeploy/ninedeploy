@@ -1,0 +1,59 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts > long-running valid request history returns latest bucket without throwing
+EXPECTED: 2000000000 error null; ACTUAL: null RangeError: Maximum call stack size exceeded
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts > long-running traffic history does not abort the scale-to-zero idle decision
+EXPECTED: idle decision null without error; ACTUAL: null RangeError: Maximum call stack size exceeded
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts > control: last timestamp works for a full day of distinct buckets 2ms
+ × .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts > long-running valid request history returns latest bucket without throwing 21ms
+   → expected { value: null, …(1) } to deeply equal { value: 2000000000, error: null }
+ × .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts > long-running traffic history does not abort the scale-to-zero idle decision 24ms
+   → expected { value: null, …(1) } to deeply equal { value: null, error: null }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts > long-running valid request history returns latest bucket without throwing
+AssertionError: expected { value: null, …(1) } to deeply equal { value: 2000000000, error: null }
+
+- Expected
++ Received
+
+  {
+-   "error": null,
+-   "value": 2000000000,
++   "error": "RangeError: Maximum call stack size exceeded",
++   "value": null,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts:13:169
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts > long-running traffic history does not abort the scale-to-zero idle decision
+AssertionError: expected { value: null, …(1) } to deeply equal { value: null, error: null }
+
+- Expected
++ Received
+
+  {
+-   "error": null,
++   "error": "RangeError: Maximum call stack size exceeded",
+    "value": null,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1080_requestLatest.test.ts:20:178
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  00:49:43
+   Duration  535ms (import 75%, transform 13%, tests 11%, worker 1%)

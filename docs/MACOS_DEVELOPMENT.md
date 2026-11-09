@@ -557,3 +557,12 @@ barrier cases passed three times, including competing baseline observations and
 a legacy empty-string baseline. Accepted deployment rows are retained; refusal
 authorization, multi-process ABA ordering, live provider and native Mac acceptance
 remain outside this bounded validation.
+
+Round 62 (F1080) avoids an argument-count crash when computing the latest
+request bucket for a long-running traffic/scale-to-zero consumer. The old code
+threw RangeError on a fixed 200,000-bucket history; it now scans the maximum
+without argument spreading. Three permanent tests were seen red (two failing
+cases and one full-day control), then 91 neighboring tests passed. Eleven
+independent arithmetic/history/idle-boundary cases passed three times. Bucket
+memory retention is a separate scope; no live 23-day run or native Mac acceptance
+was claimed.

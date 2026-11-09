@@ -49,7 +49,9 @@ export function serviceRequestRate(serviceId: number, windowMs: number, now: num
 export function lastServiceRequestAt(serviceId: number): number | null {
   const m = buckets.get(serviceId);
   if (!m || m.size === 0) return null;
-  return (Math.max(...m.keys()) + 1) * REQUEST_RATE_BUCKET_MS;
+  let latest = Number.NEGATIVE_INFINITY;
+  for (const bucket of m.keys()) latest = Math.max(latest, bucket);
+  return (latest + 1) * REQUEST_RATE_BUCKET_MS;
 }
 
 /** Tests only. */
