@@ -48,6 +48,17 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
 
+      # Nightly: run the journeys of the release the image was built from, not
+      # main's newer ones (a journey for an unreleased fix would fail falsely).
+      - name: Check out the current release (nightly)
+        if: github.event_name == 'schedule'
+        run: |
+          VERSION=$(sed -n "s/^export const VERSION = '\([^']*\)';$/\1/p" apps/server/src/version.ts)
+          test -n "$VERSION"
+          git fetch --depth 1 origin "refs/tags/v$VERSION:refs/tags/v$VERSION"
+          git checkout --quiet "v$VERSION"
+          echo "Journeys of v$VERSION"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 

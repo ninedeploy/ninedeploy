@@ -45,6 +45,11 @@ describe('.github/workflows/browser-e2e.yml', () => {
     // Nightly against the current release, only in the canonical repository (not in forks).
     expect(wf.on.schedule).toHaveLength(1);
     expect(job.if).toContain("github.event_name == 'schedule' && github.repository == 'ninedeploy/ninedeploy'");
+    // ...running the journeys of that release (its tag), not main's newer ones.
+    const pin = job.steps.find((s) => s.run?.includes('git checkout --quiet "v$VERSION"')) as { if?: string; run?: string } | undefined;
+    expect(pin?.if).toBe("github.event_name == 'schedule'");
+    expect(pin?.run).toContain('apps/server/src/version.ts');
+    expect(job.steps.indexOf(pin as never)).toBeLessThan(job.steps.findIndex((s) => s.run?.includes('pnpm --dir e2e install')));
   });
 
   it('is read-only, pins every action by SHA, and does not keep the checkout token', () => {
