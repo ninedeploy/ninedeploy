@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.18.26",
+    "date": "2026-11-09",
+    "title": "Your panel on its own domain, a stable update channel, and a panel IP allow-list",
+    "changes": [
+      "install.sh --domain panel.example.com --email you@example.com serves the panel on its own hostname with a Let's Encrypt certificate from the first boot. A first install on a terminal asks for both, and the first-run form offers the admin's email for Let's Encrypt when none is set.",
+      "Settings → System → Update channel: keep getting every release (the default), or choose stable, which offers a release once it has been out for seven days, or at once for a marked security fix. install.sh --channel stable does the same for installs.",
+      "Settings → Security → Panel access: an optional IP allow-list for the panel itself. Webhooks, status pages, CI runners and other integrations keep working; NINEDEPLOY_PANEL_ACCESS=off undoes a lockout.",
+      "Each service now says which features work where it runs, and why not (Service → Settings, GET /v1/services/:id/capabilities). Cloning, exporting and importing a service keeps its settings, such as maintenance mode, error pages and forward auth, and deleting an item removes its stored settings.",
+      "Doctor and the docs no longer tell you to bind the panel to 127.0.0.1 once it has a domain: Traefik reaches it through the Docker gateway, so that cut the panel off from its domain. Block port 3000 with a firewall in front of the host instead.",
+      "Many reliability fixes in CI runners, PostgreSQL PITR, backups, GitOps, source uploads and log search; see CHANGELOG.md.",
+      "Action needed: none. No database migration. Docker installs get the new compose file when they re-run the installer."
+    ]
+  },
+  {
     "version": "0.18.25",
     "date": "2026-11-08",
     "title": "Desktop installers on every release",

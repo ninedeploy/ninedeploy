@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.26] - 2026-11-09
+
 ### Added
 
 - **The panel on its own domain, with HTTPS, from the installer.** `install.sh --domain panel.example.com --email you@example.com` serves the panel on that hostname, with a Let's Encrypt certificate from the first boot, and makes it the public URL.
