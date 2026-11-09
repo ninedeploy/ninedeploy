@@ -1,0 +1,60 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1039_s3_short_reads.test.ts > never completes corrupted multipart bytes after short reads or early EOF
+CONTROL EXPECTED: full reads upload ABCDEFGHIJKL | ACTUAL: ABCDEFGHIJKL
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1039_s3_short_reads.test.ts > never completes corrupted multipart bytes after short reads or early EOF
+EXPECTED: short-read bytes exact; EOF rejected and aborted | ACTUAL: {"shortHex":"4142000045460000494a0000","expectedHex":"4142434445464748494a4b4c","eofCompleted":true,"eofRejected":false,"eofAborted":false}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1039_s3_short_reads.test.ts > never completes corrupted multipart bytes after short reads or early EOF 43ms
+   → expected Buffer[ 65, 66, 0, 0, 69, 70, 0, …(13) ] to deeply equal Buffer[ 65, 66, 67, 68, 69, 70, …(-58) ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1039_s3_short_reads.test.ts > never completes corrupted multipart bytes after short reads or early EOF
+AssertionError: expected Buffer[ 65, 66, 0, 0, 69, 70, 0, …(13) ] to deeply equal Buffer[ 65, 66, 67, 68, 69, 70, …(-58) ]
+
+- Expected
++ Received
+
+  {
+    "data": [
+      65,
+      66,
+-     67,
+-     68,
++     0,
++     0,
+      69,
+      70,
+-     71,
+-     72,
++     0,
++     0,
+      73,
+      74,
+-     75,
+-     76,
++     0,
++     0,
+    ],
+    "type": "Buffer",
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1039_s3_short_reads.test.ts:41:28
+     39|     const bad = !short.uploaded.equals(source) || !eof.rejected || !eo…
+     40|     console.log(bad ? 'PROBLEM CONFIRMED' : 'PROBLEM NOT REPRODUCED');
+     41|     expect(short.uploaded).toEqual(source); expect(short.completed).to…
+       |                            ^
+     42|     expect(eof).toMatchObject({ rejected: true, aborted: true, complet…
+     43|   } finally { reads.cap = Infinity; vi.unstubAllGlobals(); vi.useRealT…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  17:51:15
+   Duration  394ms (tests 47%, transform 29%, import 21%, worker 3%)

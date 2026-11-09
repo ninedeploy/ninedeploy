@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1039_s3_short_reads.test.ts > never completes corrupted multipart bytes after short reads or early EOF
+CONTROL EXPECTED: full reads upload ABCDEFGHIJKL | ACTUAL: ABCDEFGHIJKL
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1039_s3_short_reads.test.ts > never completes corrupted multipart bytes after short reads or early EOF
+EXPECTED: short-read bytes exact; EOF rejected and aborted | ACTUAL: {"shortHex":"4142434445464748494a4b4c","expectedHex":"4142434445464748494a4b4c","eofCompleted":false,"eofRejected":true,"eofAborted":true}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1039_s3_short_reads.test.ts > never completes corrupted multipart bytes after short reads or early EOF 56ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:54:51
+   Duration  835ms (transform 37%, import 33%, tests 29%, worker 1%)

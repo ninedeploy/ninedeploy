@@ -1,0 +1,88 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/lib/s3MultipartReads.test.ts (9 tests | 5 failed) 78ms
+   ❯ S3 multipart source reads (9)
+     × uploads exact bytes with reads capped at 1 36ms
+     × uploads exact bytes with reads capped at 2 7ms
+     × uploads exact bytes with reads capped at 3 5ms
+     × aborts on premature EOF after init without completing 5ms
+     × aborts on premature EOF after part without completing 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/s3MultipartReads.test.ts > S3 multipart source reads > uploads exact bytes with reads capped at 1
+AssertionError: expected 'A\u0000\u0000\u0000E\u0000\u0000\u000…' to be 'ABCDEFGHIJK' // Object.is equality
+
+Expected: "ABCDEFGHIJK"
+Received: "A\0\0\0E\0\0\0I\0\0"
+
+ ❯ test/lib/s3MultipartReads.test.ts:74:47
+     72|     const f = fixture('ABCDEFGHIJK');
+     73|     await s3PutFile(cfg, 'backup.dump', f.file, { partSize: 4, thresho…
+     74|     expect(Buffer.concat(f.parts).toString()).toBe('ABCDEFGHIJK');
+       |                                               ^
+     75|     expect(f.parts.map(part => part.length)).toEqual([4, 4, 3]);
+     76|     expect(f.events).toEqual(['init', 'part', 'part', 'part', 'complet…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  test/lib/s3MultipartReads.test.ts > S3 multipart source reads > uploads exact bytes with reads capped at 2
+AssertionError: expected 'AB\u0000\u0000EF\u0000\u0000IJ\u0000' to be 'ABCDEFGHIJK' // Object.is equality
+
+Expected: "ABCDEFGHIJK"
+Received: "AB\0\0EF\0\0IJ\0"
+
+ ❯ test/lib/s3MultipartReads.test.ts:74:47
+     72|     const f = fixture('ABCDEFGHIJK');
+     73|     await s3PutFile(cfg, 'backup.dump', f.file, { partSize: 4, thresho…
+     74|     expect(Buffer.concat(f.parts).toString()).toBe('ABCDEFGHIJK');
+       |                                               ^
+     75|     expect(f.parts.map(part => part.length)).toEqual([4, 4, 3]);
+     76|     expect(f.events).toEqual(['init', 'part', 'part', 'part', 'complet…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  test/lib/s3MultipartReads.test.ts > S3 multipart source reads > uploads exact bytes with reads capped at 3
+AssertionError: expected 'ABC\u0000EFG\u0000IJK' to be 'ABCDEFGHIJK' // Object.is equality
+
+Expected: "ABCDEFGHIJK"
+Received: "ABC\0EFG\0IJK"
+
+ ❯ test/lib/s3MultipartReads.test.ts:74:47
+     72|     const f = fixture('ABCDEFGHIJK');
+     73|     await s3PutFile(cfg, 'backup.dump', f.file, { partSize: 4, thresho…
+     74|     expect(Buffer.concat(f.parts).toString()).toBe('ABCDEFGHIJK');
+       |                                               ^
+     75|     expect(f.parts.map(part => part.length)).toEqual([4, 4, 3]);
+     76|     expect(f.events).toEqual(['init', 'part', 'part', 'part', 'complet…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  test/lib/s3MultipartReads.test.ts > S3 multipart source reads > aborts on premature EOF after init without completing
+ FAIL  test/lib/s3MultipartReads.test.ts > S3 multipart source reads > aborts on premature EOF after part without completing
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ test/lib/s3MultipartReads.test.ts:81:87
+     79|   it.each(['init', 'part'] as const)('aborts on premature EOF after %s…
+     80|     const f = fixture('ABCDEFGHIJK', phase);
+     81|     await expect(s3PutFile(cfg, 'backup.dump', f.file, { partSize: 4, …
+       |                                                                                       ^
+     82|     expect(f.events).toEqual(phase === 'init' ? ['init', 'abort'] : ['…
+     83|     expect(Buffer.concat(f.parts).toString()).toBe(phase === 'init' ? …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 4 passed (9)
+   Start at  17:54:15
+   Duration  315ms (tests 55%, transform 27%, import 15%, worker 3%)

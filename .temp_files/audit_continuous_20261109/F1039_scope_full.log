@@ -1,0 +1,32 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/lib/s3.test.ts (24 tests | 1 failed) 1173ms
+   ❯ s3PutFile / s3GetToFile (streamed transfers) (12)
+     × r188: a slow download that keeps making progress is not cut off 602ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > r188: a slow download that keeps making progress is not cut off
+AbortError: The operation was aborted
+ ❯ Timeout.<anonymous> src/lib/s3.ts:239:41
+    237|   const touch = () => {
+    238|     clearTimeout(stall);
+    239|     stall = setTimeout(() => controller.abort(new Error('S3 download s…
+       |                                         ^
+    240|   };
+    241|   // F848: once the destination is opened (and so truncated), this cal…
+
+Caused by: Error: S3 download stalled
+ ❯ Timeout.<anonymous> src/lib/s3.ts:239:47
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  1 failed | 151 passed (152)
+   Start at  17:56:13
+   Duration  16.86s (tests 60%, import 31%, transform 8%)
+
+    Isolate  6 workers spawned · ~1.25s startup each (spawn + environment, per file)
+             at least ~6.23s faster with isolate: false — reuses workers across files instead of one per file

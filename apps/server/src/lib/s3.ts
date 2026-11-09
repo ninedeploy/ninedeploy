@@ -159,7 +159,12 @@ export async function s3PutFile(
       const buf = Buffer.alloc(partSize);
       for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
         const length = partNumber === totalParts ? size - (partNumber - 1) * partSize : partSize;
-        readSync(fh, buf, 0, length, (partNumber - 1) * partSize);
+        let filled = 0;
+        while (filled < length) {
+          const bytesRead = readSync(fh, buf, filled, length - filled, (partNumber - 1) * partSize + filled);
+          if (bytesRead === 0) throw new Error('Backup file ended before the multipart upload was complete');
+          filled += bytesRead;
+        }
         const chunk = length === partSize ? buf : buf.subarray(0, length);
         const res = await s3Request(
           cfg, 'PUT', key, chunk, 'application/octet-stream',
