@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A read-only import plan for Coolify, Dokploy and CapRover.** `ninedeploy import plan <coolify|dokploy|caprover> --url …` reads the other platform's API from your machine and lists what NineDeploy would create:
+  - services, with their repository, image or compose source, build pack, port, limits, domains and first volume;
+  - environment variable names;
+  - databases, with the matching engine.
+  - Every option NineDeploy cannot carry, or that needs a person, is listed per item.
+  - It creates nothing and changes nothing on the source. Applying a plan (step 2) and moving data (step 3) come later.
+  - The credential comes from `NINEDEPLOY_IMPORT_TOKEN` / `NINEDEPLOY_IMPORT_PASSWORD` or a hidden prompt, never from the command line, and stays on your machine.
+  - A plan holds variable names only, never a value, password, token or key, and every URL loses its `user:password@`.
+  - The mappings were written against Coolify v4.7.0, Dokploy v0.31.0 and CapRover v1.16.0 and are tested with fixtures derived from their source. They have not been run against live instances yet. See [docs/IMPORTING.md](docs/IMPORTING.md).
+
 ### Fixed
 
 - Restart-loop enforcement preserves newer operator policy changes during runtime sampling and does not recreate disabled limits or clear replacement history after an admitted stop (F1075).

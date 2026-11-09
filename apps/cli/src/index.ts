@@ -128,6 +128,7 @@ import {
 import {
   egressClearAction, egressListAction, egressSetAction,
 } from './commands/egress.js';
+import { importPlanAction } from './commands/importPlan.js';
 import { ipsForgetAction, ipsListAction, ipsSetAction } from './commands/hostIps.js';
 import {
   ssoAddAction, ssoListAction, ssoRemoveAction,
@@ -694,6 +695,16 @@ egressCmd
   .description('Detach the egress rule for a project')
   .option('--driver <name>', 'Target a specific driver (default: first registered)')
   .action((projectId: string, opts: { driver?: string }) => egressClearAction(getClient(), projectId, opts));
+
+// ── Import from another platform (A1 step 1: read-only plan) ─────────────
+const importCmd = program.command('import').description('Plan a move from Coolify, Dokploy or CapRover (read-only for now)');
+importCmd
+  .command('plan <source>')
+  .description('Read a coolify | dokploy | caprover panel and print what NineDeploy would create. Nothing is created or changed. The credential comes from NINEDEPLOY_IMPORT_TOKEN (Coolify, Dokploy) or NINEDEPLOY_IMPORT_PASSWORD (CapRover, plus NINEDEPLOY_IMPORT_OTP), or a hidden prompt.')
+  .requiredOption('--url <url>', 'The source panel, e.g. https://coolify.example.com')
+  .option('--json', 'Print the plan as JSON')
+  .option('--out <file>', 'Also write the plan (JSON, names only) to a file')
+  .action((source: string, opts: { url: string; json?: boolean; out?: string }) => importPlanAction(source, opts));
 
 // ── SSO (G-22) ───────────────────────────────────────────────────────────
 const ssoCmd = program.command('sso').description('Manage OIDC / SAML SSO providers (G-22)');

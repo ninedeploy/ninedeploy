@@ -7,6 +7,7 @@ The guides are grouped by what you are doing. The last group holds the project's
 - [Quickstart](QUICKSTART.md): install, first sign-in, first deploy, upgrades.
 - [Support matrix](SUPPORT_MATRIX.md): which service features work on the panel host, on nodes, on Swarm, and for Compose and PM2.
 - [Troubleshooting](TROUBLESHOOTING.md): common failures and how to recover.
+- [Moving from Coolify, Dokploy or CapRover](IMPORTING.md): a read-only import plan (`ninedeploy import plan`).
 
 ## Guides
 
