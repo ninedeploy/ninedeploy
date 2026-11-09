@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Instance GitOps scheduler ticks no longer start new checks or publish late drift/failure alerts after their application closes (F1055).
 - Active PITR retention now excludes competing pruning, recovery, base-backup and disable operations on the same archive; backup requests report a conflict instead of accepting work that cannot start (F1054).
 - PITR recovery admission reserves capacity before asynchronous name/volume checks, keeping concurrent requests within the one-recovery limit and releasing capacity on admission failure (F1053).
 - PITR maintenance reloads the database's retention policy before pruning, honoring retention increases committed while the archiver query or a base backup was running (F1052).

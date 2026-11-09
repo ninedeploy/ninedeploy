@@ -1,0 +1,32 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/instanceGitops.coverage.test.ts > configuration routes > reads nothing before configuring, refuses an unknown git source and records a paused config 221ms
+ ✓ test/instanceGitops.coverage.test.ts > configuration routes > removes the config and the last check 182ms
+ ✓ test/instanceGitops.coverage.test.ts > configuration routes > audits a failed check by its error 169ms
+ ✓ test/instanceGitops.coverage.test.ts > configuration routes > exports the live instance as JSON on request 166ms
+ ✓ test/instanceGitops.coverage.test.ts > apply > refuses before a repository is configured, and when the file cannot be read 160ms
+ ✓ test/instanceGitops.coverage.test.ts > apply > reports each step that could not be applied, with the reason, and calls the API for the rest 162ms
+ ✓ test/instanceGitops.coverage.test.ts > apply > changes nothing for a file that matches the instance 168ms
+ ✓ test/instanceGitops.test.ts > the instance file > refuses secrets, unknown keys and a name given twice 162ms
+ ✓ test/instanceGitops.test.ts > the instance file > reports what is missing, changed and extra 172ms
+ ✓ test/instanceGitops.test.ts > the instance file > exports the live instance as a file that reads back without drift 203ms
+ ✓ test/instanceGitops.test.ts > the instance file > does not follow a symlink out of the repository 179ms
+ ✓ test/instanceGitops.test.ts > the checkout > never repeats a credential from git output, stops at the size cap and reads into a fresh directory each time 183ms
+ ✓ test/instanceGitops.test.ts > routes > configures, checks and applies the file without deleting anything 294ms
+ ✓ test/instanceGitops.test.ts > routes > stores a read failure as the check, and members cannot see any of it 177ms
+ ✓ test/plugins/gitopsScheduler.test.ts > live control owner after gated getGitopsConfig 53ms
+ ✓ test/plugins/gitopsScheduler.test.ts > closed owner after gated getGitopsConfig 1ms
+ ✓ test/plugins/gitopsScheduler.test.ts > live control owner after gated getLastCheck 1ms
+ ✓ test/plugins/gitopsScheduler.test.ts > closed owner after gated getLastCheck 2ms
+ ✓ test/plugins/gitopsScheduler.test.ts > live control owner after gated runGitopsCheck 1ms
+ ✓ test/plugins/gitopsScheduler.test.ts > closed owner after gated runGitopsCheck 1ms
+ ✓ test/gitopsCleanup.test.ts > removes the temporary directory when credentials cannot be resolved and still accepts a later checkout 64ms
+
+ Test Files  4 passed (4)
+      Tests  21 passed (21)
+   Start at  20:33:50
+   Duration  5.73s (tests 62%, import 34%, transform 4%)
+
+    Isolate  4 workers spawned · ~315ms startup each (spawn + environment, per file)
+             at least ~944ms faster with isolate: false — reuses workers across files instead of one per file

@@ -11,12 +11,16 @@ import { driftFingerprint, getGitopsConfig, getLastCheck, runGitopsCheck } from 
 export default fp(
   async (fastify) => {
     let busy = false;
+    let stopped = false;
     const tick = async () => {
+      if (stopped) return;
       const cfg = await getGitopsConfig(fastify.db);
-      if (!cfg?.enabled || cfg.intervalMinutes === 0) return;
+      if (stopped || !cfg?.enabled || cfg.intervalMinutes === 0) return;
       const last = await getLastCheck(fastify.db);
+      if (stopped) return;
       if (last && Date.now() - Date.parse(last.at) < cfg.intervalMinutes * 60_000) return;
       const { check, previous } = await runGitopsCheck(fastify.db);
+      if (stopped) return;
       if (check.error) {
         if (!previous?.error) void audit(fastify.db, null, 'alert.gitops_failed', check.error.slice(0, 300));
         return;
@@ -36,7 +40,10 @@ export default fp(
         });
     }, 60_000);
     timer.unref();
-    fastify.addHook('onClose', async () => clearInterval(timer));
+    fastify.addHook('onClose', async () => {
+      stopped = true;
+      clearInterval(timer);
+    });
   },
   { name: 'ninedeploy-instance-gitops' },
 );

@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated getGitopsConfig
+EXPECTED: { runs: 0, alerts: 0 } ACTUAL: { runs: 1, alerts: 1 }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated getLastCheck
+EXPECTED: { runs: 0, alerts: 0 } ACTUAL: { runs: 1, alerts: 1 }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated runGitopsCheck
+EXPECTED: { runs: 1, alerts: 0 } ACTUAL: { runs: 1, alerts: 1 }
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > live control owner after gated getGitopsConfig 48ms
+ × .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated getGitopsConfig 3ms
+   → expected "vi.fn()" to be called +0 times, but got 1 times
+ ✓ .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > live control owner after gated getLastCheck 1ms
+ × .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated getLastCheck 2ms
+   → expected "vi.fn()" to be called +0 times, but got 1 times
+ ✓ .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > live control owner after gated runGitopsCheck 1ms
+ × .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated runGitopsCheck 2ms
+   → expected "vi.fn()" to be called +0 times, but got 1 times
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated getGitopsConfig
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated getLastCheck
+AssertionError: expected "vi.fn()" to be called +0 times, but got 1 times
+ ❯ .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts:40:403
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts > closed owner after gated runGitopsCheck
+AssertionError: expected "vi.fn()" to be called +0 times, but got 1 times
+ ❯ .temp_files/audit_continuous_20261109/prove_F1055_gitopsClose.test.ts:41:28
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 3 passed (6)
+   Start at  20:31:38
+   Duration  274ms (import 45%, tests 36%, transform 17%, worker 2%)
