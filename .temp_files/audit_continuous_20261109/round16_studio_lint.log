@@ -1,0 +1,233 @@
+apps\server\test\lib\nodeStudio.test.ts:28:182 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    26 │ import { sha256 } from '../../src/lib/crypto.js';
+    27 │ import { STUDIO_RELAY_HKDF_INFO } from '../../src/lib/studioRelayProtocol.js';
+  > 28 │ const identity = { databaseId: 7, slug: 'orders', engine: 'postgres' as const, containerId: 'd'.repeat(64), databaseContainerId: 'a'.repeat(64), networkId: 'b'.repeat(64), imageId: 'sha256:' + 'c'.repeat(64), nonce: '11111111-1111-4111-8111-111111111111' };
+       │                                                                                                                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    29 │ const receipt = (value: unknown, exitCode = 0) => ({ exitCode, lines: ['ND-STUDIO ' + JSON.stringify(value)] });
+    30 │ let connection: ReturnType<typeof createDb>;
+
+  i Unsafe fix: Use a template literal.
+
+     26  26 │   import { sha256 } from '../../src/lib/crypto.js';
+     27  27 │   import { STUDIO_RELAY_HKDF_INFO } from '../../src/lib/studioRelayProtocol.js';
+     28     │ - const·identity·=·{·databaseId:·7,·slug:·'orders',·engine:·'postgres'·as·const,·containerId:·'d'.repeat(64),·databaseContainerId:·'a'.repeat(64),·networkId:·'b'.repeat(64),·imageId:·'sha256:'·+·'c'.repeat(64),·nonce:·'11111111-1111-4111-8111-111111111111'·};
+         28 │ + const·identity·=·{·databaseId:·7,·slug:·'orders',·engine:·'postgres'·as·const,·containerId:·'d'.repeat(64),·databaseContainerId:·'a'.repeat(64),·networkId:·'b'.repeat(64),·imageId:·`sha256:${'c'.repeat(64)}`,·nonce:·'11111111-1111-4111-8111-111111111111'·};
+     29  29 │   const receipt = (value: unknown, exitCode = 0) => ({ exitCode, lines: ['ND-STUDIO ' + JSON.stringify(value)] });
+     30  30 │   let connection: ReturnType<typeof createDb>;
+
+
+apps\server\test\lib\nodeStudio.test.ts:29:72 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    27 │ import { STUDIO_RELAY_HKDF_INFO } from '../../src/lib/studioRelayProtocol.js';
+    28 │ const identity = { databaseId: 7, slug: 'orders', engine: 'postgres' as const, containerId: 'd'.repeat(64), databaseContainerId: 'a'.repeat(64), networkId: 'b'.repeat(64), imageId: 'sha256:' + 'c'.repeat(64), nonce: '11111111-1111-4111-8111-111111111111' };
+  > 29 │ const receipt = (value: unknown, exitCode = 0) => ({ exitCode, lines: ['ND-STUDIO ' + JSON.stringify(value)] });
+       │                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    30 │ let connection: ReturnType<typeof createDb>;
+    31 │ const row = async () => (await connection.db.query.databases.findFirst({ where: eq(databases.id, 7) }))!;
+
+  i Unsafe fix: Use a template literal.
+
+     27  27 │   import { STUDIO_RELAY_HKDF_INFO } from '../../src/lib/studioRelayProtocol.js';
+     28  28 │   const identity = { databaseId: 7, slug: 'orders', engine: 'postgres' as const, containerId: 'd'.repeat(64), databaseContainerId: 'a'.repeat(64), networkId: 'b'.repeat(64), imageId: 'sha256:' + 'c'.repeat(64), nonce: '11111111-1111-4111-8111-111111111111' };
+     29     │ - const·receipt·=·(value:·unknown,·exitCode·=·0)·=>·({·exitCode,·lines:·['ND-STUDIO·'·+·JSON.stringify(value)]·});
+         29 │ + const·receipt·=·(value:·unknown,·exitCode·=·0)·=>·({·exitCode,·lines:·[`ND-STUDIO·${JSON.stringify(value)}`]·});
+     30  30 │   let connection: ReturnType<typeof createDb>;
+     31  31 │   const row = async () => (await connection.db.query.databases.findFirst({ where: eq(databases.id, 7) }))!;
+
+
+apps\server\test\lib\nodeStudio.test.ts:180:124 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    178 │     expect(h.agent.mock.calls[0]![3].request.headers).toEqual([['cookie','adminer=valid'],['accept','text/html']]);
+    179 │     expect(h.refusal).not.toHaveBeenCalled();
+  > 180 │     const socket = sockets[0]!; expect(socket.url).toBe('ws://[::1]:4600/agent/studio'); expect(socket.protocols).toEqual(['ninedeploy.agent-studio.' + '1'.repeat(32)]); expect(socket.send).not.toHaveBeenCalled();
+        │                                                                                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    181 │     peer = new StudioRelayChannel('agent', deriveFrameKey(sha256('node-token'), Buffer.alloc(32,7), STUDIO_RELAY_HKDF_INFO), { bufferedAmount: 0, send: bytes => socket.receive(bytes), close: () => undefined });
+    182 │     socket.open(); await peer.ready; peer.sendHead({ status: 200, headers: [['content-type','text/plain']] });
+
+  i Unsafe fix: Use a template literal.
+
+    178 178 │       expect(h.agent.mock.calls[0]![3].request.headers).toEqual([['cookie','adminer=valid'],['accept','text/html']]);
+    179 179 │       expect(h.refusal).not.toHaveBeenCalled();
+    180     │ - ····const·socket·=·sockets[0]!;·expect(socket.url).toBe('ws://[::1]:4600/agent/studio');·expect(socket.protocols).toEqual(['ninedeploy.agent-studio.'·+·'1'.repeat(32)]);·expect(socket.send).not.toHaveBeenCalled();
+        180 │ + ····const·socket·=·sockets[0]!;·expect(socket.url).toBe('ws://[::1]:4600/agent/studio');·expect(socket.protocols).toEqual([`ninedeploy.agent-studio.${'1'.repeat(32)}`]);·expect(socket.send).not.toHaveBeenCalled();
+    181 181 │       peer = new StudioRelayChannel('agent', deriveFrameKey(sha256('node-token'), Buffer.alloc(32,7), STUDIO_RELAY_HKDF_INFO), { bufferedAmount: 0, send: bytes => socket.receive(bytes), close: () => undefined });
+    182 182 │       socket.open(); await peer.ready; peer.sendHead({ status: 200, headers: [['content-type','text/plain']] });
+
+
+apps\server\test\lib\nodeStudio.test.ts:231:56 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    229 │     try {
+    230 │       for (const [method, suffix, payload] of [['POST','/stop',{}],['POST','/restart',{}],['POST','/start',{}],['PATCH','/limits',{ memLimitMb: 512 }],['DELETE','',undefined]] as const) {
+  > 231 │         const res = await server.inject({ method, url: '/v1/databases/7' + suffix, headers: asUser(), payload }); expect([suffix,res.statusCode,res.json().error?.code]).toEqual([suffix,409,'node_database_busy']);
+        │                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    232 │       }
+    233 │     } finally { finish(); }
+
+  i Unsafe fix: Use a template literal.
+
+    229 229 │       try {
+    230 230 │         for (const [method, suffix, payload] of [['POST','/stop',{}],['POST','/restart',{}],['POST','/start',{}],['PATCH','/limits',{ memLimitMb: 512 }],['DELETE','',undefined]] as const) {
+    231     │ - ········const·res·=·await·server.inject({·method,·url:·'/v1/databases/7'·+·suffix,·headers:·asUser(),·payload·});·expect([suffix,res.statusCode,res.json().error?.code]).toEqual([suffix,409,'node_database_busy']);
+        231 │ + ········const·res·=·await·server.inject({·method,·url:·`/v1/databases/7${suffix}`,·headers:·asUser(),·payload·});·expect([suffix,res.statusCode,res.json().error?.code]).toEqual([suffix,409,'node_database_busy']);
+    232 232 │         }
+    233 233 │       } finally { finish(); }
+
+
+apps\server\test\lib\nodeStudio.test.ts:239:52 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    237 │     await change({ nodeStudioIdentity: JSON.stringify({ phase: 'ready', identity }), webGuiEnabled: true }); h.agent.mockResolvedValueOnce(receipt({ stopped: 'short' }));
+    238 │     const before = await row(), server = await app();
+  > 239 │     const res = await server.inject({ method, url: '/v1/databases/7' + suffix, headers: asUser(), payload });
+        │                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    240 │     expect(res.statusCode).toBe(502); expect(h.agent.mock.calls.map(call => call[2])).toEqual(['db.studio.clear']);
+    241 │     expect(await row()).toMatchObject({ status: before.status, memLimitMb: before.memLimitMb }); await server.close();
+
+  i Unsafe fix: Use a template literal.
+
+    237 237 │       await change({ nodeStudioIdentity: JSON.stringify({ phase: 'ready', identity }), webGuiEnabled: true }); h.agent.mockResolvedValueOnce(receipt({ stopped: 'short' }));
+    238 238 │       const before = await row(), server = await app();
+    239     │ - ····const·res·=·await·server.inject({·method,·url:·'/v1/databases/7'·+·suffix,·headers:·asUser(),·payload·});
+        239 │ + ····const·res·=·await·server.inject({·method,·url:·`/v1/databases/7${suffix}`,·headers:·asUser(),·payload·});
+    240 240 │       expect(res.statusCode).toBe(502); expect(h.agent.mock.calls.map(call => call[2])).toEqual(['db.studio.clear']);
+    241 241 │       expect(await row()).toMatchObject({ status: before.status, memLimitMb: before.memLimitMb }); await server.close();
+
+
+apps\server\test\lib\nodeStudio.test.ts:267:117 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    265 │   async function mint(server: Awaited<ReturnType<typeof app>>, token: string) {
+    266 │     h.refusal.mockResolvedValue(null);
+  > 267 │     const response = await server.inject({ method: 'POST', url: '/v1/databases/7/studio', headers: { authorization: 'Bearer ' + token }, payload: {} });
+        │                                                                                                                     ^^^^^^^^^^^^^^^^^
+    268 │     expect(response.statusCode).toBe(200);
+    269 │     h.refusal.mockResolvedValue({ status: 403, code: 'node_feature_disabled', message: 'Owner disabled Studio' });
+
+  i Unsafe fix: Use a template literal.
+
+    265 265 │     async function mint(server: Awaited<ReturnType<typeof app>>, token: string) {
+    266 266 │       h.refusal.mockResolvedValue(null);
+    267     │ - ····const·response·=·await·server.inject({·method:·'POST',·url:·'/v1/databases/7/studio',·headers:·{·authorization:·'Bearer·'·+·token·},·payload:·{}·});
+        267 │ + ····const·response·=·await·server.inject({·method:·'POST',·url:·'/v1/databases/7/studio',·headers:·{·authorization:·`Bearer·${token}`·},·payload:·{}·});
+    268 268 │       expect(response.statusCode).toBe(200);
+    269 269 │       h.refusal.mockResolvedValue({ status: 403, code: 'node_feature_disabled', message: 'Owner disabled Studio' });
+
+
+apps\server\test\lib\nodeStudio.test.ts:281:110 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    279 │       expect(cookie).not.toContain(token); expect((await proxy(server, cookie)).statusCode).toBe(403);
+    280 │       await connection.db.delete(apiTokens).where(eq(apiTokens.hash, sha256(token)));
+  > 281 │       expect((await server.inject({ method: 'POST', url: '/v1/databases/7/studio', headers: { authorization: 'Bearer ' + token } })).statusCode).toBe(401);
+        │                                                                                                              ^^^^^^^^^^^^^^^^^
+    282 │       expect((await proxy(server, cookie)).statusCode).toBe(401);
+    283 │       expect((await proxy(server, otherCookie)).statusCode).toBe(403);
+
+  i Unsafe fix: Use a template literal.
+
+    279 279 │         expect(cookie).not.toContain(token); expect((await proxy(server, cookie)).statusCode).toBe(403);
+    280 280 │         await connection.db.delete(apiTokens).where(eq(apiTokens.hash, sha256(token)));
+    281     │ - ······expect((await·server.inject({·method:·'POST',·url:·'/v1/databases/7/studio',·headers:·{·authorization:·'Bearer·'·+·token·}·})).statusCode).toBe(401);
+        281 │ + ······expect((await·server.inject({·method:·'POST',·url:·'/v1/databases/7/studio',·headers:·{·authorization:·`Bearer·${token}`·}·})).statusCode).toBe(401);
+    282 282 │         expect((await proxy(server, cookie)).statusCode).toBe(401);
+    283 283 │         expect((await proxy(server, otherCookie)).statusCode).toBe(403);
+
+
+apps\server\test\lib\nodeStudioNetwork.test.ts:34:17 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    32 │       return reply({});
+    33 │     }
+  > 34 │     throw Error('Unexpected Docker boundary: ' + method + ' ' + path);
+       │                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    35 │   });
+    36 │ });
+
+  i Unsafe fix: Use a template literal.
+
+     32  32 │         return reply({});
+     33  33 │       }
+     34     │ - ····throw·Error('Unexpected·Docker·boundary:·'·+·method·+·'·'·+·path);
+         34 │ + ····throw·Error(`Unexpected·Docker·boundary:·${method}·${path}`);
+     35  35 │     });
+     36  36 │   });
+
+
+apps\server\test\lib\nodeStudioRuntime.test.ts:8:83 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+     6 │ import { startNodeStudio, stopNodeStudio, clearNodeStudio, resolveNodeStudioHttpTarget } from '../../src/lib/nodeStudioRuntime.js';
+     7 │
+   > 8 │ const DB = 'a'.repeat(64), NET = 'b'.repeat(64), HELPER = 'd'.repeat(64), IMAGE = 'sha256:' + 'c'.repeat(64);
+       │                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+     9 │ type Raw = Record<string, any>;
+    10 │ let database: Raw, network: Raw, helper: Raw | null, createBody: Raw | undefined;
+
+  i Unsafe fix: Use a template literal.
+
+      6   6 │   import { startNodeStudio, stopNodeStudio, clearNodeStudio, resolveNodeStudioHttpTarget } from '../../src/lib/nodeStudioRuntime.js';
+      7   7 │
+      8     │ - const·DB·=·'a'.repeat(64),·NET·=·'b'.repeat(64),·HELPER·=·'d'.repeat(64),·IMAGE·=·'sha256:'·+·'c'.repeat(64);
+          8 │ + const·DB·=·'a'.repeat(64),·NET·=·'b'.repeat(64),·HELPER·=·'d'.repeat(64),·IMAGE·=·`sha256:${'c'.repeat(64)}`;
+      9   9 │   type Raw = Record<string, any>;
+     10  10 │   let database: Raw, network: Raw, helper: Raw | null, createBody: Raw | undefined;
+
+
+apps\server\test\lib\nodeStudioRuntime.test.ts:44:21 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    42 │       helper = null; return response({}, 204);
+    43 │     }
+  > 44 │     throw new Error('Unexpected fake Docker boundary: ' + method + ' ' + path);
+       │                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    45 │   });
+    46 │ });
+
+  i Unsafe fix: Use a template literal.
+
+     42  42 │         helper = null; return response({}, 204);
+     43  43 │       }
+     44     │ - ····throw·new·Error('Unexpected·fake·Docker·boundary:·'·+·method·+·'·'·+·path);
+         44 │ + ····throw·new·Error(`Unexpected·fake·Docker·boundary:·${method}·${path}`);
+     45  45 │     });
+     46  46 │   });
+
+
+apps\server\test\lib\nodeStudioRuntime.test.ts:182:43 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    180 │     if (kind === 'nonce') helper!.Config.Labels['ninedeploy.studio.nonce'] = 'invalid';
+    181 │     if (kind === 'wrong-resource') helper!.Config.Labels['ninedeploy.database.slug'] = 'other';
+  > 182 │     if (kind === 'image') helper!.Image = 'sha256:' + 'e'.repeat(64);
+        │                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    183 │     await expect(clearNodeStudio(input)).rejects.toMatchObject({ statusCode: 409 });
+    184 │     expect(helper).not.toBeNull(); expect(h.call.mock.calls.some(call => call[1] === 'DELETE')).toBe(false);
+
+  i Unsafe fix: Use a template literal.
+
+    180 180 │       if (kind === 'nonce') helper!.Config.Labels['ninedeploy.studio.nonce'] = 'invalid';
+    181 181 │       if (kind === 'wrong-resource') helper!.Config.Labels['ninedeploy.database.slug'] = 'other';
+    182     │ - ····if·(kind·===·'image')·helper!.Image·=·'sha256:'·+·'e'.repeat(64);
+        182 │ + ····if·(kind·===·'image')·helper!.Image·=·`sha256:${'e'.repeat(64)}`;
+    183 183 │       await expect(clearNodeStudio(input)).rejects.toMatchObject({ statusCode: 409 });
+    184 184 │       expect(helper).not.toBeNull(); expect(h.call.mock.calls.some(call => call[1] === 'DELETE')).toBe(false);
+
+
+Checked 4 files in 30ms. No fixes applied.
+Found 11 infos.

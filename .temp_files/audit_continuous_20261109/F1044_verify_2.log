@@ -1,0 +1,13 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1044_probe_early_hints.test.ts > verifies final HTTP status selection and negative controls in native BusyBox
+EXPECTED: 7 native final-status and negative controls | ACTUAL: all passed
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1044_probe_early_hints.test.ts > verifies final HTTP status selection and negative controls in native BusyBox 15337ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:35:35
+   Duration  15.64s (tests 100%)

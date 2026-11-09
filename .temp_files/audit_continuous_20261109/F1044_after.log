@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints
+CONTROL EXPECTED: plain 200 ready | ACTUAL: { ready: true, protocol: 'http', status: 200 }
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints
+EXPECTED: final 200 after 103 is ready | ACTUAL: { ready: true, protocol: 'http', status: 200 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints 8774ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:33:47
+   Duration  9.16s (tests 99%)

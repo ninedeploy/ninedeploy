@@ -254,3 +254,25 @@ Ledger files record exact commands, failed attempts and environment boundaries.
 Use `git log` to identify any later rounds before resuming. These focused
 Windows checks do not replace the still-required full release gate, native Mac
 DMG/Keychain checks, Linux installer checks or live Docker/provider acceptance.
+
+### Optional native Linux-container probe regression
+
+The continued audit also ran the real BusyBox probe on Windows Docker Desktop's
+Linux engine. F1044 covers an uncommon compatibility edge: a server emitting
+informational responses despite the probe's HTTP/1.0 request. The client now
+reads through them to the final status; 101 protocol switching remains unready.
+This is not a claim that compliant HTTP/1.0 servers normally send Early Hints.
+
+With Linux Docker reachable and `busybox:1.36` already available locally, run
+the committed integration test explicitly from the repository root:
+
+```sh
+pnpm exec vitest run --config .temp_files/audit_continuous_20261109/F1044.integration.config.ts --reporter=verbose
+```
+
+The normal server suite excludes integration tests. This test creates only
+UUID-named internal networks and fixture containers, publishes no host ports,
+and removes its owned resources. Its fixture uses `--pull=never`; preload the
+image intentionally before running on a fresh Mac. The independent native
+verifier exercised seven final-status/error cases three times; 26 neighboring
+unit tests passed. This does not exercise Electron or macOS Keychain.

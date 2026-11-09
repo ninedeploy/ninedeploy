@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ × .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints 18027ms
+   → spawnSync docker ETIMEDOUT
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints
+Error: spawnSync docker ETIMEDOUT
+ ❯ docker .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts:5:39
+      3| import { expect, it } from 'vitest';
+      4| import { probeContainer } from '../../apps/server/src/lib/containerPro…
+      5| const docker = (...args: string[]) => execFileSync('docker', args, { e…
+       |                                       ^
+      6| it('accepts a final healthy HTTP response after informational early hi…
+      7|   const suffix = randomUUID();
+ ❯ .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts:15:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -4039, code: 'ETIMEDOUT', syscall: 'spawnSync docker', path: 'docker', spawnargs: [ 'exec', 'nd-audit-http-768b319a-38a7-425d-8ca7-255fcfbb10ec', 'sh', '-c', 'while ! grep -q ":1F90 .* 0A " /proc/net/tcp; do :; done; printf READY' ], error: { stack: 'Error: spawnSync docker ETIMEDOUT
+    at Object.spawnSync (node:internal/child_process:1175:20)
+    at spawnSync (node:child_process:976:24)
+    at execFileSync (node:child_process:1019:15)
+    at docker (D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts:5:39)
+    at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts:15:12
+    at file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)', message: 'spawnSync docker ETIMEDOUT', errno: -4039, code: 'ETIMEDOUT', syscall: 'spawnSync docker', path: 'docker', spawnargs: [ 'exec', 'nd-audit-http-768b319a-38a7-425d-8ca7-255fcfbb10ec', 'sh', '-c', 'while ! grep -q ":1F90 .* 0A " /proc/net/tcp; do :; done; printf READY' ], error: [Circular], status: null, signal: 'SIGTERM', output: [ null, '', '' ], pid: 178240, stdout: '', stderr: '', constructor: 'Function<Error>', name: 'Error', toString: 'Function<toString>', stacks: [ { method: 'docker', file: 'D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts', line: 5, column: 39 }, { method: '', file: 'D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts', line: 15, column: 12 } ] }, status: null, signal: 'SIGTERM', output: [ null, '', '' ], pid: 178240, stdout: '', stderr: '' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  18:30:51
+   Duration  18.40s (tests 100%)

@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | apps/server/test/integration/containerProbeHttp.test.ts > accepts a final healthy HTTP response after informational early hints
+CONTROL EXPECTED: plain 200 ready | ACTUAL: { ready: true, protocol: 'http', status: 200 }
+
+stdout | apps/server/test/integration/containerProbeHttp.test.ts > accepts a final healthy HTTP response after informational early hints
+EXPECTED: final 200 after 103 is ready | ACTUAL: { ready: true, protocol: 'http', status: 200 }
+PROBLEM NOT REPRODUCED
+
+ ✓ apps/server/test/integration/containerProbeHttp.test.ts > accepts a final healthy HTTP response after informational early hints 8302ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:36:21
+   Duration  8.74s (tests 99%)

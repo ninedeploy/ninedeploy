@@ -13,7 +13,9 @@ const PROBE_IMAGE = 'busybox:1.36';
 // listeners cannot receive proxy traffic and must not pass routed readiness.
 // This reads interface metadata; it sends no discovery traffic.
 const PROBE_ADDRESS = String.raw`address="$(ip -4 addr show | awk '$1 == "inet" && $2 !~ /^127\./ {split($2,a,"/"); print a[1]; exit}')"; [ -n "$address" ] || exit 1; `;
-const HTTP_PROBE = String.raw`exec nc -w 3 "$address" "$2" -e sh -c 'printf "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" "$1"; IFS= read -r -t 3 status && printf "%s\n" "$status" >&2' probe "$1"`;
+// Drain informational blocks before selecting the final response; 101 switches
+// protocols and cannot establish ordinary HTTP readiness.
+const HTTP_PROBE = String.raw`exec nc -w 3 "$address" "$2" -e sh -c 'printf "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" "$1"; cr="$(printf "\r")"; while IFS= read -r -t 3 status; do case "$status" in HTTP/1.[01]\ 101*) printf "%s\n" "$status" >&2; exit 0;; HTTP/1.[01]\ 1[0-9][0-9]*) while IFS= read -r -t 3 header && [ "$header" != "$cr" ] && [ -n "$header" ]; do :; done;; *) printf "%s\n" "$status" >&2; exit 0;; esac; done; exit 1' probe "$1"`;
 
 /** A fixed, bounded probe inside a workload network namespace. */
 export async function probeContainer(params: Params, onLine: (line: string) => void, options: { timeoutMs?: number; address?: string } = {}): Promise<number> {

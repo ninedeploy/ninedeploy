@@ -1,0 +1,45 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints
+CONTROL EXPECTED: plain 200 ready | ACTUAL: { ready: true, protocol: 'http', status: 200 }
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints
+EXPECTED: final 200 after 103 is ready | ACTUAL: { ready: false, protocol: 'http', status: 103 }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints 5939ms
+   → expected { Object (ready, protocol, ...) } to match object { ready: true, status: 200 }
+(1 matching property omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts > accepts a final healthy HTTP response after informational early hints
+AssertionError: expected { Object (ready, protocol, ...) } to match object { ready: true, status: 200 }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ready": true,
+-   "status": 200,
++   "ready": false,
++   "status": 103,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1044_probe_early_hints.test.ts:27:19
+     25|     console.log('EXPECTED: final 200 after 103 is ready | ACTUAL:', hi…
+     26|     console.log(hints.ready && hints.status === 200 ? 'PROBLEM NOT REP…
+     27|     expect(hints).toMatchObject({ ready: true, status: 200 });
+       |                   ^
+     28|   } finally {
+     29|     if (ownsContainer) docker('rm', '-f', container);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  18:31:32
+   Duration  6.82s (tests 99%)
