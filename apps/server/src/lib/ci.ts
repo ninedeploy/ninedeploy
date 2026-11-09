@@ -178,16 +178,17 @@ export async function approveJob(db: DB, jobId: number, userId: number): Promise
 export async function cancelJob(db: DB, jobId: number, userId: number | null): Promise<boolean> {
   const job = await db.query.ciJobs.findFirst({ where: eq(ciJobs.id, jobId) });
   if (!job || !['awaiting_approval', 'queued', 'running'].includes(job.status)) return false;
-  const r = await db
+  const [cancelled] = await db
     .update(ciJobs)
     .set({ status: 'cancelled', cancelledBy: userId, finishedAt: new Date(), error: 'Cancelled' })
-    .where(and(eq(ciJobs.id, jobId), inArray(ciJobs.status, ['awaiting_approval', 'queued', 'running'])));
-  if (affected(r) !== 1) return false;
-  if (job.currentAttemptId) {
+    .where(and(eq(ciJobs.id, jobId), inArray(ciJobs.status, ['awaiting_approval', 'queued', 'running'])))
+    .returning({ currentAttemptId: ciJobs.currentAttemptId });
+  if (!cancelled) return false;
+  if (cancelled.currentAttemptId) {
     await db
       .update(ciAttempts)
       .set({ status: 'cancelled', finishedAt: new Date(), error: 'Cancelled' })
-      .where(and(eq(ciAttempts.id, job.currentAttemptId), eq(ciAttempts.status, 'running')));
+      .where(and(eq(ciAttempts.id, cancelled.currentAttemptId), eq(ciAttempts.status, 'running')));
   }
   return true;
 }
@@ -286,7 +287,14 @@ export async function claimJob(
       .values({ jobId: job.id, runnerId: runner.id, number, leaseHash: hashToken(leaseToken), leaseExpiresAt: now + LEASE_MS })
       .returning();
     if (!attempt) throw new Error('Could not record the attempt');
-    await db.update(ciJobs).set({ currentAttemptId: attempt.id }).where(eq(ciJobs.id, job.id));
+    const assigned = await db.update(ciJobs).set({ currentAttemptId: attempt.id }).where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running')));
+    if (affected(assigned) !== 1) {
+      // Cancellation may win while the attempt insert is suspended. Retire
+      // this unassigned attempt so it neither runs nor consumes capacity.
+      await db.update(ciAttempts).set({ status: 'cancelled', finishedAt: new Date(), error: 'The job no longer accepts this attempt' })
+        .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running')));
+      return null;
+    }
     const service = await db.query.services.findFirst({ where: (s, { eq: e }) => e(s.id, job.serviceId) });
     return {
       attemptId: attempt.id,

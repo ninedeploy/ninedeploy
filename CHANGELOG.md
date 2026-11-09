@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CI cancellation closes the attempt current at cancellation time, and claims that lose assignment to cancellation retire their attempt instead of returning cancelled work or retaining runner capacity (F1061).
 - **Three web panel faults the first browser journeys found.**
   - Every page tried to load Google Fonts, which the panel's own content security policy blocks. Each page load logged a console error, and loading the fonts would have sent every visitor to Google. The import is gone. The panel uses Inter and JetBrains Mono when they are installed, and the system fonts otherwise, which is what it already showed.
   - The sign-in page asked for the project list before anyone was signed in, and got a 401.

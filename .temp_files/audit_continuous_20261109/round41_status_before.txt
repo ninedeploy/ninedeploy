@@ -1,0 +1,12 @@
+ M apps/web/src/index.css
+ M apps/web/src/lib/projects.tsx
+ M apps/web/src/routes/service/index.tsx
+ M apps/web/src/routes/settings/index.tsx
+ M apps/web/test/projects.test.tsx
+ M docs/plans/COMPETITIVE_ROADMAP_2026-11.md
+ M package.json
+ M scripts/README.md
+?? .github/workflows/browser-e2e.yml
+?? apps/server/test/browserE2e.test.ts
+?? e2e/
+?? scripts/smoke-browser-e2e.mjs

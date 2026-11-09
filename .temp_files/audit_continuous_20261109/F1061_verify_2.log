@@ -1,0 +1,44 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > cancellation wins before insert, retires the attempt, and frees capacity
+EXPECTED: cancelled cancelled ACTUAL: cancelled cancelled FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > cancellation wins before insert, retires the attempt, and frees capacity 181ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > cancellation wins after insert, retires the attempt, and frees capacity
+EXPECTED: cancelled cancelled ACTUAL: cancelled cancelled FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > cancellation wins after insert, retires the attempt, and frees capacity 181ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > cancellation wins before assignment, retires the attempt, and frees capacity
+EXPECTED: cancelled cancelled ACTUAL: cancelled cancelled FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > cancellation wins before assignment, retires the attempt, and frees capacity 156ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > a claim completed before the cancellation update is the attempt cancelled
+EXPECTED: cancelled cancelled ACTUAL: cancelled cancelled FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > a claim completed before the cancellation update is the attempt cancelled 160ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > an already cancelled queued job produces no attempt
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > an already cancelled queued job produces no attempt 158ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > terminal succeeded stays terminal and cancellation returns false
+EXPECTED: succeeded succeeded ACTUAL: succeeded succeeded FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > terminal succeeded stays terminal and cancellation returns false 166ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > terminal failed stays terminal and cancellation returns false
+EXPECTED: failed failed ACTUAL: failed failed FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > terminal failed stays terminal and cancellation returns false 178ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > concurrent cancellations have one winner and stop the current runner
+EXPECTED: cancelled cancelled ACTUAL: cancelled cancelled FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > concurrent cancellations have one winner and stop the current runner 187ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > ordinary accepted work retains its live lease and capacity until cancellation
+EXPECTED: running running ACTUAL: running running FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1061_ciClaim.test.ts > ordinary accepted work retains its live lease and capacity until cancellation 238ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  22:06:03
+   Duration  3.30s (tests 76%, import 19%, transform 5%)

@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 40
+### Further audit checkpoints through round 41
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -300,6 +300,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1058 | Working recurring jobs retain their deadlines while schedule-list refreshes wait or fail | 65 |
 | F1059 | Scheduled deploy admission counts CI-waiting rows and atomically reserves shared queue capacity | 72 |
 | F1060 | CI expiry sweeps preserve renewed leases and report only attempts actually transitioned to lost | 77 |
+| F1061 | Concurrent CI claim/cancellation closes the current attempt and retires an unassigned losing claim | 80 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -319,6 +320,11 @@ times. A heartbeat or restart extension that wins before the sweep update
 preserves the running attempt; forced revocation still requeues it. These are
 real migrated SQLite tests, without a live runner/container. Server static
 checks used the same child-process `GOMAXPROCS=4` limit.
+
+Round 41 passed nine independent claim/cancellation cases three times and
+80 neighboring CI tests. Explicit SQLite client barriers cover cancellation
+before/after the attempt insert and immediately before assignment; the next
+job can claim the freed runner capacity. No live CI container was executed.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed
