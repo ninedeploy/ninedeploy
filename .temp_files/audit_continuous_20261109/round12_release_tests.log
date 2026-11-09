@@ -1,0 +1,8 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+
+ Test Files  3 passed (3)
+      Tests  30 passed (30)
+   Start at  18:16:03
+   Duration  6.07s (tests 67%, import 24%, transform 9%)

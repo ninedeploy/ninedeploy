@@ -1,0 +1,126 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/s3.test.ts > s3Request signing > sends a SigV4-signed path-style request 3ms
+ ✓ test/lib/s3.test.ts > s3Request signing > uri-encodes keys with special characters 1ms
+ ✓ test/lib/s3.test.ts > s3Request signing > percent-encodes reserved characters (!'()*) in keys 0ms
+ ✓ test/lib/s3.test.ts > s3Put/Get/Delete/Test > s3Put throws with the body on failure 1ms
+ ✓ test/lib/s3.test.ts > s3Put/Get/Delete/Test > s3Get returns bytes 0ms
+ ✓ test/lib/s3.test.ts > s3Put/Get/Delete/Test > s3Get throws on failure 0ms
+ ✓ test/lib/s3.test.ts > s3Put/Get/Delete/Test > s3Delete tolerates 404 but not 403 1ms
+ ✓ test/lib/s3.test.ts > s3Put/Get/Delete/Test > s3Test PUTs and DELETEs a marker 1ms
+ ✓ test/lib/s3.test.ts > s3Put/Get/Delete/Test > sends Buffer bodies as bytes and string bodies as strings 0ms
+ ✓ test/lib/s3.test.ts > s3Put/Get/Delete/Test > sends no body for GET/DELETE/HEAD 0ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3PutFile single-PUTs a small file below the multipart threshold 3ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3PutFile runs a bounded multipart upload and completes with the collected ETags 15ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3PutFile aborts the multipart upload when a part fails 3ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3PutFile surfaces an initiate failure 1ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3PutFile surfaces a malformed initiate response (no UploadId) 1ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3PutFile surfaces a failed complete call 3ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3PutFile rejects and aborts when complete returns 200 with an <Error> body (r312) 2ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3GetToFile pipes the response body to disk without buffering 7ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > r188: a slow download that keeps making progress is not cut off 279ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > r188: a download that stops sending bytes is aborted 78ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > F848: a stream that fails mid-body leaves no partial file; a 404 keeps an existing one 5ms
+ ✓ test/lib/s3.test.ts > s3PutFile / s3GetToFile (streamed transfers) > s3GetToFile throws on failure and handles an empty body 2ms
+ ✓ test/lib/s3.test.ts > s3List (panel self-backup listing) > signs a ListObjectsV2 query on the bucket, follows continuation tokens and decodes keys 4ms
+ ✓ test/lib/s3.test.ts > s3List (panel self-backup listing) > throws with the response body when the listing is refused 0ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > GET /:id/storage returns the database size 115ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > GET /:id/backups returns every backup for the database (newest first) 5ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups inserts a `running` row, runs the engine, then marks `completed` 10ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > gives two backups of one database different paths in the same millisecond 8ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups marks the row `failed` and surfaces a 400 on engine error 4ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups/:bid/restore 404s when the backup is for a different database 3ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups/:bid/restore uses the local path when the file exists 5ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups/:bid/restore fetches a remote temp when the local path is missing 5ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups/:bid/restore 404s when the remote-only backup has no remoteKey 3ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups/:bid/restore 400s when restoreDatabase throws 4ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups/drill 400s when the body is missing backupId 8ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups/drill runs the engine and returns the drill result 18ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > POST /:id/backups/drill 400s when runBackupDrill throws 3ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > r693: POST /:id/backups/drill 404s for another database's backup, before the drill runs 3ms
+ ✓ test/modules/backups.test.ts > database backup routes (per-database) > GET /:id/drills lists the most recent 25 runs 2ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > answers 202 once the running row exists, then audits the verdict without the probe 65ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > refuses a restore probe to a member — it reads the backup like a download does 6ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > rejects an array as the restore probe before any work 2ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > rejects a string as the restore probe before any work 2ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > rejects an extra key as the restore probe before any work 2ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > rejects an empty query as the restore probe before any work 1ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > rejects a non-string expected value as the restore probe before any work 1ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > rejects an oversized query as the restore probe before any work 2ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > rejects an oversized expected value as the restore probe before any work 2ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > runs one verification at a time and frees the slot when it ends 60ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > reports a refusal before admission as 400 and frees the slot 4ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > logs, rather than crashes on, a run that fails after admission 3ms
+ ✓ test/modules/backups.test.ts > R3: asynchronous restore verification through the drill route > GET /:id/drills/:drillId returns one drill of this database, 404 otherwise 3ms
+ ✓ test/modules/backups.test.ts > global backup routes > GET / lists every backup and adds the parent database name 2ms
+ ✓ test/modules/backups.test.ts > global backup routes > GET / handles a backup with no associated database (volume scope) 1ms
+ ✓ test/modules/backups.test.ts > global backup routes > DELETE /:bid unlinks the local file + remote object then removes the row 1ms
+ ✓ test/modules/backups.test.ts > global backup routes > GET /:bid/download 404s when the file is missing on disk 1ms
+ ✓ test/modules/backups.test.ts > global backup routes > GET /:bid/download streams the plaintext dump for a db-scope backup 1ms
+ ✓ test/modules/backups.test.ts > global backup routes > GET /:bid/download returns the raw tar.gz for a volumes-scope backup 7ms
+ ✓ test/modules/backups.test.ts > global backup routes > DELETE /:bid 403s for a non-operator on a volumes-scope backup (operator-only) 2ms
+ ✓ test/modules/backups.test.ts > global backup routes > DELETE /:bid tolerates a missing row (the `if (!row) return` early exit) 1ms
+ ✓ test/backups.test.ts > database backup routes > reports storage size for a database 152ms
+ ✓ test/backups.test.ts > database backup routes > returns 404 for storage on a missing database 9ms
+ ✓ test/backups.test.ts > database backup routes > lists backups for a database 7ms
+ ✓ test/backups.test.ts > database backup routes > creates a backup and marks it completed 32ms
+ ✓ test/backups.test.ts > database backup routes > records size zero when the dump file is missing 8ms
+ ✓ test/backups.test.ts > database backup routes > marks the backup failed when the dump errors 11ms
+ ✓ test/backups.test.ts > database backup routes > formats non-Error dump failures 7ms
+ ✓ test/backups.test.ts > database backup routes > returns 404 when backing up a missing database 5ms
+ ✓ test/backups.test.ts > database backup routes > restores a backup 7ms
+ ✓ test/backups.test.ts > database backup routes > fetches a remote-only backup before restoring 7ms
+ ✓ test/backups.test.ts > database backup routes > r647: concurrent restores of one remote backup fetch to distinct temp files 5ms
+ ✓ test/backups.test.ts > database backup routes > 404s for a remote-less backup whose local file is gone 5ms
+ ✓ test/backups.test.ts > database backup routes > uploads completed backups off-site 5ms
+ ✓ test/backups.test.ts > database backup routes > returns 404 when the backup row is missing 4ms
+ ✓ test/backups.test.ts > database backup routes > returns 404 when the backup file is missing 5ms
+ ✓ test/backups.test.ts > database backup routes > returns 400 when the restore fails 5ms
+ ✓ test/backups.test.ts > database backup routes > formats non-Error restore failures 6ms
+ ✓ test/backups.test.ts > backup routes > lists all backups with database names 12ms
+ ✓ test/backups.test.ts > backup routes > deletes a backup and its file 6ms
+ ✓ test/backups.test.ts > backup routes > F844: keeps the backup row and local dump when the remote delete fails 4ms
+ ✓ test/backups.test.ts > backup routes > F844: a row with no known destination keeps the best-effort remote delete 4ms
+ ✓ test/backups.test.ts > backup routes > deletes a backup row even when the file is gone 4ms
+ ✓ test/backups.test.ts > backup routes > deletes a backup row when the row is missing 3ms
+ ✓ test/backups.test.ts > backup routes > downloads a backup file 7ms
+ ✓ test/backups.test.ts > backup routes > returns 404 when downloading a missing backup 4ms
+ ✓ test/backups.test.ts > backup routes > returns 404 when the backup file is missing 6ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > deletes the remote object, then the row, for every remote row past KEEP_PER_DB 81ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > keeps the row when the remote delete fails, and when the destination is unknown 5ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > caps the remote deletes per tick so an upgrade backlog is worked down over several ticks 16ms
+ ✓ test/lib/backupRemote.test.ts > activeDestination > resolves the first active destination with the decrypted secret 2ms
+ ✓ test/lib/backupRemote.test.ts > activeDestination > returns null when none are active 0ms
+ ✓ test/lib/backupRemote.test.ts > activeDestination > returns null when the table query fails (pre-migration) 0ms
+ ✓ test/lib/backupRemote.test.ts > uploadBackup > uploads the encrypted envelope from disk (streamed) and stamps remoteKey + destination 5ms
+ ✓ test/lib/backupRemote.test.ts > uploadBackup > skips silently when no destination is configured 3ms
+ ✓ test/lib/backupRemote.test.ts > uploadBackup > never throws when the upload fails 2ms
+ ✓ test/lib/backupRemote.test.ts > uploadBackup > F288: never throws when the destination secret cannot be decrypted 1ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup / deleteRemoteBackup > streams the remote object straight to a local file 4ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup / deleteRemoteBackup > throws when no destination is configured for a fetch 2ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup / deleteRemoteBackup > resolves the RECORDED destination, not the active one 5ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup / deleteRemoteBackup > falls back to the active destination for legacy rows and deleted destinations 6ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup / deleteRemoteBackup > deletes remote objects and swallows failures 1ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup / deleteRemoteBackup > F289: removes a partial download when the GET fails mid-stream 1ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup / deleteRemoteBackup > refuses a fetch when no remote key is recorded 1ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup / deleteRemoteBackup > skips the remote delete when no destination is configured 1ms
+ ✓ test/lib/backupRemote.test.ts > r542: deleteRemoteBackupForRetention > deletes through the RECORDED destination and reports it 1ms
+ ✓ test/lib/backupRemote.test.ts > r542: deleteRemoteBackupForRetention > never falls back to the active destination (a delete there would "succeed" on the wrong bucket) 1ms
+ ✓ test/lib/backupRemote.test.ts > r542: deleteRemoteBackupForRetention > surfaces an S3 failure instead of swallowing it, so the row is kept 0ms
+ ✓ test/lib/backupRemote.test.ts > r542: deleteRemoteBackupForRetention > treats a row without a remote key as nothing to delete 0ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup refuses an unsealed object (r645) > refuses a plaintext database dump and removes it from disk 5ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup refuses an unsealed object (r645) > refuses a plaintext object for a volume snapshot that was uploaded sealed (destination stamped) 4ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup refuses an unsealed object (r645) > accepts both envelopes for any row 7ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup refuses an unsealed object (r645) > keeps restoring a legacy plaintext volume snapshot taken before this server stamped destinations 9ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup refuses an unsealed object (r645) > refuses a plaintext volume object newer than the first stamped upload (its destination was deleted) 4ms
+ ✓ test/lib/backupRemote.test.ts > fetchRemoteBackup refuses an unsealed object (r645) > fails closed for a ref that carries no provenance 4ms
+
+ Test Files  5 passed (5)
+      Tests  114 passed (114)
+   Start at  17:46:42
+   Duration  6.96s (import 63%, tests 28%, transform 9%)
+
+     Import  140 modules were evaluated 241 times · 2.95s total, 63% of tracked time
+             ~1.24s faster with isolate: false — shared modules are evaluated once per worker instead of once per file
+             learn more: https://vitest.dev/guide/improving-performance#test-isolation

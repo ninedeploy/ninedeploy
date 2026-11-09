@@ -1,0 +1,82 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/fileCommandInput.test.ts > streams exact binary bytes into a real child without a shell 1960ms
+ ✓ test/lib/fileCommandInput.test.ts > kills and drains a child when input cannot be read 273ms
+ ✓ test/lib/fileCommandInput.test.ts > bounds a child that never drains stdin 1019ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > restores plain SQL, queries known data, confirms removal and never changes the source 15ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > uses the archive restore tool for custom dumps with strict error handling 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete image execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete create execution 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete copy execution 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete ready execution 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete timeout execution 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete output execution 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete cleanup execution 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete retained execution 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails restore without exposing restored content 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails query without exposing restored content 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails mismatch without exposing restored content 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > attempts owned cleanup even after a lost create response 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > rejects invalid probes before any Docker work 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses malformed image identity before creating a helper 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > refuses a dump too large for the scratch before any helper or copy exists 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > reports an out-of-space restore as unverifiable, without keeping the engine message 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > reports a cgroup OOM kill during restore as unverifiable 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the helper state cannot be read 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > still fails a genuine restore error on a healthy helper 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the helper stopped during the restore 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the client lost its server, even before Docker reports the helper stopped 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > restores a mysqldump into a hardened, networkless MySQL helper and probes the managed database 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > uses the MariaDB client, admin tool, socket directory and empty-root variable 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > never reads a MySQL dump as a PostgreSQL custom archive 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > fails a genuine restore error or a probe mismatch on a healthy helper without exposing either 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > reports a full scratch ("The table … is full") as capacity, without the table name 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > treats a MariaDB server that aborted mid-restore (lost connection) as unverifiable 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > names capacity when the aborted MariaDB helper logged a full tmpfs, keeping no log text 8ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > stays unverifiable without a capacity claim when the stopped helper log cannot be read 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > does not read logs when a healthy helper reports a genuine restore error 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > is unverifiable when the MySQL helper never accepts TCP connections 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > refuses an engine without an adapter before any Docker work 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > streams the archive straight into mongorestore in a hardened helper, with the whole scratch for data 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > fails a corrupt archive on a healthy helper, and a probe mismatch, without exposing either 8ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > is unverifiable when the streamed restore ends with a stopped helper 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > is unverifiable when mongod never answers the readiness ping 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > crashed restore helpers are swept > removes only labelled helpers with the generated name that outlived the age floor 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > crashed restore helpers are swept > keeps sweeping after one container vanishes mid-scan, and ignores non-id lines 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > imports the definitions, waits until every named object exists, then runs the list probe 8ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > compares listed rows as a set: rabbitmqctl lists them in no fixed order 14ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > fails a definitions file RabbitMQ cannot import, without the engine message 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > is unverifiable when the imported definitions never all appear 9ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > bounds the whole settle wait by its deadline, however many vhosts the file names 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "eval rabbit:stop()" before any Docker work: it is not one list command 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "list_queues; reboot" before any Docker work: it is not one list command 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "LIST_QUEUES name" before any Docker work: it is not one list command 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "status" before any Docker work: it is not one list command 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "list_queues  name" before any Docker work: it is not one list command 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > copies the dump into a gated helper, releases the import, waits for health and GETs the probe path 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > fails a dump Meilisearch refused to import, keeping no log text 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > is unverifiable when Meilisearch exits during the import without naming the dump 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "GET /indexes" as a probe before any Docker work: it is not an API path 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "indexes/movies" as a probe before any Docker work: it is not an API path 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "/indexes/movies documents" as a probe before any Docker work: it is not an API path 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "" as a probe before any Docker work: it is not an API path 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > fails a probe mismatch without exposing the response 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > copies the BACKUP archive under the allowed backups path, restores ALL and probes the managed database 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > fails an archive ClickHouse cannot open on a healthy helper, without the engine message 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > reports NOT_ENOUGH_SPACE during RESTORE as capacity 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > is unverifiable when the server never answers 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > copies the RDB into a gated, hardened helper, releases the server, waits for the load and probes on stdin 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs valkey with its own user, server and client 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs keydb with its own user, server and client 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a backup whose RDB the engine refused while loading, keeping no log text 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > names capacity when the engine ran out of memory loading the RDB, even beside a short-read line 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > is unverifiable when the server exits while loading without saying the file was bad 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs Dragonfly as dfly with the managed snapshot flags and probes it with redis-cli 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a Dragonfly backup whose RDB it refused ("Rdb load failed") 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a probe mismatch on a loaded dataset without exposing it 6ms
+
+ Test Files  2 passed (2)
+      Tests  74 passed (74)
+   Start at  17:42:32
+   Duration  4.21s (tests 98%, import 1%, transform 1%)

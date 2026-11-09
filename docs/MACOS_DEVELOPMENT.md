@@ -220,3 +220,37 @@ the normal suite. Preserve unrelated edits. Do not commit runtime data or
 credentials. The `.temp_files/` directory is ignored by default; any explicitly
 committed handoff evidence is selected individually, not the entire historical
 scratch directory.
+
+### Continued audit evidence through November 9, round 14
+
+The following additional fixes were committed and pushed after the initial
+Mac handoff. Counts are per bounded scope run, not unique aggregate coverage.
+Each fix includes a before-proof, three independent verifier runs, a permanent
+regression and successful server typecheck/build plus scoped lint.
+
+| Finding | Change | Commit | Scope tests |
+| --- | --- | --- | --- |
+| F1037 | Recheck replica retention policy before each delete | `54f9e936` | 48 |
+| F1038 | Reject truncated encrypted envelopes before opening output | `ee5b225a` | 186 |
+| F1039 | Fill short S3 multipart reads; abort premature EOF | `b0432ce8` | 152 |
+| F1040 | Cancel unused S3 cache-miss response bodies | `3a8e9e8d` | 86 |
+| F1041 | Resolve Compose workspaces under a filesystem root | `8c6d71ab` | 126 |
+| F1042 | Restore absent paths during failed system-import rollback | `9ceaf094` | 27 |
+| F1043 | Give concurrent source uploads separate pending files | `1881b72f` | 35 |
+
+F1039's first six-file scope run failed an existing real-timer slow-download
+test; an unchanged repeat passed all 152 tests. Both logs are retained, and
+this is not claimed to be a demonstrated failure on the base revision.
+
+Additional passes produced no new confirmed defect: file-command input (74
+tests), remote backup selection (114), cross-process locks (9), release records
+(30), and panel upstream reachability/sleep callers (41). Source was not changed
+for these passes. The lock implementation's documented residual stale-takeover
+window is not claimed resolved.
+
+Current-round evidence is selected under
+[`.temp_files/audit_continuous_20261109/`](../.temp_files/audit_continuous_20261109/).
+Ledger files record exact commands, failed attempts and environment boundaries.
+Use `git log` to identify any later rounds before resuming. These focused
+Windows checks do not replace the still-required full release gate, native Mac
+DMG/Keychain checks, Linux installer checks or live Docker/provider acceptance.
