@@ -1,0 +1,21 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent backup admission recovers after success 348ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent recover admission recovers after success 306ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent disable admission recovers after success 307ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent backup admission recovers after prune-error 293ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent recover admission recovers after prune-error 334ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent disable admission recovers after prune-error 290ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent backup admission recovers after log-error 288ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent recover admission recovers after log-error 369ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > independent disable admission recovers after log-error 367ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1054_pitrPrune.test.ts > other archives and retention-only settings remain usable during pruning 388ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  20:24:53
+   Duration  4.36s (tests 80%, import 16%, transform 4%)

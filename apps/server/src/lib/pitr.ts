@@ -44,11 +44,14 @@ export const PITR_MAX_RETENTION_DAYS = 35;
 const baseBackupsRunning = new Set<number>();
 /** Source databases with a recovery running in this process (their archive must not be pruned). */
 const recoveriesRunning = new Set<number>();
+/** Archives with destructive retention in flight in this process. */
+const prunesRunning = new Set<number>();
 /** One recovery at a time on the panel host: a replay is CPU, memory and disk heavy. */
 export const MAX_PITR_RECOVERIES = 1;
 
 export const pitrBusy = {
   baseBackup: (id: number) => baseBackupsRunning.has(id),
+  prune: (id: number) => prunesRunning.has(id),
   recovery: (id: number) => recoveriesRunning.has(id),
   recoveries: () => recoveriesRunning.size,
 };
@@ -159,8 +162,8 @@ export async function setPitr(
     return reload(db, d.id);
   }
   // Disabling: the archive goes with it.
-  if (recoveriesRunning.has(d.id) || baseBackupsRunning.has(d.id)) {
-    throw new HttpError(409, 'pitr_busy', 'A recovery or a base backup is using the WAL archive; try again when it finishes.');
+  if (recoveriesRunning.has(d.id) || baseBackupsRunning.has(d.id) || prunesRunning.has(d.id)) {
+    throw new HttpError(409, 'pitr_busy', 'A recovery, base backup or retention pass is using the WAL archive; try again when it finishes.');
   }
   await db.update(databases).set({ pitrEnabled: false, pitrBaseBackupAt: null, pitrLastError: null, pitrRetentionDays: retentionDays }).where(eq(databases.id, d.id));
   const off = await reload(db, d.id);
@@ -179,6 +182,7 @@ export async function setPitr(
 
 /** Take one base backup now; the row records the outcome. 409 while one runs. */
 export async function runPitrBaseBackup(db: DB, d: Database, actor: number | null, log: (line: string) => void, deps: PitrDeps = pitrDeps): Promise<string> {
+  if (prunesRunning.has(d.id)) throw new HttpError(409, 'pitr_busy', 'WAL archive retention is running; try again when it finishes.');
   if (baseBackupsRunning.has(d.id)) throw new HttpError(409, 'pitr_base_backup_running', 'A base backup of this database is already running.');
   baseBackupsRunning.add(d.id);
   try {
@@ -271,6 +275,7 @@ export async function startPitrRecovery(
   if (unavailable) throw unprocessable(unavailable, 'pitr_unavailable');
   if (!source.pitrEnabled) throw unprocessable('Point-in-time recovery is not enabled for this database.', 'pitr_disabled');
   if (input.targetTime && input.targetTime.getTime() > Date.now()) throw unprocessable('The target time is in the future.', 'pitr_target_future');
+  if (prunesRunning.has(source.id)) throw new HttpError(409, 'pitr_busy', 'WAL archive retention is running; try again when it finishes.');
   if (recoveriesRunning.size >= MAX_PITR_RECOVERIES) {
     throw new HttpError(409, 'pitr_recovery_busy', 'Another point-in-time recovery is running on this panel. Try again when it finishes.');
   }
@@ -399,10 +404,17 @@ export async function pitrMaintenance(db: DB, d: Database, log: (line: string) =
   if (!baseBackupsRunning.has(d.id) && (!d.pitrBaseBackupAt || now - d.pitrBaseBackupAt.getTime() >= PITR_BASE_BACKUP_INTERVAL_MS)) {
     await runPitrBaseBackup(db, d, null, log, deps).catch(() => undefined);
   }
-  if (!recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id)) {
+  if (!recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id) && !prunesRunning.has(d.id)) {
     const current = await db.query.databases.findFirst({ where: eq(databases.id, d.id) });
-    if (current?.pitrEnabled && !pitrUnavailable(current) && current.status === 'running' && !recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id)) {
-      await deps.prune(current, current.pitrRetentionDays, log).catch((err: unknown) => log(`WAL archive retention failed for ${d.name}: ${err instanceof Error ? err.message : String(err)}`));
+    if (current?.pitrEnabled && !pitrUnavailable(current) && current.status === 'running' && !recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id) && !prunesRunning.has(d.id)) {
+      prunesRunning.add(d.id);
+      try {
+        await deps.prune(current, current.pitrRetentionDays, log);
+      } catch (err) {
+        log(`WAL archive retention failed for ${d.name}: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        prunesRunning.delete(d.id);
+      }
     }
   }
   const fresh = await db.query.databases.findFirst({ where: eq(databases.id, d.id) });

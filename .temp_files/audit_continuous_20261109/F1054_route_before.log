@@ -1,0 +1,37 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ↓ test/modules/pitr.test.ts > reading > anyone who sees the database reads the status and the history; others get 404
+ × test/modules/pitr.test.ts > changing > refuses a base backup while archive retention is active 485ms
+   → expected 202 to be 409 // Object.is equality
+ ↓ test/modules/pitr.test.ts > changing > takes database admin, a strict body, and returns the new status
+ ↓ test/modules/pitr.test.ts > changing > admits a base backup with 202 only when PITR is on and the database runs
+ ↓ test/modules/pitr.test.ts > recovering > admits a recovery into a new database with 202, to a time or to the latest point
+ ↓ test/modules/pitr.test.ts > recovering > adds a database to a project outside every workspace only for an operator
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/modules/pitr.test.ts > changing > refuses a base backup while archive retention is active
+AssertionError: expected 202 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 202
+
+ ❯ test/modules/pitr.test.ts:126:33
+    124|       await waiting;
+    125|       const result = await call('POST', `/databases/${ids.db}/pitr/bas…
+    126|       expect(result.statusCode).toBe(409);
+       |                                 ^
+    127|       expect(result.json()).toMatchObject({ error: { code: 'pitr_busy'…
+    128|       expect(lib.baseBackups).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 skipped (6)
+   Start at  20:22:59
+   Duration  1.54s (import 48%, tests 35%, transform 17%)

@@ -1,0 +1,15 @@
+cwd: repository root
+$ pnpm.cmd exec biome lint apps/server/src/lib/pitr.ts
+Checked 1 file in 21ms. No fixes applied.
+exit 0
+$ pnpm.cmd exec biome lint apps/server/src/modules/pitr.ts
+Checked 1 file in 14ms. No fixes applied.
+exit 0
+$ pnpm.cmd exec biome lint apps/server/test/lib/pitr.test.ts
+Checked 1 file in 24ms. No fixes applied.
+exit 0
+cwd: apps/server
+$ pnpm.cmd exec biome lint test/modules/pitr.test.ts
+Checked 1 file in 13ms. No fixes applied.
+exit 0
+Captured from successful tool outputs after grouped command process launches failed before execution.

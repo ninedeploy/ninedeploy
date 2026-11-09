@@ -78,6 +78,7 @@ export const pitrRoutes: FastifyPluginAsync = async (app) => {
     if (unavailable) throw unprocessable(unavailable, 'pitr_unavailable');
     if (!d.pitrEnabled) throw unprocessable('Point-in-time recovery is not enabled for this database.', 'pitr_disabled');
     if (d.status !== 'running') throw conflict('The database must be running to take a base backup');
+    if (pitrBusy.prune(d.id)) throw new HttpError(409, 'pitr_busy', 'WAL archive retention is running; try again when it finishes.');
     if (pitrBusy.baseBackup(d.id)) throw new HttpError(409, 'pitr_base_backup_running', 'A base backup of this database is already running.');
     // The outcome lands on the row (pitr_base_backup_at / pitr_last_error) and in the audit log.
     void runPitrBaseBackup(app.db, d, req.user!.id, log).catch(() => undefined);

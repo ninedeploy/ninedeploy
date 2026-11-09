@@ -109,6 +109,26 @@ describe('reading', () => {
 });
 
 describe('changing', () => {
+  it('refuses a base backup while archive retention is active', async () => {
+    const actual = await vi.importActual<typeof import('../../src/lib/pitr.js')>('../../src/lib/pitr.js');
+    const row = (await db.query.databases.findFirst({ where: (await import('drizzle-orm')).eq(databases.id, ids.db) }))!;
+    const d = { ...row, pitrBaseBackupAt: new Date() };
+    let entered!: () => void; let release!: () => void;
+    const waiting = new Promise<void>((resolve) => { entered = resolve; });
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const pruning = actual.pitrMaintenance(db, d, () => undefined, {
+      ...actual.pitrDeps, archiver: async () => null,
+      prune: async () => { entered(); await blocked; return { removedBases: [] }; },
+    });
+    try {
+      await waiting;
+      const result = await call('POST', `/databases/${ids.db}/pitr/base-backup`, ids.admin);
+      expect(result.statusCode).toBe(409);
+      expect(result.json()).toMatchObject({ error: { code: 'pitr_busy' } });
+      expect(lib.baseBackups).toBe(0);
+    } finally { release(); await pruning; }
+  });
+
   it('takes database admin, a strict body, and returns the new status', async () => {
     expect((await call('PUT', `/databases/${ids.db}/pitr`, ids.viewer, { enabled: false })).statusCode).toBe(403);
     expect((await call('PUT', `/databases/${ids.db}/pitr`, ids.admin, { enabled: 'yes' })).statusCode).toBe(422);

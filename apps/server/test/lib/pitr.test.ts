@@ -321,6 +321,44 @@ describe('a recovery', () => {
 });
 
 describe('the scheduler pass', () => {
+  for (const action of ['base-backup', 'recovery', 'disable'] as const) {
+    it(`refuses ${action} while archive pruning is gated`, async () => {
+      const d = await insertDb({ pitrEnabled: true, pitrBaseBackupAt: new Date() });
+      let entered!: () => void; let release!: () => void;
+      const waiting = new Promise<void>((resolve) => { entered = resolve; });
+      const blocked = new Promise<void>((resolve) => { release = resolve; });
+      const done = settled(); let recoveryAdmitted = false;
+      const deps = fakeDeps({ prune: async () => { entered(); await blocked; return { removedBases: [] }; } });
+      const pruning = pitrMaintenance(db, d, () => undefined, deps);
+      try {
+        await waiting;
+        let error: unknown;
+        try {
+          if (action === 'base-backup') await runPitrBaseBackup(db, d, userId, () => undefined, deps);
+          if (action === 'disable') await setPitr(db, d, { enabled: false }, userId, () => undefined, deps);
+          if (action === 'recovery') {
+            await startPitrRecovery(db, d, { name: 'prune-copy', targetTime: null }, userId, () => undefined, deps, done.resolve);
+            recoveryAdmitted = true;
+          }
+        } catch (err) { error = err; }
+        expect(error).toMatchObject({ statusCode: 409, code: 'pitr_busy' });
+        expect(deps.baseBackup).not.toHaveBeenCalled();
+        expect(deps.recover).not.toHaveBeenCalled();
+        expect(deps.removeArchive).not.toHaveBeenCalled();
+      } finally { release(); await pruning; if (recoveryAdmitted) await done.promise; }
+    });
+  }
+
+  it('control: an existing base backup suppresses pruning', async () => {
+    const d = await insertDb({ pitrEnabled: true, pitrBaseBackupAt: new Date() });
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const deps = fakeDeps({ baseBackup: async () => { await blocked; return 'synthetic'; } });
+    const backup = runPitrBaseBackup(db, d, userId, () => undefined, deps);
+    try { await pitrMaintenance(db, d, () => undefined, deps); expect(deps.prune).not.toHaveBeenCalled(); }
+    finally { release(); await backup; }
+  });
+
   for (const stage of ['archiver', 'baseBackup'] as const) {
     for (const changed of [false, true]) {
       it(`uses persisted retention after gated ${stage} (${changed ? 'changed' : 'control'})`, async () => {
