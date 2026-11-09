@@ -1,0 +1,302 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/portProxyRace.test.ts
+FIX VERIFIED
+
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated inspect and leaves no sidecar 7ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated pull and leaves no sidecar 11ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated host and leaves no sidecar 6ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated start and leaves no sidecar 5ms
+ ✓ test/portProxyRace.test.ts > sync/remove/new-sync preserves the newest requested configuration 9ms
+ ✓ test/portProxyRace.test.ts > different slug sync completes while another slug is held 8ms
+ ✓ test/portProxyRace.test.ts > removing through a no-restricted-mapping sync does not recursively deadlock 5ms
+ ✓ test/portProxyRace.test.ts > image failure releases the queue for remove and a later successful sync 10ms
+ ✓ test/portProxyRace.test.ts > a later sync waits for an earlier gated removal then creates its fresh files 10ms
+ ✓ test/portProxyRace.test.ts > two same-fingerprint syncs keep newest routes without duplicate starts 8ms
+ ✓ test/portProxyRace.test.ts > repeated removes retain absent state 6ms
+ ✓ test/portProxyRace.test.ts > native config-write failure releases admission before cleanup and retry 9ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database false, topology change false and port configured 8362ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database true, topology change false and port configured 8368ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support false, database false, topology change false and port configured 8297ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support false, database true, topology change false and port configured 8307ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database true, topology change true and port configured 687ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database true, topology change alias and port configured 639ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database false, topology change false and port nixpacks 8868ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database false, topology change false and port portless 4267ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > persists deployment authority before the first node operation 221ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not create or clean up a runtime after a successful old pull reply loses authority 257ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not settle a newer owner after an old node reply rejects: new deployment 231ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not settle a newer owner after an old node reply rejects: moved node 243ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replace Stop authority when cancellation wins before node deployment admission 233ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: running 207ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: failed 231ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: superseded 215ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: cancelled 240ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: deploying 239ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: awaiting_ci 219ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: awaiting_approval 211ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > still executes an eligible deployment: queued 224ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > still executes an eligible deployment: building 213ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to running 229ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to failed 218ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to superseded 222ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to deploying 222ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to awaiting_ci 214ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to awaiting_approval 254ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > refuses a completed node deployment before any agent call or log-end notification 228ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > preserves Stop that commits immediately after the queued deployment claim 238ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not restore running after Stop won while the healthcheck was pending 296ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > recorded-image fan-out > runs the recorded image and target env on an extra node without Git ({"primary":null}) 4029ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > recorded-image fan-out > runs the recorded image and target env on an extra node without Git ({"port":"9182","primary":null}) 4028ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > recorded-image fan-out > runs the recorded image and target env on an extra node without Git ({"primary":4}) 8045ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > recorded-image fan-out > keeps the primary and previous target when artifact preparation fails: unsupported agent 7ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > recorded-image fan-out > keeps the primary and previous target when artifact preparation fails: transfer failure 7ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > recorded-image fan-out > keeps the primary and previous target when artifact preparation fails: wrong image 6ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > ships a recorded panel image to a node and runs it without Git credentials or a node build 4036ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > uses the exact image and target runtime env, without checkout or build placement 7ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > fails before changing a runtime when the image disappears while queued 3ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > rechecks queued target changes {"repoUrl":"https://other.test/repo"} 1ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > rechecks queued target changes {"composeContent":"services: {}"} 1ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > rejects mismatched runtime identity and retires only the candidate 4ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > records the source build image and buildpack conventions 6ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > refuses registry archival of Nixpacks secret env before building or changing traffic 4ms
+ ✓ test/pipeline.test.ts > node-built artifact pipeline > records a normal node build only after retaining its verified panel copy 4029ms
+ ✓ test/pipeline.test.ts > node-built artifact pipeline > refuses readiness when an older agent cannot verify the node candidate 5ms
+ ✓ test/pipeline.test.ts > node-built artifact pipeline > does not publish a partial record if caching fails (registry=false) 4031ms
+ ✓ test/pipeline.test.ts > node-built artifact pipeline > does not publish a partial record if caching fails (registry=true) 7ms
+ ✓ test/pipeline.test.ts > node-built artifact pipeline > refuses required archival if the running node image cannot be observed 6ms
+ ✓ test/pipeline.test.ts > 0.16.1 uploaded source > a service with no repository or image builds the uploaded archive the deployment names; git is not touched 6ms
+ ✓ test/pipeline.test.ts > 0.16.1 uploaded source > control: a repository service still clones, and never reads an upload 6ms
+ ✓ test/pipeline.test.ts > 0.16.1 allow-listed port mappings > after the routing flip the port proxy is pointed at the new containers (replicas included) 6ms
+ ✓ test/pipeline.test.ts > 0.16.1 allow-listed port mappings > a proxy failure is a warning, not a failed deploy 12ms
+ ✓ test/pipeline.test.ts > 0.16.1 allow-listed port mappings > control: a service that never had an allow list never touches the proxy 8ms
+ ✓ test/pipeline.test.ts > runDeployment env merging > merges project-scope shared env under service env 5ms
+ ✓ test/pipeline.test.ts > runDeployment env merging > skips the project lookup for project-less services 6ms
+ ✓ test/pipeline.test.ts > runDeployment env merging > snapshots the effective config onto the deployment row 6ms
+ ✓ test/pipeline.test.ts > runDeployment — PR preview credentials (r651) > withholds project secrets, vault refs and the parent database from a preview, and says so in the deploy log 7ms
+ ✓ test/pipeline.test.ts > runDeployment — PR preview credentials (r651) > a production service still receives all of it 5ms
+ ✓ test/pipeline.test.ts > runDeployment — PR preview credentials (r651) > keeps a separate database an admin attached to the preview on purpose 5ms
+ ✓ test/pipeline.test.ts > runDeployment — preview-only env (0.12) > a preview receives the set over its copied values and project values; project secrets stay withheld 5ms
+ ✓ test/pipeline.test.ts > runDeployment — preview-only env (0.12) > a vault reference that reached the set is still dropped for the preview 6ms
+ ✓ test/pipeline.test.ts > runDeployment — preview-only env (0.12) > a production service never reads the set, and its env and snapshot are unchanged 4ms
+ ✓ test/pipeline.test.ts > runDeployment — preview-only env (0.12) > a preview without a parent link (or an empty set) deploys exactly as before 5ms
+ ✓ test/pipeline.test.ts > runDeployment > refuses an unverified required CI policy before checkout or build even when called outside the worker 1ms
+ ✓ test/pipeline.test.ts > runDeployment > refuses CI evidence for a different commit before checkout or build 1ms
+ ✓ test/pipeline.test.ts > runDeployment > treats a deployment row deleted mid-flight as cancelled (stops the zombie pipeline) 3ms
+ ✓ test/pipeline.test.ts > runDeployment > r404: a cancel landing between the claim and the first status write survives 2ms
+ ✓ test/pipeline.test.ts > runDeployment > returns early when the deployment row is missing 1ms
+ ✓ test/pipeline.test.ts > runDeployment > returns early when the service row is missing 0ms
+ ✓ test/pipeline.test.ts > runDeployment > fails the deployment for an unknown service type 2ms
+ ✓ test/pipeline.test.ts > runDeployment > deploys an image-based service without touching git 7ms
+ ✓ test/pipeline.test.ts > runDeployment > records the replica count the runtime actually achieved 5ms
+ ✓ test/pipeline.test.ts > runDeployment > demotes older running rows to superseded when the build goes live 4ms
+ ✓ test/pipeline.test.ts > runDeployment > stores a managed-env fingerprint and warns loudly when it drifts 15ms
+ ✓ test/pipeline.test.ts > runDeployment > keeps the full config snapshot when persisting the managed-env fingerprint 6ms
+ ✓ test/pipeline.test.ts > runDeployment > persists a runtime port repaired during the healthcheck 5ms
+ ✓ test/pipeline.test.ts > runDeployment > resolves creds from the source row and persists the checked-out sha 6ms
+ ✓ test/pipeline.test.ts > runDeployment > builds creds with undefined token/deployKey when the source has none and defaults the repoUrl 5ms
+ ✓ test/pipeline.test.ts > runDeployment > calls checkoutCommit without creds when the source row is missing 6ms
+ ✓ test/pipeline.test.ts > runDeployment > calls checkoutCommit without querying sources when sourceId is absent 6ms
+ ✓ test/pipeline.test.ts > runDeployment > passes the previous runtime when the service was already running 8ms
+ ✓ test/pipeline.test.ts > runDeployment > normalises a null port and healthPath in the previous runtime 8ms
+ ✓ test/pipeline.test.ts > runDeployment > stops the previous runtime after a successful blue-green deploy (finalize) 6ms
+ ✓ test/pipeline.test.ts > runDeployment > r398: a proxy-write failure after two attempts fails the deploy and reverts to the previous runtime 6ms
+ ✓ test/pipeline.test.ts > runDeployment > r398: a transient proxy-write failure is rescued by the second attempt 6ms
+ ✓ test/pipeline.test.ts > runDeployment > keeps both generations when neither the new routing nor the rollback can be confirmed 5ms
+ ✓ test/pipeline.test.ts > runDeployment > retires the candidate only after the reverted routing is confirmed 6ms
+ ✓ test/pipeline.test.ts > runDeployment > keeps a healthy first runtime when its routing outcome is unknown 5ms
+ ✓ test/pipeline.test.ts > runDeployment > r398: a first-ever deploy whose proxy write fails marks the service errored and stops the container 6ms
+ ✓ test/pipeline.test.ts > runDeployment > rolls back to the previous runtime when the new one fails healthcheck (blue-green) 6ms
+ ✓ test/pipeline.test.ts > runDeployment > host ports: starts the stopped previous runtime again and probes it with the service readiness check 7ms
+ ✓ test/pipeline.test.ts > runDeployment > marks the service errored when the previous runtime is gone (PM2-style failure) 7ms
+ ✓ test/pipeline.test.ts > runDeployment > r167: a failed deploy keeps the row pointing at a previous runtime it cannot prove healthy 5ms
+ ✓ test/pipeline.test.ts > runDeployment > r167: an in-place (compose) redeploy that fails never stops the only stack 6ms
+ ✓ test/pipeline.test.ts > runDeployment > treats a previous-runtime probe error as not restorable 6ms
+ ✓ test/pipeline.test.ts > runDeployment > does not throw when safeFail cannot persist the failure status 5ms
+ ✓ test/pipeline.test.ts > runDeployment > logs a finalize warning and still succeeds when stopping the previous runtime fails 6ms
+ ✓ test/pipeline.test.ts > runDeployment > logs a wildcard-domain warning and still succeeds when the insert fails 6ms
+ ✓ test/pipeline.test.ts > runDeployment > auto-provisions a wildcard domain when configured and missing 5ms
+ ✓ test/pipeline.test.ts > runDeployment > enables HTTPS for auto-provisioned wildcard domains when ACME is configured 5ms
+ ✓ test/pipeline.test.ts > runDeployment > does not duplicate an existing wildcard domain 6ms
+ ✓ test/pipeline.test.ts > runDeployment > r398: names the proxy failure in the log (Error) and fails the deploy — no green finalize 6ms
+ ✓ test/pipeline.test.ts > runDeployment > r398: stringifies a non-Error proxy failure and fails the deploy 5ms
+ ✓ test/pipeline.test.ts > runDeployment > r398: keeps the previous container SERVING when the routing flip fails (revert, not outage) 6ms
+ ✓ test/pipeline.test.ts > runDeployment > fails the deployment with a stringified reason when the failure is not an Error 5ms
+ ✓ test/pipeline.test.ts > runDeployment > 0.16.1: waits as long as the service says for the healthcheck, and names that limit when it fails 6ms
+ ✓ test/pipeline.test.ts > runDeployment > fails the deployment when the healthcheck never passes 9ms
+ ✓ test/pipeline.test.ts > runDeployment > fails the deployment when buildAndRun throws, without stopping 5ms
+ ✓ test/pipeline.test.ts > runDeployment > fails the deployment when the git checkout throws 5ms
+ ✓ test/pipeline.test.ts > runDeployment > loads env vars and connection strings from attached running databases 5ms
+ ✓ test/pipeline.test.ts > runDeployment > reconciles durable Hub dependencies before loading runtime environment 10ms
+ ✓ test/pipeline.test.ts > runDeployment > maps managed database fields to application-specific template env vars 6ms
+ ✓ test/pipeline.test.ts > runDeployment > recovers a missing Ghost mapping from the trusted bundled runtime contract 5ms
+ ✓ test/pipeline.test.ts > runDeployment > fails before container startup when an attached database is not running 3ms
+ ✓ test/pipeline.test.ts > runDeployment > resolves registry auth from a registry-type source for image deploys 5ms
+ ✓ test/pipeline.test.ts > runDeployment > r512: withholds a registry credential from a host it is not bound to (fan-out shares the resolver) 4ms
+ ✓ test/pipeline.test.ts > runDeployment > derives no server for bare image names and skips incomplete credentials 13ms
+ ✓ test/pipeline.test.ts > runDeployment > skips registry auth for repo deploys even with a registry source 8ms
+ ✓ test/pipeline.test.ts > runDeployment > hands the builder no agent seam — remote deploys are refused, not routed 6ms
+ ✓ test/pipeline.test.ts > runDeployment > detects registry hosts with a port and skips Docker Hub names 10ms
+ ✓ test/pipeline.test.ts > runDeployment > covers null registryUsername and port-style bare image names 9ms
+ ✓ test/pipeline.test.ts > runDeployment > aborts before the build when the deployment was cancelled mid-flight 4ms
+ ✓ test/pipeline.test.ts > runDeployment > cancelling with a healthy previous runtime keeps the old version serving 5ms
+ ✓ test/pipeline.test.ts > runDeployment > a cancel landing just before the finalize write retires the new container 3ms
+ ✓ test/pipeline.test.ts > runDeployment > cancels a repo deploy at the post-checkout checkpoint 5ms
+ ✓ test/pipeline.test.ts > runDeployment > cancels after a passing healthcheck, just before the success writes 5ms
+ ✓ test/pipeline.test.ts > runDeployment > a finalize-race cancel without a previous runtime leaves the service untouched 4ms
+ ✓ test/pipeline.test.ts > runDeployment > executes preDeployCmd, postDeployCmd and preStopCmd hooks during deployment 38ms
+ ✓ test/pipeline.test.ts > runDeployment finalize: blue-green vs in-place redeploys > an in-place redeploy (compose) must NOT retire the runtime id that just went live 6ms
+ ✓ test/pipeline.test.ts > runDeployment finalize: blue-green vs in-place redeploys > blue-green finalizes still retire the previous container after routing flips 6ms
+ ✓ test/pipeline.test.ts > runDeployment applies the .ninedeploy build sections > folds build commands into the BuildContext and hands the manifest to the builder 12ms
+ ✓ test/pipeline.test.ts > runDeployment applies the .ninedeploy build sections > lets a panel value win over the manifest 7ms
+ ✓ test/pipeline.test.ts > runDeployment applies the .ninedeploy build sections > fills resources and run.port only where the panel left them unset 8ms
+ ✓ test/pipeline.test.ts > runDeployment applies the .ninedeploy build sections > leaves panel-set resources and port alone 6ms
+ ✓ test/pipeline.test.ts > runDeployment applies the .ninedeploy build sections > refuses manifest-declared lifecycle hooks and says why 8ms
+ ✓ test/pipeline.test.ts > runDeployment applies the .ninedeploy build sections > warns about a declared required env var that is not set 7ms
+ ✓ test/pipeline.test.ts > runDeployment applies the .ninedeploy build sections > r602: an invalid previews.pattern is skipped with a deploy-log note; the rest applies and the deploy succeeds 8ms
+ ✓ test/pipeline.test.ts > runDeployment audits the outcome > records deploy.success with the service name and deployment id 6ms
+ ✓ test/pipeline.test.ts > runDeployment audits the outcome > records deploy.failed with the reason when the build throws 7ms
+ ✓ test/pipeline.test.ts > runDeployment audits the outcome > records deploy.cancelled without a reason 3ms
+ ✓ test/pipeline.test.ts > runDeployment audits the outcome > falls back to a null actor when the service has no owner 7ms
+ ✓ test/pipeline.test.ts > runDeployment audits the outcome > records deploy.failed for an unknown service type 1ms
+ ✓ test/pipeline.test.ts > runDeployment with an inline compose stack > skips the git checkout and rewrites the compose file from the service row 5ms
+ ✓ test/pipeline.test.ts > runDeployment with an inline compose stack > G5.1: hands the compose builder the image scan gate on the panel host 5ms
+ ✓ test/pipeline.test.ts > runDeployment with an inline compose stack > repairs a workspace whose compose file was deleted between deploys 7ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > refuses an unsealed node before pulling or changing a runtime 6ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > runs a docker service through the node agent, never the local builder 4031ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > a cancel cuts a running node pull when the agent advertises op.cancel 6ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > an agent without op.cancel keeps the uncut pull 4031ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > deletes the env file from the node after the container has taken it 4020ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r229: refuses a database-attached service on a node — the DB host only resolves on the panel 2ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r266: refuses a template container the agent cannot start as the panel would (cmd / docker socket) 4ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > 0.16.5: a node service with file mounts is refused for an agent that predates them, naming the update, before anything is sent 2ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > an agent with file mounts and recovery writes each file before the run 4038ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > 0.16.3: a Git LFS service on the panel fetches the LFS files after checkout, before the build; off by default 13ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > 0.16.3: a Git LFS service set to build on its node (Build on: target) is refused before anything is cloned there 2ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > G1.1: an inline Dockerfile on a service built on its node is refused before anything is cloned there 2ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > 0.16.4: a node service with custom labels or the command healthcheck is refused for an agent that predates them, naming the update 4ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > an agent with recovery support runs the container with labels and the healthcheck command 4030ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r266 relaxed: an agent advertising docker.runSpec (sealed) runs the same container as the panel would 30ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r269: refuses a DB-backed template on a node before the database is provisioned 2ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r269: a database attached during the deploy still stops it before the node runs anything 6ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r268: refuses a private repository on a node before the panel even clones it 2ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > refuses a pm2 service on a node instead of running it on the panel host 2ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > brings a compose stack up on the node through the agent 8ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r521: a node proxy that could not take the new route fails the deploy and keeps the previous runtime 4026ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > keeps both node runtimes when the transition and rollback acknowledgements are lost 4030ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > retires a node candidate only after the previous routing generation is acknowledged 4028ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r521: a node proxy that took the route retires the previous runtime as before 4027ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > r522: refuses deploy hooks on a node-pinned service before anything runs, naming the fix 2ms
+ ✓ test/pipeline.test.ts > runDeployment on a remote-server target > still deploys a service with no server assigned 6ms
+ ✓ test/pipeline.test.ts > filterTrustworthyProjectLinks > keeps links into workspaces the owner holds a member+ seat in 1ms
+ ✓ test/pipeline.test.ts > filterTrustworthyProjectLinks > drops links when the owner only holds a viewer seat (r095) 0ms
+ ✓ test/pipeline.test.ts > filterTrustworthyProjectLinks > drops links into workspaces the owner cannot see 0ms
+ ✓ test/pipeline.test.ts > filterTrustworthyProjectLinks > drops NULL-workspace (operator-only) projects for non-operators 0ms
+ ✓ test/pipeline.test.ts > filterTrustworthyProjectLinks > passes every link through for an instance-operator owner 0ms
+ ✓ test/pipeline.test.ts > filterTrustworthyProjectLinks > drops every link when the service has no owner at all 0ms
+ ✓ test/pipeline.test.ts > splitHookCommand > splits plain argv on whitespace 0ms
+ ✓ test/pipeline.test.ts > splitHookCommand > honours double-quoted segments 0ms
+ ✓ test/pipeline.test.ts > splitHookCommand > honours single-quoted segments (fully literal) 0ms
+ ✓ test/pipeline.test.ts > splitHookCommand > handles backslash escapes 0ms
+ ✓ test/pipeline.test.ts > splitHookCommand > keeps quoted empty strings as empty argv entries 0ms
+ ✓ test/pipeline.test.ts > splitHookCommand > treats an unterminated quote as running to end of input 0ms
+ ✓ test/pipeline.test.ts > splitHookCommand > returns empty argv for blank input 0ms
+ ✓ test/pipeline.test.ts > r237: kernel deploy hooks > calls deploy:before and deploy:after around a deployment 7ms
+ ✓ test/pipeline.test.ts > r237: kernel deploy hooks > fires deploy:after with success=false when the deploy fails 1ms
+ ✓ test/pipeline.test.ts > r237: kernel deploy hooks > a throwing hook bus never fails the deployment 5ms
+ ✓ test/pipeline.test.ts > r239: kernel service lifecycle events > emits service.deploying and service.deployed with the linked projects 6ms
+ ✓ test/pipeline.test.ts > r239: kernel service lifecycle events > does not announce a cancelled deployment as an outcome 1ms
+ ✓ test/pipeline.test.ts > r353: source fan-out and Git credentials > skips source fan-out with a log line when the repository is cloned with a Git credential 7ms
+ ✓ test/pipeline.test.ts > r353: source fan-out and Git credentials > still fans a public source release out to the extra node (control) 4032ms
+ ✓ test/pipeline.test.ts > r353: source fan-out and Git credentials > passes the resolved source port to explicit readiness on fan-out targets 4025ms
+ ✓ test/pipeline.test.ts > r353: source fan-out and Git credentials > r592: logs each node in to the registry credential's single bound host before a source build 4032ms
+ ✓ test/pipeline.test.ts > r353: source fan-out and Git credentials > r592: sends nothing when the credential is bound to several hosts (or none) — and says why 4022ms
+ ✓ test/pipeline.test.ts > r520: railpack on an install that cannot run it > fails before the checkout with the reason, keeping the previous runtime 3ms
+ ✓ test/pipeline.test.ts > r520: railpack on an install that cannot run it > builds as usual when the CLI is there (and never probes for other packs) 9ms
+ ✓ test/pipeline.test.ts > F860: a template service with a second attached database > maps the contract onto the template database only, and the cache keeps REDIS_URL (template database attached first) 7ms
+ ✓ test/pipeline.test.ts > F860: a template service with a second attached database > maps the contract onto the template database only, and the cache keeps REDIS_URL (cache attached first) 5ms
+ ✓ test/pipeline.test.ts > F861: an error the pipeline does not handle itself settles the row > marks the deployment failed when the "deploying" write throws, and still rejects 1ms
+ ✓ test/pipeline.test.ts > F881: the run signals end-of-log only after its final settle > publishes a terminal success only after routing acknowledgement 6ms
+ ✓ test/pipeline.test.ts > F881: the run signals end-of-log only after its final settle > handles cancellation after routing without retiring a possibly routed candidate (rollback failure false) 4ms
+ ✓ test/pipeline.test.ts > F881: the run signals end-of-log only after its final settle > handles cancellation after routing without retiring a possibly routed candidate (rollback failure true) 4ms
+ ✓ test/pipeline.test.ts > F881: the run signals end-of-log only after its final settle > preserves the only safe live runtime on a late cancellation: first 4ms
+ ✓ test/pipeline.test.ts > F881: the run signals end-of-log only after its final settle > preserves the only safe live runtime on a late cancellation: unhealthy previous 5ms
+ ✓ test/pipeline.test.ts > F881: the run signals end-of-log only after its final settle > preserves the only safe live runtime on a late cancellation: in-place 4ms
+ ✓ test/pipeline.test.ts > F881: the run signals end-of-log only after its final settle > keeps a failed proxy swap nonterminal until its final log settlement 4ms
+ ✓ test/pipeline.test.ts > F881: the run signals end-of-log only after its final settle > F861's failUnsettledDeployment line precedes the end signal 1ms
+ ✓ test/pipeline.test.ts > F1012/F1013: a failed clone names its reason and never repeats the credential > names the reason class with the token advice in the deploy log and the deploy.failed reason 6ms
+ ✓ test/pipeline.test.ts > F1012/F1013: a failed clone names its reason and never repeats the credential > keeps the access token out of the log, the log file and the deploy.failed reason when a submodule clone fails 5ms
+ ✓ test/pipeline.test.ts > F1012/F1013: a failed clone names its reason and never repeats the credential > redacts an unrecognised clone error but leaves a clean one untouched 8ms
+ ✓ test/pipeline.test.ts > 0.13: a GitHub App clone > clones with a repo-scoped token, prints the App hint, and never repeats the token 7ms
+ ✓ test/pipeline.test.ts > 0.13: a GitHub App clone > a token that cannot be minted fails the deploy before the checkout, with the hint 5ms
+ ✓ test/pipeline.test.ts > 0.13: a GitHub App clone > refuses a repository URL on another host without minting a token 5ms
+ ✓ test/pipeline.test.ts > 0.13 (T5): GitHub App repositories on nodes — pipeline wiring > a node-pinned App service is checked out with a fresh per-job token, revoked after the checkout 8ms
+ ✓ test/pipeline.test.ts > 0.13 (T5): GitHub App repositories on nodes — pipeline wiring > an older node agent refuses the deploy with the update message and nothing is minted for it 3ms
+ ✓ test/pipeline.test.ts > 0.13 (T5): GitHub App repositories on nodes — pipeline wiring > an App source build fans out to an extra node with its own per-job token 4027ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > D1: a container command is never silently dropped on a target (refused by an agent without docker.runSpec) 7ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > D1: a volume attachment is never silently dropped on a target 5ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > D1: a target never receives the panel host’s database hostname 7ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > D2: a static primary is never rebuilt on a target from the repository Dockerfile 4022ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > D2: a railpack primary is never rebuilt on a target from the repository Dockerfile 4019ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > D2: an `auto` primary that resolved to Nixpacks (no Dockerfile) is never rebuilt from a Dockerfile 4023ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > control: a Dockerfile primary still rebuilds the same commit on the target, exactly as before 4021ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > D2: a Dockerfile primary built with buildTarget ships its own image to the target instead of a rebuild 4024ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > D2: a Dockerfile primary built with buildArgs ships its own image to the target instead of a rebuild 4030ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > upgrade safety: deploy hooks never refuse a target — it still deploys, and the log says it ran without them 4027ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > 0.16.7: an uploaded-source primary fans out by shipping its image — a target cannot fetch the archive, even with a Dockerfile in it 4031ms
+ ✓ test/pipeline.test.ts > 0.16 T4: fan-out targets get the primary’s rules and never a different build (D1, D2) > control: a plain image service fans out only after the target port responds 4030ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > pinned: a NULL build_on node service builds on its node exactly as before — nothing built on the panel, nothing shipped, no build_host 4027ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > build_on = panel: built on the panel, shipped to the node, run there as shipped (no clone, no build on the node) 4033ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > 0.16.5: Git LFS on a node with no placement builds on the panel (LFS fetched there) and ships the image, as build_on = panel 4016ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > 0.16.7: uploaded source on a node with no placement builds on the panel (the archive is kept there) and ships the image 4026ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > 0.16.7: uploaded source with Build on: target on a node is refused before anything is extracted or built 2ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > build_on = panel keeps a PAT on the panel: a static credential is no refusal, the node never clones 4027ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > build_on = server with its server removed fails the deploy before anything is built — never a fallback 1ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > a transfer failure fails the deploy cleanly: the node never starts the release, the previous runtime keeps serving 5ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > build_on = server for a panel-host service: built on the build server, shipped to the panel, run by the local builder as shipped 7ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > build_on = panel with a fan-out target: build once, ship many (the target never clones or builds) 8049ms
+ ✓ test/pipeline.test.ts > 0.16 T4: build placement in the pipeline (design §6.3) > D2 fixed: a static primary’s own image is shipped to the target (never a Dockerfile rebuild) 4018ms
+ ✓ test/pipeline.test.ts > 0.16 T6: attached databases are reachable from the service (D4, O7) > D4: a panel-host docker service gets its running panel-host databases on ctx.databaseContainers 5ms
+ ✓ test/pipeline.test.ts > 0.16 T6: attached databases are reachable from the service (D4, O7) > D4: a service with no attachment gets an empty list (the builder connects nothing) 5ms
+ ✓ test/pipeline.test.ts > 0.16 T6: attached databases are reachable from the service (D4, O7) > O7: a node service joins its same-node database bridge after the container starts and before the healthcheck 4030ms
+ ✓ test/pipeline.test.ts > 0.16 T6: attached databases are reachable from the service (D4, O7) > connects every immutable node replica to its database before any readiness probe 4020ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > node canary prelaunch refusal > refuses missing proxy.traffic before any candidate operation 208ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > node canary prelaunch refusal > refuses missing proxy.routingAck before any candidate operation 211ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > node canary prelaunch refusal > refuses missing docker.recovery before any candidate operation 214ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > node canary prelaunch refusal > refuses missing docker.probe before any candidate operation 226ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > node canary prelaunch refusal > refuses missing docker.readiness before any candidate operation 222ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > node canary prelaunch refusal > preserves Stop committed during the capability handshake without starting a candidate 203ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > uses a bounded periodic canary readiness budget after initial qualification (configured=undefined) 260ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > uses a bounded periodic canary readiness budget after initial qualification (configured=7) 251ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > uses a bounded periodic canary readiness budget after initial qualification (configured=5) 264ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > retains another canary incarnation during failed pipeline cleanup for deployment 999 253ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > retains another canary incarnation during failed pipeline cleanup for deployment 1 239ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > fails a canary when the analytics setting cannot be read instead of silently disabling measurement 261ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > journals replicas before canary traffic, probes inside the stage, then retires only the previous ID 274ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > rechecks every candidate replica after canary observation before the full cutover 287ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > a cancel inside the canary surfaces as the pipeline's own cancellation 270ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > an aborted canary fails the deploy and stops the new container; the previous keeps serving 265ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > confirms the canary rollback in the primary journal before retiring the rejected candidate 369ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > a failure that leaves a split in place confirms rollback before the new container is removed 248ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > names why a deploy switches all at once: no domain, a rollback, invalid stored settings, no previous release 975ms
+ ✓ test/pipeline.test.ts > 0.16.9 canary releases in the pipeline > control: a service without a canary never reaches the stage 240ms
+ ✓ test/pipeline.test.ts > 0.16.12 preview database copies in the pipeline > a preview asks for its copies before its environment is assembled 5ms
+ ✓ test/pipeline.test.ts > 0.16.12 preview database copies in the pipeline > a copy that cannot be made fails the deploy with the reason; a production service never asks 9ms
+ ✓ test/pipeline.test.ts > recorded Compose restore pipeline > uses recorded Compose content, routing settings and env instead of current edits and hooks 7ms
+ ✓ test/pipeline.test.ts > recorded Compose restore pipeline > fails a missing record before the builder, without falling back to the current stack definition 1ms
+ ✓ test/pipeline.test.ts > recorded Compose restore pipeline > stores a builder release record encrypted after a normal inline deployment 6ms
+ ✓ test/portProxy.test.ts > rendering > only allow-listed mappings go through the proxy; the container publishes the rest 2ms
+ ✓ test/portProxy.test.ts > rendering > a static entrypoint per mapping, and an ipAllowList router per entrypoint to every container 2ms
+ ✓ test/portProxy.test.ts > rendering > publishes each host side onto its entrypoint, locked down, on the service bridge 0ms
+ ✓ test/portProxy.test.ts > rendering > the fingerprint changes with the port list, not with the allow list (that is a watched route) 1ms
+ ✓ test/portProxy.test.ts > rendering > refuses a slug that could leave the data directory 1ms
+ ✓ test/portProxy.test.ts > syncPortProxy > writes the config and starts the sidecar the first time 6ms
+ ✓ test/portProxy.test.ts > syncPortProxy > a running sidecar with the same port list only gets new routes 5ms
+ ✓ test/portProxy.test.ts > syncPortProxy > a changed port list, or a stopped sidecar, recreates it 8ms
+ ✓ test/portProxy.test.ts > syncPortProxy > no allow-listed mapping left: the sidecar and its directory are removed 6ms
+
+ Test Files  3 passed (3)
+      Tests  291 passed (291)
+   Start at  01:01:18
+   Duration  223.61s (tests 99%, import 1%)

@@ -145,8 +145,24 @@ async function runningFingerprint(name: string): Promise<string | null> {
   }
 }
 
-/** Remove the sidecar and its config directory (a service without restricted ports, or deleted). Idempotent. */
-export async function removePortProxy(slug: string, log: (line: string) => void = () => undefined): Promise<void> {
+const operations = new Map<string, Promise<void>>();
+
+async function inPortProxyOrder(slug: string, operation: () => Promise<void>): Promise<void> {
+  const previous = operations.get(slug) ?? Promise.resolve();
+  let release!: () => void;
+  const completed = new Promise<void>((resolve) => { release = resolve; });
+  const tail = previous.then(() => completed);
+  operations.set(slug, tail);
+  await previous;
+  try {
+    await operation();
+  } finally {
+    release();
+    if (operations.get(slug) === tail) operations.delete(slug);
+  }
+}
+
+async function removePortProxyNow(slug: string, log: (line: string) => void): Promise<void> {
   const name = portProxyName(slug);
   if ((await runningFingerprint(name)) !== null) {
     await run('docker', ['rm', '-f', name], {}, () => undefined).catch(() => undefined);
@@ -155,18 +171,23 @@ export async function removePortProxy(slug: string, log: (line: string) => void 
   rmSync(portProxyDir(slug), { recursive: true, force: true });
 }
 
+/** Remove the sidecar and its config directory (a service without restricted ports, or deleted). Idempotent. */
+export function removePortProxy(slug: string, log: (line: string) => void = () => undefined): Promise<void> {
+  return inPortProxyOrder(slug, () => removePortProxyNow(slug, log));
+}
+
 /**
  * Make the sidecar match the service: routes to `targets` (the running
  * containers) for its restricted mappings, the container recreated only when
  * the port list changed. No restricted mapping: the sidecar is removed.
  */
-export async function syncPortProxy(
+async function syncPortProxyNow(
   service: { id: number; slug: string; portMappings?: ServicePortMapping[] | null },
   targets: readonly string[],
   log: (line: string) => void,
 ): Promise<void> {
   const mappings = restrictedMappings(service.portMappings);
-  if (mappings.length === 0) return removePortProxy(service.slug, log);
+  if (mappings.length === 0) return removePortProxyNow(service.slug, log);
   const dir = portProxyDir(service.slug);
   const staticFile = path.join(dir, 'traefik.yml');
   const dynamicFile = path.join(dir, 'dynamic', 'routes.yml');
@@ -187,4 +208,12 @@ export async function syncPortProxy(
     log,
   );
   log(`Port proxy ${name} publishes ${mappings.map((m) => `${m.hostIp ? `${m.hostIp}:` : ''}${m.hostPort}/tcp`).join(', ')} for the allowed addresses only`);
+}
+
+export function syncPortProxy(
+  service: { id: number; slug: string; portMappings?: ServicePortMapping[] | null },
+  targets: readonly string[],
+  log: (line: string) => void,
+): Promise<void> {
+  return inPortProxyOrder(service.slug, () => syncPortProxyNow(service, targets, log));
 }

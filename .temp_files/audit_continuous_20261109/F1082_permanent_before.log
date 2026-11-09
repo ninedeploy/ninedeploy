@@ -1,0 +1,112 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/portProxyRace.test.ts > same-slug remove waits through gated inspect and leaves no sidecar 10ms
+   → expected true to be false // Object.is equality
+ × test/portProxyRace.test.ts > same-slug remove waits through gated pull and leaves no sidecar 5ms
+   → expected true to be false // Object.is equality
+ × test/portProxyRace.test.ts > same-slug remove waits through gated host and leaves no sidecar 4ms
+   → expected true to be false // Object.is equality
+ × test/portProxyRace.test.ts > same-slug remove waits through gated start and leaves no sidecar 6ms
+   → expected true to be false // Object.is equality
+ × test/portProxyRace.test.ts > sync/remove/new-sync preserves the newest requested configuration 7ms
+   → ENOENT: no such file or directory, open 'C:\Users\ersin\AppData\Local\Temp\nd-audit-portproxy-aIYIFq\portproxy\db\dynamic\routes.yml'
+ ✓ test/portProxyRace.test.ts > different slug sync completes while another slug is held 7ms
+ ✓ test/portProxyRace.test.ts > removing through a no-restricted-mapping sync does not recursively deadlock 4ms
+ ✓ test/portProxyRace.test.ts > image failure releases the queue for remove and a later successful sync 8ms
+ × test/portProxyRace.test.ts > a later sync waits for an earlier gated removal then creates its fresh files 9ms
+   → expected '# Managed by NineDeploy — do not edit…' to contain 'old:5432'
+ × test/portProxyRace.test.ts > two same-fingerprint syncs keep newest routes without duplicate starts 7ms
+   → expected [ [ 'docker', …(3) ], …(1) ] to have a length of 1 but got 2
+ ✓ test/portProxyRace.test.ts > repeated removes retain absent state 4ms
+ ✓ test/portProxyRace.test.ts > native config-write failure releases admission before cleanup and retry 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/portProxyRace.test.ts > same-slug remove waits through gated inspect and leaves no sidecar
+ FAIL  test/portProxyRace.test.ts > same-slug remove waits through gated pull and leaves no sidecar
+ FAIL  test/portProxyRace.test.ts > same-slug remove waits through gated host and leaves no sidecar
+ FAIL  test/portProxyRace.test.ts > same-slug remove waits through gated start and leaves no sidecar
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/portProxyRace.test.ts:48:153
+     46|  const first = proxy.syncPortProxy(service, ['db-1'], () => {}); let s…
+     47|  try {
+     48|   await entered.promise; let removed = false; second = proxy.removePor…
+       |                                                                                                                                                         ^
+     49|   blocked.release(); await Promise.all([first, second]); expect(h.cont…
+     50|  } finally { blocked.release(); await Promise.allSettled([first, ...(s…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  test/portProxyRace.test.ts > sync/remove/new-sync preserves the newest requested configuration
+Error: ENOENT: no such file or directory, open 'C:\Users\ersin\AppData\Local\Temp\nd-audit-portproxy-aIYIFq\portproxy\db\dynamic\routes.yml'
+ ❯ test/portProxyRace.test.ts:57:178
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -4058, code: 'ENOENT', syscall: 'open', path: 'C:\Users\ersin\AppData\Local\Temp\nd-audit-portproxy-aIYIFq\portproxy\db\dynamic\routes.yml' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  test/portProxyRace.test.ts > a later sync waits for an earlier gated removal then creates its fresh files
+AssertionError: expected '# Managed by NineDeploy — do not edit…' to contain 'old:5432'
+
+- Expected
++ Received
+
+- old:5432
++ # Managed by NineDeploy — do not edit by hand.
++ tcp:
++   routers:
++     p0:
++       entryPoints: [p0]
++       rule: "HostSNI(`*`)"
++       service: s0
++       middlewares: [a0]
++   middlewares:
++     a0:
++       ipAllowList:
++         sourceRange:
++           - "10.0.0.0/8"
++   services:
++     s0:
++       loadBalancer:
++         servers:
++           - address: "new:5432"
++
+
+ ❯ test/portProxyRace.test.ts:78:178
+     76|  const remove = proxy.removePortProxy('db'); let latest: Promise<void>…
+     77|  try {
+     78|   await entered.promise; latest = proxy.syncPortProxy(service, ['new']…
+       |                                                                                                                                                                                  ^
+     79|   blocked.release(); await Promise.all([remove, latest]); expect(h.con…
+     80|  } finally { blocked.release(); await Promise.allSettled([remove, ...(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  test/portProxyRace.test.ts > two same-fingerprint syncs keep newest routes without duplicate starts
+AssertionError: expected [ [ 'docker', …(3) ], …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/portProxyRace.test.ts:86:201
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 5 passed (12)
+   Start at  01:01:12
+   Duration  702ms (import 62%, tests 21%, transform 17%, worker 1%)

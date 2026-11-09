@@ -1,0 +1,23 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > same-slug remove waits through gated inspect and leaves no sidecar 7ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > same-slug remove waits through gated pull and leaves no sidecar 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > same-slug remove waits through gated host and leaves no sidecar 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > same-slug remove waits through gated start and leaves no sidecar 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > sync/remove/new-sync preserves the newest requested configuration 10ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > different slug sync completes while another slug is held 9ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > removing through a no-restricted-mapping sync does not recursively deadlock 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > image failure releases the queue for remove and a later successful sync 10ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > a later sync waits for an earlier gated removal then creates its fresh files 10ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > two same-fingerprint syncs keep newest routes without duplicate starts 9ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > repeated removes retain absent state 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1082_portProxyOrder.test.ts > native config-write failure releases admission before cleanup and retry 8ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  01:00:47
+   Duration  511ms (import 63%, tests 22%, transform 14%, worker 1%)

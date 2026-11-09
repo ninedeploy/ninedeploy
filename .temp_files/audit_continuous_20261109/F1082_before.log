@@ -1,0 +1,35 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1082_portProxyOrder.test.ts > a remove requested while earlier sync prepares its image owns the final absent state
+EXPECTED: no sidecar/config after later remove; ACTUAL: { sidecars: 1, config: false }
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1082_portProxyOrder.test.ts > control: sequential sync then remove leaves no sidecar or config 7ms
+ × .temp_files/audit_continuous_20261109/prove_F1082_portProxyOrder.test.ts > a remove requested while earlier sync prepares its image owns the final absent state 11ms
+   → expected { sidecars: 1, config: false } to deeply equal { sidecars: +0, config: false }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1082_portProxyOrder.test.ts > a remove requested while earlier sync prepares its image owns the final absent state
+AssertionError: expected { sidecars: 1, config: false } to deeply equal { sidecars: +0, config: false }
+
+- Expected
++ Received
+
+  {
+    "config": false,
+-   "sidecars": 0,
++   "sidecars": 1,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1082_portProxyOrder.test.ts:45:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  00:58:30
+   Duration  426ms (import 75%, transform 19%, tests 5%, worker 1%)

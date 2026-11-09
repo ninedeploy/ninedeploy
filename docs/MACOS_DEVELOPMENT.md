@@ -577,3 +577,14 @@ Four permanent tests were seen red (three failing cases and one control), then
 recorded event, not wall-clock cleanup with no events; distinct service-ID counts
 and process RSS are not bounded by this fix. No live30-day/native Mac acceptance
 or full release certification was claimed.
+
+Round 64 (F1082) orders restricted-port sidecar sync/removal per service slug.
+An old sync waiting for its image previously recreated the sidecar after a later
+remove, with its config already gone. Twelve permanent cases were seen red
+(seven failing races and five controls); twelve independent native-file and
+explicit-gate cases then passed three times. Different slugs remain independent;
+failed image/config writes release admission, and a newer sync can recreate the
+sidecar after removal. Resource-bound server typecheck/build and scoped lint
+passed. The broader deployment-pipeline target passed291 tests in three files; its receipt is recorded in the round64
+ledger; root release/native Mac and live Docker/IP allow-list enforcement remain
+separate checks.
