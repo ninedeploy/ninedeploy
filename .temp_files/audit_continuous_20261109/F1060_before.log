@@ -1,0 +1,50 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1060_ciLease.test.ts > a still-expired lease is lost and its job requeued 190ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1060_ciLease.test.ts > heartbeat after the sweep read preserves the renewed lease
+EXPECTED: running / 0 lost; ACTUAL: lost / 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1060_ciLease.test.ts > heartbeat after the sweep read preserves the renewed lease 180ms
+   → expected { id: 1, jobId: 1, runnerId: 1, …(10) } to match object { status: 'running', …(1) }
+(11 matching properties omitted from actual)
+stdout | .temp_files/audit_continuous_20261109/prove_F1060_ciLease.test.ts > restart after the sweep read preserves the renewed lease
+EXPECTED: running / 0 lost; ACTUAL: lost / 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1060_ciLease.test.ts > restart after the sweep read preserves the renewed lease 171ms
+   → expected { id: 1, jobId: 1, runnerId: 1, …(10) } to match object { status: 'running', …(1) }
+(11 matching properties omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1060_ciLease.test.ts > heartbeat after the sweep read preserves the renewed lease
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1060_ciLease.test.ts > restart after the sweep read preserves the renewed lease
+AssertionError: expected { id: 1, jobId: 1, runnerId: 1, …(10) } to match object { status: 'running', …(1) }
+(11 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "leaseExpiresAt": 1800000060000,
+-   "status": "running",
++   "status": "lost",
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1060_ciLease.test.ts:47:23
+     45|       console.log('EXPECTED: running / 0 lost; ACTUAL:', attempt?.stat…
+     46|       console.log(attempt?.status === 'running' && count === 0 ? 'PROB…
+     47|       expect(attempt).toMatchObject({ status: 'running', leaseExpiresA…
+       |                       ^
+     48|       expect(await db.query.ciJobs.findFirst()).toMatchObject({ status…
+     49|       expect(count).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  21:59:59
+   Duration  1.70s (transform 35%, tests 35%, import 30%)

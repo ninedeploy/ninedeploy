@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CI expiry sweeps recheck the persisted lease atomically before declaring an attempt lost, preserving heartbeat/restart renewals and counting only attempts actually lost (F1060).
 - Scheduled deploys count CI-waiting rows toward the shared queue limit and reserve the last slot atomically, auditing concurrent losers as skipped while preserving the schedule trigger (F1059).
 - Scheduled jobs keep their active crons while a refresh query waits or fails, preserving upcoming job deadlines until a successful reload replaces the schedule set (F1058).
 - Image scan schedulers suppress critical-result callbacks after their application closes, preventing late audit alerts from a retained scan callback (F1057).

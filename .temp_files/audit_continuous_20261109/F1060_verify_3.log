@@ -1,0 +1,56 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > heartbeat wins before stale loss with maxAttempts=1
+EXPECTED: running running ACTUAL: running running FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > heartbeat wins before stale loss with maxAttempts=1 173ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > restart wins before stale loss with maxAttempts=1
+EXPECTED: running running ACTUAL: running running FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > restart wins before stale loss with maxAttempts=1 156ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > heartbeat wins before stale loss with maxAttempts=2
+EXPECTED: running running ACTUAL: running running FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > heartbeat wins before stale loss with maxAttempts=2 199ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > restart wins before stale loss with maxAttempts=2
+EXPECTED: running running ACTUAL: running running FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > restart wins before stale loss with maxAttempts=2 189ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > two sweeps count one transition with maxAttempts=1
+EXPECTED: lost failed ACTUAL: lost failed FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > two sweeps count one transition with maxAttempts=1 161ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > two sweeps count one transition with maxAttempts=2
+EXPECTED: lost queued ACTUAL: lost queued FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > two sweeps count one transition with maxAttempts=2 174ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > lease cutoff delta 0 is not expired
+EXPECTED: running running ACTUAL: running running FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > lease cutoff delta 0 is not expired 210ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > lease cutoff delta 1 is not expired
+EXPECTED: running running ACTUAL: running running FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > lease cutoff delta 1 is not expired 190ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > revocation still loses a freshly renewed lease
+EXPECTED: lost queued ACTUAL: lost queued FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > revocation still loses a freshly renewed lease 173ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > revocation during a suspended sweep is not double-counted
+EXPECTED: lost queued ACTUAL: lost queued FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > revocation during a suspended sweep is not double-counted 201ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > a successful finish before the sweep update remains terminal
+EXPECTED: succeeded succeeded ACTUAL: succeeded succeeded FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > a successful finish before the sweep update remains terminal 186ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > renewal survives the stale sweep but a later real expiry is still lost
+EXPECTED: lost queued ACTUAL: lost queued FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1060_ciLease.test.ts > renewal survives the stale sweep but a later real expiry is still lost 184ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  22:01:21
+   Duration  2.96s (tests 80%, import 15%, transform 5%)

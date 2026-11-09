@@ -399,14 +399,14 @@ export async function finishAttempt(
 }
 
 /** Mark an attempt lost and give its job another attempt, or fail it when none are left. */
-async function loseAttempt(db: DB, attempt: Attempt, reason: string): Promise<void> {
+async function loseAttempt(db: DB, attempt: Attempt, reason: string, expiredBefore?: number): Promise<boolean> {
   const lost = await db
     .update(ciAttempts)
     .set({ status: 'lost', error: reason, finishedAt: new Date() })
-    .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running')));
-  if (affected(lost) !== 1) return;
+    .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running'), expiredBefore === undefined ? undefined : lt(ciAttempts.leaseExpiresAt, expiredBefore)));
+  if (affected(lost) !== 1) return false;
   const job = await db.query.ciJobs.findFirst({ where: eq(ciJobs.id, attempt.jobId) });
-  if (!job || job.status !== 'running' || job.currentAttemptId !== attempt.id) return;
+  if (!job || job.status !== 'running' || job.currentAttemptId !== attempt.id) return true;
   if (job.attempts < job.maxAttempts) {
     await db
       .update(ciJobs)
@@ -418,6 +418,7 @@ async function loseAttempt(db: DB, attempt: Attempt, reason: string): Promise<vo
       .set({ status: 'failed', finishedAt: new Date(), error: `${reason}; no attempts left` })
       .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), eq(ciJobs.currentAttemptId, attempt.id)));
   }
+  return true;
 }
 
 /** Attempts whose lease lapsed: their runner stopped reporting. */
@@ -425,8 +426,13 @@ export async function sweepLostAttempts(db: DB, now = Date.now()): Promise<numbe
   const expired = await db.query.ciAttempts.findMany({
     where: and(eq(ciAttempts.status, 'running'), lt(ciAttempts.leaseExpiresAt, now)),
   });
-  for (const attempt of expired) await loseAttempt(db, attempt, 'The runner stopped reporting (lease expired)');
-  return expired.length;
+  let lost = 0;
+  for (const attempt of expired) {
+    // A heartbeat may renew the lease after the sweep read; only lose it if
+    // the persisted lease is still expired when this update wins.
+    if (await loseAttempt(db, attempt, 'The runner stopped reporting (lease expired)', now)) lost++;
+  }
+  return lost;
 }
 
 /**
