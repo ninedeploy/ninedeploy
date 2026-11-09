@@ -27,7 +27,11 @@ describe.skipIf(!ENABLED)('database backup/restore (real MySQL container)', () =
     container = await new GenericContainer('mysql:8')
       .withEnvironment({ MYSQL_ROOT_PASSWORD: PASSWORD })
       .withExposedPorts(3306)
-      .withWaitStrategy(Wait.forLogMessage(/ready for connections/, 2))
+      // The entrypoint's temporary init server (socket only, "port: 0") logs
+      // "ready for connections" twice by itself (X Plugin + mysqld), so a
+      // count of 2 could pass before that server stops and the real one
+      // starts. Wait for the real server's line: port 3306, not 33060.
+      .withWaitStrategy(Wait.forLogMessage(/mysqld: ready for connections.*port: 3306\b/, 1))
       .start();
     // The log line can precede the root password flip by a moment — poll
     // until the credential actually works (bounded, fails fast otherwise).
