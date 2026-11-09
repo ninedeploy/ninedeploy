@@ -52,8 +52,10 @@ services:
       # plain HTTP, and login plus bearer/refresh tokens cross it. Since 0.16
       # the installer writes NINEDEPLOY_BIND=0.0.0.0 on FRESH installs (not
       # with --private) so http://<server-ip>:3000 works out of the box, and
-      # gates the first admin on NINEDEPLOY_SETUP_TOKEN. Once a domain with
-      # HTTPS is attached, set NINEDEPLOY_BIND=127.0.0.1 and use the domain.
+      # gates the first admin on NINEDEPLOY_SETUP_TOKEN. Keep it off 127.0.0.1
+      # while the panel has a domain: Traefik reaches it through the Docker
+      # gateway on host port 3000. Block the port from the internet with a
+      # cloud firewall instead (published ports bypass ufw).
       - "${NINEDEPLOY_BIND:-127.0.0.1}:${NINEDEPLOY_PORT:-3000}:3000"
     environment:
       NODE_ENV: production

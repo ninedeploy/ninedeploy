@@ -438,6 +438,8 @@ describe('doctor: panel plaintext exposure (r575)', () => {
     const f = report.findings.find((x) => x.kind === 'panel_plaintext_exposure');
     expect(f).toMatchObject({ id: 'panel_plaintext_exposure', severity: 'warn', action: null, target: { type: 'host', name: '0.0.0.0:3000' } });
     expect(f?.detail).toContain('NINEDEPLOY_HOST=127.0.0.1');
+    // Traefik reaches the panel through the Docker gateway: loopback would cut off the domain.
+    expect(f?.detail).toContain('Do not bind it to loopback while using the domain');
     expect(report.healthy).toBe(false);
   });
 

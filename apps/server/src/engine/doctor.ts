@@ -196,9 +196,12 @@ export function panelExposureFinding(
     title: `The panel listens on ${where} over plain HTTP`,
     detail:
       `NINEDEPLOY_HOST=${host} makes the panel's own port reachable from the network, and it speaks plain HTTP — ` +
-      'passwords, session and API tokens that cross it can be read in transit. Reach the panel through HTTPS instead ' +
-      '(attach a domain to it via Traefik on :443, or a tunnel), then set NINEDEPLOY_HOST=127.0.0.1 in .env and restart ' +
-      'the service (sudo systemctl restart ninedeploy). If the port must stay open, firewall it to a trusted network.',
+      'passwords, session and API tokens that cross it can be read in transit. Reach the panel through HTTPS instead: ' +
+      'attach a domain to it via Traefik on :443, then keep this port off the internet with a firewall in front of the ' +
+      'host (a cloud firewall, or ufw rules that allow the Docker networks, 172.16.0.0/12, before denying the port). ' +
+      'Do not bind it to loopback while using the domain: Traefik reaches the panel through the Docker gateway, so ' +
+      'with NINEDEPLOY_HOST=127.0.0.1 the domain stops answering. Loopback (then sudo systemctl restart ninedeploy) ' +
+      'is for a panel reached only through an SSH tunnel.',
     target: { type: 'host', name: where, id: null },
     action: null,
     sizeBytes: null,

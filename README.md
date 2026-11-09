@@ -49,7 +49,7 @@ Docker Swarm for stateless services.
 | :--- | :--- |
 | **Host** | Linux. The installer sets up Node and Docker by itself on: <ul><li>**Debian and Ubuntu**, from signed APT repositories;</li><li>**RHEL, Rocky, Alma, CentOS Stream, Oracle Linux and Fedora**, from signed RPM repositories;</li><li>**Alpine**, from its own `docker` package under OpenRC, **Docker mode only**;</li><li>**openSUSE Leap, Tumbleweed, SLES, Arch, Manjaro and EndeavourOS**, Docker from the distribution's own packages (on SLES, with the Containers Module active). For the bare-metal mode, Node comes from NodeSource's signed RPMs through zypper on openSUSE/SLES, and from Arch's own LTS packages (with `npm`) on Arch and its derivatives.</li></ul>A host without systemd, such as Alpine, is installed in Docker mode; asking for `--bare-metal` there is refused. On Alpine, run `apk add bash curl` first. Other distributions work if Node and Docker are already present. |
 | **Runtime** | Node.js 22.23.4+, 24.22.1+ or 26.12.1+ within those supported majors (bare-metal mode only); Docker Engine + the Compose plugin. Docker/CI use Node 26.12.1. |
-| **Ports** | `80`/`443` free for Traefik. The panel listens on port `3000` over plain HTTP. **Since 0.16 a fresh install publishes it on `0.0.0.0` in both modes** and prints `http://<server-ip>:3000` plus a one-time **setup token** that the first-admin form requires (pass `--private` to keep it on `127.0.0.1`). Upgrades keep their bind: older Docker installs stay on `127.0.0.1` (`NINEDEPLOY_BIND`), bare metal on `NINEDEPLOY_HOST`. Once a domain with HTTPS is attached, set the bind to `127.0.0.1`. The panel's **Doctor** page (`GET /v1/doctor`) warns when the panel listens on a non-loopback address over plain HTTP. |
+| **Ports** | `80`/`443` free for Traefik. The panel listens on port `3000` over plain HTTP. **Since 0.16 a fresh install publishes it on `0.0.0.0` in both modes** and prints `http://<server-ip>:3000` plus a one-time **setup token** that the first-admin form requires (pass `--private` to keep it on `127.0.0.1`). Upgrades keep their bind: older Docker installs stay on `127.0.0.1` (`NINEDEPLOY_BIND`), bare metal on `NINEDEPLOY_HOST`. Once a domain with HTTPS is attached, keep port `3000` reachable from Docker, because Traefik forwards the domain to it through the Docker gateway. A panel bound to `127.0.0.1` is cut off from its domain. Keep the port off the internet with a firewall in front of the host instead. The panel's **Doctor** page (`GET /v1/doctor`) warns when the panel listens on a non-loopback address over plain HTTP. |
 | **Privileges** | `sudo` for the installer in **both** modes. Bare metal uses it for the systemd unit, firewall and optional PM2. Docker mode still uses it for base packages and Docker itself (`apt-get`, `systemctl enable docker`), swap, `ufw` rules for 22/80/443, stopping a stock `apache2`/`nginx` that holds 80/443 on a fresh host, and creating `/opt/ninedeploy-docker`. Membership in the `docker` group is enough only for running and upgrading the stack with `docker compose` afterwards. |
 
 ---
@@ -197,8 +197,11 @@ pnpm dev:web    # Vite dashboard on :5173 against that API
    generated one at boot and keeps it in `/data/setup-token`). The CLI takes it too:
    `ninedeploy setup --setup-token <token>`. It owns a personal workspace; every later signup is an
    ordinary member until someone grants more.
-2. Point a wildcard DNS record (`*.apps.example.com`) at the host and set the ACME email under
-   **Settings → System**; Traefik issues certificates from there on, DNS-01 wildcards included.
+2. Point a wildcard DNS record (`*.apps.example.com`) at the host. If the installer did not get an email
+   (`--email`), and you did not use the admin email for it on the first-run form, set the ACME email
+   under **Settings → Security**. Traefik issues certificates from then on, including DNS-01 wildcards.
+   `install.sh --domain panel.example.com --email you@example.com` puts the panel itself on HTTPS from
+   the first boot.
 3. `ninedeploy doctor` from your laptop, or the **About** page in the panel, reports what is missing.
 
 Full matrix — environment variables, upgrade paths, systemd internals — in

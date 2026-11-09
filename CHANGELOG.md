@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Advice that cut a panel off from its own domain.** Doctor, the README, the compose file and the panel IP allow-list docs said to bind the panel to `127.0.0.1` once it had an HTTPS domain. Traefik reaches the panel through the Docker gateway, so after that change the domain stopped answering. This was proven in a Linux Docker-in-Docker run: a loopback-bound panel is unreachable, `0.0.0.0` is reachable. The advice now is to keep port 3000 reachable from Docker and to block it from the internet with a firewall in front of the host. The README's first-boot steps also pointed at **Settings → System** for the ACME email. It lives under **Settings → Security**.
 - Instance GitOps scheduler ticks no longer start new checks or publish late drift/failure alerts after their application closes (F1055).
 - Active PITR retention now excludes competing pruning, recovery, base-backup and disable operations on the same archive; backup requests report a conflict instead of accepting work that cannot start (F1054).
 - PITR recovery admission reserves capacity before asynchronous name/volume checks, keeping concurrent requests within the one-recovery limit and releasing capacity on admission failure (F1053).
