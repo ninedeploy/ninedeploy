@@ -1,0 +1,13 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1042_archive_rollback.test.ts > verifies absent-path rollback, untouched omitted members, success and malformed archive cleanup
+EXPECTED: rollback restores absence, omitted originals survive, success keeps files, malformed input cleans | ACTUAL: 4 gated cases passed
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1042_archive_rollback.test.ts > verifies absent-path rollback, untouched omitted members, success and malformed archive cleanup 1956ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:13:31
+   Duration  2.39s (tests 86%, import 13%, transform 1%)

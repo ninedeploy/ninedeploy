@@ -277,6 +277,7 @@ export async function importSystemArchive(
   try { const inst = app as unknown as { worker?: { stop: () => Promise<void> } }; if (inst.worker) await inst.worker.stop(); } catch { /* */ }
 
   const backupDir = path.join(config.paths.dataDir, `_backup-${Date.now()}`);
+  const installed = new Set<string>();
 
   // Restore-from-backup: if any move fails midway (e.g. a read-only cwd), put
   // the ORIGINAL files back so we never leave a moved DB with an old key
@@ -287,7 +288,16 @@ export async function importSystemArchive(
     // honest than silently skipping a restore step.
     for (const name of ['ninedeploy.db', 'master.key', '.env', 'traefik']) {
       const b = path.join(dir, name);
-      if (!existsSync(b)) continue;
+      if (!existsSync(b)) {
+        if (installed.has(name)) {
+          const target = name === 'ninedeploy.db' ? config.paths.dbFile
+            : name === 'master.key' ? config.paths.masterKeyFile
+            : name === '.env' ? path.join(process.cwd(), '.env')
+            : path.join(config.paths.dataDir, 'traefik');
+          rmSync(target, { recursive: name === 'traefik', force: true });
+        }
+        continue;
+      }
       if (name === 'ninedeploy.db') renameSync(b, config.paths.dbFile);
       else if (name === 'master.key') renameSync(b, config.paths.masterKeyFile);
       else if (name === '.env') renameSync(b, path.join(process.cwd(), '.env'));
@@ -314,6 +324,7 @@ export async function importSystemArchive(
       mkdirSync(backupDir, { recursive: true });
       if (existsSync(config.paths.dbFile)) renameSync(config.paths.dbFile, path.join(backupDir, 'ninedeploy.db'));
       renameSync(importedDb, config.paths.dbFile);
+      installed.add('ninedeploy.db');
     }
 
     const importedKey = path.join(tmpDir, path.relative(config.paths.dataDir, config.paths.masterKeyFile));
@@ -321,6 +332,7 @@ export async function importSystemArchive(
       mkdirSync(backupDir, { recursive: true });
       if (existsSync(config.paths.masterKeyFile)) renameSync(config.paths.masterKeyFile, path.join(backupDir, 'master.key'));
       renameSync(importedKey, config.paths.masterKeyFile);
+      installed.add('master.key');
     }
 
     const importedTraefik = path.join(tmpDir, 'traefik');
@@ -329,6 +341,7 @@ export async function importSystemArchive(
       const traefikDir = path.join(config.paths.dataDir, 'traefik');
       if (existsSync(traefikDir)) renameSync(traefikDir, path.join(backupDir, 'traefik'));
       renameSync(importedTraefik, traefikDir);
+      installed.add('traefik');
     }
 
     const envFilename = extractedFiles.find((f) => f === '_env' || f.startsWith('_env-'));
@@ -337,6 +350,8 @@ export async function importSystemArchive(
       mkdirSync(backupDir, { recursive: true });
       const envPath = path.join(process.cwd(), '.env');
       if (existsSync(envPath)) renameSync(envPath, path.join(backupDir, '.env'));
+      // copyFileSync may create a partial file before failing.
+      installed.add('.env');
       copyFileSync(importedEnv, envPath);
     }
   } catch (err) {

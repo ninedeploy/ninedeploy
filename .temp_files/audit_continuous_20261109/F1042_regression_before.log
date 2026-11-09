@@ -1,0 +1,94 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/systemArchiveRollback.test.ts (4 tests | 3 failed) 5020ms
+   × F1042: restores none original state after a partial env failure 1909ms
+   × F1042: restores db-only original state after a partial env failure 1465ms
+   × F1042: restores key-only original state after a partial env failure 452ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/systemArchiveRollback.test.ts > F1042: restores none original state after a partial env failure
+AssertionError: expected [ true, true, true, true ] to deeply equal [ false, false, false, false ]
+
+- Expected
++ Received
+
+  [
+-   false,
+-   false,
+-   false,
+-   false,
++   true,
++   true,
++   true,
++   true,
+  ]
+
+ ❯ test/systemArchiveRollback.test.ts:57:70
+     55|     release();
+     56|     await rejection;
+     57|     expect(destinations.map(destination => existsSync(destination))).t…
+       |                                                                      ^
+     58|     for (const [index, destination] of destinations.entries()) {
+     59|       if (present[index]) expect(readFileSync(index === 2 ? path.join(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/systemArchiveRollback.test.ts > F1042: restores db-only original state after a partial env failure
+AssertionError: expected [ true, true, true, true ] to deeply equal [ true, false, false, false ]
+
+- Expected
++ Received
+
+  [
+    true,
+-   false,
+-   false,
+-   false,
++   true,
++   true,
++   true,
+  ]
+
+ ❯ test/systemArchiveRollback.test.ts:57:70
+     55|     release();
+     56|     await rejection;
+     57|     expect(destinations.map(destination => existsSync(destination))).t…
+       |                                                                      ^
+     58|     for (const [index, destination] of destinations.entries()) {
+     59|       if (present[index]) expect(readFileSync(index === 2 ? path.join(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/systemArchiveRollback.test.ts > F1042: restores key-only original state after a partial env failure
+AssertionError: expected [ true, true, true, true ] to deeply equal [ false, true, false, false ]
+
+- Expected
++ Received
+
+  [
+-   false,
+    true,
+-   false,
+-   false,
++   true,
++   true,
++   true,
+  ]
+
+ ❯ test/systemArchiveRollback.test.ts:57:70
+     55|     release();
+     56|     await rejection;
+     57|     expect(destinations.map(destination => existsSync(destination))).t…
+       |                                                                      ^
+     58|     for (const [index, destination] of destinations.entries()) {
+     59|       if (present[index]) expect(readFileSync(index === 2 ? path.join(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 1 passed (4)
+   Start at  18:12:13
+   Duration  5.55s (tests 94%, import 5%, transform 1%)

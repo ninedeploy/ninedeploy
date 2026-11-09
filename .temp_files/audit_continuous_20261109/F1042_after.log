@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1042_archive_rollback.test.ts > restores absence as well as original files after a later swap fails
+CONTROL EXPECTED: original DB/key/routes restored | ACTUAL: passed
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1042_archive_rollback.test.ts > restores absence as well as original files after a later swap fails
+EXPECTED: originally absent key/routes remain absent | ACTUAL: { key: false, traefik: false }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1042_archive_rollback.test.ts > restores absence as well as original files after a later swap fails 1507ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:12:38
+   Duration  2.26s (tests 80%, import 17%, transform 3%)
