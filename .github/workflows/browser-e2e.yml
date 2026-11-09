@@ -12,6 +12,10 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  # Nightly, against the current release image (the script's default), so the
+  # journeys run even when main CI pushes keep cancelling each other.
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       image:
@@ -34,6 +38,7 @@ jobs:
     # code must never run here.
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && github.repository == 'ninedeploy/ninedeploy') ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 45

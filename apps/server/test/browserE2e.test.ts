@@ -30,7 +30,7 @@ describe('e2e/ stays outside the panel workspace', () => {
 
 describe('.github/workflows/browser-e2e.yml', () => {
   const wf = load(read('.github/workflows/browser-e2e.yml')) as {
-    on: { workflow_run: { workflows: string[]; branches: string[] }; workflow_dispatch: unknown };
+    on: { workflow_run: { workflows: string[]; branches: string[] }; workflow_dispatch: unknown; schedule: { cron: string }[] };
     permissions: Record<string, string>;
     jobs: { journeys: { if: string; steps: Array<{ uses?: string; run?: string; with?: Record<string, unknown> }> } };
   };
@@ -42,6 +42,9 @@ describe('.github/workflows/browser-e2e.yml', () => {
     expect(wf.on.workflow_dispatch).toBeTruthy();
     expect(job.if).toContain("github.event.workflow_run.event == 'push'");
     expect(job.if).toContain("github.event.workflow_run.conclusion == 'success'");
+    // Nightly against the current release, only in the canonical repository (not in forks).
+    expect(wf.on.schedule).toHaveLength(1);
+    expect(job.if).toContain("github.event_name == 'schedule' && github.repository == 'ninedeploy/ninedeploy'");
   });
 
   it('is read-only, pins every action by SHA, and does not keep the checkout token', () => {
