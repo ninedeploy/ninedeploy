@@ -1,0 +1,14 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1049_loki_query_prefix.test.ts > queries the same reverse-proxy prefix that accepts the configured push endpoint
+CONTROL EXPECTED: root push/query accepted | ACTUAL: { prefix: '', pushed: true, queried: true }
+EXPECTED: configured prefixed push and query both work | ACTUAL: { prefix: '/gateway/team-a', pushed: true, queried: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1049_loki_query_prefix.test.ts > queries the same reverse-proxy prefix that accepts the configured push endpoint 34ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  19:37:52
+   Duration  670ms (import 76%, transform 15%, tests 7%, worker 1%)

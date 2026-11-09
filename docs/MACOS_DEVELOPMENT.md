@@ -276,3 +276,36 @@ and removes its owned resources. Its fixture uses `--pull=never`; preload the
 image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
+
+### Further audit checkpoints through round 25
+
+Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
+
+| Finding | Behavior verified | Bounded scope tests |
+| --- | --- | --- |
+| F1045 | Failed TAR staging writes/final moves clean their own files and preserve history | 37 |
+| F1046 | Partial ZIP writes preserve prior accepted source; retries remain extractable | 39 |
+| F1047 | Loki searches retain working drain tenant/custom headers and Bearer context | 77 |
+| F1048 | Log delivery/search header precedence is independent of field-name case | 110 |
+| F1049 | Query endpoints retain reverse-proxy prefixes from standard Loki push URLs | 64 |
+
+Counts belong to each round's recorded source snapshot and are not aggregate
+or full-suite coverage. Each fix has a before-proof, an independent verifier
+with three clean consecutive runs, permanent regression coverage and scoped
+server typecheck/build/lint results. Failed setup/worker attempts remain in the
+ledger rather than being counted as passes.
+
+At checkpoint 20 the general release gate stopped on an uncovered SDK method
+from the concurrent service-capability feature. Two authenticated SDK transport
+tests closed that gap: **390 tests passed with 100% in all four coverage
+measures** at that snapshot. The general-gate retry then suffered native
+Node/V8 worker allocation failures, so its incomplete coverage report is not a
+completed coverage result. The retry did not certify the repository.
+
+Other update-channel/installer/resources work continued concurrently and is
+tracked separately. Preserve local edits, inspect the current commit/status,
+then run the full release gate on the fresh Mac checkout; do not lower coverage
+floors to bypass an incomplete worker run. See
+[the checkpoint ledger](../.temp_files/ledger_release-checkpoint20_20261109.md)
+for commands and exact boundaries. Native DMG/Keychain and Linux installer/live
+provider acceptance remain separate checks.

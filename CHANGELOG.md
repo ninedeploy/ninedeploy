@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Loki log searches keep a reverse proxy's path prefix when deriving the query endpoint from a configured `/loki/api/v1/push` URL.
 - Log delivery and Loki search apply header precedence without regard to name casing, avoiding duplicate authentication and Content-Type values from differently cased custom headers.
 - Loki log searches preserve the drain's custom headers, including tenant IDs, and avoid duplicating an existing Bearer prefix, matching log delivery authentication.
 - ZIP source uploads publish through a complete temporary file, so a partial write cannot corrupt an already accepted archive or expose a failed upload as deployable source.

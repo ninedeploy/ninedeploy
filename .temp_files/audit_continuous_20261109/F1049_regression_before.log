@@ -1,0 +1,35 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/lib/logSearchUrls.test.ts (7 tests | 4 failed) 19ms
+   × F1049: derives query URL from https://fixture.invalid/gateway/team-a/… 3ms
+   × F1049: derives query URL from https://fixture.invalid/tenant%20a/loki… 1ms
+   × F1049: derives query URL from https://fixture.invalid//gateway/loki/a… 1ms
+   × F1049: derives query URL from https://fixture.invalid/gateway/loki/ap… 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/logSearchUrls.test.ts > F1049: derives query URL from https://fixture.invalid/gateway/team-a/…
+ FAIL  test/lib/logSearchUrls.test.ts > F1049: derives query URL from https://fixture.invalid/tenant%20a/loki…
+ FAIL  test/lib/logSearchUrls.test.ts > F1049: derives query URL from https://fixture.invalid//gateway/loki/a…
+ FAIL  test/lib/logSearchUrls.test.ts > F1049: derives query URL from https://fixture.invalid/gateway/loki/ap…
+AssertionError: promise rejected "Error: Loki query failed: 404 wrong query…" instead of resolving
+ ❯ test/lib/logSearchUrls.test.ts:26:53
+     24|   });
+     25|   vi.stubGlobal('fetch', fetch);
+     26|   await expect(searchLogs(db, { query: 'fixture' })).resolves.toMatchO…
+       |                                                     ^
+     27|   expect(fetch).toHaveBeenCalledOnce();
+     28| });
+
+Caused by: Error: Loki query failed: 404 wrong query endpoint
+ ❯ Module.searchLogs src/lib/logSearch.ts:104:11
+ ❯ test/lib/logSearchUrls.test.ts:26:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 3 passed (7)
+   Start at  19:36:45
+   Duration  610ms (import 85%, transform 11%, tests 4%, worker 1%)

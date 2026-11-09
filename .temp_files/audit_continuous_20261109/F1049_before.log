@@ -1,0 +1,37 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1049_loki_query_prefix.test.ts > queries the same reverse-proxy prefix that accepts the configured push endpoint
+CONTROL EXPECTED: root push/query accepted | ACTUAL: { prefix: '', pushed: true, queried: true }
+EXPECTED: configured prefixed push and query both work | ACTUAL: { prefix: '/gateway/team-a', pushed: true, queried: false }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1049_loki_query_prefix.test.ts > queries the same reverse-proxy prefix that accepts the configured push endpoint 32ms
+   → expected false to be true // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1049_loki_query_prefix.test.ts > queries the same reverse-proxy prefix that accepts the configured push endpoint
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1049_loki_query_prefix.test.ts:36:33
+     34|     console.log('EXPECTED: configured prefixed push and query both wor…
+     35|     console.log(results[1]?.queried ? 'PROBLEM NOT REPRODUCED' : 'PROB…
+     36|     expect(results[1]?.queried).toBe(true);
+       |                                 ^
+     37|   } finally { server.closeAllConnections(); await new Promise<void>((r…
+     38| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  19:35:37
+   Duration  605ms (import 79%, transform 13%, tests 7%, worker 1%)

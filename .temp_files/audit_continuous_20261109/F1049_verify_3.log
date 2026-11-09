@@ -1,0 +1,13 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1049_loki_query_prefix.test.ts > verifies preserved proxy paths/origin/auth and unchanged legacy fallback/query clearing
+EXPECTED: 28 prefix/origin/trailing/encoded/auth/fallback cases | ACTUAL: all passed
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1049_loki_query_prefix.test.ts > verifies preserved proxy paths/origin/auth and unchanged legacy fallback/query clearing 22ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  19:37:57
+   Duration  624ms (import 89%, transform 6%, tests 5%, worker 1%)

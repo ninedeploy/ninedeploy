@@ -86,7 +86,12 @@ export async function searchLogs(
   const lokiQuery = serviceLabel
     ? `{service="${serviceLabel}"} |= "${escapeLoki(opts.query)}"`
     : `{job="ninedeploy"} |= "${escapeLoki(opts.query)}"`;
-  const url = new URL('/loki/api/v1/query_range', drain.url);
+  const url = new URL(drain.url);
+  url.pathname = /\/loki\/api\/v1\/push\/?$/.test(url.pathname)
+    ? url.pathname.replace(/push\/?$/, 'query_range')
+    : '/loki/api/v1/query_range';
+  url.search = '';
+  url.hash = '';
   url.searchParams.set('query', lokiQuery);
   url.searchParams.set('start', (since.getTime() / 1000).toString());
   url.searchParams.set('end', (until.getTime() / 1000).toString());
