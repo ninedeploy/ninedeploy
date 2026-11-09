@@ -1,0 +1,23 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > independent minute deadline during quick refresh 54ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > independent minute deadline during pending refresh 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > independent minute deadline during failed refresh 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > independent hour deadline during quick refresh 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > independent hour deadline during pending refresh 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > independent hour deadline during failed refresh 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > swaps to a new job set after the query returns without duplicating old jobs 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > successful refresh stops a deleted job 3ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > successful refresh stops a disabled job 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > close during refresh stops old jobs and prevents replacement or reload timers 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > a failed refresh keeps the old set until a later successful replacement 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1058_jobReload.test.ts > a failed initial query still retries and arms its first valid schedule 1ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  21:36:47
+   Duration  318ms (import 56%, tests 37%, transform 5%, worker 2%)

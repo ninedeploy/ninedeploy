@@ -1,0 +1,36 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a quick control reload
+EXPECTED: six minute deadlines dispatched; ACTUAL: 6
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a pending reload
+EXPECTED: six minute deadlines dispatched; ACTUAL: 5
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a failed reload
+EXPECTED: six minute deadlines dispatched; ACTUAL: 5
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a quick control reload 50ms
+ × .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a pending reload 4ms
+   → expected "vi.fn()" to be called 6 times, but got 5 times
+ × .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a failed reload 2ms
+   → expected "vi.fn()" to be called 6 times, but got 5 times
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a pending reload
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a failed reload
+AssertionError: expected "vi.fn()" to be called 6 times, but got 5 times
+ ❯ .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts:37:200
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  21:35:04
+   Duration  249ms (import 47%, tests 35%, transform 16%, worker 2%)

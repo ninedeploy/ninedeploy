@@ -1,0 +1,14 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/inspect_round37_cloudScheduler.test.ts > control: dispatches first at two minutes and repeats on cadence 92ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round37_cloudScheduler.test.ts > suppresses overlap during a gated sweep and resumes after completion 2ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round37_cloudScheduler.test.ts > failed sweep releases busy, without future closed-owner dispatch (false) 2ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round37_cloudScheduler.test.ts > failed sweep releases busy, without future closed-owner dispatch (true) 2ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round37_cloudScheduler.test.ts > close before the first interval prevents every sweep 1ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round37_cloudScheduler.test.ts > close while a sweep waits prevents any next sweep after release 2ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  21:27:41
+   Duration  408ms (import 46%, tests 37%, transform 15%, worker 2%)

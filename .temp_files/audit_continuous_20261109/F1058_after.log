@@ -1,0 +1,23 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a quick control reload
+EXPECTED: six minute deadlines dispatched; ACTUAL: 6
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a pending reload
+EXPECTED: six minute deadlines dispatched; ACTUAL: 6
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a failed reload
+EXPECTED: six minute deadlines dispatched; ACTUAL: 6
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a quick control reload 54ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a pending reload 2ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1058_jobReload.test.ts > preserves the next job deadline during a failed reload 1ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  21:35:19
+   Duration  262ms (import 49%, tests 36%, transform 14%, worker 2%)

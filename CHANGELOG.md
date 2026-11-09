@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scheduled jobs keep their active crons while a refresh query waits or fails, preserving upcoming job deadlines until a successful reload replaces the schedule set (F1058).
 - Image scan schedulers suppress critical-result callbacks after their application closes, preventing late audit alerts from a retained scan callback (F1057).
 - **Advice that cut a panel off from its own domain.** Doctor, the README, the compose file and the panel IP allow-list docs said to bind the panel to `127.0.0.1` once it had an HTTPS domain. Traefik reaches the panel through the Docker gateway, so after that change the domain stopped answering. This was proven in a Linux Docker-in-Docker run: a loopback-bound panel is unreachable, `0.0.0.0` is reachable. The advice now is to keep port 3000 reachable from Docker and to block it from the internet with a firewall in front of the host. The README's first-boot steps also pointed at **Settings → System** for the ACME email. It lives under **Settings → Security**.
 - GitOps result publication respects configuration removal/replacement, preserves cleared state and protects newer results; stale checks report a conflict and completed apply results remain available to their caller (F1056).

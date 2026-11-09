@@ -16,8 +16,6 @@ export default fp(
     const activeCrons: Array<{ stop(): void }> = [];
 
     const armJobs = async (): Promise<void> => {
-      // Tear down the previous set; cheap at this scale (handful of jobs).
-      for (const c of activeCrons.splice(0)) c.stop();
       let jobs: Array<typeof scheduledJobs.$inferSelect> = [];
       try {
         jobs = (await db.query.scheduledJobs.findMany()).filter((j) => j.enabled);
@@ -25,6 +23,8 @@ export default fp(
         return; // table might not exist yet (pre-migration)
       }
       if (stopped) return; // close() may have run while the query was pending.
+      // Keep working schedules until the replacement query succeeds.
+      for (const c of activeCrons.splice(0)) c.stop();
       for (const job of jobs) {
         try {
           // F102: 5-part only, like the API's assertCron (F240). croner's

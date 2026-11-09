@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 36
+### Further audit checkpoints through round 38
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -297,6 +297,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1055 | Closed GitOps schedulers stop new checks and suppress late drift/failure alerts | 21 |
 | F1056 | GitOps check/apply results respect config replacement/removal, preserve cleared records and protect newer results | 31 |
 | F1057 | Image scan schedulers suppress retained critical-result alerts after their application closes | 82 |
+| F1058 | Working recurring jobs retain their deadlines while schedule-list refreshes wait or fail | 65 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -327,6 +328,9 @@ and an incomplete initial-patch edge remain recorded rather than counted as pass
 Round 36 passed 11 independent scan-callback lifecycle/overlap/failure cases
 three times, plus 82 neighboring tests and resource-bound server typecheck/build.
 These tests use synthetic findings and do not establish a live vulnerability verdict.
+Round 37 found no cloud-scheduler defect: six gated lifecycle checks and 18
+existing mocked-provider tests passed. Round 38 passed 12 real-Cron/controlled-clock
+deadline, replacement, removal and close cases three times, plus its 65-test scope.
 
 At checkpoint 20 the general release gate stopped on an uncovered SDK method
 from the concurrent service-capability feature. Two authenticated SDK transport

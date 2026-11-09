@@ -1,0 +1,26 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/hetznerCloud.test.ts > token > is proven with a read call, stored encrypted and shown back only as a hint 245ms
+ ✓ test/lib/hetznerCloud.test.ts > token > is not stored when Hetzner refuses it 274ms
+ ✓ test/lib/hetznerCloud.test.ts > options > lists current server types and only the images the bootstrap supports 256ms
+ ✓ test/lib/hetznerCloud.test.ts > options > asks for a token first 234ms
+ ✓ test/lib/hetznerCloud.test.ts > create > creates a VM whose user data installs Docker and starts the agent, and registers the node offline 263ms
+ ✓ test/lib/hetznerCloud.test.ts > create > deletes the VM again when it got no IPv4 or the IP is still another node 250ms
+ ✓ test/lib/hetznerCloud.test.ts > create > rekeys the node once its agent first answers 295ms
+ ✓ test/lib/hetznerCloud.test.ts > rekey (security review: the first key is readable from the metadata service) > sends only the new hash, stores the new token first, and switches when the agent answers with it 222ms
+ ✓ test/lib/hetznerCloud.test.ts > rekey (security review: the first key is readable from the metadata service) > keeps the old key and the pending one when the agent has not come back, and the sweep finishes later 318ms
+ ✓ test/lib/hetznerCloud.test.ts > rekey (security review: the first key is readable from the metadata service) > leaves a node whose agent is not up yet for a later sweep 268ms
+ ✓ test/lib/hetznerCloud.test.ts > rekey (security review: the first key is readable from the metadata service) > never replaces a pending key: an agent still on its first key gets the same hash again 309ms
+ ✓ test/lib/hetznerCloud.test.ts > rekey (security review: the first key is readable from the metadata service) > runs one rekey per node at a time 242ms
+ ✓ test/lib/hetznerCloud.test.ts > rekey (security review: the first key is readable from the metadata service) > stops, keeping the pending key, when it cannot be decrypted 243ms
+ ✓ test/lib/hetznerCloud.test.ts > rekey (security review: the first key is readable from the metadata service) > refuses a manual Test or Approve until the node is rekeyed 452ms
+ ✓ test/lib/hetznerCloud.test.ts > delete > is refused while the node hosts a service or a database 279ms
+ ✓ test/lib/hetznerCloud.test.ts > delete > deletes the VM, the node and the link; a VM already gone on Hetzner still cleans up 278ms
+ ✓ test/lib/hetznerCloud.test.ts > delete > keeps the node when Hetzner refuses the delete 288ms
+ ✓ test/lib/hetznerCloud.test.ts > routes > never returns the token, audits changes and refuses members 276ms
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  21:27:44
+   Duration  6.22s (tests 85%, import 11%, transform 4%)
