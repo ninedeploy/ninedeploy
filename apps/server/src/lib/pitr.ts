@@ -277,14 +277,14 @@ export async function startPitrRecovery(
   // slugify falls back to a fixed word for a name without letters or digits.
   if (!/[a-z0-9]/i.test(input.name)) throw unprocessable('The name must contain letters or digits.', 'pitr_name_invalid');
   const slug = slugify(input.name);
-  if (await db.query.databases.findFirst({ where: eq(databases.slug, slug) })) throw conflict('A database already uses this name');
   const volumeName = `nd-db-${slug}-data`;
-  if (await deps.volumeExists(volumeName)) throw conflict(`A retained volume ${volumeName} already exists; pick another name.`);
   const cfg = ENGINES.postgres!;
   recoveriesRunning.add(source.id);
   let target: Database;
   let recoveryId: number;
   try {
+    if (await db.query.databases.findFirst({ where: eq(databases.slug, slug) })) throw conflict('A database already uses this name');
+    if (await deps.volumeExists(volumeName)) throw conflict(`A retained volume ${volumeName} already exists; pick another name.`);
     const [row] = await db
       .insert(databases)
       .values({

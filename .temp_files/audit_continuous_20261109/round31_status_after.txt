@@ -1,0 +1,28 @@
+ M .env.example
+ M CHANGELOG.md
+ M README.md
+ M apps/server/src/env.ts
+ M apps/server/src/lib/autoUrl.ts
+ M apps/server/src/lib/pitr.ts
+ M apps/server/src/modules/api.ts
+ M apps/server/src/modules/auth.ts
+ M apps/server/src/openapi/specs/auth.ts
+ M apps/server/src/openapi/specs/platform.ts
+ M apps/server/test/api.test.ts
+ M apps/server/test/auth.test.ts
+ M apps/server/test/lib/pitr.test.ts
+ M apps/web/src/lib/auth.tsx
+ M apps/web/src/locales/tr.ts
+ M apps/web/src/routes/Login.tsx
+ M apps/web/test/Login.test.tsx
+ M docker-compose.prod.yml
+ M docs/MACOS_DEVELOPMENT.md
+ M docs/QUICKSTART.md
+ M docs/plans/COMPETITIVE_ROADMAP_2026-11.md
+ M install.sh
+ M packages/schemas/src/auth.ts
+ M packages/schemas/test/schemas.test.ts
+ M packages/sdk/src/resources/auth.ts
+?? apps/server/src/lib/setupAcme.ts
+?? apps/server/test/installDomain.test.ts
+?? apps/server/test/setupAcme.test.ts

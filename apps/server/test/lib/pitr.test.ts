@@ -205,6 +205,41 @@ describe('pitrStatus', () => {
 });
 
 describe('a recovery', () => {
+  for (const pendingAdmission of [false, true]) {
+    it(`enforces the global recovery limit while the first ${pendingAdmission ? 'admission waits' : 'recovery runs (control)'}`, async () => {
+      const firstSource = await insertDb({ pitrEnabled: true });
+      const secondSource = await insertDb({ slug: 'second-source', name: 'second-source', pitrEnabled: true });
+      let entered!: () => void; let releaseAdmission!: () => void; let releaseReplay!: () => void;
+      const entering = new Promise<void>((resolve) => { entered = resolve; });
+      const admission = new Promise<void>((resolve) => { releaseAdmission = resolve; });
+      const replay = new Promise<void>((resolve) => { releaseReplay = resolve; });
+      const firstDone = settled(); const secondDone = settled();
+      let volumeCalls = 0;
+      const deps = fakeDeps({
+        volumeExists: async () => { if (++volumeCalls === 1 && pendingAdmission) { entered(); await admission; } return false; },
+        recover: vi.fn(async () => { await replay; return { baseBackup: 'synthetic', recoveredTo: 'synthetic', restoreMs: 1 }; }),
+      });
+      const first = startPitrRecovery(db, firstSource, { name: 'first-restored', targetTime: null }, userId, () => undefined, deps, firstDone.resolve);
+      if (pendingAdmission) await entering; else await first;
+      let secondAdmitted = false;
+      let secondError: unknown;
+      try {
+        try {
+          await startPitrRecovery(db, secondSource, { name: 'second-restored', targetTime: null }, userId, () => undefined, deps, secondDone.resolve);
+          secondAdmitted = true;
+        } catch (err) { secondError = err; }
+        releaseAdmission(); await first;
+        expect(secondError).toMatchObject({ statusCode: 409, code: 'pitr_recovery_busy' });
+        expect(deps.recover).toHaveBeenCalledOnce();
+      } finally {
+        releaseAdmission(); await first;
+        releaseReplay(); await firstDone.promise;
+        if (secondAdmitted) await secondDone.promise;
+      }
+      expect(pitrBusy.recoveries()).toBe(0);
+    });
+  }
+
   it('admits at once, then recovers, starts and probes the new database and records the evidence', async () => {
     const source = await insertDb({ pitrEnabled: true, memLimitMb: 512 });
     const deps = fakeDeps();

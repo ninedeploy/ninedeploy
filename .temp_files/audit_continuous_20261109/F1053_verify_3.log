@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts > independent 2 contenders while first admission waits at slug 641ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts > independent 5 contenders while first admission waits at slug 353ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts > independent 2 contenders while first admission waits at volume 507ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts > independent 5 contenders while first admission waits at volume 426ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts > failed name-conflict admission releases capacity for the next request 413ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts > failed volume-exists admission releases capacity for the next request 367ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts > failed volume-error admission releases capacity for the next request 406ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1053_pitrAdmission.test.ts > failed insert-error admission releases capacity for the next request 1103ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  20:17:53
+   Duration  5.63s (tests 80%, import 12%, transform 8%)

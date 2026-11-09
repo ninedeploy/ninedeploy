@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- PITR recovery admission reserves capacity before asynchronous name/volume checks, keeping concurrent requests within the one-recovery limit and releasing capacity on admission failure (F1053).
 - PITR maintenance reloads the database's retention policy before pruning, honoring retention increases committed while the archiver query or a base backup was running (F1052).
 - Panel backup scheduler ticks waiting for settings now stop when their application closes, preventing a late backup from starting against closed resources (F1051).
 - Panel backup retention now rechecks the selected destination and keep count before each deletion, preserving old recovery artifacts when settings change during an upload or prune (F1050).

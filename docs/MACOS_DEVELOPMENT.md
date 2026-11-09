@@ -277,7 +277,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 30
+### Further audit checkpoints through round 31
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -291,6 +291,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1050 | Panel retention rechecks destination and keep count before each delete; already-deleted objects do not consume retention slots | 26 |
 | F1051 | A scheduler tick suspended in a settings read cannot start a backup after its application closes | 29 |
 | F1052 | PITR maintenance reloads persisted retention before pruning after long archiver/base-backup calls | 51 |
+| F1053 | Concurrent PITR admissions reserve capacity before name/volume checks and release it on admission failure | 53 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -308,7 +309,9 @@ Round 30's original Windows typecheck failed with a native TypeScript/Go
 server typecheck and build; the temporary environment setting was restored.
 The interrupted initial scope run was not counted; the unchanged retry passed
 all 51 tests. Keep these resource limits distinct from a full default-environment
-release gate on the Mac.
+release gate on the Mac. Round 31 likewise passed server typecheck/build with
+the child-process `GOMAXPROCS=4` resource bound; its independent admission
+verifier passed eight cases three times.
 
 At checkpoint 20 the general release gate stopped on an uncovered SDK method
 from the concurrent service-capability feature. Two authenticated SDK transport

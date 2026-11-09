@@ -1,0 +1,31 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1053_pitrAdmission.test.ts > a recovery > enforces the global recovery limit while the first recovery runs (control)
+EXPECTED: rejected with pitr_recovery_busy; ACTUAL: HttpError: Another point-in-time recovery is running on this panel. Try again when it finishes.
+    at Module.startPitrRecovery (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/pitr.ts:275:11)
+    at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/prove_F1053_pitrAdmission.test.ts:119:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:20 {
+  statusCode: 409,
+  code: 'pitr_recovery_busy'
+}
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1053_pitrAdmission.test.ts > a recovery > enforces the global recovery limit while the first recovery runs (control) 349ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1053_pitrAdmission.test.ts > a recovery > enforces the global recovery limit while the first admission waits
+EXPECTED: rejected with pitr_recovery_busy; ACTUAL: HttpError: Another point-in-time recovery is running on this panel. Try again when it finishes.
+    at Module.startPitrRecovery (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/pitr.ts:275:11)
+    at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/prove_F1053_pitrAdmission.test.ts:119:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:20 {
+  statusCode: 409,
+  code: 'pitr_recovery_busy'
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1053_pitrAdmission.test.ts > a recovery > enforces the global recovery limit while the first admission waits 416ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  20:16:49
+   Duration  2.70s (tests 43%, import 37%, transform 20%)
