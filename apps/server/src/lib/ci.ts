@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { and, asc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, DrizzleQueryError, eq, inArray, lt, sql } from 'drizzle-orm';
 import { ciAttempts, ciJobs, ciRunners, type DB, envVars, type services } from '@ninedeploy/db';
 import { CI_RESERVED_ENV, type CiClaimResponse, type CiPipeline, ciPipeline } from '@ninedeploy/schemas';
 import { config } from '../config.js';
@@ -282,10 +282,24 @@ export async function claimJob(
     if (affected(won) !== 1) continue;
     const leaseToken = newToken(LEASE_TOKEN_PREFIX);
     const number = job.attempts + 1;
-    const [attempt] = await db
-      .insert(ciAttempts)
-      .values({ jobId: job.id, runnerId: runner.id, number, leaseHash: hashToken(leaseToken), leaseExpiresAt: now + LEASE_MS })
-      .returning();
+    let attempt: Attempt | undefined;
+    try {
+      [attempt] = await db
+        .insert(ciAttempts)
+        .values({ jobId: job.id, runnerId: runner.id, number,
+          leaseHash: sql`(select case when count(*) < ${runner.capacity} then ${hashToken(leaseToken)} else null end
+            from ${ciAttempts} where ${ciAttempts.runnerId} = ${runner.id} and ${ciAttempts.status} = 'running')`,
+          leaseExpiresAt: now + LEASE_MS })
+        .returning();
+    } catch (err) {
+      if (!(err instanceof DrizzleQueryError && err.cause?.message.endsWith('NOT NULL constraint failed: ci_attempts.lease_hash'))) throw err;
+      // Another claim filled the runner's last slot. Undo only this still
+      // unassigned claim; never revive a job that cancellation already closed.
+      await db.update(ciJobs).set({ status: 'queued', attempts: job.attempts, startedAt: job.startedAt })
+        .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), eq(ciJobs.attempts, number),
+          sql`${ciJobs.currentAttemptId} IS ${job.currentAttemptId}`));
+      return null;
+    }
     if (!attempt) throw new Error('Could not record the attempt');
     const assigned = await db.update(ciJobs).set({ currentAttemptId: attempt.id }).where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running')));
     if (affected(assigned) !== 1) {

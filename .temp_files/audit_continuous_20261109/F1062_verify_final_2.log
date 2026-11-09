@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > five explicit overlapping claims reserve only 1 slots
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > five explicit overlapping claims reserve only 1 slots 208ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > five explicit overlapping claims reserve only 2 slots
+EXPECTED: 2 ACTUAL: 2 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > five explicit overlapping claims reserve only 2 slots 213ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > five explicit overlapping claims reserve only 3 slots
+EXPECTED: 3 ACTUAL: 3 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > five explicit overlapping claims reserve only 3 slots 173ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > reported capacity exhaustion does not consume a job or create an attempt
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > reported capacity exhaustion does not consume a job or create an attempt 174ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > different runners retain independent capacity
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > different runners retain independent capacity 185ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > a losing retry restores prior count/start and can later claim the same attempt number
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > a losing retry restores prior count/start and can later claim the same attempt number 192ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > capacity failure delivered after cancellation cannot requeue the cancelled job
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > capacity failure delivered after cancellation cannot requeue the cancelled job 187ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > unrelated attempt insertion errors propagate rather than becoming capacity rejection
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > unrelated attempt insertion errors propagate rather than becoming capacity rejection 294ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > independent SQLite connections share the atomic runner budget
+EXPECTED: 1 shared-file attempt; ACTUAL: 1 FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > independent SQLite connections share the atomic runner budget
+TEMP_FIXTURE_RETAINED: C:\Users\ersin\AppData\Local\Temp\nd-ci-capacity-two-clients-AnbDCQ
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1062_ciCapacity.test.ts > independent SQLite connections share the atomic runner budget 632ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  22:12:24
+   Duration  3.13s (tests 79%, import 17%, transform 4%)
