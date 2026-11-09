@@ -287,7 +287,7 @@ Required next acceptance remains explicit: shared ordering for fan-out/deploy/sc
 
 ## Release gate snapshot
 
-Across the multi-release program, one of six feature packages has implementation acceptance and five remain pending. This is a backlog inventory, not a 0.18.2 completion percentage. R1, compatibility of the completed increments and the recurring certification gates are closed for 0.18.2. R2–R6 remain allocated to later releases.
+Updated 2026-11-09. R1 and R3–R5 are published (0.18.2, 0.18.21 and 0.18.15). R6 ships unsigned installers with every release since 0.18.25. R2 is the open package, targeted at 0.19.0. The rows below are an inventory of the packages, not a completion percentage.
 
 | Package | Current state | Release allocation | Required next acceptance |
 | --- | --- | --- | --- |
@@ -295,9 +295,9 @@ Across the multi-release program, one of six feature packages has implementation
 | Public node canary (R1) | Published in 0.18.2 | 0.18.2 | Accepted; retain the canary regression suite |
 | Remaining runtime support (R2) | In progress; node metrics, manual replicas/SQL readiness and settled multi-node lifecycle verified | 0.19.0 target | Stop during generation handoff, shared deploy/scale/wake ordering, node autoscale/sleep and mixed-agent acceptance (the Swarm support matrix was accepted 2026-11-06) |
 | Recovery (R3) | Published in 0.18.21 (2026-11-06), hosted-accepted ([run 42029003391](https://github.com/ninedeploy/ninedeploy/actions/runs/42029003391)) | 0.18.21 | Isolated real restore/query/RTO for every managed engine and PostgreSQL PITR |
-| Remote MCP (R4) | Implemented, unreleased | 0.21.0 target | Streamable HTTP with API-token Bearer auth and OAuth 2.1 (discovery, dynamic registration, consent, PKCE, refresh rotation, revocation, MCP-only token audience), per-call authorization and immediate revocation are implemented and checked with the official client, including its own OAuth flow (see [AI_MCP_CLI.md](AI_MCP_CLI.md#remote-mcp-over-http-r4)); release verification remains |
-| CI/runners (R5) | Implemented, unreleased | 0.22.0 target | Durable execution, enrollment/isolation, secrets, approvals, recovery and the deploy gate are proven with a real runner ([CI_RUNNERS.md](CI_RUNNERS.md#verified)); release verification remains |
-| Packaged desktop (R6) | Implemented; built and launched on Windows, Linux and macOS CI | 0.23.0 target | Secure credentials/IPC/navigation and platform installers; sign-in and Keychain on a real Mac, signing and release verification remain |
+| Remote MCP (R4) | Published in 0.18.15 | 0.18.15 | Streamable HTTP with API-token Bearer auth and OAuth 2.1 (discovery, dynamic registration, consent, PKCE, refresh rotation, revocation, MCP-only token audience), per-call authorization and immediate revocation, checked with the official client, including its own OAuth flow (see [AI_MCP_CLI.md](AI_MCP_CLI.md#remote-mcp-over-http-r4)) |
+| CI/runners (R5) | Published in 0.18.15 | 0.18.15 | Durable execution, enrollment/isolation, secrets, approvals, recovery and the deploy gate, proven with a real runner ([CI_RUNNERS.md](CI_RUNNERS.md#verified)) |
+| Packaged desktop (R6) | Installers published with every release since 0.18.25, unsigned | 0.18.25 | Signing (needs certificates), and sign-in through the Keychain on a real Mac |
 | Release certification (R7) | Complete for 0.18.2; repeated per release | Every release | Repeat full certification for the next release |
 
 Latest published certification: 14,634 tests in 874 files, all 11 tasks uncached with unchanged coverage floors, on c097f3a3f29feb3521b6ad22b3d09181acfcbc9f. Hosted CI passed its full matrix and all 10 real integration tests. The 2,412 compiled/runtime files matched both the local candidate and published Linux amd64 image exactly. Publication, signatures, source assets and all five npm packages were independently verified.

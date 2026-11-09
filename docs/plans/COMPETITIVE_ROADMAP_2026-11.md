@@ -1,0 +1,216 @@
+# Competitive roadmap: 2026-11
+
+**Drawn up on 2026-11-09** against `main` at e85dbf45 (0.18.25). The tree had 12 modified files from another session; they are not part of this plan.
+
+**Sources:**
+- three read-only reviews run on the same day: code health and structural debt, competitor state, and product and adoption;
+- the competitive gap report in `.temp_files/competitive-gap-20261109/REPORT.md`, which pins 12 competitor sources;
+- spot checks of the claims these rely on, against the source.
+
+The working notes are git-ignored:
+- `.temp_files/compet_20261109/` holds the competitor issue rankings, advisory counts and raw release notes;
+- `.temp_files/competitive-gap-20261109/` holds the pinned competitor sources.
+
+This plan follows on from [ROADMAP.md](../ROADMAP.md) and [GAP_ROADMAP.md](../GAP_ROADMAP.md), whose items are all done except R2. It does not re-plan R2 (node ordered lifecycle, autoscaling and sleep acceptance, 0.19.0), because another session owns it; see [COMPETITIVE_DELIVERY.md](../COMPETITIVE_DELIVERY.md).
+
+Every item follows the rule every release follows: installed servers upgrade in place; migrations are additive only; new behaviour is opt-in or keeps the old default; and `smoke:upgrade` exercises the item after an upgrade.
+
+---
+
+## 1. What changed: features are no longer the bottleneck
+
+Six weeks of roadmap work closed almost every feature gap found in October. What decides whether NineDeploy beats its rivals now lies elsewhere.
+
+**Adoption is near zero.**
+
+| Signal | NineDeploy | For comparison |
+|---|---|---|
+| GitHub stars | 16 | Coolify 65.8k, Dokploy 38.3k |
+| Forks | 3 | |
+| Issues ever opened | 0 | |
+| Commits by one author | 1,925 of about 1,980 | |
+| Tags in the last 30 days | 47 | |
+
+The repository also has:
+- no importer from another platform;
+- no screenshots in the README;
+- no CONTRIBUTING, SECURITY or CODE_OF_CONDUCT file.
+
+**The rivals are closing in on our differentiators.**
+- Coolify 4.5.1 to 4.7.0 (2026-10-20 to 11-09) shipped workspace-enforced 2FA, compose build skip, per-resource RBAC for members and tokens, update channels (stable, preview, nightly), and image scanning with API and MCP tools.
+- Dokploy 0.31.0 shipped moving services between servers and audit-log export.
+- GAP_ROADMAP's G5 heading, "None of the Docker-based rivals has these", is no longer true as a group claim.
+
+**Structural debt now causes silent data loss in ordinary operations.**
+- About 25 per-entity `settings` key prefixes hold feature state.
+- They are untyped.
+- They are orphaned when their entity is deleted.
+- They are dropped on export, import and clone (§3).
+
+**The capability story is inconsistent.**
+- The server has 45 distinct `*_unsupported`, `*_unavailable` or `*_refused` codes.
+- Several docs contradict each other or the code (§2).
+
+**Security is a selling point we don't use.**
+
+| Platform | Event in 2026 | Source |
+|---|---|---|
+| Coolify | 61 GitHub advisories, 16 critical | Counted on 2026-11-09 |
+| Dokploy | 56 GitHub advisories, 33 critical | Counted on 2026-11-09 |
+| Dokploy | A fresh instance was taken over through its open setup page | [#5156](https://github.com/Dokploy/dokploy/issues/5156) |
+| Railway | Breach disclosed on 10-21 | [changelog](https://railway.com/changelog/2026-10-23-october-21-security-incident.md) |
+| Northflank | Breach disclosed on 10-30 | [BleepingComputer](https://bleepingcomputer.com/news/security/northflank-security-breach-leads-to-abuse-of-customers-ai-api-keys) |
+
+NineDeploy already has:
+- argv-only command execution;
+- a setup token on first boot;
+- signed releases;
+- real restore verification.
+
+These are told nowhere a buyer would look.
+
+**Hence the order of this plan:**
+1. Truth: one contract for what works where.
+2. Structural debt.
+3. Adoption.
+4. Parity across runtimes.
+5. Reliability and data.
+6. New modules, last.
+
+Priority: **P0** means fix now, because it is wrong or loses data today. **P1** is the next releases. **P2** comes after P1. **P3** is a strategic choice for the owner.
+
+Size: **S** means at most a patch. **M** is one or two patches. **L** is a multi-patch package. **XL** is architectural.
+
+Status: ⬜ not started · 🟨 in progress · ✅ done (with the release that shipped it)
+
+---
+
+## 2. T0: One capability contract
+
+| ID | Item | Evidence | Approach | Pri | Size | Status |
+|---|---|---|---|---|---|---|
+| C1 | **Capability registry.** A single versioned table of feature × runtime gives the support status of each feature on each runtime. The runtimes are panel-host Docker, node Docker, Compose, Swarm and PM2. Each row can also require an agent capability. | 45 refusal codes spread across modules; the UI learns a combination is unsupported only after save (REPORT G11/G12) | A typed registry in `packages/schemas`. It feeds three things: `GET /v1/capabilities?serviceId=` for the UI, which disables a control before save and says why; a generated public support matrix in the docs; and the README comparison (A5). A guard test fails when a refusal code has no registry entry, or an entry has no refusal path. | P0 | M | ⬜ |
+| C2 | **Fix doc drift now.** | Autoscaling is documented as panel-host only, but node cpu/memory/rps exists (`autoscaler.ts:61,71`; `DEPLOYMENTS.md:122`). Scale-to-zero is documented as panel-host only, but the node sleep coordinator defaults to on (`env.ts:57`; `DEPLOYMENTS.md:235`). ROADMAP's R6 row says installers are unpublished, but 0.18.25 ships them. COMPETITIVE_DELIVERY's gate snapshot calls R4 and R5 unreleased. ROADMAP's "Later" list still lists PITR. GAP_ROADMAP's G5 heading. The README's "no scheduler" wording needs to name what is actually missing. | Correct each statement from current code. Keep historical receipts, dated. | P0 | S | ✅ docs (ROADMAP, GAP_ROADMAP, COMPETITIVE_DELIVERY, DEPLOYMENTS autoscaling, README). Node scale-to-zero wording stays with R2: the coordinator defaults on (`env.ts:57`), but node sleep is not accepted yet |
+| C3 | **Separate public from internal docs.** | `AUDIT_*`, `SECURITY_AUDIT_*`, `GAP_ROADMAP`, `COMPETITIVE_DELIVERY` and `SWARM_RUNTIME_ACCEPTANCE` sit next to the user guides. They are full of CI run IDs and commit SHAs. | Move them to `docs/internal/`, keeping relative links. Reorganise the rest as Get started / Guides / Reference / Operate. | P1 | S | ⬜ |
+
+## 3. T1: Structural debt
+
+| ID | Item | Evidence | Approach | Pri | Size | Status |
+|---|---|---|---|---|---|---|
+| S1 | **Typed settings-row registry.** | `getSettingJson<T>` casts with no validation (`lib/settings.ts:37-47`). `setSettingJson` writes through `as unknown as boolean` (`:52`). About 25 per-entity prefixes and 54+ singleton keys are each validated (or not) at their own call site. | Declare each prefix once, with: a zod schema; the owning entity kind (service, domain, database, server, githubApp, workspace or ssoProvider); whether it holds a secret; and its export/clone policy. Reads go through the declaration. An invalid row reads as the fallback and logs once. | P0 | M | ⬜ |
+| S2 | **Remove owned rows when the owner is deleted.** | Service delete (`modules/services.ts:1201`) removes no settings rows. The emitted `service.deleted` and `database.deleted` events have no listener. Database, domain, GitHub App, workspace and SSO provider deletes leave rows behind as well. Orphans keep a registry-hook token hash and an error-ingest key, and `enforceRestartLimits` iterates dead ids on every pass (`restartLimit.ts:115`). | Delete the S1-declared rows in the same transaction as the entity row. Add an idempotent sweep for existing orphans to the housekeeping plugin. IDs are AUTOINCREMENT, so no new entity ever inherited an orphan. | P0 | S | ⬜ |
+| S3 | **Carry feature state through export, import, clone and move.** | Service export reads only services, build configs, env, domains, webhooks and attachments (`modules/serviceMigration.ts:61-125`). Clone copies only the inline Dockerfile (`services.ts:~1976`). An exported inline-Dockerfile service therefore loses its Dockerfile. Maintenance, forward auth, restart limit, sticky sessions, compose routes, CI pipeline and commit status are silently dropped. | Each item follows its S1 export policy. Non-secret state travels. Secrets such as hook tokens and ingest keys are generated fresh, and the import report lists them. Bundles keep their old format readable. | P0 | M | ⬜ |
+| S4 | **Prefix scans on hot paths.** | 10 `like(settings.key, 'prefix%')` scans. SQLite's `LIKE` is case-insensitive, so it cannot use the key index. `routingOverrides` and `forwardAuthDomains` run on every Traefik render (`engine/proxy.ts:1113,1193`), and `writeDynamicConfig` has 81 call sites. | Measure on a populated database first. Then switch to a key range (`key >= p AND key < p || x'ff'`) or `GLOB`, both of which use the primary key, and cache per render. | P1 | S | ⬜ |
+| S5 | **Promote hot or relational settings state to real columns or tables.** | Hot-path or per-entity state (maintenance, forward auth, compose route, restart limit) lives in JSON rows that have no foreign key and no cascade. | Use additive migrations, with a dual read for one release: new column first, row as fallback. Do this only for state that S4 shows to be hot or that needs a cascade. The rest stays declared in S1. | P2 | M | ⬜ |
+| S6 | **Panel state lost on restart.** | 109 module-level Maps or Sets and 43 timers. A canary ends when the panel restarts (`engine/canaryState.ts:61`; `DEPLOYMENTS.md:100`). | List the in-memory state that a user would notice losing: canary, sleep tracking and forward-auth codes. Persist only that state, or document its loss in C1. | P2 | M | ⬜ |
+| S7 | **Browser end-to-end tests in CI.** | Web tests run only in jsdom (`apps/web/vitest.config.ts:6`). No workflow runs Playwright. | Promote the isolated-panel Playwright capture (DinD with the panel image) into a CI job covering the ten main journeys: setup, first deploy, domain and TLS, env, rollback, database and backup, preview, approval, member access, and the Turkish locale. Run it on desktop and phone widths. | P1 | M | ⬜ |
+| S8 | **Unwired smoke scripts.** | No workflow runs 6 of the 28 `scripts/smoke-*.mjs`, and `smoke-node-operations` is referenced nowhere. | Wire each one into a workflow or delete it. | P1 | S | ⬜ |
+| S9 | **Hot files.** | `engine/pipeline.ts` has 2,409 lines and `modules/services.ts` has 2,010. The panel's `DeployWizard.tsx` has 1,596. | Split a file only while an item is already changing it. This is not a refactor project. | P3 | — | ⬜ |
+
+## 4. T2: Adoption, the biggest gap
+
+| ID | Item | Evidence | Approach | Pri | Size | Status |
+|---|---|---|---|---|---|---|
+| A1 | **Importers from Coolify, Dokploy and CapRover**, then Heroku `app.json` and Procfile. | No platform importer exists: `serviceMigration.ts` moves only NineDeploy bundles. Temps ships a CapRover importer. The switchers we can win come from these platforms. | **Step 1**, read-only: an adapter reads the source through its API or a database dump and produces a normalised plan. The plan lists each unsupported option, secret, volume and database by name before anything changes. **Step 2**: import image and Git services with domains, env and limits, resumable with receipts, leaving the source untouched. **Step 3**: move data, checksummed, with DNS cutover as an explicit last step. Coolify's and Dokploy's compose templates map onto our converters. | P1 | L | ⬜ |
+| A2 | **First run in one flow.** | About 7 steps from a fresh VPS to an app on its own domain with TLS. The panel runs on HTTP `:3000`. The ACME email is set in a separate settings step. The first automatic URL is HTTP-only. The getting-started checklist is shown to operators only (`Dashboard.tsx:134`). | Add `install.sh --domain panel.example.com --email` (prompted for on a TTY), so the panel gets its certificate during install. Ask for the ACME email in the setup form. Deploy a sample app as the last setup step. Show the checklist to every new user. Measure the time to a healthy HTTPS app on a clean host and publish it (REPORT G14). | P1 | M | ⬜ |
+| A3 | **A lighter interface.** | The sidebar has 26 items in 5 groups, with overlapping pairs: Hub/New, Queue/Deploys, Networks/Topology. The service page has 15 tabs, and its Settings tab has 27 cards. Instance Settings has 20 sections. Coolify's redesign drew a "revert the new UI" thread ([#11610](https://github.com/coollabsio/coolify/discussions/11610)), so don't change it all at once. | Merge the overlapping pairs. Cut the service page to about 6 tabs (Overview, Deploys, Environment, Domains, Logs, Settings) with an Advanced section. Simple mode stays the default. Ship the change behind a toggle for one release, and run S7's journeys before and after. | P1 | L | ⬜ |
+| A4 | **Framework guides with starter repos.** | Next.js, Laravel, Django and Rails appear only in tables. No "Deploy X" guide exists. | Write 8–10 guides: Next.js, Laravel, Django, Rails, FastAPI, Express, Astro, Go, Spring and a static site. Each gets a starter repository and a `.ninedeploy` manifest, and the guides run in a CI smoke. | P1 | M | ⬜ |
+| A5 | **README and website.** | No screenshots, GIF or comparison table. 55 lines of cosign instructions come before First boot. `old_website/` says v0.13.0 GA. The strengths below are barely mentioned. | Add a hero GIF and 4–6 screenshots. Add an honest comparison generated from C1. Move release verification below First boot. Delete or refresh `old_website/`, after confirming which source the live site is built from. Lead with: restore verification; protected lanes and approvals; remote MCP with OAuth; argv-only execution and a locked first boot; and "your secrets stay on your server". | P1 | S | ⬜ |
+| A6 | **Release channels and user-facing release notes.** | 47 tags in 30 days. The CHANGELOG has 6,984 lines, and its latest entries lead with CI internals. Coolify 4.6 added stable, preview and nightly channels. | Add a **stable** channel that moves only after a soak period, and keep **current** as today's patch stream. The self-updater follows the chosen channel. Each release starts with 3 user bullets and an "Action needed: yes/no" line, with an Internal section below. | P1 | M | ⬜ |
+| A7 | **Community basics.** | CONTRIBUTING (only 10 lines in the README), SECURITY.md, CODE_OF_CONDUCT, issue templates and Discussions are all missing. | Add the files, a SECURITY.md with a disclosure address, a public roadmap view of this file, and Discussions. The launch date is owner decision 2 (§9). | P1 | S | ⬜ |
+| A8 | **Template slugs named after a competitor.** | Public URLs read `/templates/coolify-*`. | Rename them with redirects, and credit the upstream catalogues in TEMPLATE_MIRRORS.md. | P2 | S | ⬜ (approved 2026-11-09) |
+| A9 | **Signed desktop installers** (REPORT G15). | The 0.18.25 installers are unsigned, which triggers SmartScreen and Gatekeeper warnings. Keychain on a real Mac is unverified. | Signing is already wired to repository secrets and needs certificates. Until they exist, keep the desktop app out of the README's headline. | P2 | M | ⬜ (deferred: no certificates yet) |
+
+## 5. T3: Parity across runtimes
+
+C1's matrix decides each cell: close it, or keep the refusal as a stated design limit. Never remove a guard just to fill a cell.
+
+| ID | Item | Today | Approach | Pri | Size | Status |
+|---|---|---|---|---|---|---|
+| P1 | **Swarm worker tasks: metrics, terminal, files, inspect** (REPORT G02). | Metrics average only the panel host's tasks. Terminal, files and inspect refuse with `swarm_task_elsewhere` (`modules/containers.ts`, `terminals.ts`). | Go through the node agent on the worker that runs the task. An unreachable worker shows as unknown, not as zero. A moved task never inherits an old terminal. Prove it on two separate daemons. | P1 | L | ⬜ |
+| P2 | **Node parity for panel-only features.** | These refuse on nodes: maintenance mode and error pages (`modules/maintenance.ts:116-144`), forward auth (`modules/forwardAuth.ts:67-70`), restart limit (`modules/restartLimit.ts:28`), compose image scans (`imageScan.ts:285`), deploy hooks, the static pack, LFS, and the volume file browser. | One agent capability per feature, in the order users hit them: maintenance and error pages, forward auth, restart limit, volume files, deploy hooks. An older agent keeps refusing. | P1 | L | ⬜ |
+| P3 | **Preview database copies for more engines and for nodes** (REPORT G05). | PostgreSQL and the Redis family only, on the panel host only (`lib/previewDatabases.ts:71-73`). | MySQL, MariaDB and Mongo dumps carry users, so restore the data, then reset to the preview's own credentials and verify that the production credentials fail. Node databases go through the agent. Masking becomes a separate opt-in. | P2 | L | ⬜ |
+| P4 | **Compose release fidelity** (REPORT G10). | Recorded restore covers self-contained inline stacks on the original panel host. Includes, env_file, extends, profiles and bind mounts are refused (`lib/composeRelease.ts`). | Show before deploy whether a stack can be recorded. Capture the eligible external inputs, encrypted. Pull images by digest on a clean target. | P2 | L | ⬜ |
+| P5 | **Swarm with state** (REPORT G03). | Volumes, managed databases, host ports, fan-out, the restart limit and tunnels are refused. Canary, autoscaling and scale to zero are unavailable. | Owner decision: keep Swarm a stateless deployer (and say so in C1), or define a placement-local or shared-storage contract first. | — | — | ✅ decided 2026-11-09: stateless deployer, stated in C1 |
+
+## 6. T4: Reliability and data
+
+| ID | Item | Evidence | Approach | Pri | Size | Status |
+|---|---|---|---|---|---|---|
+| O1 | **PITR that survives losing the host,** and PITR on nodes (REPORT G04). | WAL and base backups sit beside the database on the panel host. `lib/pitr.ts` refuses node databases and preview copies. | Ship the WAL archive and base backups encrypted to the backup destination. Measure the recoverable window and lag. Prove recovery to a chosen point on a clean host with the original volumes gone. For nodes, use sealed streaming with bounded retention. | P1 | L | ⬜ |
+| O2 | **Managed database HA and upgrades.** | No replica or failover code exists, and `redis-sentinel` and `postgres-wal-g` are catalogue placeholders. There is no major-version upgrade. Railway shipped HA, one-click major Postgres upgrades and automatic CVE patching in 2026. | In this order: (a) a one-click major upgrade by dump and restore into a new container, verified by the R3 restore-verification adapter before the switch, keeping the old one for rollback; (b) a PostgreSQL streaming replica with manual promote, and a Valkey/Redis replica; (c) an opt-in automatic minor-image or CVE update, gated by restore verification. | P1 | L | ⬜ |
+| O3 | **Panel failure domains** (REPORT G09). | One Node process, one SQLite file, the panel-host Traefik, and Swarm managed from the panel host. WAL is deliberately off (`packages/db/src/client.ts:76-81`). The panel backup is an opt-in snapshot. | Not a full HA rewrite: (a) document and test what keeps serving while the panel is down; (b) offer a continuous off-host copy of the panel database (a frequent encrypted snapshot to S3) and a tested "rebuild the panel on a new host" runbook; (c) decide later on a standby. | P2 | L | ⬜ |
+| O4 | **IP allow-list for the panel itself.** | Allow-lists exist only for domains, public database access and CORS; nothing restricts who reaches the panel UI and API. Requested in Coolify [#10332](https://github.com/coollabsio/coolify/discussions/10332). | An operator setting enforced in Fastify `onRequest` and on the panel's Traefik router. Agent, webhook, registry-hook, ingest and status-page routes stay exempt by default. A recovery override through env. | P1 | S | ⬜ |
+| O5 | **Guided credential rotation.** | `lib/keyRotation.ts` re-encrypts under a new master key. It does not rotate the credentials the panel holds: Git tokens, registry passwords, S3 keys, hook tokens and API tokens. The Railway and Northflank breaches made "rotate everything" a buyer question. | A checklist page lists every stored credential by age and owner. Credentials we issue (hook tokens, API tokens, ingest keys) can be rotated in one step; external ones are linked to their provider. Market it with A5. | P2 | M | ⬜ |
+| O6 | **Live cloud acceptance for DigitalOcean and Vultr** (REPORT G13). | Their guides say they were tested against fake APIs. Hetzner was not exercised against a real account either. | Run disposable real-account runs for create, enrol, deploy, a lost response, and delete-only-what-we-own. Needs an owner account. | P2 | M | ⬜ (deferred: accounts arranged later) |
+
+## 7. T5: New modules, after T0–T2
+
+| ID | Item | Who has it / demand | Approach | Pri | Size | Status |
+|---|---|---|---|---|---|---|
+| X1 | **Application observability:** traces, logs kept across deploys, and source-mapped errors. | Vercel and Railway have tracing. Coolify [#10785](https://github.com/coollabsio/coolify/discussions/10785) asks for logs kept across deploys. Temps has source maps (REPORT G06). Today we export only the panel's own telemetry, and error ingest has no symbolication. | (a) Keep a bounded tail of logs per deployment. (b) Upload source maps per release for error ingest, keeping the raw event if symbolication fails. (c) Traces: ingest OTLP into a bundled backend template linked to deploys and errors, rather than building our own store. | P2 | L | ⬜ |
+| X2 | **Deploy by polling git,** for servers that cannot receive webhooks. | Coolify [#12250](https://github.com/coollabsio/coolify/discussions/12250). No poller exists. | A per-service interval of at least 1 minute, using `git ls-remote` against the stored credentials. It reuses the auto-deploy path and its CI gate. | P2 | S | ⬜ |
+| X3 | **Wider GitOps coverage, then a Terraform provider** (REPORT G08). | Dokploy asks for declarative apply ([#4008](https://github.com/Dokploy/dokploy/issues/4008), 37) and Pulumi ([#1555](https://github.com/Dokploy/dokploy/issues/1555), 66). Our schema covers projects, a subset of services, domains and grants, and never deletes. | Add databases, build details, storage and secret references (without values). Add an opt-in reviewed delete. Freeze the schema, then generate a Terraform provider from the same API. | P2 | L | ⬜ |
+| X4 | **Network isolation per project and environment.** | Dokploy [#4637](https://github.com/Dokploy/dokploy/issues/4637) and [#2798](https://github.com/Dokploy/dokploy/issues/2798). Our Docker services join the shared `ninedeploy` bridge (`engine/dockerNames.ts:33`). Verify Compose and database attachment before designing. | An opt-in per project: one bridge per project, Traefik attached to each, and databases attached only to the networks of the projects that use them. Existing services stay on the shared network until moved. | P2 | M | ⬜ |
+| X5 | **Object storage as a managed resource.** | Hosted platforms offer buckets. Here MinIO is only a template and a placeholder plugin (`pluginLoader.ts:405`). | A Garage or SeaweedFS engine with buckets and keys per project, usable as a backup destination. | P2 | M | ⬜ |
+| X6 | **Agent sandboxes behind approvals.** | Railway's Cloud Agents and Sandboxes, Fly Sprites, Canine's "agent computers" and Netlify's Agent Runners. We already have remote MCP with OAuth and protected lanes. | Short-lived isolated workspaces where an agent works on a branch. Deploys go through the existing approvals. | P2 | L | ⬜ (approved 2026-11-09) |
+| X7 | **Quotas and plans per workspace,** for agencies and resellers (REPORT G16). | The `workspaces` table has no limits. Usage and cost reporting exists (`usageReport.ts:49`). | Owner decision on the target market first. If agencies: CPU/memory/service caps per workspace, then an export for billing. | P2 | M | ⬜ (approved 2026-11-09: agencies) |
+| X8 | **The plugin marketplace.** | All 16 catalogue entries are `implemented: false` placeholders (`pluginLoader.ts:563-575`). | Hide placeholders from the UI now (S). A real third-party registry is a later decision. | P1 / P3 | S / L | ⬜ |
+
+**Not planned:**
+- a Kubernetes runtime (a different market: Kubero, Canine, Tsuru);
+- Caddy;
+- our own analytics, replay or RUM suite (link to Umami, PostHog or GlitchTip instead, REPORT G07);
+- integrated mail.
+
+---
+
+## 8. Order of work
+
+Each phase ships as patch releases. R2 continues independently in the other session.
+
+| Phase | Items | Exit evidence |
+|---|---|---|
+| **1: Truth and debt** | C2, S1, S2, S3, S4, O4, X8 (hide), S8, A7 | Docs agree with code. No orphaned rows after a delete, proven by a test that deletes every entity kind. Export, import and clone round-trip every declared feature. Panel allow-list proven, including its exemptions. |
+| **2: Contract and first impressions** | C1, C3, A5, A2, A6, S7 | Capability API drives the UI. The support matrix is generated. Time to HTTPS on a clean host is measured. Stable channel exists. Browser journeys run in CI. |
+| **3: Switching and parity** | A1 (step 1, then 2), A3, A4, P1, P2 (maintenance, forward auth) | Import plans for one fixture each from Coolify, Dokploy and CapRover. The simpler UI passes the same journeys. Worker-task diagnostics proven on two daemons. |
+| **4: Data** | O1, O2a, O2b, P3, A1 step 3 | Recovery from losing the host to a chosen point. A major upgrade with verified rollback. Preview copies for MySQL and Mongo. |
+| **5: Expansion** | X1, X2, X3, X4, O3, O5, P4, S5, S6 | Each item's own acceptance. |
+| **Owner tracks** | A8 (with phase 2), X6 and X7 (after phase 3), A9 and O6 (deferred) | See §9. |
+
+## 9. Owner decisions (2026-11-09)
+
+1. **Release channels (A6): approved; details left to us.**
+   - Two channels. **current** is today's patch stream and stays the default, so upgrades behave as before. **stable** is opt-in.
+   - Stable moves to the newest release that is at least **7 days** old and has no later release that fixes a regression it introduced.
+   - Sooner when a release fixes a security issue: stable takes that fix, and the security bullet in the release notes says so.
+   - The self-updater and `install.sh --channel stable` follow the chosen channel.
+2. **Public launch (A7): approved.**
+   - It happens once phase 2's exit evidence exists: screenshots, a measured first-run flow and a generated support matrix.
+   - The community files ship in phase 1 regardless.
+3. **Template slugs (A8): approved.** Rename `coolify-*` with redirects and credit upstream.
+4. **Signing (A9): over time.**
+   - No certificates yet.
+   - The desktop app stays out of the README headline until signed builds exist.
+5. **Swarm's scope (P5): left to us; decided as a stateless deployer.**
+   - Stateful workloads belong on Docker nodes, where volumes, managed databases, backups, PITR and tunnels already work.
+   - A shared-storage contract would be an XL project with new data-loss modes. The current refusals are safe.
+   - C1 states the limit, and the UI offers "run on a node" when a stateful option is refused on Swarm.
+   - Revisit only if users ask for it.
+6. **Target market (X6, X7): both agencies and AI-agent workflows.**
+   - X6 (agent sandboxes) and X7 (workspace quotas and a billing export) move from P3 to **P2**.
+   - Both still come after phases 1–3.
+7. **Sustainability: sponsorship only.**
+   - Add `.github/FUNDING.yml` for GitHub Sponsors in A7.
+   - No paid tier, no paid support and no hosted control plane.
+8. **Cloud accounts (O6): later.** Arranged when the item comes up.
+
+## 10. Claims to retire or qualify
+
+- "Only we have MCP": Coolify and Easypanel have MCP.
+- "No Docker rival scans images": Coolify 4.7.0 does.
+- "None of the Docker-based rivals has these" (the GAP_ROADMAP G5 heading).
+- "GitOps manages the whole instance": the schema is narrower (X3).
+- "Swarm support" stated as multi-node parity (P1, P5).
+- "Error ingest replaces Sentry": there are no source maps or traces yet (X1).
+- Any "fastest", "most secure" or "largest catalogue" claim without a measurement.

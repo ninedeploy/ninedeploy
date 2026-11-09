@@ -60,7 +60,7 @@ Several of these were listed under "Not planned for now" in ROADMAP.md. Coolify 
 
 ## G5: Ahead of the field
 
-None of the Docker-based rivals has these.
+When this plan was written (2026-10-27), none of the Docker-based rivals had these. That no longer holds as a group claim: Coolify 4.7.0 (2026-11-09) scans images, Coolify and ZaneOps stage pending changes, and Komodo syncs resources. See [plans/COMPETITIVE_ROADMAP_2026-11.md](plans/COMPETITIVE_ROADMAP_2026-11.md) §10.
 
 | ID | Item | Inspiration | Size | Status |
 |---|---|---|---|---|

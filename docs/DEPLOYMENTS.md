@@ -30,7 +30,7 @@ replacement/deletion and a stopped or newer primary generation prevent stale
 promotion. A target failure remains independent of primary success; inspect the
 fan-out outcome lines and per-target status. Published host ports prevent safe
 overlap, so routed fan-out with a published port is refused before retirement.
-Primary node canary has the separate eligibility requirements below; node autoscaling remains later R2 work. The 0.18.2 artifact increment also uses these guards for recorded-image fan-out promotion.
+Primary node canary has the separate eligibility requirements below; node autoscaling has its own requirements, listed under [Autoscaling](#autoscaling-01610). The 0.18.2 artifact increment also uses these guards for recorded-image fan-out promotion.
 
 ### Ordered multi-node lifecycle (unreleased)
 
@@ -119,7 +119,7 @@ Expected routing is checked at observation boundaries; continuous per-request ge
 
 ### Autoscaling (0.16.10)
 
-A docker service on the panel host can run between a minimum and a maximum number of containers, set by load, without a redeploy. Configure it under **Service → Settings → Autoscaling**, or with `autoscale` on `PATCH /v1/services/:id`:
+A docker service on the panel host, or on a node within the limits listed below, can run between a minimum and a maximum number of containers, set by load, without a redeploy. Configure it under **Service → Settings → Autoscaling**, or with `autoscale` on `PATCH /v1/services/:id`:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -151,7 +151,7 @@ Resource telemetry displays **No data** when a running service has no measured C
 
 If confirmation and the retry fail, a blue-green deploy attempts to confirm the previous routing. When that outcome is also unknown, it fails the deploy and keeps both runtime generations running; the deployment log names the retained candidate. A first runtime that might already serve traffic is retained too. Resolve the proxy problem before retiring a retained container. This protects availability at the cost of temporary extra capacity.
 
-**Node routing confirmation (agent target 0.18.2).** Routed primary-node deployments require sealed transport and the `proxy.routingAck` capability. Before writing node routing, the panel checks the live capability answer; an older agent is refused with an update instruction. The agent observes both HTTP/TLS generations inside its fixed `ninedeploy-proxy` container and returns only the requested generation hash, never raw private API state. A lost dynamic-write response or failed load confirmation is an unknown outcome, so the same confirmed-rollback/retain-both rule applies. Ordinary fleet refreshes and unrouted workers retain their compatibility path. This confirms routing application, not application readiness: node default health remains container state; select explicit HTTP readiness to require an HTTP response. Eligible primary node canary adds the requirements described above; node autoscaling remains later R2 work.
+**Node routing confirmation (agent target 0.18.2).** Routed primary-node deployments require sealed transport and the `proxy.routingAck` capability. Before writing node routing, the panel checks the live capability answer; an older agent is refused with an update instruction. The agent observes both HTTP/TLS generations inside its fixed `ninedeploy-proxy` container and returns only the requested generation hash, never raw private API state. A lost dynamic-write response or failed load confirmation is an unknown outcome, so the same confirmed-rollback/retain-both rule applies. Ordinary fleet refreshes and unrouted workers retain their compatibility path. This confirms routing application, not application readiness: node default health remains container state; select explicit HTTP readiness to require an HTTP response. Eligible primary node canary adds the requirements described above; node autoscaling has its own requirements, listed under [Autoscaling](#autoscaling-01610).
 
 During the routing transition the deployment remains `deploying`, with no `finishedAt`; it stays in the queue view and blocks another deployment of that service. Only acknowledged routing can mark it `running` and supersede the previous deployment. Cancellation still applies during this phase: a healthy previous generation is restored and confirmed before candidate retirement. If rollback cannot be confirmed, both generations remain. A first or in-place runtime, or a candidate whose previous runtime is unhealthy, is kept live rather than stopped after routing; the cancelled deployment log explains that outcome. Explicit stop cancels a pending routing transition. Cancellation cleanup does not reinstate a service that is stopped or now points at another runtime.
 

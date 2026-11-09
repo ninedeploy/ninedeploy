@@ -36,8 +36,10 @@ jobs, `pg_dump | gzip | aws s3 cp` scripts, and a wiki page nobody has updated s
 migration.
 
 **What it is not:** a Kubernetes distribution, a multi-region control plane, or a hosted service.
-There is no scheduler, no service mesh and no cluster consensus — just one panel that knows how to
-drive Docker on one host, and optionally on a handful of remote ones.
+There is no general cluster scheduler, no service mesh and no cluster consensus — just one panel that
+drives Docker on one host, and optionally on a handful of remote ones. It places each service on the
+server you choose, keeps its replicas and canary steps under its own control, and can hand placement to
+Docker Swarm for stateless services.
 
 ---
 
