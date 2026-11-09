@@ -1,0 +1,36 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/autoUpdateSchedulerRace.test.ts > control: sequential changed-image sweep enqueues once across later ticks 277ms
+stdout | test/plugins/autoUpdateSchedulerRace.test.ts > a pending interval sweep excludes the next interval and queues only one deployment
+EXPECTED: 1 admitted interval sweep / 1 deployment; ACTUAL: 1 1
+PROBLEM NOT REPRODUCED
+
+ ✓ test/plugins/autoUpdateSchedulerRace.test.ts > a pending interval sweep excludes the next interval and queues only one deployment 176ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > enqueues a deploy when the digest moved and records the new baseline 3ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > treats the first observation as a baseline only 1ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > does nothing when the digest is unchanged 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips without storing while a deployment is queued or in flight 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips a service whose registry cannot be probed 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips digest-pinned images — they can never move 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > also watches remote-node image services — the probe reads the registry, not the node 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > passes the attached registry credential to the probe for private repos 3ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > only watches running, image-based, opt-in services 0ms
+ ✓ test/plugins/autoUpdateScheduler.test.ts > autoUpdateScheduler plugin > runs the first sweep shortly after boot and logs enqueued re-deploys 6ms
+ ✓ test/plugins/autoUpdateScheduler.test.ts > autoUpdateScheduler plugin > keeps the panel alive when the sweep throws 1ms
+ ✓ test/plugins/autoUpdateScheduler.test.ts > autoUpdateScheduler plugin > stops the loop on close 1ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after disable publishes nothing 2ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after image publishes nothing 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after stop publishes nothing 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after delete publishes nothing 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after digest publishes nothing 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: a disabled first observation cannot restore the cleared baseline 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: an unchanged service still records a baseline and queues a changed image 1ms
+
+ Test Files  4 passed (4)
+      Tests  21 passed (21)
+   Start at  00:38:20
+   Duration  3.92s (import 77%, tests 16%, transform 7%, worker 1%)
+
+    Isolate  4 workers spawned · ~227ms startup each (spawn + environment, per file)
+             at least ~682ms faster with isolate: false — reuses workers across files instead of one per file

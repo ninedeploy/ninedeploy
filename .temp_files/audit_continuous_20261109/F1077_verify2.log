@@ -1,0 +1,22 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > preserves delayed first tick then interval cadence 68ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > first pending sweep holds interval installation and recovers (false) 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > first pending sweep holds interval installation and recovers (true) 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > periodic pending sweep excludes repeats then releases busy (false) 3ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > periodic pending sweep excludes repeats then releases busy (true) 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > close before delayed tick prevents all work 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > close while initial sweep waits never schedules another 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > close while periodic sweep waits never schedules another 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > retained timeout callback cannot dispatch after close 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > retained interval callback cannot dispatch after close 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1077_autoUpdateOverlap.test.ts > independent plugin instances retain separate admission 1ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  00:38:12
+   Duration  459ms (import 56%, tests 36%, transform 6%, worker 2%)

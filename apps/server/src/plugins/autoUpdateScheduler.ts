@@ -11,10 +11,12 @@ export default fp(
   async (fastify) => {
     const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
     let running = true;
+    let busy = false;
     let timer: NodeJS.Timeout | undefined;
 
     const tick = async () => {
-      if (!running) return;
+      if (!running || busy) return;
+      busy = true;
       try {
         const result = await sweepAutoUpdates(fastify.db, undefined, (msg) =>
           fastify.log.info({ component: 'autoupdate' }, msg),
@@ -27,6 +29,8 @@ export default fp(
         }
       } catch (err) {
         fastify.log.warn({ err, component: 'autoupdate' }, 'auto-update sweep failed');
+      } finally {
+        busy = false;
       }
     };
 

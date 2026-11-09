@@ -530,3 +530,11 @@ were seen red on the preceding policy fix, then 19 neighboring tests passed.
 Twenty-eight independent Docker/PM2, native-SQL barrier and follow-up baseline
 cases passed three times. This does not cancel an external stop already admitted
 before a later deployment; live runtime and native Mac acceptance remain separate.
+
+Round 59 (F1077) prevents overlapping automatic image-update scheduler sweeps.
+The actual sweep with a native SQLite gate previously queued the same image
+change twice; the permanent reproduction was seen red, then 21 neighboring
+tests passed. Eleven independent scheduling/lifecycle/error cases passed three
+times. The initial five-minute delay and thirty-minute cadence remain. This
+protects one scheduler instance; cross-process enqueue deduplication, live
+registry timing and native Mac acceptance were not certified.
