@@ -1,0 +1,28 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1069_ghaEligibility.test.ts > pending job eligibility after unchanged policy update
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1069_ghaEligibility.test.ts > pending job eligibility after unchanged policy update 350ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1069_ghaEligibility.test.ts > pending job eligibility after repository policy update
+EXPECTED: [] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1069_ghaEligibility.test.ts > pending job eligibility after repository policy update 192ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1069_ghaEligibility.test.ts > pending job eligibility after labels policy update
+EXPECTED: [] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1069_ghaEligibility.test.ts > pending job eligibility after labels policy update 202ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1069_ghaEligibility.test.ts > pending job eligibility after public policy update
+EXPECTED: [] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1069_ghaEligibility.test.ts > pending job eligibility after public policy update 259ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  23:06:59
+   Duration  3.01s (tests 61%, import 30%, transform 9%)

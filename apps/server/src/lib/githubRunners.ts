@@ -135,6 +135,8 @@ interface PendingJob {
   jobId: number;
   repo: string;
   repoId: number;
+  labels: string[];
+  isPrivate: boolean;
   jobName: string | null;
   queuedAt: number;
 }
@@ -636,7 +638,7 @@ async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boole
       // Another job's startup or this recheck may outlive a later delivery.
       if (pending.get(key) !== job) continue;
       pending.delete(key);
-      if (!waiting) continue;
+      if (!waiting || jobRefusal(currentConfig, job)) continue;
       running += 1;
       try {
         await startRunner(db, log, ghApp, job, config);
@@ -718,6 +720,8 @@ export async function handleWorkflowJob(
       jobId,
       repo: fullName,
       repoId,
+      labels,
+      isPrivate: repo?.['private'] === true,
       jobName: typeof job['name'] === 'string' ? job['name'].slice(0, 200) : null,
       queuedAt: Date.now(),
     });

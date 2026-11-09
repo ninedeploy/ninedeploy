@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 49
+### Further audit checkpoints through round 50
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -308,6 +308,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1066 | Recoverable CI log file failures preserve prior bytes and roll back their sequence reservation for retry | 100 |
 | F1067 | GitHub runner drains retain pending-entry identity across earlier job startup and online status awaits | 114 |
 | F1068 | Changed runner settings stop further admissions in an old batch, including writes overlapping the final config read | 118 |
+| F1069 | Pending GitHub jobs revalidate current repository/public/label policy before consuming runner slots | 122 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -382,6 +383,13 @@ Pending work resumes under a fresh capacity/resource pass. Intermediate fixture
 mistakes and the initial stale-read gap are retained in the ledger. Direct
 external SQL/multiple-process settings writes and full queued-job eligibility
 revalidation remain separate scopes; server static checks used `GOMAXPROCS=4`.
+
+Round 50 passed nine independent eligibility/status-shape cases three times
+and 122 neighboring tests. Pending records retain their original validated
+labels/privacy for current-policy checks; refused entries do not consume slots
+ahead of eligible work. The public pending response still has four fields.
+Resource-bound server static checks passed. A repository changing visibility
+remotely after its webhook snapshot and live workflow execution were not tested.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed

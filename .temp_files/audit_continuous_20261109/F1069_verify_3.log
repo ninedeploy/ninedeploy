@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > denied repositories consume no slot before an allowed later repository
+EXPECTED: [ 82 ] ACTUAL: [ 82 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > denied repositories consume no slot before an allowed later repository 334ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > removed labels consume no slot before a still-matching later job
+EXPECTED: [ 82 ] ACTUAL: [ 82 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > removed labels consume no slot before a still-matching later job 226ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > public restriction drops the public entry and preserves a private job behind it
+EXPECTED: [ 83 ] ACTUAL: [ 83 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > public restriction drops the public entry and preserves a private job behind it 269ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > case-insensitive repository matches remain eligible
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > case-insensitive repository matches remain eligible 222ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > adding runner labels preserves old matching queued work
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > adding runner labels preserves old matching queued work 250ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > public work remains eligible when explicitly allowed
+EXPECTED: [ 82 ] ACTUAL: [ 82 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > public work remains eligible when explicitly allowed 200ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > pending status response keeps its four public fields
+FIX VERIFIED: wire fields unchanged
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > pending status response keeps its four public fields 209ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > pending metadata does not alias the original payload label array
+EXPECTED: [ 84 ] ACTUAL: [ 84 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > pending metadata does not alias the original payload label array 242ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > policy changed during an admitted start filters the deferred entry on a fresh pass
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > policy changed during an admitted start filters the deferred entry on a fresh pass
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1069_ghaEligibility.test.ts > policy changed during an admitted start filters the deferred entry on a fresh pass 206ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  23:08:11
+   Duration  2.94s (tests 78%, import 17%, transform 5%)
