@@ -1,0 +1,21 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > releases admission after disabled and later detects renewal 46ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > releases admission after missing and later detects renewal 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > releases admission after read-error and later detects renewal 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > releases admission after unchanged and later detects renewal 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > failed render does not acknowledge mtime and retries the unchanged renewal 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > held render excludes ticks, then a newer renewal is observed 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > held settings read excludes repeated cadence then produces one render 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > close before first tick and retained callback perform no reads or writes 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > close while read is gated cannot start a renewal render 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1074_sharedCertificate.test.ts > an admitted render can settle after close without another render 1ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  00:22:16
+   Duration  584ms (import 52%, tests 40%, transform 6%, worker 2%)

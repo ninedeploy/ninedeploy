@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shared-certificate renewal checks no longer overlap while reading settings, and pending checks cannot start a proxy render after server close (F1074).
 - Pending runner jobs recheck queue expiry after asynchronous preparation and status/config reads, so an expired snapshot entry cannot consume a runner slot ahead of fresh work (F1073).
 - **A PostgreSQL backup taken just after the database started no longer fails.** The official image initializes with a temporary server and then restarts, while the container already shows as running. A **Backup now** click, or a scheduled backup, in those first seconds failed with `pg_dump` exit 1. A failed dump now waits up to 20 seconds for the server to accept connections over TCP, and retries once. A backup that succeeds the first time sends the same commands as before. The panel's backup toast now shows the reason the server gave, not just "Backup failed".
 - Runner job rechecks keep failed or unrecognized GitHub status reads pending without taking a slot; only confirmed queued jobs start and confirmed non-queued work is dropped (F1072).

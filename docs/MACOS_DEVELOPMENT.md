@@ -496,3 +496,18 @@ The bootstrap helper's syntax/help/lint, unsupported-Windows rejection and
 conflicting-mode rejection passed locally. Its native `--check`/`--install`
 and the root workspace build on a Mac were not executed by this desktop-only
 workflow; run those commands on your development Mac as described above.
+
+### Audit continuation — November 10, rounds 55–56
+
+Round 55 found no secret-file helper defect in eight native disposable-file and
+controlled filesystem-failure checks. Cleanup is best-effort: persistent deletion
+failure can leave the owned file. Windows ACLs and cross-user access were not tested.
+
+Round 56 fixes shared-certificate scheduler admission (F1074). The scheduler now
+owns its settings-read wait, preventing overlapping renewal renders, and a pending
+read cannot start a render after server close. Three permanent control/regression
+tests were seen red on the original source; seven neighboring tests passed after
+the fix. Ten independent lifecycle/retry cases passed three times. Server typecheck
+and build passed with the existing child-process `GOMAXPROCS=4` bound; scoped lint
+passed. An already-admitted render can finish after close. No live ACME renewal,
+proxy deployment, full release gate or native Mac setup was exercised in this round.

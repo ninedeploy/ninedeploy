@@ -13,21 +13,23 @@ export default fp(
   async (fastify) => {
     let lastMtime = 0;
     let busy = false;
+    let closed = false;
     const tick = async () => {
-      if (busy || !(await sharedCertificatesEnabled(fastify.db))) return;
-      let mtime = 0;
-      try {
-        mtime = statSync(acmeStoragePath()).mtimeMs;
-      } catch {
-        return; // no ACME storage yet
-      }
-      if (lastMtime === 0) {
-        lastMtime = mtime; // the proxies were rendered at start-up
-        return;
-      }
-      if (mtime === lastMtime) return;
+      if (closed || busy) return;
       busy = true;
       try {
+        if (!(await sharedCertificatesEnabled(fastify.db)) || closed) return;
+        let mtime = 0;
+        try {
+          mtime = statSync(acmeStoragePath()).mtimeMs;
+        } catch {
+          return; // no ACME storage yet
+        }
+        if (lastMtime === 0) {
+          lastMtime = mtime; // the proxies were rendered at start-up
+          return;
+        }
+        if (mtime === lastMtime) return;
         await writeDynamicConfig(fastify.db);
         lastMtime = mtime;
       } finally {
@@ -38,7 +40,10 @@ export default fp(
       void tick().catch((err) => fastify.log.warn({ err, component: 'shared-certificates' }, 'shared certificate sync failed'));
     }, 60 * 60 * 1000);
     timer.unref();
-    fastify.addHook('onClose', async () => clearInterval(timer));
+    fastify.addHook('onClose', async () => {
+      closed = true;
+      clearInterval(timer);
+    });
   },
   { name: 'ninedeploy-shared-certificates' },
 );

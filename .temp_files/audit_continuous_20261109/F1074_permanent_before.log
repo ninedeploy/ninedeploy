@@ -1,0 +1,83 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/sharedCertificateSync.test.ts > one pending settings read excludes a second tick from rendering the same renewal
+EXPECTED: 1 settings admission / 1 render; ACTUAL: 2 2
+PROBLEM CONFIRMED
+
+stdout | test/lib/sharedCertificateSync.test.ts > closing while settings read is pending prevents new render admission
+EXPECTED: 0 renders after close; ACTUAL: 1
+PROBLEM CONFIRMED
+
+ ✓ test/lib/sharedCertificateSync.test.ts > control: baseline and unchanged storage do not render; a renewal renders once 58ms
+ × test/lib/sharedCertificateSync.test.ts > one pending settings read excludes a second tick from rendering the same renewal 7ms
+   → expected { admitted: 2, renders: 2 } to deeply equal { admitted: 1, renders: 1 }
+ × test/lib/sharedCertificateSync.test.ts > closing while settings read is pending prevents new render admission 4ms
+   → expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {},
+    ]
+
+
+Number of calls: 1
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/sharedCertificateSync.test.ts > one pending settings read excludes a second tick from rendering the same renewal
+AssertionError: expected { admitted: 2, renders: 2 } to deeply equal { admitted: 1, renders: 1 }
+
+- Expected
++ Received
+
+  {
+-   "admitted": 1,
+-   "renders": 1,
++   "admitted": 2,
++   "renders": 2,
+  }
+
+ ❯ test/lib/sharedCertificateSync.test.ts:27:63
+     25|   console.log('EXPECTED: 1 settings admission / 1 render; ACTUAL:', ad…
+     26|   if (admitted !== 1 || dep.render.mock.calls.length !== 1) console.lo…
+     27|   expect({ admitted, renders: dep.render.mock.calls.length }).toEqual(…
+       |                                                               ^
+     28|  } finally { blocked.release(); await checkpoint(); await app.close();…
+     29| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/lib/sharedCertificateSync.test.ts > closing while settings read is pending prevents new render admission
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {},
+    ]
+
+
+Number of calls: 1
+
+ ❯ test/lib/sharedCertificateSync.test.ts:38:26
+     36|   console.log('EXPECTED: 0 renders after close; ACTUAL:', dep.render.m…
+     37|   console.log(dep.render.mock.calls.length ? 'PROBLEM CONFIRMED' : 'PR…
+     38|   expect(dep.render).not.toHaveBeenCalled();
+       |                          ^
+     39|  } finally { blocked.release(); await checkpoint(); await app.close();…
+     40| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  00:22:54
+   Duration  474ms (import 53%, tests 39%, transform 7%, worker 1%)
