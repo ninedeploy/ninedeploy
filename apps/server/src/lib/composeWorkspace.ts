@@ -26,7 +26,8 @@ export function stackWorkspace(serviceId: number): string {
   // was a redundant wrapper that coincidentally produces the same result only
   // when STACK_ROOT has no trailing separator; it has no role in this function.
   const target = path.resolve(STACK_ROOT, String(Number(serviceId)));
-  if (!Number.isInteger(serviceId) || !target.startsWith(STACK_ROOT + path.sep)) {
+  const rootPrefix = STACK_ROOT.endsWith(path.sep) ? STACK_ROOT : STACK_ROOT + path.sep;
+  if (!Number.isInteger(serviceId) || !target.startsWith(rootPrefix)) {
     throw new Error('invalid workspace id');
   }
   return target;

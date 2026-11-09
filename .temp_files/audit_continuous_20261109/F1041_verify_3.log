@@ -1,0 +1,13 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1041_compose_root.test.ts > verifies root, nested, trailing and invalid paths without writing at root
+EXPECTED: 9 valid children, 21 invalid IDs rejected | ACTUAL: all passed
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1041_compose_root.test.ts > verifies root, nested, trailing and invalid paths without writing at root 3ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:06:52
+   Duration  427ms (import 42%, transform 22%, worker 18%, tests 17%, environment 1%)

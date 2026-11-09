@@ -1,0 +1,27 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/lib/composeWorkspace.test.ts (6 tests | 1 failed) 14ms
+   ❯ stackWorkspace (3)
+     × accepts a filesystem-root repository directory 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/composeWorkspace.test.ts > stackWorkspace > accepts a filesystem-root repository directory
+Error: invalid workspace id
+ ❯ stackWorkspace src/lib/composeWorkspace.ts:30:11
+     28|   const target = path.resolve(STACK_ROOT, String(Number(serviceId)));
+     29|   if (!Number.isInteger(serviceId) || !target.startsWith(STACK_ROOT + …
+     30|     throw new Error('invalid workspace id');
+       |           ^
+     31|   }
+     32|   return target;
+ ❯ test/lib/composeWorkspace.test.ts:24:14
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  18:06:12
+   Duration  395ms (transform 53%, import 24%, tests 18%, worker 5%)

@@ -1,0 +1,14 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1041_compose_root.test.ts > accepts a filesystem-root reposDir without weakening ID validation
+CONTROL EXPECTED: nested root accepts 42 | ACTUAL: passed
+EXPECTED: D:\42 | ACTUAL: D:\42
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1041_compose_root.test.ts > accepts a filesystem-root reposDir without weakening ID validation 2ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:06:35
+   Duration  1.68s (transform 53%, import 34%, tests 7%, worker 6%)

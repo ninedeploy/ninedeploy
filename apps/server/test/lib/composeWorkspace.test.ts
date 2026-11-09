@@ -16,6 +16,18 @@ afterAll(() => {
 });
 
 describe('stackWorkspace', () => {
+  it('accepts a filesystem-root repository directory', async () => {
+    const { config } = await import('../../src/config.js');
+    const previous = config.paths.reposDir;
+    try {
+      config.paths.reposDir = path.parse(reposDir).root;
+      expect(stackWorkspace(42)).toBe(path.join(config.paths.reposDir, '42'));
+      expect(() => stackWorkspace(Number.NaN)).toThrow(/invalid workspace id/);
+    } finally {
+      config.paths.reposDir = previous;
+    }
+  });
+
   it('resolves a per-service directory under the repos root', () => {
     expect(stackWorkspace(42)).toBe(path.join(reposDir, '42'));
   });
