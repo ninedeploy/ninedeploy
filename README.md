@@ -711,9 +711,9 @@ pnpm install
 pnpm typecheck && pnpm lint && pnpm test
 ```
 
-Biome handles formatting and linting, Vitest handles tests, Turborepo caches both. Changes that touch
-the database go through a hand-written migration in `packages/db/src/migrations` plus a case in
-`test/schema-drift.test.ts`. Please keep `CHANGELOG.md` honest — it is a load-bearing document here.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, the checks and the upgrade rules every change
+follows. Report vulnerabilities privately as described in [SECURITY.md](./SECURITY.md). Everyone taking
+part follows the [code of conduct](./CODE_OF_CONDUCT.md).
 
 ---
 

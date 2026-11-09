@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/ninedeploy/ninedeploy/security/advisories/new
+    about: Please report vulnerabilities privately, not as an issue.
+  - name: Documentation
+    url: https://ninedeploy.com
+    about: Guides and reference.

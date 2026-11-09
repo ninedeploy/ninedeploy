@@ -1,0 +1,62 @@
+name: Bug report
+description: Something in NineDeploy does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a security problem, do not open an issue: see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From the panel's About page or `GET /v1/about`.
+      placeholder: 0.18.25
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Install mode
+      options:
+        - Bare metal (systemd)
+        - Docker
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does the service run?
+      options:
+        - Panel host
+        - Remote node
+        - Docker Swarm
+        - Not service-related
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The deploy log, the panel log (`journalctl -u ninedeploy` or `docker logs ninedeploy`) or the Doctor page. Remove tokens, passwords and hostnames you do not want to share.
+      render: text
+  - type: input
+    id: os
+    attributes:
+      label: Host OS and Docker version
+      placeholder: Ubuntu 24.04, Docker 28.1
