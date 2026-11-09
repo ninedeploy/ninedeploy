@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CI runner revocation fences both lease creation and assignment; pending attempts are lost/requeued before publication, and stale claims cannot overwrite a newer runner's attempt (F1063).
 - Concurrent CI claims reserve runner capacity inside the attempt insert; a losing request leaves its job queued without consuming an attempt or reviving cancelled work (F1062).
 - CI cancellation closes the attempt current at cancellation time, and claims that lose assignment to cancellation retire their attempt instead of returning cancelled work or retaining runner capacity (F1061).
 - **Three web panel faults the first browser journeys found.**

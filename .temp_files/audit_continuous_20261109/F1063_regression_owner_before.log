@@ -1,0 +1,141 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/ciClaimRevocation.test.ts > an active runner can claim and revocation loses its assigned attempt 207ms
+stdout | test/lib/ciClaimRevocation.test.ts > revocation during queue-read prevents a new lease
+EXPECTED: no claim / 0 closed attempts; ACTUAL: null / []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > revocation during queue-read prevents a new lease 225ms
+stdout | test/lib/ciClaimRevocation.test.ts > revocation during before-insert prevents a new lease
+EXPECTED: no claim / 0 closed attempts; ACTUAL: null / []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > revocation during before-insert prevents a new lease 199ms
+stdout | test/lib/ciClaimRevocation.test.ts > revocation during after-insert prevents a new lease
+EXPECTED: no claim / 1 closed attempts; ACTUAL: null / [ 'lost' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > revocation during after-insert prevents a new lease 199ms
+stdout | test/lib/ciClaimRevocation.test.ts > an old claim cannot overwrite a newer runner after pending attempt revocation
+EXPECTED: old offer null; ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × test/lib/ciClaimRevocation.test.ts > an old claim cannot overwrite a newer runner after pending attempt revocation 242ms
+   → expected { attemptId: 1, jobId: 1, …(10) } to be null
+stdout | test/lib/ciClaimRevocation.test.ts > a lost attempt is not published while loss reconciliation still awaits its job read
+EXPECTED: lost offer null; ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × test/lib/ciClaimRevocation.test.ts > a lost attempt is not published while loss reconciliation still awaits its job read 179ms
+   → expected { attemptId: 1, jobId: 1, …(10) } to be null
+stdout | test/lib/ciClaimRevocation.test.ts > persisted revocation fences publication before the revoker processes its attempt list
+EXPECTED: revoked offer null; ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × test/lib/ciClaimRevocation.test.ts > persisted revocation fences publication before the revoker processes its attempt list 243ms
+   → expected { attemptId: 1, jobId: 1, …(10) } to be null
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/ciClaimRevocation.test.ts > an old claim cannot overwrite a newer runner after pending attempt revocation
+AssertionError: expected { attemptId: 1, jobId: 1, …(10) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "attemptId": 1,
+  "commitSha": null,
+  "env": {},
+  "heartbeatSeconds": 15,
+  "image": "alpine",
+  "jobId": 1,
+  "leaseSeconds": 60,
+  "leaseToken": "ndlease_dOsWME2fvWx93n-yWDuMFHOtLZxmmytuhLT2u93haJ0",
+  "number": 1,
+  "script": "true",
+  "sourcePath": "/v1/ci/runner/attempts/1/source",
+  "timeoutSeconds": 1800,
+}
+
+ ❯ test/lib/ciClaimRevocation.test.ts:89:17
+     87|     console.log('EXPECTED: old offer null; ACTUAL:', old?.attemptId ??…
+     88|     console.log(old === null ? 'FIX VERIFIED' : 'PROBLEM CONFIRMED');
+     89|     expect(old).toBeNull();
+       |                 ^
+     90|     expect(await db.query.ciJobs.findFirst()).toMatchObject({ status: …
+     91|     const attempts = await db.query.ciAttempts.findMany();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/lib/ciClaimRevocation.test.ts > a lost attempt is not published while loss reconciliation still awaits its job read
+AssertionError: expected { attemptId: 1, jobId: 1, …(10) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "attemptId": 1,
+  "commitSha": null,
+  "env": {},
+  "heartbeatSeconds": 15,
+  "image": "alpine",
+  "jobId": 1,
+  "leaseSeconds": 60,
+  "leaseToken": "ndlease_4TP8tavTdDQq0eWiMxIXFobSXk_3ScWHfIz4cu6ysXk",
+  "number": 1,
+  "script": "true",
+  "sourcePath": "/v1/ci/runner/attempts/1/source",
+  "timeoutSeconds": 1800,
+}
+
+ ❯ test/lib/ciClaimRevocation.test.ts:113:83
+    111|     gate.release(); const old = await pending;
+    112|     console.log('EXPECTED: lost offer null; ACTUAL:', old?.attemptId ?…
+    113|     console.log(old === null ? 'FIX VERIFIED' : 'PROBLEM CONFIRMED'); …
+       |                                                                                   ^
+    114|     release(); expect(await loss).toBe(true);
+    115|     expect(await db.query.ciJobs.findFirst()).toMatchObject({ status: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/lib/ciClaimRevocation.test.ts > persisted revocation fences publication before the revoker processes its attempt list
+AssertionError: expected { attemptId: 1, jobId: 1, …(10) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "attemptId": 1,
+  "commitSha": null,
+  "env": {},
+  "heartbeatSeconds": 15,
+  "image": "alpine",
+  "jobId": 1,
+  "leaseSeconds": 60,
+  "leaseToken": "ndlease_DX70PRIhQGJtAjlIumJ-v1XfQipZjBFK2_-lr-yntz0",
+  "number": 1,
+  "script": "true",
+  "sourcePath": "/v1/ci/runner/attempts/1/source",
+  "timeoutSeconds": 1800,
+}
+
+ ❯ test/lib/ciClaimRevocation.test.ts:135:83
+    133|     gate.release(); const old = await pending;
+    134|     console.log('EXPECTED: revoked offer null; ACTUAL:', old?.attemptI…
+    135|     console.log(old === null ? 'FIX VERIFIED' : 'PROBLEM CONFIRMED'); …
+       |                                                                                   ^
+    136|     release(); expect(await loss).toBe(true);
+    137|     expect(await db.query.ciJobs.findFirst()).toMatchObject({ status: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 4 passed (7)
+   Start at  22:20:05
+   Duration  2.31s (tests 71%, import 22%, transform 7%)

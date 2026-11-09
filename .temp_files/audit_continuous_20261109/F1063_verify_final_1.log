@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > revocation before insert with maxAttempts=1
+EXPECTED: queued no offer; ACTUAL: queued no offer FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > revocation before insert with maxAttempts=1 213ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > revocation after insert with maxAttempts=1
+EXPECTED: failed no offer; ACTUAL: failed no offer FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > revocation after insert with maxAttempts=1 216ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > revocation before insert with maxAttempts=2
+EXPECTED: queued no offer; ACTUAL: queued no offer FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > revocation before insert with maxAttempts=2 163ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > revocation after insert with maxAttempts=2
+EXPECTED: queued no offer; ACTUAL: queued no offer FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > revocation after insert with maxAttempts=2 231ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > an old claim cannot overwrite a newer runner after pending attempt revocation
+EXPECTED: old offer null; ACTUAL: null
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > an old claim cannot overwrite a newer runner after pending attempt revocation 175ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > a lost attempt is not published while loss reconciliation still awaits its job read
+EXPECTED: lost offer null; ACTUAL: null
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > a lost attempt is not published while loss reconciliation still awaits its job read 218ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > active other runner can claim after revocation and repeated revoke is false
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > active other runner can claim after revocation and repeated revoke is false 169ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > persisted revocation fences publication before the revoker processes its attempt list
+EXPECTED: revoked offer null; ACTUAL: null
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > persisted revocation fences publication before the revoker processes its attempt list 212ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > a previously revoked runner snapshot cannot create a lease
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1063_ciRevocation.test.ts > a previously revoked runner snapshot cannot create a lease 151ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  22:20:18
+   Duration  2.74s (tests 76%, import 18%, transform 6%)

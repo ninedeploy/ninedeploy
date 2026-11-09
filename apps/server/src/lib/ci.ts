@@ -287,13 +287,15 @@ export async function claimJob(
       [attempt] = await db
         .insert(ciAttempts)
         .values({ jobId: job.id, runnerId: runner.id, number,
-          leaseHash: sql`(select case when count(*) < ${runner.capacity} then ${hashToken(leaseToken)} else null end
+          leaseHash: sql`(select case when count(*) < ${runner.capacity}
+            and exists (select 1 from ${ciRunners} where ${ciRunners.id} = ${runner.id} and ${ciRunners.revokedAt} is null)
+            then ${hashToken(leaseToken)} else null end
             from ${ciAttempts} where ${ciAttempts.runnerId} = ${runner.id} and ${ciAttempts.status} = 'running')`,
           leaseExpiresAt: now + LEASE_MS })
         .returning();
     } catch (err) {
       if (!(err instanceof DrizzleQueryError && err.cause?.message.endsWith('NOT NULL constraint failed: ci_attempts.lease_hash'))) throw err;
-      // Another claim filled the runner's last slot. Undo only this still
+      // Capacity or runner revocation changed after the precheck. Undo only this still
       // unassigned claim; never revive a job that cancellation already closed.
       await db.update(ciJobs).set({ status: 'queued', attempts: job.attempts, startedAt: job.startedAt })
         .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), eq(ciJobs.attempts, number),
@@ -301,12 +303,19 @@ export async function claimJob(
       return null;
     }
     if (!attempt) throw new Error('Could not record the attempt');
-    const assigned = await db.update(ciJobs).set({ currentAttemptId: attempt.id }).where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running')));
+    const assigned = await db.update(ciJobs).set({ currentAttemptId: attempt.id }).where(and(
+      eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), eq(ciJobs.attempts, number),
+      sql`${ciJobs.currentAttemptId} IS ${job.currentAttemptId}`,
+      sql`exists (select 1 from ${ciAttempts} where ${ciAttempts.id} = ${attempt.id} and ${ciAttempts.status} = 'running')`,
+      sql`exists (select 1 from ${ciRunners} where ${ciRunners.id} = ${runner.id} and ${ciRunners.revokedAt} is null)`,
+    ));
     if (affected(assigned) !== 1) {
       // Cancellation may win while the attempt insert is suspended. Retire
       // this unassigned attempt so it neither runs nor consumes capacity.
       await db.update(ciAttempts).set({ status: 'cancelled', finishedAt: new Date(), error: 'The job no longer accepts this attempt' })
-        .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running')));
+        .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running'),
+          sql`exists (select 1 from ${ciJobs} where ${ciJobs.id} = ${job.id} and ${ciJobs.status} = 'cancelled')`));
+      await loseAttempt(db, attempt, 'The job no longer accepts this attempt');
       return null;
     }
     const service = await db.query.services.findFirst({ where: (s, { eq: e }) => e(s.id, job.serviceId) });
@@ -428,17 +437,22 @@ async function loseAttempt(db: DB, attempt: Attempt, reason: string, expiredBefo
     .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running'), expiredBefore === undefined ? undefined : lt(ciAttempts.leaseExpiresAt, expiredBefore)));
   if (affected(lost) !== 1) return false;
   const job = await db.query.ciJobs.findFirst({ where: eq(ciJobs.id, attempt.jobId) });
-  if (!job || job.status !== 'running' || job.currentAttemptId !== attempt.id) return true;
+  if (!job || job.status !== 'running' ||
+    (job.currentAttemptId !== attempt.id && !(job.currentAttemptId === null && job.attempts === attempt.number))) return true;
+  // Loss can win before claimJob links the newly inserted attempt. The
+  // attempt number fences that pending owner from an older lost attempt.
+  const ownsJob = sql`(${ciJobs.currentAttemptId} = ${attempt.id} or
+    (${ciJobs.currentAttemptId} is null and ${ciJobs.attempts} = ${attempt.number}))`;
   if (job.attempts < job.maxAttempts) {
     await db
       .update(ciJobs)
       .set({ status: 'queued', currentAttemptId: null })
-      .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), eq(ciJobs.currentAttemptId, attempt.id)));
+      .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), ownsJob));
   } else {
     await db
       .update(ciJobs)
       .set({ status: 'failed', finishedAt: new Date(), error: `${reason}; no attempts left` })
-      .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), eq(ciJobs.currentAttemptId, attempt.id)));
+      .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), ownsJob));
   }
   return true;
 }
