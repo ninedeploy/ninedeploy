@@ -7,6 +7,7 @@ for those runtime checks.
 
 This guide describes a reproducible setup, not a claim that this checkout was
 tested on a physical Mac. The November 9 handoff was prepared on Windows.
+The hosted macOS checkpoint below records which native CI checks subsequently passed.
 
 ## Open the same source revision
 
@@ -332,3 +333,35 @@ floors to bypass an incomplete worker run. See
 [the checkpoint ledger](../.temp_files/ledger_release-checkpoint20_20261109.md)
 for commands and exact boundaries. Native DMG/Keychain and Linux installer/live
 provider acceptance remain separate checks.
+
+### Hosted desktop acceptance checkpoint — November 9, round 34
+
+[Desktop run 42675648656](https://github.com/ninedeploy/ninedeploy/actions/runs/42675648656)
+completed successfully on Linux, Windows and macOS for source commit
+`9ac991cc0f1e14653db71dbc2dd22a71d9344191`. This is the independent desktop
+workflow, not a full panel release gate.
+
+The macOS job used runner image `macos-26-arm64`: frozen dependency install,
+typecheck and **27 tests in five files** passed. It built both x64 and arm64
+DMGs, then launched the arm64 packaged app and the copy installed from the DMG.
+The native Intel launch remains unverified by this arm64 runner.
+
+The installers were **unsigned**; signature/notarization checks were skipped.
+Both Mac smoke calls explicitly set `ND_SMOKE_KEYCHAIN_UNREACHABLE=1`.
+The unpacked-build smoke accepted sealed bytes that did not survive a
+restart and were removed with the instance; the installed-copy smoke reported
+an unavailable OS store and wrote nothing. Neither result proves ordinary
+login-Keychain persistence. Keep the earlier physical-Mac/normal-Keychain
+acceptance steps, with that override unset.
+
+The run contains `ninedeploy-desktop-macOS`, `ninedeploy-desktop-Windows` and
+`ninedeploy-desktop-Linux` artifacts, expiring November 23, 2026. They are CI
+artifacts, not published releases. API-reported archive digests and selected
+Mac log evidence are retained in
+[the round 34 ledger](../.temp_files/ledger_macosHandoff34_20261109.md).
+The archive digests were not independently checked against downloaded binaries.
+
+The bootstrap helper's syntax/help/lint, unsupported-Windows rejection and
+conflicting-mode rejection passed locally. Its native `--check`/`--install`
+and the root workspace build on a Mac were not executed by this desktop-only
+workflow; run those commands on your development Mac as described above.

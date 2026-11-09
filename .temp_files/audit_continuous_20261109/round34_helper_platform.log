@@ -1,0 +1,2 @@
+Run this setup on the Mac itself. See docs/MACOS_DEVELOPMENT.md.
+EXPECTED: Windows rejected with exit 1; ACTUAL: 1

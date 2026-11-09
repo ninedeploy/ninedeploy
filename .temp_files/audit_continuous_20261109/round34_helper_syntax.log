@@ -1,0 +1,1 @@
+node --check scripts/dev-macos.mjs: exit 0

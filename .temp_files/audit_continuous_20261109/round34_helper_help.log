@@ -1,0 +1,4 @@
+Usage: node scripts/dev-macos.mjs [--check | --install] [--docker]
+Default: check macOS, Node, pinned pnpm, Git and Xcode Command Line Tools.
+--install: install both frozen lockfiles; build the workspace and desktop.
+--docker: also require a reachable Linux Docker engine.

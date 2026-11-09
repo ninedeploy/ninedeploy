@@ -1,0 +1,2 @@
+Invalid arguments. Run with --help.
+EXPECTED: conflicting modes rejected with exit 2; ACTUAL: 2

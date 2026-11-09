@@ -1,0 +1,32 @@
+2026-11-09T18:37:35.2675160Z ##[group]Operating System
+2026-11-09T18:37:35.2677400Z Image: macos-26-arm64
+2026-11-09T18:38:08.0498330Z  Test Files  5 passed (5)
+2026-11-09T18:38:08.0499320Z       Tests  27 passed (27)
+2026-11-09T18:38:08.0503810Z    Duration  421ms (transform 44%, tests 26%, import 22%, worker 8%)
+2026-11-09T18:38:10.2462280Z   • executing @electron/rebuild  electronVersion=44.9.0 arch=x64 buildFromSource=false workspaceRoot=/Users/runner/work/ninedeploy/ninedeploy/desktop projectDir=./ appDir=./
+2026-11-09T18:38:10.2479090Z   • installing native dependencies  arch=x64
+2026-11-09T18:38:10.3937610Z   • packaging       platform=darwin arch=x64 electron=44.9.0 appOutDir=release/mac
+2026-11-09T18:38:17.0584340Z   • building        target=DMG arch=x64 file=release/NineDeploy-0.18.25.dmg
+2026-11-09T18:38:17.1955280Z   • executing @electron/rebuild  electronVersion=44.9.0 arch=arm64 buildFromSource=false workspaceRoot=/Users/runner/work/ninedeploy/ninedeploy/desktop projectDir=./ appDir=./
+2026-11-09T18:38:17.2059070Z   • installing native dependencies  arch=arm64
+2026-11-09T18:38:17.4227640Z   • packaging       platform=darwin arch=arm64 electron=44.9.0 appOutDir=release/mac-arm64
+2026-11-09T18:38:26.8682520Z   • building        target=DMG arch=arm64 file=release/NineDeploy-0.18.25-arm64.dmg
+2026-11-09T18:39:16.6549500Z installers unsigned on macOS
+2026-11-09T18:39:16.7036560Z ##[group]Run pnpm smoke
+2026-11-09T18:39:16.7037070Z pnpm smoke
+2026-11-09T18:39:16.7092600Z   ND_SMOKE_KEYCHAIN_UNREACHABLE: 1
+2026-11-09T18:39:17.6965510Z $ node scripts/smoke.mjs
+2026-11-09T18:39:20.9770870Z desktop smoke ok: release/mac-arm64/NineDeploy.app/Contents/MacOS/NineDeploy rendered the instance list ({"form":true,"bridge":"object","node":"undefined","title":"NineDeploy"})
+2026-11-09T18:39:21.1074800Z [5272:1109/183921.106245:ERROR:components/os_crypt/common/keychain_password_mac.mm:148] Keychain lookup failed: Error Domain=NSOSStatusErrorDomain Code=-25293 "errKCAuthFailed / errSecAuthFailed: / Authorization/Authentication failed." (-25293)
+2026-11-09T18:39:24.8643920Z [5392:1109/183924.859420:ERROR:components/os_crypt/common/keychain_password_mac.mm:148] Keychain lookup failed: Error Domain=NSOSStatusErrorDomain Code=-25293 "errKCAuthFailed / errSecAuthFailed: / Authorization/Authentication failed." (-25293)
+2026-11-09T18:39:25.4085090Z [5392:1109/183925.399530:ERROR:components/os_crypt/common/keychain_password_mac.mm:148] Keychain lookup failed: Error Domain=NSOSStatusErrorDomain Code=-25293 "errKCAuthFailed / errSecAuthFailed: / Authorization/Authentication failed." (-25293)
+2026-11-09T18:39:26.0229700Z desktop sign-in fallback ok: the macOS Keychain was unreachable, the token was sealed (never plain text), did not come back after a restart and was deleted with its instance; keeping a sign-in through it is NOT verified here
+2026-11-09T18:39:27.8623920Z pnpm smoke "$RUNNER_TEMP/Applications/NineDeploy.app/Contents/MacOS/NineDeploy"
+2026-11-09T18:39:27.8888130Z   ND_SMOKE_KEYCHAIN_UNREACHABLE: 1
+2026-11-09T18:39:36.3603300Z $ node scripts/smoke.mjs /Users/runner/work/_temp/Applications/NineDeploy.app/Contents/MacOS/NineDeploy
+2026-11-09T18:39:37.5462510Z desktop smoke ok: /Users/runner/work/_temp/Applications/NineDeploy.app/Contents/MacOS/NineDeploy rendered the instance list ({"form":true,"bridge":"object","node":"undefined","title":"NineDeploy"})
+2026-11-09T18:39:37.5835660Z [5782:1109/183937.583243:ERROR:components/os_crypt/common/keychain_password_mac.mm:148] Keychain lookup failed: Error Domain=NSOSStatusErrorDomain Code=-25293 "errKCAuthFailed / errSecAuthFailed: / Authorization/Authentication failed." (-25293)
+2026-11-09T18:39:37.7429980Z [5782:1109/183937.739639:ERROR:components/os_crypt/common/keychain_password_mac.mm:148] Keychain lookup failed: Error Domain=NSOSStatusErrorDomain Code=-25293 "errKCAuthFailed / errSecAuthFailed: / Authorization/Authentication failed." (-25293)
+2026-11-09T18:39:40.2127540Z [5793:1109/183940.212211:ERROR:components/os_crypt/common/keychain_password_mac.mm:148] Keychain lookup failed: Error Domain=NSOSStatusErrorDomain Code=-25293 "errKCAuthFailed / errSecAuthFailed: / Authorization/Authentication failed." (-25293)
+2026-11-09T18:39:40.3975590Z [5793:1109/183940.397284:ERROR:components/os_crypt/common/keychain_password_mac.mm:148] Keychain lookup failed: Error Domain=NSOSStatusErrorDomain Code=-25293 "errKCAuthFailed / errSecAuthFailed: / Authorization/Authentication failed." (-25293)
+2026-11-09T18:39:40.7859640Z desktop sign-in ok: without an OS credential store (the macOS Keychain) nothing was written and nothing came back after a restart
