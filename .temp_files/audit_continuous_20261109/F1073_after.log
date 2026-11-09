@@ -1,0 +1,18 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (false)
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (false) 274ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (true)
+EXPECTED: [ 80 ] ACTUAL: [ 80 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (true) 204ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  00:00:22
+   Duration  1.21s (import 44%, tests 43%, transform 13%)

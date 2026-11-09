@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (false)
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (false) 228ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (true)
+EXPECTED: [ 80 ] ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (true) 244ms
+   → expected [ 80, 81 ] to deeply equal [ 80 ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts > later pending job expires while the first JIT waits (true)
+AssertionError: expected [ 80, 81 ] to deeply equal [ 80 ]
+
+- Expected
++ Received
+
+  [
+    80,
++   81,
+  ]
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1073_ghaTtl.test.ts:46:237
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  23:59:14
+   Duration  1.17s (tests 44%, import 43%, transform 12%)

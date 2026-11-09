@@ -1,0 +1,48 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > JIT completion deadline delta -30000
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > JIT completion deadline delta -30000 265ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > JIT completion deadline delta 0
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > JIT completion deadline delta 0 237ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > JIT completion deadline delta 60000
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > JIT completion deadline delta 60000 192ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while online status queued waits
+EXPECTED: [] ACTUAL: [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while online status queued waits 167ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while online status missing waits
+EXPECTED: [] ACTUAL: [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while online status missing waits 210ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while online status error waits
+EXPECTED: [] ACTUAL: [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while online status error waits 179ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while host enumeration waits cannot use its earlier now snapshot
+EXPECTED: [] ACTUAL: [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while host enumeration waits cannot use its earlier now snapshot 182ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while the final settings read waits is checked after it resumes
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expiration while the final settings read waits is checked after it resumes 197ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expired middle entry consumes no slot ahead of a fresh queued job
+EXPECTED: [ 80, 82 ] ACTUAL: [ 80, 82 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > expired middle entry consumes no slot ahead of a fresh queued job 197ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > entries expired before drain retain the initial prune behavior
+EXPECTED: [] ACTUAL: [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1073_ghaTtl.test.ts > entries expired before drain retain the initial prune behavior 204ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  00:03:09
+   Duration  2.74s (tests 79%, import 17%, transform 4%)

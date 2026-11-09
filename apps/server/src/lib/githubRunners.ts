@@ -637,6 +637,10 @@ async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boole
       if (generation !== runnerConfigGeneration(db, githubAppId) || JSON.stringify(currentConfig) !== configSnapshot) break;
       // Another job's startup or this recheck may outlive a later delivery.
       if (pending.get(key) !== job) continue;
+      if (Date.now() - job.queuedAt > PENDING_TTL_MS) {
+        pending.delete(key);
+        continue;
+      }
       const refusal = jobRefusal(currentConfig, job);
       if (waiting === null && !refusal) continue;
       pending.delete(key);
