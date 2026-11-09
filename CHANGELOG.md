@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Failed restricted-port sidecar removal now preserves its live config, propagates the original Docker error and avoids a false successful-removal log (F1083).
 - Restricted-port sidecar sync and removal now run in order per service slug, so an older prepared sync cannot recreate the sidecar after a later removal or overwrite newer routes (F1082).
 - Traffic collection now expires request buckets on advancing writes, bounding per-service history to the latest recorded 24-hour window even when no rate reader runs (F1081).
 - Latest request-time calculations no longer overflow the call stack on large valid bucket histories, preserving scale-to-zero idle decisions during long-running traffic collection (F1080).

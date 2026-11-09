@@ -588,3 +588,12 @@ sidecar after removal. Resource-bound server typecheck/build and scoped lint
 passed. The broader deployment-pipeline target passed291 tests in three files; its receipt is recorded in the round64
 ledger; root release/native Mac and live Docker/IP allow-list enforcement remain
 separate checks.
+
+Round 65 (F1083) preserves a surviving port sidecar's config when Docker removal
+fails. The original error now reaches callers; the function cannot log successful
+removal or delete config after that failure. Ten permanent cases were seen red
+(eight failing cases and two controls); 31 port-proxy tests passed afterward.
+Nine independent failure/retry/queue cases passed three times. Unknown-inspect
+classification and live Docker enforcement remain outside this fix. The broader
+291-test pipeline pass belongs to preceding round64 and was not repeated for
+this isolated failure-path change; root/native acceptance remains separate.

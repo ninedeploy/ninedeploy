@@ -1,0 +1,48 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/portProxyRemovalFailure.test.ts
+FIX VERIFIED
+
+ ✓ test/portProxyRemovalFailure.test.ts > preserves error removal failure and exact live config bytes 10ms
+ ✓ test/portProxyRemovalFailure.test.ts > preserves timeout removal failure and exact live config bytes 6ms
+ ✓ test/portProxyRemovalFailure.test.ts > preserves opaque removal failure and exact live config bytes 6ms
+ ✓ test/portProxyRemovalFailure.test.ts > successful removal still removes config and reports once 6ms
+ ✓ test/portProxyRemovalFailure.test.ts > existing modeled absence remains idempotent 7ms
+ ✓ test/portProxyRemovalFailure.test.ts > a failed gated removal releases the queued successful retry 6ms
+ ✓ test/portProxyRemovalFailure.test.ts > a newer queued sync can keep the sidecar and replace routes after failed removal 8ms
+ ✓ test/portProxyRemovalFailure.test.ts > another slug can remove while this slug waits for a failing rm 10ms
+ ✓ test/portProxyRemovalFailure.test.ts > repeated failed removes each surface the error without poisoning admission 6ms
+ ✓ test/portProxyRemovalFailure.test.ts > no-mapping sync propagates removal failure without deleting config 6ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated inspect and leaves no sidecar 9ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated pull and leaves no sidecar 8ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated host and leaves no sidecar 6ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated start and leaves no sidecar 7ms
+ ✓ test/portProxyRace.test.ts > sync/remove/new-sync preserves the newest requested configuration 12ms
+ ✓ test/portProxyRace.test.ts > different slug sync completes while another slug is held 9ms
+ ✓ test/portProxyRace.test.ts > removing through a no-restricted-mapping sync does not recursively deadlock 6ms
+ ✓ test/portProxyRace.test.ts > image failure releases the queue for remove and a later successful sync 12ms
+ ✓ test/portProxyRace.test.ts > a later sync waits for an earlier gated removal then creates its fresh files 12ms
+ ✓ test/portProxyRace.test.ts > two same-fingerprint syncs keep newest routes without duplicate starts 11ms
+stdout | test/portProxyRace.test.ts
+FIX VERIFIED
+
+ ✓ test/portProxyRace.test.ts > repeated removes retain absent state 8ms
+ ✓ test/portProxyRace.test.ts > native config-write failure releases admission before cleanup and retry 17ms
+ ✓ test/portProxy.test.ts > rendering > only allow-listed mappings go through the proxy; the container publishes the rest 2ms
+ ✓ test/portProxy.test.ts > rendering > a static entrypoint per mapping, and an ipAllowList router per entrypoint to every container 4ms
+ ✓ test/portProxy.test.ts > rendering > publishes each host side onto its entrypoint, locked down, on the service bridge 1ms
+ ✓ test/portProxy.test.ts > rendering > the fingerprint changes with the port list, not with the allow list (that is a watched route) 1ms
+ ✓ test/portProxy.test.ts > rendering > refuses a slug that could leave the data directory 1ms
+ ✓ test/portProxy.test.ts > syncPortProxy > writes the config and starts the sidecar the first time 7ms
+ ✓ test/portProxy.test.ts > syncPortProxy > a running sidecar with the same port list only gets new routes 7ms
+ ✓ test/portProxy.test.ts > syncPortProxy > a changed port list, or a stopped sidecar, recreates it 10ms
+ ✓ test/portProxy.test.ts > syncPortProxy > no allow-listed mapping left: the sidecar and its directory are removed 6ms
+
+ Test Files  3 passed (3)
+      Tests  31 passed (31)
+   Start at  01:08:48
+   Duration  2.36s (import 73%, tests 15%, transform 12%, worker 1%)
+
+    Isolate  3 workers spawned · ~256ms startup each (spawn + environment, per file)
+             at least ~513ms faster with isolate: false — reuses workers across files instead of one per file

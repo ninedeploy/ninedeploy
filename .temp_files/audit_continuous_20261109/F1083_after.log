@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1083_portProxyRemoval.test.ts > Docker rm failure propagates and preserves live config (no-mapping sync=false)
+EXPECTED: removal error/live sidecar/config/no success log; ACTUAL: { sameError: true, sidecars: 1, config: true, logs: 0 }
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1083_portProxyRemoval.test.ts > Docker rm failure propagates and preserves live config (no-mapping sync=true)
+EXPECTED: removal error/live sidecar/config/no success log; ACTUAL: { sameError: true, sidecars: 1, config: true, logs: 0 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1083_portProxyRemoval.test.ts > control: successful removal cleans owned sidecar/config and reports removal 9ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1083_portProxyRemoval.test.ts > Docker rm failure propagates and preserves live config (no-mapping sync=false) 6ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1083_portProxyRemoval.test.ts > Docker rm failure propagates and preserves live config (no-mapping sync=true) 6ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  01:07:19
+   Duration  393ms (import 77%, transform 15%, tests 7%, worker 1%)

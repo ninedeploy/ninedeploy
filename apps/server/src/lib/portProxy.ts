@@ -165,7 +165,7 @@ async function inPortProxyOrder(slug: string, operation: () => Promise<void>): P
 async function removePortProxyNow(slug: string, log: (line: string) => void): Promise<void> {
   const name = portProxyName(slug);
   if ((await runningFingerprint(name)) !== null) {
-    await run('docker', ['rm', '-f', name], {}, () => undefined).catch(() => undefined);
+    await run('docker', ['rm', '-f', name], {}, () => undefined);
     log(`Removed port proxy ${name}`);
   }
   rmSync(portProxyDir(slug), { recursive: true, force: true });

@@ -1,0 +1,20 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > preserves error removal failure and exact live config bytes 8ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > preserves timeout removal failure and exact live config bytes 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > preserves opaque removal failure and exact live config bytes 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > successful removal still removes config and reports once 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > existing modeled absence remains idempotent 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > a failed gated removal releases the queued successful retry 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > a newer queued sync can keep the sidecar and replace routes after failed removal 8ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > another slug can remove while this slug waits for a failing rm 9ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1083_portProxyRemoval.test.ts > repeated failed removes each surface the error without poisoning admission 5ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  01:08:43
+   Duration  463ms (import 72%, tests 16%, transform 11%, worker 1%)

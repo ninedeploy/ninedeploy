@@ -1,0 +1,135 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/portProxyRemovalFailure.test.ts > preserves error removal failure and exact live config bytes 19ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyRemovalFailure.test.ts > preserves timeout removal failure and exact live config bytes 6ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyRemovalFailure.test.ts > preserves opaque removal failure and exact live config bytes 5ms
+   → promise resolved "undefined" instead of rejecting
+ ✓ test/portProxyRemovalFailure.test.ts > successful removal still removes config and reports once 5ms
+ ✓ test/portProxyRemovalFailure.test.ts > existing modeled absence remains idempotent 6ms
+ × test/portProxyRemovalFailure.test.ts > a failed gated removal releases the queued successful retry 7ms
+   → expected null to be Error: first remove failed // Object.is equality
+ × test/portProxyRemovalFailure.test.ts > a newer queued sync can keep the sidecar and replace routes after failed removal 10ms
+   → expected null to be Error: controlled remove failure // Object.is equality
+ × test/portProxyRemovalFailure.test.ts > another slug can remove while this slug waits for a failing rm 10ms
+   → expected null to be Error: db rm failed // Object.is equality
+ × test/portProxyRemovalFailure.test.ts > repeated failed removes each surface the error without poisoning admission 6ms
+   → expected false to be true // Object.is equality
+ × test/portProxyRemovalFailure.test.ts > no-mapping sync propagates removal failure without deleting config 6ms
+   → promise resolved "undefined" instead of rejecting
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/portProxyRemovalFailure.test.ts > preserves error removal failure and exact live config bytes
+ FAIL  test/portProxyRemovalFailure.test.ts > preserves timeout removal failure and exact live config bytes
+ FAIL  test/portProxyRemovalFailure.test.ts > preserves opaque removal failure and exact live config bytes
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ test/portProxyRemovalFailure.test.ts:44:107
+     42|  await proxy.syncPortProxy(service, ['old'], () => {}); const file = p…
+     43|  const failure = kind === 'opaque' ? 'controlled opaque failure' : Obj…
+     44|  h.run.mockRejectedValueOnce(failure); const log = vi.fn(); await expe…
+       |                                                                                                           ^
+     45|  expect(readFileSync(file, 'utf8')).toBe(before); expect(h.containers.…
+     46| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  test/portProxyRemovalFailure.test.ts > a failed gated removal releases the queued successful retry
+AssertionError: expected null to be Error: first remove failed // Object.is equality
+
+- Expected:
+Error {
+  "message": "first remove failed",
+}
+
++ Received:
+null
+
+ ❯ test/portProxyRemovalFailure.test.ts:58:168
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  test/portProxyRemovalFailure.test.ts > a newer queued sync can keep the sidecar and replace routes after failed removal
+AssertionError: expected null to be Error: controlled remove failure // Object.is equality
+
+- Expected:
+Error {
+  "message": "controlled remove failure",
+}
+
++ Received:
+null
+
+ ❯ test/portProxyRemovalFailure.test.ts:65:126
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  test/portProxyRemovalFailure.test.ts > another slug can remove while this slug waits for a failing rm
+AssertionError: expected null to be Error: db rm failed // Object.is equality
+
+- Expected:
+Error {
+  "message": "db rm failed",
+}
+
++ Received:
+null
+
+ ❯ test/portProxyRemovalFailure.test.ts:74:225
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  test/portProxyRemovalFailure.test.ts > repeated failed removes each surface the error without poisoning admission
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/portProxyRemovalFailure.test.ts:79:224
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  test/portProxyRemovalFailure.test.ts > no-mapping sync propagates removal failure without deleting config
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ test/portProxyRemovalFailure.test.ts:84:83
+     82| it('no-mapping sync propagates removal failure without deleting config…
+     83|  await proxy.syncPortProxy(service, ['old'], () => {}); const failure …
+     84|  await expect(proxy.syncPortProxy({ ...service, portMappings: [] }, []…
+       |                                                                                   ^
+     85| });
+     86|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 2 passed (10)
+   Start at  01:08:40
+   Duration  510ms (import 64%, tests 21%, transform 14%, worker 1%)
