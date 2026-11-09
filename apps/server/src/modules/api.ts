@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { register } from '@ninedeploy/schemas';
+import { setup } from '@ninedeploy/schemas';
+import { adoptSetupAcmeEmail } from '../lib/setupAcme.js';
 import { createFirstAdmin } from './auth.js';
 import { authRoutes } from './auth.js';
 import { aboutRoutes } from './about.js';
@@ -122,9 +123,13 @@ import { deploymentTransferRoutes, imageTransferRoutes } from './imageTransfers.
 export const apiRoutes: FastifyPluginAsync = async (app) => {
   // Bootstrap: create the first admin user. Only succeeds when no users exist.
   // Rate-limited tighter than the global default to deter setup-race attacks.
-  app.post('/setup', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) =>
-    createFirstAdmin(app.db, register.parse(req.body)),
-  );
+  // A2: `acmeEmail` (optional) becomes the Let's Encrypt email once the account exists.
+  app.post('/setup', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+    const input = setup.parse(req.body);
+    const session = await createFirstAdmin(app.db, input);
+    if (input.acmeEmail) await adoptSetupAcmeEmail(app.db, session.user.id, input.acmeEmail, app.log);
+    return session;
+  });
 
   // Public webhook receiver (auto-deploy on verified push).
   await app.register(hookReceiveRoutes, { prefix: '/hooks' });

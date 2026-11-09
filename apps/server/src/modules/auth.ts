@@ -22,6 +22,7 @@ import { audit } from '../lib/audit.js';
 import { assertStepUp } from '../lib/stepUp.js';
 import { assertSetupToken, clearSetupTokenFile, requiredSetupToken } from '../lib/setupToken.js';
 import { seedFreshInstallAutoUrl } from '../lib/autoUrl.js';
+import { acmeConfigured } from '../lib/setupAcme.js';
 import { getSetting } from '../lib/settings.js';
 import { sessionAuthMethod } from '../lib/sessionMethod.js';
 import { findLiveSession, issueSessionTokens, refreshSessionTokens, revokeAllSessions, revokeApiTokens } from '../lib/sessions.js';
@@ -265,6 +266,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       initialized,
       allowRegistration: await getSetting(app.db, 'allow_registration', ALLOW_REGISTRATION_DEFAULT),
       setupTokenRequired: !initialized && requiredSetupToken() !== null,
+      // A2: before setup only, so the first-run form can offer the new
+      // operator's email for Let's Encrypt when nothing is configured yet.
+      ...(initialized ? {} : { acmeConfigured: await acmeConfigured(app.db) }),
     };
   });
 

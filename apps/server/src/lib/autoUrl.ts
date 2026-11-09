@@ -184,6 +184,8 @@ export function autoUrlRelativeLabel(hostname: string): string | null {
  * been configured yet. When the installer recorded a public IPv4 for the panel
  * (NINEDEPLOY_PUBLIC_URL = http://<ip>:3000), turn on sslip.io URLs so the
  * very first deploy is reachable without any DNS work. Best effort.
+ * A2: an install with its own panel domain (install.sh --domain) has an https
+ * public URL; the installer then records the address in NINEDEPLOY_PUBLIC_IP.
  */
 export async function seedFreshInstallAutoUrl(db: DB): Promise<void> {
   try {
@@ -196,6 +198,7 @@ export async function seedFreshInstallAutoUrl(db: DB): Promise<void> {
     } catch {
       return;
     }
+    if (!isPublicIpv4(host)) host = process.env['NINEDEPLOY_PUBLIC_IP']?.trim() ?? '';
     if (!isPublicIpv4(host)) return;
     await setAutoUrlConfig(db, { mode: 'sslip', ip: host });
   } catch {

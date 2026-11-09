@@ -1,4 +1,4 @@
-import { register } from '@ninedeploy/schemas';
+import { setup } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -22,7 +22,7 @@ export const platformSpecs: RouteSpecMap = {
     summary: 'Create the first operator account (only while no user exists)',
     tag: 'platform',
     floor: 'public',
-    body: register,
+    body: setup,
     responseType: 'Session',
     validation: 'zod',
     sensitive: true,

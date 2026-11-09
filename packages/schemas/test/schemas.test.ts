@@ -220,8 +220,13 @@ describe('auth', () => {
     });
   });
 
-  it('setup is the same shape as register', () => {
-    expect(setup).toBe(register);
+  it('setup is register plus an optional ACME email (A2)', () => {
+    const base = { email: 'a@b.co', password: 'password123' };
+    expect(setup.parse(base)).toEqual(register.parse(base));
+    expect(setup.parse({ ...base, acmeEmail: 'certs@b.co' }).acmeEmail).toBe('certs@b.co');
+    expect(setup.safeParse({ ...base, acmeEmail: 'not-an-email' }).success).toBe(false);
+    // register keeps no ACME email (it is not a setup-only field there).
+    expect(register.parse({ ...base, acmeEmail: 'certs@b.co' })).not.toHaveProperty('acmeEmail');
   });
 
   describe('login', () => {

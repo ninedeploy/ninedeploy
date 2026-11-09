@@ -52,6 +52,9 @@ export function Login() {
   // 0.16: the installer prints `<panel>/#setup-token=…` — a fragment, so the
   // token never reaches a request log. Read it once and drop it from the URL.
   const [setupToken, setSetupToken] = useState(takeSetupTokenFragment);
+  // A2: on a fresh instance with no Let's Encrypt email yet, the operator's
+  // email doubles as it (on by default, one click to opt out).
+  const [useEmailForAcme, setUseEmailForAcme] = useState(true);
   const [totpCode, setTotpCode] = useState('');
   const [needsTotp, setNeedsTotp] = useState(false);
   // 0.16.3: a lost authenticator signs in with a single-use recovery code instead.
@@ -63,6 +66,7 @@ export function Login() {
   const status = useQuery({ queryKey: ['auth-status'], queryFn: () => api.auth.status() });
   const initialized = status.data?.initialized ?? false;
   const setupTokenRequired = !initialized && status.data?.setupTokenRequired === true;
+  const offerAcme = !initialized && status.data?.acmeConfigured === false;
   const oidcProviders = useQuery({
     queryKey: ['public-oidc-providers'],
     queryFn: () => api.auth.oidc.publicProviders(),
@@ -91,8 +95,15 @@ export function Login() {
     try {
       if (initialized && needsTotp && useRecovery) await login(email, password, undefined, recoveryCode.trim());
       else if (initialized) await login(email, password, needsTotp ? totpCode : undefined);
-      else if (setupTokenRequired) await setup(email, password, name || undefined, setupToken.trim());
-      else await setup(email, password, name || undefined);
+      else {
+        await setup(
+          email,
+          password,
+          name || undefined,
+          setupTokenRequired ? setupToken.trim() : undefined,
+          offerAcme && useEmailForAcme ? email.trim() : undefined,
+        );
+      }
       navigate(from, { replace: true });
     } catch (err) {
       // A 2FA-enabled account without a code yet: switch to the second step.
@@ -193,6 +204,17 @@ export function Login() {
                 autoComplete={initialized ? AUTOCOMPLETE_SIGNED_IN : AUTOCOMPLETE_SIGNING_UP}
               />
             </Field>
+            {offerAcme && (
+              <label className="flex cursor-pointer items-start gap-2 text-xs text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={useEmailForAcme}
+                  onChange={(e) => setUseEmailForAcme(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500"
+                />
+                <span>{t("Also use this email for Let's Encrypt, so domains get HTTPS certificates automatically")}</span>
+              </label>
+            )}
 
             {needsTotp && !useRecovery && (
               <Field label={t('Two-factor code')}>

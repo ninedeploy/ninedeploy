@@ -10,8 +10,11 @@ interface AuthContextValue {
   loading: boolean;
   /** `recoveryCode` (0.16.3) stands in for `totpCode` when the authenticator is lost. */
   login: (email: string, password: string, totpCode?: string, recoveryCode?: string) => Promise<void>;
-  /** `setupToken` (0.16): the installer's one-time token, when the instance requires one. */
-  setup: (email: string, password: string, name?: string, setupToken?: string) => Promise<void>;
+  /**
+   * `setupToken` (0.16): the installer's one-time token, when the instance requires one.
+   * `acmeEmail` (A2): also the Let's Encrypt email, when none is configured yet.
+   */
+  setup: (email: string, password: string, name?: string, setupToken?: string, acmeEmail?: string) => Promise<void>;
   /** Passwordless sign-in with a registered passkey (WebAuthn). */
   loginWithPasskey: () => Promise<void>;
   logout: () => void;
@@ -102,8 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSessionTokens(session.tokens.accessToken, session.tokens.refreshToken);
       setUser(session.user);
     },
-    setup: async (email, password, name, setupToken) => {
-      const session = await api.auth.setup(setupToken ? { email, password, name, setupToken } : { email, password, name });
+    setup: async (email, password, name, setupToken, acmeEmail) => {
+      const session = await api.auth.setup({ email, password, name, ...(setupToken ? { setupToken } : {}), ...(acmeEmail ? { acmeEmail } : {}) });
       sessionRevision.current++;
       queryClient.clear();
       setSessionTokens(session.tokens.accessToken, session.tokens.refreshToken);

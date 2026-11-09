@@ -14,6 +14,7 @@ import type {
   PublicUser,
   Refresh,
   Register,
+  Setup,
   Session,
   UserCreate,
   WorkspaceEntry,
@@ -48,7 +49,7 @@ import type { Transport } from '../transport.js';
 export interface AuthApi {
   auth: {
     /** `setupTokenRequired` (0.16): the first-run bootstrap needs the installer's setup token. */
-    status: () => Promise<{ initialized: boolean; allowRegistration?: boolean; setupTokenRequired?: boolean }>;
+    status: () => Promise<{ initialized: boolean; allowRegistration?: boolean; setupTokenRequired?: boolean; acmeConfigured?: boolean }>;
     /**
      * Introspect the current bearer token. Returns the
      * token's id (when opaque), name, scopes, expiry and
@@ -58,7 +59,7 @@ export interface AuthApi {
      * tools.
      */
     introspectToken: () => Promise<TokenIntrospection>;
-    setup: (input: Register) => Promise<Session>;
+    setup: (input: Setup) => Promise<Session>;
     register: (input: Register) => Promise<Session>;
     login: (input: Login) => Promise<Session>;
     refresh: (input: Refresh) => Promise<Session>;
@@ -249,7 +250,7 @@ export function authApi(t: Transport): AuthApi {
   const { get, send, request } = t;
   return {
     auth: {
-      status: () => get<{ initialized: boolean; allowRegistration?: boolean; setupTokenRequired?: boolean }>('/v1/auth/status'),
+      status: () => get<{ initialized: boolean; allowRegistration?: boolean; setupTokenRequired?: boolean; acmeConfigured?: boolean }>('/v1/auth/status'),
       introspectToken: () => get<TokenIntrospection>('/v1/auth/token'),
       setup: (input) => send<Session>('POST', '/v1/setup', input),
       register: (input) => send<Session>('POST', '/v1/auth/register', input),

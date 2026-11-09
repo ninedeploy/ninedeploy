@@ -144,7 +144,8 @@ describe('buildApp', () => {
     await createUsersTable(app);
     const res = await app.inject({ method: 'GET', url: '/v1/auth/status' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false });
+    // A2: acmeConfigured is reported before setup only.
+    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false, acmeConfigured: false });
     await app.close();
   });
 

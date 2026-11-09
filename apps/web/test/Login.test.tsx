@@ -128,7 +128,7 @@ describe('Login', () => {
     await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.c');
     await user.type(screen.getByPlaceholderText('••••••••'), 'secret');
     await user.click(screen.getByRole('button', { name: /Create account/ }));
-    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', 'Boss'));
+    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', 'Boss', undefined, undefined));
   });
 
   it('0.16: asks for the setup token when the instance requires one', async () => {
@@ -142,7 +142,7 @@ describe('Login', () => {
     await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.c');
     await user.type(screen.getByPlaceholderText('••••••••'), 'secret');
     await user.click(screen.getByRole('button', { name: /Create account/ }));
-    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', undefined, 'tok-123'));
+    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', undefined, 'tok-123', undefined));
   });
 
   it('0.16: pre-fills the setup token from the #setup-token fragment and drops it from the URL', async () => {
@@ -152,6 +152,39 @@ describe('Login', () => {
     renderWithProviders(<Login />);
     expect(await screen.findByPlaceholderText('Printed by the installer')).toHaveValue('from-link');
     expect(window.location.hash).toBe('');
+  });
+
+  it("A2: offers the admin email for Let's Encrypt when none is configured, on by default", async () => {
+    const user = userEvent.setup();
+    const setup = vi.fn().mockResolvedValue(undefined);
+    mockOf(api.auth.status).mockResolvedValue({ initialized: false, acmeConfigured: false } as never);
+    mockOf(useAuth).mockReturnValue(authValue({ setup }) as never);
+    renderWithProviders(<Login />);
+    await screen.findByRole('heading', { name: 'Create admin account' });
+    const box = await screen.findByRole('checkbox', { name: /Let's Encrypt/ });
+    expect(box).toBeChecked();
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.c');
+    await user.type(screen.getByPlaceholderText('••••••••'), 'secret');
+    await user.click(screen.getByRole('button', { name: /Create account/ }));
+    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', undefined, undefined, 'a@b.c'));
+    // Opting out sends no ACME email.
+    setup.mockClear();
+    await user.click(box);
+    await user.click(screen.getByRole('button', { name: /Create account/ }));
+    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', undefined, undefined, undefined));
+  });
+
+  it('A2: does not offer it when Let’s Encrypt is already configured, or the status is silent', async () => {
+    mockOf(api.auth.status).mockResolvedValue({ initialized: false, acmeConfigured: true } as never);
+    mockOf(useAuth).mockReturnValue(authValue() as never);
+    const { unmount } = renderWithProviders(<Login />);
+    await screen.findByRole('heading', { name: 'Create admin account' });
+    expect(screen.queryByRole('checkbox', { name: /Let's Encrypt/ })).not.toBeInTheDocument();
+    unmount();
+    mockOf(api.auth.status).mockResolvedValue({ initialized: false } as never);
+    renderWithProviders(<Login />);
+    await screen.findByRole('heading', { name: 'Create admin account' });
+    expect(screen.queryByRole('checkbox', { name: /Let's Encrypt/ })).not.toBeInTheDocument();
   });
 
   it('hides the setup token field when the instance does not require one', async () => {
@@ -172,7 +205,7 @@ describe('Login', () => {
     await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.c');
     await user.type(screen.getByPlaceholderText('••••••••'), 'secret');
     await user.click(screen.getByRole('button', { name: /Create account/ }));
-    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', undefined));
+    await waitFor(() => expect(setup).toHaveBeenCalledWith('a@b.c', 'secret', undefined, undefined, undefined));
   });
 
   it('shows an error message when login fails', async () => {

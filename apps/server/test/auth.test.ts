@@ -176,7 +176,7 @@ describe('auth routes', () => {
     await app.register(authRoutes);
     const res = await app.inject({ method: 'GET', url: '/status' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false });
+    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false, acmeConfigured: false });
   });
 
   it('reports initialized when users exist', async () => {
@@ -190,7 +190,7 @@ describe('auth routes', () => {
     const app = await buildTestApp({ db: createFakeDb({ counts: {} }) });
     await app.register(authRoutes);
     const res = await app.inject({ method: 'GET', url: '/status' });
-    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false });
+    expect(res.json()).toEqual({ initialized: false, allowRegistration: false, setupTokenRequired: false, acmeConfigured: false });
   });
 
   it('registers a user', async () => {

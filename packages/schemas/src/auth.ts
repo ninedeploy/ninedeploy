@@ -9,9 +9,15 @@ export const register = z.object({
 });
 export type Register = z.infer<typeof register>;
 
-/** Initial bootstrap — same shape as register, only works when no users exist. */
-export const setup = register;
-export type Setup = Register;
+/**
+ * Initial bootstrap: register's shape, only works when no users exist.
+ * A2: `acmeEmail` also becomes the Let's Encrypt account email, unless one is
+ * already configured.
+ */
+export const setup = register.extend({
+  acmeEmail: z.email().max(255).optional(),
+});
+export type Setup = z.infer<typeof setup>;
 
 export const login = z.object({
   email: z.email(),

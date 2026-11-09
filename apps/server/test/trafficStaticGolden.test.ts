@@ -351,8 +351,9 @@ describe('traefikInputs: the one source of ensureTraefik inputs (recreate-flap g
         expect(src, rel).toMatch(new RegExp(`const ${t} = await traefikInputs\\(`));
       }
     }
-    // The three callers named in the design (M14), the 0.16.1 HTTP/3 switch (apply and restore), and no others.
-    expect(calls.sort()).toEqual(['modules/settings.ts', 'modules/traefik.ts', 'modules/traefik.ts', 'modules/traefik.ts', 'modules/traffic.ts', 'modules/traffic.ts', 'plugins/traefik.ts']);
+    // The three callers named in the design (M14), the 0.16.1 HTTP/3 switch (apply and restore),
+    // A2's first-run ACME email (lib/setupAcme.ts), and no others.
+    expect(calls.sort()).toEqual(['lib/setupAcme.ts', 'modules/settings.ts', 'modules/traefik.ts', 'modules/traefik.ts', 'modules/traefik.ts', 'modules/traffic.ts', 'modules/traffic.ts', 'plugins/traefik.ts']);
   });
 
   it('node proxies and the custom-config preflight never render the analytics file', () => {

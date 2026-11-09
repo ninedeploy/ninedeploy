@@ -12,6 +12,21 @@ Bare-metal Linux is the recommended production deployment mode: NineDeploy runs 
 curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash
 ```
 
+**Panel on its own domain with HTTPS from the first boot.** Point an A record at the server, then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash -s -- \
+  --domain panel.example.com --email you@example.com
+```
+
+- With these flags, the installer writes `NINEDEPLOY_DOMAIN` and `NINEDEPLOY_ACME_EMAIL` into `.env` and makes `https://panel.example.com` the public URL. Traefik then gets its certificate from Let's Encrypt.
+- Without the flags, a first install on a terminal asks for both. Press Enter to skip.
+- The installer warns when the domain does not resolve to the server yet.
+- The setup link is printed for the domain and for `http://<server-ip>:3000`. The second link works before the certificate is issued.
+- Leave port 3000 reachable from Docker: Traefik forwards the domain to it through the Docker gateway. To keep it off the internet, block it in your cloud provider's firewall instead of binding the panel to 127.0.0.1.
+- A domain set later under **Settings → Security** wins over `NINEDEPLOY_DOMAIN`.
+- Without the email, the first-run form offers to use the admin's email for Let's Encrypt.
+
 ### What the installer does:
 1. Detects or installs **Node.js (22.23.4+, 24.22.1+ or 26.12.1+ within those supported majors)** and **pnpm (v11 via Corepack)**. Existing supported Node majors are retained during patching. It rechecks the security patch level and selected major after installation; stale package mirrors or an unexpected executable on PATH stop setup.
 2. Verifies Docker daemon connectivity.

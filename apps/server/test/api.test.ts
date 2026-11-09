@@ -19,6 +19,8 @@ vi.mock('../src/modules/auth.js', () => ({
   createFirstAdmin: stubs.createFirstAdmin,
   authRoutes: stubs.plugin('auth'),
 }));
+const setupAcme = vi.hoisted(() => ({ adoptSetupAcmeEmail: vi.fn(async () => true) }));
+vi.mock('../src/lib/setupAcme.js', () => setupAcme);
 vi.mock('../src/modules/about.js', () => ({ aboutRoutes: stubs.plugin('about') }));
 vi.mock('../src/modules/activity.js', () => ({ activityRoutes: stubs.plugin('activity') }));
 vi.mock('../src/modules/dashboard.js', () => ({ dashboardRoutes: stubs.plugin('dashboard') }));
@@ -132,6 +134,23 @@ describe('api routes (mounted under /v1)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().user).toMatchObject({ id: 1, email: 'admin@example.com', isOperator: true });
     expect(stubs.createFirstAdmin).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ email: 'admin@example.com' }));
+  });
+
+  it('A2: hands the setup ACME email over only after the account exists', async () => {
+    setupAcme.adoptSetupAcmeEmail.mockClear();
+    const app = await buildTestApp({ db: createFakeDb() });
+    await app.register(apiRoutes, { prefix: '/v1' });
+    const plain = await app.inject({ method: 'POST', url: '/v1/setup', payload: { email: 'admin@example.com', password: 'password123' } });
+    expect(plain.statusCode).toBe(200);
+    expect(setupAcme.adoptSetupAcmeEmail).not.toHaveBeenCalled();
+    const res = await app.inject({ method: 'POST', url: '/v1/setup', payload: { email: 'admin@example.com', password: 'password123', acmeEmail: 'certs@example.com' } });
+    expect(res.statusCode).toBe(200);
+    expect(setupAcme.adoptSetupAcmeEmail).toHaveBeenCalledWith(expect.anything(), 1, 'certs@example.com', expect.anything());
+    expect((await app.inject({ method: 'POST', url: '/v1/setup', payload: { email: 'admin@example.com', password: 'password123', acmeEmail: 'nope' } })).statusCode).toBe(400);
+    setupAcme.adoptSetupAcmeEmail.mockClear();
+    stubs.createFirstAdmin.mockRejectedValueOnce(new Error('Instance is already initialized'));
+    await app.inject({ method: 'POST', url: '/v1/setup', payload: { email: 'admin@example.com', password: 'password123', acmeEmail: 'certs@example.com' } });
+    expect(setupAcme.adoptSetupAcmeEmail).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid setup payload with a validation envelope', async () => {

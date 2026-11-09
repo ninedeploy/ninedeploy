@@ -28,7 +28,7 @@ export const authSpecs: RouteSpecMap = {
     summary: 'Whether the instance is initialized and open registration is on',
     tag: 'auth',
     floor: 'public',
-    responseType: '{ initialized: boolean; allowRegistration: boolean; setupTokenRequired: boolean }',
+    responseType: '{ initialized: boolean; allowRegistration: boolean; setupTokenRequired: boolean; acmeConfigured?: boolean }',
   },
   'POST /v1/auth/login': {
     summary: 'Sign in with email and password',

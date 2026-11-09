@@ -34,6 +34,14 @@
 #                       through an SSH tunnel or a Traefik domain).
 #                       NINEDEPLOY_PRIVATE=1 works too.
 #
+# Panel domain (A2):
+#   --domain HOST       serve the panel on HOST (NINEDEPLOY_DOMAIN); point its
+#                       A record at this server. A first install with a
+#                       terminal asks for it when the flag is absent.
+#   --email ADDRESS     Let's Encrypt account email (NINEDEPLOY_ACME_EMAIL), so
+#                       HOST gets a real certificate and becomes the public URL.
+#   Either flag replaces the value in .env; without them .env keeps its own.
+#
 # Release integrity (r702): a release since v0.10.43 is installed from its own
 # archive only when it matches the release's SHA256SUMS; with cosign on the
 # host, SHA256SUMS' Sigstore signature is verified first. Either failing stops
@@ -642,7 +650,96 @@ print_setup_token_hint() {
   printf '%s' "$_status" | grep -q '"initialized":false' || return 0
   echo -e "  ${CYAN}Setup token:${NC} $3"
   echo -e "  ${CYAN}First run:${NC}  $2/login#setup-token=$3"
+  # A2: with a panel domain, the domain link works once its certificate is
+  # issued; the direct address works at once.
+  if [ -n "${4:-}" ] && [ "$4" != "$2" ]; then
+    echo -e "              or, until the domain answers: $4/login#setup-token=$3"
+  fi
   echo -e "              (the first account created becomes the instance operator)"
+}
+
+# ── Panel domain (A2) ───────────────────────────────────────────────────────
+#
+# `--domain panel.example.com --email you@example.com` serves the panel on its
+# own hostname with a Let's Encrypt certificate from the first boot: both go
+# into .env (NINEDEPLOY_DOMAIN, NINEDEPLOY_ACME_EMAIL), the panel's Traefik
+# router does the rest. Bare metal SOURCES .env (`set -a; . ./.env`), so the
+# validators accept plain hostnames and addresses only, never a character a
+# shell would act on (no `$`, quotes, spaces or newlines).
+
+# A lowercase DNS hostname with at least two labels.
+valid_panel_domain() {
+  case "$1" in "" | *[!a-z0-9.-]*) return 1 ;; esac
+  [ "${#1}" -le 253 ] || return 1
+  printf '%s\n' "$1" | grep -Eq '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$'
+}
+
+valid_acme_email() {
+  case "$1" in "" | *[!A-Za-z0-9._%+@-]*) return 1 ;; esac
+  printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+}
+
+# Set KEY=VALUE in ./.env, replacing an existing line. Filter-and-append, so
+# the value never rides through a sed replacement (r449).
+#   $1 key  $2 value
+env_file_set() {
+  local _tmp
+  if [ -f .env ] && grep -q "^$1=" .env; then
+    _tmp="$(mktemp)"
+    { grep -v "^$1=" .env; printf '%s=%s\n' "$1" "$2"; } > "$_tmp" && cat "$_tmp" > .env && rm -f "$_tmp"
+  else
+    printf '%s=%s\n' "$1" "$2" >> .env
+  fi
+}
+
+# On a first install with a terminal, ask for the panel domain (and, with one,
+# the Let's Encrypt email) unless the flags gave them. Never on a re-run, and
+# never during the panel's self-update (no terminal there).
+prompt_panel_domain() {
+  [ -z "$PANEL_DOMAIN_ARG" ] || return 0
+  [ -z "${ND_SELF_UPDATE_TARGET:-}" ] || return 0
+  { : <>/dev/tty; } 2>/dev/null || return 0
+  local _in=""
+  { printf "Panel domain, e.g. panel.example.com (Enter to use the server's IP address): " >/dev/tty; } 2>/dev/null || return 0
+  IFS= read -r _in </dev/tty 2>/dev/null || _in=""
+  _in="$(printf '%s' "$_in" | tr 'A-Z' 'a-z')"
+  [ -n "$_in" ] || return 0
+  if ! valid_panel_domain "$_in"; then
+    warn "'$_in' is not a hostname; continuing without a panel domain (set one later in Settings -> Security)."
+    return 0
+  fi
+  PANEL_DOMAIN_ARG="$_in"
+  if [ -z "$ACME_EMAIL_ARG" ]; then
+    ACME_PROMPTED=1
+    { printf "Let's Encrypt account email for its certificate (Enter to skip): " >/dev/tty; } 2>/dev/null || return 0
+    IFS= read -r _in </dev/tty 2>/dev/null || _in=""
+    if [ -n "$_in" ] && valid_acme_email "$_in"; then
+      ACME_EMAIL_ARG="$_in"
+    elif [ -n "$_in" ]; then
+      warn "The supplied ACME email is invalid and was not saved."
+    fi
+  fi
+}
+
+# Warn (never fail) when the domain does not point at this host yet: Let's
+# Encrypt issues the certificate only once it does.
+#   $1 domain
+warn_domain_dns() {
+  command -v getent >/dev/null 2>&1 || return 0
+  local _ips _me
+  # `getent` exits 2 for a name that does not resolve (or has AAAA only):
+  # under `set -euo pipefail` that would end the run, so it must not fail.
+  _ips="$({ getent ahostsv4 "$1" 2>/dev/null || true; } | awk '{print $1}' | sort -u | tr '\n' ' ')"
+  _ips="${_ips% }"
+  if [ -z "$_ips" ]; then
+    warn "$1 does not resolve yet. Point its A record at this server; the certificate is issued once it does."
+    return 0
+  fi
+  _me="$(detect_server_ip)"
+  case " $_ips " in
+    *" $_me "*) ok "$1 resolves to this server ($_me)" ;;
+    *) warn "$1 resolves to $_ips, while this server's address looks like ${_me:-unknown}. Behind NAT that can be right; otherwise point the A record here first." ;;
+  esac
 }
 
 # ── Release integrity (r702) ────────────────────────────────────────────────
@@ -777,9 +874,31 @@ PINNED_VERSION="${NINEDEPLOY_VERSION:-}"
 FORCE_REFRESH="${NINEDEPLOY_FORCE:-0}"
 INSTALL_MODE_FLAG=""
 PANEL_PRIVATE="${NINEDEPLOY_PRIVATE:-0}"
+# A2: set by --domain / --email (or the first-install prompt). An explicit flag
+# replaces the value in .env; without one, .env keeps what it has.
+PANEL_DOMAIN_ARG=""
+ACME_EMAIL_ARG=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --domain=*)
+      PANEL_DOMAIN_ARG="${1#--domain=}"
+      shift
+      ;;
+    --domain)
+      [ "$#" -ge 2 ] || fail "--domain requires a hostname, e.g. --domain panel.example.com"
+      PANEL_DOMAIN_ARG="$2"
+      shift 2
+      ;;
+    --email=*)
+      ACME_EMAIL_ARG="${1#--email=}"
+      shift
+      ;;
+    --email)
+      [ "$#" -ge 2 ] || fail "--email requires the Let's Encrypt account email"
+      ACME_EMAIL_ARG="$2"
+      shift 2
+      ;;
     --docker)
       INSTALL_MODE_FLAG="docker"
       shift
@@ -828,6 +947,14 @@ case "$CHANNEL" in
   release|stable|main) ;;
   *) fail "Unsupported channel '$CHANNEL' (expected release, stable or main)" ;;
 esac
+
+PANEL_DOMAIN_ARG="$(printf '%s' "$PANEL_DOMAIN_ARG" | tr 'A-Z' 'a-z')"
+if [ -n "$PANEL_DOMAIN_ARG" ] && ! valid_panel_domain "$PANEL_DOMAIN_ARG"; then
+  fail "Invalid --domain '$PANEL_DOMAIN_ARG' (expected a hostname such as panel.example.com)"
+fi
+if [ -n "$ACME_EMAIL_ARG" ] && ! valid_acme_email "$ACME_EMAIL_ARG"; then
+  fail "Invalid --email '$ACME_EMAIL_ARG' (expected an address such as you@example.com)"
+fi
 
 if [ -n "$PINNED_VERSION" ] && ! printf '%s' "$PINNED_VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
   fail "Invalid version '$PINNED_VERSION' (expected vX.Y.Z)"
@@ -1754,6 +1881,35 @@ install_docker_mode() {
   if [ "$CHANNEL" = "stable" ] && [ -z "$PINNED_VERSION" ]; then
     upsert_env NINEDEPLOY_UPDATE_CHANNEL stable
   fi
+  # A2: the panel domain and its certificate email (helpers near the top).
+  if [ "$fresh_env" = true ]; then prompt_panel_domain; fi
+  if [ -n "$ACME_EMAIL_ARG" ]; then upsert_env NINEDEPLOY_ACME_EMAIL "$ACME_EMAIL_ARG"; fi
+  if [ -n "$PANEL_DOMAIN_ARG" ]; then
+    local panel_ip
+    # A compose file from an older pinned release does not pass the variable.
+    grep -q 'NINEDEPLOY_DOMAIN' docker-compose.yml \
+      || warn "This release's compose file does not pass NINEDEPLOY_DOMAIN to the panel: after signing in, set the panel domain under Settings -> Security."
+    upsert_env NINEDEPLOY_DOMAIN "$PANEL_DOMAIN_ARG"
+    # The public URL becomes the domain; fresh installs still seed sslip.io
+    # service URLs from this address.
+    panel_ip="$(detect_server_ip)"
+    if [ -n "$panel_ip" ]; then upsert_env NINEDEPLOY_PUBLIC_IP "$panel_ip"; fi
+    if grep -q '^NINEDEPLOY_ACME_EMAIL=.' .env; then
+      upsert_env NINEDEPLOY_PUBLIC_URL "https://$PANEL_DOMAIN_ARG"
+    else
+      warn "No Let's Encrypt email in .env, so the public URL stays as it is. Unless an email is saved under Settings -> Security, $PANEL_DOMAIN_ARG gets a self-signed certificate: re-run with --email, or save it there and set NINEDEPLOY_PUBLIC_URL=https://$PANEL_DOMAIN_ARG in .env."
+    fi
+    # Traefik reaches the panel through the Docker gateway, never loopback.
+    case "$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)" in
+      "" | 127.0.0.1 | localhost)
+        warn "The panel port is bound to 127.0.0.1, which Traefik cannot reach: $PANEL_DOMAIN_ARG answers only once NINEDEPLOY_BIND=0.0.0.0 is set in .env." ;;
+    esac
+    # Traefik targets host port 3000 (the port inside the container); a panel
+    # published elsewhere is not behind the domain (proven in dind, A2).
+    if [ "$panel_port" != "3000" ]; then
+      warn "The panel is published on port $panel_port, but Traefik forwards $PANEL_DOMAIN_ARG to port 3000: the domain answers only with NINEDEPLOY_PORT=3000."
+    fi
+  fi
   # The default panel URL follows the bind: http://<server-ip>:port when the
   # port is published on 0.0.0.0 (0.16 fresh installs), localhost:port for
   # the loopback bind older installs keep. Once the operator attaches a
@@ -1882,7 +2038,12 @@ install_docker_mode() {
   echo ""
   echo -e "  ${CYAN}Dashboard:${NC}  ${PUBLIC_URL:-http://localhost:${HEALTH_PORT}}"
   print_setup_token_hint "http://${HEALTH_HOST}:${HEALTH_PORT}" "${PUBLIC_URL:-http://localhost:${HEALTH_PORT}}" \
-    "$(sed -n 's/^NINEDEPLOY_SETUP_TOKEN=//p' .env | tail -1)"
+    "$(sed -n 's/^NINEDEPLOY_SETUP_TOKEN=//p' .env | tail -1)" \
+    "$(panel_default_url "$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)" "$HEALTH_PORT")"
+  # A2: say whether the panel domain points here yet.
+  local panel_domain
+  panel_domain="$(sed -n 's/^NINEDEPLOY_DOMAIN=//p' .env | tail -1)"
+  if [ -n "$panel_domain" ]; then warn_domain_dns "$panel_domain"; fi
   case "$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)" in
     ""|127.0.0.1|localhost)
       echo -e "  ${CYAN}Access:${NC}     the panel port is bound to 127.0.0.1 — use an SSH tunnel (ssh -L ${HEALTH_PORT}:127.0.0.1:${HEALTH_PORT} <server>)"
@@ -2552,6 +2713,9 @@ fi
 
 # ── 4. Configure ──────────────────────────────────────────────────────────
 
+# A2: a first install asks for the panel domain (see prompt_panel_domain).
+if [ ! -f ".env" ]; then prompt_panel_domain; fi
+
 if [ ! -f ".env" ]; then
   info "Creating .env from template…"
   # Tighten the umask BEFORE the file exists: `cp` then `chmod 600` at the end
@@ -2602,6 +2766,15 @@ if [ "$CHANNEL" = "stable" ] && [ -z "$PINNED_VERSION" ]; then
     printf 'NINEDEPLOY_UPDATE_CHANNEL=stable\n' >> .env
   fi
 fi
+# A2: the panel domain and its certificate email (helpers near the top). The
+# public URL follows below, once the email prompt has had its turn.
+if [ -n "$ACME_EMAIL_ARG" ]; then env_file_set NINEDEPLOY_ACME_EMAIL "$ACME_EMAIL_ARG"; fi
+if [ -n "$PANEL_DOMAIN_ARG" ]; then
+  env_file_set NINEDEPLOY_DOMAIN "$PANEL_DOMAIN_ARG"
+  # Fresh installs still seed sslip.io service URLs from this address.
+  _nd_panel_ip="$(detect_server_ip)"
+  if [ -n "$_nd_panel_ip" ]; then env_file_set NINEDEPLOY_PUBLIC_IP "$_nd_panel_ip"; fi
+fi
 
 # r451: the data dir holds ninedeploy.db (credential hashes, sessions), the
 # repos/ checkouts (committed secrets included) and PM2's dump (managed-app
@@ -2623,7 +2796,8 @@ set -a
 # shellcheck disable=SC1091
 . ./.env
 set +a
-if [ -z "${NINEDEPLOY_ACME_EMAIL:-}" ]; then
+# A2: not again when the domain prompt just asked for it.
+if [ -z "${NINEDEPLOY_ACME_EMAIL:-}" ] && [ "${ACME_PROMPTED:-0}" != "1" ]; then
   ACME_INPUT=""
   # r261: the old `-r`/`-w` test on /dev/tty only read the device node's
   # permission bits (crw-rw-rw-, true for everyone). With NO controlling
@@ -2645,6 +2819,21 @@ if [ -z "${NINEDEPLOY_ACME_EMAIL:-}" ]; then
     [ -z "$ACME_INPUT" ] || warn "The supplied ACME email is invalid and was not saved."
     warn "Automatic HTTPS is not active yet: set the Let's Encrypt account email in Settings -> Security after signing in. NineDeploy will apply it to Traefik immediately."
   fi
+fi
+# A2: with a certificate email, the panel domain becomes the public URL (links
+# in emails, OAuth callbacks). Traefik reaches the panel through the Docker
+# gateway, so a loopback-only panel cannot serve it.
+if [ -n "$PANEL_DOMAIN_ARG" ]; then
+  if [ -n "${NINEDEPLOY_ACME_EMAIL:-}" ]; then
+    env_file_set NINEDEPLOY_PUBLIC_URL "https://$PANEL_DOMAIN_ARG"
+    export NINEDEPLOY_PUBLIC_URL="https://$PANEL_DOMAIN_ARG"
+  else
+    warn "No Let's Encrypt email in .env, so the public URL stays as it is. Unless an email is saved under Settings -> Security, $PANEL_DOMAIN_ARG gets a self-signed certificate: re-run with --email, or save it there and set NINEDEPLOY_PUBLIC_URL=https://$PANEL_DOMAIN_ARG in .env."
+  fi
+  case "${NINEDEPLOY_HOST:-0.0.0.0}" in
+    127.0.0.1 | localhost)
+      warn "The panel listens on 127.0.0.1, which Traefik cannot reach: $PANEL_DOMAIN_ARG answers only once NINEDEPLOY_HOST=0.0.0.0 is set in .env." ;;
+  esac
 fi
 # r357: from here on the database may be on the new schema, so a rollback to
 # the previous release must restore the pre-update snapshot first — which is
@@ -2981,7 +3170,9 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 echo -e "  ${CYAN}Dashboard:${NC}  ${PUBLIC_URL}"
 echo -e "  ${CYAN}API:${NC}       ${PUBLIC_URL}/health"
-print_setup_token_hint "http://${PROBE_HOST}:${PORT}" "$PUBLIC_URL" "$SETUP_TOKEN"
+print_setup_token_hint "http://${PROBE_HOST}:${PORT}" "$PUBLIC_URL" "$SETUP_TOKEN" "$(panel_default_url "$HOST" "$PORT")"
+# A2: say whether the panel domain points here yet.
+if [ -n "${NINEDEPLOY_DOMAIN:-}" ]; then warn_domain_dns "$NINEDEPLOY_DOMAIN"; fi
 case "$HOST" in
   127.0.0.1|localhost) echo -e "  ${CYAN}Access:${NC}     the panel listens on 127.0.0.1 only — use an SSH tunnel (ssh -L ${PORT}:127.0.0.1:${PORT} <server>)" ;;
   *) [ "$(uname -s)" = "Linux" ] && warn_if_firewalled "$PORT" ;;

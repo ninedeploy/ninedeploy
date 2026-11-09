@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The panel on its own domain, with HTTPS, from the installer.** `install.sh --domain panel.example.com --email you@example.com` serves the panel on that hostname, with a Let's Encrypt certificate from the first boot, and makes it the public URL.
+  - Without the flags, a first install on a terminal asks for both. Re-runs and self-updates never ask, and an explicit flag replaces the value in `.env`.
+  - Both values are checked strictly before anything runs, because bare metal sources `.env`.
+  - The installer warns when the domain does not point at the server yet. It prints the setup link for the domain and for `http://<server-ip>:3000`, which works before the certificate exists.
+  - The Docker compose file now passes `NINEDEPLOY_DOMAIN` to the panel. A compose file from an older pinned release does not, and the installer says so.
+  - The first-run form offers to use the admin's email for Let's Encrypt when none is configured (`POST /v1/setup` takes `acmeEmail`; `GET /v1/auth/status` reports `acmeConfigured` before setup only). It never replaces an email that is already set.
+  - A domain install still seeds free sslip.io service URLs: the installer records the server address in `NINEDEPLOY_PUBLIC_IP`.
 - **A stable update channel.** Until now, the panel offered every release as soon as it was published. An operator can now choose **stable** under **Settings → System → Update channel**, or with `GET`/`PUT /v1/system/update-channel` (SDK `system.updateChannel`). Stable offers only the release the `stable` tag points at. Every release stays the default, so nothing changes until you switch.
   - A daily workflow (`.github/workflows/stable-channel.yml`) moves the `stable` tag to the newest release that has been out for 7 days.
   - A release whose GitHub release notes carry `<!-- stable: security -->` is promoted at once. A maintainer can also promote a tag by hand from the workflow. One marked `<!-- stable: hold -->` is never promoted.

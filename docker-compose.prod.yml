@@ -71,6 +71,11 @@ services:
       # "stable" offers only releases on the stable tag (install.sh --channel
       # stable writes it). Settings → System → Update channel wins over it.
       NINEDEPLOY_UPDATE_CHANNEL: ${NINEDEPLOY_UPDATE_CHANNEL:-}
+      # A2: the panel's own hostname (install.sh --domain). Traefik routes it to
+      # the panel, with a Let's Encrypt certificate once NINEDEPLOY_ACME_EMAIL is
+      # set. Settings → Security → Panel domain wins over it.
+      NINEDEPLOY_DOMAIN: ${NINEDEPLOY_DOMAIN:-}
+      NINEDEPLOY_PUBLIC_IP: ${NINEDEPLOY_PUBLIC_IP:-}
       # "off" ignores the panel IP allow-list (Settings → Security), for when
       # you have locked yourself out. Remove it again once the list is fixed.
       NINEDEPLOY_PANEL_ACCESS: ${NINEDEPLOY_PANEL_ACCESS:-on}

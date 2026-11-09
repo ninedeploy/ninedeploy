@@ -6239,4 +6239,6 @@ export const TR: Readonly<Record<string, string>> = {
   'Stable offers a release once it has been out for seven days without a known regression, or at once when it fixes a security issue. Every release offers each patch as soon as it is published.': 'Stable, bir sürümü bilinen bir gerileme olmadan yedi gün yayında kaldıktan sonra, güvenlik açığı düzeltiyorsa hemen sunar. Her sürüm seçeneği her yamayı yayınlandığı anda sunar.',
   'The panel now follows the stable channel': 'Panel artık stable kanalını izliyor',
   'The panel now offers every release': 'Panel artık her sürümü sunuyor',
+  // ── First run: Let's Encrypt email on the setup form (A2) ───────────────
+  "Also use this email for Let's Encrypt, so domains get HTTPS certificates automatically": "Bu e-postayı Let's Encrypt için de kullan, böylece alan adları HTTPS sertifikalarını otomatik alır",
 };

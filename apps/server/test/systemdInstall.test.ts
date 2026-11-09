@@ -219,7 +219,15 @@ describe('docker-mode upgrade safety (r447–r452)', () => {
     expect(sh).not.toContain('sed -i.bak "s|^$1=.*|$1=$2|" .env');
     expect(sh).toContain('grep -v "^$1=" .env');
     // Written with printf (append semantics), never through a sed replacement.
-    expect(sh.indexOf('_tmp="$(mktemp)"')).toBeGreaterThan(sh.indexOf('upsert_env() {'));
+    // (A2's env_file_set, defined earlier for bare metal, works the same way.)
+    const upsertAt = sh.indexOf('upsert_env() {');
+    expect(upsertAt).toBeGreaterThan(-1);
+    const body = sh.slice(upsertAt, sh.indexOf('\n  }\n', upsertAt));
+    expect(body).toContain('_tmp="$(mktemp)"');
+    expect(body).not.toContain('sed -i');
+    const envSet = sh.slice(sh.indexOf('\nenv_file_set() {'), sh.indexOf('\n}\n', sh.indexOf('\nenv_file_set() {')));
+    expect(envSet).toContain('_tmp="$(mktemp)"');
+    expect(envSet).not.toContain('sed -i');
   });
 
   it('r451: .data is created private (the DB, repos and PM2 dump live there)', () => {

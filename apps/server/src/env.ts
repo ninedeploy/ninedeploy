@@ -66,6 +66,9 @@ const schema = z.object({
   // stable writes it). Anything else is every release. A channel saved under
   // Settings -> System wins over it.
   NINEDEPLOY_UPDATE_CHANNEL: z.string().optional(),
+  // A2: this host's public IPv4 when the public URL is a domain (install.sh
+  // --domain writes it); fresh installs seed sslip.io service URLs from it.
+  NINEDEPLOY_PUBLIC_IP: z.string().optional(),
   // Number of volume backups to keep per volume (1-100). Older backups
   // (file + DB row) are pruned automatically after each successful backup.
   NINEDEPLOY_BACKUP_VOLUME_RETAIN_COUNT: z.coerce.number().int().min(1).max(100).default(10),
