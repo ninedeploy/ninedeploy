@@ -1,0 +1,37 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/panelBackup.test.ts > NDPB1 passphrase envelope > round-trips under the right passphrase 122ms
+ ✓ test/panelBackup.test.ts > NDPB1 passphrase envelope > a wrong passphrase leaves no plaintext behind 132ms
+ ✓ test/panelBackup.test.ts > NDPB1 passphrase envelope > authenticates the header: changed KDF parameters fail like a wrong passphrase 126ms
+ ✓ test/panelBackup.test.ts > NDPB1 passphrase envelope > refuses a crafted header that would burn memory on the KDF, and non-backups 6ms
+ ✓ test/panelBackup.test.ts > upgrade safety > an install with no panel_backup row reports disabled defaults and writes nothing 59ms
+ ✓ test/panelBackup.test.ts > upgrade safety > members are refused 13ms
+ ✓ test/panelBackup.test.ts > settings > validates cron, destination and passphrase before enabling 19ms
+ ✓ test/panelBackup.test.ts > settings > stores the passphrase sealed, never returns it, and audits without it 31ms
+ ✓ test/panelBackup.test.ts > runs > Back up now uploads a sealed /system/export archive and leaves no plaintext behind 341ms
+ ✓ test/panelBackup.test.ts > runs > a run never overlaps another: the API answers 409, the scheduler path skips and audits it 141ms
+ ✓ test/panelBackup.test.ts > runs > retention keeps the newest N (the new one always), and never touches foreign objects 377ms
+ ✓ test/panelBackup.test.ts > runs > a retention failure does not fail the run: the new backup is kept and the warning recorded 153ms
+ ✓ test/panelBackup.test.ts > runs > a failed upload is recorded, audited for the notification fan-out, and prunes nothing 192ms
+ ✓ test/panelBackup.test.ts > runs > a run with no destination or passphrase fails loudly instead of silently doing nothing 292ms
+ ✓ test/panelBackup.test.ts > listing and restore > lists panel backups newest first with size, ignoring foreign objects 33ms
+ ✓ test/panelBackup.test.ts > listing and restore > restore needs the typed file name and the right passphrase, then imports the archive 1242ms
+ ✓ test/panelBackupLock.test.ts > panel backup lock after a restore that cannot start (F1024) > frees the lock when the scratch directory cannot be created 22ms
+ ✓ test/panelBackupRetention.test.ts > control: unchanged retain=1 deletes only old panel objects 84ms
+ ✓ test/panelBackupRetention.test.ts > honors an increased retention committed while upload is blocked 69ms
+ ✓ test/panelBackupRetention.test.ts > does not prune the previous destination after switching destinations 94ms
+ ✓ test/panelBackupRetention.test.ts > rechecks retention before dispatching each delete 557ms
+ ✓ test/panelBackupRetention.test.ts > counts surviving objects when retention increases after one dispatched deletion 68ms
+ ✓ test/plugins/panelBackupScheduler.test.ts > panel backup scheduler > upgrade default: no settings row (disabled) arms nothing, but clears crashed-run scratch 589ms
+ ✓ test/plugins/panelBackupScheduler.test.ts > panel backup scheduler > arms the configured cron and runs a scheduled backup on each tick 12ms
+ ✓ test/plugins/panelBackupScheduler.test.ts > panel backup scheduler > a tick after the operator disabled it does not run 15ms
+ ✓ test/plugins/panelBackupScheduler.test.ts > panel backup scheduler > a settings change re-arms at once; disabling stops the job; close clears the listener 61ms
+
+ Test Files  4 passed (4)
+      Tests  26 passed (26)
+   Start at  19:49:43
+   Duration  12.43s (tests 65%, import 30%, transform 6%)
+
+    Isolate  4 workers spawned · ~304ms startup each (spawn + environment, per file)
+             at least ~913ms faster with isolate: false — reuses workers across files instead of one per file

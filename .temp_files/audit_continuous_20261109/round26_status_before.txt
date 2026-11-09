@@ -1,0 +1,27 @@
+ M .env.example
+ M .github/workflows/ci.yml
+ M CHANGELOG.md
+ M CONTRIBUTING.md
+ M README.md
+ M apps/server/src/env.ts
+ M apps/server/src/lib/updateCheck.ts
+ M apps/server/src/modules/resources.ts
+ M apps/server/src/openapi/specs/operations.ts
+ M apps/server/test/authzMatrix.test.ts
+ M apps/server/test/openapi/apiSurface.snap
+ M apps/server/test/resources.test.ts
+ M apps/server/test/systemdInstall.test.ts
+ M apps/web/src/locales/tr.ts
+ M apps/web/src/routes/settings/SystemSection.tsx
+ M apps/web/test/apiMock.tsx
+ M docker-compose.prod.yml
+ M docs/QUICKSTART.md
+ M docs/plans/COMPETITIVE_ROADMAP_2026-11.md
+ M install.sh
+ M packages/schemas/src/management.ts
+ M packages/sdk/src/resources/system.ts
+?? .github/workflows/stable-channel.yml
+?? apps/server/test/stableChannel.test.ts
+?? apps/web/src/routes/settings/UpdateChannelCard.tsx
+?? apps/web/test/UpdateChannelCard.test.tsx
+?? scripts/stable-channel.mjs

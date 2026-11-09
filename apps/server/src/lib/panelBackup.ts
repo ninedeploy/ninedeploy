@@ -356,17 +356,29 @@ export async function listPanelBackups(db: DB, destinationId: number): Promise<P
  * never be pruned (the F97/F288 rule for database dumps).
  */
 export async function prunePanelBackups(dest: PanelDestination, retain: number, justUploaded: string): Promise<number> {
+  return prunePanelBackupsWithPolicy(dest, justUploaded, async () => retain);
+}
+
+async function prunePanelBackupsWithPolicy(
+  dest: PanelDestination,
+  justUploaded: string,
+  getRetain: () => Promise<number | null>,
+): Promise<number> {
   const names = new Set((await listObjects(dest)).map((o) => o.key));
   names.add(justUploaded);
   const newestFirst = [...names].sort().reverse();
-  const keep = new Set(newestFirst.slice(0, Math.max(PANEL_BACKUP_RETAIN_MIN, retain)));
-  keep.add(justUploaded);
   let deleted = 0;
   const failures: string[] = [];
   for (const key of newestFirst) {
+    // Settings may change during upload, listing, or the previous deletion.
+    const retain = await getRetain();
+    if (retain == null) break;
+    const keep = new Set(newestFirst.filter((name) => names.has(name)).slice(0, Math.max(PANEL_BACKUP_RETAIN_MIN, retain)));
+    keep.add(justUploaded);
     if (keep.has(key)) continue;
     try {
       await s3Delete(dest.cfg, key);
+      names.delete(key);
       deleted++;
     } catch (err) {
       failures.push(`${key}: ${err instanceof Error ? err.message : String(err)}`);
@@ -456,7 +468,10 @@ export async function runPanelBackup(
     let pruned = 0;
     let warning: string | null = null;
     try {
-      pruned = await prunePanelBackups(dest, cfg.retain, key);
+      pruned = await prunePanelBackupsWithPolicy(dest, key, async () => {
+        const current = await getPanelBackupConfig(db);
+        return current.destinationId === dest.id ? current.retain : null;
+      });
     } catch (err) {
       // The new backup is safe; retention retries next run.
       warning = `Retention: ${errMessage(err)}`;

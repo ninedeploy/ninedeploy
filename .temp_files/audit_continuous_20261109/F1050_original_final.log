@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1050_panelRetention.test.ts > control: unchanged retain=1 deletes only old panel objects 75ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1050_panelRetention.test.ts > honors an increased retention committed while upload is blocked
+EXPECTED: no old objects deleted after retain=4; ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1050_panelRetention.test.ts > honors an increased retention committed while upload is blocked 59ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1050_panelRetention.test.ts > does not prune the previous destination after switching destinations 60ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1050_panelRetention.test.ts > rechecks retention before dispatching each delete 66ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  19:49:06
+   Duration  882ms (import 52%, tests 35%, transform 13%)

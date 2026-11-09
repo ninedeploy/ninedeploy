@@ -1,0 +1,45 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/panelBackupRetention.test.ts > control: unchanged retain=1 deletes only old panel objects 74ms
+stdout | test/panelBackupRetention.test.ts > honors an increased retention committed while upload is blocked
+EXPECTED: no old objects deleted after retain=4; ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/panelBackupRetention.test.ts > honors an increased retention committed while upload is blocked 101ms
+ ✓ test/panelBackupRetention.test.ts > does not prune the previous destination after switching destinations 64ms
+ ✓ test/panelBackupRetention.test.ts > rechecks retention before dispatching each delete 63ms
+ × test/panelBackupRetention.test.ts > counts surviving objects when retention increases after one dispatched deletion 64ms
+   → expected { status: 'completed', …(4) } to match object { status: 'completed', pruned: 2 }
+(3 matching properties omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/panelBackupRetention.test.ts > counts surviving objects when retention increases after one dispatched deletion
+AssertionError: expected { status: 'completed', …(4) } to match object { status: 'completed', pruned: 2 }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "pruned": 2,
++   "pruned": 3,
+    "status": "completed",
+  }
+
+ ❯ test/panelBackupRetention.test.ts:117:25
+    115|     await lib.setPanelBackupConfig(db, cfg(2));
+    116|   } finally { deletion.release(); }
+    117|   expect(await running).toMatchObject({ status: 'completed', pruned: 2…
+       |                         ^
+    118|   expect(state.bucket.has(old[1]!)).toBe(true);
+    119|   expect(state.bucket.size).toBe(3); // two backups and the foreign ob…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  19:47:39
+   Duration  1.64s (import 51%, tests 31%, transform 18%)
