@@ -1,0 +1,18 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > live control owner after a gated settings read
+EXPECTED: 1 ACTUAL: 1
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > closed owner after a gated settings read
+EXPECTED: 0 ACTUAL: 0
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > live control owner after a gated settings read 64ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > closed owner after a gated settings read 2ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > a failed settings read released after close starts no backup 2ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  19:55:11
+   Duration  276ms (import 50%, tests 41%, transform 6%, worker 2%)

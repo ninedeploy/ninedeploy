@@ -43,7 +43,7 @@ export default fp(
           void (async () => {
             // Re-read at fire time: a disable that raced the reload wins.
             const live = await getPanelBackupConfig(fastify.db).catch(() => null);
-            if (!live?.enabled) return;
+            if (stopped || !live?.enabled) return;
             await runPanelBackup(fastify.db, { trigger: 'schedule', actorUserId: null, log });
           })().catch((err) => fastify.log.error({ err, component: 'panel-backup' }, 'scheduled panel backup crashed'));
         });

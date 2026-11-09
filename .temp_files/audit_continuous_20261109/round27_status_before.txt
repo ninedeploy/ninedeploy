@@ -1,0 +1,7 @@
+ M apps/server/src/modules/api.ts
+ M apps/server/src/modules/auth.ts
+ M apps/server/src/openapi/specs/auth.ts
+ M apps/server/src/openapi/specs/platform.ts
+ M packages/schemas/src/auth.ts
+ M packages/sdk/src/resources/auth.ts
+?? apps/server/src/lib/setupAcme.ts

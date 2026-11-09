@@ -277,7 +277,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 26
+### Further audit checkpoints through round 27
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -289,6 +289,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1048 | Log delivery/search header precedence is independent of field-name case | 110 |
 | F1049 | Query endpoints retain reverse-proxy prefixes from standard Loki push URLs | 64 |
 | F1050 | Panel retention rechecks destination and keep count before each delete; already-deleted objects do not consume retention slots | 26 |
+| F1051 | A scheduler tick suspended in a settings read cannot start a backup after its application closes | 29 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier

@@ -1,0 +1,27 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/panelBackupSchedulerLifecycle.test.ts > live control owner after a gated settings read 51ms
+ × test/plugins/panelBackupSchedulerLifecycle.test.ts > closed owner after a gated settings read 3ms
+   → expected "vi.fn()" to be called +0 times, but got 1 times
+ ✓ test/plugins/panelBackupSchedulerLifecycle.test.ts > a failed settings read released after close starts no backup 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/plugins/panelBackupSchedulerLifecycle.test.ts > closed owner after a gated settings read
+AssertionError: expected "vi.fn()" to be called +0 times, but got 1 times
+ ❯ test/plugins/panelBackupSchedulerLifecycle.test.ts:48:35
+     46|       read.resolve(cfg);
+     47|       await checkpoint();
+     48|       expect(mock.runPanelBackup).toHaveBeenCalledTimes(closeBeforeRel…
+       |                                   ^
+     49|       if (closeBeforeRelease) expect(mock.stops[0]).toHaveBeenCalledOn…
+     50|     } finally { read.resolve(cfg); await app.close(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  19:53:14
+   Duration  673ms (import 84%, tests 10%, transform 6%)

@@ -1,0 +1,29 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > live control owner after a gated settings read
+EXPECTED: 1 ACTUAL: 1
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > closed owner after a gated settings read
+EXPECTED: 0 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > live control owner after a gated settings read 77ms
+ × .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > closed owner after a gated settings read 10ms
+   → expected "vi.fn()" to be called +0 times, but got 1 times
+ ✓ .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > a failed settings read released after close starts no backup 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts > closed owner after a gated settings read
+AssertionError: expected "vi.fn()" to be called +0 times, but got 1 times
+ ❯ .temp_files/audit_continuous_20261109/prove_F1051_schedulerClose.test.ts:48:264
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  19:53:38
+   Duration  2.90s (import 48%, transform 44%, tests 8%)
