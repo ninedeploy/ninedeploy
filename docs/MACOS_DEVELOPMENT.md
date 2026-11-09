@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 50
+### Further audit checkpoints through round 51
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -309,6 +309,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1067 | GitHub runner drains retain pending-entry identity across earlier job startup and online status awaits | 114 |
 | F1068 | Changed runner settings stop further admissions in an old batch, including writes overlapping the final config read | 118 |
 | F1069 | Pending GitHub jobs revalidate current repository/public/label policy before consuming runner slots | 122 |
+| F1070 | Automated runner sweeps retain unreadable/unrecognized container states and keep explicit stop available | 127 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -390,6 +391,13 @@ labels/privacy for current-policy checks; refused entries do not consume slots
 ahead of eligible work. The public pending response still has four fields.
 Resource-bound server static checks passed. A repository changing visibility
 remotely after its webhook snapshot and live workflow execution were not tested.
+
+Round 51 passed 25 independent state/busy/error/idle-boundary controls three
+times, including a delayed uncertain node response released after the node's
+current state became running. The 127-test scope and resource-bound server
+static checks passed. These assert mocked stop/removal requests; no live
+container was deleted. The separate maximum-lifetime policy is being checked
+against current upstream self-hosted-runner limits.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed

@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Runner sweeps retain missing, malformed or unrecognized node/container states instead of treating them as confirmed non-running runners and automatically stopping them (F1070).
 - Queued GitHub runner jobs revalidate current repository, public-repository and label policy before taking a slot, so previously accepted work cannot bypass later runner restrictions (F1069).
 - GitHub runner batches stop admitting additional jobs when their configuration changes during preparation, retaining pending work for a fresh host/capacity pass (F1068).
 - GitHub runner drains recheck pending-job identity after asynchronous preparation of earlier jobs or online status checks, so later workflow events cannot leave stale jobs eligible to start (F1067).

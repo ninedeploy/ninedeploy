@@ -1,0 +1,62 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles exited node state conservatively
+EXPECTED: 1 ACTUAL: 1
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles exited node state conservatively 231ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles missing node state conservatively
+EXPECTED: 0 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles missing node state conservatively 206ms
+   → expected 1 to be +0 // Object.is equality
+stdout | .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles blank node state conservatively
+EXPECTED: 0 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles blank node state conservatively 188ms
+   → expected 1 to be +0 // Object.is equality
+stdout | .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles oversized node state conservatively
+EXPECTED: 0 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles oversized node state conservatively 183ms
+   → expected 1 to be +0 // Object.is equality
+stdout | .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles unexpected node state conservatively
+EXPECTED: 0 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles unexpected node state conservatively 192ms
+   → expected 1 to be +0 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles missing node state conservatively
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles blank node state conservatively
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles oversized node state conservatively
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts > automatic sweep handles unexpected node state conservatively
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1070_ghaReap.test.ts:34:17
+     32|   const expected=mode==='exited'?1:0;
+     33|   console.log('EXPECTED:',expected,'ACTUAL:',stops);console.log(stops=…
+     34|   expect(stops).toBe(expected);
+       |                 ^
+     35|   expect(h.githubApi.mock.calls.filter(call=>call[2]==='DELETE')).toHa…
+     36| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 1 passed (5)
+   Start at  23:15:07
+   Duration  1.67s (tests 64%, import 26%, transform 9%)

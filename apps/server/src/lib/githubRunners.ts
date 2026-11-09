@@ -747,7 +747,8 @@ export async function sweepGithubRunners(db: DB, log: FastifyBaseLogger, now: nu
   for (const c of containers) {
     const age = c.createdAt ? now - c.createdAt.getTime() : 0;
     if (c.state !== 'running') {
-      await removeRunnerContainer(db, c);
+      // An unreadable node/Docker state is not permission to stop a runner.
+      if (['created', 'paused', 'restarting', 'removing', 'exited', 'dead'].includes(c.state)) await removeRunnerContainer(db, c);
       continue;
     }
     if (age > MAX_RUNNER_AGE_MS) {

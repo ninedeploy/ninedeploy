@@ -1,0 +1,108 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained (undefined)
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained (undefined) 217ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained ()
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained () 173ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained (unknown)
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained (unknown) 182ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained (unrecognized)
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained (unrecognized) 212ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained (xxxxxxxxxxxxxxx)
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > uncertain state retained (xxxxxxxxxxxxxxx) 201ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running created keeps existing cleanup
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running created keeps existing cleanup 161ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running paused keeps existing cleanup
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running paused keeps existing cleanup 195ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running restarting keeps existing cleanup
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running restarting keeps existing cleanup 185ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running removing keeps existing cleanup
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running removing keeps existing cleanup 196ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running exited keeps existing cleanup
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running exited keeps existing cleanup 185ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running dead keeps existing cleanup
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > recognized non-running dead keeps existing cleanup 164ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer busy
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer busy 189ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer idle
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer idle 190ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer missing
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer missing 218ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer null
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer null 234ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer wrong-type
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner busy answer wrong-type 181ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner API error 404
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner API error 404 194ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner API error 500
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner API error 500 199ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner API error 0
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > running runner API error 0 218ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > idle threshold plus 0ms
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > idle threshold plus 0ms 216ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > idle threshold plus 1ms
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > idle threshold plus 1ms 212ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > invalid creation time is not evidence of old age
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > invalid creation time is not evidence of old age 222ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > explicit operator stop remains available for an unknown state
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > explicit operator stop remains available for an unknown state 177ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > failed container removal never deregisters a running runner
+EXPECTED stops: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > failed container removal never deregisters a running runner 201ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > a delayed uncertain node snapshot cannot stop a runner now known running
+EXPECTED stops: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1070_ghaReap.test.ts > a delayed uncertain node snapshot cannot stop a runner now known running 191ms
+
+ Test Files  1 passed (1)
+      Tests  25 passed (25)
+   Start at  23:20:21
+   Duration  5.86s (tests 90%, import 7%, transform 2%)
