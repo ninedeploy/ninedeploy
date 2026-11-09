@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 43
+### Further audit checkpoints through round 44
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -303,6 +303,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1061 | Concurrent CI claim/cancellation closes the current attempt and retires an unassigned losing claim | 80 |
 | F1062 | Concurrent CI claims atomically reserve runner capacity and restore a losing unassigned job to its prior queue state | 83 |
 | F1063 | Runner revocation fences lease creation and attempt publication; pending losses and newer owners are reconciled by attempt identity | 90 |
+| F1064 | Cancellation-winning CI results return conflicts, close current attempt history and emit no result-success audit | 93 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -341,6 +342,12 @@ and a newer runner claiming before the stale claim resumes. Intermediate
 verification exposed gaps in the initial patches and remains in the ledger.
 Final scope tests and resource-bound server static checks passed; no live
 runner or secret-exposure claim is made.
+
+Round 44 passed nine independent HTTP-level result/cancellation cases three
+times. Both success and failure reports return 409 when cancellation wins;
+ordinary results emit one audit and duplicate/expired/superseded reports are
+rejected. The 93-test CI scope and resource-bound server static checks passed.
+Concurrent release/version preparation remains separately owned and validated.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed

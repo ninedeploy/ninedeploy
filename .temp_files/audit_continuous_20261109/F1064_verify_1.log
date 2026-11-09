@@ -1,0 +1,44 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP succeeded completes once and emits one result audit
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP succeeded completes once and emits one result audit 285ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP succeeded, cancel-first: 409 and no result audit
+EXPECTED: HTTP409; ACTUAL: 409 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP succeeded, cancel-first: 409 and no result audit 236ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP succeeded, attempt-first: 409 and no result audit
+EXPECTED: HTTP409; ACTUAL: 409 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP succeeded, attempt-first: 409 and no result audit 171ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP failed completes once and emits one result audit
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP failed completes once and emits one result audit 182ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP failed, cancel-first: 409 and no result audit
+EXPECTED: HTTP409; ACTUAL: 409 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP failed, cancel-first: 409 and no result audit 271ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP failed, attempt-first: 409 and no result audit
+EXPECTED: HTTP409; ACTUAL: 409 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > HTTP failed, attempt-first: 409 and no result audit 211ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > already cancelled work is a conflict without a result audit
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > already cancelled work is a conflict without a result audit 165ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > an expired lease is a conflict without a result audit
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > an expired lease is a conflict without a result audit 235ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > a superseded attempt cannot finish the current job
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1064_ciFinish.test.ts > a superseded attempt cannot finish the current job 169ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  22:26:44
+   Duration  2.84s (tests 71%, import 20%, transform 8%)

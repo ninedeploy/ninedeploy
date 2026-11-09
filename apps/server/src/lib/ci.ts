@@ -185,10 +185,12 @@ export async function cancelJob(db: DB, jobId: number, userId: number | null): P
     .returning({ currentAttemptId: ciJobs.currentAttemptId });
   if (!cancelled) return false;
   if (cancelled.currentAttemptId) {
+    // A result may have closed the attempt while the job was still running.
+    // Winning cancellation owns that current attempt's final state too.
     await db
       .update(ciAttempts)
       .set({ status: 'cancelled', finishedAt: new Date(), error: 'Cancelled' })
-      .where(and(eq(ciAttempts.id, cancelled.currentAttemptId), eq(ciAttempts.status, 'running')));
+      .where(and(eq(ciAttempts.id, cancelled.currentAttemptId), inArray(ciAttempts.status, ['running', 'succeeded', 'failed'])));
   }
   return true;
 }
@@ -421,12 +423,14 @@ export async function finishAttempt(
   const closed = await db
     .update(ciAttempts)
     .set({ status: result.status, exitCode: result.exitCode, error: result.error ?? null, finishedAt: at })
-    .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running')));
+    .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.status, 'running'),
+      sql`exists (select 1 from ${ciJobs} where ${ciJobs.id} = ${job.id} and ${ciJobs.status} = 'running' and ${ciJobs.currentAttemptId} = ${attempt.id})`));
   if (affected(closed) !== 1) throw new CiError('This attempt no longer counts', 409);
-  await db
+  const finished = await db
     .update(ciJobs)
     .set({ status: result.status, finishedAt: at, error: result.status === 'failed' ? (result.error ?? `Exited with ${result.exitCode}`) : null })
     .where(and(eq(ciJobs.id, job.id), eq(ciJobs.status, 'running'), eq(ciJobs.currentAttemptId, attempt.id)));
+  if (affected(finished) !== 1) throw new CiError('This attempt no longer counts', 409);
 }
 
 /** Mark an attempt lost and give its job another attempt, or fail it when none are left. */
