@@ -18,6 +18,7 @@ import { classifyCloneFailure, displayRepoUrl, redactGitOutput } from './cloneFa
 import { checkoutCommit, type CloneCreds } from './git.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 import { resolveCloneCreds } from './sourceCreds.js';
+import { conflict } from './errors.js';
 
 /**
  * G5.3 instance-wide GitOps. One YAML file in a repository describes the
@@ -35,15 +36,40 @@ const CHECK_KEY = 'instance_gitops_check';
 /** The file is configuration, not data. */
 export const MAX_SPEC_BYTES = 256 * 1024;
 
+interface GitopsState { revision: number; writing: Promise<void> }
+const states = new WeakMap<DB, GitopsState>();
+function stateFor(db: DB): GitopsState {
+  let state = states.get(db);
+  if (!state) { state = { revision: 0, writing: Promise.resolve() }; states.set(db, state); }
+  return state;
+}
+function withGitopsSettings<T>(db: DB, operation: () => Promise<T>): Promise<T> {
+  const state = stateFor(db);
+  const result = state.writing.then(operation);
+  state.writing = result.then(() => undefined, () => undefined);
+  return result;
+}
+
 export const getGitopsConfig = (db: DB) => getSettingJson<GitopsConfig>(db, CONFIG_KEY, null);
 /** null removes the row: settings.value is NOT NULL, so storing null failed (DELETE /v1/gitops answered 500). */
 const setOrClear = async <T>(db: DB, key: string, value: T | null): Promise<void> => {
   if (value === null) await db.delete(settings).where(eq(settings.key, key));
   else await setSettingJson(db, key, value);
 };
-export const setGitopsConfig = (db: DB, cfg: GitopsConfig | null) => setOrClear(db, CONFIG_KEY, cfg);
+export const setGitopsConfig = (db: DB, cfg: GitopsConfig | null) => withGitopsSettings(db, () => {
+  stateFor(db).revision++;
+  return setOrClear(db, CONFIG_KEY, cfg);
+});
+export const getGitopsConfigSnapshot = (db: DB) => withGitopsSettings(db, async () => {
+  const revision = stateFor(db).revision;
+  return { revision, config: await getGitopsConfig(db) };
+});
 export const getLastCheck = (db: DB) => getSettingJson<GitopsCheck>(db, CHECK_KEY, null);
-export const setLastCheck = (db: DB, check: GitopsCheck | null) => setOrClear(db, CHECK_KEY, check);
+export const setLastCheck = (db: DB, check: GitopsCheck | null, revision?: number) => withGitopsSettings(db, async () => {
+  if (revision !== undefined && stateFor(db).revision !== revision) return false;
+  await setOrClear(db, CHECK_KEY, check);
+  return true;
+});
 
 /** Parse and validate the file: size, no secrets, the schema, unique names. */
 export function parseInstanceSpec(text: string): InstanceSpec {
@@ -333,7 +359,7 @@ let running: Promise<{ check: GitopsCheck; previous: GitopsCheck | null }> | nul
 export function runGitopsCheck(db: DB, deps: GitopsDeps = defaultDeps): Promise<{ check: GitopsCheck; previous: GitopsCheck | null }> {
   running ??= (async () => {
     const previous = await getLastCheck(db);
-    const cfg = await getGitopsConfig(db);
+    const { config: cfg, revision } = await getGitopsConfigSnapshot(db);
     if (!cfg) throw new Error('Instance GitOps is not configured');
     let check: GitopsCheck;
     try {
@@ -342,7 +368,7 @@ export function runGitopsCheck(db: DB, deps: GitopsDeps = defaultDeps): Promise<
     } catch (err) {
       check = { at: new Date().toISOString(), commit: null, error: err instanceof Error ? err.message : String(err), drift: [] };
     }
-    await setLastCheck(db, check);
+    if (!(await setLastCheck(db, check, revision))) throw conflict('Instance GitOps configuration changed during the check; run it again');
     return { check, previous };
   })().finally(() => {
     running = null;

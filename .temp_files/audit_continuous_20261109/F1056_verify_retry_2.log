@@ -1,0 +1,21 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent check result ownership after remove 296ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent check result ownership after replace 246ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent check result ownership after recreate 193ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent apply result ownership after remove 237ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent apply result ownership after replace 272ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent apply result ownership after recreate 184ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > failed old check checkout cannot restore a deleted error row 228ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > settings deletion waits for an already-publishing check 197ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > failed old apply checkout cannot restore a deleted error row 174ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > settings deletion waits for an already-publishing apply 236ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  20:56:43
+   Duration  3.11s (tests 76%, import 20%, transform 5%)

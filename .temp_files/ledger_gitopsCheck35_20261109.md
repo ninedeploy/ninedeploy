@@ -48,5 +48,7 @@ Real migrated SQLite and repository-file parsing with gated checkout; actual Fas
 ### Working tree
 Snapshots: audit_continuous_20261109/round35_status_before.txt and round35_status_after.txt. Concurrent auth/setup/installer/doctor work was committed by the other writer as f192c575 and 9a3668e7, then README work as 76d05698; no external changes to the GitOps scope were observed on reread. After the after-snapshot, unrelated old_website deletions plus Biome/issue-template/roadmap/changelog work appeared; all remain unstaged by this audit. Stage only the two GitOps source files, their ten added tests, own changelog hunk, Mac table and selected evidence; retain failed fixture/partial-repair artifacts too. No reset/stash/clean or blanket staging.
 
+Shared-index receipt: after the selected-content check, the other writer's a2707c3e/a832908c commits cleared the audit's staged entries while leaving their working files intact. Commit 7e0eb73b therefore recorded only this ledger. The unchanged verified source/tests/docs/proofs are re-staged with an exact owned-path guard; the next repair commit is verified by HEAD blob identity before pushing. This receipt does not attribute a product fix to the ledger-only commit.
+
 ### Next scope (if rounds continue)
 apps/server/src/plugins/imageScanScheduler.ts and nearest image-scan tests: periodic-scan ownership, overlap, failure handling and close after awaited work.

@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 33
+### Further audit checkpoints through round 35
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -295,6 +295,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1053 | Concurrent PITR admissions reserve capacity before name/volume checks and release it on admission failure | 53 |
 | F1054 | Active PITR pruning excludes new same-archive users; backup HTTP admission returns a conflict while pruning | 58 |
 | F1055 | Closed GitOps schedulers stop new checks and suppress late drift/failure alerts | 21 |
+| F1056 | GitOps check/apply results respect config replacement/removal, preserve cleared records and protect newer results | 31 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -318,6 +319,10 @@ verifier passed eight cases three times. Round 32's prune-ownership verifier
 passed ten cases three times, including failure cleanup and other-archive controls.
 Round 33 passed 18 independent GitOps lifecycle/interval/deduplication cases
 three times, plus the bounded scope and the same resource-bound server static checks.
+Round 35 passed 13 independent configuration/result-ownership cases three times,
+including queued writes, identical-config recreation and SQL publication failure.
+Ten permanent regression/control cases were added; a verifier-fixture deadlock
+and an incomplete initial-patch edge remain recorded rather than counted as passes.
 
 At checkpoint 20 the general release gate stopped on an uncovered SDK method
 from the concurrent service-capability feature. Two authenticated SDK transport

@@ -1,0 +1,48 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ↓ test/instanceGitops.test.ts > the instance file > refuses secrets, unknown keys and a name given twice
+ ↓ test/instanceGitops.test.ts > the instance file > reports what is missing, changed and extra
+ ↓ test/instanceGitops.test.ts > the instance file > exports the live instance as a file that reads back without drift
+ ↓ test/instanceGitops.test.ts > the instance file > does not follow a symlink out of the repository
+ ↓ test/instanceGitops.test.ts > the checkout > never repeats a credential from git output, stops at the size cap and reads into a fresh directory each time
+ ↓ test/instanceGitops.test.ts > routes > configures, checks and applies the file without deleting anything
+ ↓ test/instanceGitops.test.ts > routes > stores a read failure as the check, and members cannot see any of it
+ ↓ test/instanceGitops.test.ts > routes > check: none config after a gated checkout
+ ↓ test/instanceGitops.test.ts > routes > check: remove config after a gated checkout
+ ↓ test/instanceGitops.test.ts > routes > check: replace config after a gated checkout
+ ↓ test/instanceGitops.test.ts > routes > check: recreate config after a gated checkout
+ ↓ test/instanceGitops.test.ts > routes > apply: none config after a gated checkout
+ ↓ test/instanceGitops.test.ts > routes > apply: remove config after a gated checkout
+ ↓ test/instanceGitops.test.ts > routes > apply: replace config after a gated checkout
+ ↓ test/instanceGitops.test.ts > routes > apply: recreate config after a gated checkout
+ ↓ test/instanceGitops.test.ts > routes > releases result publication after a settings write fails
+ × test/instanceGitops.test.ts > routes > does not give a queued snapshot the revision of a later config write 183ms
+   → expected true to be false // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/instanceGitops.test.ts > routes > does not give a queued snapshot the revision of a later config write
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/instanceGitops.test.ts:282:129
+    280|       const old = await snapshot; await replacing;
+    281|       expect(old.config?.branch).toBe('main');
+    282|       expect(await lib.setLastCheck(db, { at: '2026-11-09T12:00:00Z', …
+       |                                                                                                                                 ^
+    283|       expect(await lib.getLastCheck(db)).toBeNull();
+    284|     } finally { release(); await Promise.allSettled([holding, snapshot…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 skipped (17)
+   Start at  21:03:37
+   Duration  1.10s (import 63%, tests 18%, transform 18%)

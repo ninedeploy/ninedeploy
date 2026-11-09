@@ -1,0 +1,26 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1056_gitopsPublishers.test.ts > routes > check: control: unchanged config stores a check after a gated checkout 262ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1056_gitopsPublishers.test.ts > routes > check: deletion stays cleared after a gated checkout
+EXPECTED: lastCheck remains null; ACTUAL: null
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1056_gitopsPublishers.test.ts > routes > check: deletion stays cleared after a gated checkout 165ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1056_gitopsPublishers.test.ts > routes > apply: control: unchanged config stores a check after a gated checkout 190ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1056_gitopsPublishers.test.ts > routes > apply: deletion stays cleared after a gated checkout
+EXPECTED: lastCheck remains null; ACTUAL: null
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1056_gitopsPublishers.test.ts > routes > apply: deletion stays cleared after a gated checkout 193ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1056_gitopsDeletion.test.ts > routes > control: unchanged config stores a check after a gated checkout 326ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1056_gitopsDeletion.test.ts > routes > deletion stays cleared after a gated checkout
+EXPECTED: lastCheck remains null; ACTUAL: null
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1056_gitopsDeletion.test.ts > routes > deletion stays cleared after a gated checkout 235ms
+
+ Test Files  2 passed (2)
+      Tests  6 passed (6)
+   Start at  21:05:26
+   Duration  2.88s (tests 52%, import 44%, transform 5%)

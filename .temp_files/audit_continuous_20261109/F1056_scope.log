@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/instanceGitops.coverage.test.ts > configuration routes > reads nothing before configuring, refuses an unknown git source and records a paused config 217ms
+ ✓ test/instanceGitops.coverage.test.ts > configuration routes > removes the config and the last check 165ms
+ ✓ test/instanceGitops.coverage.test.ts > configuration routes > audits a failed check by its error 166ms
+ ✓ test/instanceGitops.coverage.test.ts > configuration routes > exports the live instance as JSON on request 188ms
+ ✓ test/instanceGitops.coverage.test.ts > apply > refuses before a repository is configured, and when the file cannot be read 168ms
+ ✓ test/instanceGitops.coverage.test.ts > apply > reports each step that could not be applied, with the reason, and calls the API for the rest 169ms
+ ✓ test/instanceGitops.coverage.test.ts > apply > changes nothing for a file that matches the instance 246ms
+ ✓ test/instanceGitops.test.ts > the instance file > refuses secrets, unknown keys and a name given twice 166ms
+ ✓ test/instanceGitops.test.ts > the instance file > reports what is missing, changed and extra 155ms
+ ✓ test/instanceGitops.test.ts > the instance file > exports the live instance as a file that reads back without drift 158ms
+ ✓ test/instanceGitops.test.ts > the instance file > does not follow a symlink out of the repository 174ms
+ ✓ test/instanceGitops.test.ts > the checkout > never repeats a credential from git output, stops at the size cap and reads into a fresh directory each time 152ms
+ ✓ test/instanceGitops.test.ts > routes > configures, checks and applies the file without deleting anything 253ms
+ ✓ test/instanceGitops.test.ts > routes > stores a read failure as the check, and members cannot see any of it 170ms
+ ✓ test/instanceGitops.test.ts > routes > check: none config after a gated checkout 166ms
+ ✓ test/instanceGitops.test.ts > routes > check: remove config after a gated checkout 157ms
+ ✓ test/instanceGitops.test.ts > routes > check: replace config after a gated checkout 177ms
+ ✓ test/instanceGitops.test.ts > routes > check: recreate config after a gated checkout 174ms
+ ✓ test/instanceGitops.test.ts > routes > apply: none config after a gated checkout 174ms
+ ✓ test/instanceGitops.test.ts > routes > apply: remove config after a gated checkout 178ms
+ ✓ test/instanceGitops.test.ts > routes > apply: replace config after a gated checkout 204ms
+ ✓ test/instanceGitops.test.ts > routes > apply: recreate config after a gated checkout 221ms
+ ✓ test/instanceGitops.test.ts > routes > releases result publication after a settings write fails 229ms
+ ✓ test/plugins/gitopsScheduler.test.ts > live control owner after gated getGitopsConfig 50ms
+ ✓ test/plugins/gitopsScheduler.test.ts > closed owner after gated getGitopsConfig 1ms
+ ✓ test/plugins/gitopsScheduler.test.ts > live control owner after gated getLastCheck 1ms
+ ✓ test/plugins/gitopsScheduler.test.ts > closed owner after gated getLastCheck 2ms
+ ✓ test/plugins/gitopsScheduler.test.ts > live control owner after gated runGitopsCheck 1ms
+ ✓ test/plugins/gitopsScheduler.test.ts > closed owner after gated runGitopsCheck 1ms
+ ✓ test/gitopsCleanup.test.ts > removes the temporary directory when credentials cannot be resolved and still accepts a later checkout 8ms
+
+ Test Files  4 passed (4)
+      Tests  30 passed (30)
+   Start at  20:59:45
+   Duration  6.37s (tests 72%, import 25%, transform 3%)

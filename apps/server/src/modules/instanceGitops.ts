@@ -6,6 +6,7 @@ import { audit } from '../lib/audit.js';
 import { badRequest } from '../lib/errors.js';
 import {
   getGitopsConfig,
+  getGitopsConfigSnapshot,
   getLastCheck,
   loadLive,
   readSpecFromRepo,
@@ -66,7 +67,7 @@ export function instanceGitopsRoutes(deps?: GitopsDeps): FastifyPluginAsync {
     });
 
     app.post('/apply', async (req): Promise<{ steps: GitopsApplyStep[]; check: GitopsCheck }> => {
-      const cfg = await getGitopsConfig(app.db);
+      const { config: cfg, revision } = await getGitopsConfigSnapshot(app.db);
       if (!cfg) throw badRequest('Configure the repository first', 'gitops_not_configured');
       // Applied from a fresh read, never from a stored check.
       let desired: InstanceSpec;
@@ -78,7 +79,9 @@ export function instanceGitopsRoutes(deps?: GitopsDeps): FastifyPluginAsync {
       }
       const steps = await applySpec(app, req, desired);
       const check: GitopsCheck = { at: new Date().toISOString(), commit, error: null, drift: computeDrift(desired, (await loadLive(app.db)).spec) };
-      await setLastCheck(app.db, check);
+      // Completed steps still belong to this caller; only the current config
+      // may publish their result into the shared last-check record.
+      await setLastCheck(app.db, check, revision);
       const failed = steps.filter((s) => !s.ok).length;
       void audit(app.db, req.user!.id, 'gitops.apply', `${commit?.slice(0, 7) ?? '?'}: ${steps.length - failed} applied, ${failed} failed, ${check.drift.length} difference(s) left`);
       return { steps, check };

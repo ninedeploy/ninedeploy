@@ -207,4 +207,80 @@ describe('routes', () => {
     expect(exported.body).toContain('slug: legacy');
     await a.close();
   });
+
+  for (const endpoint of ['check', 'apply'] as const) for (const change of ['none', 'remove', 'replace', 'recreate'] as const) {
+    it(`${endpoint}: ${change} config after a gated checkout`, async () => {
+      let entered!: () => void; let release!: () => void;
+      const waiting = new Promise<void>((resolve) => { entered = resolve; });
+      const blocked = new Promise<void>((resolve) => { release = resolve; });
+      const original = repo({ 'ninedeploy-instance.yaml': FILE });
+      const deps = { checkout: vi.fn(async (...args: Parameters<typeof original.checkout>) => {
+        entered(); await blocked; return original.checkout(...args);
+      }) };
+      const a = await app(deps, []);
+      await a.inject({ method: 'PUT', url: '/gitops', headers: asUser(1), payload: CFG });
+      const pending = a.inject({ method: 'POST', url: `/gitops/${endpoint}`, headers: asUser(1) }).then(result => result);
+      try {
+        await waiting;
+        if (change === 'remove' || change === 'recreate') {
+          expect((await a.inject({ method: 'DELETE', url: '/gitops', headers: asUser(1) })).statusCode).toBe(200);
+          expect(await lib.getGitopsConfig(db)).toBeNull();
+          expect(await lib.getLastCheck(db)).toBeNull();
+        }
+        if (change === 'replace' || change === 'recreate') {
+          expect((await a.inject({ method: 'PUT', url: '/gitops', headers: asUser(1), payload: { ...CFG, branch: change === 'replace' ? 'replacement' : CFG.branch } })).statusCode).toBe(200);
+        }
+      } finally { release(); }
+      try {
+        const result = await pending;
+        if (change !== 'none') {
+          expect(await lib.getLastCheck(db)).toBeNull();
+          expect(result.statusCode).toBe(endpoint === 'check' ? 409 : 200);
+          if (endpoint === 'check') expect(result.json()).toMatchObject({ error: { code: 'conflict' } });
+          else expect(result.json().steps).toEqual(expect.any(Array));
+        }
+        else {
+          expect(result.statusCode).toBe(200);
+          expect(await lib.getLastCheck(db)).toMatchObject({ commit: 'abc1234def', error: null });
+        }
+      } finally { await a.close(); }
+    });
+  }
+
+  it('releases result publication after a settings write fails', async () => {
+    const { sql } = await import('drizzle-orm');
+    const a = await app(repo({ 'ninedeploy-instance.yaml': 'version: "1"\nprojects: []\n' }), []);
+    await a.inject({ method: 'PUT', url: '/gitops', headers: asUser(1), payload: CFG });
+    await db.run(sql.raw("CREATE TRIGGER f1056_reject_check BEFORE INSERT ON settings WHEN NEW.key = 'instance_gitops_check' BEGIN SELECT RAISE(ABORT, 'injected publication failure'); END"));
+    try {
+      expect((await a.inject({ method: 'POST', url: '/gitops/check', headers: asUser(1) })).statusCode).toBe(500);
+      expect(await lib.getLastCheck(db)).toBeNull();
+      await db.run(sql.raw('DROP TRIGGER f1056_reject_check'));
+      const retry = await a.inject({ method: 'POST', url: '/gitops/check', headers: asUser(1) });
+      expect(retry.statusCode).toBe(200);
+      expect(await lib.getLastCheck(db)).toMatchObject({ commit: 'abc1234def', error: null });
+    } finally { await db.run(sql.raw('DROP TRIGGER IF EXISTS f1056_reject_check')); await a.close(); }
+  });
+
+  it('does not give a queued snapshot the revision of a later config write', async () => {
+    await lib.setGitopsConfig(db, CFG);
+    let entered!: () => void; let release!: () => void;
+    const waiting = new Promise<void>((resolve) => { entered = resolve; });
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const original = db.query.settings.findFirst.bind(db.query.settings);
+    const read = vi.spyOn(db.query.settings, 'findFirst').mockImplementationOnce(((...args: Parameters<typeof original>) => (async () => {
+      const row = await original(...args); entered(); await blocked; return row;
+    })()) as typeof original);
+    const holding = lib.getGitopsConfigSnapshot(db);
+    await waiting;
+    const snapshot = lib.getGitopsConfigSnapshot(db);
+    const replacing = lib.setGitopsConfig(db, { ...CFG, branch: 'replacement' });
+    try {
+      release(); await holding;
+      const old = await snapshot; await replacing;
+      expect(old.config?.branch).toBe('main');
+      expect(await lib.setLastCheck(db, { at: '2026-11-09T12:00:00Z', commit: 'stale', error: null, drift: [] }, old.revision)).toBe(false);
+      expect(await lib.getLastCheck(db)).toBeNull();
+    } finally { release(); await Promise.allSettled([holding, snapshot, replacing]); read.mockRestore(); }
+  });
 });

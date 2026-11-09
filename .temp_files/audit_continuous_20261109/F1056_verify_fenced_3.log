@@ -1,0 +1,24 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent check result ownership after remove 267ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent check result ownership after replace 240ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent check result ownership after recreate 211ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent apply result ownership after remove 275ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent apply result ownership after replace 185ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > independent apply result ownership after recreate 181ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > failed old check checkout cannot restore a deleted error row 231ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > settings deletion waits for an already-publishing check 180ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > failed old apply checkout cannot restore a deleted error row 153ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > settings deletion waits for an already-publishing apply 203ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > queued reads retain their own config revision, not a later writer revision 186ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > SQL publication failure releases check and settings queues 302ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1056_gitopsOwnership.test.ts > SQL publication failure releases apply and settings queues 287ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  21:04:24
+   Duration  3.61s (tests 82%, import 14%, transform 3%)

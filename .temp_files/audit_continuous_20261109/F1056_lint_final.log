@@ -1,0 +1,9 @@
+$ pnpm.cmd exec biome lint apps/server/src/lib/instanceGitops.ts
+Checked 1 file in 16ms. No fixes applied.
+exit 0
+$ pnpm.cmd exec biome lint apps/server/src/modules/instanceGitops.ts
+Checked 1 file in 12ms. No fixes applied.
+exit 0
+$ pnpm.cmd exec biome lint apps/server/test/instanceGitops.test.ts
+Checked 1 file in 15ms. No fixes applied.
+exit 0

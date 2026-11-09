@@ -1,0 +1,130 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1056_gitopsDeletion.test.ts > routes > control: unchanged config stores a check after a gated checkout 276ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1056_gitopsDeletion.test.ts > routes > deletion stays cleared after a gated checkout
+EXPECTED: lastCheck remains null; ACTUAL: {
+  at: '2026-11-09T18:47:44.517Z',
+  commit: 'abc1234def',
+  error: null,
+  drift: [
+    {
+      kind: 'service',
+      key: 'shop/api',
+      change: 'changed',
+      fields: [Array]
+    },
+    {
+      kind: 'domain',
+      key: 'shop/api/api.example.com',
+      change: 'missing'
+    },
+    {
+      kind: 'domain',
+      key: 'shop/api/old.example.com',
+      change: 'extra'
+    },
+    { kind: 'service', key: 'shop/web', change: 'missing' },
+    {
+      kind: 'grant',
+      key: 'shop/bob@example.com',
+      change: 'changed',
+      fields: [Array]
+    },
+    { kind: 'grant', key: 'shop/carol@example.com', change: 'missing' },
+    { kind: 'project', key: 'blog', change: 'missing' },
+    { kind: 'service', key: 'blog/blog-app', change: 'missing' },
+    { kind: 'project', key: 'legacy', change: 'extra' }
+  ]
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1056_gitopsDeletion.test.ts > routes > deletion stays cleared after a gated checkout 209ms
+   → expected { Object (at, commit, ...) } to be null
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1056_gitopsDeletion.test.ts > routes > deletion stays cleared after a gated checkout
+AssertionError: expected { Object (at, commit, ...) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "at": "2026-11-09T18:47:44.517Z",
+  "commit": "abc1234def",
+  "drift": [
+    {
+      "change": "changed",
+      "fields": [
+        {
+          "actual": "nginx:1.26",
+          "desired": "nginx:1.27",
+          "field": "image",
+        },
+      ],
+      "key": "shop/api",
+      "kind": "service",
+    },
+    {
+      "change": "missing",
+      "key": "shop/api/api.example.com",
+      "kind": "domain",
+    },
+    {
+      "change": "extra",
+      "key": "shop/api/old.example.com",
+      "kind": "domain",
+    },
+    {
+      "change": "missing",
+      "key": "shop/web",
+      "kind": "service",
+    },
+    {
+      "change": "changed",
+      "fields": [
+        {
+          "actual": "member",
+          "desired": "admin",
+          "field": "role",
+        },
+      ],
+      "key": "shop/bob@example.com",
+      "kind": "grant",
+    },
+    {
+      "change": "missing",
+      "key": "shop/carol@example.com",
+      "kind": "grant",
+    },
+    {
+      "change": "missing",
+      "key": "blog",
+      "kind": "project",
+    },
+    {
+      "change": "missing",
+      "key": "blog/blog-app",
+      "kind": "service",
+    },
+    {
+      "change": "extra",
+      "key": "legacy",
+      "kind": "project",
+    },
+  ],
+  "error": null,
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1056_gitopsDeletion.test.ts:121:232
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  20:47:42
+   Duration  2.00s (import 44%, tests 34%, transform 21%)
