@@ -1,0 +1,41 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1047_log_search_auth.test.ts > keeps successful drain authentication when querying the same upstream
+CONTROL EXPECTED: plain token push/query accepted | ACTUAL: { label: 'plain control', push: true, query: true }
+EXPECTED: search reuses each successful drain auth context | ACTUAL: [
+  { label: 'plain control', push: true, query: true },
+  { label: 'prefixed token', push: true, query: false },
+  { label: 'tenant header', push: true, query: false }
+]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1047_log_search_auth.test.ts > keeps successful drain authentication when querying the same upstream 37ms
+   → expected false to be true // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1047_log_search_auth.test.ts > keeps successful drain authentication when querying the same upstream
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1047_log_search_auth.test.ts:41:51
+     39|     console.log('EXPECTED: search reuses each successful drain auth co…
+     40|     console.log(results.every(result => result.query) ? 'PROBLEM NOT R…
+     41|     expect(results.every(result => result.query)).toBe(true);
+       |                                                   ^
+     42|   } finally { server.closeAllConnections(); await new Promise<void>((r…
+     43| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  19:15:39
+   Duration  634ms (import 78%, transform 14%, tests 7%, worker 1%)

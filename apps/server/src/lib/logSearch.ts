@@ -92,9 +92,12 @@ export async function searchLogs(
   url.searchParams.set('limit', String(limit));
   url.searchParams.set('direction', 'backward');
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    ...(drain.headersJson ? JSON.parse(drain.headersJson) as Record<string, string> : {}),
+  };
   if (drain.apiKeyEncrypted) {
-    headers['Authorization'] = `Bearer ${decrypt(drain.apiKeyEncrypted)}`;
+    const apiKey = decrypt(drain.apiKeyEncrypted);
+    headers['Authorization'] = apiKey.startsWith('Bearer ') ? apiKey : `Bearer ${apiKey}`;
   }
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) {

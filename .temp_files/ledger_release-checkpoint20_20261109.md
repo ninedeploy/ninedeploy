@@ -37,3 +37,10 @@ Fetch seam, synthetic capability view covering four statuses and nullable reason
 Concurrent install/update/resources/management/stable-channel work retained. Stage only SDK transport test and selected checkpoint evidence; no source/schema/changelog change (no operator behavior change), no reset/stash/cleanup.
 ### Next scope (if rounds continue)
 Rerun pnpm release:check on committed SDK coverage addition; any newly observed failure becomes the next concrete validation scope.
+
+### Full gate retry after SDK coverage commit
+- Starting HEAD44e987c40a864c033089b5d46f0cfa6b6ff39161; exact starting status captured checkpoint20_retry_status_before.txt. Concurrent update/resources/installer/management/stable-channel work continued changing the checkout; no exact-commit certification claimed.
+- pnpm release:check retry exit1, retained checkpoint20_release_retry.log. SDK workers aborted during starting state, exit134,16 worker errors; native messages include Zone Allocation failed/process out of memory and Worklist::Segment::Create. Only267 tests/20 files passed before incomplete run; its low coverage report is not a completed product-coverage result.
+- Separate configured SDK run390 tests/36 files had already passed all100% floors. No assertion/coverage threshold was weakened or Node memory setting changed; no other writer killed.
+- Read-only host snapshot after failure:64 Node processes, about595MiB resident Node memory, free physical memory~27.3GiB and free virtual memory~10GiB; parent Node heap limit4192MiB, NODE_OPTIONS absent. This supports an environment/resource boundary, not a measured product memory leak or a proven source cause.
+- Full release gate remains incomplete. Continue bounded audits; retry broad certification after concurrent source work and resource pressure settle, or on fresh Mac setup. Do not describe this as a green release.

@@ -1,0 +1,18 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1047_log_search_auth.test.ts > keeps successful drain authentication when querying the same upstream
+CONTROL EXPECTED: plain token push/query accepted | ACTUAL: { label: 'plain control', push: true, query: true }
+EXPECTED: search reuses each successful drain auth context | ACTUAL: [
+  { label: 'plain control', push: true, query: true },
+  { label: 'prefixed token', push: true, query: true },
+  { label: 'tenant header', push: true, query: true }
+]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1047_log_search_auth.test.ts > keeps successful drain authentication when querying the same upstream 34ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  19:17:24
+   Duration  798ms (import 86%, transform 8%, tests 5%, worker 1%)

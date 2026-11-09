@@ -1,0 +1,33 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/lib/logSearchAuth.test.ts (5 tests | 3 failed) 17ms
+   × F1047: searches using configured drain auth: already prefixed token 3ms
+   × F1047: searches using configured drain auth: tenant header 1ms
+   × F1047: searches using configured drain auth: custom authorization 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/logSearchAuth.test.ts > F1047: searches using configured drain auth: already prefixed token
+ FAIL  test/lib/logSearchAuth.test.ts > F1047: searches using configured drain auth: tenant header
+ FAIL  test/lib/logSearchAuth.test.ts > F1047: searches using configured drain auth: custom authorization
+AssertionError: promise rejected "Error: Loki query failed: 401 configured …" instead of resolving
+ ❯ test/lib/logSearchAuth.test.ts:22:53
+     20|   });
+     21|   vi.stubGlobal('fetch', fetch);
+     22|   await expect(searchLogs(db, { query: 'matched' })).resolves.toMatchO…
+       |                                                     ^
+     23|   expect(fetch).toHaveBeenCalledOnce();
+     24| });
+
+Caused by: Error: Loki query failed: 401 configured auth required
+ ❯ Module.searchLogs src/lib/logSearch.ts:102:11
+ ❯ test/lib/logSearchAuth.test.ts:22:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 2 passed (5)
+   Start at  19:16:27
+   Duration  496ms (import 79%, transform 15%, tests 5%, worker 1%)
