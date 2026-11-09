@@ -108,6 +108,7 @@ export class S3BuildCache implements IBuildCache {
     const objectKey = objectKeyFor(conn.prefix, key);
     const res = await s3Request(conn.cfg, 'GET', objectKey, undefined, 'application/octet-stream');
     if (res.status !== 200) {
+      await res.body?.cancel().catch(() => undefined);
       this.misses += 1;
       return null;
     }

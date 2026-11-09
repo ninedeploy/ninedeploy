@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- S3 build-cache misses cancel unused HTTP response bodies, releasing transport resources while preserving the cache-miss result if cancellation fails.
 - S3 multipart backup uploads fill short filesystem reads and abort on premature EOF instead of completing an object containing unread buffer bytes.
 - Truncated encrypted backup envelopes are rejected before opening a plaintext output, preventing late empty staging files and leaked write descriptors when the authentication tag is incomplete.
 - Backup replica retention rechecks the current destination list and copy limit before every remote delete. Removing a replica or raising its retained-copy count during a slow upload no longer lets the old policy delete recovery points afterward.

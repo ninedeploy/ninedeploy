@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1040_s3_cache_body.test.ts > releases an unused cache-miss response body
+CONTROL EXPECTED: hit body consumed | ACTUAL: true
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1040_s3_cache_body.test.ts > releases an unused cache-miss response body
+EXPECTED: miss body released | ACTUAL: { cancelled: true, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1040_s3_cache_body.test.ts > releases an unused cache-miss response body 25ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:02:18
+   Duration  526ms (transform 41%, tests 29%, import 24%, worker 6%)

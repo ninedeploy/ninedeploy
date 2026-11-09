@@ -90,6 +90,36 @@ afterEach(() => {
 });
 
 describe('S3BuildCache', () => {
+  it.each([403, 404, 500])('F1040: cancels an unused HTTP %s lookup body', async status => {
+    const cancel = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new ReadableStream({ cancel }), { status }));
+    const cache = newCache();
+    await expect(cache.lookup('missing')).resolves.toBeNull();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect((await cache.stats()).misses).toBe(1);
+  });
+
+  it('F1040: waits for cancellation and preserves a miss when cancellation fails', async () => {
+    let rejectCancel!: (error: Error) => void;
+    let entered!: () => void;
+    const cancelEntered = new Promise<void>(resolve => { entered = resolve; });
+    const cancelDone = new Promise<void>((_resolve, reject) => { rejectCancel = reject; });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new ReadableStream({
+      cancel() { entered(); return cancelDone; },
+    }), { status: 404 }));
+    const cache = newCache();
+    let settled = false;
+    const lookup = cache.lookup('missing').finally(() => { settled = true; });
+    // On broken code the lookup resolves before entering cancel; race both
+    // explicit completion signals so the red run fails rather than hanging.
+    await Promise.race([cancelEntered, lookup]);
+    expect(settled).toBe(false);
+    expect((await cache.stats()).misses).toBe(0);
+    rejectCancel(new Error('fixture cancellation failure'));
+    await expect(lookup).resolves.toBeNull();
+    expect((await cache.stats()).misses).toBe(1);
+  });
+
   it('exposes a stable name and starts at zero stats', async () => {
     const cache = newCache();
     expect(cache.name).toBe('s3');

@@ -1,0 +1,13 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1040_s3_cache_body.test.ts > releases repeated misses, null bodies and failed cancellation without touching a valid hit
+EXPECTED: 18 misses cleaned or bodyless, hit consumed | ACTUAL: 12 cancellations, 18 misses, 1 hit
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1040_s3_cache_body.test.ts > releases repeated misses, null bodies and failed cancellation without touching a valid hit 20ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:02:24
+   Duration  259ms (tests 49%, import 27%, transform 18%, worker 6%)

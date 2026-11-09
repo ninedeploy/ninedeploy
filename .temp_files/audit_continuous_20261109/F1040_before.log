@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1040_s3_cache_body.test.ts > releases an unused cache-miss response body
+CONTROL EXPECTED: hit body consumed | ACTUAL: true
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1040_s3_cache_body.test.ts > releases an unused cache-miss response body
+EXPECTED: miss body released | ACTUAL: { cancelled: false, bodyUsed: false }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1040_s3_cache_body.test.ts > releases an unused cache-miss response body 20ms
+   → expected false to be true // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1040_s3_cache_body.test.ts > releases an unused cache-miss response body
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1040_s3_cache_body.test.ts:18:40
+     16|     console.log('EXPECTED: miss body released | ACTUAL:', { cancelled,…
+     17|     console.log(cancelled || miss.bodyUsed ? 'PROBLEM NOT REPRODUCED' …
+     18|     expect(cancelled || miss.bodyUsed).toBe(true);
+       |                                        ^
+     19|   } finally { vi.unstubAllGlobals(); }
+     20| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  18:01:25
+   Duration  487ms (transform 48%, tests 25%, import 22%, worker 6%)

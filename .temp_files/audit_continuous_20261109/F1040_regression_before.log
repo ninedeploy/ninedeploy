@@ -1,0 +1,50 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/kernel/s3BuildCache.test.ts (20 tests | 4 failed) 27ms
+   ❯ S3BuildCache (15)
+     × F1040: cancels an unused HTTP 403 lookup body 16ms
+     × F1040: cancels an unused HTTP 404 lookup body 1ms
+     × F1040: cancels an unused HTTP 500 lookup body 0ms
+     × F1040: waits for cancellation and preserves a miss when cancellation fails 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/kernel/s3BuildCache.test.ts > S3BuildCache > F1040: cancels an unused HTTP 403 lookup body
+ FAIL  test/kernel/s3BuildCache.test.ts > S3BuildCache > F1040: cancels an unused HTTP 404 lookup body
+ FAIL  test/kernel/s3BuildCache.test.ts > S3BuildCache > F1040: cancels an unused HTTP 500 lookup body
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ test/kernel/s3BuildCache.test.ts:98:20
+     96|     const cache = newCache();
+     97|     await expect(cache.lookup('missing')).resolves.toBeNull();
+     98|     expect(cancel).toHaveBeenCalledOnce();
+       |                    ^
+     99|     expect((await cache.stats()).misses).toBe(1);
+    100|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/kernel/s3BuildCache.test.ts > S3BuildCache > F1040: waits for cancellation and preserves a miss when cancellation fails
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/kernel/s3BuildCache.test.ts:116:21
+    114|     // explicit completion signals so the red run fails rather than ha…
+    115|     await Promise.race([cancelEntered, lookup]);
+    116|     expect(settled).toBe(false);
+       |                     ^
+    117|     expect((await cache.stats()).misses).toBe(0);
+    118|     rejectCancel(new Error('fixture cancellation failure'));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 16 passed (20)
+   Start at  18:01:51
+   Duration  711ms (tests 40%, transform 37%, import 19%, worker 4%)
