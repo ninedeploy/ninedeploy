@@ -1,0 +1,213 @@
+apps\server\test\portProxy.test.ts:92:116 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    91 │   it('writes the config and starts the sidecar the first time', async () => {
+  > 92 │     h.capture.mockImplementation(async (...call: unknown[]) => { const args = call[1] as string[]; throw new Error("`docker " + args.join(" ") + "` exited 1: Error: No such object: " + args[1]); });
+       │                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    93 │     const logs: string[] = [];
+    94 │     await proxy.syncPortProxy({ id: 3, slug: 'db', portMappings: [pg, open] }, ['db-5'], (l) => logs.push(l));
+
+  i Unsafe fix: Use a template literal.
+
+     90  90 │
+     91  91 │     it('writes the config and starts the sidecar the first time', async () => {
+     92     │ - ····h.capture.mockImplementation(async·(...call:·unknown[])·=>·{·const·args·=·call[1]·as·string[];·throw·new·Error("`docker·"·+·args.join("·")·+·"`·exited·1:·Error:·No·such·object:·"·+·args[1]);·});
+         92 │ + ····h.capture.mockImplementation(async·(...call:·unknown[])·=>·{·const·args·=·call[1]·as·string[];·throw·new·Error(`\`docker·${args.join("·")}\`·exited·1:·Error:·No·such·object:·${args[1]}`);·});
+     93  93 │       const logs: string[] = [];
+     94  94 │       await proxy.syncPortProxy({ id: 3, slug: 'db', portMappings: [pg, open] }, ['db-5'], (l) => logs.push(l));
+
+
+apps\server\test\portProxy.test.ts:122:116 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    121 │   it('no allow-listed mapping left: the sidecar and its directory are removed', async () => {
+  > 122 │     h.capture.mockImplementation(async (...call: unknown[]) => { const args = call[1] as string[]; throw new Error("`docker " + args.join(" ") + "` exited 1: Error: No such object: " + args[1]); });
+        │                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    123 │     await proxy.syncPortProxy({ id: 3, slug: 'db', portMappings: [pg] }, ['db-5'], () => undefined);
+    124 │     h.run.mockClear();
+
+  i Unsafe fix: Use a template literal.
+
+    120 120 │
+    121 121 │     it('no allow-listed mapping left: the sidecar and its directory are removed', async () => {
+    122     │ - ····h.capture.mockImplementation(async·(...call:·unknown[])·=>·{·const·args·=·call[1]·as·string[];·throw·new·Error("`docker·"·+·args.join("·")·+·"`·exited·1:·Error:·No·such·object:·"·+·args[1]);·});
+        122 │ + ····h.capture.mockImplementation(async·(...call:·unknown[])·=>·{·const·args·=·call[1]·as·string[];·throw·new·Error(`\`docker·${args.join("·")}\`·exited·1:·Error:·No·such·object:·${args[1]}`);·});
+    123 123 │       await proxy.syncPortProxy({ id: 3, slug: 'db', portMappings: [pg] }, ['db-5'], () => undefined);
+    124 124 │       h.run.mockClear();
+
+
+apps\server\test\portProxy.test.ts:133:116 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    131 │     // Nothing there: nothing to remove.
+    132 │     h.run.mockClear();
+  > 133 │     h.capture.mockImplementation(async (...call: unknown[]) => { const args = call[1] as string[]; throw new Error("`docker " + args.join(" ") + "` exited 1: Error: No such object: " + args[1]); });
+        │                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    134 │     await proxy.removePortProxy('db');
+    135 │     expect(h.run).not.toHaveBeenCalled();
+
+  i Unsafe fix: Use a template literal.
+
+    131 131 │       // Nothing there: nothing to remove.
+    132 132 │       h.run.mockClear();
+    133     │ - ····h.capture.mockImplementation(async·(...call:·unknown[])·=>·{·const·args·=·call[1]·as·string[];·throw·new·Error("`docker·"·+·args.join("·")·+·"`·exited·1:·Error:·No·such·object:·"·+·args[1]);·});
+        133 │ + ····h.capture.mockImplementation(async·(...call:·unknown[])·=>·{·const·args·=·call[1]·as·string[];·throw·new·Error(`\`docker·${args.join("·")}\`·exited·1:·Error:·No·such·object:·${args[1]}`);·});
+    134 134 │       await proxy.removePortProxy('db');
+    135 135 │       expect(h.run).not.toHaveBeenCalled();
+
+
+apps\server\test\portProxyInspectFailure.test.ts:24:184 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    22 │  ownedRoot = path.resolve(mkdtempSync(path.join(tmpdir(), 'nd-audit-portproxy-'))); h.config.paths.dataDir = ownedRoot;
+    23 │  if (!ownedRoot.startsWith(path.resolve(tmpdir()) + path.sep) || !path.basename(ownedRoot).startsWith('nd-audit-portproxy-')) throw new Error('Unowned temp root');
+  > 24 │  h.containers.clear(); h.capture.mockReset().mockImplementation(async (_cmd: string, args: string[]) => { const fp = h.containers.get(args[1]!); if (fp === undefined) throw new Error("`docker " + args.join(" ") + "` exited 1: Error: No such object: " + args[1]); return `true ${fp}`; });
+       │                                                                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    25 │  h.run.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
+    26 │   if (args[0] === 'rm') h.containers.delete(args.at(-1)!);
+
+  i Unsafe fix: Use a template literal.
+
+    22 22 │    ownedRoot = path.resolve(mkdtempSync(path.join(tmpdir(), 'nd-audit-portproxy-'))); h.config.paths.dataDir = ownedRoot;
+    23 23 │    if (!ownedRoot.startsWith(path.resolve(tmpdir()) + path.sep) || !path.basename(ownedRoot).startsWith('nd-audit-portproxy-')) throw new Error('Unowned temp root');
+    24    │ - ·h.containers.clear();·h.capture.mockReset().mockImplementation(async·(_cmd:·string,·args:·string[])·=>·{·const·fp·=·h.containers.get(args[1]!);·if·(fp·===·undefined)·throw·new·Error("`docker·"·+·args.join("·")·+·"`·exited·1:·Error:·No·such·object:·"·+·args[1]);·return·`true·${fp}`;·});
+       24 │ + ·h.containers.clear();·h.capture.mockReset().mockImplementation(async·(_cmd:·string,·args:·string[])·=>·{·const·fp·=·h.containers.get(args[1]!);·if·(fp·===·undefined)·throw·new·Error(`\`docker·${args.join("·")}\`·exited·1:·Error:·No·such·object:·${args[1]}`);·return·`true·${fp}`;·});
+    25 25 │    h.run.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
+    26 26 │     if (args[0] === 'rm') h.containers.delete(args.at(-1)!);
+
+
+apps\server\test\portProxyInspectFailure.test.ts:43:62 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    41 │ afterAll(() => { if (!failed) console.log('FIX VERIFIED'); });
+    42 │ const inspectArgs = (name = 'nd-portproxy-db') => ['inspect', name, '--format', `{{.State.Running}} {{ index .Config.Labels "${proxy.PORT_PROXY_CONFIG_LABEL}" }}`];
+  > 43 │ const envelope = (diagnostic: string, code = 1) => new Error('`docker ' + inspectArgs().join(' ') + '` exited ' + code + ': ' + diagnostic);
+       │                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    44 │ for (const diagnostic of ['Error: No such object: nd-portproxy-db', 'Error: No such container: nd-portproxy-db', 'Error response from daemon: No such container: nd-portproxy-db']) for (const operation of ['remove', 'sync'] as const) it(`exact absence control ${operation}: ${diagnostic}`, async () => {
+    45 │  await proxy.syncPortProxy(service, ['old'], () => {}); h.containers.clear(); h.capture.mockRejectedValueOnce(envelope(diagnostic)); h.run.mockClear();
+
+  i Unsafe fix: Use a template literal.
+
+    41 41 │   afterAll(() => { if (!failed) console.log('FIX VERIFIED'); });
+    42 42 │   const inspectArgs = (name = 'nd-portproxy-db') => ['inspect', name, '--format', `{{.State.Running}} {{ index .Config.Labels "${proxy.PORT_PROXY_CONFIG_LABEL}" }}`];
+    43    │ - const·envelope·=·(diagnostic:·string,·code·=·1)·=>·new·Error('`docker·'·+·inspectArgs().join('·')·+·'`·exited·'·+·code·+·':·'·+·diagnostic);
+       43 │ + const·envelope·=·(diagnostic:·string,·code·=·1)·=>·new·Error(`\`docker·${inspectArgs().join('·')}\`·exited·${code}:·${diagnostic}`);
+    44 44 │   for (const diagnostic of ['Error: No such object: nd-portproxy-db', 'Error: No such container: nd-portproxy-db', 'Error response from daemon: No such container: nd-portproxy-db']) for (const operation of ['remove', 'sync'] as const) it(`exact absence control ${operation}: ${diagnostic}`, async () => {
+    45 45 │    await proxy.syncPortProxy(service, ['old'], () => {}); h.containers.clear(); h.capture.mockRejectedValueOnce(envelope(diagnostic)); h.run.mockClear();
+
+
+apps\server\test\portProxyInspectFailure.test.ts:67:92 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    65 │  const actual = await vi.importActual<typeof import('../src/lib/exec.js')>('../src/lib/exec.js');
+    66 │  const args = ['-e', "process.stderr.write('Error: No such object: fixture'); process.exit(1)"];
+  > 67 │  await expect(actual.capture(process.execPath, args, { timeoutMs: 5000 })).rejects.toThrow('`' + actual.redactedLabel(process.execPath, args) + '` exited 1: Error: No such object: fixture');
+       │                                                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    68 │  expect(actual.redactedLabel('docker', inspectArgs())).toBe(['docker', ...inspectArgs()].join(' '));
+    69 │ });
+
+  i Unsafe fix: Use a template literal.
+
+    65 65 │    const actual = await vi.importActual<typeof import('../src/lib/exec.js')>('../src/lib/exec.js');
+    66 66 │    const args = ['-e', "process.stderr.write('Error: No such object: fixture'); process.exit(1)"];
+    67    │ - ·await·expect(actual.capture(process.execPath,·args,·{·timeoutMs:·5000·})).rejects.toThrow('`'·+·actual.redactedLabel(process.execPath,·args)·+·'`·exited·1:·Error:·No·such·object:·fixture');
+       67 │ + ·await·expect(actual.capture(process.execPath,·args,·{·timeoutMs:·5000·})).rejects.toThrow(`\`${actual.redactedLabel(process.execPath,·args)}\`·exited·1:·Error:·No·such·object:·fixture`);
+    68 68 │    expect(actual.redactedLabel('docker', inspectArgs())).toBe(['docker', ...inspectArgs()].join(' '));
+    69 69 │   });
+
+
+apps\server\test\portProxyRace.test.ts:24:184 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    22 │  ownedRoot = path.resolve(mkdtempSync(path.join(tmpdir(), 'nd-audit-portproxy-'))); h.config.paths.dataDir = ownedRoot;
+    23 │  if (!ownedRoot.startsWith(path.resolve(tmpdir()) + path.sep) || !path.basename(ownedRoot).startsWith('nd-audit-portproxy-')) throw new Error('Unowned temp root');
+  > 24 │  h.containers.clear(); h.capture.mockReset().mockImplementation(async (_cmd: string, args: string[]) => { const fp = h.containers.get(args[1]!); if (fp === undefined) throw new Error("`docker " + args.join(" ") + "` exited 1: Error: No such object: " + args[1]); return `true ${fp}`; });
+       │                                                                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    25 │  h.run.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
+    26 │   if (args[0] === 'rm') h.containers.delete(args.at(-1)!);
+
+  i Unsafe fix: Use a template literal.
+
+    22 22 │    ownedRoot = path.resolve(mkdtempSync(path.join(tmpdir(), 'nd-audit-portproxy-'))); h.config.paths.dataDir = ownedRoot;
+    23 23 │    if (!ownedRoot.startsWith(path.resolve(tmpdir()) + path.sep) || !path.basename(ownedRoot).startsWith('nd-audit-portproxy-')) throw new Error('Unowned temp root');
+    24    │ - ·h.containers.clear();·h.capture.mockReset().mockImplementation(async·(_cmd:·string,·args:·string[])·=>·{·const·fp·=·h.containers.get(args[1]!);·if·(fp·===·undefined)·throw·new·Error("`docker·"·+·args.join("·")·+·"`·exited·1:·Error:·No·such·object:·"·+·args[1]);·return·`true·${fp}`;·});
+       24 │ + ·h.containers.clear();·h.capture.mockReset().mockImplementation(async·(_cmd:·string,·args:·string[])·=>·{·const·fp·=·h.containers.get(args[1]!);·if·(fp·===·undefined)·throw·new·Error(`\`docker·${args.join("·")}\`·exited·1:·Error:·No·such·object:·${args[1]}`);·return·`true·${fp}`;·});
+    25 25 │    h.run.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
+    26 26 │     if (args[0] === 'rm') h.containers.delete(args.at(-1)!);
+
+
+apps\server\test\portProxyRace.test.ts:42:160 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    40 │ for (const where of ['inspect', 'pull', 'host', 'start'] as const) it(`same-slug remove waits through gated ${where} and leaves no sidecar`, async () => {
+    41 │  const entered = gate(), blocked = gate();
+  > 42 │  if (where === 'inspect') h.capture.mockImplementationOnce(async (_cmd: string, args: string[]) => { entered.release(); await blocked.promise; throw new Error("`docker " + args.join(" ") + "` exited 1: Error: No such object: " + args[1]); });
+       │                                                                                                                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    43 │  if (where === 'pull') h.pull.mockImplementationOnce(async () => { entered.release(); await blocked.promise; });
+    44 │  if (where === 'host') h.host.mockImplementationOnce(async (p: string) => { entered.release(); await blocked.promise; return p; });
+
+  i Unsafe fix: Use a template literal.
+
+    40 40 │   for (const where of ['inspect', 'pull', 'host', 'start'] as const) it(`same-slug remove waits through gated ${where} and leaves no sidecar`, async () => {
+    41 41 │    const entered = gate(), blocked = gate();
+    42    │ - ·if·(where·===·'inspect')·h.capture.mockImplementationOnce(async·(_cmd:·string,·args:·string[])·=>·{·entered.release();·await·blocked.promise;·throw·new·Error("`docker·"·+·args.join("·")·+·"`·exited·1:·Error:·No·such·object:·"·+·args[1]);·});
+       42 │ + ·if·(where·===·'inspect')·h.capture.mockImplementationOnce(async·(_cmd:·string,·args:·string[])·=>·{·entered.release();·await·blocked.promise;·throw·new·Error(`\`docker·${args.join("·")}\`·exited·1:·Error:·No·such·object:·${args[1]}`);·});
+    43 43 │    if (where === 'pull') h.pull.mockImplementationOnce(async () => { entered.release(); await blocked.promise; });
+    44 44 │    if (where === 'host') h.host.mockImplementationOnce(async (p: string) => { entered.release(); await blocked.promise; return p; });
+
+
+apps\server\test\portProxyRemovalFailure.test.ts:24:184 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    22 │  ownedRoot = path.resolve(mkdtempSync(path.join(tmpdir(), 'nd-audit-portproxy-'))); h.config.paths.dataDir = ownedRoot;
+    23 │  if (!ownedRoot.startsWith(path.resolve(tmpdir()) + path.sep) || !path.basename(ownedRoot).startsWith('nd-audit-portproxy-')) throw new Error('Unowned temp root');
+  > 24 │  h.containers.clear(); h.capture.mockReset().mockImplementation(async (_cmd: string, args: string[]) => { const fp = h.containers.get(args[1]!); if (fp === undefined) throw new Error("`docker " + args.join(" ") + "` exited 1: Error: No such object: " + args[1]); return `true ${fp}`; });
+       │                                                                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    25 │  h.run.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
+    26 │   if (args[0] === 'rm') h.containers.delete(args.at(-1)!);
+
+  i Unsafe fix: Use a template literal.
+
+    22 22 │    ownedRoot = path.resolve(mkdtempSync(path.join(tmpdir(), 'nd-audit-portproxy-'))); h.config.paths.dataDir = ownedRoot;
+    23 23 │    if (!ownedRoot.startsWith(path.resolve(tmpdir()) + path.sep) || !path.basename(ownedRoot).startsWith('nd-audit-portproxy-')) throw new Error('Unowned temp root');
+    24    │ - ·h.containers.clear();·h.capture.mockReset().mockImplementation(async·(_cmd:·string,·args:·string[])·=>·{·const·fp·=·h.containers.get(args[1]!);·if·(fp·===·undefined)·throw·new·Error("`docker·"·+·args.join("·")·+·"`·exited·1:·Error:·No·such·object:·"·+·args[1]);·return·`true·${fp}`;·});
+       24 │ + ·h.containers.clear();·h.capture.mockReset().mockImplementation(async·(_cmd:·string,·args:·string[])·=>·{·const·fp·=·h.containers.get(args[1]!);·if·(fp·===·undefined)·throw·new·Error(`\`docker·${args.join("·")}\`·exited·1:·Error:·No·such·object:·${args[1]}`);·return·`true·${fp}`;·});
+    25 25 │    h.run.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
+    26 26 │     if (args[0] === 'rm') h.containers.delete(args.at(-1)!);
+
+
+apps\server\test\portProxyRace.test.ts:75:56 lint/correctness/noUnusedFunctionParameters  FIXABLE  ━━━━━━━━━━
+
+  ! This parameter args is unused.
+
+    73 │ it('a later sync waits for an earlier gated removal then creates its fresh files', async () => {
+    74 │  await proxy.syncPortProxy(service, ['old'], () => {}); const entered = gate(), blocked = gate(); const fp = h.containers.get(proxy.portProxyName('db'))!;
+  > 75 │  h.capture.mockImplementationOnce(async (_cmd: string, args: string[]) => { entered.release(); await blocked.promise; return `true ${fp}`; });
+       │                                                        ^^^^
+    76 │  const remove = proxy.removePortProxy('db'); let latest: Promise<void> | undefined;
+    77 │  try {
+
+  i Unused parameters might be the result of an incomplete refactoring.
+
+  i Unsafe fix: If this is intentional, prepend args with an underscore.
+
+    73 73 │   it('a later sync waits for an earlier gated removal then creates its fresh files', async () => {
+    74 74 │    await proxy.syncPortProxy(service, ['old'], () => {}); const entered = gate(), blocked = gate(); const fp = h.containers.get(proxy.portProxyName('db'))!;
+    75    │ - ·h.capture.mockImplementationOnce(async·(_cmd:·string,·args:·string[])·=>·{·entered.release();·await·blocked.promise;·return·`true·${fp}`;·});
+       75 │ + ·h.capture.mockImplementationOnce(async·(_cmd:·string,·_args:·string[])·=>·{·entered.release();·await·blocked.promise;·return·`true·${fp}`;·});
+    76 76 │    const remove = proxy.removePortProxy('db'); let latest: Promise<void> | undefined;
+    77 77 │    try {
+
+
+Checked 5 files in 28ms. No fixes applied.
+Found 1 warning.
+Found 9 infos.

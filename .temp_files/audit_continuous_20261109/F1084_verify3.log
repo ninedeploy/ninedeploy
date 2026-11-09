@@ -1,0 +1,32 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > exact absence control remove: Error: No such object: nd-portproxy-db 8ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > exact absence control sync: Error: No such object: nd-portproxy-db 8ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > exact absence control remove: Error: No such container: nd-portproxy-db 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > exact absence control sync: Error: No such container: nd-portproxy-db 7ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > exact absence control remove: Error response from daemon: No such container: nd-portproxy-db 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > exact absence control sync: Error response from daemon: No such container: nd-portproxy-db 7ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > unknown permission is not a removal absence receipt 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > unknown daemon is not a removal absence receipt 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > unknown generic missing is not a removal absence receipt 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > unknown wrong target is not a removal absence receipt 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > unknown additional diagnostic is not a removal absence receipt 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > unknown wrong exit is not a removal absence receipt 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > unknown timeout is not a removal absence receipt 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > unknown opaque is not a removal absence receipt 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > sync refuses unconfirmed absence: permission denied 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > sync refuses unconfirmed absence: `docker inspect nd-portproxy-db --format {{.State.Running}} {{ index .Config.Labels "ninedeploy.portproxy.config" }}` exited 1: Error: No such object: other 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > sync refuses unconfirmed absence: `docker inspect nd-portproxy-db --format {{.State.Running}} {{ index .Config.Labels "ninedeploy.portproxy.config" }}` exited 1: Error: No such object: nd-portproxy-db
+connection failed 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > gated unknown inspection releases queued retry while preserving config until known removal 5ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > actual native capture command envelope and fixed Docker label match the classifier contract 420ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1084_portProxyInspect.test.ts > known same-fingerprint running sidecar keeps its instance 10ms
+
+ Test Files  1 passed (1)
+      Tests  20 passed (20)
+   Start at  01:14:12
+   Duration  1.16s (tests 64%, import 30%, transform 5%)

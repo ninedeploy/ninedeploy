@@ -1,0 +1,69 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control remove: Error: No such object: nd-portproxy-db 7ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control sync: Error: No such object: nd-portproxy-db 7ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control remove: Error: No such container: nd-portproxy-db 5ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control sync: Error: No such container: nd-portproxy-db 6ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control remove: Error response from daemon: No such container: nd-portproxy-db 5ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control sync: Error response from daemon: No such container: nd-portproxy-db 6ms
+ ✓ test/portProxyInspectFailure.test.ts > unknown permission is not a removal absence receipt 5ms
+ ✓ test/portProxyInspectFailure.test.ts > unknown daemon is not a removal absence receipt 5ms
+ ✓ test/portProxyInspectFailure.test.ts > unknown generic missing is not a removal absence receipt 4ms
+ ✓ test/portProxyInspectFailure.test.ts > unknown wrong target is not a removal absence receipt 5ms
+ ✓ test/portProxyInspectFailure.test.ts > unknown additional diagnostic is not a removal absence receipt 4ms
+ ✓ test/portProxyInspectFailure.test.ts > unknown wrong exit is not a removal absence receipt 5ms
+ ✓ test/portProxyInspectFailure.test.ts > unknown timeout is not a removal absence receipt 4ms
+ ✓ test/portProxyInspectFailure.test.ts > unknown opaque is not a removal absence receipt 4ms
+ ✓ test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: permission denied 8ms
+ ✓ test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: `docker inspect nd-portproxy-db --format {{.State.Running}} {{ index .Config.Labels "ninedeploy.portproxy.config" }}` exited 1: Error: No such object: other 7ms
+ ✓ test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: `docker inspect nd-portproxy-db --format {{.State.Running}} {{ index .Config.Labels "ninedeploy.portproxy.config" }}` exited 1: Error: No such object: nd-portproxy-db
+connection failed 7ms
+ ✓ test/portProxyInspectFailure.test.ts > gated unknown inspection releases queued retry while preserving config until known removal 5ms
+stdout | test/portProxyInspectFailure.test.ts
+FIX VERIFIED
+
+ ✓ test/portProxyInspectFailure.test.ts > actual native capture command envelope and fixed Docker label match the classifier contract 71ms
+ ✓ test/portProxyInspectFailure.test.ts > known same-fingerprint running sidecar keeps its instance 7ms
+stdout | test/portProxyRace.test.ts
+FIX VERIFIED
+
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated inspect and leaves no sidecar 8ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated pull and leaves no sidecar 5ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated host and leaves no sidecar 5ms
+ ✓ test/portProxyRace.test.ts > same-slug remove waits through gated start and leaves no sidecar 5ms
+ ✓ test/portProxyRace.test.ts > sync/remove/new-sync preserves the newest requested configuration 8ms
+ ✓ test/portProxyRace.test.ts > different slug sync completes while another slug is held 8ms
+ ✓ test/portProxyRace.test.ts > removing through a no-restricted-mapping sync does not recursively deadlock 5ms
+ ✓ test/portProxyRace.test.ts > image failure releases the queue for remove and a later successful sync 9ms
+ ✓ test/portProxyRace.test.ts > a later sync waits for an earlier gated removal then creates its fresh files 8ms
+ ✓ test/portProxyRace.test.ts > two same-fingerprint syncs keep newest routes without duplicate starts 7ms
+ ✓ test/portProxyRace.test.ts > repeated removes retain absent state 4ms
+ ✓ test/portProxyRace.test.ts > native config-write failure releases admission before cleanup and retry 8ms
+stdout | test/portProxyRemovalFailure.test.ts
+FIX VERIFIED
+
+ ✓ test/portProxyRemovalFailure.test.ts > preserves error removal failure and exact live config bytes 8ms
+ ✓ test/portProxyRemovalFailure.test.ts > preserves timeout removal failure and exact live config bytes 6ms
+ ✓ test/portProxyRemovalFailure.test.ts > preserves opaque removal failure and exact live config bytes 5ms
+ ✓ test/portProxyRemovalFailure.test.ts > successful removal still removes config and reports once 4ms
+ ✓ test/portProxyRemovalFailure.test.ts > existing modeled absence remains idempotent 5ms
+ ✓ test/portProxyRemovalFailure.test.ts > a failed gated removal releases the queued successful retry 5ms
+ ✓ test/portProxyRemovalFailure.test.ts > a newer queued sync can keep the sidecar and replace routes after failed removal 7ms
+ ✓ test/portProxyRemovalFailure.test.ts > another slug can remove while this slug waits for a failing rm 7ms
+ ✓ test/portProxyRemovalFailure.test.ts > repeated failed removes each surface the error without poisoning admission 4ms
+ ✓ test/portProxyRemovalFailure.test.ts > no-mapping sync propagates removal failure without deleting config 4ms
+ ✓ test/portProxy.test.ts > rendering > only allow-listed mappings go through the proxy; the container publishes the rest 2ms
+ ✓ test/portProxy.test.ts > rendering > a static entrypoint per mapping, and an ipAllowList router per entrypoint to every container 2ms
+ ✓ test/portProxy.test.ts > rendering > publishes each host side onto its entrypoint, locked down, on the service bridge 0ms
+ ✓ test/portProxy.test.ts > rendering > the fingerprint changes with the port list, not with the allow list (that is a watched route) 1ms
+ ✓ test/portProxy.test.ts > rendering > refuses a slug that could leave the data directory 1ms
+ ✓ test/portProxy.test.ts > syncPortProxy > writes the config and starts the sidecar the first time 6ms
+ ✓ test/portProxy.test.ts > syncPortProxy > a running sidecar with the same port list only gets new routes 4ms
+ ✓ test/portProxy.test.ts > syncPortProxy > a changed port list, or a stopped sidecar, recreates it 7ms
+ ✓ test/portProxy.test.ts > syncPortProxy > no allow-listed mapping left: the sidecar and its directory are removed 5ms
+
+ Test Files  4 passed (4)
+      Tests  51 passed (51)
+   Start at  01:15:56
+   Duration  1.99s (import 67%, tests 21%, transform 11%, worker 1%)

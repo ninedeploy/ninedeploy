@@ -21,7 +21,7 @@ function ownedDir(slug = 'db') {
 beforeEach(() => {
  ownedRoot = path.resolve(mkdtempSync(path.join(tmpdir(), 'nd-audit-portproxy-'))); h.config.paths.dataDir = ownedRoot;
  if (!ownedRoot.startsWith(path.resolve(tmpdir()) + path.sep) || !path.basename(ownedRoot).startsWith('nd-audit-portproxy-')) throw new Error('Unowned temp root');
- h.containers.clear(); h.capture.mockReset().mockImplementation(async (_cmd: string, args: string[]) => { const fp = h.containers.get(args[1]!); if (fp === undefined) throw new Error('No such container'); return `true ${fp}`; });
+ h.containers.clear(); h.capture.mockReset().mockImplementation(async (_cmd: string, args: string[]) => { const fp = h.containers.get(args[1]!); if (fp === undefined) throw new Error(`\`docker ${args.join(" ")}\` exited 1: Error: No such object: ${args[1]}`); return `true ${fp}`; });
  h.run.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
   if (args[0] === 'rm') h.containers.delete(args.at(-1)!);
   if (args[0] === 'run') { const name = args[args.indexOf('--name') + 1]!; const prefix = `${proxy.PORT_PROXY_CONFIG_LABEL}=`; const label = args.find(arg => arg.startsWith(prefix))!; h.containers.set(name, label.slice(prefix.length)); }
@@ -39,7 +39,7 @@ afterEach(({ task }) => { if (task.result?.errors?.length) failed = true; });
 afterAll(() => { if (!failed) console.log('FIX VERIFIED'); });
 for (const where of ['inspect', 'pull', 'host', 'start'] as const) it(`same-slug remove waits through gated ${where} and leaves no sidecar`, async () => {
  const entered = gate(), blocked = gate();
- if (where === 'inspect') h.capture.mockImplementationOnce(async () => { entered.release(); await blocked.promise; throw new Error('No such container'); });
+ if (where === 'inspect') h.capture.mockImplementationOnce(async (_cmd: string, args: string[]) => { entered.release(); await blocked.promise; throw new Error(`\`docker ${args.join(" ")}\` exited 1: Error: No such object: ${args[1]}`); });
  if (where === 'pull') h.pull.mockImplementationOnce(async () => { entered.release(); await blocked.promise; });
  if (where === 'host') h.host.mockImplementationOnce(async (p: string) => { entered.release(); await blocked.promise; return p; });
  if (where === 'start') { const run = h.run.getMockImplementation()!; let used = false; h.run.mockImplementation(async (_cmd: string, args: string[]) => { if (!used && args[0] === 'run') { used = true; entered.release(); await blocked.promise; } return run(_cmd, args); }); }

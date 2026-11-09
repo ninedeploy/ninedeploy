@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ServicePortMapping } from '@ninedeploy/db';
 import { config } from '../config.js';
 import { TRAEFIK_IMAGE } from '../engine/dockerNames.js';
+import { confirmsMissingContainer } from './dockerContainerAbsence.js';
 import { ensureDockerImage } from './dockerPull.js';
 import { capture, run } from './exec.js';
 import { hostPathFor } from './hostPath.js';
@@ -136,12 +137,16 @@ function writeAtomic(file: string, content: string): void {
 const readIfExists = (file: string): string | null => (existsSync(file) ? readFileSync(file, 'utf8') : null);
 
 async function runningFingerprint(name: string): Promise<string | null> {
+  const args = ['inspect', name, '--format', `{{.State.Running}} {{ index .Config.Labels "${PORT_PROXY_CONFIG_LABEL}" }}`];
   try {
-    const out = await capture('docker', ['inspect', name, '--format', `{{.State.Running}} {{ index .Config.Labels "${PORT_PROXY_CONFIG_LABEL}" }}`], { timeoutMs: 10_000 });
+    const out = await capture('docker', args, { timeoutMs: 10_000 });
     const [running, fingerprint] = out.trim().split(' ');
     return running === 'true' ? (fingerprint ?? '') : '';
-  } catch {
-    return null;
+  } catch (err) {
+    const prefix = `\`docker ${args.join(' ')}\` exited 1: `;
+    if (err instanceof Error && err.message.startsWith(prefix) &&
+      confirmsMissingContainer(err.message.slice(prefix.length).split(/\r?\n/), name)) return null;
+    throw err;
   }
 }
 

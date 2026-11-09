@@ -1,0 +1,65 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > remove: unknown inspect failure preserves config and performs no Docker mutation
+EXPECTED: original unknown error/no Docker mutations/config kept; ACTUAL: { sameError: false, mutations: 0, config: false, pulls: 0 }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > sync: unknown inspect failure preserves config and performs no Docker mutation
+EXPECTED: original unknown error/no Docker mutations/config kept; ACTUAL: { sameError: false, mutations: 2, config: true, pulls: 1 }
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > control: exact target-specific native capture absence cleans orphan config 33ms
+ × .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > remove: unknown inspect failure preserves config and performs no Docker mutation 11ms
+   → expected { sameError: false, …(3) } to deeply equal { Object (sameError, mutations, ...) }
+ × .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > sync: unknown inspect failure preserves config and performs no Docker mutation 9ms
+   → expected { Object (sameError, mutations, ...) } to deeply equal { Object (sameError, mutations, ...) }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > remove: unknown inspect failure preserves config and performs no Docker mutation
+AssertionError: expected { sameError: false, …(3) } to deeply equal { Object (sameError, mutations, ...) }
+
+- Expected
++ Received
+
+  {
+-   "config": true,
++   "config": false,
+    "mutations": 0,
+    "pulls": 0,
+-   "sameError": true,
++   "sameError": false,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts:45:238
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > sync: unknown inspect failure preserves config and performs no Docker mutation
+AssertionError: expected { Object (sameError, mutations, ...) } to deeply equal { Object (sameError, mutations, ...) }
+
+- Expected
++ Received
+
+  {
+    "config": true,
+-   "mutations": 0,
+-   "pulls": 0,
+-   "sameError": true,
++   "mutations": 2,
++   "pulls": 1,
++   "sameError": false,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts:45:238
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  01:11:42
+   Duration  503ms (import 70%, transform 15%, tests 13%, worker 1%)

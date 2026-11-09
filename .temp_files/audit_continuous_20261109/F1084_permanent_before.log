@@ -1,0 +1,102 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control remove: Error: No such object: nd-portproxy-db 12ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control sync: Error: No such object: nd-portproxy-db 7ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control remove: Error: No such container: nd-portproxy-db 6ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control sync: Error: No such container: nd-portproxy-db 6ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control remove: Error response from daemon: No such container: nd-portproxy-db 4ms
+ ✓ test/portProxyInspectFailure.test.ts > exact absence control sync: Error response from daemon: No such container: nd-portproxy-db 6ms
+ × test/portProxyInspectFailure.test.ts > unknown permission is not a removal absence receipt 8ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > unknown daemon is not a removal absence receipt 9ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > unknown generic missing is not a removal absence receipt 6ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > unknown wrong target is not a removal absence receipt 5ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > unknown additional diagnostic is not a removal absence receipt 5ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > unknown wrong exit is not a removal absence receipt 5ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > unknown timeout is not a removal absence receipt 5ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > unknown opaque is not a removal absence receipt 4ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: permission denied 6ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: `docker inspect nd-portproxy-db --format {{.State.Running}} {{ index .Config.Labels "ninedeploy.portproxy.config" }}` exited 1: Error: No such object: other 7ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: `docker inspect nd-portproxy-db --format {{.State.Running}} {{ index .Config.Labels "ninedeploy.portproxy.config" }}` exited 1: Error: No such object: nd-portproxy-db
+connection failed 7ms
+   → promise resolved "undefined" instead of rejecting
+ × test/portProxyInspectFailure.test.ts > gated unknown inspection releases queued retry while preserving config until known removal 6ms
+   → expected null to be Error: controlled inspect error // Object.is equality
+ ✓ test/portProxyInspectFailure.test.ts > actual native capture command envelope and fixed Docker label match the classifier contract 300ms
+ ✓ test/portProxyInspectFailure.test.ts > known same-fingerprint running sidecar keeps its instance 8ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 12 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/portProxyInspectFailure.test.ts > unknown permission is not a removal absence receipt
+ FAIL  test/portProxyInspectFailure.test.ts > unknown daemon is not a removal absence receipt
+ FAIL  test/portProxyInspectFailure.test.ts > unknown generic missing is not a removal absence receipt
+ FAIL  test/portProxyInspectFailure.test.ts > unknown wrong target is not a removal absence receipt
+ FAIL  test/portProxyInspectFailure.test.ts > unknown additional diagnostic is not a removal absence receipt
+ FAIL  test/portProxyInspectFailure.test.ts > unknown wrong exit is not a removal absence receipt
+ FAIL  test/portProxyInspectFailure.test.ts > unknown timeout is not a removal absence receipt
+ FAIL  test/portProxyInspectFailure.test.ts > unknown opaque is not a removal absence receipt
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ test/portProxyInspectFailure.test.ts:54:159
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ FAIL  test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: permission denied
+ FAIL  test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: `docker inspect nd-portproxy-db --format {{.State.Running}} {{ index .Config.Labels "ninedeploy.portproxy.config" }}` exited 1: Error: No such object: other
+ FAIL  test/portProxyInspectFailure.test.ts > sync refuses unconfirmed absence: `docker inspect nd-portproxy-db --format {{.State.Running}} {{ index .Config.Labels "ninedeploy.portproxy.config" }}` exited 1: Error: No such object: nd-portproxy-db
+connection failed
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ test/portProxyInspectFailure.test.ts:57:249
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ FAIL  test/portProxyInspectFailure.test.ts > gated unknown inspection releases queued retry while preserving config until known removal
+AssertionError: expected null to be Error: controlled inspect error // Object.is equality
+
+- Expected:
+Error {
+  "message": "controlled inspect error",
+}
+
++ Received:
+null
+
+ ❯ test/portProxyInspectFailure.test.ts:62:173
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  12 failed | 8 passed (20)
+   Start at  01:14:04
+   Duration  1.03s (tests 59%, import 34%, transform 7%)

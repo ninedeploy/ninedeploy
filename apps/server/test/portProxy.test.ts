@@ -89,7 +89,7 @@ describe('syncPortProxy', () => {
   const runArgv = () => h.run.mock.calls.map((c) => c[1] as string[]).find((a) => a[0] === 'run');
 
   it('writes the config and starts the sidecar the first time', async () => {
-    h.capture.mockRejectedValue(new Error('No such container'));
+    h.capture.mockImplementation(async (...call: unknown[]) => { const args = call[1] as string[]; throw new Error(`\`docker ${args.join(" ")}\` exited 1: Error: No such object: ${args[1]}`); });
     const logs: string[] = [];
     await proxy.syncPortProxy({ id: 3, slug: 'db', portMappings: [pg, open] }, ['db-5'], (l) => logs.push(l));
     const dir = path.join(base, 'portproxy', 'db');
@@ -119,7 +119,7 @@ describe('syncPortProxy', () => {
   });
 
   it('no allow-listed mapping left: the sidecar and its directory are removed', async () => {
-    h.capture.mockRejectedValue(new Error('No such container'));
+    h.capture.mockImplementation(async (...call: unknown[]) => { const args = call[1] as string[]; throw new Error(`\`docker ${args.join(" ")}\` exited 1: Error: No such object: ${args[1]}`); });
     await proxy.syncPortProxy({ id: 3, slug: 'db', portMappings: [pg] }, ['db-5'], () => undefined);
     h.run.mockClear();
     h.capture.mockResolvedValue('true x\n');
@@ -130,7 +130,7 @@ describe('syncPortProxy', () => {
     expect(logs).toEqual(['Removed port proxy nd-portproxy-db']);
     // Nothing there: nothing to remove.
     h.run.mockClear();
-    h.capture.mockRejectedValue(new Error('No such container'));
+    h.capture.mockImplementation(async (...call: unknown[]) => { const args = call[1] as string[]; throw new Error(`\`docker ${args.join(" ")}\` exited 1: Error: No such object: ${args[1]}`); });
     await proxy.removePortProxy('db');
     expect(h.run).not.toHaveBeenCalled();
   });

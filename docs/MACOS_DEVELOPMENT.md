@@ -597,3 +597,13 @@ Nine independent failure/retry/queue cases passed three times. Unknown-inspect
 classification and live Docker enforcement remain outside this fix. The broader
 291-test pipeline pass belongs to preceding round64 and was not repeated for
 this isolated failure-path change; root/native acceptance remains separate.
+
+Round 66 (F1084) distinguishes exact native Docker-inspect absence from unknown
+errors. A connection/permission/timeout or unrelated diagnostic now reaches the
+caller instead of deleting config or starting a replacement. Twenty permanent
+cases were seen red (12 failing cases and eight controls); 51 port-proxy tests
+passed after repair. Twenty independent cases passed three times, including a
+real native Node subprocess validating the capture error envelope. Existing
+missing-container fixtures now reproduce that actual envelope. Sync's earlier
+desired-config writes, live Docker/network enforcement and native Mac acceptance
+remain outside this correction; the full pipeline pass remains round64 evidence.

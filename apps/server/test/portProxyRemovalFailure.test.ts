@@ -21,7 +21,7 @@ function ownedDir(slug = 'db') {
 beforeEach(() => {
  ownedRoot = path.resolve(mkdtempSync(path.join(tmpdir(), 'nd-audit-portproxy-'))); h.config.paths.dataDir = ownedRoot;
  if (!ownedRoot.startsWith(path.resolve(tmpdir()) + path.sep) || !path.basename(ownedRoot).startsWith('nd-audit-portproxy-')) throw new Error('Unowned temp root');
- h.containers.clear(); h.capture.mockReset().mockImplementation(async (_cmd: string, args: string[]) => { const fp = h.containers.get(args[1]!); if (fp === undefined) throw new Error('No such container'); return `true ${fp}`; });
+ h.containers.clear(); h.capture.mockReset().mockImplementation(async (_cmd: string, args: string[]) => { const fp = h.containers.get(args[1]!); if (fp === undefined) throw new Error(`\`docker ${args.join(" ")}\` exited 1: Error: No such object: ${args[1]}`); return `true ${fp}`; });
  h.run.mockReset().mockImplementation(async (_cmd: string, args: string[]) => {
   if (args[0] === 'rm') h.containers.delete(args.at(-1)!);
   if (args[0] === 'run') { const name = args[args.indexOf('--name') + 1]!; const prefix = `${proxy.PORT_PROXY_CONFIG_LABEL}=`; const label = args.find(arg => arg.startsWith(prefix))!; h.containers.set(name, label.slice(prefix.length)); }

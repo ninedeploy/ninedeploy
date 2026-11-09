@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > remove: unknown inspect failure preserves config and performs no Docker mutation
+EXPECTED: original unknown error/no Docker mutations/config kept; ACTUAL: { sameError: true, mutations: 0, config: true, pulls: 0 }
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > sync: unknown inspect failure preserves config and performs no Docker mutation
+EXPECTED: original unknown error/no Docker mutations/config kept; ACTUAL: { sameError: true, mutations: 0, config: true, pulls: 0 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > control: exact target-specific native capture absence cleans orphan config 7ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > remove: unknown inspect failure preserves config and performs no Docker mutation 6ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1084_portProxyInspect.test.ts > sync: unknown inspect failure preserves config and performs no Docker mutation 7ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  01:12:36
+   Duration  401ms (import 75%, transform 17%, tests 7%, worker 1%)
