@@ -130,6 +130,15 @@ export function envFileKeys(content: string): string[] {
 const hasSource = (s: PlanService): boolean => Boolean(s.create.image || s.create.repoUrl);
 const issueNotes = (issues: PlanIssue[], skip: string[] = []): string[] =>
   issues.filter((i) => i.level !== 'info' && !skip.includes(i.option)).map((i) => `${i.level === 'unsupported' ? 'Not carried' : 'To do'}: ${i.detail}`);
+/** Which domains move at the cutover, and which stay with the source (its own generated hosts). */
+function domainNotes(s: PlanService): string[] {
+  const moving = s.domains.filter((d) => !d.sourceDefault).map((d) => d.host);
+  const staying = s.domains.filter((d) => d.sourceDefault).map((d) => d.host);
+  return [
+    ...(moving.length ? [`Domains wait for the cutover (step 3): ${moving.join(', ')}.`] : []),
+    ...(staying.length ? [`The source's own host stays with it: ${staying.join(', ')}.`] : []),
+  ];
+}
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** Create what the plan describes, recording every step in the receipt. */
@@ -170,7 +179,7 @@ export async function applyPlan(plan: ImportPlan, opts: ApplyOptions, deps: Appl
         put(key, { ...base, state: 'failed', notes: [message(err)] });
         continue;
       }
-      const domains = s.domains.length ? [`Domains wait for the cutover (step 3): ${s.domains.map((d) => d.host).join(', ')}.`] : [];
+      const domains = domainNotes(s);
       put(key, { ...base, state: 'done', id: created.id, notes: ['Created, not deployed.', ...domains, ...notes] });
     }
     const serviceId = receipt.items[key]!.id!;
@@ -256,7 +265,7 @@ export function renderApplyPreview(plan: ImportPlan, receipt: ImportReceipt | nu
     else if (!hasSource(s)) out.push(`  – ${s.name}: skipped, no image and no repository`);
     else out.push(`  + ${s.name}: ${s.create.image ? `image ${s.create.image}` : `git ${s.create.repoUrl}${s.create.branch ? `@${s.create.branch}` : ''}`}`);
     if (s.env.length) out.push(`      env: ${envFiles[s.name] !== undefined ? 'from the file passed' : `${s.env.length} name(s), no values (pass --dotenv ${s.name}=<path>)`}`);
-    if (s.domains.length) out.push(`      domains wait for the cutover (step 3): ${s.domains.map((d) => d.host).join(', ')}`);
+    for (const n of domainNotes(s)) out.push(`      ${n}`);
   }
   out.push('Databases (created empty):');
   for (const d of plan.databases) {

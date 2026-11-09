@@ -9,7 +9,7 @@
  * value into the plan.
  */
 import {
-  DATA_NOT_MOVED, emptyPlan, envNames, firstVolumeMount, memToMb, replicasFor, stripUserinfo,
+  DATA_NOT_MOVED, emptyPlan, envNames, firstVolumeMount, memToMb, planDomain, replicasFor, stripUserinfo,
   type ImportPlan, type PlanDatabase, type PlanEngine, type PlanIssue, type PlanService, type SourceGet,
 } from './plan.js';
 
@@ -105,7 +105,7 @@ async function applicationItem(get: SourceGet, id: string): Promise<PlanService>
   const volumes = volumesOf(app['mounts']);
   const mount = firstVolumeMount(volumes, issues);
   if (mount) create.volumeMount = mount;
-  return { ref: id, name, kind, create, domains: domains.map(({ host, https }) => ({ host, https })), env: envNames(str(app['env'])), volumes, issues };
+  return { ref: id, name, kind, create, domains: domains.map(({ host, https }) => planDomain(host, https)), env: envNames(str(app['env'])), volumes, issues };
 }
 
 async function composeItem(get: SourceGet, id: string): Promise<PlanService> {
@@ -120,7 +120,7 @@ async function composeItem(get: SourceGet, id: string): Promise<PlanService> {
     issues.push({ level: 'info', option: 'composePath', detail: `Compose file ${str(row['composePath']) ?? './docker-compose.yml'} in the repository.` });
   }
   if (str(row['composeType']) === 'stack') issues.push({ level: 'info', option: 'composeType', detail: 'A Swarm stack; NineDeploy runs it as a Compose stack unless you choose Swarm.' });
-  const domains = list(row['domains']).map((d) => ({ host: str(d['host']) ?? '', https: d['https'] === true })).filter((d) => d.host);
+  const domains = list(row['domains']).map((d) => planDomain(str(d['host']) ?? '', d['https'] === true)).filter((d) => d.host);
   return { ref: id, name, kind: 'compose', create, domains, env: envNames(str(row['env'])), volumes: volumesOf(row['mounts']), issues };
 }
 

@@ -75,7 +75,7 @@ export function renderImportPlan(plan: ImportPlan): string {
   for (const svc of plan.services) {
     const what = svc.kind === 'image' ? `image ${svc.create.image ?? '(unknown)'}` : svc.kind === 'git' ? `git ${svc.create.repoUrl ?? '(no repository)'}${svc.create.branch ? `@${svc.create.branch}` : ''}` : 'compose stack';
     lines.push(`  • ${svc.name}: ${what}${svc.create.port ? `, port ${svc.create.port}` : ''}`);
-    if (svc.domains.length) lines.push(`      domains: ${svc.domains.map((d) => `${d.https ? 'https' : 'http'}://${d.host}`).join(', ')}`);
+    if (svc.domains.length) lines.push(`      domains: ${svc.domains.map((d) => `${d.https ? 'https' : 'http'}://${d.host}${d.sourceDefault ? " (the source's own host; stays)" : ''}`).join(', ')}`);
     if (svc.env.length) lines.push(`      env: ${svc.env.length} variable(s): ${svc.env.map((e) => e.key).join(', ')} (names only)`);
     if (svc.volumes.length) lines.push(`      volumes: ${svc.volumes.map((v) => v.mountPath).join(', ')}`);
     for (const i of svc.issues) lines.push(`      ${i.level === 'unsupported' ? '✗' : i.level === 'manual' ? '!' : '·'} ${i.option}: ${i.detail}`);

@@ -6,7 +6,7 @@ import { buildImportPlan, CREDENTIAL_ENV, importPlanAction, renderImportPlan } f
 import { planFromCaprover } from '../src/lib/importers/caprover.js';
 import { planFromCoolify } from '../src/lib/importers/coolify.js';
 import { planFromDokploy } from '../src/lib/importers/dokploy.js';
-import { domainsFrom, envNames, memToMb, stripUserinfo, type ImportPlan, type SourceGet } from '../src/lib/importers/plan.js';
+import { domainsFrom, envNames, isGeneratedHost, memToMb, stripUserinfo, type ImportPlan, type SourceGet } from '../src/lib/importers/plan.js';
 import { caproverSource, coolifySource, dokploySource, normaliseBase, OtpRequiredError, SourceError } from '../src/lib/importers/sources.js';
 import { caprover, caproverLive, coolify, dokploy, SENTINEL } from './fixtures/importSources.js';
 
@@ -40,6 +40,12 @@ describe('plan helpers', () => {
     expect(domainsFrom('https://a.example, http://b.example:8080/x ,c.example,,')).toEqual([
       { host: 'a.example', https: true }, { host: 'b.example', https: false }, { host: 'c.example', https: false },
     ]);
+    // Hosts the sources generate for themselves are marked, so they are never moved.
+    expect(domainsFrom('http://x1.203.0.113.7.sslip.io,https://app-ab12.traefik.me,app.example')).toEqual([
+      { host: 'x1.203.0.113.7.sslip.io', https: false, sourceDefault: true }, { host: 'app-ab12.traefik.me', https: true, sourceDefault: true }, { host: 'app.example', https: false },
+    ]);
+    expect(isGeneratedHost('a.10.0.0.1.NIP.IO')).toBe(true);
+    expect(isGeneratedHost('traefik.me.example.com')).toBe(false);
     expect(memToMb('512m')).toBe(512);
     expect(memToMb('2g')).toBe(2048);
     expect(memToMb('1073741824')).toBe(1024);
@@ -190,7 +196,7 @@ describe('CapRover adapter', async () => {
     const blog = byName(plan, 'blog');
     expect(blog.kind).toBe('git');
     expect(blog.create).toEqual({ name: 'blog', type: 'docker', repoUrl: 'https://github.com/acme/blog.git', branch: 'main', build: { buildPack: 'auto' }, port: 2368, replicas: 2, volumeMount: '/var/lib/ghost/content' });
-    expect(blog.domains).toEqual([{ host: 'blog.apps.acme.example', https: true }, { host: 'blog.acme.example', https: true }]);
+    expect(blog.domains).toEqual([{ host: 'blog.apps.acme.example', https: true, sourceDefault: true }, { host: 'blog.acme.example', https: true }]);
     expect(blog.env).toEqual([{ key: 'DB_PASSWORD' }, { key: 'url' }]);
     for (const option of ['repoInfo', 'httpAuth', 'customNginxConfig', 'captain-definition', 'default subdomain']) expect(issue(blog.issues, option), option).toBeTruthy();
   });
@@ -211,7 +217,7 @@ describe('CapRover adapter', async () => {
       '/api/v2/user/system/info/': { rootDomain: '' },
       '/api/v2/user/apps/appDefinitions/': { rootDomain: 'list.example', appDefinitions: [{ appName: 'a', notExposeAsWebApp: false, versions: [], tags: [{ tagName: 'not-a-db' }] }, { notAnApp: true }] },
     }), 'https://c.example');
-    expect(byName(p, 'a').domains[0]).toEqual({ host: 'a.list.example', https: false });
+    expect(byName(p, 'a').domains[0]).toEqual({ host: 'a.list.example', https: false, sourceDefault: true });
     const q = await planFromCaprover(async (p2) => { if (p2.includes('system')) throw new Error('no'); return { appDefinitions: [{ appName: 'b', nodeId: 'n1', preDeployFunction: 'x', serviceUpdateOverride: 'y', instanceCount: 1 }] }; }, 'https://c.example');
     expect(byName(q, 'b').domains[0]!.host).toBe('b.captain.localhost');
     for (const option of ['nodeId', 'preDeployFunction', 'serviceUpdateOverride']) expect(issue(byName(q, 'b').issues, option), option).toBeTruthy();
@@ -227,7 +233,7 @@ describe('CapRover adapter, against a capture from a live v1.16.0', async () => 
     expect(plan.source.version).toBe('1.16.0');
     const blog = byName(plan, 'blog');
     expect(blog.create).toEqual({ name: 'blog', type: 'docker', repoUrl: 'https://github.com/acme/blog.git', branch: 'main', build: { buildPack: 'auto' }, port: 2368, replicas: 2, volumeMount: '/var/lib/ghost/content' });
-    expect(blog.domains).toEqual([{ host: 'blog.captain.localhost', https: false }]);
+    expect(blog.domains).toEqual([{ host: 'blog.captain.localhost', https: false, sourceDefault: true }]);
     expect(blog.env).toEqual([{ key: 'DB_PASSWORD' }, { key: 'url' }]);
     const proxy = byName(plan, 'proxy');
     expect(proxy.create).toEqual({ name: 'proxy', type: 'docker', image: 'traefik/whoami:v1.10.3', port: 80 });

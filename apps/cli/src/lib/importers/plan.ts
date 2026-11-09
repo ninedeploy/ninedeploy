@@ -30,13 +30,34 @@ export type ServiceCreateFields = Pick<CreateService, 'name' | 'type'> &
     build?: { buildPack?: NonNullable<CreateService['build']>['buildPack']; baseDir?: string; dockerfilePath?: string; outputDir?: string };
   };
 
+/**
+ * A domain of a service. `sourceDefault` marks a host the source generated
+ * for itself (CapRover's <app>.<root domain>, Coolify's sslip.io, Dokploy's
+ * traefik.me): it stays with the source and is never added to NineDeploy.
+ * Optional and additive, so planVersion stays 1.
+ */
+export interface PlanDomain {
+  host: string;
+  https: boolean;
+  sourceDefault?: true;
+}
+
+/** Wildcard-DNS hosts the sources generate (they resolve to an IP in the name, or to the source). */
+export function isGeneratedHost(host: string): boolean {
+  return /\.(sslip\.io|nip\.io|traefik\.me)$/i.test(host);
+}
+
+export function planDomain(host: string, https: boolean, sourceDefault = isGeneratedHost(host)): PlanDomain {
+  return sourceDefault ? { host, https, sourceDefault: true } : { host, https };
+}
+
 export interface PlanService {
   /** Stable reference in the source (uuid / id / appName). */
   ref: string;
   name: string;
   kind: 'image' | 'git' | 'compose';
   create: ServiceCreateFields;
-  domains: Array<{ host: string; https: boolean }>;
+  domains: PlanDomain[];
   /** Names only. `secret` marks values the source keeps hidden or flags as secret. */
   env: Array<{ key: string }>;
   volumes: Array<{ mountPath: string; source: 'volume' | 'bind' | 'file'; name?: string }>;
@@ -105,14 +126,14 @@ export function envNames(blob: string | null | undefined): Array<{ key: string }
 }
 
 /** Each URL or bare host in a list → `{host, https}` (Coolify's comma-separated `fqdn`). */
-export function domainsFrom(list: string | null | undefined): Array<{ host: string; https: boolean }> {
-  const out: Array<{ host: string; https: boolean }> = [];
+export function domainsFrom(list: string | null | undefined): PlanDomain[] {
+  const out: PlanDomain[] = [];
   for (const part of (list ?? '').split(',')) {
     const t = part.trim();
     if (!t) continue;
     try {
       const u = new URL(/^[a-z]+:\/\//i.test(t) ? t : `http://${t}`);
-      if (u.hostname) out.push({ host: u.hostname, https: u.protocol === 'https:' });
+      if (u.hostname) out.push(planDomain(u.hostname, u.protocol === 'https:'));
     } catch {
       /* not a host */
     }

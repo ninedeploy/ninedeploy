@@ -85,7 +85,8 @@ describe('import apply: creating', () => {
     expect(calls[2]!.input).toEqual({ name: 'pg', engine: 'postgres', reuseExisting: true, projectId: 7 });
     // The client has no domain or deploy call at all; the receipt says where the domains went.
     expect(receipt.items['service:blog']).toMatchObject({ state: 'done', id: 100, at: '2026-11-10T00:00:00.000Z' });
-    expect(receipt.items['service:blog']!.notes.join(' ')).toMatch(/Domains wait for the cutover \(step 3\): blog\.captain\.localhost/);
+    expect(receipt.items['service:blog']!.notes.join(' ')).toMatch(/The source's own host stays with it: blog\.captain\.localhost\./);
+    expect(receipt.items['service:blog']!.notes.join(' ')).not.toMatch(/Domains wait for the cutover/);
     expect(receipt.items['service:blog']!.notes.join(' ')).toMatch(/To do: Repository credentials do not transfer/);
     expect(receipt.items['env:blog']).toMatchObject({ state: 'skipped', id: 100 });
     expect(receipt.items['env:blog']!.notes[0]).toMatch(/2 variable\(s\) need a value: DB_PASSWORD, url\. Pass --dotenv blog=<path>/);
@@ -132,6 +133,17 @@ describe('import apply: creating', () => {
     expect(calls.some((x) => (x.input as { name?: string }).name === 'uploaded' || (x.input as { name?: string }).name === 'lite')).toBe(false);
     expect(r.items['service:up']).toMatchObject({ state: 'skipped', notes: ['Nothing to create it from: the plan has no image and no repository for it.', 'Not carried: Its image lives in CapRover.'] });
     expect(r.items['database:lite']).toMatchObject({ state: 'skipped', notes: ['NineDeploy has no managed equivalent.', 'Not carried: libSQL has no equivalent.'] });
+  });
+
+  it('lists a custom domain for the cutover and leaves the source\'s own host behind', async () => {
+    const plan = await livePlan();
+    plan.services[0]!.domains.push({ host: 'blog.acme.example', https: true });
+    const { client } = fakePanel();
+    const r = await applyPlan(plan, {}, { client, panel: PANEL, receipt: null, save: () => undefined });
+    expect(r.items['service:blog']!.notes).toEqual(expect.arrayContaining([
+      'Domains wait for the cutover (step 3): blog.acme.example.',
+      "The source's own host stays with it: blog.captain.localhost.",
+    ]));
   });
 
   it('carries the source version into the database when the image matches', async () => {
@@ -227,7 +239,7 @@ describe('ninedeploy import apply', () => {
     expect(out).toMatch(/Import into https:\/\/panel\.example(?!\/)/);
     expect(out).toMatch(/\+ blog: git https:\/\/github\.com\/acme\/blog\.git@main/);
     expect(out).toMatch(/env: 2 name\(s\), no values \(pass --dotenv blog=<path>\)/);
-    expect(out).toMatch(/domains wait for the cutover \(step 3\): blog\.captain\.localhost/);
+    expect(out).toMatch(/The source's own host stays with it: blog\.captain\.localhost/);
     expect(out).toMatch(/\+ proxy: image traefik\/whoami:v1\.10\.3/);
     expect(out).toMatch(/\+ pg: postgres \(default version\)/);
     expect(out).toMatch(/Repeat with --yes/);

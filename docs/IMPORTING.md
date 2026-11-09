@@ -55,7 +55,7 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
 - **Services**, each with:
   - a kind: image, Git or compose;
   - the fields a NineDeploy service would be created with: repository and branch, build pack, base directory, port, replicas, CPU and memory limits, health path, first volume;
-  - its domains, with whether each had HTTPS;
+  - its domains, with whether each had HTTPS. A host the source generated for itself is marked as staying behind: CapRover's `<app>.<root domain>`, Coolify's `sslip.io` hosts and Dokploy's `traefik.me` hosts;
   - its environment variable **names**;
   - its volumes.
 - **Databases**, each with the matching NineDeploy engine and the source image, which carries the version.

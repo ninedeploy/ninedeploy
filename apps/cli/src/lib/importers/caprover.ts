@@ -9,7 +9,7 @@
  * adapter copies none of them into the plan.
  */
 import {
-  DATA_NOT_MOVED, emptyPlan, firstVolumeMount, replicasFor, stripUserinfo,
+  DATA_NOT_MOVED, emptyPlan, firstVolumeMount, planDomain, replicasFor, stripUserinfo,
   type ImportPlan, type PlanDatabase, type PlanEngine, type PlanIssue, type PlanService, type SourceGet,
 } from './plan.js';
 
@@ -73,12 +73,12 @@ function appItem(app: Obj, rootDomain: string): PlanService | null {
 
   const domains: PlanService['domains'] = [];
   if (app['notExposeAsWebApp'] !== true) {
-    domains.push({ host: `${name}.${rootDomain}`, https: app['hasDefaultSubDomainSsl'] === true });
+    domains.push(planDomain(`${name}.${rootDomain}`, app['hasDefaultSubDomainSsl'] === true, true));
     issues.push({ level: 'info', option: 'default subdomain', detail: `${name}.${rootDomain} is CapRover's own subdomain; it moves only if that DNS points at NineDeploy.` });
   }
   for (const d of list(app['customDomain'])) {
     const host = str(d['publicDomain']);
-    if (host) domains.push({ host, https: d['hasSsl'] === true });
+    if (host) domains.push(planDomain(host, d['hasSsl'] === true));
   }
 
   const volumes: PlanService['volumes'] = list(app['volumes'])
