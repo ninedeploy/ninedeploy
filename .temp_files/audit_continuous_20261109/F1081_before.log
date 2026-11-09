@@ -1,0 +1,3 @@
+CONTROL: fixed8640 buckets /1day retained bytes: 453600 EXPECTED <=2000000
+EXPECTED: fixed259200 buckets /30days retain <= 2000000 bytes; ACTUAL: 7340072
+PROBLEM CONFIRMED

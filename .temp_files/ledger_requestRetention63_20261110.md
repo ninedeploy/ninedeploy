@@ -1,0 +1,26 @@
+## Round 63 — request-bucket write-path retention
+### Summary
+Scope confirmed: apps/server/src/lib/requestRate.ts and apps/server/test/lib/requestRateRetention.test.ts; nearest autoscaler/sleep/traffic tests read-only. Previous3bf80a23 selected blobs/remote verified; unrelated CHANGELOG.md preserved. This is memory retention, separate from F1080 argument overflow.
+### Toolchain
+Node26.13.0 built-in TypeScript stripping loads this import-free TS module directly; executable JS uses --expose-gc solely to measure retained heap after collection. Existing Vitest5.0.5/TS7.0.2/Biome2.5.14 for regression/static validation; no dependency/tool installs.
+### Invariants
+Traffic-write-only consumers must not retain an unbounded history despite the documented24-hour bucket retention. Fixed inputs: one active service,8640 ten-second buckets/day,30days without calling serviceRequestRate. Acceptable retained memory for30days: no more than max(3 times measured1day retained heap,2000000 bytes). The one-day control must itself stay below2000000 bytes. Latest timestamp must still match the last accepted event. No timing/speed claim.
+### Findings
+Pending measured current-source proof; no source patch.
+### Boundaries
+Native Node heap after explicit GC, synthetic valid bucket events, no live30-day process or full memory leak scan. Bounds relative to latest recorded event rather than an injected wall clock will be evaluated if a defect is confirmed.
+### F1081 — resource-leak — Medium — write-only traffic retains unlimited request buckets
+Measured original-source proof: node --expose-gc .temp_files/audit_continuous_20261109/prove_F1081_requestRetention.mjs ->exit1 (F1081_before.log). One-day unaffected control453600 retained bytes <=2000000. Fixed30-day stream259200 buckets retained7340072 bytes > max(3*day,2000000)=2000000; latest-time arithmetic control passed. PROBLEM CONFIRMED. This is retained JavaScript heap, not RSS or a full process leak attribution.
+Root cause before patch: recordServiceRequest never expires buckets; only optional serviceRequestRate reads do. The traffic writer plus sleep-only latest-time reader can therefore retain every bucket for process lifetime. Repair per-service latest-recorded bucket high-water mark: discard samples older than its24-hour inclusive cutoff; evict newly expired buckets on advancing writes. Use bounded numeric deletion for small cutoff advances and a scan of actual buckets for huge timestamp jumps, so a gap cannot cause a loop over arbitrary missing time. Existing rate-pruning empty maps and reset must clear new metadata. Keep no wall-clock dependency or new API; retention relative to latest recorded event, not guaranteed elapsed-wall-clock aging with no events.
+### Completed verification
+Original proof F1081_after.log ->PROBLEM NOT REPRODUCED, one-day466584 bytes,30-day680944 bytes under2000000. Independent plain-JS verifier with --expose-gc passed10 memory/retention/boundary/order/jump/isolation/reset controls3 times, FIX VERIFIED (F1081_verify1/2/3.log): one-day~480KB,30-day~920KB, always below2MB. No elapsed-time speed claim.
+Permanent apps/server/test/lib/requestRateRetention.test.ts4 cases: original3bf80a23 source3 failed/1 control passed (F1081_permanent_before.log), including native child-process GC budget and black-box expiry/late-arrival behavior. Final95 tests/5files passed with large-history/autoscaler/sleep/traffic (F1081_scope.log). Child process uses current Node executable, direct import-free source TS loading, explicit GC, no dependency or custom runner install.
+Commands: node --expose-gc .temp_files/audit_continuous_20261109/prove_F1081_requestRetention.mjs; node --expose-gc .temp_files/audit_continuous_20261109/verify_F1081_requestRetention.mjs x3; server pnpm exec vitest run test/lib/requestRateRetention.test.ts test/lib/requestRateLargeHistory.test.ts test/lib/autoscaler.test.ts test/lib/sleep.test.ts test/lib/trafficAnalytics.test.ts --coverage=false --reporter=verbose ->95/5 passed. Static/lint/diff results below after completion.
+### Boundaries
+24h retention is relative to the latest accepted event, inclusive cutoff (at most8641 distinct ten-second buckets per active service); out-of-order expired events are ignored. No wall-clock expiry without later events/rate reads, no automatic deletion of idle/deleted-service identity metadata, and no bound on number of distinct service IDs claimed. Measured JavaScript retained heap, not RSS. No live30-day process, platform-wide heap certification, native Mac, full root release/coverage or Docker acceptance. Public API/config/persistence unchanged; comments clarify event-relative meaning.
+### Working tree
+Unrelated CHANGELOG and new CLI importApply.ts work preserved. Own source/permanent test/docs/evidence only selected.
+### Next scope
+Select another independent source after publication; no unmeasured leak claim retained.
+Final static checks: child-process GOMAXPROCS=4 server pnpm typecheck ->exit0; build ->exit0; scoped Biome requestRate/new permanent test ->2files passed; git diff --check ->exit0. Root release/native Mac not certified.
+Publication preflight: own staged paths including both plain-JS proof/verifier files, cached diff check and limited credential/runtime/index-line-ending scan passed. Selected source/evidence/changelog HEAD hashes verified before push.

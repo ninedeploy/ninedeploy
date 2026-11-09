@@ -1,0 +1,111 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/requestRateRetention.test.ts > bounds retained heap for30 days of traffic without rate-reader pruning 307ms
+ ✓ test/lib/requestRateRetention.test.ts > expires write-only history strictly outside24 hours while retaining the exact boundary 0ms
+ ✓ test/lib/requestRateRetention.test.ts > late expired requests cannot repopulate an evicted bucket 0ms
+ ✓ test/lib/requestRateRetention.test.ts > reset and rate-driven emptying release latest-bucket ownership 0ms
+ ✓ test/lib/trafficAnalytics.test.ts > parseAccessLogLine > reads a Traefik v3 JSON line: @provider suffix stripped, Duration in nanoseconds 167ms
+ ✓ test/lib/trafficAnalytics.test.ts > parseAccessLogLine > falls back to `time`, then to now, for the start; missing fields default 163ms
+ ✓ test/lib/trafficAnalytics.test.ts > parseAccessLogLine > rejects malformed JSON and non-objects 156ms
+ ✓ test/lib/trafficAnalytics.test.ts > attributeRouter / scopeFor > classifies panel, custom, domain (incl. _http twins) and other routers 152ms
+ ✓ test/lib/trafficAnalytics.test.ts > attributeRouter / scopeFor > confirms a domain router against the database; a stale or look-alike name falls back 160ms
+ ✓ test/lib/trafficAnalytics.test.ts > histogram and percentiles > buckets on the upper edges 5…10000 ms, with an overflow bucket 160ms
+ ✓ test/lib/trafficAnalytics.test.ts > histogram and percentiles > estimates percentiles by interpolating inside the rank bucket 156ms
+ ✓ test/lib/trafficAnalytics.test.ts > histogram and percentiles > merges element-wise; a stored histogram of the wrong shape counts as empty 156ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficAggregator > writes minute AND hour keys per scope, counting status classes, bytes and durations 153ms
+ ✓ test/lib/trafficAnalytics.test.ts > commitRollups > accumulates over two commits (upsert) and stores the cursor 169ms
+ ✓ test/lib/trafficAnalytics.test.ts > commitRollups > ignores a cursor of the wrong shape 152ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > holds ordinary rotation for an active observation and resumes after close 375ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > enforces the disk bound by invalidating observations before forced rotation 641ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > invalidates active observations when analytics is drained and purged 227ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > 0.16.9: feeds each line to a canary in progress, by the weighted leaf that answered 246ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > ingests complete lines, attributes them, and leaves a partial last line for the next tick 280ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > a crash before the commit re-reads nothing twice: rows and cursor roll back together 227ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > caps a tick at the byte cap and continues where it stopped 239ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > skips a single line longer than the whole cap instead of stalling 216ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > a new inode (Traefik recreated the file) or a truncation resets the cursor 233ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > rotates past the threshold: rename, USR1, drain the .1 file on the next tick, then delete it 894ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > waits for Traefik to reopen before deleting the drained .1 file (re-signals, then gives up) 257ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > USR1 failure: undo the rename, truncate after reading (bare metal), keep counting 830ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > boot hard cap: a huge backlog is skipped to its tail, audited, and rotated 1319ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > drainAndPurge (disable): reads what is left, deletes both files, forgets the cursor 204ms
+ ✓ test/lib/trafficAnalytics.test.ts > TrafficTailer > the default reopen signal is docker kill --signal USR1 ninedeploy-traefik 220ms
+ ✓ test/lib/trafficAnalytics.test.ts > process-wide tailer > starts once, ticks at once, reports running; stop is clean; state is off afterwards 263ms
+ ✓ test/lib/trafficAnalytics.test.ts > process-wide tailer > records a failing tick as error and keeps the process alive 273ms
+ ✓ test/lib/trafficAnalytics.test.ts > process-wide tailer > stop with purge drains and deletes the files 217ms
+ ✓ test/lib/trafficAnalytics.test.ts > settings helpers > analytics is off without a row; retention defaults to 30 and ignores invalid values 213ms
+ ✓ test/lib/trafficAnalytics.test.ts > pruneTrafficRollups (housekeeping step traffic-rollups) > deletes minute rows after 48h and hour rows after the configured days 227ms
+ ✓ test/lib/trafficAnalytics.test.ts > pruneTrafficRollups (housekeeping step traffic-rollups) > deletes in batches of 5000 until done 421ms
+ ✓ test/lib/trafficAnalytics.test.ts > trafficReport > sums series and scopes, merges histograms for percentiles; filters by service 241ms
+ ✓ test/lib/trafficAnalytics.test.ts > trafficReport > rangeStart covers the current bucket plus the range 210ms
+ ✓ test/lib/autoscaler.test.ts > measure > cpu is the average per serving container, in percent of its limit or of one core 154ms
+ ✓ test/lib/autoscaler.test.ts > measure > memory is the percent of the limit; a missing limit holds scaling 147ms
+ ✓ test/lib/autoscaler.test.ts > measure > holds without stats, and rps needs traffic analytics 149ms
+ ✓ test/lib/autoscaler.test.ts > requestRate > counts per service in ten-second buckets, leaves out the last bucket, and forgets after a day 157ms
+ ✓ test/lib/autoscaler.test.ts > decide > scales up once the need has lasted the up window, to the smallest count asked for 145ms
+ ✓ test/lib/autoscaler.test.ts > decide > scales down only after the down window, to the largest count asked for in it 152ms
+ ✓ test/lib/autoscaler.test.ts > decide > a value back near the target, or a swing the other way, restarts the window 147ms
+ ✓ test/lib/autoscaler.test.ts > decide > does not act when the window asks for the current count after all, and labels rps 147ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: starts and probes each spare, then routes them and audits 153ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: stops at a spare that fails its healthcheck, and says so 154ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: a spare that does not exist (autoscaling turned on since the deploy) leaves everything as it was 149ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > down: routes the containers away first, then stops them 152ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > down: a failed stop is logged; the containers are already unrouted 149ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > a deploy that replaced the runtime meanwhile wins: nothing is written or audited 148ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > holds with the reason and touches nothing 149ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > stops a spare that runs unrouted 176ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > moves inside new bounds at once 203ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > G5.6: raises to a scheduled floor while its window is in force, and names it 210ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > G5.6: outside the window the floor does not hold capacity 193ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > measures, waits the window, then scales; status shows what it saw 201ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > starts a new decision window and confirms routing after a redeploy between ticks 203ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > does not treat a long unobserved gap as sustained load 211ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > does not scale on the same cached sample twice 209ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > restarts the decision window when the collector sample timestamp moves backwards 217ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > holds when the metric cannot be read 211ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > names each reason not to measure 221ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > reads a stored configuration, and none from an invalid one 212ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > lists the metrics each placement can act on 218ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > dispatches node work separately and cancels it during shutdown 212ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > releases a node service after a worker failure so a later tick can retry 330ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > runs recovery even without configured autoscaling services 213ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > cancels an in-flight recovery and waits for it before shutdown 216ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > reports recovery failure while continuing the ordinary autoscaler tick 215ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > looks at autoscaled services only, one step per service at a time 327ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > does nothing without autoscaled services, and reports a failed load 224ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > reports a failed step 216ms
+ ✓ test/lib/sleep.test.ts > sleepHoldReason > starts the idle window when it first sees a runtime, then sleeps after it with no request 164ms
+ ✓ test/lib/sleep.test.ts > sleepHoldReason > a request restarts the window, and a new runtime (a deploy) does too 147ms
+ ✓ test/lib/sleep.test.ts > sleepHoldReason > names every other reason 155ms
+ ✓ test/lib/sleep.test.ts > putToSleep > does not sleep a runtime protected by pending primary recovery 159ms
+ ✓ test/lib/sleep.test.ts > putToSleep > routes the domains to the wake endpoint first, then stops the serving containers, and audits 154ms
+ ✓ test/lib/sleep.test.ts > putToSleep > stays awake when the routes cannot be written 148ms
+ ✓ test/lib/sleep.test.ts > putToSleep > logs a failed stop; the domains are on the wake endpoint already 151ms
+ ✓ test/lib/sleep.test.ts > putToSleep > does nothing when the row moved on (a deploy, a stop) 165ms
+ ✓ test/lib/sleep.test.ts > wakeService > starts the containers, waits for the healthcheck, routes back and audits 152ms
+ ✓ test/lib/sleep.test.ts > wakeService > concurrent requests share one wake 225ms
+ ✓ test/lib/sleep.test.ts > wakeService > uses the service healthcheck timeout 150ms
+ ✓ test/lib/sleep.test.ts > wakeService > stays asleep when the containers will not start or fail the healthcheck 158ms
+ ✓ test/lib/sleep.test.ts > wakeService > a service woken meanwhile (a deploy) is not routed or audited again 160ms
+ ✓ test/lib/sleep.test.ts > servingContainers, markAwake > lists the serving containers 158ms
+ ✓ test/lib/sleep.test.ts > servingContainers, markAwake > markAwake starts a window by hand 164ms
+ ✓ test/lib/sleep.test.ts > createSleeper > puts idle services to sleep and skips the rest 207ms
+ ✓ test/lib/sleep.test.ts > createSleeper > reports a failed load and a failed sleep, and does nothing without candidates 217ms
+ ✓ test/lib/sleep.test.ts > the sleeper plugin > loads services with sleepAfterMinutes, their routed domains and in-flight deploys 434ms
+stdout | test/lib/requestRateLargeHistory.test.ts > long-running valid request history returns latest bucket without throwing
+EXPECTED: 2000000000 error null; ACTUAL: 2000000000 null
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/requestRateLargeHistory.test.ts > long-running traffic history does not abort the scale-to-zero idle decision
+EXPECTED: idle decision null without error; ACTUAL: null null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/requestRateLargeHistory.test.ts > control: last timestamp works for a full day of distinct buckets 3ms
+ ✓ test/lib/requestRateLargeHistory.test.ts > long-running valid request history returns latest bucket without throwing 14ms
+ ✓ test/lib/requestRateLargeHistory.test.ts > long-running traffic history does not abort the scale-to-zero idle decision 13ms
+
+ Test Files  5 passed (5)
+      Tests  95 passed (95)
+   Start at  00:55:12
+   Duration  23.36s (tests 92%, import 7%, transform 1%)

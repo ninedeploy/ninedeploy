@@ -566,3 +566,14 @@ cases and one full-day control), then 91 neighboring tests passed. Eleven
 independent arithmetic/history/idle-boundary cases passed three times. Bucket
 memory retention is a separate scope; no live 23-day run or native Mac acceptance
 was claimed.
+
+Round 63 (F1081) bounds request buckets on the traffic-write path, including
+consumers that never call the rate reader. Before repair, a fixed 30-day stream
+retained 7.34 MB after explicit GC against a 2 MB budget (one-day control454 KB).
+The original proof then retained681 KB; three independent verification runs
+retained about920 KB and passed ten memory/boundary/order/jump/reset controls.
+Four permanent tests were seen red (three failing cases and one control), then
+95 neighboring tests passed. Retention is inclusive24 hours behind the latest
+recorded event, not wall-clock cleanup with no events; distinct service-ID counts
+and process RSS are not bounded by this fix. No live30-day/native Mac acceptance
+or full release certification was claimed.

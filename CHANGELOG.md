@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Traffic collection now expires request buckets on advancing writes, bounding per-service history to the latest recorded 24-hour window even when no rate reader runs (F1081).
 - Latest request-time calculations no longer overflow the call stack on large valid bucket histories, preserving scale-to-zero idle decisions during long-running traffic collection (F1080).
 - Automatic image-update digest writes preserve completed opt-outs and replacement baselines across initial observation, refused update and already-admitted enqueue paths (F1079).
 - Automatic image updates recheck opt-in, running state, image/digest and in-flight work atomically when enqueuing, preserving operator changes and avoiding competing duplicate deployments (F1078).
