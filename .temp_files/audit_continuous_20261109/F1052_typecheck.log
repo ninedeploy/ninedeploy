@@ -1,0 +1,999 @@
+$ tsc --noEmit
+runtime: VirtualAlloc of 81920 bytes failed with errno=1455
+fatal error: runtime: VirtualAlloc of 8192 bytes failed with errno=1455
+fatal error: runtime: VirtualAlloc of 16384 bytes failed with errno=1455
+fatal error: out of memory
+out of memory
+out of memory
+
+runtime stack:
+runtime.throw({0x7ff7cb814c38?, 0xea16fff5f0?})
+	runtime/panic.go:1229 +0x4d fp=0xea16fff5b8 sp=0xea16fff588 pc=0x7ff7cacc4fad
+runtime.sysUsedOS(0x3e20f8600000, 0x14000)
+	runtime/mem_windows.go:83 +0x1e5 fp=0xea16fff638 sp=0xea16fff5b8 pc=0x7ff7cac64e85
+runtime.sysUsed(...)
+	runtime/mem.go:91
+runtime.(*mheap).allocSpan(0x7ff7cc344f60, 0xa, 0x0, 0x82)
+	runtime/mheap.go:1404 +0x4a7 fp=0xea16fff6e8 sp=0xea16fff638 pc=0x7ff7cac7b7e7
+runtime.(*mheap).alloc.func1()
+	runtime/mheap.go:1017 +0x5c fp=0xea16fff730 sp=0xea16fff6e8 pc=0x7ff7cac7af9c
+runtime.systemstack(0x3e20c42cc000)
+	runtime/asm_amd64.s:562 +0x49 fp=0xea16fff740 sp=0xea16fff730 pc=0x7ff7caccaa69
+
+goroutine 8321 gp=0x3e20bcdb0000 m=56 mp=0x3e20c429a808 [running]:
+runtime.systemstack_switch()
+	runtime/asm_amd64.s:516 +0x8 fp=0x3e20f5367ff0 sp=0x3e20f5367fe0 pc=0x7ff7caccaa08
+runtime.(*mheap).alloc(0x0?, 0xe70a?, 0x87?)
+	runtime/mheap.go:1011 +0x57 fp=0x3e20f5368038 sp=0x3e20f5367ff0 pc=0x7ff7cac7aef7
+runtime.(*mcentral).grow(0x14000?)
+	runtime/mcentral.go:253 +0x36 fp=0x3e20f5368068 sp=0x3e20f5368038 pc=0x7ff7cac62a36
+runtime.(*mcentral).cacheSpan(0x7ff7cc35b578)
+	runtime/mcentral.go:171 +0x454 fp=0x3e20f53680e0 sp=0x3e20f5368068 pc=0x7ff7cac628b4
+runtime.(*mcache).refill(0x2707ed22c40, 0x82?)
+	runtime/mcache.go:205 +0x16b fp=0x3e20f5368120 sp=0x3e20f53680e0 pc=0x7ff7cac61e8b
+runtime.(*mcache).nextFree(0x2707ed22c40, 0x82)
+	runtime/malloc.go:1006 +0x7e fp=0x3e20f5368158 sp=0x3e20f5368120 pc=0x7ff7cac5e35e
+runtime.mallocgcSmallScanHeader(0x0?, 0x7ff7cb6d01c0)
+	runtime/malloc.go:1627 +0x18e fp=0x3e20f53681b0 sp=0x3e20f5368158 pc=0x7ff7cac5ef8e
+runtime.mallocgc(0x6a20, 0x7ff7cb6d01c0, 0x1)
+	runtime/malloc.go:1152 +0xac fp=0x3e20f53681e0 sp=0x3e20f53681b0 pc=0x7ff7cacc2f0c
+runtime.growslice(0x0, 0x3e20e655bf50?, 0x3e20c4d71028?, 0x3e20f5368298?, 0x7ff7cb6d01c0)
+	runtime/slice.go:273 +0x507 fp=0x3e20f5368250 sp=0x3e20f53681e0 pc=0x7ff7cacc6e67
+slices.Grow[...](...)
+	slices/slices.go:426
+github.com/microsoft/typescript-go/internal/core.(*Arena[...]).New(0x3e20f8363568)
+	github.com/microsoft/typescript-go/internal/core/arena.go:17 +0x65 fp=0x3e20f5368288 sp=0x3e20f5368250 pc=0x7ff7caedc945
+github.com/microsoft/typescript-go/internal/checker.(*Checker).newSymbol(0x3e20c71ac1e8?, 0x2000, {0x3e20b792541f, 0x8})
+	github.com/microsoft/typescript-go/internal/checker/checker.go:13998 +0x31 fp=0x3e20f53682a8 sp=0x3e20f5368288 pc=0x7ff7cb0314b1
+github.com/microsoft/typescript-go/internal/checker.(*Checker).instantiateSymbol(0x3e20c71ab908, 0x3e20c4d71028, 0x3e20f8311980)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:20686 +0x1cf fp=0x3e20f5368308 sp=0x3e20f53682a8 pc=0x7ff7cb059d8f
+github.com/microsoft/typescript-go/internal/checker.(*Checker).instantiateSymbolTable(0x3e20c71ab908, 0x3e20b75e0f90, 0x3e20f8311980)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:20652 +0x113 fp=0x3e20f53683c0 sp=0x3e20f5368308 pc=0x7ff7cb059b13
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveObjectTypeMembers(0x3e20c71ab908, 0x3e20f836d340, 0x3e20c8bf7980, {0x3e20b6666680, 0x4, 0x4}, {0x3e20f835c780, 0x4, 0x4})
+	github.com/microsoft/typescript-go/internal/checker/checker.go:19027 +0x210 fp=0x3e20f5368540 sp=0x3e20f53683c0 pc=0x7ff7cb04ea50
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveTypeReferenceMembers(0x3e20c71ab908, 0x3e20f836d340)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:19008 +0x131 fp=0x3e20f53685d8 sp=0x3e20f5368540 pc=0x7ff7cb04e811
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveStructuredTypeMembers(0x3e20c71ab908?, 0x3e20f836d340)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:18973 +0x8c fp=0x3e20f5368630 sp=0x3e20f53685d8 pc=0x7ff7cb04e64c
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getPropertiesOfObjectType(...)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:18761
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getPropertiesOfType(0x3e20c71ab908, 0x3e20f836d260?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:18756 +0x45 fp=0x3e20f5368650 sp=0x3e20f5368630 pc=0x7ff7cb04d645
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveObjectTypeMembers(0x3e20c71ab908, 0x3e20f836d180, 0x3e20c8bf7680, {0x3e20b53f6f40, 0x2, 0x2}, {0x3e20f836e010, 0x2, 0x2})
+	github.com/microsoft/typescript-go/internal/checker/checker.go:19045 +0x6fa fp=0x3e20f53687d0 sp=0x3e20f5368650 pc=0x7ff7cb04ef3a
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveTypeReferenceMembers(0x3e20c71ab908, 0x3e20f836d180)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:19008 +0x131 fp=0x3e20f5368868 sp=0x3e20f53687d0 pc=0x7ff7cb04e811
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveStructuredTypeMembers(0x3e20c71ab908?, 0x3e20f836d180)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:18973 +0x8c fp=0x3e20f53688c0 sp=0x3e20f5368868 pc=0x7ff7cb04e64c
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getPropertiesOfObjectType(...)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:18761
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getPropertiesOfType(0x3e20c71ab908, 0x3e20f836d0a0?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:18756 +0x45 fp=0x3e20f53688e0 sp=0x3e20f53688c0 pc=0x7ff7cb04d645
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveObjectTypeMembers(0x3e20c71ab908, 0x3e20f836cb60, 0x3e20cb34b680, {0x3e20cb553320, 0x3, 0x4}, {0x3e20f82eee40, 0x3, 0x3})
+	github.com/microsoft/typescript-go/internal/checker/checker.go:19045 +0x6fa fp=0x3e20f5368a60 sp=0x3e20f53688e0 pc=0x7ff7cb04ef3a
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveTypeReferenceMembers(0x3e20c71ab908, 0x3e20f836cb60)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:19008 +0x131 fp=0x3e20f5368af8 sp=0x3e20f5368a60 pc=0x7ff7cb04e811
+github.com/microsoft/typescript-go/internal/checker.(*Checker).resolveStructuredTypeMembers(0x3e20f5368b90?, 0x3e20f836cb60)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:18973 +0x8c fp=0x3e20f5368b50 sp=0x3e20f5368af8 pc=0x7ff7cb04e64c
+github.com/microsoft/typescript-go/internal/checker.(*Checker).isWeakType(0x3e20c71ab908?, 0x3e20f836cee0?)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:683 +0x90 fp=0x3e20f5368ba0 sp=0x3e20f5368b50 pc=0x7ff7cb10b590
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cd5b4c00, 0x3e20f836cee0, 0x3e20f836cb60, 0x3, 0x0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2678 +0x51b fp=0x3e20f5368c58 sp=0x3e20f5368ba0 pc=0x7ff7cb115d1b
+github.com/microsoft/typescript-go/internal/checker.(*Relater).signatureRelatedTo.func1(0x3e20c71ab908?, 0x3e20f82cca80?, 0x0?)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4549 +0x2e fp=0x3e20f5368c98 sp=0x3e20f5368c58 pc=0x7ff7cb12388e
+github.com/microsoft/typescript-go/internal/checker.(*Checker).compareSignaturesRelated(0x3e20c71ab908, 0x3e20f82cca00, 0x3e20f82cca80, 0x0, 0x0, 0x3e20f5368e40, 0x3e20f82eee28, 0x3e20bbb660a8)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:1619 +0xf24 fp=0x3e20f5368df0 sp=0x3e20f5368c98 pc=0x7ff7cb10ffa4
+github.com/microsoft/typescript-go/internal/checker.(*Relater).signatureRelatedTo(0x3e20cd5b4c00, 0xd?, 0x3e20f82cc900?, 0x73?, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4551 +0x127 fp=0x3e20f5368e60 sp=0x3e20f5368df0 pc=0x7ff7cb123807
+github.com/microsoft/typescript-go/internal/checker.(*Relater).signaturesRelatedTo(0x3e20cd5b4c00, 0x3e20f4236480, 0x3e20f423d5c0, 0x0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4473 +0x325 fp=0x3e20f5368f30 sp=0x3e20f5368e60 pc=0x7ff7cb123145
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cd5b4c00, 0x3e20f4236480, 0x3e20f423d5c0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3866 +0x2edf fp=0x3e20f5369248 sp=0x3e20f5368f30 pc=0x7ff7cb11c97f
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cd5b4c00, 0x3e20f4236480, 0x3e20f423d5c0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20f53692d0 sp=0x3e20f5369248 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cd5b4c00, 0x3e20f4236480, 0x3e20f423d5c0, 0x0, 0x1, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20f5369548 sp=0x3e20f53692d0 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cd5b4c00, 0x3e20f4236480, 0x3e20f423d5c0, 0x3, 0x0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20f5369600 sp=0x3e20f5369548 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isPropertySymbolTypeRelated(0x3e20cd5b4c00, 0x3e20f41a9f28, 0x3e20cc309710?, 0x3e20f5369908, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4335 +0xee fp=0x3e20f5369650 sp=0x3e20f5369600 pc=0x7ff7cb1219ee
+github.com/microsoft/typescript-go/internal/checker.(*Relater).propertyRelatedTo(0x3e20cd5b4c00, 0x3e20f41d0fc0, 0x3e20f41d0ee0, 0x3e20f41a9f28, 0x3e20f41a9928, 0x3e20f5369908, 0x0, 0x1, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4303 +0x82e fp=0x3e20f53697a8 sp=0x3e20f5369650 pc=0x7ff7cb12154e
+github.com/microsoft/typescript-go/internal/checker.(*Relater).propertiesRelatedTo(0x3e20cd5b4c00, 0x3e20f41d0fc0, 0x3e20f41d0ee0, 0x0, {0x0}, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4252 +0xd9d fp=0x3e20f5369928 sp=0x3e20f53697a8 pc=0x7ff7cb1201fd
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cd5b4c00, 0x3e20f41d0fc0, 0x3e20f41d0ee0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3864 +0x2ea7 fp=0x3e20f5369c40 sp=0x3e20f5369928 pc=0x7ff7cb11c947
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cd5b4c00, 0x3e20f41d0fc0, 0x3e20f41d0ee0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20f5369cc8 sp=0x3e20f5369c40 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cd5b4c00, 0x3e20f41d0fc0, 0x3e20f41d0ee0, 0x0, 0x1, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20f5369f40 sp=0x3e20f5369cc8 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cd5b4c00, 0x3e20f41d0fc0, 0x3e20f41d0ee0, 0x1, 0x0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20f5369ff8 sp=0x3e20f5369f40 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).someTypeRelatedToType(0x3e20cd5b4c00, 0x3e20f41bab40, 0x3e20f41d0ee0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2924 +0xe5 fp=0x3e20f536a050 sp=0x3e20f5369ff8 pc=0x7ff7cb117ba5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).unionOrIntersectionRelatedTo(0x3e20cd5b4c00, 0x3e20f41bab40, 0x3e20f41d0ee0, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2915 +0x205 fp=0x3e20f536a0c0 sp=0x3e20f536a050 pc=0x7ff7cb117805
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cd5b4c00, 0x3e20f41bab40, 0x3e20f41d0ee0, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3373 +0x732 fp=0x3e20f536a3d8 sp=0x3e20f536a0c0 pc=0x7ff7cb11a1d2
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cd5b4c00, 0x3e20f41bab40, 0x3e20f41d0ee0, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20f536a460 sp=0x3e20f536a3d8 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cd5b4c00, 0x3e20f41bab40, 0x3e20f41d0ee0, 0x0, 0x2, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20f536a6d8 sp=0x3e20f536a460 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cd5b4c00, 0x3e20f41bab40, 0x3e20f41d0ee0, 0x2, 0x0, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20f536a790 sp=0x3e20f536a6d8 pc=0x7ff7cb1161cb
+...240 frames elided...
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20c27463c0, 0x3e20f3d8fc80, 0x3e20f3d8fbc0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20f537d570 sp=0x3e20f537d4e8 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20c27463c0, 0x3e20f3d8fc80, 0x3e20f3d8fbc0, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20f537d7e8 sp=0x3e20f537d570 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20c27463c0, 0x3e20f3d8fc80, 0x3e20f3d8fbc0, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20f537d8a0 sp=0x3e20f537d7e8 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isPropertySymbolTypeRelated(0x3e20c27463c0, 0x3e20f3a710e8, 0x3e20c8bf7500?, 0x3e20cc31dba8, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4335 +0xee fp=0x3e20f537d8f0 sp=0x3e20f537d8a0 pc=0x7ff7cb1219ee
+github.com/microsoft/typescript-go/internal/checker.(*Relater).propertyRelatedTo(0x3e20c27463c0, 0x3e20f3c0a1c0, 0x3e20f29667e0, 0x3e20f3a710e8, 0x3e20f35120a8, 0x3e20cc31dba8, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4303 +0x82e fp=0x3e20f537da48 sp=0x3e20f537d8f0 pc=0x7ff7cb12154e
+github.com/microsoft/typescript-go/internal/checker.(*Relater).propertiesRelatedTo(0x3e20c27463c0, 0x3e20f3c0a1c0, 0x3e20f29667e0, 0x0, {0x0}, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4252 +0xd9d fp=0x3e20f537dbc8 sp=0x3e20f537da48 pc=0x7ff7cb1201fd
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20c27463c0, 0x3e20f3c0a1c0, 0x3e20f29667e0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3864 +0x2ea7 fp=0x3e20f537dee0 sp=0x3e20f537dbc8 pc=0x7ff7cb11c947
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20c27463c0, 0x3e20f3c0a1c0, 0x3e20f29667e0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20f537df68 sp=0x3e20f537dee0 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20c27463c0, 0x3e20f3c0a1c0, 0x3e20f29667e0, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20f537e1e0 sp=0x3e20f537df68 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20c27463c0, 0x3e20f3c0a1c0, 0x3e20f35350e0, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20f537e298 sp=0x3e20f537e1e0 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isPropertySymbolTypeRelated(0x3e20c27463c0, 0x3e20f3a33a48, 0x7ff7cac45e29?, 0x3e20cc31e5a0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4335 +0xee fp=0x3e20f537e2e8 sp=0x3e20f537e298 pc=0x7ff7cb1219ee
+github.com/microsoft/typescript-go/internal/checker.(*Relater).propertyRelatedTo(0x3e20c27463c0, 0x3e20f3c220c0, 0x3e20bd621500, 0x3e20f3a33a48, 0x3e20c6f95688, 0x3e20cc31e5a0, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4303 +0x82e fp=0x3e20f537e440 sp=0x3e20f537e2e8 pc=0x7ff7cb12154e
+github.com/microsoft/typescript-go/internal/checker.(*Relater).propertiesRelatedTo(0x3e20c27463c0, 0x3e20f3c220c0, 0x3e20bd621500, 0x0, {0x0}, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4252 +0xd9d fp=0x3e20f537e5c0 sp=0x3e20f537e440 pc=0x7ff7cb1201fd
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20c27463c0, 0x3e20f3c220c0, 0x3e20bd621500, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3864 +0x2ea7 fp=0x3e20f537e8d8 sp=0x3e20f537e5c0 pc=0x7ff7cb11c947
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20c27463c0, 0x3e20f3c220c0, 0x3e20bd621500, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20f537e960 sp=0x3e20f537e8d8 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20c27463c0, 0x3e20f3c220c0, 0x3e20bd621500, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20f537ebd8 sp=0x3e20f537e960 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20c27463c0, 0x3e20f3c220c0, 0x3e20bd621500, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20f537ec90 sp=0x3e20f537ebd8 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).membersRelatedToIndexInfo(0x3e20c27463c0, 0x3e20f3c23980, 0x3e20f352bfc8, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4649 +0x28f fp=0x3e20f537ed48 sp=0x3e20f537ec90 pc=0x7ff7cb1242af
+github.com/microsoft/typescript-go/internal/checker.(*Relater).typeRelatedToIndexInfo(0x3e20c27463c0, 0x3e20f3c23980, 0x3e20f352bfc8, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4605 +0xa6 fp=0x3e20f537eda8 sp=0x3e20f537ed48 pc=0x7ff7cb123d06
+github.com/microsoft/typescript-go/internal/checker.(*Relater).indexSignaturesRelatedTo(0x3e20c27463c0, 0x3e20f3c23980, 0x3e20f340bb00?, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:4586 +0x1b4 fp=0x3e20f537ee18 sp=0x3e20f537eda8 pc=0x7ff7cb123bb4
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20c27463c0, 0x3e20f3c23980, 0x3e20f340bb00, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3870 +0x2f68 fp=0x3e20f537f130 sp=0x3e20f537ee18 pc=0x7ff7cb11ca08
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20c27463c0, 0x3e20f3c23980, 0x3e20f340bb00, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20f537f1b8 sp=0x3e20f537f130 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20c27463c0, 0x3e20f3c23980, 0x3e20f340bb00, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20f537f430 sp=0x3e20f537f1b8 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20c27463c0, 0x3e20f3c23980, 0x3e20f340bb00, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20f537f4e8 sp=0x3e20f537f430 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkTypeRelatedToEx(0x3e20c71ab908, 0x3e20f3c23980, 0x3e20f340bb00, 0x3e20b3db6b30, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:371 +0x175 fp=0x3e20f537f7d0 sp=0x3e20f537f4e8 pc=0x7ff7cb1085d5
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkTypeRelatedTo(...)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:353
+github.com/microsoft/typescript-go/internal/checker.(*Checker).isTypeRelatedTo(0x3e20c71ab908, 0x3e2000000000?, 0x0?, 0x3e20b3db6b30)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:201 +0x1e7 fp=0x3e20f537f838 sp=0x3e20f537f7d0 pc=0x7ff7cb107187
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkTypeRelatedToAndOptionallyElaborate(0x3e20c71ab908, 0x3e20f3c23980, 0x3e20f340bb00, 0x3e20b3db6b30, 0x3e20b4b1f2b0, 0x3e20bac9e1e0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:431 +0x45 fp=0x3e20f537f880 sp=0x3e20f537f838 pc=0x7ff7cb1091a5
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkTypeAssignableToAndOptionallyElaborate(...)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:427
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkVariableLikeDeclaration(0x3e20c71ab908, 0x3e20b4b1f2b0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:5878 +0x39d fp=0x3e20f537f9c8 sp=0x3e20f537f880 pc=0x7ff7caffd4bd
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkVariableDeclaration(0x3e20c71ab908, 0x3e20b4b1f2b0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:5765 +0x1ad fp=0x3e20f537fa38 sp=0x3e20f537f9c8 pc=0x7ff7caffcfad
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElementWorker(0x3e20c71ab908, 0x3e20b4b1f2b0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2346 +0x333 fp=0x3e20f537faa8 sp=0x3e20f537fa38 pc=0x7ff7cafe61b3
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElement(0x3e20c71ab908, 0x200000002?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2235 +0x66 fp=0x3e20f537fad8 sp=0x3e20f537faa8 pc=0x7ff7cafe5e06
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElements(0x3e20c71ab908, {0x3e20b83f2a10, 0x1, 0x3e20ba9194c8?})
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2225 +0x2d fp=0x3e20f537fb08 sp=0x3e20f537fad8 pc=0x7ff7cafe5ced
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkVariableDeclarationList(0x3e20c71ab908, 0x3e20b9747700)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:5757 +0x96 fp=0x3e20f537fb38 sp=0x3e20f537fb08 pc=0x7ff7caffcdb6
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkVariableStatement(0x3e20c71ab908, 0x3e20b7d0c5a0?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:5749 +0x8e fp=0x3e20f537fb70 sp=0x3e20f537fb38 pc=0x7ff7caffccce
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElementWorker(0x3e20c71ab908, 0x3e20b7d0c5a0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2316 +0x28f fp=0x3e20f537fbe0 sp=0x3e20f537fb70 pc=0x7ff7cafe610f
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElement(0x3e20c71ab908, 0x3e20c7b51290?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2235 +0x66 fp=0x3e20f537fc10 sp=0x3e20f537fbe0 pc=0x7ff7cafe5e06
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElements(0x3e20c71ab908, {0x3e20b83f2a18, 0x3, 0x3e20cc31fcc0?})
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2225 +0x2d fp=0x3e20f537fc40 sp=0x3e20f537fc10 pc=0x7ff7cafe5ced
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceFile(0x3e20c71ab908, {0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x3e20ba913888, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2193 +0x205 fp=0x3e20f537fcd0 sp=0x3e20f537fc40 pc=0x7ff7cafe5985
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getDiagnostics(0x3e20c71ab908, {0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x3e20ba913888, 0x3e20c71abb30)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:13886 +0x67 fp=0x3e20f537fd08 sp=0x3e20f537fcd0 pc=0x7ff7cb030b07
+github.com/microsoft/typescript-go/internal/checker.(*Checker).GetDiagnostics(...)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:13876
+github.com/microsoft/typescript-go/internal/compiler.(*Program).getBindAndCheckDiagnosticsWithChecker(0x3e20b3814c88, {0x7ff7cb9a4e68, 0x7ff7cc382fa0}, 0x3e20c71ab908, 0x3e20ba913888)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:1338 +0xc5 fp=0x3e20f537fe40 sp=0x3e20f537fd08 pc=0x7ff7cb247dc5
+github.com/microsoft/typescript-go/internal/compiler.(*Program).getSemanticDiagnosticsWithChecker(0x3e20b3814c88, {0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x3e20cc31fe18?, 0x3e20ba913888)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:1322 +0x2e fp=0x3e20f537fea0 sp=0x3e20f537fe40 pc=0x7ff7cb247c4e
+github.com/microsoft/typescript-go/internal/compiler.(*Program).getSemanticDiagnosticsWithChecker-fm({0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x7ff7cac49262?, 0x3e20b57ab730?)
+	<autogenerated>:1 +0x30 fp=0x3e20f537fed8 sp=0x3e20f537fea0 pc=0x7ff7cb253410
+github.com/microsoft/typescript-go/internal/compiler.(*Program).collectCheckerDiagnosticsFromFiles.func1(0x7ff7cb5e1920?, 0x590, 0x3e20ba913888?)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:585 +0x47 fp=0x3e20f537ff18 sp=0x3e20f537fed8 pc=0x7ff7cb2390a7
+github.com/microsoft/typescript-go/internal/compiler.(*checkerPool).forEachCheckerGroupDo.func1()
+	github.com/microsoft/typescript-go/internal/compiler/checkerpool.go:159 +0x159 fp=0x3e20f537ffa0 sp=0x3e20f537ff18 pc=0x7ff7cb220ab9
+github.com/microsoft/typescript-go/internal/core.(*parallelWorkGroup).Queue.func1()
+	github.com/microsoft/typescript-go/internal/core/workgroup.go:40 +0x13 fp=0x3e20f537ffb0 sp=0x3e20f537ffa0 pc=0x7ff7cadd8c93
+sync.(*WaitGroup).Go.func1()
+	sync/waitgroup.go:258 +0x4a fp=0x3e20f537ffe0 sp=0x3e20f537ffb0 pc=0x7ff7cacd4f6a
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20f537ffe8 sp=0x3e20f537ffe0 pc=0x7ff7caccc6a1
+created by sync.(*WaitGroup).Go in goroutine 1
+	sync/waitgroup.go:238 +0x73
+
+goroutine 1 gp=0x3e20b371e000 m=nil [sync.WaitGroup.Wait]:
+runtime.gopark(0x7ff7cac5ecd4?, 0x7ff7cac7af40?, 0x30?, 0xb7?, 0x3e20b5bf7d60?)
+	runtime/proc.go:462 +0xce fp=0x3e20b5bf7ce8 sp=0x3e20b5bf7cc8 pc=0x7ff7cacc50ce
+runtime.goparkunlock(...)
+	runtime/proc.go:468
+runtime.semacquire1(0x3e20b6334550, 0x0, 0x1, 0x0, 0x19)
+	runtime/sema.go:192 +0x245 fp=0x3e20b5bf7d50 sp=0x3e20b5bf7ce8 pc=0x7ff7caca5b65
+sync.runtime_SemacquireWaitGroup(0x3e20b371e000?, 0xf3?)
+	runtime/sema.go:114 +0x2e fp=0x3e20b5bf7d88 sp=0x3e20b5bf7d50 pc=0x7ff7cacc650e
+sync.(*WaitGroup).Wait(0x3e20b6334548)
+	sync/waitgroup.go:206 +0x85 fp=0x3e20b5bf7db0 sp=0x3e20b5bf7d88 pc=0x7ff7cacd4de5
+github.com/microsoft/typescript-go/internal/core.(*parallelWorkGroup).RunAndWait(0x3e20b6334540?)
+	github.com/microsoft/typescript-go/internal/core/workgroup.go:46 +0x45 fp=0x3e20b5bf7de8 sp=0x3e20b5bf7db0 pc=0x7ff7cadd8ce5
+github.com/microsoft/typescript-go/internal/compiler.(*checkerPool).forEachCheckerGroupDo(0x3e20c040b080, {0x7ff7cac44425?, 0x3e20c21ab008?}, {0x3e20bb4ca008, 0x632, 0x632}, 0x0, 0x3e20c6802c40)
+	github.com/microsoft/typescript-go/internal/compiler/checkerpool.go:164 +0x14e fp=0x3e20b5bf7e28 sp=0x3e20b5bf7de8 pc=0x7ff7cb2208ee
+github.com/microsoft/typescript-go/internal/compiler.(*Program).collectCheckerDiagnosticsFromFiles(0x3e20b3814c88, {0x7ff7cb9a4e68, 0x7ff7cc382fa0}, {0x3e20bb4ca008, 0x632, 0x632}, 0x3e20b5cf5260)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:584 +0x1b4 fp=0x3e20b5bf7ea8 sp=0x3e20b5bf7e28 pc=0x7ff7cb238db4
+github.com/microsoft/typescript-go/internal/compiler.(*Program).collectCheckerDiagnostics(0x194319a4bfb48?, {0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x3e20b5bf7f80?, 0x7ff7cb4c562f?)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:577 +0x4f fp=0x3e20b5bf7f58 sp=0x3e20b5bf7ea8 pc=0x7ff7cb23896f
+github.com/microsoft/typescript-go/internal/compiler.(*Program).GetSemanticDiagnostics(0x3e20b3814c88, {0x7ff7cb9a4e68, 0x7ff7cc382fa0}, 0x0)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:660 +0x74 fp=0x3e20b5bf7f90 sp=0x3e20b5bf7f58 pc=0x7ff7cb2396f4
+github.com/microsoft/typescript-go/internal/execute/tsc.EmitFilesAndReportErrors.func2({0x7ff7cb9a4e68, 0x7ff7cc382fa0}, 0x0)
+	github.com/microsoft/typescript-go/internal/execute/tsc/emit.go:99 +0x11a fp=0x3e20b5bf8048 sp=0x3e20b5bf7f90 pc=0x7ff7cb49e89a
+github.com/microsoft/typescript-go/internal/compiler.GetDiagnosticsOfAnyProgram({0x7ff7cb9a4e68, 0x7ff7cc382fa0}, {0x7ff7cb9b13b0, 0x3e20b3814c88}, 0x0, 0x0, 0x3e20b5bf8248, 0x3e20b5bf81b8)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:1780 +0x335 fp=0x3e20b5bf80b8 sp=0x3e20b5bf8048 pc=0x7ff7cb24b555
+github.com/microsoft/typescript-go/internal/execute/tsc.EmitFilesAndReportErrors({{0x7ff7cb9ae100, 0x3e20b373c9c0}, {0x7ff7cb9b13b0, 0x3e20b3814c88}, 0x3e20b3814c88, 0x3e20b38b0160, 0x3e20b3884f40, 0x7ff7cb9938f0, {0x7ff7cb9a0260, 0x3e20b3656058}, ...})
+	github.com/microsoft/typescript-go/internal/execute/tsc/emit.go:77 +0x1cb fp=0x3e20b5bf82e8 sp=0x3e20b5bf80b8 pc=0x7ff7cb49e38b
+github.com/microsoft/typescript-go/internal/execute/tsc.EmitAndReportStatistics({{0x7ff7cb9ae100, 0x3e20b373c9c0}, {0x7ff7cb9b13b0, 0x3e20b3814c88}, 0x3e20b3814c88, 0x3e20b38b0160, 0x3e20b3884f40, 0x7ff7cb9938f0, {0x7ff7cb9a0260, 0x3e20b3656058}, ...})
+	github.com/microsoft/typescript-go/internal/execute/tsc/emit.go:47 +0x99 fp=0x3e20b5bf9aa8 sp=0x3e20b5bf82e8 pc=0x7ff7cb49def9
+github.com/microsoft/typescript-go/internal/execute.performCompilation({0x7ff7cb9ae100, 0x3e20b373c9c0}, 0x3e20b38b0160, 0x3e20b3884f40, 0x7ff7cb9938f0, {0x7ff7cb9a1160, 0x3e20b38a2150}, 0x3e20b36799c0, {0x0, 0x0})
+	github.com/microsoft/typescript-go/internal/execute/tsc.go:353 +0x49c fp=0x3e20b5bf9c60 sp=0x3e20b5bf9aa8 pc=0x7ff7cb4c057c
+github.com/microsoft/typescript-go/internal/execute.tscCompilation({0x7ff7cb9a5158, 0x3e20b386c940}, {0x7ff7cb9ae100, 0x3e20b373c9c0}, 0x3e20b38b0000, {0x0, 0x0})
+	github.com/microsoft/typescript-go/internal/execute/tsc.go:255 +0xff4 fp=0x3e20b5bf9e48 sp=0x3e20b5bf9c60 pc=0x7ff7cb4bf1f4
+github.com/microsoft/typescript-go/internal/execute.CommandLine({0x7ff7cb9a5158, 0x3e20b386c940}, {0x7ff7cb9ae100, 0x3e20b373c9c0}, {0x3e20b372a450, 0x1, 0x1}, {0x0, 0x0})
+	github.com/microsoft/typescript-go/internal/execute/tsc.go:62 +0x17a fp=0x3e20b5bf9e98 sp=0x3e20b5bf9e48 pc=0x7ff7cb4bdc5a
+main.runMain()
+	github.com/microsoft/typescript-go/cmd/tsgo/main.go:30 +0x1b6 fp=0x3e20b5bf9f30 sp=0x3e20b5bf9e98 pc=0x7ff7cb4c5576
+main.main()
+	github.com/microsoft/typescript-go/cmd/tsgo/main.go:14 +0x13 fp=0x3e20b5bf9f48 sp=0x3e20b5bf9f30 pc=0x7ff7cb4c5393
+runtime.main()
+	runtime/proc.go:290 +0x2c7 fp=0x3e20b5bf9fe0 sp=0x3e20b5bf9f48 pc=0x7ff7cac91807
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b5bf9fe8 sp=0x3e20b5bf9fe0 pc=0x7ff7caccc6a1
+
+goroutine 2 gp=0x3e20b371e780 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3721fa8 sp=0x3e20b3721f88 pc=0x7ff7cacc50ce
+runtime.goparkunlock(...)
+	runtime/proc.go:468
+runtime.forcegchelper()
+	runtime/proc.go:375 +0xb8 fp=0x3e20b3721fe0 sp=0x3e20b3721fa8 pc=0x7ff7cac91af8
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3721fe8 sp=0x3e20b3721fe0 pc=0x7ff7caccc6a1
+created by runtime.init.7 in goroutine 1
+	runtime/proc.go:363 +0x1a
+
+goroutine 3 gp=0x3e20b371eb40 m=nil [GC sweep wait]:
+runtime.gopark(0x1?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3723f88 sp=0x3e20b3723f68 pc=0x7ff7cacc50ce
+runtime.goparkunlock(...)
+	runtime/proc.go:468
+runtime.bgsweep(0x3e20b372e000)
+	runtime/mgcsweep.go:324 +0x151 fp=0x3e20b3723fc8 sp=0x3e20b3723f88 pc=0x7ff7cac777b1
+runtime.gcenable.gowrap1()
+	runtime/mgc.go:214 +0x17 fp=0x3e20b3723fe0 sp=0x3e20b3723fc8 pc=0x7ff7cac68ab7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3723fe8 sp=0x3e20b3723fe0 pc=0x7ff7caccc6a1
+created by runtime.gcenable in goroutine 1
+	runtime/mgc.go:214 +0x66
+
+goroutine 4 gp=0x3e20b371ed20 m=nil [GC scavenge wait]:
+runtime.gopark(0x10000?, 0x7ff7cb995700?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3735f78 sp=0x3e20b3735f58 pc=0x7ff7cacc50ce
+runtime.goparkunlock(...)
+	runtime/proc.go:468
+runtime.(*scavengerState).park(0x7ff7cc338f60)
+	runtime/mgcscavenge.go:425 +0x49 fp=0x3e20b3735fa8 sp=0x3e20b3735f78 pc=0x7ff7cac75229
+runtime.bgscavenge(0x3e20b372e000)
+	runtime/mgcscavenge.go:658 +0x59 fp=0x3e20b3735fc8 sp=0x3e20b3735fa8 pc=0x7ff7cac757b9
+runtime.gcenable.gowrap2()
+	runtime/mgc.go:215 +0x17 fp=0x3e20b3735fe0 sp=0x3e20b3735fc8 pc=0x7ff7cac68a77
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3735fe8 sp=0x3e20b3735fe0 pc=0x7ff7caccc6a1
+created by runtime.gcenable in goroutine 1
+	runtime/mgc.go:215 +0xa5
+
+goroutine 5 gp=0x3e20b371f0e0 m=nil [GOMAXPROCS updater (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3737f88 sp=0x3e20b3737f68 pc=0x7ff7cacc50ce
+runtime.goparkunlock(...)
+	runtime/proc.go:468
+runtime.updateMaxProcsGoroutine()
+	runtime/proc.go:7095 +0xe7 fp=0x3e20b3737fe0 sp=0x3e20b3737f88 pc=0x7ff7caca00a7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3737fe8 sp=0x3e20b3737fe0 pc=0x7ff7caccc6a1
+created by runtime.defaultGOMAXPROCSUpdateEnable in goroutine 1
+	runtime/proc.go:7083 +0x37
+
+goroutine 6 gp=0x3e20b371f2c0 m=nil [finalizer wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3731e20 sp=0x3e20b3731e00 pc=0x7ff7cacc50ce
+runtime.runFinalizers()
+	runtime/mfinal.go:210 +0x107 fp=0x3e20b3731fe0 sp=0x3e20b3731e20 pc=0x7ff7cac679c7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3731fe8 sp=0x3e20b3731fe0 pc=0x7ff7caccc6a1
+created by runtime.createfing in goroutine 1
+	runtime/mfinal.go:172 +0x3d
+
+goroutine 7 gp=0x3e20b371f680 m=nil [cleanup wait]:
+runtime.gopark(0x101000000000000?, 0x65?, 0x3?, 0x0?, 0x7ff7cc2be7a0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3725f68 sp=0x3e20b3725f48 pc=0x7ff7cacc50ce
+runtime.goparkunlock(...)
+	runtime/proc.go:468
+runtime.(*cleanupQueue).dequeue(0x7ff7cc339180)
+	runtime/mcleanup.go:522 +0xd4 fp=0x3e20b3725fa0 sp=0x3e20b3725f68 pc=0x7ff7cac64074
+runtime.runCleanups()
+	runtime/mcleanup.go:718 +0x45 fp=0x3e20b3725fe0 sp=0x3e20b3725fa0 pc=0x7ff7cac646e5
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3725fe8 sp=0x3e20b3725fe0 pc=0x7ff7caccc6a1
+created by runtime.(*cleanupQueue).createGs in goroutine 1
+	runtime/mcleanup.go:672 +0xa5
+
+goroutine 8 gp=0x3e20b371f860 m=5 mp=0x3e20b3780008 [syscall]:
+runtime.notetsleepg(0x7ff7cc3837a0, 0xffffffffffffffff)
+	runtime/lock_sema.go:175 +0x31 fp=0x3e20b3733fa0 sp=0x3e20b3733f68 pc=0x7ff7cac5cad1
+os/signal.signal_recv()
+	runtime/sigqueue.go:152 +0x98 fp=0x3e20b3733fc0 sp=0x3e20b3733fa0 pc=0x7ff7cacc6738
+os/signal.loop()
+	os/signal/signal_unix.go:23 +0x13 fp=0x3e20b3733fe0 sp=0x3e20b3733fc0 pc=0x7ff7cad4e833
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3733fe8 sp=0x3e20b3733fe0 pc=0x7ff7caccc6a1
+created by os/signal.Notify.func1.1 in goroutine 1
+	os/signal/signal.go:152 +0x1f
+
+goroutine 9 gp=0x3e20b371fa40 m=nil [select]:
+runtime.gopark(0x3e20b38a9f98?, 0x2?, 0x68?, 0x31?, 0x3e20b38a9f8c?)
+	runtime/proc.go:462 +0xce fp=0x3e20b38a9e28 sp=0x3e20b38a9e08 pc=0x7ff7cacc50ce
+runtime.selectgo(0x3e20b38a9f98, 0x3e20b38a9f88, 0x0?, 0x0, 0x0?, 0x1)
+	runtime/select.go:351 +0xaa5 fp=0x3e20b38a9f58 sp=0x3e20b38a9e28 pc=0x7ff7caca4ca5
+os/signal.NotifyContext.func1()
+	os/signal/signal.go:292 +0x7c fp=0x3e20b38a9fe0 sp=0x3e20b38a9f58 pc=0x7ff7cad4e31c
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b38a9fe8 sp=0x3e20b38a9fe0 pc=0x7ff7caccc6a1
+created by os/signal.NotifyContext in goroutine 1
+	os/signal/signal.go:291 +0x158
+
+goroutine 82 gp=0x3e20b3aa2000 m=nil [GC worker (idle)]:
+runtime.gopark(0x3e20b3a4cd80?, 0x7d3de32b72960e45?, 0x3b?, 0xdc?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b38a5f40 sp=0x3e20b38a5f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b38a5fc8 sp=0x3e20b38a5f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b38a5fe0 sp=0x3e20b38a5fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b38a5fe8 sp=0x3e20b38a5fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 83 gp=0x3e20b3aa21e0 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3c09f40 sp=0x3e20b3c09f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3c09fc8 sp=0x3e20b3c09f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3c09fe0 sp=0x3e20b3c09fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3c09fe8 sp=0x3e20b3c09fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 84 gp=0x3e20b3aa23c0 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3c0bf40 sp=0x3e20b3c0bf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3c0bfc8 sp=0x3e20b3c0bf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3c0bfe0 sp=0x3e20b3c0bfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3c0bfe8 sp=0x3e20b3c0bfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 85 gp=0x3e20b3aa25a0 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3aabf40 sp=0x3e20b3aabf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3aabfc8 sp=0x3e20b3aabf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3aabfe0 sp=0x3e20b3aabfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3aabfe8 sp=0x3e20b3aabfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 86 gp=0x3e20b3aa2780 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3aadf40 sp=0x3e20b3aadf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3aadfc8 sp=0x3e20b3aadf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3aadfe0 sp=0x3e20b3aadfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3aadfe8 sp=0x3e20b3aadfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 87 gp=0x3e20b3aa2960 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ab3f40 sp=0x3e20b3ab3f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ab3fc8 sp=0x3e20b3ab3f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ab3fe0 sp=0x3e20b3ab3fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ab3fe8 sp=0x3e20b3ab3fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 88 gp=0x3e20b3aa2b40 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ab5f40 sp=0x3e20b3ab5f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ab5fc8 sp=0x3e20b3ab5f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ab5fe0 sp=0x3e20b3ab5fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ab5fe8 sp=0x3e20b3ab5fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 89 gp=0x3e20b3aa2d20 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3aaff40 sp=0x3e20b3aaff20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3aaffc8 sp=0x3e20b3aaff40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3aaffe0 sp=0x3e20b3aaffc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3aaffe8 sp=0x3e20b3aaffe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 90 gp=0x3e20b3aa2f00 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ab1f40 sp=0x3e20b3ab1f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ab1fc8 sp=0x3e20b3ab1f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ab1fe0 sp=0x3e20b3ab1fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ab1fe8 sp=0x3e20b3ab1fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 91 gp=0x3e20b3aa30e0 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3c19f40 sp=0x3e20b3c19f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3c19fc8 sp=0x3e20b3c19f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3c19fe0 sp=0x3e20b3c19fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3c19fe8 sp=0x3e20b3c19fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 92 gp=0x3e20b3aa32c0 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3c1bf40 sp=0x3e20b3c1bf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3c1bfc8 sp=0x3e20b3c1bf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3c1bfe0 sp=0x3e20b3c1bfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3c1bfe8 sp=0x3e20b3c1bfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 93 gp=0x3e20b3aa34a0 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943555637c8c?, 0x1?, 0x60?, 0xf8?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3c21f40 sp=0x3e20b3c21f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3c21fc8 sp=0x3e20b3c21f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3c21fe0 sp=0x3e20b3c21fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3c21fe8 sp=0x3e20b3c21fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 94 gp=0x3e20b3aa3680 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943553e7c908?, 0x3?, 0x84?, 0x83?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3c23f40 sp=0x3e20b3c23f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3c23fc8 sp=0x3e20b3c23f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3c23fe0 sp=0x3e20b3c23fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3c23fe8 sp=0x3e20b3c23fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 95 gp=0x3e20b3aa3860 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943553e7c908?, 0x3?, 0x94?, 0x6?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3abbf40 sp=0x3e20b3abbf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3abbfc8 sp=0x3e20b3abbf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3abbfe0 sp=0x3e20b3abbfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3abbfe8 sp=0x3e20b3abbfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 96 gp=0x3e20b3aa3a40 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943555637c8c?, 0x1?, 0x20?, 0x58?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3abdf40 sp=0x3e20b3abdf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3abdfc8 sp=0x3e20b3abdf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3abdfe0 sp=0x3e20b3abdfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3abdfe8 sp=0x3e20b3abdfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 97 gp=0x3e20b3aa3c20 m=nil [GC worker (idle)]:
+runtime.gopark(0x19435315166c4?, 0x3?, 0xac?, 0x3d?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ab7f40 sp=0x3e20b3ab7f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ab7fc8 sp=0x3e20b3ab7f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ab7fe0 sp=0x3e20b3ab7fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ab7fe8 sp=0x3e20b3ab7fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 114 gp=0x3e20b3ac0000 m=nil [GC worker (idle)]:
+runtime.gopark(0x19435315166c4?, 0x1?, 0x10?, 0xde?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ab9f40 sp=0x3e20b3ab9f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ab9fc8 sp=0x3e20b3ab9f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ab9fe0 sp=0x3e20b3ab9fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ab9fe8 sp=0x3e20b3ab9fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 115 gp=0x3e20b3ac01e0 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943555637c8c?, 0x1?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3c29f40 sp=0x3e20b3c29f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3c29fc8 sp=0x3e20b3c29f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3c29fe0 sp=0x3e20b3c29fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3c29fe8 sp=0x3e20b3c29fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 116 gp=0x3e20b3ac03c0 m=nil [GC worker (idle)]:
+runtime.gopark(0x7ff7cc3840a0?, 0x1?, 0x30?, 0xe5?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3c2bf40 sp=0x3e20b3c2bf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3c2bfc8 sp=0x3e20b3c2bf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3c2bfe0 sp=0x3e20b3c2bfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3c2bfe8 sp=0x3e20b3c2bfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 117 gp=0x3e20b3ac05a0 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943555637c8c?, 0x1?, 0xac?, 0x46?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ac7f40 sp=0x3e20b3ac7f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ac7fc8 sp=0x3e20b3ac7f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ac7fe0 sp=0x3e20b3ac7fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ac7fe8 sp=0x3e20b3ac7fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 118 gp=0x3e20b3ac0780 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943553aad840?, 0x1?, 0x30?, 0xe3?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ac9f40 sp=0x3e20b3ac9f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ac9fc8 sp=0x3e20b3ac9f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ac9fe0 sp=0x3e20b3ac9fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ac9fe8 sp=0x3e20b3ac9fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 119 gp=0x3e20b3ac0960 m=nil [GC worker (idle)]:
+runtime.gopark(0x19435315166c4?, 0x3?, 0xa4?, 0xc2?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b37a1f40 sp=0x3e20b37a1f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b37a1fc8 sp=0x3e20b37a1f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b37a1fe0 sp=0x3e20b37a1fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b37a1fe8 sp=0x3e20b37a1fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 120 gp=0x3e20b3ac0b40 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943555637c8c?, 0x1?, 0xd8?, 0xaf?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b379bf40 sp=0x3e20b379bf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b379bfc8 sp=0x3e20b379bf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b379bfe0 sp=0x3e20b379bfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b379bfe8 sp=0x3e20b379bfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 121 gp=0x3e20b3ac0d20 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943555637c8c?, 0x1?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ac3f40 sp=0x3e20b3ac3f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ac3fc8 sp=0x3e20b3ac3f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ac3fe0 sp=0x3e20b3ac3fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ac3fe8 sp=0x3e20b3ac3fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 122 gp=0x3e20b3ac0f00 m=nil [GC worker (idle)]:
+runtime.gopark(0x19431c0c8d750?, 0x1?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ac5f40 sp=0x3e20b3ac5f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ac5fc8 sp=0x3e20b3ac5f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ac5fe0 sp=0x3e20b3ac5fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ac5fe8 sp=0x3e20b3ac5fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 123 gp=0x3e20b3ac10e0 m=nil [GC worker (idle)]:
+runtime.gopark(0x19435315166c4?, 0x1?, 0xa0?, 0x74?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3acff40 sp=0x3e20b3acff20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3acffc8 sp=0x3e20b3acff40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3acffe0 sp=0x3e20b3acffc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3acffe8 sp=0x3e20b3acffe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 124 gp=0x3e20b3ac12c0 m=nil [GC worker (idle)]:
+runtime.gopark(0x7ff7cc3840a0?, 0x3?, 0x30?, 0x66?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ad1f40 sp=0x3e20b3ad1f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ad1fc8 sp=0x3e20b3ad1f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ad1fe0 sp=0x3e20b3ad1fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ad1fe8 sp=0x3e20b3ad1fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 125 gp=0x3e20b3ac14a0 m=nil [GC worker (idle)]:
+runtime.gopark(0x19435315166c4?, 0x1?, 0xf4?, 0xb8?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3acbf40 sp=0x3e20b3acbf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3acbfc8 sp=0x3e20b3acbf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3acbfe0 sp=0x3e20b3acbfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3acbfe8 sp=0x3e20b3acbfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 126 gp=0x3e20b3ac1680 m=nil [GC worker (idle)]:
+runtime.gopark(0x19435315166c4?, 0x3?, 0xbc?, 0x2a?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3acdf40 sp=0x3e20b3acdf20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3acdfc8 sp=0x3e20b3acdf40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3acdfe0 sp=0x3e20b3acdfc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3acdfe8 sp=0x3e20b3acdfe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 127 gp=0x3e20b3ac1860 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943555637c8c?, 0x1?, 0x70?, 0xe8?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b37b1f40 sp=0x3e20b37b1f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b37b1fc8 sp=0x3e20b37b1f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b37b1fe0 sp=0x3e20b37b1fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b37b1fe8 sp=0x3e20b37b1fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 128 gp=0x3e20b3ac1a40 m=nil [GC worker (idle)]:
+runtime.gopark(0x1943555637c8c?, 0x1?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b37b7f40 sp=0x3e20b37b7f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b37b7fc8 sp=0x3e20b37b7f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b37b7fe0 sp=0x3e20b37b7fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b37b7fe8 sp=0x3e20b37b7fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 129 gp=0x3e20b3ac1c20 m=nil [GC worker (idle)]:
+runtime.gopark(0x19435315166c4?, 0x1?, 0xe4?, 0x30?, 0x0?)
+	runtime/proc.go:462 +0xce fp=0x3e20b3ad9f40 sp=0x3e20b3ad9f20 pc=0x7ff7cacc50ce
+runtime.gcBgMarkWorker(0x3e20b3a96070)
+	runtime/mgc.go:1791 +0xeb fp=0x3e20b3ad9fc8 sp=0x3e20b3ad9f40 pc=0x7ff7cac6b5eb
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1695 +0x17 fp=0x3e20b3ad9fe0 sp=0x3e20b3ad9fc8 pc=0x7ff7cac6b4d7
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20b3ad9fe8 sp=0x3e20b3ad9fe0 pc=0x7ff7caccc6a1
+created by runtime.gcBgMarkStartWorkers in goroutine 18
+	runtime/mgc.go:1695 +0x105
+
+goroutine 11540 gp=0x3e20bb108d20 m=53 mp=0x3e20c41d3008 [running]:
+	goroutine running on other thread; stack unavailable
+created by sync.(*WaitGroup).Go in goroutine 1
+	sync/waitgroup.go:238 +0x73
+
+goroutine 11538 gp=0x3e20c2e9f680 m=nil [runnable]:
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getTypeParameterFromMappedType(0x3e20c19e0c08?, 0x3e20f84d4a00?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:22576 +0xbc fp=0x3e20dd3ae1f0 sp=0x3e20dd3ae1e8 pc=0x7ff7cb067c1c
+github.com/microsoft/typescript-go/internal/checker.(*Relater).mappedTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84d4a00, 0x3e20f84d4800, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3980 +0x265 fp=0x3e20dd3ae278 sp=0x3e20dd3ae1f0 pc=0x7ff7cb11e325
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cb5d4900, 0x3e20f84d4a00, 0x3e20f84d4800, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3807 +0x313a fp=0x3e20dd3ae590 sp=0x3e20dd3ae278 pc=0x7ff7cb11cbda
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84d4a00, 0x3e20f84d4800, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3ae618 sp=0x3e20dd3ae590 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84d4a00, 0x3e20f84d4800, 0x0, 0x1, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3ae890 sp=0x3e20dd3ae618 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cb5d4900, 0x3e20f84d4a00, 0x3e20f84d4800, 0x1, 0x0, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3ae948 sp=0x3e20dd3ae890 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).someTypeRelatedToType(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84d4800, 0x0, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2924 +0xe5 fp=0x3e20dd3ae9a0 sp=0x3e20dd3ae948 pc=0x7ff7cb117ba5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).unionOrIntersectionRelatedTo(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84d4800, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2915 +0x205 fp=0x3e20dd3aea10 sp=0x3e20dd3ae9a0 pc=0x7ff7cb117805
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84d4800, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3373 +0x732 fp=0x3e20dd3aed28 sp=0x3e20dd3aea10 pc=0x7ff7cb11a1d2
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84d4800, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3aedb0 sp=0x3e20dd3aed28 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84d4800, 0x0, 0x2, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3af028 sp=0x3e20dd3aedb0 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84d4800, 0x2, 0x0, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3af0e0 sp=0x3e20dd3af028 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).typeRelatedToEachType(0x3e20cb5d4900, 0x3e20f84c3e00, 0x0?, 0x0, 0x2)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3034 +0x93 fp=0x3e20dd3af140 sp=0x3e20dd3af0e0 pc=0x7ff7cb118333
+github.com/microsoft/typescript-go/internal/checker.(*Relater).unionOrIntersectionRelatedTo(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84c3c20, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2879 +0x215 fp=0x3e20dd3af1b0 sp=0x3e20dd3af140 pc=0x7ff7cb117815
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84c3c20, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3373 +0x732 fp=0x3e20dd3af4c8 sp=0x3e20dd3af1b0 pc=0x7ff7cb11a1d2
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84c3c20, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3af550 sp=0x3e20dd3af4c8 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84c3c20, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3af7c8 sp=0x3e20dd3af550 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cb5d4900, 0x3e20f84c3e00, 0x3e20f84c3c20, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3af880 sp=0x3e20dd3af7c8 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).eachTypeRelatedToType(0x3e20cb5d4900, 0x3e20f84d86c0, 0x3e20f84d8480, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2949 +0x13d fp=0x3e20dd3af900 sp=0x3e20dd3af880 pc=0x7ff7cb117d3d
+github.com/microsoft/typescript-go/internal/checker.(*Relater).unionOrIntersectionRelatedTo(0x3e20cb5d4900, 0x3e20f84d86c0, 0x3e20f84d8480, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2873 +0x2cf fp=0x3e20dd3af970 sp=0x3e20dd3af900 pc=0x7ff7cb1178cf
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cb5d4900, 0x3e20f84d86c0, 0x3e20f84d8480, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3373 +0x732 fp=0x3e20dd3afc88 sp=0x3e20dd3af970 pc=0x7ff7cb11a1d2
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84d86c0, 0x3e20f84d8480, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3afd10 sp=0x3e20dd3afc88 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84d86c0, 0x3e20f84d8480, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3aff88 sp=0x3e20dd3afd10 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cb5d4900, 0x3e20f84d86c0, 0x3e20f84d8480, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3b0040 sp=0x3e20dd3aff88 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedTo(...)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2597
+github.com/microsoft/typescript-go/internal/checker.(*Relater).mappedTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84d4500, 0x3e20f84d4600, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3982 +0x3db fp=0x3e20dd3b00c8 sp=0x3e20dd3b0040 pc=0x7ff7cb11e49b
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cb5d4900, 0x3e20f84d4500, 0x3e20f84d4600, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3807 +0x313a fp=0x3e20dd3b03e0 sp=0x3e20dd3b00c8 pc=0x7ff7cb11cbda
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84d4500, 0x3e20f84d4600, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3b0468 sp=0x3e20dd3b03e0 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84d4500, 0x3e20f84d4600, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3b06e0 sp=0x3e20dd3b0468 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cb5d4900, 0x3e20f84d4500, 0x3e20f84d4600, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3b0798 sp=0x3e20dd3b06e0 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedTo(...)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2597
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20cb5d4900, 0x3e20f84c1b90, 0x3e20f84c1b00, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3742 +0x34b0 fp=0x3e20dd3b0ab0 sp=0x3e20dd3b0798 pc=0x7ff7cb11cf50
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84c1b90, 0x3e20f84c1b00, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3b0b38 sp=0x3e20dd3b0ab0 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20cb5d4900, 0x3e20f84c1b90, 0x3e20f84c1b00, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3b0db0 sp=0x3e20dd3b0b38 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20cb5d4900, 0x3e20f84c1b90, 0x3e20f84c1b00, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3b0e68 sp=0x3e20dd3b0db0 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkTypeRelatedToEx(0x3e20c19e0c08, 0x3e20f84c1b90, 0x3e20f84c1b00, 0x3e20b58b0b78, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:371 +0x175 fp=0x3e20dd3b1150 sp=0x3e20dd3b0e68 pc=0x7ff7cb1085d5
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkTypeRelatedTo(...)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:353
+github.com/microsoft/typescript-go/internal/checker.(*Checker).isTypeRelatedTo(0x3e20c19e0c08, 0x3e20beafd508?, 0x3e20f84822a0?, 0x3e20b58b0b78)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:201 +0x1e7 fp=0x3e20dd3b11b8 sp=0x3e20dd3b1150 pc=0x7ff7cb107187
+github.com/microsoft/typescript-go/internal/checker.(*Checker).isTypeAssignableTo(...)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:151
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getVariancesWorker(0x3e20c19e0c08, 0x3e20beafd508, {0x3e20f8246970, 0x2, 0x3e20f7f4cf30?})
+	github.com/microsoft/typescript-go/internal/checker/relater.go:1385 +0x40d fp=0x3e20dd3b1298 sp=0x3e20dd3b11b8 pc=0x7ff7cb10e8ed
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getAliasVariances(0x3e20c19e0c08, 0x3e20beafd508)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:1333 +0x4a fp=0x3e20dd3b12d0 sp=0x3e20dd3b1298 pc=0x7ff7cb10e4aa
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20c98fc900, 0x3e20f7f4cfc0, 0x3e20f7f4cf30, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3394 +0x8f8 fp=0x3e20dd3b15e8 sp=0x3e20dd3b12d0 pc=0x7ff7cb11a398
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20c98fc900, 0x3e20f7f4cfc0, 0x3e20f7f4cf30, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3b1670 sp=0x3e20dd3b15e8 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20c98fc900, 0x3e20f7f4cfc0, 0x3e20f7f4cf30, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3b18e8 sp=0x3e20dd3b1670 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20c98fc900, 0x3e20f7f4cfc0, 0x3e20f7f4cf30, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3b19a0 sp=0x3e20dd3b18e8 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedTo(...)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2597
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedToWorker(0x3e20c98fc900, 0x3e20f2fa7950, 0x3e20f2fa76d0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3493 +0x136f fp=0x3e20dd3b1cb8 sp=0x3e20dd3b19a0 pc=0x7ff7cb11ae0f
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20c98fc900, 0x3e20f2fa7950, 0x3e20f2fa76d0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3b1d40 sp=0x3e20dd3b1cb8 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20c98fc900, 0x3e20f2fa7950, 0x3e20f2fa76d0, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3b1fb8 sp=0x3e20dd3b1d40 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20c98fc900, 0x3e20f2fa7950, 0x3e20f2fa76d0, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3b2070 sp=0x3e20dd3b1fb8 pc=0x7ff7cb1161cb
+...57 frames elided...
+github.com/microsoft/typescript-go/internal/checker.(*Relater).structuredTypeRelatedTo(0x3e20c8486180, 0x3e20f82398c0, 0x3e20f8239440, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3194 +0x65 fp=0x3e20dd3b67d8 sp=0x3e20dd3b6750 pc=0x7ff7cb1195a5
+github.com/microsoft/typescript-go/internal/checker.(*Relater).recursiveTypeRelatedTo(0x3e20c8486180, 0x3e20f82398c0, 0x3e20f8239440, 0x0, 0x0, 0x3)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:3135 +0xbd5 fp=0x3e20dd3b6a50 sp=0x3e20dd3b67d8 pc=0x7ff7cb119035
+github.com/microsoft/typescript-go/internal/checker.(*Relater).isRelatedToEx(0x3e20c8486180, 0x3e20f82398c0, 0x3e20f8239440, 0x3, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:2702 +0x9cb fp=0x3e20dd3b6b08 sp=0x3e20dd3b6a50 pc=0x7ff7cb1161cb
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkTypeRelatedToEx(0x3e20c19e0c08, 0x3e20f82398c0, 0x3e20f8239440, 0x3e20b58b0b70, 0x0, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:371 +0x175 fp=0x3e20dd3b6df0 sp=0x3e20dd3b6b08 pc=0x7ff7cb1085d5
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkTypeRelatedTo(...)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:353
+github.com/microsoft/typescript-go/internal/checker.(*Checker).isTypeRelatedTo(0x3e20c19e0c08, 0x3e20f8239980?, 0x3e20b7b978d7?, 0x3e20b58b0b70)
+	github.com/microsoft/typescript-go/internal/checker/relater.go:201 +0x1e7 fp=0x3e20dd3b6e58 sp=0x3e20dd3b6df0 pc=0x7ff7cb107187
+github.com/microsoft/typescript-go/internal/checker.(*Checker).removeSubtypes(0x3e20c19e0c08, {0x3e20f8264a40, 0x8, 0x8}, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:25904 +0x750 fp=0x3e20dd3b70f8 sp=0x3e20dd3b6e58 pc=0x7ff7cb07cc90
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getUnionTypeWorker(0x3e20c19e0c08, {0x3e20dd3b7300, 0x4, 0x4}, 0x2, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:25593 +0x305 fp=0x3e20dd3b71b8 sp=0x3e20dd3b70f8 pc=0x7ff7cb07a865
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getUnionTypeEx(0x7ff7cb694ac0?, {0x3e20dd3b7300?, 0x3?, 0x3e20dd3b7280?}, 0xcb149ffd?, 0x3e20c19e0c08?, 0x3e20f7c48d00?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:25558 +0x1e6 fp=0x3e20dd3b7248 sp=0x3e20dd3b71b8 pc=0x7ff7cb07a4e6
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getUnionOrIntersectionType(0x3e20c19e0c08?, {0x3e20dd3b7300?, 0x3e20f7c48d80?, 0x7ff700000003?}, 0x28?, 0x3e20?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:25520 +0x26 fp=0x3e20dd3b7290 sp=0x3e20dd3b7248 pc=0x7ff7cb07a2a6
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getReturnTypeOfSignature(0x3e20c19e0c08, 0x3e20f7c48d80)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:19918 +0x48b fp=0x3e20dd3b7350 sp=0x3e20dd3b7290 pc=0x7ff7cb0555ab
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkCallExpression(0x3e20c19e0c08, 0x3e20bc18ff28, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:8323 +0x145 fp=0x3e20dd3b73a8 sp=0x3e20dd3b7350 pc=0x7ff7cb00d945
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkExpressionWorker(0x3e20c19e0c08, 0x3e20bc18ff28, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:7753 +0x2df fp=0x3e20dd3b73e8 sp=0x3e20dd3b73a8 pc=0x7ff7cb00a2df
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkExpressionEx(0x3e20c19e0c08, 0x3e20bc18ff28, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:7541 +0x1e8 fp=0x3e20dd3b7470 sp=0x3e20dd3b73e8 pc=0x7ff7cb008788
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkExpressionCachedEx(0x3e20c19e0c08, 0x3e20bc18ff28, 0xbc189788?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:7507 +0xd7 fp=0x3e20dd3b74c0 sp=0x3e20dd3b7470 pc=0x7ff7cb0082b7
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkDeclarationInitializer(0x3e20c19e0c08, 0x3e20bc193960, 0x0, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:16717 +0x7a fp=0x3e20dd3b7510 sp=0x3e20dd3b74c0 pc=0x7ff7cb0410fa
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getTypeForVariableLikeDeclaration(0x3e20c19e0c08, 0x3e20bc193960, 0xb?, 0x0)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:16662 +0x727 fp=0x3e20dd3b7588 sp=0x3e20dd3b7510 pc=0x7ff7cb040ea7
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getWidenedTypeForVariableLikeDeclaration(0x3e20c19e0c08, 0x3e20bc193960, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:16561 +0x28 fp=0x3e20dd3b75b8 sp=0x3e20dd3b7588 pc=0x7ff7cb040728
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getTypeOfVariableOrParameterOrPropertyWorker(0x3e20c19e0c08, 0x3e20c09c1088)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:16523 +0x26e fp=0x3e20dd3b7630 sp=0x3e20dd3b75b8 pc=0x7ff7cb0404ce
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getTypeOfVariableOrParameterOrProperty(0x3e20c19e0c08, 0x3e20c09c1088)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:16460 +0x4d fp=0x3e20dd3b7668 sp=0x3e20dd3b7630 pc=0x7ff7cb04012d
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getTypeOfSymbol(0x3e20c19e0c08?, 0x3e20bc193960?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:16423 +0x9b fp=0x3e20dd3b7688 sp=0x3e20dd3b7668 pc=0x7ff7cb03fe9b
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkVariableLikeDeclaration(0x3e20c19e0c08, 0x3e20bc193960)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:5872 +0x2d1 fp=0x3e20dd3b77d0 sp=0x3e20dd3b7688 pc=0x7ff7caffd3f1
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkVariableDeclaration(0x3e20c19e0c08, 0x3e20bc193960)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:5765 +0x1ad fp=0x3e20dd3b7840 sp=0x3e20dd3b77d0 pc=0x7ff7caffcfad
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElementWorker(0x3e20c19e0c08, 0x3e20bc193960)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2346 +0x333 fp=0x3e20dd3b78b0 sp=0x3e20dd3b7840 pc=0x7ff7cafe61b3
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElement(0x3e20c19e0c08, 0x200200002002?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2235 +0x66 fp=0x3e20dd3b78e0 sp=0x3e20dd3b78b0 pc=0x7ff7cafe5e06
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElements(0x3e20c19e0c08, {0x3e20bc189f68, 0x1, 0x3e20bb1c0d08?})
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2225 +0x2d fp=0x3e20dd3b7910 sp=0x3e20dd3b78e0 pc=0x7ff7cafe5ced
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkVariableDeclarationList(0x3e20c19e0c08, 0x3e20bc189788)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:5757 +0x96 fp=0x3e20dd3b7940 sp=0x3e20dd3b7910 pc=0x7ff7caffcdb6
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkVariableStatement(0x3e20c19e0c08, 0x3e20bb44aa98?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:5749 +0x8e fp=0x3e20dd3b7978 sp=0x3e20dd3b7940 pc=0x7ff7caffccce
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElementWorker(0x3e20c19e0c08, 0x3e20bb44aa98)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2316 +0x28f fp=0x3e20dd3b79e8 sp=0x3e20dd3b7978 pc=0x7ff7cafe610f
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElement(0x3e20c19e0c08, 0x3e20dd3b7a48?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2235 +0x66 fp=0x3e20dd3b7a18 sp=0x3e20dd3b79e8 pc=0x7ff7cafe5e06
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElements(0x3e20c19e0c08, {0x3e20bc189ff0, 0x6, 0x3e20bb46ef00?})
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2225 +0x2d fp=0x3e20dd3b7a48 sp=0x3e20dd3b7a18 pc=0x7ff7cafe5ced
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkBlock(0x3e20c19e0c08, 0x3e20bb46a8a8)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:3778 +0xfc fp=0x3e20dd3b7a80 sp=0x3e20dd3b7a48 pc=0x7ff7cafeed5c
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElementWorker(0x3e20c19e0c08, 0x3e20bb46a8a8)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2314 +0x365 fp=0x3e20dd3b7af0 sp=0x3e20dd3b7a80 pc=0x7ff7cafe61e5
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceElement(0x3e20c19e0c08, 0x3e20bc1ac580?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2235 +0x66 fp=0x3e20dd3b7b20 sp=0x3e20dd3b7af0 pc=0x7ff7cafe5e06
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkFunctionExpressionOrObjectLiteralMethodDeferred(0x3e20c19e0c08, 0x3e20bc1ac580)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:10197 +0xbf fp=0x3e20dd3b7b88 sp=0x3e20dd3b7b20 pc=0x7ff7cb01885f
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkDeferredNode(0x3e20c19e0c08, 0x7ff7cb9aec60?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2504 +0x285 fp=0x3e20dd3b7c00 sp=0x3e20dd3b7b88 pc=0x7ff7cafe6d85
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkDeferredNodes-range1(...)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2486
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkDeferredNodes.(*OrderedSet[...]).Keys.func1(...)
+	github.com/microsoft/typescript-go/internal/collections/ordered_map.go:138
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkDeferredNodes(0x3e20c19e0c08, 0x3e20bc18a530?)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2482 +0xb4 fp=0x3e20dd3b7c40 sp=0x3e20dd3b7c00 pc=0x7ff7cafe6a54
+github.com/microsoft/typescript-go/internal/checker.(*Checker).checkSourceFile(0x3e20c19e0c08, {0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x3e20bc194388, 0x1)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:2194 +0x21a fp=0x3e20dd3b7cd0 sp=0x3e20dd3b7c40 pc=0x7ff7cafe599a
+github.com/microsoft/typescript-go/internal/checker.(*Checker).getDiagnostics(0x3e20c19e0c08, {0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x3e20bc194388, 0x3e20c19e0e30)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:13886 +0x67 fp=0x3e20dd3b7d08 sp=0x3e20dd3b7cd0 pc=0x7ff7cb030b07
+github.com/microsoft/typescript-go/internal/checker.(*Checker).GetDiagnostics(...)
+	github.com/microsoft/typescript-go/internal/checker/checker.go:13876
+github.com/microsoft/typescript-go/internal/compiler.(*Program).getBindAndCheckDiagnosticsWithChecker(0x3e20b3814c88, {0x7ff7cb9a4e68, 0x7ff7cc382fa0}, 0x3e20c19e0c08, 0x3e20bc194388)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:1338 +0xc5 fp=0x3e20dd3b7e40 sp=0x3e20dd3b7d08 pc=0x7ff7cb247dc5
+github.com/microsoft/typescript-go/internal/compiler.(*Program).getSemanticDiagnosticsWithChecker(0x3e20b3814c88, {0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x3e20da0b3e18?, 0x3e20bc194388)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:1322 +0x2e fp=0x3e20dd3b7ea0 sp=0x3e20dd3b7e40 pc=0x7ff7cb247c4e
+github.com/microsoft/typescript-go/internal/compiler.(*Program).getSemanticDiagnosticsWithChecker-fm({0x7ff7cb9a4e68?, 0x7ff7cc382fa0?}, 0x7ff7cac49262?, 0x0?)
+	<autogenerated>:1 +0x30 fp=0x3e20dd3b7ed8 sp=0x3e20dd3b7ea0 pc=0x7ff7cb253410
+github.com/microsoft/typescript-go/internal/compiler.(*Program).collectCheckerDiagnosticsFromFiles.func1(0x7ff7cb5e1920?, 0x559, 0x3e20bc194388?)
+	github.com/microsoft/typescript-go/internal/compiler/program.go:585 +0x47 fp=0x3e20dd3b7f18 sp=0x3e20dd3b7ed8 pc=0x7ff7cb2390a7
+github.com/microsoft/typescript-go/internal/compiler.(*checkerPool).forEachCheckerGroupDo.func1()
+	github.com/microsoft/typescript-go/internal/compiler/checkerpool.go:159 +0x159 fp=0x3e20dd3b7fa0 sp=0x3e20dd3b7f18 pc=0x7ff7cb220ab9
+github.com/microsoft/typescript-go/internal/core.(*parallelWorkGroup).Queue.func1()
+	github.com/microsoft/typescript-go/internal/core/workgroup.go:40 +0x13 fp=0x3e20dd3b7fb0 sp=0x3e20dd3b7fa0 pc=0x7ff7cadd8c93
+sync.(*WaitGroup).Go.func1()
+	sync/waitgroup.go:258 +0x4a fp=0x3e20dd3b7fe0 sp=0x3e20dd3b7fb0 pc=0x7ff7cacd4f6a
+runtime.goexit({})
+	runtime/asm_amd64.s:1771 +0x1 fp=0x3e20dd3b7fe8 sp=0x3e20dd3b7fe0 pc=0x7ff7caccc6a1
+created by sync.(*WaitGroup).Go in goroutine 1
+	sync/waitgroup.go:238 +0x73
+
+goroutine 11539 gp=0x3e20c17190e0 m=34 mp=0x3e20b3c81008 [running]:
+	goroutine running on other thread; stack unavailable
+created by sync.(*WaitGroup).Go in goroutine 1
+	sync/waitgroup.go:238 +0x73
+
+runtime stack:
+runtime.throw({0x7ff7cb814c38?, 0xea169ff5f0?})
+	runtime/panic.go:1229 +0x4d fp=0xea169ff5b8 sp=0xea169ff588 pc=0x7ff7cacc4fad
+runtime.sysUsedOS(0x3e20f852a000, 0x2000)
+	runtime/mem_windows.go:83 +0x1e5 fp=0xea169ff638 sp=0xea169ff5b8 pc=0x7ff7cac64e85
+runtime.sysUsed(...)
+	runtime/mem.go:91
+runtime.(*mheap).allocSpan(0x7ff7cc344f60, 0x1, 0x0, 0x1c)
+	runtime/mheap.go:1404 +0x4a7 fp=0xea169ff6e8 sp=0xea169ff638 pc=0x7ff7cac7b7e7
+runtime.(*mheap).alloc.func1()
+	runtime/mheap.go:1017 +0x5c fp=0xea169ff730 sp=0xea169ff6e8 pc=0x7ff7cac7af9c
+runtime.systemstack(0x3e20c419e960)
+	runtime/asm_amd64.s:562 +0x49 fp=0xea169ff740 sp=0xea169ff730 pc=0x7ff7caccaa69
+
+runtime stack:
+runtime.throw({0x7ff7cb814c38?, 0xea143ffc70?})
+	runtime/panic.go:1229 +0x4d fp=0xea143ffc38 sp=0xea143ffc08 pc=0x7ff7cacc4fad
+runtime.sysUsedOS(0x3e20f85b4000, 0x4000)
+	runtime/mem_windows.go:83 +0x1e5 fp=0xea143ffcb8 sp=0xea143ffc38 pc=0x7ff7cac64e85
+runtime.sysUsed(...)
+	runtime/mem.go:91
+runtime.(*mheap).allocSpan(0x7ff7cc344f60, 0x2, 0x0, 0x76)
+	runtime/mheap.go:1404 +0x4a7 fp=0xea143ffd68 sp=0xea143ffcb8 pc=0x7ff7cac7b7e7
+runtime.(*mheap).alloc.func1()
+	runtime/mheap.go:1017 +0x5c fp=0xea143ffdb0 sp=0xea143ffd68 pc=0x7ff7cac7af9c
+runtime.systemstack(0x3e20b3f205a0)
+	runtime/asm_amd64.s:562 +0x49 fp=0xea143ffdc0 sp=0xea143ffdb0 pc=0x7ff7caccaa69

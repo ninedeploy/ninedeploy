@@ -1,0 +1,10 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/pitrScheduler.test.ts > pitrScheduler > sweeps interrupted recoveries at boot, then passes over every database ten minutes in and hourly 85ms
+ ✓ test/plugins/pitrScheduler.test.ts > pitrScheduler > boots even when the sweep or a pass cannot read the database 2ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  19:58:15
+   Duration  1.88s (import 46%, tests 35%, transform 17%, worker 2%)

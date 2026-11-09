@@ -1,0 +1,23 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > independent real retention plan: archiver, persisted 1 days 361ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > independent real retention plan: archiver, persisted 7 days 383ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > independent real retention plan: archiver, persisted 14 days 296ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > independent real retention plan: archiver, persisted 35 days 305ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > independent real retention plan: baseBackup, persisted 1 days 383ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > independent real retention plan: baseBackup, persisted 7 days 366ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > independent real retention plan: baseBackup, persisted 14 days 384ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > independent real retention plan: baseBackup, persisted 35 days 373ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > no prune after the persisted database becomes disabled 365ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > no prune after the persisted database becomes stopped 398ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > no prune after the persisted database becomes deleted 400ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1052_pitrRetention.test.ts > a base backup that starts during the row refresh suppresses prune 367ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  20:03:19
+   Duration  6.24s (tests 73%, transform 15%, import 12%)

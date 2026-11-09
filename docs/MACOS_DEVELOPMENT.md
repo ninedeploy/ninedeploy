@@ -277,7 +277,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 27
+### Further audit checkpoints through round 30
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -290,12 +290,25 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1049 | Query endpoints retain reverse-proxy prefixes from standard Loki push URLs | 64 |
 | F1050 | Panel retention rechecks destination and keep count before each delete; already-deleted objects do not consume retention slots | 26 |
 | F1051 | A scheduler tick suspended in a settings read cannot start a backup after its application closes | 29 |
+| F1052 | PITR maintenance reloads persisted retention before pruning after long archiver/base-backup calls | 51 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
 with three clean consecutive runs, permanent regression coverage and scoped
 server typecheck/build/lint results. Failed setup/worker attempts remain in the
 ledger rather than being counted as passes.
+
+Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
+additional cases plus its two existing tests; recovery-helper housekeeping passed
+12 boundary cases and 57 neighboring tests. These are bounded passes, not live
+PostgreSQL or Docker cleanup certification.
+
+Round 30's original Windows typecheck failed with a native TypeScript/Go
+`VirtualAlloc` error (`errno=1455`). A serial retry with `GOMAXPROCS=4` passed
+server typecheck and build; the temporary environment setting was restored.
+The interrupted initial scope run was not counted; the unchanged retry passed
+all 51 tests. Keep these resource limits distinct from a full default-environment
+release gate on the Mac.
 
 At checkpoint 20 the general release gate stopped on an uncovered SDK method
 from the concurrent service-capability feature. Two authenticated SDK transport

@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- PITR maintenance reloads the database's retention policy before pruning, honoring retention increases committed while the archiver query or a base backup was running (F1052).
 - Panel backup scheduler ticks waiting for settings now stop when their application closes, preventing a late backup from starting against closed resources (F1051).
 - Panel backup retention now rechecks the selected destination and keep count before each deletion, preserving old recovery artifacts when settings change during an upload or prune (F1050).
 - Loki log searches keep a reverse proxy's path prefix when deriving the query endpoint from a configured `/loki/api/v1/push` URL.

@@ -1,0 +1,12 @@
+ M .env.example
+ M apps/server/src/env.ts
+ M apps/server/src/lib/autoUrl.ts
+ M apps/server/src/modules/api.ts
+ M apps/server/src/modules/auth.ts
+ M apps/server/src/openapi/specs/auth.ts
+ M apps/server/src/openapi/specs/platform.ts
+ M docker-compose.prod.yml
+ M install.sh
+ M packages/schemas/src/auth.ts
+ M packages/sdk/src/resources/auth.ts
+?? apps/server/src/lib/setupAcme.ts

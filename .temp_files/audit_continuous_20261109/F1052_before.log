@@ -1,0 +1,269 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (control)
+EXPECTED: 1 ACTUAL: 1
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (control) 681ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (changed)
+EXPECTED: 14 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (changed) 1162ms
+   → expected "vi.fn()" to be called with arguments: [ ObjectContaining{…}, 14, …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   ObjectContaining {
+-     "pitrRetentionDays": 14,
++   {
++     "containerName": "nd-db-main",
++     "cpuLimitMilli": 0,
++     "cpuShares": 0,
++     "createdAt": 2026-11-09T18:01:38.000Z,
++     "dbName": "app",
++     "engine": "postgres",
++     "extensions": [],
++     "id": 1,
++     "initializedAt": null,
++     "internalHost": null,
++     "internalPort": null,
++     "memLimitMb": 0,
++     "name": "main",
++     "nodeContainerName": null,
++     "nodeStudioIdentity": null,
++     "nodeVolumeName": null,
++     "ownerUserId": 1,
++     "passwordEncrypted": "v0:t5sqyBITHAnw5BY3:oJITgb5QUbIvtE8b5kNppg==:6wk=",
++     "pgbouncerContainerName": null,
++     "pgbouncerEnabled": false,
++     "pgbouncerPort": 6432,
++     "pitrBaseBackupAt": null,
++     "pitrEnabled": true,
++     "pitrLastError": null,
++     "pitrRetentionDays": 1,
++     "previewCopyOf": null,
++     "previewServiceId": null,
++     "projectId": null,
++     "serverId": null,
++     "slug": "main",
++     "status": "running",
++     "updatedAt": 2026-11-09T18:01:38.000Z,
++     "username": "nine",
++     "version": null,
++     "volumeName": "nd-db-main-data",
++     "webGuiEnabled": false,
++     "webGuiPort": null,
+    },
+-   14,
+-   Any<Function>,
++   1,
++   [Function anonymous],
+  ]
+
+
+Number of calls: 1
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (control)
+EXPECTED: 1 ACTUAL: 1
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (control) 1113ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (changed)
+EXPECTED: 14 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (changed) 1625ms
+   → expected "vi.fn()" to be called with arguments: [ ObjectContaining{…}, 14, …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   ObjectContaining {
+-     "pitrRetentionDays": 14,
++   {
++     "containerName": "nd-db-main",
++     "cpuLimitMilli": 0,
++     "cpuShares": 0,
++     "createdAt": 2026-11-09T18:01:40.000Z,
++     "dbName": "app",
++     "engine": "postgres",
++     "extensions": [],
++     "id": 1,
++     "initializedAt": null,
++     "internalHost": null,
++     "internalPort": null,
++     "memLimitMb": 0,
++     "name": "main",
++     "nodeContainerName": null,
++     "nodeStudioIdentity": null,
++     "nodeVolumeName": null,
++     "ownerUserId": 1,
++     "passwordEncrypted": "v0:x/eW2R5+eIFkpGEf:Lm5djlntXH3820SQcL3H2A==:TAE=",
++     "pgbouncerContainerName": null,
++     "pgbouncerEnabled": false,
++     "pgbouncerPort": 6432,
++     "pitrBaseBackupAt": null,
++     "pitrEnabled": true,
++     "pitrLastError": null,
++     "pitrRetentionDays": 1,
++     "previewCopyOf": null,
++     "previewServiceId": null,
++     "projectId": null,
++     "serverId": null,
++     "slug": "main",
++     "status": "running",
++     "updatedAt": 2026-11-09T18:01:40.000Z,
++     "username": "nine",
++     "version": null,
++     "volumeName": "nd-db-main-data",
++     "webGuiEnabled": false,
++     "webGuiPort": null,
+    },
+-   14,
+-   Any<Function>,
++   1,
++   [Function anonymous],
+  ]
+
+
+Number of calls: 1
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (changed)
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…}, 14, …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   ObjectContaining {
+-     "pitrRetentionDays": 14,
++   {
++     "containerName": "nd-db-main",
++     "cpuLimitMilli": 0,
++     "cpuShares": 0,
++     "createdAt": 2026-11-09T18:01:38.000Z,
++     "dbName": "app",
++     "engine": "postgres",
++     "extensions": [],
++     "id": 1,
++     "initializedAt": null,
++     "internalHost": null,
++     "internalPort": null,
++     "memLimitMb": 0,
++     "name": "main",
++     "nodeContainerName": null,
++     "nodeStudioIdentity": null,
++     "nodeVolumeName": null,
++     "ownerUserId": 1,
++     "passwordEncrypted": "v0:t5sqyBITHAnw5BY3:oJITgb5QUbIvtE8b5kNppg==:6wk=",
++     "pgbouncerContainerName": null,
++     "pgbouncerEnabled": false,
++     "pgbouncerPort": 6432,
++     "pitrBaseBackupAt": null,
++     "pitrEnabled": true,
++     "pitrLastError": null,
++     "pitrRetentionDays": 1,
++     "previewCopyOf": null,
++     "previewServiceId": null,
++     "projectId": null,
++     "serverId": null,
++     "slug": "main",
++     "status": "running",
++     "updatedAt": 2026-11-09T18:01:38.000Z,
++     "username": "nine",
++     "version": null,
++     "volumeName": "nd-db-main-data",
++     "webGuiEnabled": false,
++     "webGuiPort": null,
+    },
+-   14,
+-   Any<Function>,
++   1,
++   [Function anonymous],
+  ]
+
+
+Number of calls: 1
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts:120:287
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (changed)
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…}, 14, …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   ObjectContaining {
+-     "pitrRetentionDays": 14,
++   {
++     "containerName": "nd-db-main",
++     "cpuLimitMilli": 0,
++     "cpuShares": 0,
++     "createdAt": 2026-11-09T18:01:40.000Z,
++     "dbName": "app",
++     "engine": "postgres",
++     "extensions": [],
++     "id": 1,
++     "initializedAt": null,
++     "internalHost": null,
++     "internalPort": null,
++     "memLimitMb": 0,
++     "name": "main",
++     "nodeContainerName": null,
++     "nodeStudioIdentity": null,
++     "nodeVolumeName": null,
++     "ownerUserId": 1,
++     "passwordEncrypted": "v0:x/eW2R5+eIFkpGEf:Lm5djlntXH3820SQcL3H2A==:TAE=",
++     "pgbouncerContainerName": null,
++     "pgbouncerEnabled": false,
++     "pgbouncerPort": 6432,
++     "pitrBaseBackupAt": null,
++     "pitrEnabled": true,
++     "pitrLastError": null,
++     "pitrRetentionDays": 1,
++     "previewCopyOf": null,
++     "previewServiceId": null,
++     "projectId": null,
++     "serverId": null,
++     "slug": "main",
++     "status": "running",
++     "updatedAt": 2026-11-09T18:01:40.000Z,
++     "username": "nine",
++     "version": null,
++     "volumeName": "nd-db-main-data",
++     "webGuiEnabled": false,
++     "webGuiPort": null,
+    },
+-   14,
+-   Any<Function>,
++   1,
++   [Function anonymous],
+  ]
+
+
+Number of calls: 1
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts:120:287
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  20:01:31
+   Duration  9.49s (tests 52%, transform 31%, import 17%)

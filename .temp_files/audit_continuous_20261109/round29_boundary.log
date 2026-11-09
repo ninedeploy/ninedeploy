@@ -1,0 +1,20 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > control: removes the exact helper at the age boundary 3ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > does not delete uncertain or ineligible inspection "2026-11-09T05:00:00.001Z /nd-pitr-12345678-1234-1234-1234-123456789abc" 0ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > does not delete uncertain or ineligible inspection "2026-11-09T19:00:00.000Z /nd-pitr-12345678-1234-1234-1234-123456789abc" 0ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > does not delete uncertain or ineligible inspection "invalid-date /nd-pitr-12345678-1234-1234-1234-123456789abc" 0ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > does not delete uncertain or ineligible inspection "2026-11-09T05:00:00.000Z /nd-db-user-data" 0ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > does not delete uncertain or ineligible inspection "2026-11-09T05:00:00.000Z /nd-pitr-12345678-1234-1234-1234-123456789abc-extra" 0ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > does not delete uncertain or ineligible inspection "2026-11-09T05:00:00.000Z /nd-pitr-1234" 0ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > does not delete uncertain or ineligible inspection "" 0ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > filters malformed IDs before inspect or delete 0ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > uncertain inspect failure is not credited as removal 2ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > uncertain rm failure is not credited as removal 1ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round29_pitrHousekeeping.test.ts > a list failure propagates without removing anything 2ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  19:59:29
+   Duration  2.51s (import 95%, transform 4%, tests 1%)

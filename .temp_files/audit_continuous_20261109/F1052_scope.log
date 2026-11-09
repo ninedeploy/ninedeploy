@@ -1,0 +1,24 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/pitr.test.ts > who can use it > PostgreSQL on the panel host, not a preview copy 807ms
+ ✓ test/lib/pitr.test.ts > setPitr > enables: restarts with archiving, audits, and takes the first base backup 587ms
+ ✓ test/lib/pitr.test.ts > setPitr > refuses what cannot archive, before touching the container 639ms
+ ✓ test/lib/pitr.test.ts > setPitr > puts the database back without archiving when it does not start with it 719ms
+ ✓ test/lib/pitr.test.ts > setPitr > changes only the retention when the state is unchanged, and disables by deleting the archive 579ms
+ ✓ test/lib/pitr.test.ts > setPitr > disables a stopped database without starting it, and marks a failed restart 567ms
+ ✓ test/lib/pitr.test.ts > base backups > runs one at a time per database and records a failure on the row 470ms
+ ✓ test/lib/pitr.test.ts > pitrStatus > reads nothing from Docker while off, and the window, base backups and archiver when on 405ms
+ ✓ test/lib/pitr.test.ts > a recovery > admits at once, then recovers, starts and probes the new database and records the evidence 442ms
+ ✓ test/lib/pitr.test.ts > a recovery > removes the new database again when the archive refuses, keeping only the reason 564ms
+ ✓ test/lib/pitr.test.ts > a recovery > stops a started database that does not accept its credentials; an unexpected error reads generic 550ms
+ ✓ test/lib/pitr.test.ts > a recovery > refuses before inserting anything 721ms
+ ✓ test/lib/pitr.test.ts > a recovery > fails, at boot, what a previous process left running, and removes its half-made database 1102ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > uses persisted retention after gated archiver (control) 602ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > uses persisted retention after gated archiver (changed) 946ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (control) 732ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (changed) 1170ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > takes a base backup when the newest is a day old, then applies the retention 659ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > reports failing archiving once, skips the base backup, and clears the report when it recovers 2313ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > leaves alone what it does not look after, and keeps going when the retention fails 4035ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > prunes finished recovery rows past the window, never a running one 3574ms

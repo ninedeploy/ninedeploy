@@ -400,7 +400,10 @@ export async function pitrMaintenance(db: DB, d: Database, log: (line: string) =
     await runPitrBaseBackup(db, d, null, log, deps).catch(() => undefined);
   }
   if (!recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id)) {
-    await deps.prune(d, d.pitrRetentionDays, log).catch((err: unknown) => log(`WAL archive retention failed for ${d.name}: ${err instanceof Error ? err.message : String(err)}`));
+    const current = await db.query.databases.findFirst({ where: eq(databases.id, d.id) });
+    if (current?.pitrEnabled && !pitrUnavailable(current) && current.status === 'running' && !recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id)) {
+      await deps.prune(current, current.pitrRetentionDays, log).catch((err: unknown) => log(`WAL archive retention failed for ${d.name}: ${err instanceof Error ? err.message : String(err)}`));
+    }
   }
   const fresh = await db.query.databases.findFirst({ where: eq(databases.id, d.id) });
   if (fresh?.pitrLastError?.startsWith('WAL archiving is failing')) {

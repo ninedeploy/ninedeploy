@@ -286,6 +286,32 @@ describe('a recovery', () => {
 });
 
 describe('the scheduler pass', () => {
+  for (const stage of ['archiver', 'baseBackup'] as const) {
+    for (const changed of [false, true]) {
+      it(`uses persisted retention after gated ${stage} (${changed ? 'changed' : 'control'})`, async () => {
+        const d = await insertDb({ pitrEnabled: true, pitrRetentionDays: 1 });
+        let entered!: () => void;
+        let release!: () => void;
+        const waiting = new Promise<void>((resolve) => { entered = resolve; });
+        const blocked = new Promise<void>((resolve) => { release = resolve; });
+        const deps = fakeDeps();
+        const original = deps[stage];
+        Object.assign(deps, { [stage]: async (...args: never[]) => {
+          entered(); await blocked;
+          return (original as (...input: never[]) => unknown)(...args);
+        } });
+        const running = pitrMaintenance(db, d, () => undefined, deps);
+        try {
+          await waiting;
+          if (changed) await setPitr(db, await reload(d.id), { enabled: true, retentionDays: 14 }, userId, () => undefined, deps);
+        } finally { release(); }
+        await running;
+        expect((await reload(d.id)).pitrRetentionDays).toBe(changed ? 14 : 1);
+        expect(deps.prune).toHaveBeenCalledWith(expect.objectContaining({ pitrRetentionDays: changed ? 14 : 1 }), changed ? 14 : 1, expect.any(Function));
+      });
+    }
+  }
+
   it('takes a base backup when the newest is a day old, then applies the retention', async () => {
     const d = await insertDb({ pitrEnabled: true, pitrRetentionDays: 5, pitrBaseBackupAt: new Date('2026-11-04T08:00:00Z') });
     const deps = fakeDeps();

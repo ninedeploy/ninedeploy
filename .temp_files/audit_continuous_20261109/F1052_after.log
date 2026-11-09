@@ -1,0 +1,26 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (control)
+EXPECTED: 1 ACTUAL: 1
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (control) 527ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (changed)
+EXPECTED: 14 ACTUAL: 14
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated archiver (changed) 339ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (control)
+EXPECTED: 1 ACTUAL: 1
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (control) 414ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (changed)
+EXPECTED: 14 ACTUAL: 14
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1052_pitrRetention.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (changed) 458ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  20:02:24
+   Duration  3.43s (tests 63%, import 30%, transform 7%)

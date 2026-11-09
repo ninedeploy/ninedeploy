@@ -1,0 +1,63 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/pitr.test.ts > who can use it > PostgreSQL on the panel host, not a preview copy 772ms
+ ✓ test/lib/pitr.test.ts > setPitr > enables: restarts with archiving, audits, and takes the first base backup 675ms
+ ✓ test/lib/pitr.test.ts > setPitr > refuses what cannot archive, before touching the container 599ms
+ ✓ test/lib/pitr.test.ts > setPitr > puts the database back without archiving when it does not start with it 800ms
+ ✓ test/lib/pitr.test.ts > setPitr > changes only the retention when the state is unchanged, and disables by deleting the archive 435ms
+ ✓ test/lib/pitr.test.ts > setPitr > disables a stopped database without starting it, and marks a failed restart 439ms
+ ✓ test/lib/pitr.test.ts > base backups > runs one at a time per database and records a failure on the row 381ms
+ ✓ test/lib/pitr.test.ts > pitrStatus > reads nothing from Docker while off, and the window, base backups and archiver when on 389ms
+ ✓ test/lib/pitr.test.ts > a recovery > admits at once, then recovers, starts and probes the new database and records the evidence 402ms
+ ✓ test/lib/pitr.test.ts > a recovery > removes the new database again when the archive refuses, keeping only the reason 443ms
+ ✓ test/lib/pitr.test.ts > a recovery > stops a started database that does not accept its credentials; an unexpected error reads generic 383ms
+ ✓ test/lib/pitr.test.ts > a recovery > refuses before inserting anything 446ms
+ ✓ test/lib/pitr.test.ts > a recovery > fails, at boot, what a previous process left running, and removes its half-made database 490ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > uses persisted retention after gated archiver (control) 396ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > uses persisted retention after gated archiver (changed) 382ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (control) 341ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > uses persisted retention after gated baseBackup (changed) 1603ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > takes a base backup when the newest is a day old, then applies the retention 1303ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > reports failing archiving once, skips the base backup, and clears the report when it recovers 1306ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > leaves alone what it does not look after, and keeps going when the retention fails 1169ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > prunes finished recovery rows past the window, never a running one 2317ms
+ ✓ test/modules/pitr.test.ts > reading > anyone who sees the database reads the status and the history; others get 404 2030ms
+ ✓ test/modules/pitr.test.ts > changing > takes database admin, a strict body, and returns the new status 1195ms
+ ✓ test/modules/pitr.test.ts > changing > admits a base backup with 202 only when PITR is on and the database runs 1049ms
+ ✓ test/modules/pitr.test.ts > recovering > admits a recovery into a new database with 202, to a time or to the latest point 1133ms
+ ✓ test/modules/pitr.test.ts > recovering > adds a database to a project outside every workspace only for an operator 1025ms
+ ✓ test/plugins/pitrScheduler.test.ts > pitrScheduler > sweeps interrupted recoveries at boot, then passes over every database ten minutes in and hourly 402ms
+ ✓ test/plugins/pitrScheduler.test.ts > pitrScheduler > boots even when the sweep or a pass cannot read the database 3ms
+ ✓ test/engine/postgresPitr.test.ts > segment arithmetic (16 MiB segments) > names and orders segments across a 4 GiB boundary and maps WAL locations to them 4ms
+ ✓ test/engine/postgresPitr.test.ts > the archive listing > counts a base backup only with its history file, and keeps pending directories and interrupted uploads apart 1ms
+ ✓ test/engine/postgresPitr.test.ts > the archive listing > ignores a history file not named the way PostgreSQL names one: the archive is writable by the database superuser 0ms
+ ✓ test/engine/postgresPitr.test.ts > the archive listing > falls back to the tarball time when PostgreSQL wrote the history in another zone 0ms
+ ✓ test/engine/postgresPitr.test.ts > the recoverable window and the recovery plan > spans from each base backup to the newest contiguous segment; a gap splits it 1ms
+ ✓ test/engine/postgresPitr.test.ts > the recoverable window and the recovery plan > refuses what the archive cannot deliver, in words the operator can act on 1ms
+ ✓ test/engine/postgresPitr.test.ts > PostgreSQL's recovery log > finds where replay ended, where it stopped and why it gave up, ignoring the panel probes 0ms
+ ✓ test/engine/postgresPitr.test.ts > retention > keeps every base backup inside the window, and always the newest 0ms
+ ✓ test/engine/postgresPitr.test.ts > retention > removes old base backups, their history and the WAL before the oldest kept one, plus stale leftovers 1ms
+ ✓ test/engine/postgresPitr.test.ts > retention > works on a stopped database through a one-off container with the archive writable 1ms
+ ✓ test/engine/postgresPitr.test.ts > retention > lists nothing for a database without an archive volume 0ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > waits for the server, then runs pg_basebackup in the container over the socket, into a labelled directory 1ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > removes the partial directory when the backup fails, and refuses a stopped database 1ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > refuses a cluster it cannot archive, and reads pg_stat_archiver 0ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > checks segments with gzip -t, names passed as arguments 1ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > sweeps only labelled, exactly named helpers older than the cut-off 1ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > restores the base backup, replays to the end of the archive, re-keys the role and stops cleanly 4ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > replays up to a time and reports the transaction PostgreSQL stopped before 1ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > refuses a "latest" recovery that stopped before the newest archived segment 1ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > maps PostgreSQL's refusals and a stopped replay to clear reasons 2ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > stops a replay that runs past its time limit 1ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > refuses before creating anything: an unreachable plan, a damaged segment, an existing volume 1ms
+ ✓ test/lib/pitrDeps.test.ts > pitrDeps > calls the engine functions 3ms
+
+ Test Files  5 passed (5)
+      Tests  51 passed (51)
+   Start at  20:11:49
+   Duration  36.86s (tests 68%, import 26%, transform 5%, worker 1%)
+
+     Import  150 modules were evaluated 262 times · 8.59s total, 26% of tracked time
+             ~3.67s faster with isolate: false — shared modules are evaluated once per worker instead of once per file
+             learn more: https://vitest.dev/guide/improving-performance#test-isolation

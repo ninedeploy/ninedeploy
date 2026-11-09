@@ -1,0 +1,65 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/pitr.test.ts > who can use it > PostgreSQL on the panel host, not a preview copy 646ms
+ ✓ test/lib/pitr.test.ts > setPitr > enables: restarts with archiving, audits, and takes the first base backup 1073ms
+ ✓ test/lib/pitr.test.ts > setPitr > refuses what cannot archive, before touching the container 2373ms
+ ✓ test/lib/pitr.test.ts > setPitr > puts the database back without archiving when it does not start with it 2546ms
+ ✓ test/lib/pitr.test.ts > setPitr > changes only the retention when the state is unchanged, and disables by deleting the archive 735ms
+ ✓ test/lib/pitr.test.ts > setPitr > disables a stopped database without starting it, and marks a failed restart 881ms
+ ✓ test/lib/pitr.test.ts > base backups > runs one at a time per database and records a failure on the row 601ms
+ ✓ test/lib/pitr.test.ts > pitrStatus > reads nothing from Docker while off, and the window, base backups and archiver when on 1177ms
+ ✓ test/lib/pitr.test.ts > a recovery > admits at once, then recovers, starts and probes the new database and records the evidence 1182ms
+ ✓ test/lib/pitr.test.ts > a recovery > removes the new database again when the archive refuses, keeping only the reason 1439ms
+ ✓ test/lib/pitr.test.ts > a recovery > stops a started database that does not accept its credentials; an unexpected error reads generic 1148ms
+ ✓ test/lib/pitr.test.ts > a recovery > refuses before inserting anything 1214ms
+ ✓ test/lib/pitr.test.ts > a recovery > fails, at boot, what a previous process left running, and removes its half-made database 2273ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > takes a base backup when the newest is a day old, then applies the retention 1045ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > reports failing archiving once, skips the base backup, and clears the report when it recovers 1785ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > leaves alone what it does not look after, and keeps going when the retention fails 868ms
+ ✓ test/lib/pitr.test.ts > the scheduler pass > prunes finished recovery rows past the window, never a running one 1106ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > protects terminal deployment logs while their Swarm recovery journal is unresolved 638ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > sweeps resource history and retired log cursors through the actual retention helpers 353ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > prunes old logs and deletes stale audit/notification rows on each tick 13ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > sweeps drills, invitations, domain transfers, cold cache rows and drill leftovers each tick (r302) 9ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > exempts the log files of non-terminal deployments from the mtime sweep (r302) 7ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > runs the metric-history retention sweep each tick 7ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > skips the metric-history sweep when the plugin is absent 21ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > keeps sweeping when the metric-history backend throws 5ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > sweeps finished deployment rows and their log files 19ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > issues no deployment delete when nothing has aged out 7ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > skips auto-prune when disk percent is below threshold 7ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > logs and continues when a retention delete fails 13ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > stops scheduling after close 4ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > does not reschedule when close lands while a tick is still in flight 7ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > absorbs a failing docker image prune without breaking the tick 10ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > runs the 0.15 terminal-session and traffic-rollup retention steps each tick (M5) 4ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > runs the serving-traffic receipt retention step each tick 3ms
+ ✓ test/plugins/housekeeping.test.ts > housekeeping plugin > isolates a failing 0.15 retention step (r544) 3ms
+ ✓ test/engine/postgresPitr.test.ts > segment arithmetic (16 MiB segments) > names and orders segments across a 4 GiB boundary and maps WAL locations to them 7ms
+ ✓ test/engine/postgresPitr.test.ts > the archive listing > counts a base backup only with its history file, and keeps pending directories and interrupted uploads apart 1ms
+ ✓ test/engine/postgresPitr.test.ts > the archive listing > ignores a history file not named the way PostgreSQL names one: the archive is writable by the database superuser 0ms
+ ✓ test/engine/postgresPitr.test.ts > the archive listing > falls back to the tarball time when PostgreSQL wrote the history in another zone 1ms
+ ✓ test/engine/postgresPitr.test.ts > the recoverable window and the recovery plan > spans from each base backup to the newest contiguous segment; a gap splits it 3ms
+ ✓ test/engine/postgresPitr.test.ts > the recoverable window and the recovery plan > refuses what the archive cannot deliver, in words the operator can act on 1ms
+ ✓ test/engine/postgresPitr.test.ts > PostgreSQL's recovery log > finds where replay ended, where it stopped and why it gave up, ignoring the panel probes 1ms
+ ✓ test/engine/postgresPitr.test.ts > retention > keeps every base backup inside the window, and always the newest 24ms
+ ✓ test/engine/postgresPitr.test.ts > retention > removes old base backups, their history and the WAL before the oldest kept one, plus stale leftovers 2ms
+ ✓ test/engine/postgresPitr.test.ts > retention > works on a stopped database through a one-off container with the archive writable 2ms
+ ✓ test/engine/postgresPitr.test.ts > retention > lists nothing for a database without an archive volume 0ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > waits for the server, then runs pg_basebackup in the container over the socket, into a labelled directory 1ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > removes the partial directory when the backup fails, and refuses a stopped database 2ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > refuses a cluster it cannot archive, and reads pg_stat_archiver 1ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > checks segments with gzip -t, names passed as arguments 1ms
+ ✓ test/engine/postgresPitr.test.ts > base backups, preflight and archiver health > sweeps only labelled, exactly named helpers older than the cut-off 1ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > restores the base backup, replays to the end of the archive, re-keys the role and stops cleanly 3ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > replays up to a time and reports the transaction PostgreSQL stopped before 0ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > refuses a "latest" recovery that stopped before the newest archived segment 0ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > maps PostgreSQL's refusals and a stopped replay to clear reasons 1ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > stops a replay that runs past its time limit 0ms
+ ✓ test/engine/postgresPitr.test.ts > a recovery into a new database > refuses before creating anything: an unreachable plan, a damaged segment, an existing volume 1ms
+
+ Test Files  3 passed (3)
+      Tests  57 passed (57)
+   Start at  19:59:37
+   Duration  31.85s (tests 79%, import 16%, transform 5%)
