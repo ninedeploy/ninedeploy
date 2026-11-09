@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* S7: no web-font @import. The panel's CSP (plugins/securityHeaders.ts) allows
+   styles and fonts from 'self' only, so a Google Fonts import was always
+   blocked (and logged); loading it would also send every visitor to Google.
+   Inter / JetBrains Mono are used when installed, else the system stack. */
 @import 'tailwindcss';
 
 /* ── Accent palette — maps indigo-* utilities to dynamic CSS vars ──────── */

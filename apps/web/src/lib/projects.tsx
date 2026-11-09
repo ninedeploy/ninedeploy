@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Label, ProjectEntry, Workspace } from '@ninedeploy/sdk';
 import { api } from './api.js';
+import { useAuth } from './auth.js';
 
 /**
  * Global tag-scope context (replaces the old single-project switcher).
@@ -203,9 +204,12 @@ function readLegacyId(): number | null {
 
 export function ProjectScopeProvider({ children }: { children: ReactNode }) {
   const [selectedId, setSelectedId] = useState<number | null>(readLegacyId);
+  // S7: mounted around the sign-in page too; listing projects there is a 401.
+  const { user } = useAuth();
   const { data } = useQuery({
     queryKey: ['projects'],
     queryFn: async () => (await api.projects.list()) ?? [],
+    enabled: user != null,
   });
   const projects = data ?? [];
   useEffect(() => {

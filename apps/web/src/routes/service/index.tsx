@@ -436,7 +436,8 @@ export function ServiceDetail() {
         </aside>
 
         {/* Right Content Pane */}
-        <main id="service-tab-panel" role="tabpanel" className="flex-1 min-w-0 w-full">
+        {/* S7: a div, not a second <main>: the Layout owns the page's one main. */}
+        <div id="service-tab-panel" role="tabpanel" className="flex-1 min-w-0 w-full">
           {tab === 'overview' && (
             <>
               <OverviewTab serviceId={id} svc={svc} />
@@ -516,7 +517,7 @@ export function ServiceDetail() {
               deleting={removeService.isPending}
             />
           )}
-        </main>
+        </div>
 
         <ConfirmDialog
           open={confirmRedeploy}

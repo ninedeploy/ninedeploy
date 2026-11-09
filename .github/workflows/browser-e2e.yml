@@ -1,0 +1,78 @@
+name: Browser journeys
+
+# S7 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): the web panel driven by
+# Playwright, on the image main CI just published (main-<sha>). It is a
+# separate workflow, so it stays out of ci.yml's cancel-on-push concurrency and
+# of the release's main-CI reuse guard, and it does not block anything yet.
+# scripts/smoke-browser-e2e.mjs starts dind + the panel; e2e/ holds the
+# journeys and its own Playwright install (never part of the panel workspace).
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Panel image to drive (default: the current release, ghcr.io/ninedeploy/ninedeploy:v<version>)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-e2e-${{ github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  journeys:
+    name: Setup · first deploy · Turkish · phone width
+    # Only main CI runs that were pushes publish main-<sha>; a pull request
+    # from a fork's own `main` branch also matches the branch filter, and its
+    # code must never run here.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+
+      - name: Install Playwright (e2e/ only)
+        run: |
+          pnpm --dir e2e install --frozen-lockfile
+          pnpm --dir e2e exec playwright install --with-deps chromium
+
+      - name: Browser journeys
+        env:
+          IMAGE: ${{ inputs.image || (github.event.workflow_run.head_sha && format('ghcr.io/ninedeploy/ninedeploy:main-{0}', github.event.workflow_run.head_sha)) || '' }}
+        run: |
+          if [ -n "$IMAGE" ]; then
+            node scripts/smoke-browser-e2e.mjs --image="$IMAGE"
+          else
+            node scripts/smoke-browser-e2e.mjs
+          fi
+
+      - name: Upload the Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-journeys-${{ github.run_id }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 14
+          if-no-files-found: ignore

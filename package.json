@@ -30,6 +30,7 @@
     "release": "pnpm release:check && pnpm -r --filter \"./packages/*\" --filter \"./apps/cli\" publish --access public",
     "packages:publish": "pnpm -r --filter \"./packages/*\" --filter \"./apps/cli\" publish --access public",
     "smoke:user-journey": "node scripts/smoke-user-journey.mjs",
+    "smoke:browser": "node scripts/smoke-browser-e2e.mjs",
     "smoke:upgrade": "node scripts/smoke-upgrade.mjs",
     "smoke:multinode": "node scripts/smoke-multinode.mjs",
     "smoke:container-readiness": "node scripts/smoke-container-readiness.mjs",

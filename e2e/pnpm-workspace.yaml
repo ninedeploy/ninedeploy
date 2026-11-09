@@ -1,0 +1,9 @@
+# This project is NOT part of the panel's pnpm workspace (the root
+# pnpm-workspace.yaml globs apps/* and packages/* only). The bare-metal
+# installer builds that workspace on every host, so Playwright and its
+# browsers must stay here, with their own lockfile, installed only by
+# .github/workflows/browser-e2e.yml (S7).
+packages:
+  - "."
+
+minimumReleaseAge: 20160

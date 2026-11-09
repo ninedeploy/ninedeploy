@@ -17,4 +17,8 @@ A smoke test drives real Docker, often with a built panel image. Most run in CI 
 | `smoke-volume-file-helper.mjs` | `pnpm smoke:volume-files` | The volume file browser's helper container (`--image=<built candidate>`). | An isolated daemon; no host volumes are mounted |
 <!-- manual-smokes:end -->
 
+### Browser journeys
+
+`smoke-browser-e2e.mjs` (`pnpm smoke:browser`) drives the web panel with Playwright. It covers the setup form, the deploy wizard, the Turkish locale and a phone-width pass. It runs against an image in Docker-in-Docker, which it starts and removes by name. `.github/workflows/browser-e2e.yml` runs it after each green main CI run, on that run's `main-<sha>` image. Playwright lives in `e2e/`, with its own lockfile, outside the panel workspace. Install it once with `pnpm --dir e2e install && pnpm --dir e2e exec playwright install chromium`. Then run `node scripts/smoke-browser-e2e.mjs --image=<image>`. `--keep` leaves the panel running, and arguments after `--` go to Playwright.
+
 Before you run any smoke against a Docker daemon, check which daemon it is. A smoke that boots the panel recreates the panel's Traefik container on that daemon.

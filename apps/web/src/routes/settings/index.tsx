@@ -285,7 +285,8 @@ export function Settings() {
         </aside>
 
         {/* Active Section Content Panel */}
-        <main className="lg:col-span-8 xl:col-span-9 min-w-0" id={`settings-panel-${section}`} role="tabpanel">
+        {/* S7: a div, not a second <main>: the Layout owns the page's one main. */}
+        <div className="lg:col-span-8 xl:col-span-9 min-w-0" id={`settings-panel-${section}`} role="tabpanel">
           <div className="space-y-6">
             {section === 'account' && <AccountSection />}
             {section === 'appearance' && <AppearanceSection />}
@@ -308,7 +309,7 @@ export function Settings() {
             {section === 'panel-backup' && <PanelBackupSection />}
             {section === 'migration' && <MigrationSection />}
           </div>
-        </main>
+        </div>
       </div>
     </div>
   );

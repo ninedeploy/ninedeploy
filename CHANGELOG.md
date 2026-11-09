@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Three web panel faults the first browser journeys found.**
+  - Every page tried to load Google Fonts, which the panel's own content security policy blocks. Each page load logged a console error, and loading the fonts would have sent every visitor to Google. The import is gone. The panel uses Inter and JetBrains Mono when they are installed, and the system fonts otherwise, which is what it already showed.
+  - The sign-in page asked for the project list before anyone was signed in, and got a 401.
+  - The Settings and service pages each had a second `<main>` element. A page should have only one; the Layout owns it.
 - CI expiry sweeps recheck the persisted lease atomically before declaring an attempt lost, preserving heartbeat/restart renewals and counting only attempts actually lost (F1060).
 - Scheduled deploys count CI-waiting rows toward the shared queue limit and reserve the last slot atomically, auditing concurrent losers as skipped while preserving the schedule trigger (F1059).
 - Scheduled jobs keep their active crons while a refresh query waits or fails, preserving upcoming job deadlines until a successful reload replaces the schedule set (F1058).

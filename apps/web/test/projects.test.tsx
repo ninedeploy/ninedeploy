@@ -69,7 +69,26 @@ vi.mock('../src/lib/api.js', () => {
   };
 });
 
+// S7: the provider lists projects only for a signed-in user (it also wraps
+// the sign-in page, where the request would answer 401).
+const authState = vi.hoisted(() => ({ user: { id: 1 } as { id: number } | null }));
+vi.mock('../src/lib/auth.js', () => ({ useAuth: () => ({ user: authState.user }) }));
+
 describe('ProjectScopeProvider', () => {
+  it('does not list projects before sign-in', async () => {
+    const { api } = await import('../src/lib/api.js');
+    vi.mocked(api.projects.list).mockClear();
+    authState.user = null;
+    try {
+      renderProvider();
+      await new Promise((r) => setTimeout(r, 30));
+      expect(api.projects.list).not.toHaveBeenCalled();
+      expect(screen.getByTestId('count')).toHaveTextContent('0');
+    } finally {
+      authState.user = { id: 1 };
+    }
+  });
+
   it('defaults to All projects and loads the list', async () => {
     localStorage.removeItem('ninedeploy.projectId');
     renderProvider();
