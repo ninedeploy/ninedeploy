@@ -1,0 +1,44 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > five overlapping copies acknowledge one append and four replays
+EXPECTED: "once\n" ACTUAL: "once\n" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > five overlapping copies acknowledge one append and four replays 189ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > ordered different sequences may use the same pre-request snapshot
+EXPECTED: "ab" ACTUAL: "ab" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > ordered different sequences may use the same pre-request snapshot 235ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > gated first completion preserves file order and accounting
+EXPECTED: "alpha\nbeta\n" ACTUAL: "alpha\nbeta\n" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > gated first completion preserves file order and accounting 186ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > another file can complete while the first file writer is gated
+EXPECTED: "first" ACTUAL: "first" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > another file can complete while the first file writer is gated 173ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > a gap rejection releases the same file for the proper next chunk
+EXPECTED: "good" ACTUAL: "good" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > a gap rejection releases the same file for the proper next chunk 167ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > a fresh-state read failure releases the file queue
+EXPECTED: "retry" ACTUAL: "retry" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > a fresh-state read failure releases the file queue 170ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > a queued writer rereads cancellation and appends no late second chunk
+EXPECTED: "admitted" ACTUAL: "admitted" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > a queued writer rereads cancellation and appends no late second chunk 158ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > a previously captured running snapshot does not append after cancellation
+EXPECTED: "" ACTUAL: "" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > a previously captured running snapshot does not append after cancellation 178ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > empty chunk and duplicate still advance once without bytes
+EXPECTED: "" ACTUAL: "" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1065_ciLogOrder.test.ts > empty chunk and duplicate still advance once without bytes 173ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  22:35:11
+   Duration  2.58s (tests 68%, import 21%, transform 10%)

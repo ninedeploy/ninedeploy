@@ -1,0 +1,65 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts > sequential chunks and replay preserve exact bytes 170ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts > delayed metadata completion cannot invert the accepted file sequence
+EXPECTED: "first\nsecond\n" ACTUAL: "second\nfirst\n"
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts > delayed metadata completion cannot invert the accepted file sequence 412ms
+   → expected 'second\nfirst\n' to be 'first\nsecond\n' // Object.is equality
+stdout | .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts > overlapping retries with the same request snapshot acknowledge once
+EXPECTED: 2 acknowledgements; ACTUAL: 1
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts > overlapping retries with the same request snapshot acknowledge once 185ms
+   → expected [ { status: 'fulfilled', …(1) } ] to have a length of 2 but got 1
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts > delayed metadata completion cannot invert the accepted file sequence
+AssertionError: expected 'second\nfirst\n' to be 'first\nsecond\n' // Object.is equality
+
+- Expected
++ Received
+
+- first
+- second
++ second
++ first
+
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts:43:20
+     41|     console.log('EXPECTED:', JSON.stringify('first\nsecond\n'), 'ACTUA…
+     42|     console.log(actual === 'first\nsecond\n' ? 'PROBLEM NOT REPRODUCED…
+     43|     expect(actual).toBe('first\nsecond\n');
+       |                    ^
+     44|   } finally { release(); await first.catch(() => undefined); await sec…
+     45| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts > overlapping retries with the same request snapshot acknowledge once
+AssertionError: expected [ { status: 'fulfilled', …(1) } ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1065_ciLogOrder.test.ts:51:58
+     49|   console.log('EXPECTED: 2 acknowledgements; ACTUAL:', outcomes.filter…
+     50|   console.log(outcomes.every(r => r.status === 'fulfilled') ? 'PROBLEM…
+     51|   expect(outcomes.filter(r => r.status === 'fulfilled')).toHaveLength(…
+       |                                                          ^
+     52|   expect(readLog(jobId,1)).toBe('once\n');
+     53| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  22:33:22
+   Duration  2.11s (import 47%, tests 45%, transform 8%)

@@ -372,12 +372,33 @@ export function logFile(jobId: number, attemptNumber: number): string {
   return path.join(config.paths.logsDir, 'ci', String(jobId), `${attemptNumber}.log`);
 }
 
+const logWriters = new Map<string, Promise<void>>();
+
 /**
  * Append one chunk. Chunks carry a sequence number; a repeated number (a
  * retried POST) is acknowledged without appending it twice, and a gap is
  * refused so the runner resends in order.
  */
 export async function appendLog(db: DB, attempt: Attempt, seq: number, data: string): Promise<{ stored: boolean }> {
+  const file = logFile(attempt.jobId, attempt.number);
+  const previous = logWriters.get(file) ?? Promise.resolve();
+  let release!: () => void;
+  const done = new Promise<void>((resolve) => { release = resolve; });
+  logWriters.set(file, done);
+  await previous;
+  try {
+    const fresh = await db.query.ciAttempts.findFirst({ where: and(
+      eq(ciAttempts.id, attempt.id), eq(ciAttempts.jobId, attempt.jobId), eq(ciAttempts.number, attempt.number),
+    ) });
+    if (!fresh) throw new CiError('The attempt is over', 409);
+    return await appendLogInOrder(db, fresh, seq, data);
+  } finally {
+    release();
+    if (logWriters.get(file) === done) logWriters.delete(file);
+  }
+}
+
+async function appendLogInOrder(db: DB, attempt: Attempt, seq: number, data: string): Promise<{ stored: boolean }> {
   if (attempt.status !== 'running') throw new CiError('The attempt is over', 409);
   if (seq <= attempt.logSeq) return { stored: false };
   if (seq !== attempt.logSeq + 1) throw new CiError(`Expected chunk ${attempt.logSeq + 1}`, 409);

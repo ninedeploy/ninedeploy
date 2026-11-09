@@ -1,0 +1,177 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > requires target CI for a pinned artifact promotion and preserves its image identity 283ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > preserves the legacy queue response and exposes CI only to clients that opt in 322ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > is opt-in and does no network work in the claim path 200ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > pins the branch once, waits across a new poller, and only admits that SHA 254ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > does not treat queued as success or reuse a previous successful run 244ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > does not treat in_progress as success or reuse a previous successful run 208ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > refuses a completed failure workflow 220ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > refuses a completed cancelled workflow 212ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > refuses a completed skipped workflow 270ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > refuses a completed neutral workflow 242ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > refuses a completed timed_out workflow 253ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > refuses a completed action_required workflow 222ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > does not accept another SHA, another workflow, or pull_request_target runs 244ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > keeps the captured policy when a link is disabled or the policy changes 225ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > fails closed on permission errors and expires missing checks 224ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > cannot resurrect a deployment cancelled while GitHub answers 246ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > does not build another repository after the captured source changes 236ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > clears an early approval when a mutable ref is pinned, but preserves approval of an exact SHA 232ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > checks every required workflow and the latest attempt, including subsequent pages 226ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > never admits a success from truncated run history 231ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > uses a persisted lease so concurrent pollers make only one check 271ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > rechecks a receipt that aged while awaiting human approval 282ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > applies the parent policy to a pinned fork preview without sending a token to the fork 268ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > refuses source changes made while GitHub is answering 253ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > does not release an old CI candidate after a newer deployment has served 287ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > polls fairly when older candidates become due again before a later candidate was checked 285ms
+ ✓ test/lib/ciGate.test.ts > durable required GitHub workflows > cancels a queued CI receipt if a newer deployment started after the poll released it 267ms
+ ✓ test/lib/ciGate.coverage.test.ts > ciSummary > is null without a gate and exposes only safe evidence 218ms
+ ✓ test/lib/ciGate.coverage.test.ts > holdForCiIfNeeded edges > lets missing and non-queued deployments through untouched 260ms
+ ✓ test/lib/ciGate.coverage.test.ts > holdForCiIfNeeded edges > holds again (renewing the deadline) when a fresh receipt no longer matches the source 202ms
+ ✓ test/lib/ciGate.coverage.test.ts > assertCiGateForBuild edges > refuses an unverified build when a policy exists and allows it when none does 205ms
+ ✓ test/lib/ciGate.coverage.test.ts > assertCiGateForBuild edges > refuses a gate that has not passed for this exact commit 260ms
+ ✓ test/lib/ciGate.coverage.test.ts > assertCiGateForBuild edges > refuses a passed gate once a newer deployment has started 187ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > fails when the service switched to an image source 264ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > fails when the repository link changed after the hold 180ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > keeps waiting (no verdict) while the installation is removed 275ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > fails when the link names a different repository than the service URL 375ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > fails an invalid captured policy 353ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > fails when GitHub reports another repository id 312ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > fails when the branch does not resolve to an exact SHA 289ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > fails when the deployment commit moved away from the resolved SHA 289ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates refusals > refuses a fork preview that arrived without an exact SHA 273ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates bookkeeping > skips an awaiting row without a gate 284ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates bookkeeping > reports a released candidate as a transition, and records nothing once the caller aborted 326ms
+ ✓ test/lib/ciGate.coverage.test.ts > pollCiGates bookkeeping > surfaces database failures as one AggregateError 242ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > leaves deploys alone without a gating pipeline 220ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > holds the deploy, runs one job, and builds exactly the commit the job pinned 280ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > fails the deploy when the job fails, or when the job tested another commit 234ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > cancels the job of a deploy that was cancelled or replaced 207ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > lets a waiting deploy go and stops its job when the gate is removed 244ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > requeues a deploy held without a job, so the claim path decides again 335ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > gates a fork preview with its parent's pipeline, and its job waits for an admin 299ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > fails a fork preview deploy that names no commit, instead of asking an admin to approve a moving branch 209ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate > reaches a passed job behind more than a page of deploys whose jobs still run 487ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 deploy gate beside the GitHub workflow gate > keeps polling GitHub-gated deploys while runner-gated ones wait 342ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 jobs on push > runs one job per pushed commit when the pipeline asks for it 238ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 jobs on push > is wired into the push webhook, which still queues the deploy 269ms
+ ✓ test/lib/ciDeployGate.test.ts > R5 jobs on push > leaves a gating pipeline to the deploy the push queues 259ms
+ ✓ test/ciRunner.test.ts > R5 runner: the job container > gets the workspace and the script, limits, and no way to raise privileges 1ms
+ ✓ test/ciRunner.test.ts > R5 runner: the job container > never mounts the Docker socket, never runs privileged, and keeps secret values off the command line 0ms
+ ✓ test/ciRunner.test.ts > R5 runner: the job container > puts the job on a network of its own, or on none 0ms
+ ✓ test/ciRunner.test.ts > R5 runner: the job container > labels the container with this runner's id (not its token) for orphan cleanup 0ms
+ ✓ test/ciRunner.test.ts > R5 runner: job variables never steer the docker client > drops reserved names from both the -e list and the client environment, and the schema refuses them 1ms
+ ✓ test/ciRunner.test.ts > R5 runner against the real CI routes (docker replaced by a stand-in) > removes its orphans, runs jobs, ships logs and reports one result each 7180ms
+ ✓ test/modules/ci.test.ts > R5 CI > enrols a runner with a token shown once, and refuses unknown tokens 278ms
+ ✓ test/modules/ci.test.ts > R5 CI > runs a job: claim with only the named secret, ordered logs, one counted result 388ms
+ ✓ test/modules/ci.test.ts > R5 CI > a lease is bound to its runner 276ms
+ ✓ test/modules/ci.test.ts > R5 CI > a lost runner requeues the job; its late result does not count and it is told to stop 235ms
+ ✓ test/modules/ci.test.ts > R5 CI > fails a job once its attempts are used up 199ms
+ ✓ test/modules/ci.test.ts > R5 CI > cancelling a running job stops its runner and voids its result 252ms
+ ✓ test/modules/ci.test.ts > R5 CI > holds a job for approval, and matches runner labels 228ms
+ ✓ test/modules/ci.test.ts > R5 CI > revoking a runner shuts it out and requeues its work 267ms
+ ✓ test/modules/ci.test.ts > R5 CI > a panel restart gives running attempts a fresh lease instead of declaring them lost 233ms
+ ✓ test/modules/ci.test.ts > R5 CI > only admins choose the pipeline, and finished jobs are pruned with their logs 249ms
+ ✓ test/lib/ciClaimRevocation.test.ts > an active runner can claim and revocation loses its assigned attempt 204ms
+stdout | test/lib/ciClaimRevocation.test.ts > revocation during queue-read prevents a new lease
+EXPECTED: no claim / 0 closed attempts; ACTUAL: null / []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > revocation during queue-read prevents a new lease 193ms
+stdout | test/lib/ciClaimRevocation.test.ts > revocation during before-insert prevents a new lease
+EXPECTED: no claim / 0 closed attempts; ACTUAL: null / []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > revocation during before-insert prevents a new lease 185ms
+stdout | test/lib/ciClaimRevocation.test.ts > revocation during after-insert prevents a new lease
+EXPECTED: no claim / 1 closed attempts; ACTUAL: null / [ 'lost' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > revocation during after-insert prevents a new lease 181ms
+stdout | test/lib/ciClaimRevocation.test.ts > an old claim cannot overwrite a newer runner after pending attempt revocation
+EXPECTED: old offer null; ACTUAL: null
+FIX VERIFIED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > an old claim cannot overwrite a newer runner after pending attempt revocation 199ms
+stdout | test/lib/ciClaimRevocation.test.ts > a lost attempt is not published while loss reconciliation still awaits its job read
+EXPECTED: lost offer null; ACTUAL: null
+FIX VERIFIED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > a lost attempt is not published while loss reconciliation still awaits its job read 225ms
+stdout | test/lib/ciClaimRevocation.test.ts > persisted revocation fences publication before the revoker processes its attempt list
+EXPECTED: revoked offer null; ACTUAL: null
+FIX VERIFIED
+
+ ✓ test/lib/ciClaimRevocation.test.ts > persisted revocation fences publication before the revoker processes its attempt list 225ms
+ ✓ test/lib/ciClaimCapacity.test.ts > sequential under-reported claims cannot exceed capacity 219ms
+stdout | test/lib/ciClaimCapacity.test.ts > overlapping claims cannot exceed runner capacity 1
+EXPECTED: 1 ACTUAL: 1
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimCapacity.test.ts > overlapping claims cannot exceed runner capacity 1 195ms
+stdout | test/lib/ciClaimCapacity.test.ts > overlapping claims cannot exceed runner capacity 2
+EXPECTED: 2 ACTUAL: 2
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimCapacity.test.ts > overlapping claims cannot exceed runner capacity 2 187ms
+ ✓ test/lib/ciClaimCancellation.test.ts > an ordinary claim remains owned and cancellation closes its attempt 228ms
+stdout | test/lib/ciClaimCancellation.test.ts > cancellation uses the current attempt rather than its earlier queued snapshot
+EXPECTED: cancelled; ACTUAL: cancelled
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimCancellation.test.ts > cancellation uses the current attempt rather than its earlier queued snapshot 160ms
+stdout | test/lib/ciClaimCancellation.test.ts > a claim cannot publish an attempt after cancellation won before publication
+EXPECTED: no offer / cancelled attempt; ACTUAL: null / cancelled
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciClaimCancellation.test.ts > a claim cannot publish an attempt after cancellation won before publication 200ms
+ ✓ test/lib/ciFinishCancellation.test.ts > a completed finish stays terminal and cannot be cancelled 199ms
+stdout | test/lib/ciFinishCancellation.test.ts > cancel-first: cancellation winning the job rejects the finish
+EXPECTED: conflict; ACTUAL: conflict
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/ciFinishCancellation.test.ts > cancel-first: cancellation winning the job rejects the finish
+EXPECTED: cancelled job/attempt; ACTUAL: cancelled / cancelled
+
+ ✓ test/lib/ciFinishCancellation.test.ts > cancel-first: cancellation winning the job rejects the finish 198ms
+stdout | test/lib/ciFinishCancellation.test.ts > attempt-result-first: cancellation winning the job rejects the finish
+EXPECTED: conflict; ACTUAL: conflict
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/ciFinishCancellation.test.ts > attempt-result-first: cancellation winning the job rejects the finish
+EXPECTED: cancelled job/attempt; ACTUAL: cancelled / cancelled
+
+ ✓ test/lib/ciFinishCancellation.test.ts > attempt-result-first: cancellation winning the job rejects the finish 238ms
+ ✓ test/lib/ciLogOrdering.test.ts > sequential chunks and replay preserve exact bytes 189ms
+stdout | test/lib/ciLogOrdering.test.ts > delayed metadata completion cannot invert the accepted file sequence
+EXPECTED: "first\nsecond\n" ACTUAL: "first\nsecond\n"
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciLogOrdering.test.ts > delayed metadata completion cannot invert the accepted file sequence 181ms
+stdout | test/lib/ciLogOrdering.test.ts > overlapping retries with the same request snapshot acknowledge once
+EXPECTED: 2 acknowledgements; ACTUAL: 2
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciLogOrdering.test.ts > overlapping retries with the same request snapshot acknowledge once 193ms
+ ✓ test/lib/ciLeaseSweep.test.ts > a still-expired lease is lost and its job requeued 239ms
+stdout | test/lib/ciLeaseSweep.test.ts > heartbeat after the sweep read preserves the renewed lease
+EXPECTED: running / 0 lost; ACTUAL: running / 0
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciLeaseSweep.test.ts > heartbeat after the sweep read preserves the renewed lease 289ms
+stdout | test/lib/ciLeaseSweep.test.ts > restart after the sweep read preserves the renewed lease
+EXPECTED: running / 0 lost; ACTUAL: running / 0
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/ciLeaseSweep.test.ts > restart after the sweep read preserves the renewed lease 274ms
+
+ Test Files  11 passed (11)
+      Tests  96 passed (96)
+   Start at  22:35:30
+   Duration  38.82s (tests 81%, import 17%, transform 1%)
+
+    Isolate  11 workers spawned · ~200ms startup each (spawn + environment, per file)
+             at least ~2.00s faster with isolate: false — reuses workers across files instead of one per file
