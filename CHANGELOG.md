@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- GitHub runner drains recheck pending-job identity after asynchronous preparation of earlier jobs or online status checks, so later workflow events cannot leave stale jobs eligible to start (F1067).
 - Failed CI log file creation or append no longer consumes the chunk sequence; partial writes restore the prior file length and reservation so retries preserve accepted diagnostics (F1066).
 - CI log writes serialize admission and file append per attempt within the panel process, preserving chunk order and acknowledging overlapping retries from current persisted sequence state (F1065).
 - CI results that lose the job transition to cancellation return a conflict instead of success; cancellation closes the current attempt even when a competing result just finished its attempt write (F1064).

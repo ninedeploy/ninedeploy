@@ -1,0 +1,119 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/githubRunners.coverage.test.ts > configuration and matching > falls back to the defaults for a stored configuration that no longer parses 178ms
+ ✓ test/lib/githubRunners.coverage.test.ts > configuration and matching > uses a repository scope when an organization installation has no login 152ms
+ ✓ test/lib/githubRunners.coverage.test.ts > configuration and matching > accepts the host architecture label by default 158ms
+ ✓ test/lib/githubRunners.coverage.test.ts > configuration and matching > writes the node isolation script from the module constants only 161ms
+ ✓ test/lib/githubRunners.coverage.test.ts > configuration and matching > leaves the cpu and memory limits off when unset 155ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerNetwork > accepts a network another start created while this one raced 154ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerNetwork > rethrows a create failure when the network still does not exist 167ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerNetwork > refuses a network with another bridge name 171ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerIsolation > adds nothing when every rule is already in place 187ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerIsolation > names a non-Error insertion failure 189ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerIsolation > refuses when the bridge is not visible (checker passed in) 154ms
+ ✓ test/lib/githubRunners.coverage.test.ts > listRunnerContainers (panel host) > reads zone names off the date and drops bad numbers and empty labels 155ms
+ ✓ test/lib/githubRunners.coverage.test.ts > listRunnerContainers (panel host) > handles a line with only a name 175ms
+ ✓ test/lib/githubRunners.coverage.test.ts > listNodeRunnerContainers > fails when the node answers no runner list line 232ms
+ ✓ test/lib/githubRunners.coverage.test.ts > listNodeRunnerContainers > fails on a list that is not an array, and on bad JSON 259ms
+ ✓ test/lib/githubRunners.coverage.test.ts > listNodeRunnerContainers > drops rows that do not look like ours and normalizes the rest 232ms
+ ✓ test/lib/githubRunners.coverage.test.ts > listNodeRunnerContainers > does not ask the agent when the node lacks the capability 237ms
+ ✓ test/lib/githubRunners.coverage.test.ts > listAllRunnerContainers > reports each host that cannot answer, null for the panel host, without failing the rest 227ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerGroup > reuses the cached group until the repositories change or ten minutes pass 223ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerGroup > copes with a list answer without groups, and refuses a created group without an id 255ms
+ ✓ test/lib/githubRunners.coverage.test.ts > ensureRunnerGroup > names a non-Error failure of the group calls 222ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > starts only up to maxConcurrent of several jobs, oldest first, and the rest as slots free up 253ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > ignores a delivery whose repository has no name 214ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > keeps one entry for a job delivered twice, and stores a job without a name or labels list 232ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > drops a job that waited longer than GitHub keeps one queued 246ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > drops the jobs of an App that was deleted or had runners turned off 240ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > forgets the waiting jobs of one App only 230ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > logs a drain that fails outright and keeps the chain usable 227ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > starts nothing for an installation removed since the job was queued 228ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > records a GitHub answer without a JIT configuration, a non-Error failure, and clears it after a success 219ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the queue > starts a repository runner on a node for a personal installation 215ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: re-checking waiting jobs > drops a job GitHub no longer has queued 214ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: re-checking waiting jobs > starts a job GitHub still has queued, and one it cannot check 230ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: re-checking waiting jobs > drops a job whose installation is gone before asking GitHub 217ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: re-checking waiting jobs > drains leftover jobs even after every App turned runners off 235ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: reaping > keeps a running runner without a creation time, and one whose registration cannot be found 231ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: reaping > reaps an idle repository runner through the repository path, and survives a failed deregistration 228ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: reaping > removes a runner past the job limit even when GitHub cannot be asked about it 199ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: reaping > keeps a runner whose busy check fails for another reason than a 404 206ms
+ ✓ test/lib/githubRunners.coverage.test.ts > sweepGithubRunners: reaping > reaps a node runner through the node, and leaves it when the node cannot remove it 214ms
+ ✓ test/lib/githubRunners.coverage.test.ts > stopRunner > stops a node runner through the node and removes its registration 217ms
+ ✓ test/lib/githubRunners.coverage.test.ts > stopRunner > surfaces a node failure to the operator 227ms
+ ✓ test/lib/githubRunners.coverage.test.ts > stopRunner > answers false when no host lists the runner 215ms
+ ✓ test/lib/githubRunners.coverage.test.ts > runner status and problems > says why runners cannot start on a node that refuses the capability 216ms
+ ✓ test/lib/githubRunners.coverage.test.ts > runner status and problems > names an App without installations or events, and a personal installation without administration 210ms
+ ✓ test/lib/githubRunners.coverage.test.ts > runner status and problems > reports a node that did not list its runners, only while runners are on 219ms
+ ✓ test/lib/githubRunners.coverage.test.ts > runner status and problems > lists only this App runners, with a null start time when unknown 211ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > prepares the network and the host firewall 234ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > names a non-Error firewall failure, and keeps only the tail of a long one 236ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > starts nothing when the network is not the isolated one 252ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > starts a runner without limits, and reports it 215ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > accepts a repository scope 230ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > cleans up the env file even when docker run fails 249ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { name: 42 } before touching Docker 232ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { repo: 7 } before touching Docker 173ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { scope: 3 } before touching Docker 199ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { scope: 'team:acme' } before touching Docker 231ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { cpus: '2' } before touching Docker 236ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { cpus: 0.1 } before touching Docker 193ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { cpus: 65 } before touching Docker 196ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { cpus: NaN } before touching Docker 186ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { memoryMb: '4096' } before touching Docker 185ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { memoryMb: 1024.5 } before touching Docker 176ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { memoryMb: 262145 } before touching Docker 165ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { jitConfig: 5 } before touching Docker 186ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { jitConfig: 'short' } before touching Docker 169ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { app: '1' } before touching Docker 177ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { app: 0 } before touching Docker 193ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { job: 1.5 } before touching Docker 179ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { job: 9007199254740992 } before touching Docker 170ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { runner: -3 } before touching Docker 200ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > refuses { runner: undefined } before touching Docker 183ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > lists the runner containers it started 182ms
+ ✓ test/lib/githubRunners.coverage.test.ts > the agent ops on the node > stops a runner it started, and refuses a malformed name 154ms
+ ✓ test/lib/githubRunners.test.ts > jobRefusal > takes a job whose labels are ours plus GitHub defaults 188ms
+ ✓ test/lib/githubRunners.test.ts > jobRefusal > leaves jobs meant for other runners alone 179ms
+ ✓ test/lib/githubRunners.test.ts > jobRefusal > refuses public repositories unless allowed, and repositories outside the list 168ms
+ ✓ test/lib/githubRunners.test.ts > jobRefusal > takes nothing while runners are off 186ms
+ ✓ test/lib/githubRunners.test.ts > githubRunnerConfig > refuses GitHub default labels and duplicates 208ms
+ ✓ test/lib/githubRunners.test.ts > runnerRunArgs > runs the pinned image without the Docker socket, on its own network, with limits 190ms
+ ✓ test/lib/githubRunners.test.ts > handleWorkflowJob > starts an org runner for a matching job, the JIT config only in the env file 201ms
+ ✓ test/lib/githubRunners.test.ts > handleWorkflowJob > uses a repository runner (administration permission) on a personal installation 210ms
+ ✓ test/lib/githubRunners.test.ts > handleWorkflowJob > ignores refused jobs and later actions without starting anything 162ms
+ ✓ test/lib/githubRunners.test.ts > handleWorkflowJob > holds jobs beyond the slot limit and drops one another runner took 192ms
+ ✓ test/lib/githubRunners.test.ts > handleWorkflowJob > records a failed start and removes the registration 179ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > firewalls the runner bridge before anything is registered on GitHub 178ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > creates the network without IPv6, and refuses one that has it 178ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > starts nothing when the panel cannot see the bridge, and says why 196ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > starts nothing if firewall insertion fails 186ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > starts nothing when no permitted repositories are visible 153ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > runs without the firewall only when explicitly told to 168ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > starts no organization runner when the runner group cannot be set up 186ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > keeps the group to the repository list and lets public repositories in only when allowed 170ms
+ ✓ test/lib/githubRunners.test.ts > runner isolation and groups (security review) > updates an existing group instead of making another 185ms
+ ✓ test/lib/githubRunners.test.ts > sweepGithubRunners > makes no Docker call while no App has runners on 224ms
+ ✓ test/lib/githubRunners.test.ts > sweepGithubRunners > reaps an idle runner and keeps a busy one 173ms
+ ✓ test/lib/githubRunners.test.ts > sweepGithubRunners > treats a runner GitHub no longer knows as done 185ms
+ ✓ test/lib/githubRunners.test.ts > runner operator and expiration > keeps the GitHub registration if periodic cleanup cannot remove the container 155ms
+ ✓ test/lib/githubRunners.test.ts > runner operator and expiration > reports a Docker removal failure without deregistering the running runner 166ms
+ ✓ test/lib/githubRunners.test.ts > runner operator and expiration > stops only the requested App runner and removes its GitHub registration 203ms
+ ✓ test/lib/githubRunners.test.ts > runner operator and expiration > removes exited runners and those exceeding the maximum age 214ms
+ ✓ test/lib/githubRunners.test.ts > runner operator and expiration > retains an idle runner when GitHub cannot confirm it is idle 203ms
+ ✓ test/lib/githubRunners.test.ts > runnerProblems > names the missing event and permission 219ms
+ ✓ test/lib/githubRunnersNode.test.ts > the panel, with runners on a node > prepares the node before registering anything, then starts the runner there with the JIT config sealed 188ms
+ ✓ test/lib/githubRunnersNode.test.ts > the panel, with runners on a node > removes the registration when the node cannot start the runner 186ms
+ ✓ test/lib/githubRunnersNode.test.ts > the panel, with runners on a node > counts the node runners against the slot limit, and holds jobs while the node cannot answer 176ms
+ ✓ test/lib/githubRunnersNode.test.ts > the panel, with runners on a node > reaps an exited node runner through the node, and lists it in the status 166ms
+ ✓ test/lib/githubRunnersNode.test.ts > the agent ops > are opt-in on the node, sealed only 165ms
+ ✓ test/lib/githubRunnersNode.test.ts > the agent ops > firewalls the host through the nsenter helper, then runs the runner with the JIT config only in the env file 177ms
+ ✓ test/lib/githubRunnersNode.test.ts > the agent ops > starts nothing when the firewall cannot be put in place 188ms
+ ✓ test/lib/githubRunnersNode.test.ts > the agent ops > refuses malformed requests 199ms
+
+ Test Files  3 passed (3)
+      Tests  111 passed (111)
+   Start at  22:46:45
+   Duration  25.31s (tests 93%, import 6%, transform 1%)

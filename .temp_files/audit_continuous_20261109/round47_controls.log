@@ -1,0 +1,15 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/inspect_round47_ghaScheduler.test.ts > control: dispatches first at one minute and repeats on cadence 80ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round47_ghaScheduler.test.ts > suppresses overlap during a gated sweep and resumes after completion 2ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round47_ghaScheduler.test.ts > failed sweep releases busy, without future closed-owner dispatch (false) 1ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round47_ghaScheduler.test.ts > failed sweep releases busy, without future closed-owner dispatch (true) 2ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round47_ghaScheduler.test.ts > close before the first interval prevents every sweep 1ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round47_ghaScheduler.test.ts > close while a sweep waits prevents any next sweep after release 1ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round47_ghaScheduler.test.ts > a retained timer callback invoked after close cannot dispatch 2ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  22:46:36
+   Duration  334ms (import 42%, tests 41%, transform 15%, worker 2%)

@@ -1,0 +1,44 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > JIT gate: later in_progress for job81
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > JIT gate: later in_progress for job81 222ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > JIT gate: later completed for job81
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > JIT gate: later completed for job81 181ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > JIT gate: later completed for job999
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > JIT gate: later completed for job999 172ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > JIT gate: later completed for job80
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > JIT gate: later completed for job80 215ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > online recheck queued, remove=false
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > online recheck queued, remove=false 195ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > online recheck queued, remove=true
+EXPECTED: [ 81 ] ACTUAL: [ 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > online recheck queued, remove=true 195ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > online recheck completed, remove=false
+EXPECTED: [ 81 ] ACTUAL: [ 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > online recheck completed, remove=false 185ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > failed first preparation does not revive removed pending jobs (false)
+EXPECTED: [ 81 ] ACTUAL: [ 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > failed first preparation does not revive removed pending jobs (false) 201ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > failed first preparation does not revive removed pending jobs (true)
+EXPECTED: [] ACTUAL: [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1067_ghaPending.test.ts > failed first preparation does not revive removed pending jobs (true) 211ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  22:52:07
+   Duration  2.40s (tests 77%, import 17%, transform 5%)

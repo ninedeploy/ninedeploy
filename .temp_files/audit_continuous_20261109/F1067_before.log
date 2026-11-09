@@ -1,0 +1,25 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts [ .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts ]
+Error: Cannot find package '@ninedeploy/schemas' imported from D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts
+ ❯ .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts:4:1
+      2| import type { FastifyBaseLogger } from 'fastify';
+      3| import type { DB, GithubApp, GithubAppInstallation } from '@ninedeploy…
+      4| import { GITHUB_RUNNER_DEFAULTS } from '@ninedeploy/schemas';
+       | ^
+      5| const h = vi.hoisted(() => {
+      6|   process.env['NINEDEPLOY_MASTER_KEY']='ab'.repeat(32);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_MODULE_NOT_FOUND' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  22:49:32
+   Duration  1.24s (worker 95%, environment 5%)

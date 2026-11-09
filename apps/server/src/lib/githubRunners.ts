@@ -618,11 +618,11 @@ async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boole
     for (const job of jobs) {
       if (running >= config.maxConcurrent) break;
       const key = pendingKey(githubAppId, job.jobId);
-      if (opts.recheck && !(await stillQueued(db, ghApp, job))) {
-        pending.delete(key);
-        continue;
-      }
+      const waiting = !opts.recheck || await stillQueued(db, ghApp, job);
+      // Another job's startup or this recheck may outlive a later delivery.
+      if (pending.get(key) !== job) continue;
       pending.delete(key);
+      if (!waiting) continue;
       running += 1;
       try {
         await startRunner(db, log, ghApp, job, config);

@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 46
+### Further audit checkpoints through round 48
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -306,6 +306,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1064 | Cancellation-winning CI results return conflicts, close current attempt history and emit no result-success audit | 93 |
 | F1065 | CI log admission and append serialize per file within the panel process, retaining byte order and idempotent overlapping retries | 96 |
 | F1066 | Recoverable CI log file failures preserve prior bytes and roll back their sequence reservation for retry | 100 |
+| F1067 | GitHub runner drains retain pending-entry identity across earlier job startup and online status awaits | 114 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -365,6 +366,13 @@ The 100-test scope and resource-bound server static checks passed. Simultaneous
 write-plus-rollback failures are surfaced together and close handles; automatic
 data recovery after those double failures is not certified. Multi-process
 writers and abrupt process/power loss remain separate boundaries.
+
+Round 47 found no new scheduler defect: seven gated Fastify/interval controls
+and 111 existing runner fixtures passed. Round 48's independent nine-case
+verifier passed three times, including later workflow events during JIT/status
+waits and preparation failure controls. Its 114-test scope and resource-bound
+server static checks passed. These use mocked GitHub/Docker/node boundaries;
+an already-admitted runner startup can still finish under its original scope.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed

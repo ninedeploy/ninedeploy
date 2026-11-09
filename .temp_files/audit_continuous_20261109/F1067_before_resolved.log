@@ -1,0 +1,50 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts > a later pending job is unchanged while the first start waits
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts > a later pending job is unchanged while the first start waits 221ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts > a later pending job is in_progress while the first start waits
+EXPECTED: [ 80 ] ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts > a later pending job is in_progress while the first start waits 186ms
+   → expected [ 80, 81 ] to deeply equal [ 80 ]
+stdout | .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts > a later pending job is completed while the first start waits
+EXPECTED: [ 80 ] ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts > a later pending job is completed while the first start waits 182ms
+   → expected [ 80, 81 ] to deeply equal [ 80 ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts > a later pending job is in_progress while the first start waits
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts > a later pending job is completed while the first start waits
+AssertionError: expected [ 80, 81 ] to deeply equal [ 80 ]
+
+- Expected
++ Received
+
+  [
+    80,
++   81,
+  ]
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1067_ghaPending.test.ts:49:20
+     47|     console.log('EXPECTED:',expected,'ACTUAL:',actual);
+     48|     console.log(JSON.stringify(expected)===JSON.stringify(actual)?'PRO…
+     49|     expect(actual).toEqual(expected);
+       |                    ^
+     50|   }finally{release();await drain;}
+     51| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  22:49:57
+   Duration  2.43s (transform 37%, import 35%, tests 28%)
