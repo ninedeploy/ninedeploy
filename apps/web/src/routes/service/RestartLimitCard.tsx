@@ -7,6 +7,7 @@ import { formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { useT } from '../../lib/i18n.js';
 import { Button, Card, CardBody, Field, Input, Switch } from '../../components/ui.js';
+import { capabilityUsable, useServiceCapabilities } from '../../lib/capabilities.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -18,8 +19,9 @@ export function RestartLimitCard({ svc }: { svc: ServiceDetail }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
-  // G1.3: docker services on the panel host and PM2 services, not Swarm (the server refuses the rest).
-  const limitable = (svc.type === 'docker' || svc.type === 'pm2') && svc.serverId == null && svc.orchestrator !== 'swarm';
+  // G1.3 / C1: offered where the server accepts it (docker on the panel host and PM2, not Swarm).
+  const caps = useServiceCapabilities(svc.id);
+  const limitable = capabilityUsable(caps.data, 'restartLimit');
   const q = useQuery({ queryKey: ['restart-limit', svc.id], queryFn: () => api.services.restartLimit.get(svc.id), enabled: limitable });
   const [on, setOn] = useState(false);
   const [max, setMax] = useState('5');

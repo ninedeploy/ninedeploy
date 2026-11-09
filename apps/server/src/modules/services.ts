@@ -47,6 +47,7 @@ import { autoUrlPreview } from '../lib/autoUrl.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
 import { deleteOwnedSettings } from '../lib/ownedSettings.js';
+import { assertServiceCapability } from '../lib/serviceCapabilities.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { assertMayLeaveLane, assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 import { readRuntimeLogs } from '../lib/runtimeLogs.js';
@@ -724,19 +725,15 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // 0.16.10 autoscaling: docker services only (saved on a node or Swarm
     // service too; the autoscaler holds there and says why). A change starts
     // the autoscaler's windows again.
-    if (patch.autoscale != null && (patch.type ?? existing.type) !== 'docker') {
-      throw badRequest('Autoscaling applies to docker services only');
-    }
+    // C1: the gates below are the capability evaluator's, on the type after this patch.
+    const patched = { ...existing, type: patch.type ?? existing.type };
+    if (patch.autoscale != null) await assertServiceCapability(app.db, patched, 'autoscale');
     if (patch.autoscale !== undefined) resetAutoscaleState(id);
     // 0.16.11 scale to zero: docker services only.
-    if (patch.sleepAfterMinutes != null && (patch.type ?? existing.type) !== 'docker') {
-      throw badRequest('Scale to zero applies to docker services only');
-    }
+    if (patch.sleepAfterMinutes != null) await assertServiceCapability(app.db, patched, 'scaleToZero');
     // Canary settings are stored for Docker services. Node deploys validate
     // support before candidate launch; Swarm logs its native rolling-update skip.
-    if (patch.canary != null && (patch.type ?? existing.type) !== 'docker') {
-      throw badRequest('Canary releases apply to docker services only');
-    }
+    if (patch.canary != null) await assertServiceCapability(app.db, patched, 'canary');
     // 0.16.1 healthcheck mode: 'http' is stored as null, the pre-0.16.1 row.
     if (patch.healthCheck !== undefined) {
       if (['running', 'tcp', 'http-strict'].includes(patch.healthCheck ?? '') && (patch.type ?? existing.type) !== 'docker') {

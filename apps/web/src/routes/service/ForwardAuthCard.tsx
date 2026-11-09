@@ -5,6 +5,7 @@ import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { useT } from '../../lib/i18n.js';
 import { Card, CardBody, Select, Switch } from '../../components/ui.js';
+import { capabilityUsable, useServiceCapabilities } from '../../lib/capabilities.js';
 
 type Role = 'viewer' | 'member' | 'admin' | 'owner';
 
@@ -15,7 +16,9 @@ type Role = 'viewer' | 'member' | 'admin' | 'owner';
  */
 export function ForwardAuthCard({ svc }: { svc: ServiceDetail }) {
   const t = useT();
-  const onHost = svc.serverId == null;
+  // C1: shown where the server lets panel sign-in be turned on.
+  const caps = useServiceCapabilities(svc.id);
+  const onHost = capabilityUsable(caps.data, 'forwardAuth');
   const domains = useQuery({ queryKey: ['domains', svc.id], queryFn: () => api.domains.list(svc.id), enabled: onHost, retry: false });
   const rows = (domains.data ?? []).filter((d) => d.status === 'active');
   if (!onHost || rows.length === 0) return null;

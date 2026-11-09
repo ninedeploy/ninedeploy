@@ -7,6 +7,7 @@ import type {
   SizingReport,
   RestartLimitConfig,
   RestartLimitView,
+  ServiceCapabilitiesView,
   PendingChangesView,
   PendingApplyInput,
   PendingApplyResult,
@@ -270,6 +271,8 @@ export interface ServicesApi {
       enable: (id: number) => Promise<RegistryHookView>;
       disable: (id: number) => Promise<RegistryHookView>;
     };
+    /** C1: what the service can use where it runs, and why not (viewer). */
+    capabilities: (id: number) => Promise<ServiceCapabilitiesView>;
     /** G1.3: stop the service when its containers keep restarting (opt-in; member to set). */
     restartLimit: {
       get: (id: number) => Promise<RestartLimitView>;
@@ -471,6 +474,7 @@ export function servicesApi(t: Transport): ServicesApi {
         enable: (id) => send<RegistryHookView>('POST', `/v1/services/${id}/registry-hook`),
         disable: (id) => request<RegistryHookView>(`/v1/services/${id}/registry-hook`, { method: 'DELETE' }),
       },
+      capabilities: (id) => get<ServiceCapabilitiesView>(`/v1/services/${id}/capabilities`),
       restartLimit: {
         get: (id) => get<RestartLimitView>(`/v1/services/${id}/restart-limit`),
         set: (id, limit) => send<RestartLimitView>('PUT', `/v1/services/${id}/restart-limit`, { limit }),

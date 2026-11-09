@@ -4,9 +4,9 @@ import { serviceFiles, serviceVolumeAttachments } from '@ninedeploy/db';
 import { MAX_SERVICE_FILES, type ServiceFile, type ServiceFileEntry, serviceFilePut, utf8Length } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { badRequest, conflict, notFound, parseId } from '../lib/errors.js';
+import { conflict, notFound, parseId } from '../lib/errors.js';
+import { assertServiceCapability } from '../lib/serviceCapabilities.js';
 import { assertServiceRole } from '../lib/resourceAccess.js';
-import { FILE_MOUNTS_UNSUPPORTED, fileMountsSupported } from '../lib/serviceFiles.js';
 import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 
@@ -51,7 +51,7 @@ export const serviceFileRoutes: FastifyPluginAsync = async (app) => {
     const input = serviceFilePut.parse(req.body);
     // Stored where it would never be mounted is a silent no-op; say so instead.
     // 0.16.5: a node service too; a deploy to a node whose agent predates file mounts is refused with the update named.
-    if (!fileMountsSupported(svc)) throw badRequest(FILE_MOUNTS_UNSUPPORTED, 'file_mounts_unsupported');
+    await assertServiceCapability(app.db, svc, 'fileMounts');
     // Docker refuses two mounts at one path; catch it here, not at deploy time.
     if (svc.volumeMount === input.path) throw conflict(`${input.path} is the service's data volume mount`);
     const attached = await app.db.query.serviceVolumeAttachments.findFirst({

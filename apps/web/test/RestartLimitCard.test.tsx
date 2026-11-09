@@ -11,6 +11,14 @@ vi.mock('../src/lib/api.js', async () => {
   return createFakeApiModule();
 });
 
+/** C1: the server's capability answer for one feature (everything else available). */
+const capabilities = (id: string, status: string, reason: string | null = 'reason') =>
+  mockOf(api.services.capabilities).mockResolvedValueOnce({
+    serviceId: 6,
+    runtime: 'node-docker',
+    capabilities: { maintenance: { status: 'available', reason: null }, errorPages: { status: 'available', reason: null }, forwardAuth: { status: 'available', reason: null }, restartLimit: { status: 'available', reason: null }, [id]: { status, reason } },
+  } as never);
+
 describe('RestartLimitCard (G1.3)', () => {
   it('turns the limit on with its values', async () => {
     mockOf(api.services.restartLimit.get).mockResolvedValue({ limit: null, recentRestarts: 0, trippedAt: null } as never);
@@ -26,13 +34,12 @@ describe('RestartLimitCard (G1.3)', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('is not offered where the server would refuse it: a node service or a Swarm service', () => {
+  it('is not offered where the server would refuse it (C1: its capability answer)', async () => {
+    capabilities('restartLimit', 'unavailable', 'The restart-loop limit is for docker services on the panel host and PM2 services, not Swarm');
     const before = mockOf(api.services.restartLimit.get).mock.calls.length;
-    for (const svc of [{ id: 5, type: 'docker', serverId: 4 }, { id: 5, type: 'docker', serverId: null, orchestrator: 'swarm' }]) {
-      const { container, unmount } = renderWithProviders(<RestartLimitCard svc={svc as never} />);
-      expect(container.textContent).toBe('');
-      unmount();
-    }
+    const { container } = renderWithProviders(<RestartLimitCard svc={{ id: 6, type: 'docker', serverId: 4 } as never} />);
+    await waitFor(() => expect(api.services.capabilities).toHaveBeenCalledWith(6));
+    expect(container.textContent).toBe('');
     expect(mockOf(api.services.restartLimit.get).mock.calls.length).toBe(before);
   });
 

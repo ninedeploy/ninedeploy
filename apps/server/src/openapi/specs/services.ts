@@ -178,6 +178,12 @@ export const servicesSpecs: RouteSpecMap = {
     responseType: 'ServiceTags',
     validation: 'zod',
   },
+  'GET /v1/services/:id/capabilities': {
+    summary: 'What the service can use where it runs, and why not (C1)',
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'ServiceCapabilitiesView',
+  },
   'GET /v1/services/:id/restart-limit': {
     summary: "A service's restart-loop limit, its restarts in the window and when it last tripped (G1.3)",
     tag: 'services',

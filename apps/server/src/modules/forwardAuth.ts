@@ -1,10 +1,11 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
-import { domains, serviceTargets, services, users, type Domain } from '@ninedeploy/db';
+import { domains, services, users, type Domain } from '@ninedeploy/db';
 import { forwardAuthGrantInput, forwardAuthInput, type ForwardAuthView } from '@ninedeploy/schemas';
 import { writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
+import { assertServiceCapability } from '../lib/serviceCapabilities.js';
 import {
   FA_PREFIX,
   forwardAuthState,
@@ -64,10 +65,8 @@ export const domainForwardAuthRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, svc, req.user!, 'member');
     const { forwardAuth } = forwardAuthInput.parse(req.body ?? {});
     if (forwardAuth) {
-      if (svc.serverId != null) throw badRequest('Panel sign-in is for domains of services on the panel host for now', 'forward_auth_unsupported');
-      // A service that also runs on nodes would be routed by their proxies, which cannot ask the panel.
-      const onNodes = await app.db.query.serviceTargets.findFirst({ where: eq(serviceTargets.serviceId, svc.id) });
-      if (onNodes) throw badRequest('Panel sign-in is not available for a service that also runs on nodes', 'forward_auth_unsupported');
+      // C1: panel host only; a service that also runs on nodes would be routed by their proxies, which cannot ask the panel.
+      await assertServiceCapability(app.db, svc, 'forwardAuth');
       const unreachable = await wakeUnreachableReason();
       if (unreachable) throw badRequest(`Cannot put the domain behind panel sign-in: ${unreachable}`, 'forward_auth_unreachable');
     }

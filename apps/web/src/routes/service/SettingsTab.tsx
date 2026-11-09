@@ -21,6 +21,7 @@ import { PendingChangesTray } from './PendingChangesTray.js';
 import { RestartLimitCard } from './RestartLimitCard.js';
 import { MaintenanceCard } from './MaintenanceCard.js';
 import { ForwardAuthCard } from './ForwardAuthCard.js';
+import { CapabilityLimitsCard } from './CapabilityLimitsCard.js';
 import { InlineDockerfileCard } from './InlineDockerfileCard.js';
 import { MoveWithDataCard } from './MoveWithDataCard.js';
 import { SleepCard } from './SleepCard.js';
@@ -75,6 +76,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
       <MaintenanceCard svc={svc} />
       {/* G2.3: panel sign-in in front of the service's domains. */}
       <ForwardAuthCard svc={svc} />
+      {/* C1: what this service cannot fully use where it runs, and why. */}
+      <CapabilityLimitsCard serviceId={serviceId} />
       {/* G2.1: a compose stack picks each domain's service in Network → Domains. */}
     </div>
   );

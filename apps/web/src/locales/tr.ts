@@ -6223,4 +6223,12 @@ export const TR: Readonly<Record<string, string>> = {
   'Panel allow-list off': 'Panel izin listesi kapalı',
   'Could not save the allow-list: {error}': 'İzin listesi kaydedilemedi: {error}',
   'Could not load the panel allow-list': 'Panel izin listesi yüklenemedi',
+  // ── Service → Settings: capability limits (C1) ─────────────────────────
+  '{n} features are limited or unavailable for this service': 'Bu serviste {n} özellik kısıtlı ya da kullanılamıyor',
+  'Panel sign-in on a domain': 'Bir domainde panel girişi',
+  'File mounts': 'Dosya bağlamaları',
+  'Limited': 'Kısmi',
+  'Coming': 'Yolda',
+  'Not here': 'Burada yok',
+  'See docs/SUPPORT_MATRIX.md for every runtime.': 'Tüm çalışma ortamları için docs/SUPPORT_MATRIX.md dosyasına bakın.',
 };

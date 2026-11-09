@@ -91,6 +91,7 @@ export function createFakeApiModule() {
       revokeToken: vi.fn(),
     },
     services: {
+      capabilities: vi.fn().mockResolvedValue({ serviceId: 1, runtime: 'panel-docker', capabilities: { maintenance: { status: 'available', reason: null }, errorPages: { status: 'available', reason: null }, forwardAuth: { status: 'available', reason: null }, restartLimit: { status: 'available', reason: null }, inlineDockerfile: { status: 'available', reason: null }, fileMounts: { status: 'available', reason: null }, autoscale: { status: 'available', reason: null }, scaleToZero: { status: 'available', reason: null }, canary: { status: 'available', reason: null } } }),
       restartLimit: { get: vi.fn().mockResolvedValue({ limit: null, recentRestarts: 0, trippedAt: null }), set: vi.fn() },
       pending: {
         get: vi.fn().mockResolvedValue({ serviceId: 1, staging: false, changes: [], updatedAt: null, updatedBy: null }),

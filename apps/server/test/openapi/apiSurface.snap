@@ -230,6 +230,7 @@ GET /v1/services/:id/attachments viewer nd://scope/read/services
 GET /v1/services/:id/autoscale viewer nd://scope/read/services
 GET /v1/services/:id/badge member nd://scope/read/services
 GET /v1/services/:id/canary viewer nd://scope/read/services
+GET /v1/services/:id/capabilities viewer nd://scope/read/services
 GET /v1/services/:id/ci viewer nd://scope/read/services
 GET /v1/services/:id/ci/jobs viewer nd://scope/read/services
 GET /v1/services/:id/ci/jobs/:jobId viewer nd://scope/read/services

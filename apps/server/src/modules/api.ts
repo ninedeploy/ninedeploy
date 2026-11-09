@@ -52,6 +52,7 @@ import { databaseTunnelRoutes } from './databaseTunnel.js';
 import { serviceTunnelRoutes } from './serviceTunnel.js';
 import { pendingChangeRoutes } from './pendingChanges.js';
 import { restartLimitRoutes } from './restartLimit.js';
+import { serviceCapabilityRoutes } from './serviceCapabilities.js';
 import { mcpEndpointRoutes, mcpPolicyRoutes } from './mcpHttp.js';
 import { mcpOAuthConsentRoutes, mcpOAuthServerRoutes } from './mcpOAuth.js';
 import { serviceMaintenanceRoutes } from './maintenance.js';
@@ -339,6 +340,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(pendingChangeRoutes, { prefix: '/services' });
   // G1.3: the restart-loop limit
   await app.register(restartLimitRoutes, { prefix: '/services' });
+  // C1: what a service can use, from the same checks its routes refuse with.
+  await app.register(serviceCapabilityRoutes, { prefix: '/services' });
   // G2.2: maintenance mode and custom error pages
   await app.register(serviceMaintenanceRoutes, { prefix: '/services' });
   // G1.1: a Dockerfile pasted in the panel

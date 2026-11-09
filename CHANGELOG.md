@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **What a service can use, in one place.** `GET /v1/services/:id/capabilities` (SDK `services.capabilities`) answers, for nine features, whether each is available, limited, still being built, or refused where the service runs, with the reason. The features are maintenance mode, error pages, forward auth, restart limit, inline Dockerfile, file mounts, autoscaling, scale to zero and canary releases.
+  - The routes now refuse through the same check, with the same messages as before.
+  - The maintenance, restart-limit and forward-auth cards follow it. For example, the maintenance card no longer appears on a panel-host service that also runs on nodes, where saving was refused.
+  - **Service → Settings** lists the limits with their reasons.
+  - [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md) is generated from it, so the docs cannot drift from the code. It also corrects one claim: an inline Dockerfile on a node service works only with **Build on: panel**.
 - A native macOS development bootstrap (`node scripts/dev-macos.mjs --install`) and cross-machine handoff guide in `docs/MACOS_DEVELOPMENT.md`, including the separate desktop lockfile and the remaining DMG/Keychain acceptance checks.
 - **An IP allow-list for the panel itself.** Turn it on under **Settings → Security → Panel access**, or with `PUT /v1/settings/panel-access` (SDK `settings.panelAccess`). It is off by default and operator only. When on, only the listed IPv4 or IPv6 addresses and CIDR ranges can sign in or use the panel with a session, over HTTP and WebSocket.
   - Integrations keep working from anywhere: git, registry and deploy webhooks, badges, status pages, CI runners, SCIM, error ingest, and the app traffic the panel serves for wake, forward auth and maintenance pages.

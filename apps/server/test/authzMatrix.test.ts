@@ -812,6 +812,7 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/tags': R('viewer'),
   'GET /v1/services/:id/image-scan': R('viewer'),
   'GET /v1/services/:id/pending': R('viewer'),
+  'GET /v1/services/:id/capabilities': R('viewer'),
   'GET /v1/services/:id/restart-limit': R('viewer'),
   'PUT /v1/services/:id/restart-limit': R('member', { body: () => ({ limit: null }) }),
   'GET /v1/services/:id/maintenance': R('viewer'),

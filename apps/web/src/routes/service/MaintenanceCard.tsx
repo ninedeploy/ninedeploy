@@ -7,6 +7,7 @@ import { formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { useT } from '../../lib/i18n.js';
 import { Button, Card, CardBody, Field, Input, Switch, Textarea } from '../../components/ui.js';
+import { capabilityUsable, useServiceCapabilities } from '../../lib/capabilities.js';
 
 const STATUSES = ['502', '503', '504'] as const;
 type Status = (typeof STATUSES)[number];
@@ -20,7 +21,9 @@ export function MaintenanceCard({ svc }: { svc: ServiceDetail }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const onHost = svc.serverId == null;
+  // C1: shown where the server lets maintenance mode be turned on.
+  const caps = useServiceCapabilities(svc.id);
+  const onHost = capabilityUsable(caps.data, 'maintenance');
   const q = useQuery({ queryKey: ['maintenance', svc.id], queryFn: () => api.services.maintenance.get(svc.id), retry: false, enabled: onHost });
   const pagesQ = useQuery({ queryKey: ['error-pages', svc.id], queryFn: () => api.services.errorPages.get(svc.id), retry: false, enabled: onHost });
 

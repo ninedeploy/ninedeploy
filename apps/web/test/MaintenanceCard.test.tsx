@@ -11,6 +11,14 @@ vi.mock('../src/lib/api.js', async () => {
   return createFakeApiModule();
 });
 
+/** C1: the server's capability answer for one feature (everything else available). */
+const capabilities = (id: string, status: string, reason: string | null = 'reason') =>
+  mockOf(api.services.capabilities).mockResolvedValueOnce({
+    serviceId: 6,
+    runtime: 'node-docker',
+    capabilities: { maintenance: { status: 'available', reason: null }, errorPages: { status: 'available', reason: null }, forwardAuth: { status: 'available', reason: null }, restartLimit: { status: 'available', reason: null }, [id]: { status, reason } },
+  } as never);
+
 describe('MaintenanceCard (G2.2)', () => {
   it('turns maintenance on with the bypass list', async () => {
     mockOf(api.services.maintenance.set).mockResolvedValue({ maintenance: { title: 'Down for maintenance', message: '', retryAfterSeconds: 300, bypass: ['203.0.113.7'] }, since: '2026-10-28T10:00:00.000Z' } as never);
@@ -30,8 +38,13 @@ describe('MaintenanceCard (G2.2)', () => {
     await waitFor(() => expect(api.services.errorPages.set).toHaveBeenCalledWith(5, { '502': '<h1>x</h1>' }));
   });
 
-  it('is hidden for a service on a node', () => {
-    const { container } = renderWithProviders(<MaintenanceCard svc={{ id: 6, type: 'docker', serverId: 2 } as never} />);
+  it('is hidden where the server says maintenance mode is unavailable (C1)', async () => {
+    // On the panel host but also on node fan-out targets: the old local rule (serverId == null) showed it.
+    capabilities('maintenance', 'unavailable', 'Maintenance mode is not available for a service that also runs on nodes');
+    const before = mockOf(api.services.maintenance.get).mock.calls.length;
+    const { container } = renderWithProviders(<MaintenanceCard svc={{ id: 6, type: 'docker', serverId: null } as never} />);
+    await waitFor(() => expect(api.services.capabilities).toHaveBeenCalledWith(6));
     expect(container.textContent).toBe('');
+    expect(mockOf(api.services.maintenance.get).mock.calls.length).toBe(before);
   });
 });

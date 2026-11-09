@@ -1,7 +1,8 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { inlineDockerfileInput, type InlineDockerfileView } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
-import { badRequest, parseId } from '../lib/errors.js';
+import { parseId } from '../lib/errors.js';
+import { assertServiceCapability } from '../lib/serviceCapabilities.js';
 import { getInlineDockerfile, setInlineDockerfile } from '../lib/inlineDockerfile.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
 
@@ -23,9 +24,7 @@ export const inlineDockerfileRoutes: FastifyPluginAsync = async (app) => {
     const svc = await loadServiceForUser(app.db, parseId((req.params as { id: string }).id), req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     const { content } = inlineDockerfileInput.parse(req.body ?? {});
-    if (content !== null && (svc.type !== 'docker' || svc.image || svc.composeContent)) {
-      throw badRequest('An inline Dockerfile is for docker services that build from source, not from an image or a compose file', 'inline_dockerfile_unsupported');
-    }
+    if (content !== null) await assertServiceCapability(app.db, svc, 'inlineDockerfile');
     await setInlineDockerfile(app.db, svc.id, content);
     void audit(app.db, req.user!.id, content ? 'service.inline_dockerfile.set' : 'service.inline_dockerfile.clear', `${svc.name} #${svc.id}`, {
       serviceId: svc.id,
