@@ -1,0 +1,72 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > first append failure leaves sequence zero and permits retry
+EXPECTED: 0 "" ACTUAL: 0 "" FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > first append failure leaves sequence zero and permits retry
+EXPECTED: 1 "retry" ACTUAL: 1 "retry" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > first append failure leaves sequence zero and permits retry 162ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > repeated partial UTF8 writes preserve byte boundaries and retry once
+EXPECTED: 1 "ğ🚀\n" ACTUAL: 1 "ğ🚀\n" FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > repeated partial UTF8 writes preserve byte boundaries and retry once
+EXPECTED: 2 "ğ🚀\né🧪\n" ACTUAL: 2 "ğ🚀\né🧪\n" FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > repeated partial UTF8 writes preserve byte boundaries and retry once
+EXPECTED: 2 "ğ🚀\né🧪\n" ACTUAL: 2 "ğ🚀\né🧪\n" FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > repeated partial UTF8 writes preserve byte boundaries and retry once
+EXPECTED: 3 "ğ🚀\né🧪\né🧪\n" ACTUAL: 3 "ğ🚀\né🧪\né🧪\n" FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > repeated partial UTF8 writes preserve byte boundaries and retry once
+EXPECTED: 3 "ğ🚀\né🧪\né🧪\n" ACTUAL: 3 "ğ🚀\né🧪\né🧪\n" FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > repeated partial UTF8 writes preserve byte boundaries and retry once
+EXPECTED: 4 "ğ🚀\né🧪\né🧪\né🧪\n" ACTUAL: 4 "ğ🚀\né🧪\né🧪\né🧪\n" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > repeated partial UTF8 writes preserve byte boundaries and retry once 165ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > real parent blocker fails before metadata reservation
+EXPECTED: 0 "" ACTUAL: 0 "" FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > real parent blocker fails before metadata reservation
+EXPECTED: 1 "good" ACTUAL: 1 "good" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > real parent blocker fails before metadata reservation 155ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > database admission failure closes the opened file without appending
+EXPECTED: 1 "prefix" ACTUAL: 1 "prefix" FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > database admission failure closes the opened file without appending
+EXPECTED: 2 "prefixretry" ACTUAL: 2 "prefixretry" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > database admission failure closes the opened file without appending 166ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > cancellation before admission CAS closes the descriptor without bytes
+EXPECTED: 1 "prefix" ACTUAL: 1 "prefix" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > cancellation before admission CAS closes the descriptor without bytes 157ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > a queued retry waits for failed append rollback before rereading sequence
+EXPECTED: 2 "prefixgood" ACTUAL: 2 "prefixgood" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > a queued retry waits for failed append rollback before rereading sequence 162ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > truncate failure is surfaced with the write failure and closes all handles
+FIX VERIFIED: rollback error surfaced; partial bytes remain a dual-failure boundary
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > truncate failure is surfaced with the write failure and closes all handles 313ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > database rollback failure is surfaced and closes all handles
+FIX VERIFIED: database rollback failure surfaced; reservation may remain
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > database rollback failure is surfaced and closes all handles 191ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > rollback never truncates a replacement file at the same path
+FIX VERIFIED: replacement file preserved
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > rollback never truncates a replacement file at the same path 161ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > an empty chunk does not need the blocked directory to be writable
+EXPECTED: 1 "" ACTUAL: 1 "" FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1066_ciLogFailure.test.ts > an empty chunk does not need the blocked directory to be writable 201ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  22:43:30
+   Duration  2.83s (tests 74%, import 21%, transform 5%)

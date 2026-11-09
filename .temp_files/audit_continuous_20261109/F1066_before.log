@@ -1,0 +1,105 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > accepted file bytes and sequential metadata agree 234ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry
+EXPECTED: seq1 / prefix / retry stored; ACTUAL: 2 / "prefix\n" / false
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry 200ms
+   → expected { id: 1, jobId: 900002, …(11) } to match object { logSeq: 1, logBytes: 7 }
+(11 matching properties omitted from actual)
+stdout | .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry
+EXPECTED: seq1 / prefix / retry stored; ACTUAL: 2 / "prefix\nchu" / false
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry 167ms
+   → expected { id: 1, jobId: 900003, …(11) } to match object { logSeq: 1, logBytes: 7 }
+(11 matching properties omitted from actual)
+stdout | .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence
+EXPECTED: seq0 / retry stored; ACTUAL: 1 / false
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence 223ms
+   → expected { id: 1, jobId: 900004, …(11) } to match object { logSeq: +0, logBytes: +0 }
+(11 matching properties omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry
+AssertionError: expected { id: 1, jobId: 900002, …(11) } to match object { logSeq: 1, logBytes: 7 }
+(11 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "logBytes": 7,
+-   "logSeq": 1,
++   "logBytes": 13,
++   "logSeq": 2,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts:42:18
+     40|   console.log('EXPECTED: seq1 / prefix / retry stored; ACTUAL:', faile…
+     41|   console.log(failed.logSeq === 1 && beforeRetry === 'prefix\n' && ret…
+     42|   expect(failed).toMatchObject({logSeq:1,logBytes:7}); expect(beforeRe…
+       |                  ^
+     43|   expect(readLog(jobId,1)).toBe('prefix\nchunk\n'); expect(await row()…
+     44| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry
+AssertionError: expected { id: 1, jobId: 900003, …(11) } to match object { logSeq: 1, logBytes: 7 }
+(11 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "logBytes": 7,
+-   "logSeq": 1,
++   "logBytes": 13,
++   "logSeq": 2,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts:42:18
+     40|   console.log('EXPECTED: seq1 / prefix / retry stored; ACTUAL:', faile…
+     41|   console.log(failed.logSeq === 1 && beforeRetry === 'prefix\n' && ret…
+     42|   expect(failed).toMatchObject({logSeq:1,logBytes:7}); expect(beforeRe…
+       |                  ^
+     43|   expect(readLog(jobId,1)).toBe('prefix\nchunk\n'); expect(await row()…
+     44| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence
+AssertionError: expected { id: 1, jobId: 900004, …(11) } to match object { logSeq: +0, logBytes: +0 }
+(11 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "logBytes": 0,
+-   "logSeq": 0,
++   "logBytes": 6,
++   "logSeq": 1,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts:51:18
+     49|   console.log('EXPECTED: seq0 / retry stored; ACTUAL:', failed.logSeq,…
+     50|   console.log(failed.logSeq === 0 && retry.stored ? 'PROBLEM NOT REPRO…
+     51|   expect(failed).toMatchObject({logSeq:0,logBytes:0}); expect(retry).t…
+       |                  ^
+     52| });
+     53|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 1 passed (4)
+   Start at  22:39:11
+   Duration  2.16s (tests 48%, import 40%, transform 12%)

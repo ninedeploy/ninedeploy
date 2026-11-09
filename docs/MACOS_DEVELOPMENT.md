@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 45
+### Further audit checkpoints through round 46
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -305,6 +305,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1063 | Runner revocation fences lease creation and attempt publication; pending losses and newer owners are reconciled by attempt identity | 90 |
 | F1064 | Cancellation-winning CI results return conflicts, close current attempt history and emit no result-success audit | 93 |
 | F1065 | CI log admission and append serialize per file within the panel process, retaining byte order and idempotent overlapping retries | 96 |
+| F1066 | Recoverable CI log file failures preserve prior bytes and roll back their sequence reservation for retry | 100 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -355,6 +356,15 @@ times. Explicit delayed-update gates and native SQLite read checkpoints use
 no sleep timing; different files can still complete independently. The 96-test
 scope and resource-bound server static checks passed. Filesystem-write failure
 durability and multiple independent panel processes remain separate boundaries.
+
+Round 46 passed ten independent file/error/descriptor cases three times,
+including UTF-8 partial appends and a replacement-file identity check. A native
+Windows probe showed append handles cannot truncate, so rollback uses a verified
+read/write recovery handle. Initial failed verification remains in the ledger.
+The 100-test scope and resource-bound server static checks passed. Simultaneous
+write-plus-rollback failures are surfaced together and close handles; automatic
+data recovery after those double failures is not certified. Multi-process
+writers and abrupt process/power loss remain separate boundaries.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed

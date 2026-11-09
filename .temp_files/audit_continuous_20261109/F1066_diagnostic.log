@@ -1,0 +1,128 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > accepted file bytes and sequential metadata agree 219ms
+stdout | .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry
+ROLLBACK_DIAGNOSTIC: AggregateError: CI log append and rollback failed
+    at appendLogInOrder (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:435:42)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at appendLog (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:394:12)
+    at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+    at async file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:20 {
+  [errors]: [
+    Error: synthetic append failure
+        at appendFileSync (D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:10:34)
+        at appendLogInOrder (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:426:9)
+        at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+        at appendLog (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:394:12)
+        at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+        at async file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:20,
+    Error: EPERM: operation not permitted, ftruncate
+        at ftruncateSync (node:fs:1462:11)
+        at appendLogInOrder (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:429:15)
+        at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+        at appendLog (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:394:12)
+        at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+        at async file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:20 {
+      errno: -4048,
+      code: 'EPERM',
+      syscall: 'ftruncate'
+    }
+  ]
+}
+
+ × .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry 158ms
+   → synthetic append failure
+   → EPERM: operation not permitted, ftruncate
+stdout | .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry
+ROLLBACK_DIAGNOSTIC: AggregateError: CI log append and rollback failed
+    at appendLogInOrder (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:435:42)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at appendLog (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:394:12)
+    at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+    at async file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:20 {
+  [errors]: [
+    Error: synthetic partial append
+        at appendFileSync (D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:14:13)
+        at appendLogInOrder (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:426:9)
+        at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+        at appendLog (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:394:12)
+        at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+        at async file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:20,
+    Error: EPERM: operation not permitted, ftruncate
+        at ftruncateSync (node:fs:1462:11)
+        at appendLogInOrder (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:429:15)
+        at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+        at appendLog (D:/Codebox/PROJECTS/NineDeploy/apps/server/src/lib/ci.ts:394:12)
+        at D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+        at async file:///D:/Codebox/PROJECTS/NineDeploy/node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:20 {
+      errno: -4048,
+      code: 'EPERM',
+      syscall: 'ftruncate'
+    }
+  ]
+}
+
+ × .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry 170ms
+   → synthetic partial append
+   → EPERM: operation not permitted, ftruncate
+stdout | .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence
+EXPECTED: seq0 / retry stored; ACTUAL: 0 / true
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence 226ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry
+Error: synthetic append failure
+ ❯ appendFileSync .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:10:34
+      8|   return { ...fs, appendFileSync: (...args: Parameters<typeof fs.appen…
+      9|     const mode = fault.mode; fault.mode = 'none';
+     10|     if (mode === 'before') throw new Error('synthetic append failure');
+       |                                  ^
+     11|     if (mode === 'partial') {
+     12|       const bytes = Buffer.from(args[1] as string);
+ ❯ appendLogInOrder apps/server/src/lib/ci.ts:426:9
+ ❯ appendLog apps/server/src/lib/ci.ts:394:12
+ ❯ .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry
+ FAIL  .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry
+Error: EPERM: operation not permitted, ftruncate
+ ❯ appendLogInOrder apps/server/src/lib/ci.ts:429:15
+    427|       } catch (err) {
+    428|         const rollbackErrors: unknown[] = [];
+    429|         try { ftruncateSync(descriptor, priorSize); } catch (rollbackE…
+       |               ^
+    430|         try {
+    431|           const restored = await db.update(ciAttempts).set({ logSeq: a…
+ ❯ appendLog apps/server/src/lib/ci.ts:394:12
+ ❯ .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -4048, code: 'EPERM', syscall: 'ftruncate' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry
+Error: synthetic partial append
+ ❯ appendFileSync .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:14:13
+     12|       const bytes = Buffer.from(args[1] as string);
+     13|       fs.appendFileSync(args[0], bytes.subarray(0, Math.floor(bytes.le…
+     14|       throw new Error('synthetic partial append');
+       |             ^
+     15|     }
+     16|     return fs.appendFileSync(...args);
+ ❯ appendLogInOrder apps/server/src/lib/ci.ts:426:9
+ ❯ appendLog apps/server/src/lib/ci.ts:394:12
+ ❯ .temp_files/audit_continuous_20261109/diagnose_F1066_ciLogFailure.test.ts:37:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  22:40:23
+   Duration  1.58s (tests 55%, import 34%, transform 11%)

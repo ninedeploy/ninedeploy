@@ -1,0 +1,24 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > accepted file bytes and sequential metadata agree 174ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry
+EXPECTED: seq1 / prefix / retry stored; ACTUAL: 1 / "prefix\n" / true
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry 214ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry
+EXPECTED: seq1 / prefix / retry stored; ACTUAL: 1 / "prefix\n" / true
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry 183ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence
+EXPECTED: seq0 / retry stored; ACTUAL: 0 / true
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence 170ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  22:41:20
+   Duration  1.55s (tests 52%, import 37%, transform 10%)

@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, fstatSync, ftruncateSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { and, asc, DrizzleQueryError, eq, inArray, lt, sql } from 'drizzle-orm';
 import { ciAttempts, ciJobs, ciRunners, type DB, envVars, type services } from '@ninedeploy/db';
@@ -406,17 +406,50 @@ async function appendLogInOrder(db: DB, attempt: Attempt, seq: number, data: str
   const room = MAX_LOG_BYTES - attempt.logBytes;
   if (room <= 0) chunk = '';
   else if (Buffer.byteLength(chunk) > room) chunk = `${Buffer.from(chunk).subarray(0, room).toString()}\n[log cut at ${MAX_LOG_BYTES} bytes]\n`;
-  const r = await db
-    .update(ciAttempts)
-    .set({ logSeq: seq, logBytes: sql`${ciAttempts.logBytes} + ${Buffer.byteLength(chunk)}` })
-    .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.logSeq, attempt.logSeq), eq(ciAttempts.status, 'running')));
-  if (affected(r) !== 1) throw new CiError('Concurrent log write', 409);
-  if (chunk) {
-    const file = logFile(attempt.jobId, attempt.number);
-    mkdirSync(path.dirname(file), { recursive: true });
-    appendFileSync(file, chunk);
+  let descriptor: number | undefined;
+  let priorSize = 0;
+  const addedBytes = Buffer.byteLength(chunk);
+  try {
+    if (chunk) {
+      const file = logFile(attempt.jobId, attempt.number);
+      mkdirSync(path.dirname(file), { recursive: true });
+      descriptor = openSync(file, 'a');
+      priorSize = fstatSync(descriptor).size;
+    }
+    const r = await db
+      .update(ciAttempts)
+      .set({ logSeq: seq, logBytes: sql`${ciAttempts.logBytes} + ${addedBytes}` })
+      .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.logSeq, attempt.logSeq), eq(ciAttempts.status, 'running')));
+    if (affected(r) !== 1) throw new CiError('Concurrent log write', 409);
+    if (descriptor !== undefined) {
+      try {
+        appendFileSync(descriptor, chunk);
+      } catch (err) {
+        const rollbackErrors: unknown[] = [];
+        try {
+          // Windows append handles cannot truncate. Verify the recovery
+          // handle still names our file before restoring its prior length.
+          const recovery = openSync(logFile(attempt.jobId, attempt.number), 'r+');
+          try {
+            const owned = fstatSync(descriptor, { bigint: true });
+            const target = fstatSync(recovery, { bigint: true });
+            if (owned.dev !== target.dev || owned.ino !== target.ino) throw new Error('CI log file changed before rollback');
+            ftruncateSync(recovery, priorSize);
+          } finally { closeSync(recovery); }
+        } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+        try {
+          const restored = await db.update(ciAttempts).set({ logSeq: attempt.logSeq, logBytes: attempt.logBytes })
+            .where(and(eq(ciAttempts.id, attempt.id), eq(ciAttempts.logSeq, seq), eq(ciAttempts.logBytes, attempt.logBytes + addedBytes)));
+          if (affected(restored) !== 1) throw new Error('CI log reservation changed before rollback');
+        } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+        if (rollbackErrors.length) throw new AggregateError([err, ...rollbackErrors], 'CI log append and rollback failed');
+        throw err;
+      }
+    }
+    return { stored: true };
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
   }
-  return { stored: true };
 }
 
 export function readLog(jobId: number, attemptNumber: number): string {

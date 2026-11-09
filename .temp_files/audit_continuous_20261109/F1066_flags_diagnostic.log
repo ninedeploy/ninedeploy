@@ -1,0 +1,6 @@
+a before 12
+a truncate error EPERM
+a+ before 12
+a+ truncate error EPERM
+r+ before 6
+r+ truncate passed 6

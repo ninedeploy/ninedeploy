@@ -1,0 +1,17 @@
+before 7
+node:fs:1462
+  binding.ftruncate(fd, len < 0 ? 0 : len);
+          ^
+
+Error: EPERM: operation not permitted, ftruncate
+    at ftruncateSync (node:fs:1462:11)
+    at file:///D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/F1066_descriptor_diagnostic.mjs:4:79
+    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)
+    at async node:internal/modules/esm/loader:650:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:105:5) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'ftruncate'
+}
+
+Node.js v26.13.0

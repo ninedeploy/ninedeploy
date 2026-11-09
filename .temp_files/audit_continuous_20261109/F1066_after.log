@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > accepted file bytes and sequential metadata agree 344ms
+ × .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry 160ms
+   → expected [Function] to throw error including 'synthetic' but got 'CI log append and rollback failed'
+ × .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry 162ms
+   → expected [Function] to throw error including 'synthetic' but got 'CI log append and rollback failed'
+stdout | .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence
+EXPECTED: seq0 / retry stored; ACTUAL: 0 / true
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > a real directory-path blocker does not consume the first sequence 168ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > before append failure preserves prior bytes and sequence for retry
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts > partial append failure preserves prior bytes and sequence for retry
+AssertionError: expected [Function] to throw error including 'synthetic' but got 'CI log append and rollback failed'
+
+Expected: "synthetic"
+Received: "CI log append and rollback failed"
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1066_ciLogFailure.test.ts:37:54
+     35| for (const mode of ['before','partial'] as const) it(`${mode} append f…
+     36|   await appendLog(db,await row(),1,'prefix\n'); fault.mode = mode;
+     37|   await expect(appendLog(db,await row(),2,'chunk\n')).rejects.toThrow(…
+       |                                                      ^
+     38|   const failed = await row(); const beforeRetry = readLog(jobId,1);
+     39|   const retry = await appendLog(db,await row(),2,'chunk\n');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  22:40:03
+   Duration  1.69s (tests 62%, import 29%, transform 9%)
