@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1046_zip_publication.test.ts > preserves accepted ZIP bytes after a failed same-content reupload
+CONTROL EXPECTED: complete valid ZIP accepted | ACTUAL: 129
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1046_zip_publication.test.ts > preserves accepted ZIP bytes after a failed same-content reupload
+EXPECTED: prior complete ZIP preserved | ACTUAL: { expectedBytes: 129, actualBytes: 129, listedBytes: 129 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1046_zip_publication.test.ts > preserves accepted ZIP bytes after a failed same-content reupload 18ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:51:58
+   Duration  591ms (transform 40%, import 29%, tests 25%, worker 6%)

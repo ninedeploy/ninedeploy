@@ -1,0 +1,67 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/sourceUploadPublication.test.ts (4 tests | 2 failed) 52ms
+   × F1046: failed ZIP write preserves accepted history (previous archive: false) 12ms
+   × F1046: failed ZIP write preserves accepted history (previous archive: true) 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/sourceUploadPublication.test.ts > F1046: failed ZIP write preserves accepted history (previous archive: false)
+AssertionError: expected [ { …(4) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "bytes": 7,
++     "format": "zip",
++     "sha": "5de7672b09f6ede127f1ba3cec90077cfef8168e",
++     "uploadedAt": "2026-11-09T16:50:55.950Z",
++   },
++ ]
+
+ ❯ test/sourceUploadPublication.test.ts:46:34
+     44|     state.fault = 'write';
+     45|     await expect(storeSourceUpload(1, archive)).rejects.toMatchObject(…
+     46|     expect(listSourceUploads(1)).toEqual(before);
+       |                                  ^
+     47|     expect(readdirSync(dir)).toEqual(stored ? [`${stored.sha}.zip`] : …
+     48|     if (stored) expect(readFileSync(path.join(dir, `${stored.sha}.zip`…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/sourceUploadPublication.test.ts > F1046: failed ZIP write preserves accepted history (previous archive: true)
+AssertionError: expected [ { …(4) } ] to deeply equal [ { …(4) } ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "bytes": 129,
++     "bytes": 7,
+      "format": "zip",
+      "sha": "5de7672b09f6ede127f1ba3cec90077cfef8168e",
+-     "uploadedAt": "2026-11-09T16:50:55.960Z",
++     "uploadedAt": "2026-11-09T16:50:55.962Z",
+    },
+  ]
+
+ ❯ test/sourceUploadPublication.test.ts:46:34
+     44|     state.fault = 'write';
+     45|     await expect(storeSourceUpload(1, archive)).rejects.toMatchObject(…
+     46|     expect(listSourceUploads(1)).toEqual(before);
+       |                                  ^
+     47|     expect(readdirSync(dir)).toEqual(stored ? [`${stored.sha}.zip`] : …
+     48|     if (stored) expect(readFileSync(path.join(dir, `${stored.sha}.zip`…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  18:50:55
+   Duration  778ms (tests 45%, transform 33%, import 18%, worker 4%)

@@ -300,7 +300,14 @@ export async function storeSourceUpload(serviceId: number, buf: Buffer): Promise
     const list = readZip(buf);
     for (const e of list) if (!e.dir) zipEntryData(buf, e);
     entries = list.length;
-    writeFileSync(path.join(dir, file), buf);
+    const pending = path.join(dir, `.pending-${sha}-${randomUUID()}.zip`);
+    try {
+      writeFileSync(pending, buf);
+      renameSync(pending, path.join(dir, file));
+    } catch (err) {
+      rmSync(pending, { force: true });
+      throw err;
+    }
   } else {
     await gunzippedSize(buf);
     const pending = `.pending-${sha}-${randomUUID()}.tar.gz`;

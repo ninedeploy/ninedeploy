@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { gzipSync } from 'node:zlib';
+import { crc32, gzipSync } from 'node:zlib';
 import { expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ paths: { dataDir: '' }, fault: '' }));
@@ -16,7 +16,7 @@ vi.mock('node:fs', async original => {
       return fs.renameSync(...args);
     },
     writeFileSync: (...args: Parameters<typeof fs.writeFileSync>) => {
-      if (state.fault === 'write' && path.basename(String(args[0])).startsWith('.pending-')) {
+      if (state.fault === 'write' && (path.basename(String(args[0])).startsWith('.pending-') || String(args[0]).endsWith('.zip'))) {
         fs.writeFileSync(args[0], 'PARTIAL');
         throw Object.assign(new Error('fixture partial write'), { code: 'ENOSPC' });
       }
@@ -24,8 +24,35 @@ vi.mock('node:fs', async original => {
     },
   };
 });
+
 import { listSourceUploads, storeSourceUpload } from '../src/lib/sourceUpload.js';
 
+/** One stored, checksummed ZIP member; no external archive dependency. */
+function zipArchive(): Buffer {
+  const name = Buffer.from('Dockerfile'), data = Buffer.from('FROM nginx\n');
+  const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50); local.writeUInt32LE(crc32(data), 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26);
+  const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50); cd.writeUInt32LE(crc32(data), 16); cd.writeUInt32LE(data.length, 20); cd.writeUInt32LE(data.length, 24); cd.writeUInt16LE(name.length, 28);
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(cd.length + name.length, 12); end.writeUInt32LE(local.length + name.length + data.length, 16);
+  return Buffer.concat([local, name, data, cd, name, end]);
+}
+
+it.each([false, true])('F1046: failed ZIP write preserves accepted history (previous archive: %s)', async previous => {
+  const root = mkdtempSync(path.join(tmpdir(), 'nd-zip-publish-'));
+  state.paths.dataDir = root; state.fault = '';
+  try {
+    const archive = zipArchive();
+    const stored = previous ? await storeSourceUpload(1, archive) : null;
+    const before = listSourceUploads(1), dir = path.join(root, 'uploads', '1');
+    state.fault = 'write';
+    await expect(storeSourceUpload(1, archive)).rejects.toMatchObject({ code: 'ENOSPC' });
+    expect(listSourceUploads(1)).toEqual(before);
+    expect(readdirSync(dir)).toEqual(stored ? [`${stored.sha}.zip`] : []);
+    if (stored) expect(readFileSync(path.join(dir, `${stored.sha}.zip`))).toEqual(archive);
+    state.fault = '';
+    await expect(storeSourceUpload(1, archive)).resolves.toMatchObject({ format: 'zip', bytes: archive.length });
+    expect(listSourceUploads(1)).toHaveLength(1);
+  } finally { state.fault = ''; rmSync(root, { recursive: true, force: true }); }
+});
 it.each(['rename', 'write'])('F1045: cleans pending %s failures and preserves the published archive', async fault => {
   const root = mkdtempSync(path.join(tmpdir(), 'nd-upload-publication-'));
   state.paths.dataDir = root; state.fault = '';

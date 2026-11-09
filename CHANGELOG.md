@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- ZIP source uploads publish through a complete temporary file, so a partial write cannot corrupt an already accepted archive or expose a failed upload as deployable source.
 - Failed `.tar.gz` source upload writes and final moves remove their owned temporary files while preserving an already published archive and its retention history.
 - HTTP readiness probes tolerate unexpected informational replies such as `103 Early Hints` and wait for the final status instead of rejecting the workload early.
 - Concurrent identical source archive uploads use separate temporary files, so one request cannot consume or remove another request's pending upload.
