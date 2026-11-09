@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1045_upload_publication_cleanup.test.ts > removes the owned pending file when publication fails and keeps the previous archive
+CONTROL EXPECTED: valid archive published, no pending file | ACTUAL: passed
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1045_upload_publication_cleanup.test.ts > removes the owned pending file when publication fails and keeps the previous archive
+EXPECTED: zero pending files after failed publication | ACTUAL: 0
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1045_upload_publication_cleanup.test.ts > removes the owned pending file when publication fails and keeps the previous archive 17ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:43:35
+   Duration  1.52s (transform 45%, import 29%, tests 22%, worker 4%)

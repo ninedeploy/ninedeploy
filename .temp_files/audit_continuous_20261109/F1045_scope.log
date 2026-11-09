@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/sourceUploadConcurrency.test.ts (2 tests | 1 failed) 31ms
+   × F1043: independent owners clean concurrent uploads (tar fails: true) 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/sourceUploadConcurrency.test.ts > F1043: independent owners clean concurrent uploads (tar fails: true)
+AssertionError: expected [ 'rejected', 'fulfilled' ] to deeply equal [ 'fulfilled', 'rejected' ]
+
+- Expected
++ Received
+
+  [
+-   "fulfilled",
+    "rejected",
++   "fulfilled",
+  ]
+
+ ❯ test/sourceUploadConcurrency.test.ts:28:50
+     26|     const archive = gzipSync(Buffer.alloc(1024));
+     27|     const results = await Promise.allSettled([storeSourceUpload(1, arc…
+     28|     expect(results.map(result => result.status)).toEqual(fail ? ['fulf…
+       |                                                  ^
+     29|     const files = readdirSync(path.join(root, 'uploads', '1'));
+     30|     expect(files.filter(file => file.startsWith('.pending-'))).toEqual…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 36 passed (37)
+   Start at  18:44:23
+   Duration  22.35s (tests 84%, import 15%, transform 2%)
+
+    Isolate  4 workers spawned · ~590ms startup each (spawn + environment, per file)
+             at least ~1.77s faster with isolate: false — reuses workers across files instead of one per file

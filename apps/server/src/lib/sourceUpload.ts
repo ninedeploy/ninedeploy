@@ -304,14 +304,14 @@ export async function storeSourceUpload(serviceId: number, buf: Buffer): Promise
   } else {
     await gunzippedSize(buf);
     const pending = `.pending-${sha}-${randomUUID()}.tar.gz`;
-    writeFileSync(path.join(dir, pending), buf);
     try {
+      writeFileSync(path.join(dir, pending), buf);
       entries = await checkTarGz(dir, pending);
+      renameSync(path.join(dir, pending), path.join(dir, file));
     } catch (err) {
       rmSync(path.join(dir, pending), { force: true });
       throw err;
     }
-    renameSync(path.join(dir, pending), path.join(dir, file));
   }
   // Re-uploading the same bytes refreshes its place as the newest.
   const now = new Date();

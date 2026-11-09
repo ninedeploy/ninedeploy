@@ -1,0 +1,56 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/sourceUploadPublication.test.ts (2 tests | 2 failed) 30ms
+   × F1045: cleans pending rename failures and preserves the published archive 21ms
+   × F1045: cleans pending write failures and preserves the published archive 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/sourceUploadPublication.test.ts > F1045: cleans pending rename failures and preserves the published archive
+AssertionError: expected [ …(2) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
++   ".pending-b48e9c608b3b099351d10aa3c8c94fcaa5ea7b07-0cfc0ada-b450-4613-b24a-3322f15967db.tar.gz",
+    "b48e9c608b3b099351d10aa3c8c94fcaa5ea7b07.tar.gz",
+  ]
+
+ ❯ test/sourceUploadPublication.test.ts:40:32
+     38|     for (let attempt = 0; attempt < 3; attempt++) {
+     39|       await expect(storeSourceUpload(1, archive)).rejects.toMatchObjec…
+     40|       expect(readdirSync(dir)).toEqual([final]);
+       |                                ^
+     41|       expect(readFileSync(path.join(dir, final))).toEqual(archive);
+     42|       expect(listSourceUploads(1)).toEqual(before);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/sourceUploadPublication.test.ts > F1045: cleans pending write failures and preserves the published archive
+AssertionError: expected [ …(2) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
++   ".pending-b48e9c608b3b099351d10aa3c8c94fcaa5ea7b07-34681c15-172c-448c-b612-52e7c6f3c7f9.tar.gz",
+    "b48e9c608b3b099351d10aa3c8c94fcaa5ea7b07.tar.gz",
+  ]
+
+ ❯ test/sourceUploadPublication.test.ts:40:32
+     38|     for (let attempt = 0; attempt < 3; attempt++) {
+     39|       await expect(storeSourceUpload(1, archive)).rejects.toMatchObjec…
+     40|       expect(readdirSync(dir)).toEqual([final]);
+       |                                ^
+     41|       expect(readFileSync(path.join(dir, final))).toEqual(archive);
+     42|       expect(listSourceUploads(1)).toEqual(before);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  18:42:49
+   Duration  675ms (transform 38%, tests 32%, import 24%, worker 6%)

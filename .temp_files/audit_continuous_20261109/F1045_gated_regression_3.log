@@ -1,0 +1,11 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  18:46:35
+   Duration  1.18s (tests 57%, import 30%, transform 7%, worker 6%)
+
+    Isolate  2 workers spawned · ~499ms startup each (spawn + environment, per file)
+             at least ~499ms faster with isolate: false — reuses workers across files instead of one per file
