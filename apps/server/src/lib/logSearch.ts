@@ -22,6 +22,7 @@ import { eq } from 'drizzle-orm';
 import { logDrains, services, type DB, type LogDrain } from '@ninedeploy/db';
 import { decrypt } from './crypto.js';
 import { notFound } from './errors.js';
+import { mergeHttpHeaders } from './httpHeaders.js';
 
 export interface LogSearchOptions {
   /** Free-text search (case-insensitive substring). */
@@ -92,12 +93,10 @@ export async function searchLogs(
   url.searchParams.set('limit', String(limit));
   url.searchParams.set('direction', 'backward');
 
-  const headers: Record<string, string> = {
-    ...(drain.headersJson ? JSON.parse(drain.headersJson) as Record<string, string> : {}),
-  };
+  let headers = mergeHttpHeaders(drain.headersJson ? JSON.parse(drain.headersJson) as Record<string, string> : null);
   if (drain.apiKeyEncrypted) {
     const apiKey = decrypt(drain.apiKeyEncrypted);
-    headers['Authorization'] = apiKey.startsWith('Bearer ') ? apiKey : `Bearer ${apiKey}`;
+    headers = mergeHttpHeaders(headers, { Authorization: apiKey.startsWith('Bearer ') ? apiKey : `Bearer ${apiKey}` });
   }
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) {

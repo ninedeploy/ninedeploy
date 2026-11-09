@@ -1,0 +1,43 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1048_header_precedence.test.ts > applies identical HTTP header precedence for differently cased names
+CONTROL EXPECTED: canonical header names accepted | ACTUAL: { label: 'canonical control', pushed: true, queried: true }
+EXPECTED: casing does not change precedence | ACTUAL: { label: 'lowercase', pushed: false, queried: false }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1048_header_precedence.test.ts > applies identical HTTP header precedence for differently cased names 32ms
+   → expected { label: 'lowercase', …(2) } to match object { pushed: true, queried: true }
+(1 matching property omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1048_header_precedence.test.ts > applies identical HTTP header precedence for differently cased names
+AssertionError: expected { label: 'lowercase', …(2) } to match object { pushed: true, queried: true }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "pushed": true,
+-   "queried": true,
++   "pushed": false,
++   "queried": false,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1048_header_precedence.test.ts:34:24
+     32|     console.log('EXPECTED: casing does not change precedence | ACTUAL:…
+     33|     console.log(results[1]?.pushed && results[1]?.queried ? 'PROBLEM N…
+     34|     expect(results[1]).toMatchObject({ pushed: true, queried: true });
+       |                        ^
+     35|   } finally { server.closeAllConnections(); await new Promise<void>((r…
+     36| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  19:25:46
+   Duration  623ms (import 81%, transform 10%, tests 8%, worker 1%)

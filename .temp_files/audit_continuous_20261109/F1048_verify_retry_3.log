@@ -1,0 +1,13 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1048_header_precedence.test.ts > verifies single/batch credential priorities, content-type overrides, query auth and opaque custom names
+EXPECTED: 34 case/priority/body/opaque-field checks preserve inputs | ACTUAL: all passed
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1048_header_precedence.test.ts > verifies single/batch credential priorities, content-type overrides, query auth and opaque custom names 16ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  19:30:12
+   Duration  773ms (import 83%, transform 12%, tests 4%, worker 1%)

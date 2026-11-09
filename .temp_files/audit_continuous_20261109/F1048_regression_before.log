@@ -1,0 +1,101 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ❯ test/engine/logDrainHeaders.test.ts (12 tests | 8 failed) 24ms
+   × F1048: API key replaces custom authorization without duplicate wire values 4ms
+   × F1048: API key replaces custom AuThOrIzAtIoN without duplicate wire values 1ms
+   × F1048: custom content-type replaces the default content type 0ms
+   × F1048: custom CoNtEnT-TyPe replaces the default content type 0ms
+   × F1048: datadog credentials override a differently cased custom key 0ms
+   × F1048: newrelic credentials override a differently cased custom key 1ms
+   × F1048: search applies API-key priority over authorization 2ms
+   × F1048: search applies API-key priority over AuThOrIzAtIoN 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/engine/logDrainHeaders.test.ts > F1048: API key replaces custom authorization without duplicate wire values
+ FAIL  test/engine/logDrainHeaders.test.ts > F1048: API key replaces custom AuThOrIzAtIoN without duplicate wire values
+AssertionError: expected { ok: false, status: 401 } to match object { ok: true }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
++   "ok": false,
+  }
+
+ ❯ test/engine/logDrainHeaders.test.ts:15:143
+     13|     return new Response(null, { status: actual.get('authorization') ==…
+     14|   });
+     15|   await expect(dispatchLogToDrain({ url: 'https://fixture.invalid', ty…
+       |                                                                                                                                               ^
+     16|   expect(headers[field]).toBe('Basic replaced');
+     17| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  test/engine/logDrainHeaders.test.ts > F1048: custom content-type replaces the default content type
+ FAIL  test/engine/logDrainHeaders.test.ts > F1048: custom CoNtEnT-TyPe replaces the default content type
+AssertionError: expected { ok: false, status: 415 } to match object { ok: true }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
++   "ok": false,
+  }
+
+ ❯ test/engine/logDrainHeaders.test.ts:21:161
+     19| it.each(['Content-Type', 'content-type', 'CoNtEnT-TyPe'])('F1048: cust…
+     20|   const fetch = vi.fn(async (_url: string, init?: RequestInit) => new …
+     21|   await expect(dispatchLogToDrain({ url: 'https://fixture.invalid', ty…
+       |                                                                                                                                                                 ^
+     22| });
+     23|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  test/engine/logDrainHeaders.test.ts > F1048: datadog credentials override a differently cased custom key
+ FAIL  test/engine/logDrainHeaders.test.ts > F1048: newrelic credentials override a differently cased custom key
+AssertionError: expected { ok: false, status: 401 } to match object { ok: true }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
++   "ok": false,
+  }
+
+ ❯ test/engine/logDrainHeaders.test.ts:29:178
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  test/engine/logDrainHeaders.test.ts > F1048: search applies API-key priority over authorization
+ FAIL  test/engine/logDrainHeaders.test.ts > F1048: search applies API-key priority over AuThOrIzAtIoN
+AssertionError: promise rejected "Error: Loki query failed: 401 invalid dup…" instead of resolving
+ ❯ test/engine/logDrainHeaders.test.ts:37:53
+     35|   vi.stubGlobal('fetch', vi.fn(async (_url: URL, init: RequestInit) =>…
+     36|     ? new Response(JSON.stringify({ status: 'success', data: { result:…
+     37|   await expect(searchLogs(db, { query: 'fixture' })).resolves.toMatchO…
+       |                                                     ^
+     38| });
+     39|
+
+Caused by: Error: Loki query failed: 401 invalid duplicate auth
+ ❯ Module.searchLogs src/lib/logSearch.ts:105:11
+ ❯ test/engine/logDrainHeaders.test.ts:37:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 4 passed (12)
+   Start at  19:27:01
+   Duration  919ms (import 75%, transform 18%, tests 6%, worker 1%)

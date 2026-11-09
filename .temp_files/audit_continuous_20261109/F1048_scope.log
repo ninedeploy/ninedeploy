@@ -1,0 +1,12 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+
+ Test Files  9 passed (9)
+      Tests  110 passed (110)
+   Start at  19:30:37
+   Duration  11.39s (tests 66%, import 30%, transform 3%)
+
+     Import  132 modules were evaluated 290 times · 2.66s total, 30% of tracked time
+             ~1.45s faster with isolate: false — shared modules are evaluated once per worker instead of once per file
+             learn more: https://vitest.dev/guide/improving-performance#test-isolation

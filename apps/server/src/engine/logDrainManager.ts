@@ -1,5 +1,6 @@
 import type { LogDrainFormat, LogDrainType } from '@ninedeploy/schemas';
 import { guardedFetch } from '../lib/egressGuard.js';
+import { mergeHttpHeaders } from '../lib/httpHeaders.js';
 import { elasticsearchBulkFailed, extraAuthHeaders, formatExtraBatch, isExtraDrainType, postCloudWatch } from './logDrainTargets.js';
 
 /** Drains are always addressed by a URL string; the narrower contract keeps
@@ -159,19 +160,18 @@ async function postToDrain(
   const timeout = signal ? AbortSignal.any([signal, AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000);
   // G3.4: CloudWatch is a signed AWS API call, not a plain POST.
   if (drain.type === 'cloudwatch') return postCloudWatch(fetchImpl, drain, body, timeout);
-  const headers: Record<string, string> = {
+  let headers = mergeHttpHeaders({
     'Content-Type': contentType,
     'User-Agent': 'NineDeploy-LogDrain/1.0',
-    ...(drain.headers ?? {}),
-  };
+  }, drain.headers);
 
   if (isExtraDrainType(drain.type)) {
-    Object.assign(headers, extraAuthHeaders(drain.type, drain.apiKey));
+    headers = mergeHttpHeaders(headers, extraAuthHeaders(drain.type, drain.apiKey));
   } else if (drain.apiKey) {
     if (drain.type === 'datadog') {
-      headers['DD-API-KEY'] = drain.apiKey;
+      headers = mergeHttpHeaders(headers, { 'DD-API-KEY': drain.apiKey });
     } else {
-      headers['Authorization'] = drain.apiKey.startsWith('Bearer ') ? drain.apiKey : `Bearer ${drain.apiKey}`;
+      headers = mergeHttpHeaders(headers, { Authorization: drain.apiKey.startsWith('Bearer ') ? drain.apiKey : `Bearer ${drain.apiKey}` });
     }
   }
 

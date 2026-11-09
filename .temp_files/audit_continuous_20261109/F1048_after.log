@@ -1,0 +1,14 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1048_header_precedence.test.ts > applies identical HTTP header precedence for differently cased names
+CONTROL EXPECTED: canonical header names accepted | ACTUAL: { label: 'canonical control', pushed: true, queried: true }
+EXPECTED: casing does not change precedence | ACTUAL: { label: 'lowercase', pushed: true, queried: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1048_header_precedence.test.ts > applies identical HTTP header precedence for differently cased names 34ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  19:28:26
+   Duration  645ms (import 78%, transform 14%, tests 7%, worker 1%)
