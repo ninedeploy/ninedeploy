@@ -23,11 +23,13 @@ const ONE_CLICK_DATABASES: Record<string, PlanEngine> = {
 };
 
 /** The image CapRover runs for the deployed version, if it is not one it built itself. */
-function deployedImage(app: Obj): { image?: string; builtByCaprover: boolean } {
+function deployedImage(app: Obj): { image?: string; builtByCaprover: boolean; neverDeployed?: boolean } {
   const deployed = Number(app['deployedVersion']);
   const version = list(app['versions']).find((v) => Number(v['version']) === deployed);
   const image = str(version?.['deployedImageName']);
   if (!image) return { builtByCaprover: true };
+  // A registered app runs CapRover's placeholder until its first deploy (checked live on v1.16.0).
+  if (/^caprover\/caprover-placeholder-app(:|$)/.test(image)) return { builtByCaprover: false, neverDeployed: true };
   // Images CapRover builds are tagged img-captain-<app>, optionally in its own registry.
   if (/(^|\/)img-captain-/.test(image)) return { builtByCaprover: true };
   return { image, builtByCaprover: false };
@@ -38,7 +40,7 @@ function appItem(app: Obj, rootDomain: string): PlanService | null {
   const issues: PlanIssue[] = [];
   const repoInfo = (app['appPushWebhook'] as Obj | undefined)?.['repoInfo'] as Obj | undefined;
   const repo = str(repoInfo?.['repo']);
-  const { image, builtByCaprover } = deployedImage(app);
+  const { image, builtByCaprover, neverDeployed } = deployedImage(app);
   const base = { name, type: 'docker' as const };
   let kind: PlanService['kind'];
   let create: PlanService['create'];
@@ -53,6 +55,10 @@ function appItem(app: Obj, rootDomain: string): PlanService | null {
   } else if (image && !builtByCaprover) {
     kind = 'image';
     create = { ...base, image };
+  } else if (neverDeployed) {
+    kind = 'image';
+    create = base;
+    issues.push({ level: 'manual', option: 'deployedVersion', detail: 'Never deployed in CapRover (it still runs the placeholder app): set an image or a repository for it in NineDeploy.' });
   } else {
     kind = 'image';
     create = base;
@@ -63,6 +69,7 @@ function appItem(app: Obj, rootDomain: string): PlanService | null {
   if (Number.isInteger(port) && port > 0) create.port = port;
   const replicas = replicasFor(app['instanceCount'], issues);
   if (replicas) create.replicas = replicas;
+  if (app['instanceCount'] === 0) issues.push({ level: 'info', option: 'instanceCount', detail: 'Stopped in CapRover (0 instances); NineDeploy runs one when it deploys the service.' });
 
   const domains: PlanService['domains'] = [];
   if (app['notExposeAsWebApp'] !== true) {
@@ -100,8 +107,9 @@ function databaseOf(app: Obj): PlanDatabase | null {
   for (const t of list(app['tags'])) {
     const engine = ONE_CLICK_DATABASES[String(t['tagName'] ?? '').toLowerCase()];
     if (!engine) continue;
-    const { image } = deployedImage(app);
+    const { image, neverDeployed } = deployedImage(app);
     const issues: PlanIssue[] = [DATA_NOT_MOVED];
+    if (neverDeployed) issues.push({ level: 'info', option: 'deployedVersion', detail: 'Never deployed in CapRover, so the source has no engine version: choose one in NineDeploy.' });
     if (list(app['ports']).length) issues.push({ level: 'manual', option: 'ports', detail: 'A host port was published; turn on public access in NineDeploy if you still need it.' });
     return { ref: String(app['appName']), name: String(app['appName']), engine, image: image ?? null, issues };
   }
@@ -112,7 +120,8 @@ export async function planFromCaprover(get: SourceGet, url: string): Promise<Imp
   const data = ((await get('/api/v2/user/apps/appDefinitions/')) ?? {}) as Obj;
   const info = (await get('/api/v2/user/system/info/').catch(() => null)) as Obj | null;
   const rootDomain = str(info?.['rootDomain']) ?? str(data['rootDomain']) ?? 'captain.localhost';
-  const plan = emptyPlan('caprover', url, null, 'every app on this CapRover instance');
+  const versionInfo = (await get('/api/v2/user/system/versionInfo/').catch(() => null)) as Obj | null;
+  const plan = emptyPlan('caprover', url, str(versionInfo?.['currentVersion']) ?? null, 'every app on this CapRover instance');
   for (const app of list(data['appDefinitions'])) {
     if (!str(app['appName'])) continue;
     const db = databaseOf(app);

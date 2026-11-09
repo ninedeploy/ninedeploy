@@ -91,6 +91,7 @@ export const dokploy: Record<string, unknown> = {
 
 export const caprover: Record<string, unknown> = {
   '/api/v2/user/system/info/': { rootDomain: 'apps.acme.example', captainSubDomain: 'captain', forceSsl: false },
+  '/api/v2/user/system/versionInfo/': { currentVersion: '1.16.0', latestVersion: '1.16.0', changeLogMessage: '', canUpdate: false },
   '/api/v2/user/apps/appDefinitions/': {
     rootDomain: 'apps.acme.example',
     appDefinitions: [
@@ -108,4 +109,203 @@ export const caprover: Record<string, unknown> = {
       { appName: 'pg', instanceCount: 1, notExposeAsWebApp: true, envVars: [{ key: 'POSTGRES_PASSWORD', value: SENTINEL }], volumes: [{ containerPath: '/var/lib/postgresql/data', volumeName: 'pg-data' }], ports: [{ hostPort: 5432, containerPort: 5432 }], deployedVersion: 0, versions: [{ version: 0, deployedImageName: 'postgres:14.5' }], tags: [{ tagName: 'postgres' }] },
     ],
   },
+};
+
+/**
+ * CAPTURED LIVE from CapRover v1.16.0 (caprover/caprover:1.16.0 in a disposable
+ * dind, 2026-11-09): the appDefinitions, system/info and versionInfo responses
+ * after registering three apps through the API. Only secret values were
+ * replaced with SENTINEL (env values, the Git password, the push-webhook token)
+ * and defaultNginxConfig was dropped. Notable live shapes: system/info returns
+ * rootDomain "", a registered app runs caprover/caprover-placeholder-app until
+ * its first deploy, and an update without instanceCount leaves it at 0.
+ */
+export const caproverLive: Record<string, unknown> = {
+  "/api/v2/user/system/info/": {
+    "forceSsl": false,
+    "rootDomain": "",
+    "captainSubDomain": "captain"
+  },
+  "/api/v2/user/system/versionInfo/": {
+    "currentVersion": "1.16.0",
+    "latestVersion": "1.16.0",
+    "changeLogMessage": "",
+    "canUpdate": false
+  },
+  "/api/v2/user/apps/appDefinitions/": {
+    "appDefinitions": [
+      {
+        "hasPersistentData": true,
+        "projectId": "",
+        "description": "",
+        "instanceCount": 2,
+        "captainDefinitionRelativeFilePath": "./captain-definition",
+        "networks": [
+          "captain-overlay-network"
+        ],
+        "envVars": [
+          {
+            "key": "DB_PASSWORD",
+            "value": SENTINEL
+          },
+          {
+            "key": "url",
+            "value": "https://blog"
+          }
+        ],
+        "volumes": [
+          {
+            "containerPath": "/var/lib/ghost/content",
+            "volumeName": "blog-content"
+          }
+        ],
+        "ports": [],
+        "tags": [],
+        "versions": [
+          {
+            "version": 0,
+            "timeStamp": "2026-11-09T22:41:28.738Z",
+            "deployedImageName": "caprover/caprover-placeholder-app:latest",
+            "gitHash": ""
+          }
+        ],
+        "deployedVersion": 0,
+        "notExposeAsWebApp": false,
+        "customDomain": [],
+        "hasDefaultSubDomainSsl": false,
+        "redirectDomain": "",
+        "forceSsl": false,
+        "websocketSupport": false,
+        "appPushWebhook": {
+          "tokenVersion": SENTINEL,
+          "pushWebhookToken": SENTINEL,
+          "repoInfo": {
+            "repo": `https://ci:${SENTINEL}@github.com/acme/blog.git`,
+            "user": "ci",
+            "password": SENTINEL,
+            "sshKey": "",
+            "branch": "main"
+          }
+        },
+        "containerHttpPort": 2368,
+        "nodeId": "5xrc0s0xof6cf2bnvorc5p5s5",
+        "customNginxConfig": "",
+        "preDeployFunction": "",
+        "serviceUpdateOverride": "",
+        "appDeployTokenConfig": {
+          "enabled": false
+        },
+        "appName": "blog",
+        "isAppBuilding": false,
+        "isLegacyAppName": false
+      },
+      {
+        "hasPersistentData": false,
+        "projectId": "",
+        "description": "",
+        "instanceCount": 0,
+        "captainDefinitionRelativeFilePath": "./captain-definition",
+        "networks": [
+          "captain-overlay-network"
+        ],
+        "envVars": [],
+        "volumes": [],
+        "ports": [
+          {
+            "hostPort": 8443,
+            "containerPort": 443
+          }
+        ],
+        "tags": [],
+        "versions": [
+          {
+            "version": 0,
+            "timeStamp": "2026-11-09T22:41:34.363Z",
+            "deployedImageName": "caprover/caprover-placeholder-app:latest",
+            "gitHash": ""
+          },
+          {
+            "version": 1,
+            "timeStamp": "2026-11-09T22:41:39.971Z",
+            "deployedImageName": "traefik/whoami:v1.10.3",
+            "gitHash": ""
+          }
+        ],
+        "deployedVersion": 1,
+        "notExposeAsWebApp": false,
+        "customDomain": [],
+        "hasDefaultSubDomainSsl": false,
+        "redirectDomain": "",
+        "forceSsl": false,
+        "websocketSupport": false,
+        "containerHttpPort": 80,
+        "nodeId": "",
+        "customNginxConfig": "",
+        "preDeployFunction": "",
+        "serviceUpdateOverride": "",
+        "appDeployTokenConfig": {
+          "enabled": false
+        },
+        "appName": "proxy",
+        "isAppBuilding": false,
+        "isLegacyAppName": false
+      },
+      {
+        "hasPersistentData": true,
+        "projectId": "",
+        "description": "",
+        "instanceCount": 0,
+        "captainDefinitionRelativeFilePath": "./captain-definition",
+        "networks": [
+          "captain-overlay-network"
+        ],
+        "envVars": [
+          {
+            "key": "POSTGRES_PASSWORD",
+            "value": SENTINEL
+          }
+        ],
+        "volumes": [
+          {
+            "containerPath": "/var/lib/postgresql/data",
+            "volumeName": "pg-data"
+          }
+        ],
+        "ports": [],
+        "tags": [
+          {
+            "tagName": "postgres"
+          }
+        ],
+        "versions": [
+          {
+            "version": 0,
+            "timeStamp": "2026-11-09T22:41:45.437Z",
+            "deployedImageName": "caprover/caprover-placeholder-app:latest",
+            "gitHash": ""
+          }
+        ],
+        "deployedVersion": 0,
+        "notExposeAsWebApp": false,
+        "customDomain": [],
+        "hasDefaultSubDomainSsl": false,
+        "redirectDomain": "",
+        "forceSsl": false,
+        "websocketSupport": false,
+        "containerHttpPort": 80,
+        "nodeId": "5xrc0s0xof6cf2bnvorc5p5s5",
+        "customNginxConfig": "",
+        "preDeployFunction": "",
+        "serviceUpdateOverride": "",
+        "appDeployTokenConfig": {
+          "enabled": false
+        },
+        "appName": "pg",
+        "isAppBuilding": false,
+        "isLegacyAppName": false
+      }
+    ],
+    "rootDomain": "captain.localhost",
+    "captainSubDomain": "captain"
+  }
 };

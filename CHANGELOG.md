@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - It creates nothing and changes nothing on the source. Applying a plan (step 2) and moving data (step 3) come later.
   - The credential comes from `NINEDEPLOY_IMPORT_TOKEN` / `NINEDEPLOY_IMPORT_PASSWORD` or a hidden prompt, never from the command line, and stays on your machine.
   - A plan holds variable names only, never a value, password, token or key, and every URL loses its `user:password@`.
-  - The mappings were written against Coolify v4.7.0, Dokploy v0.31.0 and CapRover v1.16.0 and are tested with fixtures derived from their source. They have not been run against live instances yet. See [docs/IMPORTING.md](docs/IMPORTING.md).
+  - The mappings were written against Coolify v4.7.0, Dokploy v0.31.0 and CapRover v1.16.0 and are tested with fixtures derived from their source. CapRover v1.16.0 was also checked against a live instance. That run found three gaps the fixtures missed, now fixed: a never-deployed app's placeholder image, stopped apps, and the source version. Coolify and Dokploy have not been checked live yet. See [docs/IMPORTING.md](docs/IMPORTING.md).
 
 ### Fixed
 

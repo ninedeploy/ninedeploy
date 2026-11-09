@@ -59,7 +59,16 @@ NINEDEPLOY_IMPORT_PASSWORD=… ninedeploy import plan caprover --url https://cap
 - A one-click database (marked by its template tag) is listed as a database.
 - An app built by CapRover from an upload or the CLI, with no repository on record, has its image only inside CapRover. Push its source or image somewhere NineDeploy can reach first.
 - A custom nginx config, pre-deploy script and Swarm service override have no equivalent and are listed as such.
+- An app that was registered but never deployed has no image or repository to carry. It is listed for a person to complete.
 
 ## How the adapters were checked
 
-The field mappings were written against the source code of Coolify v4.7.0, Dokploy v0.31.0 and CapRover v1.16.0, and are tested with fixtures derived from that code. They have **not yet been run against live instances**. If a plan looks wrong for your version, please open an issue with the plan's `source.version`.
+The field mappings were written against the source code of Coolify v4.7.0, Dokploy v0.31.0 and CapRover v1.16.0, and are tested with fixtures derived from that code.
+
+- **CapRover v1.16.0 was also run live.** A plan was made against a fresh instance with an app from a repository, an image app with a host port and a one-click PostgreSQL. Its responses are kept as a test fixture, with secret values replaced. That run found three things the source reading had missed:
+  - an app that was never deployed runs CapRover's placeholder image, which is not planned as its image;
+  - a stopped app (0 instances) is flagged as stopped;
+  - the version is read from `versionInfo`.
+- **Coolify and Dokploy have not yet been run against live instances.**
+
+If a plan looks wrong for your version, please open an issue with the plan's `source.version`.

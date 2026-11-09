@@ -8,7 +8,7 @@ import { planFromCoolify } from '../src/lib/importers/coolify.js';
 import { planFromDokploy } from '../src/lib/importers/dokploy.js';
 import { domainsFrom, envNames, memToMb, stripUserinfo, type ImportPlan, type SourceGet } from '../src/lib/importers/plan.js';
 import { caproverSource, coolifySource, dokploySource, normaliseBase, OtpRequiredError, SourceError } from '../src/lib/importers/sources.js';
-import { caprover, coolify, dokploy, SENTINEL } from './fixtures/importSources.js';
+import { caprover, caproverLive, coolify, dokploy, SENTINEL } from './fixtures/importSources.js';
 
 /** A source that answers only the paths in its fixture (an unexpected call fails the test). */
 const fromFixture = (map: Record<string, unknown>): SourceGet => async (p) => {
@@ -184,6 +184,8 @@ describe('CapRover adapter', async () => {
 
   it('keeps no secret anywhere in the plan (env values, git password and key, tokens, the auth hash)', () => assertNoSecret(plan));
 
+  it('reads the CapRover version from versionInfo', () => expect(plan.source.version).toBe('1.16.0'));
+
   it('maps a repository-backed app, with its subdomain, custom domain, replicas and volume', () => {
     const blog = byName(plan, 'blog');
     expect(blog.kind).toBe('git');
@@ -213,6 +215,40 @@ describe('CapRover adapter', async () => {
     const q = await planFromCaprover(async (p2) => { if (p2.includes('system')) throw new Error('no'); return { appDefinitions: [{ appName: 'b', nodeId: 'n1', preDeployFunction: 'x', serviceUpdateOverride: 'y', instanceCount: 1 }] }; }, 'https://c.example');
     expect(byName(q, 'b').domains[0]!.host).toBe('b.captain.localhost');
     for (const option of ['nodeId', 'preDeployFunction', 'serviceUpdateOverride']) expect(issue(byName(q, 'b').issues, option), option).toBeTruthy();
+  });
+});
+
+describe('CapRover adapter, against a capture from a live v1.16.0', async () => {
+  const plan = await planFromCaprover(fromFixture(caproverLive), 'http://127.0.0.1:13000');
+
+  it('keeps no secret anywhere in the plan (env values, the Git password, the push-webhook token)', () => assertNoSecret(plan));
+
+  it('reads the version and plans the captured apps, with system/info returning an empty rootDomain', () => {
+    expect(plan.source.version).toBe('1.16.0');
+    const blog = byName(plan, 'blog');
+    expect(blog.create).toEqual({ name: 'blog', type: 'docker', repoUrl: 'https://github.com/acme/blog.git', branch: 'main', build: { buildPack: 'auto' }, port: 2368, replicas: 2, volumeMount: '/var/lib/ghost/content' });
+    expect(blog.domains).toEqual([{ host: 'blog.captain.localhost', https: false }]);
+    expect(blog.env).toEqual([{ key: 'DB_PASSWORD' }, { key: 'url' }]);
+    const proxy = byName(plan, 'proxy');
+    expect(proxy.create).toEqual({ name: 'proxy', type: 'docker', image: 'traefik/whoami:v1.10.3', port: 80 });
+    expect(issue(proxy.issues, 'instanceCount')?.level).toBe('info');
+    expect(issue(proxy.issues, 'ports')?.level).toBe('manual');
+    expect(issue(blog.issues, 'instanceCount')).toBeUndefined();
+  });
+
+  it('lists a never-deployed one-click database without the placeholder as its image', () => {
+    expect(plan.databases).toEqual([expect.objectContaining({ name: 'pg', engine: 'postgres', image: null })]);
+    expect(issue(plan.databases[0]!.issues, 'deployedVersion')?.level).toBe('info');
+  });
+
+  it('never plans the placeholder image for an app that was never deployed', async () => {
+    const p = await planFromCaprover(fromFixture({
+      '/api/v2/user/apps/appDefinitions/': { rootDomain: 'x.example', appDefinitions: [{ appName: 'fresh', deployedVersion: 0, versions: [{ version: 0, deployedImageName: 'caprover/caprover-placeholder-app:latest' }], tags: [] }] },
+    }), 'https://c.example');
+    const fresh = byName(p, 'fresh');
+    expect(fresh.create.image).toBeUndefined();
+    expect(issue(fresh.issues, 'deployedVersion')?.level).toBe('manual');
+    expect(p.source.version).toBeNull();
   });
 });
 
