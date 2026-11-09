@@ -1,0 +1,110 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: busy runner retained at 7h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: busy runner retained at 7h 321ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: busy runner retained at 24h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: busy runner retained at 24h 237ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: busy runner retained at 120h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: busy runner retained at 120h 216ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: confirmed idle removed at 7h
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: confirmed idle removed at 7h 236ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: confirmed idle removed at 144h
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: confirmed idle removed at 144h 389ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: unknown busy retained at 7h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: unknown busy retained at 7h 322ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: unknown busy retained at 144h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: unknown busy retained at 144h 261ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: confirmed missing registration is cleaned at24h
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: confirmed missing registration is cleaned at24h 225ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: network failure does not authorize age deletion
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: network failure does not authorize age deletion 290ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: delayed busy answer gates all old-container removal
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: delayed busy answer gates all old-container removal
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: delayed busy answer gates all old-container removal 264ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: explicit operator stop remains available for an old busy runner
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: explicit operator stop remains available for an old busy runner 291ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: exited cleanup remains available for an old runner
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > node: exited cleanup remains available for an old runner 264ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: busy runner retained at 7h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: busy runner retained at 7h 252ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: busy runner retained at 24h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: busy runner retained at 24h 306ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: busy runner retained at 120h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: busy runner retained at 120h 248ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: confirmed idle removed at 7h
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: confirmed idle removed at 7h 297ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: confirmed idle removed at 144h
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: confirmed idle removed at 144h 277ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: unknown busy retained at 7h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: unknown busy retained at 7h 276ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: unknown busy retained at 144h
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: unknown busy retained at 144h 294ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: confirmed missing registration is cleaned at24h
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: confirmed missing registration is cleaned at24h 324ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: network failure does not authorize age deletion
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: network failure does not authorize age deletion 288ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: delayed busy answer gates all old-container removal
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: delayed busy answer gates all old-container removal
+EXPECTED: 0 ACTUAL: 0 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: delayed busy answer gates all old-container removal 299ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: explicit operator stop remains available for an old busy runner
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: explicit operator stop remains available for an old busy runner 281ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: exited cleanup remains available for an old runner
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1071_ghaLifetime.test.ts > panel: exited cleanup remains available for an old runner 290ms
+
+ Test Files  1 passed (1)
+      Tests  24 passed (24)
+   Start at  23:30:18
+   Duration  7.66s (tests 91%, import 7%, transform 2%)

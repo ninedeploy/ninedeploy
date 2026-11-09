@@ -432,6 +432,7 @@ describe('runner operator and expiration', () => {
     await setRunnerConfig(db, ghApp.id, enabled());
     const name = `nd-${ghApp.id}-1-aaaaaa`;
     psRows = [`${name}\trunning\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t1\tacme/api\t31\torg:acme`];
+    h.githubApi.mockResolvedValue({ status: 200, data: { busy: false }, headers: new Headers() });
     const original = h.capture.getMockImplementation()!;
     h.capture.mockImplementation(async (cmd, args, opts) => {
       if (args[0] === 'rm') throw new Error('Docker unavailable');
@@ -464,15 +465,16 @@ describe('runner operator and expiration', () => {
     expect(h.githubApi.mock.calls.some(([, , method, path]) => method === 'DELETE' && path === '/orgs/acme/actions/runners/31')).toBe(true);
   });
 
-  it('removes exited runners and those exceeding the maximum age', async () => {
+  it('removes exited runners and keeps older busy runners', async () => {
     await setRunnerConfig(db, ghApp.id, enabled());
     psRows = [
       `nd-${ghApp.id}-1-aaaaaa\texited\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t1\tacme/api\t31\torg:acme`,
       `nd-${ghApp.id}-2-bbbbbb\trunning\t2026-10-28 10:00:00 +0000 UTC\t${ghApp.id}\t2\tacme/api\t32\torg:acme`,
     ];
+    h.githubApi.mockResolvedValue({ status: 200, data: { busy: true }, headers: new Headers() });
     await sweepGithubRunners(db, log, new Date('2026-10-28T17:00:00Z').getTime());
-    expect(h.capture.mock.calls.filter(([, args]) => args[0] === 'rm').map(([, args]) => args[2])).toEqual([`nd-${ghApp.id}-1-aaaaaa`, `nd-${ghApp.id}-2-bbbbbb`]);
-    expect(h.githubApi.mock.calls.some(([, , method, path]) => method === 'DELETE' && path === '/orgs/acme/actions/runners/32')).toBe(true);
+    expect(h.capture.mock.calls.filter(([, args]) => args[0] === 'rm').map(([, args]) => args[2])).toEqual([`nd-${ghApp.id}-1-aaaaaa`]);
+    expect(h.githubApi.mock.calls.some(([, , method, path]) => method === 'DELETE' && path === '/orgs/acme/actions/runners/32')).toBe(false);
   });
 
   it('retains an idle runner when GitHub cannot confirm it is idle', async () => {

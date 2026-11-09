@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 51
+### Further audit checkpoints through round 52
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -310,6 +310,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1068 | Changed runner settings stop further admissions in an old batch, including writes overlapping the final config read | 118 |
 | F1069 | Pending GitHub jobs revalidate current repository/public/label policy before consuming runner slots | 122 |
 | F1070 | Automated runner sweeps retain unreadable/unrecognized container states and keep explicit stop available | 127 |
+| F1071 | Active self-hosted runners use confirmed GitHub busy/idle state instead of a hosted-runner container-age cutoff | 132 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -398,6 +399,13 @@ current state became running. The 127-test scope and resource-bound server
 static checks passed. These assert mocked stop/removal requests; no live
 container was deleted. The separate maximum-lifetime policy is being checked
 against current upstream self-hosted-runner limits.
+
+Round 52 checked current [GitHub execution limits](https://docs.github.com/en/actions/reference/limits)
+and [job timeout syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes),
+then passed 24 independent local/node lifetime-state cases three times. The
+132-test scope and resource-bound server static checks passed. Elapsed time
+and provider replies were controlled fixtures; no multi-day live workflow ran.
+Confirmed idle/exited cleanup and explicit operator stop remain available.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed

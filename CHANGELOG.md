@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Self-hosted GitHub runner upkeep no longer applies a GitHub-hosted six-hour age cutoff to busy or unverifiable runners; confirmed-idle/exited cleanup and explicit operator stop remain available (F1071).
+- Runner sweeps retain missing, malformed or unrecognized node/container states instead of treating them as confirmed non-running runners and automatically stopping them (F1070).
+- Queued GitHub runner jobs revalidate current repository, public-repository and label policy before taking a slot, so previously accepted work cannot bypass later runner restrictions (F1069).
+- GitHub runner batches stop admitting additional jobs when their configuration changes during preparation, retaining pending work for a fresh host/capacity pass (F1068).
+- GitHub runner drains recheck pending-job identity after asynchronous preparation of earlier jobs or online status checks, so later workflow events cannot leave stale jobs eligible to start (F1067).
+- Failed CI log file creation or append no longer consumes the chunk sequence; partial writes restore the prior file length and reservation so retries preserve accepted diagnostics (F1066).
+- CI log writes serialize admission and file append per attempt within the panel process, preserving chunk order and acknowledging overlapping retries from current persisted sequence state (F1065).
+- CI results that lose the job transition to cancellation return a conflict instead of success; cancellation closes the current attempt even when a competing result just finished its attempt write (F1064).
+
 ## [0.18.26] - 2026-11-09
 
 ### Added
@@ -44,13 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Runner sweeps retain missing, malformed or unrecognized node/container states instead of treating them as confirmed non-running runners and automatically stopping them (F1070).
-- Queued GitHub runner jobs revalidate current repository, public-repository and label policy before taking a slot, so previously accepted work cannot bypass later runner restrictions (F1069).
-- GitHub runner batches stop admitting additional jobs when their configuration changes during preparation, retaining pending work for a fresh host/capacity pass (F1068).
-- GitHub runner drains recheck pending-job identity after asynchronous preparation of earlier jobs or online status checks, so later workflow events cannot leave stale jobs eligible to start (F1067).
-- Failed CI log file creation or append no longer consumes the chunk sequence; partial writes restore the prior file length and reservation so retries preserve accepted diagnostics (F1066).
-- CI log writes serialize admission and file append per attempt within the panel process, preserving chunk order and acknowledging overlapping retries from current persisted sequence state (F1065).
-- CI results that lose the job transition to cancellation return a conflict instead of success; cancellation closes the current attempt even when a competing result just finished its attempt write (F1064).
 - CI runner revocation fences both lease creation and assignment; pending attempts are lost/requeued before publication, and stale claims cannot overwrite a newer runner's attempt (F1063).
 - Concurrent CI claims reserve runner capacity inside the attempt insert; a losing request leaves its job queued without consuming an attempt or reviving cancelled work (F1062).
 - CI cancellation closes the attempt current at cancellation time, and claims that lose assignment to cancellation retire their attempt instead of returning cancelled work or retaining runner capacity (F1061).

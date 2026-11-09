@@ -573,13 +573,13 @@ describe('sweepGithubRunners: reaping', () => {
     expect(log.info).toHaveBeenCalledWith(expect.objectContaining({ reason: 'never picked up a job' }), 'removed a runner');
   });
 
-  it('removes a runner past the job limit even when GitHub cannot be asked about it', async () => {
+  it('keeps an older runner when GitHub cannot be asked whether it is busy', async () => {
     await lib.setRunnerConfig(db, ghApp.id, enabled());
     psRows = [psRow(`nd-${ghApp.id}-1-aaaaaa`, 'running', OLD, ghApp.id, 1, 'acme/api', 31, '')];
     await lib.sweepGithubRunners(db, log, new Date('2026-10-28T17:00:00Z').getTime());
-    expect(h.capture.mock.calls.filter(([, a]) => a[0] === 'rm').map(([, a]) => a[2])).toEqual([`nd-${ghApp.id}-1-aaaaaa`]);
+    expect(h.capture.mock.calls.filter(([, a]) => a[0] === 'rm')).toEqual([]);
     expect(h.githubApi).not.toHaveBeenCalled();
-    expect(log.info).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outlived the 6-hour job limit' }), 'removed a runner');
+    expect(log.info).not.toHaveBeenCalledWith(expect.objectContaining({ runner: `nd-${ghApp.id}-1-aaaaaa` }), 'removed a runner');
   });
 
   it('keeps a runner whose busy check fails for another reason than a 404', async () => {
@@ -590,11 +590,12 @@ describe('sweepGithubRunners: reaping', () => {
     expect(h.capture.mock.calls.some(([, a]) => a[0] === 'rm')).toBe(false);
   });
 
-  it('reaps a node runner through the node, and leaves it when the node cannot remove it', async () => {
+  it('reaps an idle node runner through the node, and leaves it when the node cannot remove it', async () => {
     await lib.setRunnerConfig(db, ghApp.id, enabled({ serverId: 9 }));
     nodeRunners = [
       { name: 'nd-1-5-abcdef', state: 'running', githubAppId: ghApp.id, jobId: 5, repo: 'acme/api', runnerId: 30, scope: 'org:acme', createdAt: '2026-10-28T03:00:00Z' },
     ];
+    h.githubApi.mockResolvedValue(ok({ busy: false }));
     await lib.sweepGithubRunners(db, log, T);
     expect(h.agentOp).toHaveBeenCalledWith(db, 9, 'gha.runner.stop', { name: 'nd-1-5-abcdef' }, expect.any(Function), { timeoutMs: 11 * 60 * 1000 });
     expect(h.githubApi).toHaveBeenCalledWith(expect.anything(), 'ghs_token', 'DELETE', '/orgs/acme/actions/runners/30');

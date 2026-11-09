@@ -61,8 +61,6 @@ const settingKey = (githubAppId: number) => `github_runners:${githubAppId}`;
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 /** A runner that has not picked up a job by then is removed. */
 const IDLE_REAP_MS = 10 * 60 * 1000;
-/** No job runs longer than GitHub's own 6-hour cap; anything older is stuck. */
-const MAX_RUNNER_AGE_MS = 6 * 60 * 60 * 1000 + 15 * 60 * 1000;
 const DOCKER_RUN_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ── configuration ──────────────────────────────────────────────────────────
@@ -734,7 +732,8 @@ export async function handleWorkflowJob(
 
 /**
  * Periodic upkeep: start waiting jobs (re-checking each still waits), and
- * remove runners that never picked up a job or outlived any job.
+ * remove exited or confirmed-idle runners. Active jobs own their execution
+ * timeout; container age cannot substitute for current GitHub busy state.
  */
 export async function sweepGithubRunners(db: DB, log: FastifyBaseLogger, now: number = Date.now()): Promise<void> {
   // Nothing to do (and no Docker call) on a panel that never turned runners on.
@@ -749,10 +748,6 @@ export async function sweepGithubRunners(db: DB, log: FastifyBaseLogger, now: nu
     if (c.state !== 'running') {
       // An unreadable node/Docker state is not permission to stop a runner.
       if (['created', 'paused', 'restarting', 'removing', 'exited', 'dead'].includes(c.state)) await removeRunnerContainer(db, c);
-      continue;
-    }
-    if (age > MAX_RUNNER_AGE_MS) {
-      await reapRunner(db, log, c, 'outlived the 6-hour job limit');
       continue;
     }
     if (age > IDLE_REAP_MS && !(await runnerBusy(db, c))) await reapRunner(db, log, c, 'never picked up a job');
