@@ -41,6 +41,21 @@ drives Docker on one host, and optionally on a handful of remote ones. It places
 server you choose, keeps its replicas and canary steps under its own control, and can hand placement to
 Docker Swarm for stateless services.
 
+## Why NineDeploy
+
+The usual building blocks are all here: Git and image deploys, TLS, databases, backups, previews and teams. These are the parts it does differently. Each one links to the page that proves it.
+
+- **Backups that are proven to restore.** A restore drill loads a backup into an isolated copy, checks the data you named, and records how long the restore took. It never touches the source. This works for all eleven managed engines, from PostgreSQL to RabbitMQ. PostgreSQL also gets point-in-time recovery into a new database. → [Restore verification](./docs/RESTORE_VERIFICATION.md)
+- **Protected production lanes.** A lane can hide its variables and logs from members who can still deploy to it. It can also hold every deploy until a lane admin approves it, whether a push, a schedule or a deploy hook started it. → [Protected lanes and approvals](./docs/DEPLOYMENTS.md#protected-lanes-and-deploy-approvals-01613)
+- **AI agents with the same permissions as people.** The panel serves MCP over HTTP with OAuth 2.1 or scoped API tokens. Every tool call goes through the same role, scope, 2FA and IP checks as a direct API call. → [MCP, CLI and SDK](./docs/AI_MCP_CLI.md#remote-mcp-over-http-r4)
+- **Hard to talk into running something else.** Commands run as argument lists, never as shell strings built from input. A fresh panel accepts its first admin only with the installer's one-time setup token. Releases are signed, and the installer checks them. → [Security](./docs/SECURITY_SSO.md), [Verifying a release](#verifying-a-release)
+- **Your secrets stay on your server.** Secrets and backups are encrypted with a master key on the host. External secret managers are optional: Vault/OpenBao, AWS, GCP, Azure, 1Password, or your own command. There is no telemetry. The panel calls out only to services you configure, plus a release check you can turn off with `NINEDEPLOY_UPDATE_CHECK_URL=disabled`. → [Secret managers](./docs/SECRET_MANAGERS.md)
+- **It says what it cannot do.** Every service reports which features work where it runs, and why the others do not. The [support matrix](./docs/SUPPORT_MATRIX.md) is generated from the same code.
+
+### How it compares
+
+Coolify, Dokploy and CapRover are the closest alternatives. They are older, have larger communities and longer template catalogs, and Coolify also ships MCP and image scanning. NineDeploy does not import projects from them yet. If you already run one of them happily, the reasons to switch are the points above. Feature names alone are not a reason: our capabilities come with stated limits, and we have not verified every competitor's depth.
+
 ---
 
 ## Requirements
@@ -125,6 +140,33 @@ docker run -d --name ninedeploy \
 > bare-metal installer. Docker/Compose deploys, managed databases, Traefik ingress and encrypted S3
 > backups behave identically — the panel drives them as sibling containers through the mounted socket.
 
+### From source (development)
+
+```bash
+git clone https://github.com/NineDeploy/NineDeploy.git && cd NineDeploy
+corepack enable && pnpm install && pnpm build
+pnpm dev        # API + built dashboard on :3000
+pnpm dev:web    # Vite dashboard on :5173 against that API
+```
+
+### First boot
+
+1. Open the URL the installer printed (`http://<server-ip>:3000/login#setup-token=…` pre-fills the
+   token). **The first account created becomes the instance operator**, so since 0.16 creating it
+   needs the installer's setup token (`NINEDEPLOY_SETUP_TOKEN` in `.env`; a bare `docker run` logs a
+   generated one at boot and keeps it in `/data/setup-token`). The CLI takes it too:
+   `ninedeploy setup --setup-token <token>`. It owns a personal workspace; every later signup is an
+   ordinary member until someone grants more.
+2. Point a wildcard DNS record (`*.apps.example.com`) at the host. If the installer did not get an email
+   (`--email`), and you did not use the admin email for it on the first-run form, set the ACME email
+   under **Settings → Security**. Traefik issues certificates from then on, including DNS-01 wildcards.
+   `install.sh --domain panel.example.com --email you@example.com` puts the panel itself on HTTPS from
+   the first boot.
+3. `ninedeploy doctor` from your laptop, or the **About** page in the panel, reports what is missing.
+
+Full matrix — environment variables, upgrade paths, systemd internals — in
+[**docs/QUICKSTART.md**](./docs/QUICKSTART.md).
+
 ### Verifying a release
 
 Since **0.10.43** every release is signed without a maintainer-held key: the release workflow signs
@@ -179,33 +221,6 @@ that workflow can produce a validly signed release; what the signature rules out
 afterwards — an archive, installer or image modified anywhere between the workflow and your host. The
 `git` fallback paths (`--channel main`, a clone-based install, an unreachable asset host) are verified
 by TLS to github.com only.
-
-### From source (development)
-
-```bash
-git clone https://github.com/NineDeploy/NineDeploy.git && cd NineDeploy
-corepack enable && pnpm install && pnpm build
-pnpm dev        # API + built dashboard on :3000
-pnpm dev:web    # Vite dashboard on :5173 against that API
-```
-
-### First boot
-
-1. Open the URL the installer printed (`http://<server-ip>:3000/login#setup-token=…` pre-fills the
-   token). **The first account created becomes the instance operator**, so since 0.16 creating it
-   needs the installer's setup token (`NINEDEPLOY_SETUP_TOKEN` in `.env`; a bare `docker run` logs a
-   generated one at boot and keeps it in `/data/setup-token`). The CLI takes it too:
-   `ninedeploy setup --setup-token <token>`. It owns a personal workspace; every later signup is an
-   ordinary member until someone grants more.
-2. Point a wildcard DNS record (`*.apps.example.com`) at the host. If the installer did not get an email
-   (`--email`), and you did not use the admin email for it on the first-run form, set the ACME email
-   under **Settings → Security**. Traefik issues certificates from then on, including DNS-01 wildcards.
-   `install.sh --domain panel.example.com --email you@example.com` puts the panel itself on HTTPS from
-   the first boot.
-3. `ninedeploy doctor` from your laptop, or the **About** page in the panel, reports what is missing.
-
-Full matrix — environment variables, upgrade paths, systemd internals — in
-[**docs/QUICKSTART.md**](./docs/QUICKSTART.md).
 
 ---
 
