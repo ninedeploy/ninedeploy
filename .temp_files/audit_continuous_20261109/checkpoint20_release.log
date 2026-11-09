@@ -1,0 +1,1699 @@
+$ node scripts/check-node-version.mjs && pnpm typecheck && pnpm lint && pnpm build && pnpm turbo run test --concurrency=1
+Node.js 26.13.0: security baseline satisfied
+$ turbo run typecheck
+• turbo 2.11.2
+
+   • Packages in scope: @ninedeploy/db, @ninedeploy/mcp, @ninedeploy/plugin-sdk, @ninedeploy/schemas, @ninedeploy/sdk, @ninedeploy/server, @ninedeploy/web, ninedeploy
+   • Running typecheck in 8 packages
+   • Remote caching disabled
+
+@ninedeploy/db:typecheck: cache miss, executing 42826e185746d6ac
+@ninedeploy/schemas:typecheck: cache miss, executing 33d23c08d5b7dc8c
+@ninedeploy/schemas:build: cache miss, executing d88ac8108d66806b
+@ninedeploy/db:build: cache miss, executing 06b99ab7b7ce1e24
+@ninedeploy/plugin-sdk:typecheck: cache miss, executing 8c756567c211c425
+@ninedeploy/schemas:build: $ tsc
+@ninedeploy/db:typecheck: $ tsc --noEmit
+@ninedeploy/sdk:build: cache miss, executing 16c2f62990fc9230
+@ninedeploy/sdk:typecheck: cache miss, executing fe2d337a6b820f12
+@ninedeploy/db:build: $ tsc
+@ninedeploy/plugin-sdk:typecheck: $ tsc --noEmit
+@ninedeploy/schemas:typecheck: $ tsc --noEmit
+@ninedeploy/sdk:build: $ tsc
+@ninedeploy/mcp:build: cache miss, executing bd687f6e28d77c91
+ninedeploy:typecheck: cache miss, executing 1734e127f9e6d1b4
+@ninedeploy/web:typecheck: cache miss, executing 504249367e762dfd
+@ninedeploy/mcp:typecheck: cache miss, executing 841ff61f9880bb67
+@ninedeploy/sdk:typecheck: $ tsc --noEmit
+@ninedeploy/mcp:build: $ tsc
+@ninedeploy/server:typecheck: cache miss, executing c8c1f977399699e7
+@ninedeploy/web:typecheck: $ tsc --noEmit
+ninedeploy:typecheck: $ tsc --noEmit
+@ninedeploy/mcp:typecheck: $ tsc --noEmit
+@ninedeploy/server:typecheck: $ tsc --noEmit
+
+ Tasks:    12 successful, 12 total
+Cached:    0 cached, 12 total
+  Time:    21.841s
+
+$ turbo run lint
+• turbo 2.11.2
+
+   • Packages in scope: @ninedeploy/db, @ninedeploy/mcp, @ninedeploy/plugin-sdk, @ninedeploy/schemas, @ninedeploy/sdk, @ninedeploy/server, @ninedeploy/web, ninedeploy
+   • Running lint in 8 packages
+   • Remote caching disabled
+
+@ninedeploy/server:lint: cache miss, executing e010a8388f628d62
+@ninedeploy/schemas:lint: cache miss, executing 942b11a43dae30ca
+@ninedeploy/plugin-sdk:lint: cache miss, executing 271821ddc7ca60c5
+ninedeploy:lint: cache miss, executing b3ab15d24b78882d
+@ninedeploy/mcp:lint: cache miss, executing 0ee0c988db868c6e
+@ninedeploy/db:lint: cache miss, executing 960ff686c6051a9f
+@ninedeploy/web:lint: cache miss, executing 37b041bcc1516791
+@ninedeploy/sdk:lint: cache miss, executing 5d13729b2c1c6b94
+@ninedeploy/server:lint: $ biome lint .
+@ninedeploy/schemas:lint: $ biome lint .
+@ninedeploy/schemas:lint: test\containerLifecycle.test.ts:61:109 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     59 │   });
+@ninedeploy/schemas:lint:     60 │   it('keeps the legacy limit while bounding explicit Stop batches at thirty immutable targets', () => {
+@ninedeploy/schemas:lint:   > 61 │     const batch = Array.from({ length: 30 }, (_, n) => ({ id: (n + 1).toString(16).padStart(64, '0'), name: 'web-' + (n + 1), deploymentId: n + 1 }));
+@ninedeploy/schemas:lint:        │                                                                                                             ^^^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     62 │     expect(containerLifecycleRequest.parse({ ...stop, targets: batch }).targets).toHaveLength(30);
+@ninedeploy/schemas:lint:     63 │     expect(containerLifecycleReply.parse({ ...receipt, items: batch.map(item => ({ ...item, running: false })) }).items).toHaveLength(30);
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     59 59 │     });
+@ninedeploy/schemas:lint:     60 60 │     it('keeps the legacy limit while bounding explicit Stop batches at thirty immutable targets', () => {
+@ninedeploy/schemas:lint:     61    │ - ····const·batch·=·Array.from({·length:·30·},·(_,·n)·=>·({·id:·(n·+·1).toString(16).padStart(64,·'0'),·name:·'web-'·+·(n·+·1),·deploymentId:·n·+·1·}));
+@ninedeploy/schemas:lint:        61 │ + ····const·batch·=·Array.from({·length:·30·},·(_,·n)·=>·({·id:·(n·+·1).toString(16).padStart(64,·'0'),·name:·`web-${n·+·1}`,·deploymentId:·n·+·1·}));
+@ninedeploy/schemas:lint:     62 62 │       expect(containerLifecycleRequest.parse({ ...stop, targets: batch }).targets).toHaveLength(30);
+@ninedeploy/schemas:lint:     63 63 │       expect(containerLifecycleReply.parse({ ...receipt, items: batch.map(item => ({ ...item, running: false })) }).items).toHaveLength(30);
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:5:39 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     3 │ import { containerStartSetRequest, containerStartSetReply } from '../src/containerMutation.js';
+@ninedeploy/schemas:lint:     4 │ const head = { requestId: 'a'.repeat(32), serviceId: 7, revision: 8, timeoutMs: 30_000 };
+@ninedeploy/schemas:lint:   > 5 │ const spec = { name: 'web-10', image: 'sha256:' + 'b'.repeat(64), serviceId: 7, deploymentId: 10 };
+@ninedeploy/schemas:lint:       │                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     6 │ const prepare = { ...head, deploymentId: 10, specs: [spec] };
+@ninedeploy/schemas:lint:     7 │ const target = { id: 'c'.repeat(64), name: 'web-10', deploymentId: 10 };
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:       3   3 │   import { containerStartSetRequest, containerStartSetReply } from '../src/containerMutation.js';
+@ninedeploy/schemas:lint:       4   4 │   const head = { requestId: 'a'.repeat(32), serviceId: 7, revision: 8, timeoutMs: 30_000 };
+@ninedeploy/schemas:lint:       5     │ - const·spec·=·{·name:·'web-10',·image:·'sha256:'·+·'b'.repeat(64),·serviceId:·7,·deploymentId:·10·};
+@ninedeploy/schemas:lint:           5 │ + const·spec·=·{·name:·'web-10',·image:·`sha256:${'b'.repeat(64)}`,·serviceId:·7,·deploymentId:·10·};
+@ninedeploy/schemas:lint:       6   6 │   const prepare = { ...head, deploymentId: 10, specs: [spec] };
+@ninedeploy/schemas:lint:       7   7 │   const target = { id: 'c'.repeat(64), name: 'web-10', deploymentId: 10 };
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:33:88 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     31 │   });
+@ninedeploy/schemas:lint:     32 │   it.each([
+@ninedeploy/schemas:lint:   > 33 │     { specs: [] }, { specs: Array.from({ length: 11 }, (_, index) => ({ ...spec, name: 'web-10-r' + index })) },
+@ninedeploy/schemas:lint:        │                                                                                        ^^^^^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     34 │     { specs: [{ ...spec, name: '' }] }, { specs: [{ ...spec, name: 7 }] }, { specs: [spec, spec] },
+@ninedeploy/schemas:lint:     35 │     { specs: [{ ...spec, serviceId: 8 }] }, { specs: [{ ...spec, deploymentId: 11 }] }, { specs: [{ ...spec, managed: 'database' }] },
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:      31  31 │     });
+@ninedeploy/schemas:lint:      32  32 │     it.each([
+@ninedeploy/schemas:lint:      33     │ - ····{·specs:·[]·},·{·specs:·Array.from({·length:·11·},·(_,·index)·=>·({·...spec,·name:·'web-10-r'·+·index·}))·},
+@ninedeploy/schemas:lint:          33 │ + ····{·specs:·[]·},·{·specs:·Array.from({·length:·11·},·(_,·index)·=>·({·...spec,·name:·`web-10-r${index}`·}))·},
+@ninedeploy/schemas:lint:      34  34 │       { specs: [{ ...spec, name: '' }] }, { specs: [{ ...spec, name: 7 }] }, { specs: [spec, spec] },
+@ninedeploy/schemas:lint:      35  35 │       { specs: [{ ...spec, serviceId: 8 }] }, { specs: [{ ...spec, deploymentId: 11 }] }, { specs: [{ ...spec, managed: 'database' }] },
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:37:58 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     35 │     { specs: [{ ...spec, serviceId: 8 }] }, { specs: [{ ...spec, deploymentId: 11 }] }, { specs: [{ ...spec, managed: 'database' }] },
+@ninedeploy/schemas:lint:     36 │     { specs: [{ ...spec, image: 'busybox:1.36' }] }, { specs: [{ ...spec, image: 7 }] },
+@ninedeploy/schemas:lint:   > 37 │     { specs: [spec, { ...spec, name: 'web-10-r2', image: 'sha256:' + 'd'.repeat(64) }] },
+@ninedeploy/schemas:lint:        │                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     38 │     { timeoutMs: 300_001 }, { extra: true },
+@ninedeploy/schemas:lint:     39 │   ])('refuses unbound, ambiguous or mutable preparation: %j', patch => {
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:      35  35 │       { specs: [{ ...spec, serviceId: 8 }] }, { specs: [{ ...spec, deploymentId: 11 }] }, { specs: [{ ...spec, managed: 'database' }] },
+@ninedeploy/schemas:lint:      36  36 │       { specs: [{ ...spec, image: 'busybox:1.36' }] }, { specs: [{ ...spec, image: 7 }] },
+@ninedeploy/schemas:lint:      37     │ - ····{·specs:·[spec,·{·...spec,·name:·'web-10-r2',·image:·'sha256:'·+·'d'.repeat(64)·}]·},
+@ninedeploy/schemas:lint:          37 │ + ····{·specs:·[spec,·{·...spec,·name:·'web-10-r2',·image:·`sha256:${'d'.repeat(64)}`·}]·},
+@ninedeploy/schemas:lint:      38  38 │       { timeoutMs: 300_001 }, { extra: true },
+@ninedeploy/schemas:lint:      39  39 │     ])('refuses unbound, ambiguous or mutable preparation: %j', patch => {
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:43:142 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     41 │   });
+@ninedeploy/schemas:lint:     42 │   it('accepts all ten distinct replicas from one immutable image', () => {
+@ninedeploy/schemas:lint:   > 43 │     expect(containerPrepareRequest.parse({ ...prepare, timeoutMs: 300_000, specs: Array.from({ length: 10 }, (_, index) => ({ ...spec, name: 'web-10-r' + index })) }).specs).toHaveLength(10);
+@ninedeploy/schemas:lint:        │                                                                                                                                              ^^^^^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     44 │   });
+@ninedeploy/schemas:lint:     45 │   it.each([{ targets: [target, target] }, { targets: [target, { ...target, name: 'other' }] },
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:      41  41 │     });
+@ninedeploy/schemas:lint:      42  42 │     it('accepts all ten distinct replicas from one immutable image', () => {
+@ninedeploy/schemas:lint:      43     │ - ····expect(containerPrepareRequest.parse({·...prepare,·timeoutMs:·300_000,·specs:·Array.from({·length:·10·},·(_,·index)·=>·({·...spec,·name:·'web-10-r'·+·index·}))·}).specs).toHaveLength(10);
+@ninedeploy/schemas:lint:          43 │ + ····expect(containerPrepareRequest.parse({·...prepare,·timeoutMs:·300_000,·specs:·Array.from({·length:·10·},·(_,·index)·=>·({·...spec,·name:·`web-10-r${index}`·}))·}).specs).toHaveLength(10);
+@ninedeploy/schemas:lint:      44  44 │     });
+@ninedeploy/schemas:lint:      45  45 │     it.each([{ targets: [target, target] }, { targets: [target, { ...target, name: 'other' }] },
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:47:77 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     45 │   it.each([{ targets: [target, target] }, { targets: [target, { ...target, name: 'other' }] },
+@ninedeploy/schemas:lint:     46 │     { targets: [target, { ...target, id: 'd'.repeat(64) }] }, { targets: [{ ...target, deploymentId: undefined }] },
+@ninedeploy/schemas:lint:   > 47 │     { targets: Array.from({ length: 31 }, (_, index) => ({ ...target, name: 'web-' + index, id: index.toString(16).padStart(64, '0') })) },
+@ninedeploy/schemas:lint:        │                                                                             ^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     48 │     { graceSeconds: -1 }, { graceSeconds: 301 }, { timeoutMs: 330_001 }, { extra: true },
+@ninedeploy/schemas:lint:     49 │   ])('refuses unsafe retirement identity or bounds: %j', patch => {
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:      45  45 │     it.each([{ targets: [target, target] }, { targets: [target, { ...target, name: 'other' }] },
+@ninedeploy/schemas:lint:      46  46 │       { targets: [target, { ...target, id: 'd'.repeat(64) }] }, { targets: [{ ...target, deploymentId: undefined }] },
+@ninedeploy/schemas:lint:      47     │ - ····{·targets:·Array.from({·length:·31·},·(_,·index)·=>·({·...target,·name:·'web-'·+·index,·id:·index.toString(16).padStart(64,·'0')·}))·},
+@ninedeploy/schemas:lint:          47 │ + ····{·targets:·Array.from({·length:·31·},·(_,·index)·=>·({·...target,·name:·`web-${index}`,·id:·index.toString(16).padStart(64,·'0')·}))·},
+@ninedeploy/schemas:lint:      48  48 │       { graceSeconds: -1 }, { graceSeconds: 301 }, { timeoutMs: 330_001 }, { extra: true },
+@ninedeploy/schemas:lint:      49  49 │     ])('refuses unsafe retirement identity or bounds: %j', patch => {
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:55:128 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     53 │     expect(containerRetireSetRequest.parse({ ...retired, targets: [] }).targets).toEqual([]);
+@ninedeploy/schemas:lint:     54 │     expect(containerRetireSetReply.parse({ ...replyHead, items: [] }).items).toEqual([]);
+@ninedeploy/schemas:lint:   > 55 │     expect(containerRetireSetRequest.parse({ ...retired, targets: Array.from({ length: 30 }, (_, index) => ({ ...target, name: 'web-' + index, id: index.toString(16).padStart(64, '0') })) }).targets).toHaveLength(30);
+@ninedeploy/schemas:lint:        │                                                                                                                                ^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     56 │   });
+@ninedeploy/schemas:lint:     57 │   it.each([
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:      53  53 │       expect(containerRetireSetRequest.parse({ ...retired, targets: [] }).targets).toEqual([]);
+@ninedeploy/schemas:lint:      54  54 │       expect(containerRetireSetReply.parse({ ...replyHead, items: [] }).items).toEqual([]);
+@ninedeploy/schemas:lint:      55     │ - ····expect(containerRetireSetRequest.parse({·...retired,·targets:·Array.from({·length:·30·},·(_,·index)·=>·({·...target,·name:·'web-'·+·index,·id:·index.toString(16).padStart(64,·'0')·}))·}).targets).toHaveLength(30);
+@ninedeploy/schemas:lint:          55 │ + ····expect(containerRetireSetRequest.parse({·...retired,·targets:·Array.from({·length:·30·},·(_,·index)·=>·({·...target,·name:·`web-${index}`,·id:·index.toString(16).padStart(64,·'0')·}))·}).targets).toHaveLength(30);
+@ninedeploy/schemas:lint:      56  56 │     });
+@ninedeploy/schemas:lint:      57  57 │     it.each([
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:72:120 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     70 │   });
+@ninedeploy/schemas:lint:     71 │   it('keeps the complete UTF-8 request inside the sealed agent transport budget', () => {
+@ninedeploy/schemas:lint:   > 72 │     const batch = (length: number) => ({ ...prepare, specs: Array.from({ length: 10 }, (_, index) => ({ ...spec, name: 'web-10-r' + index, cmd: Array.from({ length: 64 }, () => 'ü'.repeat(length)) })) });
+@ninedeploy/schemas:lint:        │                                                                                                                        ^^^^^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     73 │     expect(containerPrepareRequest.safeParse(batch(400)).success).toBe(true);
+@ninedeploy/schemas:lint:     74 │     const oversized = containerPrepareRequest.safeParse(batch(1000)); expect(oversized.success).toBe(false);
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:      70  70 │     });
+@ninedeploy/schemas:lint:      71  71 │     it('keeps the complete UTF-8 request inside the sealed agent transport budget', () => {
+@ninedeploy/schemas:lint:      72     │ - ····const·batch·=·(length:·number)·=>·({·...prepare,·specs:·Array.from({·length:·10·},·(_,·index)·=>·({·...spec,·name:·'web-10-r'·+·index,·cmd:·Array.from({·length:·64·},·()·=>·'ü'.repeat(length))·}))·});
+@ninedeploy/schemas:lint:          72 │ + ····const·batch·=·(length:·number)·=>·({·...prepare,·specs:·Array.from({·length:·10·},·(_,·index)·=>·({·...spec,·name:·`web-10-r${index}`,·cmd:·Array.from({·length:·64·},·()·=>·'ü'.repeat(length))·}))·});
+@ninedeploy/schemas:lint:      73  73 │       expect(containerPrepareRequest.safeParse(batch(400)).success).toBe(true);
+@ninedeploy/schemas:lint:      74  74 │       const oversized = containerPrepareRequest.safeParse(batch(1000)); expect(oversized.success).toBe(false);
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:98:141 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:      96 │     expect(containerNetworkSetReply.safeParse({ ...reply, items: [reply.items[0], reply.items[0]] }).success).toBe(false);
+@ninedeploy/schemas:lint:      97 │   });
+@ninedeploy/schemas:lint:    > 98 │   it.each([{ networks: [] }, { networks: ['nd-x', 'nd-x'] }, { networks: ['--flag'] }, { networks: Array.from({ length: 33 }, (_, index) => 'nd-' + index) },
+@ninedeploy/schemas:lint:         │                                                                                                                                             ^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:      99 │     { targets: [] }, { targets: [target, target] }, { targets: [target, { ...target, id: 'd'.repeat(64) }] }, { targets: [target, { ...target, name: 'other' }] },
+@ninedeploy/schemas:lint:     100 │     { timeoutMs: 60_001 }, { action: 'run' }, { extra: true },
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:      96  96 │       expect(containerNetworkSetReply.safeParse({ ...reply, items: [reply.items[0], reply.items[0]] }).success).toBe(false);
+@ninedeploy/schemas:lint:      97  97 │     });
+@ninedeploy/schemas:lint:      98     │ - ··it.each([{·networks:·[]·},·{·networks:·['nd-x',·'nd-x']·},·{·networks:·['--flag']·},·{·networks:·Array.from({·length:·33·},·(_,·index)·=>·'nd-'·+·index)·},
+@ninedeploy/schemas:lint:          98 │ + ··it.each([{·networks:·[]·},·{·networks:·['nd-x',·'nd-x']·},·{·networks:·['--flag']·},·{·networks:·Array.from({·length:·33·},·(_,·index)·=>·`nd-${index}`)·},
+@ninedeploy/schemas:lint:      99  99 │       { targets: [] }, { targets: [target, target] }, { targets: [target, { ...target, id: 'd'.repeat(64) }] }, { targets: [target, { ...target, name: 'other' }] },
+@ninedeploy/schemas:lint:     100 100 │       { timeoutMs: 60_001 }, { action: 'run' }, { extra: true },
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\containerMutation.test.ts:116:75 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     114 │     expect(containerStopSetReply.parse({ ...replyHead, items: [{ ...target, running: false }] })).toMatchObject({ complete: true });
+@ninedeploy/schemas:lint:     115 │   });
+@ninedeploy/schemas:lint:   > 116 │   it.each([['x', 'x'], ['--unsafe'], Array.from({ length: 31 }, (_, i) => 'web-' + i)])('rejects ambiguous or unbounded expected names: %j', (...names) => {
+@ninedeploy/schemas:lint:         │                                                                           ^^^^^^^^^^
+@ninedeploy/schemas:lint:     117 │     expect(containerInventoryRequest.safeParse({ ...head, expectedNames: names }).success).toBe(false);
+@ninedeploy/schemas:lint:     118 │   });
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     114 114 │       expect(containerStopSetReply.parse({ ...replyHead, items: [{ ...target, running: false }] })).toMatchObject({ complete: true });
+@ninedeploy/schemas:lint:     115 115 │     });
+@ninedeploy/schemas:lint:     116     │ - ··it.each([['x',·'x'],·['--unsafe'],·Array.from({·length:·31·},·(_,·i)·=>·'web-'·+·i)])('rejects·ambiguous·or·unbounded·expected·names:·%j',·(...names)·=>·{
+@ninedeploy/schemas:lint:         116 │ + ··it.each([['x',·'x'],·['--unsafe'],·Array.from({·length:·31·},·(_,·i)·=>·`web-${i}`)])('rejects·ambiguous·or·unbounded·expected·names:·%j',·(...names)·=>·{
+@ninedeploy/schemas:lint:     117 117 │       expect(containerInventoryRequest.safeParse({ ...head, expectedNames: names }).success).toBe(false);
+@ninedeploy/schemas:lint:     118 118 │     });
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: test\observability.test.ts:16:161 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     14 │     expect(observabilityPatch.parse({ otlpEndpoint }).otlpEndpoint).toBe(otlpEndpoint);
+@ninedeploy/schemas:lint:     15 │   });
+@ninedeploy/schemas:lint:   > 16 │   it.each(['https://user:secret@collector.example/v1/metrics', 'https://collector.example/v1/metrics#fragment', 'ftp://collector.example/metrics', 'not-a-url', 'https://collector.example/' + 'a'.repeat(2048)])('rejects an unsafe or invalid endpoint %s', (otlpEndpoint) => {
+@ninedeploy/schemas:lint:        │                                                                                                                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/schemas:lint:     17 │     expect(observabilityPatch.safeParse({ otlpEndpoint }).success).toBe(false);
+@ninedeploy/schemas:lint:     18 │   });
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:     14 14 │       expect(observabilityPatch.parse({ otlpEndpoint }).otlpEndpoint).toBe(otlpEndpoint);
+@ninedeploy/schemas:lint:     15 15 │     });
+@ninedeploy/schemas:lint:     16    │ - ··it.each(['https://user:secret@collector.example/v1/metrics',·'https://collector.example/v1/metrics#fragment',·'ftp://collector.example/metrics',·'not-a-url',·'https://collector.example/'·+·'a'.repeat(2048)])('rejects·an·unsafe·or·invalid·endpoint·%s',·(otlpEndpoint)·=>·{
+@ninedeploy/schemas:lint:        16 │ + ··it.each(['https://user:secret@collector.example/v1/metrics',·'https://collector.example/v1/metrics#fragment',·'ftp://collector.example/metrics',·'not-a-url',·`https://collector.example/${'a'.repeat(2048)}`])('rejects·an·unsafe·or·invalid·endpoint·%s',·(otlpEndpoint)·=>·{
+@ninedeploy/schemas:lint:     17 17 │       expect(observabilityPatch.safeParse({ otlpEndpoint }).success).toBe(false);
+@ninedeploy/schemas:lint:     18 18 │     });
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint:
+@ninedeploy/schemas:lint: Checked 105 files in 51ms. No fixes applied.
+@ninedeploy/schemas:lint: Found 11 infos.
+@ninedeploy/server:lint: src\agentOps\containerLifecycle.ts:22:16 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     20 │       async run(params, onLine) {
+@ninedeploy/server:lint:     21 │         const receipt = await createNodeLifecycle(join(process.cwd(), '.agent-work', '.lifecycle')).retire(params);
+@ninedeploy/server:lint:   > 22 │         onLine('ND-LIFECYCLE-RETIRED ' + JSON.stringify(receipt)); return 0;
+@ninedeploy/server:lint:        │                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     23 │       },
+@ninedeploy/server:lint:     24 │     },
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     20 20 │         async run(params, onLine) {
+@ninedeploy/server:lint:     21 21 │           const receipt = await createNodeLifecycle(join(process.cwd(), '.agent-work', '.lifecycle')).retire(params);
+@ninedeploy/server:lint:     22    │ - ········onLine('ND-LIFECYCLE-RETIRED·'·+·JSON.stringify(receipt));·return·0;
+@ninedeploy/server:lint:        22 │ + ········onLine(`ND-LIFECYCLE-RETIRED·${JSON.stringify(receipt)}`);·return·0;
+@ninedeploy/server:lint:     23 23 │         },
+@ninedeploy/server:lint:     24 24 │       },
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:13:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     11 │   ops: {
+@ninedeploy/server:lint:     12 │     'docker.runtimeFence': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:   > 13 │       onLine('ND-RUNTIME-FENCE ' + JSON.stringify(await runtime().fence(params))); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     14 │     } },
+@ninedeploy/server:lint:     15 │     'docker.runtimeInventory': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     11 11 │     ops: {
+@ninedeploy/server:lint:     12 12 │       'docker.runtimeFence': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:     13    │ - ······onLine('ND-RUNTIME-FENCE·'·+·JSON.stringify(await·runtime().fence(params)));·return·0;
+@ninedeploy/server:lint:        13 │ + ······onLine(`ND-RUNTIME-FENCE·${JSON.stringify(await·runtime().fence(params))}`);·return·0;
+@ninedeploy/server:lint:     14 14 │       } },
+@ninedeploy/server:lint:     15 15 │       'docker.runtimeInventory': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:16:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     14 │     } },
+@ninedeploy/server:lint:     15 │     'docker.runtimeInventory': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:   > 16 │       onLine('ND-RUNTIME-INVENTORY ' + JSON.stringify(await runtime().inventory(params))); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     17 │     } },
+@ninedeploy/server:lint:     18 │     'docker.stopSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     14 14 │       } },
+@ninedeploy/server:lint:     15 15 │       'docker.runtimeInventory': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:     16    │ - ······onLine('ND-RUNTIME-INVENTORY·'·+·JSON.stringify(await·runtime().inventory(params)));·return·0;
+@ninedeploy/server:lint:        16 │ + ······onLine(`ND-RUNTIME-INVENTORY·${JSON.stringify(await·runtime().inventory(params))}`);·return·0;
+@ninedeploy/server:lint:     17 17 │       } },
+@ninedeploy/server:lint:     18 18 │       'docker.stopSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:19:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     17 │     } },
+@ninedeploy/server:lint:     18 │     'docker.stopSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:   > 19 │       onLine('ND-STOPPED-SET ' + JSON.stringify(await runtime().stop(params, onLine))); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     20 │     } },
+@ninedeploy/server:lint:     21 │     'docker.startSet': { cap: 'docker.startSet', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     17 17 │       } },
+@ninedeploy/server:lint:     18 18 │       'docker.stopSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:     19    │ - ······onLine('ND-STOPPED-SET·'·+·JSON.stringify(await·runtime().stop(params,·onLine)));·return·0;
+@ninedeploy/server:lint:        19 │ + ······onLine(`ND-STOPPED-SET·${JSON.stringify(await·runtime().stop(params,·onLine))}`);·return·0;
+@ninedeploy/server:lint:     20 20 │       } },
+@ninedeploy/server:lint:     21 21 │       'docker.startSet': { cap: 'docker.startSet', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:22:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     20 │     } },
+@ninedeploy/server:lint:     21 │     'docker.startSet': { cap: 'docker.startSet', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:   > 22 │       onLine('ND-STARTED-SET ' + JSON.stringify(await runtime().start(params, onLine))); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     23 │     } },
+@ninedeploy/server:lint:     24 │     'docker.runtimeLegacyHandoff': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     20 20 │       } },
+@ninedeploy/server:lint:     21 21 │       'docker.startSet': { cap: 'docker.startSet', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:     22    │ - ······onLine('ND-STARTED-SET·'·+·JSON.stringify(await·runtime().start(params,·onLine)));·return·0;
+@ninedeploy/server:lint:        22 │ + ······onLine(`ND-STARTED-SET·${JSON.stringify(await·runtime().start(params,·onLine))}`);·return·0;
+@ninedeploy/server:lint:     23 23 │       } },
+@ninedeploy/server:lint:     24 24 │       'docker.runtimeLegacyHandoff': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:25:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     23 │     } },
+@ninedeploy/server:lint:     24 │     'docker.runtimeLegacyHandoff': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:   > 25 │       onLine('ND-RUNTIME-LEGACY ' + JSON.stringify(await handoffStoppedNodeToLegacy(join(process.cwd(), '.agent-work', '.lifecycle'), params))); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     26 │     } },
+@ninedeploy/server:lint:     27 │     'docker.prepare': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     23 23 │       } },
+@ninedeploy/server:lint:     24 24 │       'docker.runtimeLegacyHandoff': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:     25    │ - ······onLine('ND-RUNTIME-LEGACY·'·+·JSON.stringify(await·handoffStoppedNodeToLegacy(join(process.cwd(),·'.agent-work',·'.lifecycle'),·params)));·return·0;
+@ninedeploy/server:lint:        25 │ + ······onLine(`ND-RUNTIME-LEGACY·${JSON.stringify(await·handoffStoppedNodeToLegacy(join(process.cwd(),·'.agent-work',·'.lifecycle'),·params))}`);·return·0;
+@ninedeploy/server:lint:     26 26 │       } },
+@ninedeploy/server:lint:     27 27 │       'docker.prepare': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:40:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     38 │         }
+@ninedeploy/server:lint:     39 │       }
+@ninedeploy/server:lint:   > 40 │       onLine('ND-PREPARED ' + JSON.stringify(receipt)); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     41 │     } },
+@ninedeploy/server:lint:     42 │     'docker.networkSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     38 38 │           }
+@ninedeploy/server:lint:     39 39 │         }
+@ninedeploy/server:lint:     40    │ - ······onLine('ND-PREPARED·'·+·JSON.stringify(receipt));·return·0;
+@ninedeploy/server:lint:        40 │ + ······onLine(`ND-PREPARED·${JSON.stringify(receipt)}`);·return·0;
+@ninedeploy/server:lint:     41 41 │       } },
+@ninedeploy/server:lint:     42 42 │       'docker.networkSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:43:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     41 │     } },
+@ninedeploy/server:lint:     42 │     'docker.networkSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:   > 43 │       onLine('ND-NETWORKS ' + JSON.stringify(await runtime().networks(params, onLine))); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     44 │     } },
+@ninedeploy/server:lint:     45 │     'docker.retireSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     41 41 │       } },
+@ninedeploy/server:lint:     42 42 │       'docker.networkSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:     43    │ - ······onLine('ND-NETWORKS·'·+·JSON.stringify(await·runtime().networks(params,·onLine)));·return·0;
+@ninedeploy/server:lint:        43 │ + ······onLine(`ND-NETWORKS·${JSON.stringify(await·runtime().networks(params,·onLine))}`);·return·0;
+@ninedeploy/server:lint:     44 44 │       } },
+@ninedeploy/server:lint:     45 45 │       'docker.retireSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:46:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     44 │     } },
+@ninedeploy/server:lint:     45 │     'docker.retireSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:   > 46 │       onLine('ND-RETIRED-SET ' + JSON.stringify(await runtime().retire(params, onLine))); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     47 │     } },
+@ninedeploy/server:lint:     48 │     'docker.limits': { cap: 'docker.limits', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     44 44 │       } },
+@ninedeploy/server:lint:     45 45 │       'docker.retireSet': { cap: 'docker.mutations', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:     46    │ - ······onLine('ND-RETIRED-SET·'·+·JSON.stringify(await·runtime().retire(params,·onLine)));·return·0;
+@ninedeploy/server:lint:        46 │ + ······onLine(`ND-RETIRED-SET·${JSON.stringify(await·runtime().retire(params,·onLine))}`);·return·0;
+@ninedeploy/server:lint:     47 47 │       } },
+@ninedeploy/server:lint:     48 48 │       'docker.limits': { cap: 'docker.limits', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\containerMutation.ts:49:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     47 │     } },
+@ninedeploy/server:lint:     48 │     'docker.limits': { cap: 'docker.limits', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:   > 49 │       onLine('ND-LIMITS ' + JSON.stringify(await runtime().limits(params, onLine))); return 0;
+@ninedeploy/server:lint:        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     50 │     } },
+@ninedeploy/server:lint:     51 │   },
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     47 47 │       } },
+@ninedeploy/server:lint:     48 48 │       'docker.limits': { cap: 'docker.limits', sealedOnly: true, async run(params, onLine) {
+@ninedeploy/server:lint:     49    │ - ······onLine('ND-LIMITS·'·+·JSON.stringify(await·runtime().limits(params,·onLine)));·return·0;
+@ninedeploy/server:lint:        49 │ + ······onLine(`ND-LIMITS·${JSON.stringify(await·runtime().limits(params,·onLine))}`);·return·0;
+@ninedeploy/server:lint:     50 50 │       } },
+@ninedeploy/server:lint:     51 51 │     },
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\agentOps\tunnels.ts:272:7 lint/complexity/noUselessSwitchCase  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Useless case clause.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     270 │         applyPause();
+@ninedeploy/server:lint:     271 │         return;
+@ninedeploy/server:lint:   > 272 │       case TUNNEL_FRAME.close:
+@ninedeploy/server:lint:         │       ^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     273 │       default:
+@ninedeploy/server:lint:     274 │         return shut(1000, 'closed by the panel');
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i because the default clause is present:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     271 │         return;
+@ninedeploy/server:lint:     272 │       case TUNNEL_FRAME.close:
+@ninedeploy/server:lint:   > 273 │       default:
+@ninedeploy/server:lint:         │       ^^^^^^^^
+@ninedeploy/server:lint:   > 274 │         return shut(1000, 'closed by the panel');
+@ninedeploy/server:lint:         │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     275 │     }
+@ninedeploy/server:lint:     276 │   });
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Remove the useless case.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     269 269 │           panelPaused = false;␍
+@ninedeploy/server:lint:     270 270 │           applyPause();␍
+@ninedeploy/server:lint:     271     │ - ········return;␍
+@ninedeploy/server:lint:     272     │ - ······case·TUNNEL_FRAME.close:␍
+@ninedeploy/server:lint:         271 │ + ········return;␍
+@ninedeploy/server:lint:     273 272 │         default:␍
+@ninedeploy/server:lint:     274 273 │           return shut(1000, 'closed by the panel');␍
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\database.ts:450:16 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     448 │ /** Start database web studio container on shared network. */
+@ninedeploy/server:lint:     449 │ export async function startDatabaseStudio(d: Database, port: number, log: (line: string) => void): Promise<void> {
+@ninedeploy/server:lint:   > 450 │   const name = 'nd-studio-' + d.slug;
+@ninedeploy/server:lint:         │                ^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     451 │   const password = isRedisFamily(d.engine) && d.passwordEncrypted ? decrypt(d.passwordEncrypted) : '';
+@ninedeploy/server:lint:     452 │   const host = d.internalHost || d.containerName || '';
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:      448  448 │   /** Start database web studio container on shared network. */
+@ninedeploy/server:lint:      449  449 │   export async function startDatabaseStudio(d: Database, port: number, log: (line: string) => void): Promise<void> {
+@ninedeploy/server:lint:      450      │ - ··const·name·=·'nd-studio-'·+·d.slug;
+@ninedeploy/server:lint:           450 │ + ··const·name·=·`nd-studio-${d.slug}`;
+@ninedeploy/server:lint:      451  451 │     const password = isRedisFamily(d.engine) && d.passwordEncrypted ? decrypt(d.passwordEncrypted) : '';
+@ninedeploy/server:lint:      452  452 │     const host = d.internalHost || d.containerName || '';
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\database.ts:460:55 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     458 │     try {
+@ninedeploy/server:lint:     459 │       const env: unknown = JSON.parse(await capture('docker', ['inspect', name, '--format', '{{json .Config.Env}}']));
+@ninedeploy/server:lint:   > 460 │       configured = Array.isArray(env) && env.includes('NODE_CONFIG=' + connectionConfig);
+@ninedeploy/server:lint:         │                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     461 │     } catch { /* no confirmed configuration: replace the managed helper */ }
+@ninedeploy/server:lint:     462 │     if (configured) return;
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:      458  458 │       try {
+@ninedeploy/server:lint:      459  459 │         const env: unknown = JSON.parse(await capture('docker', ['inspect', name, '--format', '{{json .Config.Env}}']));
+@ninedeploy/server:lint:      460      │ - ······configured·=·Array.isArray(env)·&&·env.includes('NODE_CONFIG='·+·connectionConfig);
+@ninedeploy/server:lint:           460 │ + ······configured·=·Array.isArray(env)·&&·env.includes(`NODE_CONFIG=${connectionConfig}`);
+@ninedeploy/server:lint:      461  461 │       } catch { /* no confirmed configuration: replace the managed helper */ }
+@ninedeploy/server:lint:      462  462 │       if (configured) return;
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\database.ts:466:7 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     464 │   await run('docker', ['rm', '-f', name], {}, swallow).catch(() => undefined);
+@ninedeploy/server:lint:     465 │   const studio = studioImageForEngine(d.engine);
+@ninedeploy/server:lint:   > 466 │   log('Preparing Web Studio image ' + studio.image + ' …');
+@ninedeploy/server:lint:         │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     467 │   await ensureDockerImage(studio.image, log);
+@ninedeploy/server:lint:     468 │   const args = ['run', '-d', '--name', name, '--network', NETWORK, '--restart', 'unless-stopped',
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:      464  464 │     await run('docker', ['rm', '-f', name], {}, swallow).catch(() => undefined);
+@ninedeploy/server:lint:      465  465 │     const studio = studioImageForEngine(d.engine);
+@ninedeploy/server:lint:      466      │ - ··log('Preparing·Web·Studio·image·'·+·studio.image·+·'·…');
+@ninedeploy/server:lint:           466 │ + ··log(`Preparing·Web·Studio·image·${studio.image}·…`);
+@ninedeploy/server:lint:      467  467 │     await ensureDockerImage(studio.image, log);
+@ninedeploy/server:lint:      468  468 │     const args = ['run', '-d', '--name', name, '--network', NETWORK, '--restart', 'unless-stopped',
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\database.ts:469:11 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     467 │   await ensureDockerImage(studio.image, log);
+@ninedeploy/server:lint:     468 │   const args = ['run', '-d', '--name', name, '--network', NETWORK, '--restart', 'unless-stopped',
+@ninedeploy/server:lint:   > 469 │     '-p', '127.0.0.1:' + port + ':' + studio.containerPort];
+@ninedeploy/server:lint:         │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     470 │   const env: Record<string, string> = {};
+@ninedeploy/server:lint:     471 │   if (isRedisFamily(d.engine)) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:      467  467 │     await ensureDockerImage(studio.image, log);
+@ninedeploy/server:lint:      468  468 │     const args = ['run', '-d', '--name', name, '--network', NETWORK, '--restart', 'unless-stopped',
+@ninedeploy/server:lint:      469      │ - ····'-p',·'127.0.0.1:'·+·port·+·':'·+·studio.containerPort];
+@ninedeploy/server:lint:           469 │ + ····'-p',·`127.0.0.1:${port}:${studio.containerPort}`];
+@ninedeploy/server:lint:      470  470 │     const env: Record<string, string> = {};
+@ninedeploy/server:lint:      471  471 │     if (isRedisFamily(d.engine)) {
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\logShipper.ts:45:77 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     43 │ }
+@ninedeploy/server:lint:     44 │ function timestampKey(ts: string): string {
+@ninedeploy/server:lint:   > 45 │   return ts.replace(/(?:\.(\d+))?Z$/, (_m, fraction: string | undefined) => '.' + (fraction ?? '').padEnd(9, '0') + 'Z');
+@ninedeploy/server:lint:        │                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     46 │ }
+@ninedeploy/server:lint:     47 │
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:      43  43 │   }␍
+@ninedeploy/server:lint:      44  44 │   function timestampKey(ts: string): string {␍
+@ninedeploy/server:lint:      45     │ - ··return·ts.replace(/(?:\.(\d+))?Z$/,·(_m,·fraction:·string·|·undefined)·=>·'.'·+·(fraction·??·'').padEnd(9,·'0')·+·'Z');␍
+@ninedeploy/server:lint:          45 │ + ··return·ts.replace(/(?:\.(\d+))?Z$/,·(_m,·fraction:·string·|·undefined)·=>·`.${(fraction·??·'').padEnd(9,·'0')}Z`);␍
+@ninedeploy/server:lint:      46  46 │   }␍
+@ninedeploy/server:lint:      47  47 │   ␍
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\logShipper.ts:137:39 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     135 │               shipped += count; continue;
+@ninedeploy/server:lint:     136 │             }
+@ninedeploy/server:lint:   > 137 │             error = response.status ? 'http_' + response.status : 'transport_error';
+@ninedeploy/server:lint:         │                                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     138 │           } catch { error = 'delivery_unavailable'; }
+@ninedeploy/server:lint:     139 │         }
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     135 135 │                 shipped += count; continue;␍
+@ninedeploy/server:lint:     136 136 │               }␍
+@ninedeploy/server:lint:     137     │ - ············error·=·response.status·?·'http_'·+·response.status·:·'transport_error';␍
+@ninedeploy/server:lint:         137 │ + ············error·=·response.status·?·`http_${response.status}`·:·'transport_error';␍
+@ninedeploy/server:lint:     138 138 │             } catch { error = 'delivery_unavailable'; }␍
+@ninedeploy/server:lint:     139 139 │           }␍
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\logShipper.ts:165:71 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     163 │       const read = deps.readSwarmTaskLogs ?? ((taskId: string, since: string) => swarmTaskLogsSince(taskId, since, MAX_LINES_PER_RUNTIME * 2));
+@ninedeploy/server:lint:     164 │       const tasks = await list(swarmRuntime).catch(() => []);
+@ninedeploy/server:lint:   > 165 │       return tasks.map((task) => ({ container: task.name, runtimeKey: 'swarm:' + task.id, read: (since: string) => read(task.id, since) }));
+@ninedeploy/server:lint:         │                                                                       ^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     166 │     }
+@ninedeploy/server:lint:     167 │     return replicaNames(runtimeId, svc.runtimeReplicas ?? svc.replicas).map((container) => ({
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     163 163 │         const read = deps.readSwarmTaskLogs ?? ((taskId: string, since: string) => swarmTaskLogsSince(taskId, since, MAX_LINES_PER_RUNTIME * 2));␍
+@ninedeploy/server:lint:     164 164 │         const tasks = await list(swarmRuntime).catch(() => []);␍
+@ninedeploy/server:lint:     165     │ - ······return·tasks.map((task)·=>·({·container:·task.name,·runtimeKey:·'swarm:'·+·task.id,·read:·(since:·string)·=>·read(task.id,·since)·}));␍
+@ninedeploy/server:lint:         165 │ + ······return·tasks.map((task)·=>·({·container:·task.name,·runtimeKey:·`swarm:${task.id}`,·read:·(since:·string)·=>·read(task.id,·since)·}));␍
+@ninedeploy/server:lint:     166 166 │       }␍
+@ninedeploy/server:lint:     167 167 │       return replicaNames(runtimeId, svc.runtimeReplicas ?? svc.replicas).map((container) => ({␍
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\logShipper.ts:169:54 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     167 │     return replicaNames(runtimeId, svc.runtimeReplicas ?? svc.replicas).map((container) => ({
+@ninedeploy/server:lint:     168 │       container,
+@ninedeploy/server:lint:   > 169 │       runtimeKey: svc.serverId == null ? container : 'node:' + svc.serverId + ':' + container,
+@ninedeploy/server:lint:         │                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/server:lint:     170 │       read: async (since: string) => svc.serverId == null ? await deps.readLogs(container, since)
+@ninedeploy/server:lint:     171 │         : deps.readRemoteLogs ? await deps.readRemoteLogs(svc.serverId, container, since)
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:     167 167 │       return replicaNames(runtimeId, svc.runtimeReplicas ?? svc.replicas).map((container) => ({␍
+@ninedeploy/server:lint:     168 168 │         container,␍
+@ninedeploy/server:lint:     169     │ - ······runtimeKey:·svc.serverId·==·null·?·container·:·'node:'·+·svc.serverId·+·':'·+·container,␍
+@ninedeploy/server:lint:         169 │ + ······runtimeKey:·svc.serverId·==·null·?·container·:·`node:${svc.serverId}:${container}`,␍
+@ninedeploy/server:lint:     170 170 │         read: async (since: string) => svc.serverId == null ? await deps.readLogs(container, since)␍
+@ninedeploy/server:lint:     171 171 │           : deps.readRemoteLogs ? await deps.readRemoteLogs(svc.serverId, container, since)␍
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: src\engine\serverProvisioner.ts:96:43 lint/complexity/noUselessStringRaw ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i String.raw is useless when the raw string doesn't contain any escape sequence.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:      94 │  * non-root SSH user runs it through `sudo -n` (no password prompt).
+@ninedeploy/server:lint:      95 │  */
+@ninedeploy/server:lint:    > 96 │ export const NODE_DOCKER_INSTALL_SCRIPT = String.raw`
+@ninedeploy/server:lint:         │                                           ^^^^^^^^^^^
+@ninedeploy/server:lint:    > 97 │ set -e
+@ninedeploy/server:lint:          ...
+@ninedeploy/server:lint:   > 142 │ esac
+@ninedeploy/server:lint:   > 143 │ `;
+@ninedeploy/server:lint:         │ ^
+@ninedeploy/server:lint:     144 │
+@ninedeploy/server:lint:     145 │ /**
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:   i Remove the String.raw call because it's useless here, String.raw can deal with string which contains escape sequence like \n, \t, \r, \\, \", \'.
+@ninedeploy/server:lint:
+@ninedeploy/server:lint:
+@ninedeploy/server:lint: The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+@ninedeploy/server:lint: Diagnostics not shown: 393.
+@ninedeploy/server:lint: Checked 1513 files in 690ms. No fixes applied.
+@ninedeploy/server:lint: Found 121 warnings.
+@ninedeploy/server:lint: Found 292 infos.
+@ninedeploy/plugin-sdk:lint: $ biome lint .
+@ninedeploy/plugin-sdk:lint: Checked 8 files in 8ms. No fixes applied.
+ninedeploy:lint: $ biome lint .
+ninedeploy:lint: src\commands\logDrains.ts:12:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     10 │   try {
+ninedeploy:lint:     11 │     const status = await client.logDrains.queue(drainId(id));
+ninedeploy:lint:   > 12 │     info('Pending: ' + status.pendingBatches + ' batch(es), ' + status.pendingEntries + ' entries, ' + status.payloadBytes + ' bytes');
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     13 │     info('Blocked: ' + status.blockedBatches + ' batch(es); paused sources: ' + status.pausedSources);
+ninedeploy:lint:     14 │     info('Oldest: ' + (status.oldestAt ?? 'none'));
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:     10 10 │     try {
+ninedeploy:lint:     11 11 │       const status = await client.logDrains.queue(drainId(id));
+ninedeploy:lint:     12    │ - ····info('Pending:·'·+·status.pendingBatches·+·'·batch(es),·'·+·status.pendingEntries·+·'·entries,·'·+·status.payloadBytes·+·'·bytes');
+ninedeploy:lint:        12 │ + ····info(`Pending:·${status.pendingBatches}·batch(es),·${status.pendingEntries}·entries,·${status.payloadBytes}·bytes`);
+ninedeploy:lint:     13 13 │       info('Blocked: ' + status.blockedBatches + ' batch(es); paused sources: ' + status.pausedSources);
+ninedeploy:lint:     14 14 │       info('Oldest: ' + (status.oldestAt ?? 'none'));
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\logDrains.ts:13:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     11 │     const status = await client.logDrains.queue(drainId(id));
+ninedeploy:lint:     12 │     info('Pending: ' + status.pendingBatches + ' batch(es), ' + status.pendingEntries + ' entries, ' + status.payloadBytes + ' bytes');
+ninedeploy:lint:   > 13 │     info('Blocked: ' + status.blockedBatches + ' batch(es); paused sources: ' + status.pausedSources);
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     14 │     info('Oldest: ' + (status.oldestAt ?? 'none'));
+ninedeploy:lint:     15 │   } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:     11 11 │       const status = await client.logDrains.queue(drainId(id));
+ninedeploy:lint:     12 12 │       info('Pending: ' + status.pendingBatches + ' batch(es), ' + status.pendingEntries + ' entries, ' + status.payloadBytes + ' bytes');
+ninedeploy:lint:     13    │ - ····info('Blocked:·'·+·status.blockedBatches·+·'·batch(es);·paused·sources:·'·+·status.pausedSources);
+ninedeploy:lint:        13 │ + ····info(`Blocked:·${status.blockedBatches}·batch(es);·paused·sources:·${status.pausedSources}`);
+ninedeploy:lint:     14 14 │       info('Oldest: ' + (status.oldestAt ?? 'none'));
+ninedeploy:lint:     15 15 │     } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\logDrains.ts:14:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     12 │     info('Pending: ' + status.pendingBatches + ' batch(es), ' + status.pendingEntries + ' entries, ' + status.payloadBytes + ' bytes');
+ninedeploy:lint:     13 │     info('Blocked: ' + status.blockedBatches + ' batch(es); paused sources: ' + status.pausedSources);
+ninedeploy:lint:   > 14 │     info('Oldest: ' + (status.oldestAt ?? 'none'));
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     15 │   } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:     16 │ }
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:     12 12 │       info('Pending: ' + status.pendingBatches + ' batch(es), ' + status.pendingEntries + ' entries, ' + status.payloadBytes + ' bytes');
+ninedeploy:lint:     13 13 │       info('Blocked: ' + status.blockedBatches + ' batch(es); paused sources: ' + status.pausedSources);
+ninedeploy:lint:     14    │ - ····info('Oldest:·'·+·(status.oldestAt·??·'none'));
+ninedeploy:lint:        14 │ + ····info(`Oldest:·${status.oldestAt·??·'none'}`);
+ninedeploy:lint:     15 15 │     } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:     16 16 │   }
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\logDrains.ts:21:13 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     19 │   try {
+ninedeploy:lint:     20 │     const status = await client.logDrains.retryQueue(drainId(id));
+ninedeploy:lint:   > 21 │     success('Retry scheduled for the next delivery cycle; ' + status.pendingBatches + ' batch(es) remain queued');
+ninedeploy:lint:        │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     22 │   } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:     23 │ }
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:     19 19 │     try {
+ninedeploy:lint:     20 20 │       const status = await client.logDrains.retryQueue(drainId(id));
+ninedeploy:lint:     21    │ - ····success('Retry·scheduled·for·the·next·delivery·cycle;·'·+·status.pendingBatches·+·'·batch(es)·remain·queued');
+ninedeploy:lint:        21 │ + ····success(`Retry·scheduled·for·the·next·delivery·cycle;·${status.pendingBatches}·batch(es)·remain·queued`);
+ninedeploy:lint:     22 22 │     } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:     23 23 │   }
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\logDrains.ts:30:13 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     28 │     if (!opts.yes) throw new Error('Discard permanently deletes queued logs. Repeat with --yes to confirm.');
+ninedeploy:lint:     29 │     const result = await client.logDrains.discardQueue(parsedId);
+ninedeploy:lint:   > 30 │     success('Discarded ' + result.discardedBatches + ' queued batch(es)');
+ninedeploy:lint:        │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     31 │   } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:     32 │ }
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:     28 28 │       if (!opts.yes) throw new Error('Discard permanently deletes queued logs. Repeat with --yes to confirm.');
+ninedeploy:lint:     29 29 │       const result = await client.logDrains.discardQueue(parsedId);
+ninedeploy:lint:     30    │ - ····success('Discarded·'·+·result.discardedBatches·+·'·queued·batch(es)');
+ninedeploy:lint:        30 │ + ····success(`Discarded·${result.discardedBatches}·queued·batch(es)`);
+ninedeploy:lint:     31 31 │     } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:     32 32 │   }
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\metrics.ts:77:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     75 │     const { settings, exportStatus } = await client.stats.observability.get();
+ninedeploy:lint:     76 │     header('Resource history and metrics export');
+ninedeploy:lint:   > 77 │     info('History: ' + settings.retentionDays + ' day(s)');
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     78 │     info('Prometheus: ' + (settings.prometheusEnabled ? '/v1/stats/prometheus (operator bearer required)' : 'disabled'));
+ninedeploy:lint:     79 │     info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:      75  75 │       const { settings, exportStatus } = await client.stats.observability.get();
+ninedeploy:lint:      76  76 │       header('Resource history and metrics export');
+ninedeploy:lint:      77     │ - ····info('History:·'·+·settings.retentionDays·+·'·day(s)');
+ninedeploy:lint:          77 │ + ····info(`History:·${settings.retentionDays}·day(s)`);
+ninedeploy:lint:      78  78 │       info('Prometheus: ' + (settings.prometheusEnabled ? '/v1/stats/prometheus (operator bearer required)' : 'disabled'));
+ninedeploy:lint:      79  79 │       info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\metrics.ts:78:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     76 │     header('Resource history and metrics export');
+ninedeploy:lint:     77 │     info('History: ' + settings.retentionDays + ' day(s)');
+ninedeploy:lint:   > 78 │     info('Prometheus: ' + (settings.prometheusEnabled ? '/v1/stats/prometheus (operator bearer required)' : 'disabled'));
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     79 │     info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:     80 │     info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:      76  76 │       header('Resource history and metrics export');
+ninedeploy:lint:      77  77 │       info('History: ' + settings.retentionDays + ' day(s)');
+ninedeploy:lint:      78     │ - ····info('Prometheus:·'·+·(settings.prometheusEnabled·?·'/v1/stats/prometheus·(operator·bearer·required)'·:·'disabled'));
+ninedeploy:lint:          78 │ + ····info(`Prometheus:·${settings.prometheusEnabled·?·'/v1/stats/prometheus·(operator·bearer·required)'·:·'disabled'}`);
+ninedeploy:lint:      79  79 │       info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:      80  80 │       info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\metrics.ts:79:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     77 │     info('History: ' + settings.retentionDays + ' day(s)');
+ninedeploy:lint:     78 │     info('Prometheus: ' + (settings.prometheusEnabled ? '/v1/stats/prometheus (operator bearer required)' : 'disabled'));
+ninedeploy:lint:   > 79 │     info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     80 │     info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:     81 │     info('Log queue: ' + settings.logQueueMaxMb + ' MiB per destination');
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:      77  77 │       info('History: ' + settings.retentionDays + ' day(s)');
+ninedeploy:lint:      78  78 │       info('Prometheus: ' + (settings.prometheusEnabled ? '/v1/stats/prometheus (operator bearer required)' : 'disabled'));
+ninedeploy:lint:      79     │ - ····info('OTLP:·'·+·(settings.otlpEndpoint·||·'disabled'));
+ninedeploy:lint:          79 │ + ····info(`OTLP:·${settings.otlpEndpoint·||·'disabled'}`);
+ninedeploy:lint:      80  80 │       info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:      81  81 │       info('Log queue: ' + settings.logQueueMaxMb + ' MiB per destination');
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\metrics.ts:80:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     78 │     info('Prometheus: ' + (settings.prometheusEnabled ? '/v1/stats/prometheus (operator bearer required)' : 'disabled'));
+ninedeploy:lint:     79 │     info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:   > 80 │     info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     81 │     info('Log queue: ' + settings.logQueueMaxMb + ' MiB per destination');
+ninedeploy:lint:     82 │     info('Last export: ' + (exportStatus.lastAttemptAt ?? 'never'));
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:      78  78 │       info('Prometheus: ' + (settings.prometheusEnabled ? '/v1/stats/prometheus (operator bearer required)' : 'disabled'));
+ninedeploy:lint:      79  79 │       info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:      80     │ - ····info('Collector·authorization:·'·+·(settings.hasOtlpAuthorization·?·'saved'·:·'not·set'));
+ninedeploy:lint:          80 │ + ····info(`Collector·authorization:·${settings.hasOtlpAuthorization·?·'saved'·:·'not·set'}`);
+ninedeploy:lint:      81  81 │       info('Log queue: ' + settings.logQueueMaxMb + ' MiB per destination');
+ninedeploy:lint:      82  82 │       info('Last export: ' + (exportStatus.lastAttemptAt ?? 'never'));
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\metrics.ts:81:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     79 │     info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:     80 │     info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:   > 81 │     info('Log queue: ' + settings.logQueueMaxMb + ' MiB per destination');
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     82 │     info('Last export: ' + (exportStatus.lastAttemptAt ?? 'never'));
+ninedeploy:lint:     83 │   } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:      79  79 │       info('OTLP: ' + (settings.otlpEndpoint || 'disabled'));
+ninedeploy:lint:      80  80 │       info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:      81     │ - ····info('Log·queue:·'·+·settings.logQueueMaxMb·+·'·MiB·per·destination');
+ninedeploy:lint:          81 │ + ····info(`Log·queue:·${settings.logQueueMaxMb}·MiB·per·destination`);
+ninedeploy:lint:      82  82 │       info('Last export: ' + (exportStatus.lastAttemptAt ?? 'never'));
+ninedeploy:lint:      83  83 │     } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\metrics.ts:82:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     80 │     info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:     81 │     info('Log queue: ' + settings.logQueueMaxMb + ' MiB per destination');
+ninedeploy:lint:   > 82 │     info('Last export: ' + (exportStatus.lastAttemptAt ?? 'never'));
+ninedeploy:lint:        │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     83 │   } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:     84 │ }
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:      80  80 │       info('Collector authorization: ' + (settings.hasOtlpAuthorization ? 'saved' : 'not set'));
+ninedeploy:lint:      81  81 │       info('Log queue: ' + settings.logQueueMaxMb + ' MiB per destination');
+ninedeploy:lint:      82     │ - ····info('Last·export:·'·+·(exportStatus.lastAttemptAt·??·'never'));
+ninedeploy:lint:          82 │ + ····info(`Last·export:·${exportStatus.lastAttemptAt·??·'never'}`);
+ninedeploy:lint:      83  83 │     } catch (err) { error(err instanceof Error ? err.message : String(err)); process.exitCode = 1; }
+ninedeploy:lint:      84  84 │   }
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\metrics.ts:105:42 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     103 │     }
+ninedeploy:lint:     104 │     const parsed = observabilityPatch.safeParse(patch);
+ninedeploy:lint:   > 105 │     if (!parsed.success) throw new Error('Invalid monitoring settings: ' + parsed.error.issues.map((issue) => issue.path.join('.') + ': ' + issue.message).join('; '));
+ninedeploy:lint:         │                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     106 │     await client.stats.observability.update(parsed.data);
+ninedeploy:lint:     107 │     success('Monitoring settings saved');
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:     103 103 │       }
+ninedeploy:lint:     104 104 │       const parsed = observabilityPatch.safeParse(patch);
+ninedeploy:lint:     105     │ - ····if·(!parsed.success)·throw·new·Error('Invalid·monitoring·settings:·'·+·parsed.error.issues.map((issue)·=>·issue.path.join('.')·+·':·'·+·issue.message).join(';·'));
+ninedeploy:lint:         105 │ + ····if·(!parsed.success)·throw·new·Error(`Invalid·monitoring·settings:·${parsed.error.issues.map((issue)·=>·issue.path.join('.')·+·':·'·+·issue.message).join(';·')}`);
+ninedeploy:lint:     106 106 │       await client.stats.observability.update(parsed.data);
+ninedeploy:lint:     107 107 │       success('Monitoring settings saved');
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\commands\metrics.ts:105:111 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     103 │     }
+ninedeploy:lint:     104 │     const parsed = observabilityPatch.safeParse(patch);
+ninedeploy:lint:   > 105 │     if (!parsed.success) throw new Error('Invalid monitoring settings: ' + parsed.error.issues.map((issue) => issue.path.join('.') + ': ' + issue.message).join('; '));
+ninedeploy:lint:         │                                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ninedeploy:lint:     106 │     await client.stats.observability.update(parsed.data);
+ninedeploy:lint:     107 │     success('Monitoring settings saved');
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:     103 103 │       }
+ninedeploy:lint:     104 104 │       const parsed = observabilityPatch.safeParse(patch);
+ninedeploy:lint:     105     │ - ····if·(!parsed.success)·throw·new·Error('Invalid·monitoring·settings:·'·+·parsed.error.issues.map((issue)·=>·issue.path.join('.')·+·':·'·+·issue.message).join(';·'));
+ninedeploy:lint:         105 │ + ····if·(!parsed.success)·throw·new·Error('Invalid·monitoring·settings:·'·+·parsed.error.issues.map((issue)·=>·`${issue.path.join('.')}:·${issue.message}`).join(';·'));
+ninedeploy:lint:     106 106 │       await client.stats.observability.update(parsed.data);
+ninedeploy:lint:     107 107 │       success('Monitoring settings saved');
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: test\uptime.test.ts:293:32 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   i Template literals are preferred over string concatenation.
+ninedeploy:lint:
+ninedeploy:lint:     291 │     expect(text).toContain('42 ms (HTTP 200)');
+ninedeploy:lint:     292 │     expect(text).toContain('timeout');
+ninedeploy:lint:   > 293 │     expect(text).not.toContain(ESC + ']0;');
+ninedeploy:lint:         │                                ^^^^^^^^^^^
+ninedeploy:lint:     294 │     // 10 rows: the 11th and 12th checks are not shown
+ninedeploy:lint:     295 │     expect(text.match(/just now/g)).toHaveLength(10);
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use a template literal.
+ninedeploy:lint:
+ninedeploy:lint:     291 291 │       expect(text).toContain('42 ms (HTTP 200)');␍
+ninedeploy:lint:     292 292 │       expect(text).toContain('timeout');␍
+ninedeploy:lint:     293     │ - ····expect(text).not.toContain(ESC·+·']0;');␍
+ninedeploy:lint:         293 │ + ····expect(text).not.toContain(`${ESC}]0;`);␍
+ninedeploy:lint:     294 294 │       // 10 rows: the 11th and 12th checks are not shown␍
+ninedeploy:lint:     295 295 │       expect(text.match(/just now/g)).toHaveLength(10);␍
+ninedeploy:lint:
+ninedeploy:lint:
+ninedeploy:lint: src\prompts.ts:31:49 lint/suspicious/noConfusingVoidType  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ninedeploy:lint:
+ninedeploy:lint:   ! void is confusing inside a union type.
+ninedeploy:lint:
+ninedeploy:lint:     29 │ const lineWaiters: LineWaiter[] = [];
+ninedeploy:lint:     30 │ /** At most one hidden prompt at a time; it consumes live keystrokes. */
+ninedeploy:lint:   > 31 │ let hiddenWaiter: ((chunk: string) => boolean | void) | null = null;
+ninedeploy:lint:        │                                                 ^^^^
+ninedeploy:lint:     32 │ /** EOF handler while a hidden prompt is active (resolves what was typed). */
+ninedeploy:lint:     33 │ let hiddenOnEnd: (() => void) | null = null;
+ninedeploy:lint:
+ninedeploy:lint:   i Unsafe fix: Use undefined instead.
+ninedeploy:lint:
+ninedeploy:lint:      29  29 │   const lineWaiters: LineWaiter[] = [];␍
+ninedeploy:lint:      30  30 │   /** At most one hidden prompt at a time; it consumes live keystrokes. */␍
+ninedeploy:lint:      31     │ - let·hiddenWaiter:·((chunk:·string)·=>·boolean·|·void)·|·null·=·null;
+ninedeploy:lint:          31 │ + let·hiddenWaiter:·((chunk:·string)·=>·boolChecked 124 files in 67ms. No fixes applied.
+ninedeploy:lint: Found 1 warning.
+ninedeploy:lint: Found 14 infos.
+ninedeploy:lint: ean·|·undefined)·|·null·=·null;
+ninedeploy:lint:      32  32 │   /** EOF handler while a hidden prompt is active (resolves what was typed). */␍
+ninedeploy:lint:      33  33 │   let hiddenOnEnd: (() => void) | null = null;␍
+ninedeploy:lint:
+ninedeploy:lint:
+@ninedeploy/mcp:lint: $ biome lint .
+@ninedeploy/mcp:lint: Checked 10 files in 19ms. No fixes applied.
+@ninedeploy/db:lint: $ biome lint .
+@ninedeploy/db:lint: test\migration-0096-observability.test.ts:45:118 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+@ninedeploy/db:lint:
+@ninedeploy/db:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/db:lint:
+@ninedeploy/db:lint:     43 │       await client.execute("INSERT INTO log_drain_batches(drain_id,service_id,runtime_key,binding,payload_encrypted,entry_count,payload_bytes,next_attempt_at,created_at) VALUES (3,7,'panel:web','binding','v1:opaque',1,64,1792681200,1792681200)");
+@ninedeploy/db:lint:     44 │       await client.execute('DELETE FROM services WHERE id=7');
+@ninedeploy/db:lint:   > 45 │       for (const table of ['metric_rollups', 'log_drain_cursors', 'log_drain_batches']) expect((await client.execute('SELECT * FROM ' + table)).rows).toEqual([]);
+@ninedeploy/db:lint:        │                                                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/db:lint:     46 │       expect((await client.execute('PRAGMA foreign_key_check')).rows).toEqual([]);
+@ninedeploy/db:lint:     47 │     } finally {
+@ninedeploy/db:lint:
+@ninedeploy/db:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/db:lint:
+@ninedeploy/db:lint:     43 43 │         await client.execute("INSERT INTO log_drain_batches(drain_id,service_id,runtime_key,binding,payload_encrypted,entry_count,payload_bytes,next_attempt_at,created_at) VALUES (3,7,'panel:web','binding','v1:opaque',1,64,1792681200,1792681200)");
+@ninedeploy/db:lint:     44 44 │         await client.execute('DELETE FROM services WHERE id=7');
+@ninedeploy/db:lint:     45    │ - ······for·(const·table·of·['metric_rollups',·'log_drain_cursors',·'log_drain_batches'])·expect((await·client.execute('SELECT·*·FROM·'·+·table)).rows).toEqual([]);
+@ninedeploy/db:lint:        45 │ + ······for·(const·table·of·['metric_rollups',·'log_drain_cursors',·'log_drain_batches'])·expect((await·client.execute(`SELECT·*·FROM·${table}`)).rows).toEqual([]);
+@ninedeploy/db:lint:     46 46 │         expect((await client.execute('PRAGMA foreign_key_check')).rows).toEqual([]);
+@ninedeploy/db:lint:     47 47 │       } finally {
+@ninedeploy/db:lint:
+@ninedeploy/db:lint:
+@ninedeploy/db:lint: Checked 44 files in 83ms. No fixes applied.
+@ninedeploy/db:lint: Found 1 info.
+@ninedeploy/web:lint: $ biome lint .
+@ninedeploy/sdk:lint: $ biome lint .
+@ninedeploy/sdk:lint: src\resources\logs.ts:40:42 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:     38 │   return {
+@ninedeploy/sdk:lint:     39 │     logDrains: {
+@ninedeploy/sdk:lint:   > 40 │       queue: (id) => get<LogQueueStatus>('/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:        │                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/sdk:lint:     41 │       retryQueue: (id) => send<LogQueueStatus>('POST', '/v1/log-drains/' + id + '/queue/retry'),
+@ninedeploy/sdk:lint:     42 │       discardQueue: (id) => send<{ discardedBatches: number }>('DELETE', '/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:     38 38 │     return {
+@ninedeploy/sdk:lint:     39 39 │       logDrains: {
+@ninedeploy/sdk:lint:     40    │ - ······queue:·(id)·=>·get<LogQueueStatus>('/v1/log-drains/'·+·id·+·'/queue'),
+@ninedeploy/sdk:lint:        40 │ + ······queue:·(id)·=>·get<LogQueueStatus>(`/v1/log-drains/${id}/queue`),
+@ninedeploy/sdk:lint:     41 41 │         retryQueue: (id) => send<LogQueueStatus>('POST', '/v1/log-drains/' + id + '/queue/retry'),
+@ninedeploy/sdk:lint:     42 42 │         discardQueue: (id) => send<{ discardedBatches: number }>('DELETE', '/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint: src\resources\logs.ts:41:56 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:     39 │     logDrains: {
+@ninedeploy/sdk:lint:     40 │       queue: (id) => get<LogQueueStatus>('/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:   > 41 │       retryQueue: (id) => send<LogQueueStatus>('POST', '/v1/log-drains/' + id + '/queue/retry'),
+@ninedeploy/sdk:lint:        │                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/sdk:lint:     42 │       discardQueue: (id) => send<{ discardedBatches: number }>('DELETE', '/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:     43 │       list: (query) => {
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:     39 39 │       logDrains: {
+@ninedeploy/sdk:lint:     40 40 │         queue: (id) => get<LogQueueStatus>('/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:     41    │ - ······retryQueue:·(id)·=>·send<LogQueueStatus>('POST',·'/v1/log-drains/'·+·id·+·'/queue/retry'),
+@ninedeploy/sdk:lint:        41 │ + ······retryQueue:·(id)·=>·send<LogQueueStatus>('POST',·`/v1/log-drains/${id}/queue/retry`),
+@ninedeploy/sdk:lint:     42 42 │         discardQueue: (id) => send<{ discardedBatches: number }>('DELETE', '/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:     43 43 │         list: (query) => {
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint: src\resources\logs.ts:42:74 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:     40 │       queue: (id) => get<LogQueueStatus>('/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:     41 │       retryQueue: (id) => send<LogQueueStatus>('POST', '/v1/log-drains/' + id + '/queue/retry'),
+@ninedeploy/sdk:lint:   > 42 │       discardQueue: (id) => send<{ discardedBatches: number }>('DELETE', '/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:        │                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/sdk:lint:     43 │       list: (query) => {
+@ninedeploy/sdk:lint:     44 │         const qs = query?.serviceId !== undefined ? `?serviceId=${encodeURIComponent(String(query.serviceId))}` : '';
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:     40 40 │         queue: (id) => get<LogQueueStatus>('/v1/log-drains/' + id + '/queue'),
+@ninedeploy/sdk:lint:     41 41 │         retryQueue: (id) => send<LogQueueStatus>('POST', '/v1/log-drains/' + id + '/queue/retry'),
+@ninedeploy/sdk:lint:     42    │ - ······discardQueue:·(id)·=>·send<{·discardedBatches:·number·}>('DELETE',·'/v1/log-drains/'·+·id·+·'/queue'),
+@ninedeploy/sdk:lint:        42 │ + ······discardQueue:·(id)·=>·send<{·discardedBatches:·number·}>('DELETE',·`/v1/log-drains/${id}/queue`),
+@ninedeploy/sdk:lint:     43 43 │         list: (query) => {
+@ninedeploy/sdk:lint:     44 44 │           const qs = query?.serviceId !== undefined ? `?serviceId=${encodeURIComponent(String(query.serviceId))}` : '';
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint: src\resources\system.ts:250:49 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:     248 │       },
+@ninedeploy/sdk:lint:     249 │       snapshot: async (opts) => {
+@ninedeploy/sdk:lint:   > 250 │         const result = await get<StatsSnapshot>('/v1/stats' + (opts?.databaseId === undefined ? '' : `?databaseId=${encodeURIComponent(opts.databaseId)}`));
+@ninedeploy/sdk:lint:         │                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/sdk:lint:     251 │         if (opts?.databaseId !== undefined && (result?.resource?.kind !== 'database' || result.resource.id !== opts.databaseId || result.host !== null
+@ninedeploy/sdk:lint:     252 │           || !Array.isArray(result.containers) || result.containers.some(entry => entry.kind !== 'database' || entry.refId !== opts.databaseId))) {
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:     248 248 │         },
+@ninedeploy/sdk:lint:     249 249 │         snapshot: async (opts) => {
+@ninedeploy/sdk:lint:     250     │ - ········const·result·=·await·get<StatsSnapshot>('/v1/stats'·+·(opts?.databaseId·===·undefined·?·''·:·`?databaseId=${encodeURIComponent(opts.databaseId)}`));
+@ninedeploy/sdk:lint:         250 │ + ········const·result·=·await·get<StatsSnapshot>(`/v1/stats${opts?.databaseId·===·undefined·?·''·:·`?databaseId=${encodeURIComponent(opts.databaseId)}`}`);
+@ninedeploy/sdk:lint:     251 251 │           if (opts?.databaseId !== undefined && (result?.resource?.kind !== 'database' || result.resource.id !== opts.databaseId || result.host !== null
+@ninedeploy/sdk:lint:     252 252 │             || !Array.isArray(result.containers) || result.containers.some(entry => entry.kind !== 'database' || entry.refId !== opts.databChecked 66 files in 77ms. No fixes applied.aseId))) {
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint:
+@ninedeploy/sdk:lint: Found 4 infos.
+@ninedeploy/web:lint: test\DeploysTab.test.tsx:346:66 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:     345 │   it('explains native Swarm rollout and pins the artifact request for a Swarm target', async () => {
+@ninedeploy/web:lint:   > 346 │     const repoUrl = 'https://github.com/acme/web.git', imageId = 'sha256:' + 'a'.repeat(64);
+@ninedeploy/web:lint:         │                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/web:lint:     347 │     mockOf(api.services.list).mockResolvedValue([{ id: 2, name: 'swarm production', repoUrl, orchestrator: 'swarm' }] as never);
+@ninedeploy/web:lint:     348 │     const promote = vi.fn().mockResolvedValue({ ok: true, deploymentId: 30, commitSha: 'abcdef12345', promotedFrom: 'staging' });
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:     344 344 │   ␍
+@ninedeploy/web:lint:     345 345 │     it('explains native Swarm rollout and pins the artifact request for a Swarm target', async () => {␍
+@ninedeploy/web:lint:     346     │ - ····const·repoUrl·=·'https://github.com/acme/web.git',·imageId·=·'sha256:'·+·'a'.repeat(64);␍
+@ninedeploy/web:lint:         346 │ + ····const·repoUrl·=·'https://github.com/acme/web.git',·imageId·=·`sha256:${'a'.repeat(64)}`;␍
+@ninedeploy/web:lint:     347 347 │       mockOf(api.services.list).mockResolvedValue([{ id: 2, name: 'swarm production', repoUrl, orchestrator: 'swarm' }] as never);␍
+@ninedeploy/web:lint:     348 348 │       const promote = vi.fn().mockResolvedValue({ ok: true, deploymentId: 30, commitSha: 'abcdef12345', promotedFrom: 'staging' });␍
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:
+@ninedeploy/web:lint: test\RegistryHookCard.coverage.test.tsx:36:17 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:     34 │     const writeText = vi.fn().mockResolvedValue(undefined);
+@ninedeploy/web:lint:     35 │     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+@ninedeploy/web:lint:   > 36 │     const url = 'https://panel.example.com/v1/registry-hooks/5/' + 'b'.repeat(32);
+@ninedeploy/web:lint:        │                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/web:lint:     37 │     mockOf(api.services.registryHook.get).mockResolvedValue({ ...off, enabled: true, mine: true, url } as never);
+@ninedeploy/web:lint:     38 │     renderWithProviders(<RegistryHookCard svc={svc} />);
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:     34 34 │       const writeText = vi.fn().mockResolvedValue(undefined);
+@ninedeploy/web:lint:     35 35 │       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+@ninedeploy/web:lint:     36    │ - ····const·url·=·'https://panel.example.com/v1/registry-hooks/5/'·+·'b'.repeat(32);
+@ninedeploy/web:lint:        36 │ + ····const·url·=·`https://panel.example.com/v1/registry-hooks/5/${'b'.repeat(32)}`;
+@ninedeploy/web:lint:     37 37 │       mockOf(api.services.registryHook.get).mockResolvedValue({ ...off, enabled: true, mine: true, url } as never);
+@ninedeploy/web:lint:     38 38 │       renderWithProviders(<RegistryHookCard svc={svc} />);
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:
+@ninedeploy/web:lint: test\RegistryHookCard.test.tsx:26:12 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:   i Template literals are preferred over string concatenation.
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:     24 │       enabled: true,
+@ninedeploy/web:lint:     25 │       mine: true,
+@ninedeploy/web:lint:   > 26 │       url: 'https://panel.example.com/v1/registry-hooks/5/' + 'a'.repeat(32),
+@ninedeploy/web:lint:        │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+@ninedeploy/web:lint:     27 │       createdAt: '2026-10-28T10:00:00.000Z',
+@ninedeploy/web:lint:     28 │     } as never);
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:   i Unsafe fix: Use a template literal.
+@ninedeploy/web:lint:
+@ninedeploy/web:lint:     24 24 │         enabled: true,
+@ninedeploy/web:lint:     25 25 │         mine: true,
+@ninedeploy/web:lint:     26    │ - ······url:·'https://panel.example.com/v1/registry-hooks/5/'·+·'a'.repeat(32),
+@ninedeploy/web:lint:        26 │ + ······url:·`https://panel.example.com/v1/registry-hooks/5/${'a'.repeat(32)}`,
+@ninedeploy/web:lint:     27 27 │         createdAt: '2026-10-28T10:00:00.000Z',
+@ninedeploy/web:lint:     28 28 │       } as never);
+@ninedeploy/web:lint:
+@ninedeploy/web:lint: Checked 515 files in 1272ms. No fixes applied.
+@ninedeploy/web:lint:
+@ninedeploy/web:lint: Found 3 infos.
+
+ Tasks:    8 successful, 8 total
+Cached:    0 cached, 8 total
+  Time:    10.818s
+
+$ turbo run build
+• turbo 2.11.2
+
+   • Packages in scope: @ninedeploy/db, @ninedeploy/mcp, @ninedeploy/plugin-sdk, @ninedeploy/schemas, @ninedeploy/sdk, @ninedeploy/server, @ninedeploy/web, ninedeploy
+   • Running build in 8 packages
+   • Remote caching disabled
+
+@ninedeploy/plugin-sdk:build: cache miss, executing 1f1d3f3f7d39314d
+@ninedeploy/db:build: cache hit, replaying logs 06b99ab7b7ce1e24
+@ninedeploy/db:build: $ tsc
+@ninedeploy/schemas:build: cache hit, replaying logs d88ac8108d66806b
+@ninedeploy/schemas:build: $ tsc
+@ninedeploy/sdk:build: cache hit, replaying logs 16c2f62990fc9230
+@ninedeploy/sdk:build: $ tsc
+ninedeploy:build: cache miss, executing f0986a66213b0bac
+@ninedeploy/web:build: cache miss, executing 1e1109b5d95c4d69
+@ninedeploy/mcp:build: cache hit, replaying logs bd687f6e28d77c91
+@ninedeploy/mcp:build: $ tsc
+@ninedeploy/server:build: cache miss, executing 11ab6b196718bb75
+@ninedeploy/plugin-sdk:build: $ tsc
+ninedeploy:build: $ tsc
+@ninedeploy/web:build: $ tsc --noEmit && vite build
+@ninedeploy/server:build: $ tsc
+@ninedeploy/web:build: vite v8.3.6 building client environment for production...
+@ninedeploy/web:build: transforming...
+@ninedeploy/web:build: ✓ 2559 modules transformed.
+@ninedeploy/web:build: rendering chunks...
+@ninedeploy/web:build: computing gzip size...
+@ninedeploy/web:build: dist/index.html                                  1.38 kB │ gzip:   0.61 kB
+@ninedeploy/web:build: dist/assets/terminal-vendor-BrP-ENHg.css         3.93 kB │ gzip:   1.01 kB
+@ninedeploy/web:build: dist/assets/react-vendor-DLioOiRN.css           15.41 kB │ gzip:   2.56 kB
+@ninedeploy/web:build: dist/assets/index-BHzWWzu3.css                 161.00 kB │ gzip:  22.12 kB
+@ninedeploy/web:build: dist/assets/apiCall-5GuOlidl.js                  0.53 kB │ gzip:   0.37 kB
+@ninedeploy/web:build: dist/assets/rolldown-runtime-WkwZ5CU-.js         0.59 kB │ gzip:   0.36 kB
+@ninedeploy/web:build: dist/assets/NodeDatabaseBadge-Dtjh0ypp.js        0.62 kB │ gzip:   0.36 kB
+@ninedeploy/web:build: dist/assets/LanguageSwitch-Cp70xZ1f.js           0.67 kB │ gzip:   0.43 kB
+@ninedeploy/web:build: dist/assets/ForwardAuthPage-C55n8LPv.js          1.16 kB │ gzip:   0.68 kB
+@ninedeploy/web:build: dist/assets/multiNode-CrJAYAft.js                1.16 kB │ gzip:   0.72 kB
+@ninedeploy/web:build: dist/assets/StepUpModal-D_ejP1j2.js              1.22 kB │ gzip:   0.68 kB
+@ninedeploy/web:build: dist/assets/DeploymentSupport-YlMYtqUF.js        1.47 kB │ gzip:   0.78 kB
+@ninedeploy/web:build: dist/assets/Toast-DaG54j9L.js                    1.64 kB │ gzip:   0.88 kB
+@ninedeploy/web:build: dist/assets/PluginSlot-DvoANQqH.js               1.73 kB │ gzip:   0.75 kB
+@ninedeploy/web:build: dist/assets/ForgotPassword-Dw7qe94T.js           2.29 kB │ gzip:   1.03 kB
+@ninedeploy/web:build: dist/assets/ResetPassword-CV-vA3h1.js            2.53 kB │ gzip:   1.14 kB
+@ninedeploy/web:build: dist/assets/ServiceDomainLauncher-BPj0I1Uz.js    3.39 kB │ gzip:   1.43 kB
+@ninedeploy/web:build: dist/assets/OAuthAuthorize-B2SJL3pb.js           3.54 kB │ gzip:   1.39 kB
+@ninedeploy/web:build: dist/assets/cron-DtJfxy2M.js                     3.75 kB │ gzip:   1.46 kB
+@ninedeploy/web:build: dist/assets/GithubAppPages-ClmQocSr.js           4.16 kB │ gzip:   1.57 kB
+@ninedeploy/web:build: dist/assets/SleepState-C4uL_YFd.js               4.28 kB │ gzip:   1.78 kB
+@ninedeploy/web:build: dist/assets/OsUpdatesCard-CA5LLV-p.js            4.70 kB │ gzip:   1.80 kB
+@ninedeploy/web:build: dist/assets/TrafficChart-DxL3Gca1.js             4.74 kB │ gzip:   1.80 kB
+@ninedeploy/web:build: dist/assets/Doctor-DjoKJFEN.js                   4.79 kB │ gzip:   2.04 kB
+@ninedeploy/web:build: dist/assets/DomainTransferAccept-CQ6tOaaO.js     5.00 kB │ gzip:   1.86 kB
+@ninedeploy/web:build: dist/assets/auth-Bu_UPY8w.js                     5.43 kB │ gzip:   2.42 kB
+@ninedeploy/web:build: dist/assets/VolumeBackupsPanel-1vz-so0y.js       5.91 kB │ gzip:   2.03 kB
+@ninedeploy/web:build: dist/assets/UploadSource-DAxQCQna.js             6.00 kB │ gzip:   2.47 kB
+@ninedeploy/web:build: dist/assets/Terminals-DxRNcg6e.js                6.81 kB │ gzip:   2.44 kB
+@ninedeploy/web:build: dist/assets/Login-Y4L7ENJT.js                    6.84 kB │ gzip:   2.52 kB
+@ninedeploy/web:build: dist/assets/AcceptInvite-o1FWQSP0.js             6.85 kB │ gzip:   1.88 kB
+@ninedeploy/web:build: dist/assets/TerminalPanel-x1TwJruC.js            6.90 kB │ gzip:   2.74 kB
+@ninedeploy/web:build: dist/assets/Labels-ZB0Q2hON.js                   7.39 kB │ gzip:   2.80 kB
+@ninedeploy/web:build: dist/assets/Networks-CmBWhvzF.js                 7.49 kB │ gzip:   2.34 kB
+@ninedeploy/web:build: dist/assets/PortMappingsCard-D-ydKAdW.js         7.76 kB │ gzip:   2.99 kB
+@ninedeploy/web:build: dist/assets/Databases-BY5gmr_W.js                7.92 kB │ gzip:   2.89 kB
+@ninedeploy/web:build: dist/assets/Deploys-tjfNPYwc.js                  8.00 kB │ gzip:   2.68 kB
+@ninedeploy/web:build: dist/assets/esm-BFCrCNMJ.js                      8.56 kB │ gzip:   2.78 kB
+@ninedeploy/web:build: dist/assets/Tunnels-D9In4xYX.js                  9.74 kB │ gzip:   3.20 kB
+@ninedeploy/web:build: dist/assets/Backups-CGErm20K.js                  9.78 kB │ gzip:   3.02 kB
+@ninedeploy/web:build: dist/assets/About-CwKD2VUT.js                    9.92 kB │ gzip:   3.15 kB
+@ninedeploy/web:build: dist/assets/Projects-COj70utb.js                10.44 kB │ gzip:   3.65 kB
+@ninedeploy/web:build: dist/assets/Activity-BS91xVtL.js                10.63 kB │ gzip:   3.36 kB
+@ninedeploy/web:build: dist/assets/EnvCard-DJz6Ysgw.js                 10.75 kB │ gzip:   3.94 kB
+@ninedeploy/web:build: dist/assets/NewResource-9mOkTcwy.js             10.77 kB │ gzip:   3.82 kB
+@ninedeploy/web:build: dist/assets/Users-DxPzy9T2.js                   10.83 kB │ gzip:   3.43 kB
+@ninedeploy/web:build: dist/assets/Domains-Cx9H4pPP.js                 11.08 kB │ gzip:   3.88 kB
+@ninedeploy/web:build: dist/assets/DatabaseWizard-DevFYHsG.js          11.20 kB │ gzip:   3.81 kB
+@ninedeploy/web:build: dist/assets/VolumeBrowser-DXfrnFkP.js           11.30 kB │ gzip:   4.01 kB
+@ninedeploy/web:build: dist/assets/Volumes-D3g8rJip.js                 12.14 kB │ gzip:   4.10 kB
+@ninedeploy/web:build: dist/assets/Docker-BhKleSf2.js                  12.23 kB │ gzip:   3.20 kB
+@ninedeploy/web:build: dist/assets/MonitorBits-Dyr6BRYX.js             12.99 kB │ gzip:   4.71 kB
+@ninedeploy/web:build: dist/assets/ServicesList-Crvk4O1N.js            15.01 kB │ gzip:   4.46 kB
+@ninedeploy/web:build: dist/assets/Hub-DGIUUKmH.js                     16.62 kB │ gzip:   4.55 kB
+@ninedeploy/web:build: dist/assets/ManifestTab-D0OXQf1_.js             17.05 kB │ gzip:   4.92 kB
+@ninedeploy/web:build: dist/assets/Dashboard-COaUObLh.js               27.16 kB │ gzip:   6.89 kB
+@ninedeploy/web:build: dist/assets/Workspaces-R6k2k1Pt.js              29.53 kB │ gzip:   7.88 kB
+@ninedeploy/web:build: dist/assets/Topology-BeqOmhhC.js                29.84 kB │ gzip:   8.00 kB
+@ninedeploy/web:build: dist/assets/NetworkTab-879FHVsq.js              30.72 kB │ gzip:   8.24 kB
+@ninedeploy/web:build: dist/assets/Traefik-om7Zvo6C.js                 35.13 kB │ gzip:   8.89 kB
+@ninedeploy/web:build: dist/assets/Sources-DjREiLwE.js                 41.23 kB │ gzip:  11.05 kB
+@ninedeploy/web:build: dist/assets/yaml-vendor-8R0iYpNO.js             42.87 kB │ gzip:  14.27 kB
+@ninedeploy/web:build: dist/assets/DeployWizard-Gwplwgdz.js            45.47 kB │ gzip:  13.05 kB
+@ninedeploy/web:build: dist/assets/ManifestCreator-BrrLq48i.js         56.18 kB │ gzip:  15.79 kB
+@ninedeploy/web:build: dist/assets/Monitoring-D66Vey0E.js              62.32 kB │ gzip:  15.24 kB
+@ninedeploy/web:build: dist/assets/Servers-CdL8Pjtt.js                 64.37 kB │ gzip:  13.79 kB
+@ninedeploy/web:build: dist/assets/DatabaseDetail-C2DJchdL.js          86.36 kB │ gzip:  21.94 kB
+@ninedeploy/web:build: dist/assets/data-vendor-CLunkZ0k.js             94.45 kB │ gzip:  29.03 kB
+@ninedeploy/web:build: dist/assets/index-DhtxZm4o.js                  215.41 kB │ gzip:  67.14 kB
+@ninedeploy/web:build: dist/assets/settings-C_teV6LU.js               259.24 kB │ gzip:  60.45 kB
+@ninedeploy/web:build: dist/assets/service-DTJauTB4.js                306.56 kB │ gzip:  73.21 kB
+@ninedeploy/web:build: dist/assets/terminal-vendor-YHeAwa-f.js        332.12 kB │ gzip:  83.33 kB
+@ninedeploy/web:build: dist/assets/react-vendor-C4ewlid9.js           395.97 kB │ gzip: 126.63 kB
+@ninedeploy/web:build: dist/assets/ui-BRQmuDiE.js                     715.64 kB │ gzip: 224.12 kB
+@ninedeploy/web:build:
+@ninedeploy/web:build: [plugin builtin:vite-reporter]
+@ninedeploy/web:build: (!) Some chunks are larger than 600 kB after minification. Consider:
+@ninedeploy/web:build: - Using dynamic import() to code-split the application
+@ninedeploy/web:build: - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+@ninedeploy/web:build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+@ninedeploy/web:build: ✓ built in 970ms
+
+ Tasks:    8 successful, 8 total
+Cached:    4 cached, 8 total
+  Time:    9.371s
+
+• turbo 2.11.2
+
+   • Packages in scope: @ninedeploy/db, @ninedeploy/mcp, @ninedeploy/plugin-sdk, @ninedeploy/schemas, @ninedeploy/sdk, @ninedeploy/server, @ninedeploy/web, ninedeploy
+   • Running test in 8 packages
+   • Remote caching disabled
+
+@ninedeploy/db:build: cache hit, replaying logs 06b99ab7b7ce1e24
+@ninedeploy/db:build: $ tsc
+@ninedeploy/db:test: cache miss, executing 28a3d87da7ee1cbb
+@ninedeploy/db:test: $ vitest run --coverage
+@ninedeploy/db:test:
+@ninedeploy/db:test:  RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/db
+@ninedeploy/db:test:       Coverage enabled with v8
+@ninedeploy/db:test:
+@ninedeploy/db:test:  ✓ test/migration-journal-order.test.ts (12 tests) 31ms
+@ninedeploy/db:test:  ✓ test/migrate.test.ts (7 tests) 227ms
+@ninedeploy/db:test:  ✓ test/migrate-recovery-edges.test.ts (2 tests) 85ms
+@ninedeploy/db:test:  ✓ test/drizzle-config-path.test.ts (3 tests) 14ms
+@ninedeploy/db:test:  ✓ test/migrate-atomic-recovery.test.ts (5 tests) 364ms
+@ninedeploy/db:test:  ✓ test/client.test.ts (5 tests) 147ms
+@ninedeploy/db:test:  ✓ test/clientConcurrency.test.ts (3 tests) 24ms
+@ninedeploy/db:test:  ✓ test/migrate-error.test.ts (1 test) 6ms
+@ninedeploy/db:test:  ✓ test/migrate-recovery.test.ts (3 tests) 798ms
+@ninedeploy/db:test:    ✓ runMigrations recovery (3)
+@ninedeploy/db:test:      ✓ completes an upgrade whose objects already exist outside the journal 490ms
+@ninedeploy/db:test:      ✓ leaves an already-current database untouched 303ms
+@ninedeploy/db:test:  ✓ test/client-reject.test.ts (1 test) 12ms
+@ninedeploy/db:test:  ✓ test/clientMemory.test.ts (1 test) 19ms
+@ninedeploy/db:test:  ✓ test/schema-drift.test.ts (4 tests) 1883ms
+@ninedeploy/db:test:    ✓ schema ↔ migrations (4)
+@ninedeploy/db:test:      ✓ creates every table and column the schema declares, and nothing it does not 691ms
+@ninedeploy/db:test:      ✓ creates every foreign key with the delete/update rule the schema declares (r300) 506ms
+@ninedeploy/db:test:      ✓ round-trips a log drain (the table the drift check found missing) 672ms
+@ninedeploy/db:test:  ✓ test/schema.test.ts (7 tests) 1890ms
+@ninedeploy/db:test:    ✓ schema (7)
+@ninedeploy/db:test:      ✓ runs a real insert + select + update roundtrip through the in-memory db 716ms
+@ninedeploy/db:test:      ✓ allows two deployments of the same service within the same second (non-unique index) 539ms
+@ninedeploy/db:test:      ✓ roundtrips a workspace invitation row (table + indexes) 622ms
+@ninedeploy/db:test:  ✓ test/migration-0097-fanout-recovery.test.ts (1 test) 2140ms
+@ninedeploy/db:test:    ✓ adds a unique recovery journal without losing existing target data on repeated migrations 2139ms
+@ninedeploy/db:test:  ✓ test/migration-0116-node-networks.test.ts (1 test) 2290ms
+@ninedeploy/db:test:    ✓ upgrades existing node preparation and capacity receipts without losing their identities 2288ms
+@ninedeploy/db:test:  ✓ test/migration-0102-runtime-owners.test.ts (1 test) 2174ms
+@ninedeploy/db:test:    ✓ preserves pending wire identity and seeds private ownership above deleted command history when upgrading 0101 2173ms
+@ninedeploy/db:test:  ✓ test/migration-0123-postgres-pitr.test.ts (1 test) 2557ms
+@ninedeploy/db:test:    ✓ upgrades existing databases from 122 with point-in-time recovery off, and records recoveries that outlive both databases 2556ms
+@ninedeploy/db:test:  ✓ test/migration-0105-error-ingest.test.ts (1 test) 2272ms
+@ninedeploy/db:test:    ✓ adds empty error issue and event tables that cascade with their service and leave deployments alone 2270ms
+@ninedeploy/db:test:  ✓ test/migration-0120-node-sleep.test.ts (1 test) 2308ms
+@ninedeploy/db:test:    ✓ upgrades an existing runtime owner, retains sleep journals across deployment pruning and enforces unique request/token identity 2307ms
+@ninedeploy/db:test:  ✓ test/migration-0122-catcher-names.test.ts (1 test) 2186ms
+@ninedeploy/db:test:    ✓ upgrades existing sleep and maintenance bindings from 121 without losing legacy routing identity 2185ms
+@ninedeploy/db:test:  ✓ test/migration-0099-swarm-recovery.test.ts (1 test) 2204ms
+@ninedeploy/db:test:    ✓ creates an encrypted Swarm transition journal without replacing existing service state 2202ms
+@ninedeploy/db:test:  ✓ test/migration-0119-serving-receipts.test.ts (1 test) 2327ms
+@ninedeploy/db:test:    ✓ upgrades an existing deployment with replay-safe receipt constraints and cascading retirement 2325ms
+@ninedeploy/db:test:  ✓ test/node-wake-collection.test.ts (1 test) 3910ms
+@ninedeploy/db:test:    ✓ reopens standalone catcher retirement targets without invented service authority or a schema migration 3909ms
+@ninedeploy/db:test:  ✓ test/migration-0098-primary-recovery.test.ts (1 test) 2142ms
+@ninedeploy/db:test:    ✓ creates a bounded primary transition journal without replacing existing service state 2140ms
+@ninedeploy/db:test:  ✓ test/migration-0121-wake-maintenance.test.ts (1 test) 2163ms
+@ninedeploy/db:test:    ✓ upgrades from 120 and retains a unique maintenance intent and precise lease after node deletion 2161ms
+@ninedeploy/db:test:  ✓ test/migration-0096-observability.test.ts (1 test) 2244ms
+@ninedeploy/db:test:    ✓ observability upgrade from migration 0095 (1)
+@ninedeploy/db:test:      ✓ preserves existing data and supports queue/history writes with foreign-key cleanup 2243ms
+@ninedeploy/db:test:  ✓ test/migration-0100-node-studio.test.ts (1 test) 2274ms
+@ninedeploy/db:test:    ✓ adds nullable node Studio identity without changing local ports, node placement or stored credentials 2272ms
+@ninedeploy/db:test:  ✓ test/migration-0104-deployment-owner.test.ts (1 test) 2490ms
+@ninedeploy/db:test:    ✓ adds a private empty owner journal without guessing ownership for existing work or changing deployment payloads 2489ms
+@ninedeploy/db:test:  ✓ test/migration-0114-node-recovery.test.ts (1 test) 2590ms
+@ninedeploy/db:test:    ✓ preserves existing preparation records when adding the recovery watermark 2588ms
+@ninedeploy/db:test:  ✓ test/migration-0101-node-lifecycle.test.ts (3 tests) 2956ms
+@ninedeploy/db:test:    ✓ upgrades 0100 without changing deployed services and preserves ordered intents across migration reruns 2318ms
+@ninedeploy/db:test:    ✓ cascades intents with deleted services and nodes and refuses unknown parents 344ms
+@ninedeploy/db:test:  ✓ test/migration-0103-unselected-stop.test.ts (2 tests) 3049ms
+@ninedeploy/db:test:    ✓ preserves old commands and pruned sequence through nullable Stop upgrade; retained=true 2224ms
+@ninedeploy/db:test:    ✓ preserves old commands and pruned sequence through nullable Stop upgrade; retained=false 823ms
+@ninedeploy/db:test:  ✓ test/migration-0064-fk-rebuild.test.ts (2 tests) 2935ms
+@ninedeploy/db:test:    ✓ migration 0064 — FK SET NULL rebuild (r300) (2)
+@ninedeploy/db:test:      ✓ upgrades a populated 0063 database through the drizzle migrator without losing rows 2350ms
+@ninedeploy/db:test:      ✓ is safe on the statement-by-statement recovery path, which runs with foreign keys ON 459ms
+@ninedeploy/db:test:  ✓ test/migration-0113-node-preparation.test.ts (1 test) 2928ms
+@ninedeploy/db:test:    ✓ upgrades existing work and persists node preparation receipts across reopen 2926ms
+@ninedeploy/db:test:  ✓ test/migration-0115-node-capacity.test.ts (1 test) 2901ms
+@ninedeploy/db:test:    ✓ adds durable capacity evidence without changing existing deployments 2899ms
+@ninedeploy/db:test:  ✓ test/migration-0066-retention.test.ts (3 tests) 3569ms
+@ninedeploy/db:test:    ✓ migration 0066 (3)
+@ninedeploy/db:test:      ✓ r541: deletes project-scoped env vars whose project is gone, and nothing else 2017ms
+@ninedeploy/db:test:      ✓ r545: the housekeeping deletes are served by an index, not a table scan 843ms
+@ninedeploy/db:test:      ✓ re-running its statements is harmless (IF NOT EXISTS) 590ms
+@ninedeploy/db:test:  ✓ test/migration-0106-node-autoscale.test.ts (2 tests) 4040ms
+@ninedeploy/db:test:    ✓ upgrades without changing existing work and retains the unique scale decision across database reopen 2873ms
+@ninedeploy/db:test:    ✓ retains a pre-configuration scale decision while leaving its configuration unconfirmed on upgrade 1166ms
+@ninedeploy/db:test:
+@ninedeploy/db:test:  Test Files  36 passed (36)
+@ninedeploy/db:test:       Tests  84 passed (84)
+@ninedeploy/db:test:    Start at  18:57:09
+@ninedeploy/db:test:    Duration  9.59s (tests 56%, import 40%, transform 3%, worker 1%)
+@ninedeploy/db:test:
+@ninedeploy/db:test:  % Coverage report from v8
+@ninedeploy/db:test: ------------|---------|----------|---------|---------|-------------------
+@ninedeploy/db:test: File        | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+@ninedeploy/db:test: ------------|---------|----------|---------|---------|-------------------
+@ninedeploy/db:test: All files   |     100 |      100 |     100 |     100 |
+@ninedeploy/db:test:  client.ts  |     100 |      100 |     100 |     100 |
+@ninedeploy/db:test:  index.ts   |       0 |        0 |       0 |       0 |
+@ninedeploy/db:test:  migrate.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/db:test:  schema.ts  |     100 |      100 |     100 |     100 |
+@ninedeploy/db:test: ------------|---------|----------|---------|---------|-------------------
+@ninedeploy/schemas:test: cache miss, executing 52bd38a81d1d0ea1
+@ninedeploy/schemas:test: $ vitest run --coverage
+@ninedeploy/schemas:test:
+@ninedeploy/schemas:test:  RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/schemas
+@ninedeploy/schemas:test:       Coverage enabled with v8
+@ninedeploy/schemas:test:
+@ninedeploy/schemas:test:  ✓ test/publicAccess.test.ts (9 tests) 19ms
+@ninedeploy/schemas:test:  ✓ test/backupPolicy.test.ts (6 tests) 20ms
+@ninedeploy/schemas:test:  ✓ test/maintenance.test.ts (17 tests) 18ms
+@ninedeploy/schemas:test:  ✓ test/secretProviders.test.ts (14 tests) 22ms
+@ninedeploy/schemas:test:  ✓ test/servingTraffic.test.ts (24 tests) 12ms
+@ninedeploy/schemas:test:  ✓ test/serviceLifecycle.test.ts (8 tests) 10ms
+@ninedeploy/schemas:test:  ✓ test/traffic.test.ts (7 tests) 58ms
+@ninedeploy/schemas:test:  ✓ test/ninedeployManifest.test.ts (96 tests) 37ms
+@ninedeploy/schemas:test:  ✓ test/cloud.test.ts (5 tests) 39ms
+@ninedeploy/schemas:test:  ✓ test/terminals.test.ts (15 tests) 21ms
+@ninedeploy/schemas:test:  ✓ test/accessGrants.test.ts (11 tests) 17ms
+@ninedeploy/schemas:test:  ✓ test/sizing.test.ts (4 tests) 32ms
+@ninedeploy/schemas:test:  ✓ test/proxyConfig.test.ts (8 tests) 14ms
+@ninedeploy/schemas:test:  ✓ test/proxyTraffic.test.ts (19 tests) 15ms
+@ninedeploy/schemas:test:  ✓ test/containerMutation.test.ts (78 tests) 96ms
+@ninedeploy/schemas:test:  ✓ test/containerReadiness.test.ts (18 tests) 13ms
+@ninedeploy/schemas:test:  ✓ test/databaseImport.test.ts (9 tests) 13ms
+@ninedeploy/schemas:test:  ✓ test/runtimeVersions.test.ts (23 tests) 10ms
+@ninedeploy/schemas:test:  ✓ test/observability.test.ts (17 tests) 10ms
+@ninedeploy/schemas:test:  ✓ test/volumeFileWrite.test.ts (22 tests) 11ms
+@ninedeploy/schemas:test:  ✓ test/secretScan.test.ts (24 tests) 10ms
+@ninedeploy/schemas:test:  ✓ test/osUpdates.test.ts (3 tests) 9ms
+@ninedeploy/schemas:test:  ✓ test/ci.test.ts (22 tests) 10ms
+@ninedeploy/schemas:test:  ✓ test/canary.test.ts (8 tests) 9ms
+@ninedeploy/schemas:test:  ✓ test/agentCommand.test.ts (6 tests) 4ms
+@ninedeploy/schemas:test:  ✓ test/dockerLabels.test.ts (3 tests) 18ms
+@ninedeploy/schemas:test:  ✓ test/autoscale.test.ts (7 tests) 11ms
+@ninedeploy/schemas:test:  ✓ test/containerMetrics.test.ts (25 tests) 11ms
+@ninedeploy/schemas:test:  ✓ test/portMappings.test.ts (46 tests) 11ms
+@ninedeploy/schemas:test:  ✓ test/deployFreeze.test.ts (3 tests) 10ms
+@ninedeploy/schemas:test:  ✓ test/serviceFiles.test.ts (3 tests) 26ms
+@ninedeploy/schemas:test:  ✓ test/uptime.test.ts (8 tests) 18ms
+@ninedeploy/schemas:test:  ✓ test/githubApp.test.ts (28 tests) 30ms
+@ninedeploy/schemas:test:  ✓ test/containerLifecycle.test.ts (34 tests) 18ms
+@ninedeploy/schemas:test:  ✓ test/multiNode.test.ts (24 tests) 33ms
+@ninedeploy/schemas:test:  ✓ test/usage.test.ts (2 tests) 8ms
+@ninedeploy/schemas:test:  ✓ test/databaseStats.test.ts (2 tests) 9ms
+@ninedeploy/schemas:test:  ✓ test/schemas.test.ts (137 tests) 104ms
+@ninedeploy/schemas:test:  ✓ test/ai.test.ts (3 tests) 8ms
+@ninedeploy/schemas:test:  ✓ test/watchPaths.test.ts (5 tests) 5ms
+@ninedeploy/schemas:test:
+@ninedeploy/schemas:test:  Test Files  40 passed (40)
+@ninedeploy/schemas:test:       Tests  803 passed (803)
+@ninedeploy/schemas:test:    Start at  18:57:21
+@ninedeploy/schemas:test:    Duration  2.34s (import 56%, transform 30%, worker 8%, tests 6%)
+@ninedeploy/schemas:test:
+@ninedeploy/schemas:test:  % Coverage report from v8
+@ninedeploy/schemas:test: -------------------|---------|----------|---------|---------|-------------------
+@ninedeploy/schemas:test: File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+@ninedeploy/schemas:test: -------------------|---------|----------|---------|---------|-------------------
+@ninedeploy/schemas:test: All files          |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  accessGrants.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  agentCommand.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ai.ts             |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  auth.ts           |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  autoscale.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  backupPolicy.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  canary.ts         |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  capabilities.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ci.ts             |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  cloud.ts          |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  commitStatus.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  common.ts         |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...erLifecycle.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...inerMetrics.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...nerMutation.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...erReadiness.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  databaseImport.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  deployFreeze.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  dockerLabels.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  doctor.ts         |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  environments.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  errorIngest.ts    |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  forwardAuth.ts    |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  githubApp.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  imageScan.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...eDockerfile.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  insights.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  instanceGitops.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  kernel.ts         |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  labels.ts         |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  maintenance.ts    |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  management.ts     |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  mcpHttp.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  multiNode.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...loyManifest.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  observability.ts  |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  osUpdates.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  panelAccess.ts    |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  panelBackup.ts    |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  pendingChanges.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  project.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  proxyConfig.ts    |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  proxyTraffic.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  publicAccess.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  restartLimit.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  routing.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...imeVersions.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...etProviders.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  secretScan.ts     |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  service.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  serviceFiles.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...ceLifecycle.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  serviceMove.ts    |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  serviceSleep.ts   |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  sizing.ts         |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  terminals.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  traffic.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  ...actorPolicy.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  uptime.ts         |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  usage.ts          |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test:  workspaces.ts     |     100 |      100 |     100 |     100 |
+@ninedeploy/schemas:test: -------------------|---------|----------|---------|---------|-------------------
+@ninedeploy/schemas:build: cache hit, replaying logs d88ac8108d66806b
+@ninedeploy/schemas:build: $ tsc
+@ninedeploy/plugin-sdk:test: cache miss, executing d3cc0fe3cd112096
+@ninedeploy/plugin-sdk:test: $ vitest run --coverage
+@ninedeploy/plugin-sdk:test:
+@ninedeploy/plugin-sdk:test:  RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/plugin-sdk
+@ninedeploy/plugin-sdk:test:       Coverage enabled with v8
+@ninedeploy/plugin-sdk:test:
+@ninedeploy/plugin-sdk:test:  ✓ test/pluginSdk.test.ts (7 tests) 8ms
+@ninedeploy/plugin-sdk:test:
+@ninedeploy/plugin-sdk:test:  Test Files  1 passed (1)
+@ninedeploy/plugin-sdk:test:       Tests  7 passed (7)
+@ninedeploy/plugin-sdk:test:    Start at  18:57:25
+@ninedeploy/plugin-sdk:test:    Duration  181ms (worker 29%, transform 27%, import 26%, tests 18%)
+@ninedeploy/plugin-sdk:test:
+@ninedeploy/plugin-sdk:test:  % Coverage report from v8
+@ninedeploy/plugin-sdk:test: -----------------|---------|----------|---------|---------|-------------------
+@ninedeploy/plugin-sdk:test: File             | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+@ninedeploy/plugin-sdk:test: -----------------|---------|----------|---------|---------|-------------------
+@ninedeploy/plugin-sdk:test: All files        |     100 |      100 |     100 |     100 |
+@ninedeploy/plugin-sdk:test:  definePlugin.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/plugin-sdk:test:  index.ts        |       0 |        0 |       0 |       0 |
+@ninedeploy/plugin-sdk:test:  scopedConfig.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/plugin-sdk:test:  types.ts        |       0 |        0 |       0 |       0 |
+@ninedeploy/plugin-sdk:test: -----------------|---------|----------|---------|---------|-------------------
+@ninedeploy/sdk:build: cache hit, replaying logs 16c2f62990fc9230
+@ninedeploy/sdk:build: $ tsc
+@ninedeploy/sdk:test: cache miss, executing 4f797d3312aebcd5
+@ninedeploy/sdk:test: $ vitest run --coverage
+@ninedeploy/sdk:test:
+@ninedeploy/sdk:test:  RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/sdk
+@ninedeploy/sdk:test:       Coverage enabled with v8
+@ninedeploy/sdk:test:
+@ninedeploy/sdk:test:  ✓ test/r059-yaml-scalar-roundtrip.test.ts (1 test) 13ms
+@ninedeploy/sdk:test:  ✓ test/manifest.test.ts (42 tests) 28ms
+@ninedeploy/sdk:test:  ✓ test/manifestRoundTrip.test.ts (47 tests) 31ms
+@ninedeploy/sdk:test:  ✓ test/databaseStudio.test.ts (4 tests) 10ms
+@ninedeploy/sdk:test:  ✓ test/cloud.test.ts (3 tests) 12ms
+@ninedeploy/sdk:test:  ✓ test/databaseClientTerminal.test.ts (3 tests) 10ms
+@ninedeploy/sdk:test:  ✓ test/sleep.test.ts (5 tests) 17ms
+@ninedeploy/sdk:test:  ✓ test/releaseRecords.test.ts (2 tests) 49ms
+@ninedeploy/sdk:test:  ✓ test/panelAccess.test.ts (2 tests) 52ms
+@ninedeploy/sdk:test:  ✓ test/operationsSurfaces.test.ts (18 tests) 56ms
+@ninedeploy/sdk:test:  ✓ test/imageScans.test.ts (3 tests) 57ms
+@ninedeploy/sdk:test:  ✓ test/uptime.test.ts (3 tests) 9ms
+@ninedeploy/sdk:test:  ✓ test/osUpdates.test.ts (1 test) 7ms
+@ninedeploy/sdk:test:  ✓ test/canary.test.ts (5 tests) 12ms
+@ninedeploy/sdk:test:  ✓ test/approvals.test.ts (3 tests) 11ms
+@ninedeploy/sdk:test:  ✓ test/autoscale.test.ts (5 tests) 12ms
+@ninedeploy/sdk:test:  ✓ test/githubApps.test.ts (4 tests) 17ms
+@ninedeploy/sdk:test:  ✓ test/serviceLifecycle.test.ts (1 test) 8ms
+@ninedeploy/sdk:test:  ✓ test/sprint11Coverage.test.ts (40 tests) 23ms
+@ninedeploy/sdk:test:  ✓ test/serviceRouting.test.ts (1 test) 42ms
+@ninedeploy/sdk:test:  ✓ test/databaseStats.test.ts (4 tests) 27ms
+@ninedeploy/sdk:test:  ✓ test/apiGet.test.ts (3 tests) 25ms
+@ninedeploy/sdk:test:  ✓ test/aiAnalyzeLogs.test.ts (2 tests) 29ms
+@ninedeploy/sdk:test:  ✓ test/observability.test.ts (1 test) 39ms
+@ninedeploy/sdk:test:  ✓ test/mcpRemote.test.ts (2 tests) 27ms
+@ninedeploy/sdk:test:  ✓ test/networkDataAccess.test.ts (23 tests) 68ms
+@ninedeploy/sdk:test:  ✓ test/multiNodeSurfaces.test.ts (21 tests) 21ms
+@ninedeploy/sdk:test:  ✓ test/deployBulkRemoval.test.ts (3 tests) 31ms
+@ninedeploy/sdk:test:  ✓ test/newOperations.test.ts (1 test) 59ms
+@ninedeploy/sdk:test:  ✓ test/client.test.ts (122 tests) 102ms
+@ninedeploy/sdk:test:  ✓ test/deployFreeze.test.ts (1 test) 9ms
+@ninedeploy/sdk:test:  ✓ test/usage.test.ts (1 test) 8ms
+@ninedeploy/sdk:test:  ✓ test/errors.test.ts (7 tests) 4ms
+@ninedeploy/sdk:test:  ✓ test/resourceComposition.test.ts (3 tests) 408ms
+@ninedeploy/sdk:test:    ✓ client composition from resources/*.ts (3)
+@ninedeploy/sdk:test:      ✓ no two resource modules define the same top-level client key 384ms
+@ninedeploy/sdk:test:  ✓ test/ci.test.ts (1 test) 5ms
+@ninedeploy/sdk:test:
+@ninedeploy/sdk:test:  Test Files  35 passed (35)
+@ninedeploy/sdk:test:       Tests  388 passed (388)
+@ninedeploy/sdk:test:    Start at  18:57:27
+@ninedeploy/sdk:test:    Duration  3.50s (transform 49%, import 44%, worker 4%, tests 3%)
+@ninedeploy/sdk:test:
+@ninedeploy/sdk:test:  % Coverage report from v8
+@ninedeploy/sdk:test: -------------------|---------|----------|---------|---------|-------------------
+@ninedeploy/sdk:test: File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+@ninedeploy/sdk:test: -------------------|---------|----------|---------|---------|-------------------
+@ninedeploy/sdk:test: All files          |   99.91 |      100 |   99.85 |    99.9 |
+@ninedeploy/sdk:test:  src               |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   apiPath.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   client.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   ...baseImport.ts |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   errors.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   index.ts         |       0 |        0 |       0 |       0 |
+@ninedeploy/sdk:test:   manifest.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   terminal.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   transport.ts     |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   types.ts         |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:  src/resources     |   99.85 |      100 |   99.84 |   99.85 |
+@ninedeploy/sdk:test:   auth.ts          |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   ci.ts            |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   databases.ts     |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   deploys.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   domains.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   env.ts           |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   logs.ts          |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   network.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   plugins.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   servers.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   services.ts      |   99.02 |      100 |   99.01 |   99.02 | 477
+@ninedeploy/sdk:test:   settings.ts      |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   sources.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   system.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   templates.ts     |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   terminals.ts     |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   traefik.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   uptime.ts        |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test:   volumes.ts       |     100 |      100 |     100 |     100 |
+@ninedeploy/sdk:test: -------------------|---------|----------|---------|---------|-------------------
+@ninedeploy/sdk:test: ERROR: Coverage for lines (99.9%) does not meet global threshold (100%)
+@ninedeploy/sdk:test: ERROR: Coverage for functions (99.85%) does not meet global threshold (100%)
+@ninedeploy/sdk:test: ERROR: Coverage for statements (99.91%) does not meet global threshold (100%)
+@ninedeploy/sdk:test: [ELIFECYCLE] Test failed. See above for more details.
+@ninedeploy/mcp:test: cache miss, executing 29e4ea26561f4f34
+@ninedeploy/web:test: cache miss, executing 6660e457f13adaee
+ninedeploy:test: cache miss, executing 8e528a2d1f3e6ce0
+@ninedeploy/mcp:build: cache hit, replaying logs bd687f6e28d77c91
+@ninedeploy/mcp:build: $ tsc
+@ninedeploy/sdk#test:  ERROR  command (D:\Codebox\PROJECTS\NineDeploy\packages\sdk) C:\Users\ersin\AppData\Local\pnpm\bin\pnpm.cmd run test exited (1)
+
+ Tasks:    7 successful, 11 total
+Cached:    4 cached, 11 total
+  Time:    26.385s
+Failed:    @ninedeploy/sdk#test
+
+ ERROR  run failed: command  exited (1)
+[ELIFECYCLE] Command failed with exit code 1.

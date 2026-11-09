@@ -1,0 +1,22 @@
+$ vitest run --coverage
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/sdk
+      Coverage enabled with v8
+
+
+ Test Files  36 passed (36)
+      Tests  390 passed (390)
+   Start at  19:00:19
+   Duration  15.02s (import 54%, transform 40%, tests 5%, worker 1%)
+
+ % Coverage report from v8
+No files with missing coverage.
+27 files fully covered.
+1 empty file skipped.
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 1157/1157 )
+Branches     : 100% ( 537/537 )
+Functions    : 100% ( 685/685 )
+Lines        : 100% ( 1071/1071 )
+================================================================================

@@ -1,0 +1,33 @@
+$ vitest run --coverage
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/sdk
+      Coverage enabled with v8
+
+ ❯ test/serviceCapabilities.test.ts (2 tests | 1 failed) 1700ms
+   × reads the selected service capability view with an authenticated GET and preserves all statuses 1694ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/serviceCapabilities.test.ts > reads the selected service capability view with an authenticated GET and preserves all statuses
+AssertionError: expected 'Bearer [object Promise]' to be 'Bearer capability-fixture' // Object.is equality
+
+Expected: "Bearer capability-fixture"
+Received: "Bearer [object Promise]"
+
+ ❯ test/serviceCapabilities.test.ts:28:66
+     26|   expect(calls[0]![1].method).toBe('GET');
+     27|   expect(calls[0]![1].body).toBeUndefined();
+     28|   expect(new Headers(calls[0]![1].headers).get('authorization')).toBe(…
+       |                                                                  ^
+     29| });
+     30|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 35 passed (36)
+      Tests  1 failed | 389 passed (390)
+   Start at  18:59:07
+   Duration  14.68s (import 54%, transform 38%, tests 7%, worker 1%)
+
+[ELIFECYCLE] Test failed. See above for more details.
