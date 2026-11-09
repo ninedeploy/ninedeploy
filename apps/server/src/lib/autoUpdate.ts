@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, DrizzleQueryError, eq, inArray, sql } from 'drizzle-orm';
 import { deployments, services, type DB } from '@ninedeploy/db';
 import { audit } from './audit.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
@@ -162,12 +162,28 @@ export async function sweepAutoUpdates(
       continue;
     }
 
-    await db.insert(deployments).values({
-      serviceId: svc.id,
-      status: 'queued',
-      trigger: 'schedule',
-      message: ['Auto-update:', svc.image, '→', digest.slice(0, 19)].join(' '),
-    });
+    try {
+      await db.insert(deployments).values({
+        serviceId: svc.id,
+        status: 'queued',
+        trigger: sql`(select case when exists (
+          select 1 from ${services} where ${services.id} = ${svc.id}
+            and ${services.autoUpdate} = 1 and ${services.status} = 'running'
+            and ${services.type} = 'docker' and ${services.image} = ${svc.image}
+            and ${services.autoUpdateDigest} = ${svc.autoUpdateDigest}
+        ) and not exists (
+          select 1 from ${deployments} where ${deployments.serviceId} = ${svc.id}
+            and ${deployments.status} in ('queued', 'building', 'deploying')
+        ) then 'schedule' else null end)`,
+        message: ['Auto-update:', svc.image, '→', digest.slice(0, 19)].join(' '),
+      });
+    } catch (err) {
+      if (err instanceof DrizzleQueryError && err.cause?.message.endsWith('NOT NULL constraint failed: deployments.trigger')) {
+        result.skipped++;
+        continue;
+      }
+      throw err;
+    }
     await db.update(services).set({ autoUpdateDigest: digest }).where(eq(services.id, svc.id));
     void audit(db, null, 'autoupdate.enqueued', `${svc.name}: ${svc.image} moved to ${digest.slice(0, 19)}`, {
       serviceId: svc.id,

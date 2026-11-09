@@ -1,0 +1,27 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > conditional INSERT rejects disable after all application reads 188ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > conditional INSERT rejects stop after all application reads 203ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > conditional INSERT rejects image after all application reads 182ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > conditional INSERT rejects digest after all application reads 163ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > conditional INSERT rejects type after all application reads 162ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > conditional INSERT rejects delete after all application reads 170ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > manual queued work wins immediately before INSERT 197ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > manual building work wins immediately before INSERT 150ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > manual deploying work wins immediately before INSERT 166ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > overlapping independent sweeps admit one deployment after both saw no in-flight job 176ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > unrelated INSERT error propagates without digest advance and a clean retry can enqueue 182ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > terminal succeeded deployment allows a fresh update 172ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > terminal failed deployment allows a fresh update 180ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > terminal cancelled deployment allows a fresh update 165ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > another service active work does not suppress this update 215ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1078_autoUpdateEnqueue.test.ts > first observation remains baseline-only and unchanged digest enqueues nothing 234ms
+
+ Test Files  1 passed (1)
+      Tests  16 passed (16)
+   Start at  00:42:48
+   Duration  3.49s (tests 87%, import 11%, transform 2%)

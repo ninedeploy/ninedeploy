@@ -1,0 +1,26 @@
+## Round 60 — automatic update final enqueue preconditions
+### Summary
+Scope confirmed: apps/server/src/lib/autoUpdate.ts, apps/server/test/lib/autoUpdateEnqueueRace.test.ts, nearest autoUpdate.test.ts fake-database assertion compatibility only if needed. Plugin/schemas/helpers read-only. Existing F77 post-probe checks and F1077 scheduler admission preserved; this tests later enqueue suspension. Current63cbd220 remote verified; unrelated CHANGELOG ordering hunk preserved.
+### Toolchain
+Existing server package Node26/TS7.0.2, root Vitest5.0.5 migrated libsql and configured Biome2.5.14, GOMAXPROCS=4 for static checks. No dependencies installed.
+### Invariants
+Opt-out, service stop, changed image or new in-flight work completed before final enqueue must prevent an old registry result from creating a deployment or advancing its digest. Unchanged opt-in service enqueues a schedule deployment and advances digest normally. Pre-probe and later-enqueue suspension are different boundaries.
+### Findings
+Pending executable proof; no source patch.
+### Boundaries
+Actual SQLite with native query-result gate, controlled registry digest and audit, no live registry/deployment or authorization escalation claim.
+### F1078 — race — Medium — stale update result enqueues after completed opt-out, stop or image replacement
+Before F1078_before.log:3 failed/1 unchanged control passed, Vitest exit1. Native SQLite result gate holds the in-flight query after the existing post-probe service check. Operator disables/stops/changes image before enqueue resumes. EXPECTED0 queue entries and unchanged operator state; ACTUAL1 queue entry and stale sha256:new digest for all3; PROBLEM CONFIRMED.
+Root cause recorded before patch: eligibility is accepted before in-flight/refusal awaits; INSERT unconditionally trusts it, and in-flight absence is also only a stale snapshot. Repair: evaluate service eligibility/image/digest snapshot plus current in-flight absence inside the same INSERT. Reuse existing repository conditional NOTNULL trigger admission pattern; handle only its known deployments.trigger rejection as skipped and leave all unrelated SQL errors visible. No insert means no downstream digest update/audit. Existing fake-only trigger-field assertions will defer actual SQL evaluation to the migrated SQLite control, which verifies resulting trigger=schedule.
+### Completed verification
+F1078_after.log original proof4 passed, all3 stale operator changes PROBLEM NOT REPRODUCED. Permanent apps/server/test/lib/autoUpdateEnqueueRace.test.ts8 cases red on original63cbd220 library:7 failed/1 unaffected control passed (F1078_permanent_before.log). Final29 tests/5files passed (F1078_scope.log), including existing scheduler real-sweep race and F77 checks. Fake-only nearest tests no longer assert unevaluated SQL expression equals a string; actual SQLite control verifies persisted trigger=schedule/status=queued/serviceId5.
+Independent16-case verifier passed3 consecutive clean runs, each guarded FIX VERIFIED (F1078_verify1/2/3.log). Six service changes after all application reads, every active manual deployment status, overlapping independent sweeps, unrelated SQL error propagation with clean retry, terminal/unrelated deployment controls, baseline/unchanged digest controls. Native libsql execute barriers, no sleeps; no configured TS race detector.
+Commands: root pnpm exec vitest run --config .temp_files/audit_continuous_20261109/F1073.config.ts [proof/verify] --reporter=verbose; server pnpm exec vitest run test/lib/autoUpdateEnqueueRace.test.ts test/plugins/autoUpdateSchedulerRace.test.ts test/plugins/autoUpdateScheduler.test.ts test/lib/autoUpdate.test.ts test/lib/autoUpdateLifecycle.test.ts --coverage=false --reporter=verbose ->29/5 passed. Static/lint/diff recorded below after completion.
+### Boundaries
+No wire/config/schema change; resulting accepted trigger remains schedule. Known NOTNULL admission loss only becomes skip; unrelated SQL errors propagate. Same migrated database was used for competing calls; independent processes/connections, live registry/deployment and authorization escalation were not certified. Post-insert digest publication after a later operator mutation, baseline/refusal digest-write races remain a separate next scope; an accepted enqueue is not cancelled after its SQL admission. Full root coverage/release gate and native Mac NOT RUN.
+### Working tree
+Unrelated CHANGELOG ordering hunk preserved. Source/permanent test/nearest two fake assertions/docs/evidence only selected; no dependency or shared test-helper change.
+### Next scope
+lib/autoUpdate.ts baseline/refusal/post-insert digest publication ownership under a native write barrier.
+Final static checks: child-process GOMAXPROCS=4 pnpm --dir apps/server typecheck ->exit0; build ->exit0. Scoped pnpm exec biome check apps/server/src/lib/autoUpdate.ts apps/server/test/lib/autoUpdate.test.ts apps/server/test/lib/autoUpdateEnqueueRace.test.ts ->3files passed; git diff --check ->exit0. Root release and native Mac not certified.
+Publication preflight: own staged paths only; cached diff check and limited staged credential/runtime/index-line-ending scan passed. HEAD source/evidence/changelog hashes verified before push.

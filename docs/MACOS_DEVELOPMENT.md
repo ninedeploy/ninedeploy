@@ -538,3 +538,12 @@ tests passed. Eleven independent scheduling/lifecycle/error cases passed three
 times. The initial five-minute delay and thirty-minute cadence remain. This
 protects one scheduler instance; cross-process enqueue deduplication, live
 registry timing and native Mac acceptance were not certified.
+
+Round 60 (F1078) moves automatic-update enqueue eligibility and in-flight checks
+into the same deployment INSERT. A completed opt-out, stop, image/digest change
+or competing active deployment cannot be bypassed by a stale application read.
+Eight permanent tests were seen red (seven failing cases and one control); 29
+neighboring tests passed after repair. Sixteen independent native-SQL barrier,
+competing-sweep and failure/retry cases passed three times. Accepted queue rows
+retain the schedule trigger. This does not certify post-insert digest publication,
+multiple processes, live registry/deployment or native Mac acceptance.

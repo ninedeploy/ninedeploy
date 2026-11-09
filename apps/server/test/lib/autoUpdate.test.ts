@@ -46,7 +46,8 @@ describe('sweepAutoUpdates', () => {
     expect(result).toEqual({ probed: 1, enqueued: 1, skipped: 0 });
     // Ownerless legacy row: operator-controlled ref, LAN registries allowed (r514).
     expect(probe).toHaveBeenCalledWith('ghcr.io', 'acme/web', 'latest', undefined, { allowPrivateEgress: true });
-    expect(inserts[0]).toMatchObject({ serviceId: 5, status: 'queued', trigger: 'schedule' });
+    // The migrated SQLite enqueue-race control evaluates the conditional trigger.
+    expect(inserts[0]).toMatchObject({ serviceId: 5, status: 'queued' });
     expect(String(inserts[0]!.message)).toContain('Auto-update:');
     expect(updates.at(-1)).toMatchObject({ autoUpdateDigest: 'sha256:new' });
   });
@@ -100,7 +101,7 @@ describe('sweepAutoUpdates', () => {
     const { db, inserts } = baseDb([remote]);
     const result = await sweepAutoUpdates(db, probeOf('sha256:new'));
     expect(result.enqueued).toBe(1);
-    expect(inserts[0]).toMatchObject({ serviceId: 8, trigger: 'schedule' });
+    expect(inserts[0]).toMatchObject({ serviceId: 8, status: 'queued' });
   });
 
   it('passes the attached registry credential to the probe for private repos', async () => {

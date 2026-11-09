@@ -1,0 +1,104 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > control: eligible unchanged service enqueues scheduled work 197ms
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > disable after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 1 1 sha256:new
+PROBLEM CONFIRMED
+
+ × test/lib/autoUpdateEnqueueRace.test.ts > disable after probe check but before final enqueue discards stale result 186ms
+   → expected [ { id: 1, serviceId: 5, …(19) } ] to have a length of +0 but got 1
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > stop after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 1 1 sha256:new
+PROBLEM CONFIRMED
+
+ × test/lib/autoUpdateEnqueueRace.test.ts > stop after probe check but before final enqueue discards stale result 193ms
+   → expected [ { id: 1, serviceId: 5, …(19) } ] to have a length of +0 but got 1
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > image after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 1 1 sha256:new
+PROBLEM CONFIRMED
+
+ × test/lib/autoUpdateEnqueueRace.test.ts > image after probe check but before final enqueue discards stale result 153ms
+   → expected [ { id: 1, serviceId: 5, …(19) } ] to have a length of +0 but got 1
+ × test/lib/autoUpdateEnqueueRace.test.ts > manual queued work wins immediately before INSERT 190ms
+   → expected { probed: 1, enqueued: 1, skipped: +0 } to deeply equal { probed: 1, enqueued: +0, skipped: 1 }
+ × test/lib/autoUpdateEnqueueRace.test.ts > manual building work wins immediately before INSERT 164ms
+   → expected { probed: 1, enqueued: 1, skipped: +0 } to deeply equal { probed: 1, enqueued: +0, skipped: 1 }
+ × test/lib/autoUpdateEnqueueRace.test.ts > manual deploying work wins immediately before INSERT 183ms
+   → expected { probed: 1, enqueued: 1, skipped: +0 } to deeply equal { probed: 1, enqueued: +0, skipped: 1 }
+ × test/lib/autoUpdateEnqueueRace.test.ts > overlapping independent sweeps admit one deployment after both saw no in-flight job 166ms
+   → expected 1 to be +0 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/autoUpdateEnqueueRace.test.ts > disable after probe check but before final enqueue discards stale result
+ FAIL  test/lib/autoUpdateEnqueueRace.test.ts > stop after probe check but before final enqueue discards stale result
+ FAIL  test/lib/autoUpdateEnqueueRace.test.ts > image after probe check but before final enqueue discards stale result
+AssertionError: expected [ { id: 1, serviceId: 5, …(19) } ] to have a length of +0 but got 1
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/lib/autoUpdateEnqueueRace.test.ts:31:16
+     29|   console.log('EXPECTED: 0 enqueued, operator state unchanged; ACTUAL:…
+     30|   console.log(rows.length ? 'PROBLEM CONFIRMED' : 'PROBLEM NOT REPRODU…
+     31|   expect(rows).toHaveLength(0); expect(result).toEqual({ probed: 1, en…
+       |                ^
+     32|  } finally { blocked.release(); await run; }
+     33| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  test/lib/autoUpdateEnqueueRace.test.ts > manual queued work wins immediately before INSERT
+ FAIL  test/lib/autoUpdateEnqueueRace.test.ts > manual building work wins immediately before INSERT
+ FAIL  test/lib/autoUpdateEnqueueRace.test.ts > manual deploying work wins immediately before INSERT
+AssertionError: expected { probed: 1, enqueued: 1, skipped: +0 } to deeply equal { probed: 1, enqueued: +0, skipped: 1 }
+
+- Expected
++ Received
+
+  {
+-   "enqueued": 0,
++   "enqueued": 1,
+    "probed": 1,
+-   "skipped": 1,
++   "skipped": 0,
+  }
+
+ ❯ test/lib/autoUpdateEnqueueRace.test.ts:49:137
+     47|  const held = holdSql(/insert into "deployments"/i); const run = sweep…
+     48|  try {
+     49|   await held.entered; await db.insert(deployments).values({ serviceId:…
+       |                                                                                                                                         ^
+     50|   expect(await db.query.deployments.findMany()).toMatchObject([{ trigg…
+     51|  } finally { held.release(); await run; held.close(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  test/lib/autoUpdateEnqueueRace.test.ts > overlapping independent sweeps admit one deployment after both saw no in-flight job
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/lib/autoUpdateEnqueueRace.test.ts:56:170
+     54|  const held = holdSql(/select .* from "deployments"/i, true); const st…
+     55|  try {
+     56|   await held.entered; const fresh = await sweepAutoUpdates(db, async (…
+       |                                                                                                                                                                          ^
+     57|   expect(await db.query.deployments.findMany()).toHaveLength(1); expec…
+     58|  } finally { held.release(); await stale; held.close(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 1 passed (8)
+   Start at  00:42:34
+   Duration  2.04s (tests 76%, import 20%, transform 5%)
