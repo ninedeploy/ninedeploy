@@ -1,0 +1,69 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change same retains work for a fresh pass
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change same retains work for a fresh pass 249ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change disabled retains work for a fresh pass
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change disabled retains work for a fresh pass
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change disabled retains work for a fresh pass 208ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change capacity retains work for a fresh pass
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change capacity retains work for a fresh pass
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change capacity retains work for a fresh pass
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change capacity retains work for a fresh pass 231ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change increase retains work for a fresh pass
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change increase retains work for a fresh pass
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change increase retains work for a fresh pass 286ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change cpus retains work for a fresh pass
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change cpus retains work for a fresh pass
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change cpus retains work for a fresh pass 194ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change memory retains work for a fresh pass
+EXPECTED: [ 80 ] ACTUAL: [ 80 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change memory retains work for a fresh pass
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > JIT config change memory retains work for a fresh pass 276ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > online status query observes config drift (enabled=false)
+EXPECTED: [] ACTUAL: [] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > online status query observes config drift (enabled=false)
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > online status query observes config drift (enabled=false) 206ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > online status query observes config drift (enabled=true)
+EXPECTED: [] ACTUAL: [] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > online status query observes config drift (enabled=true)
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > online status query observes config drift (enabled=true) 226ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > a settings read captured before a completed update cannot approve the old batch
+EXPECTED: [80]; ACTUAL: [ 80 ]
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1068_ghaConfig.test.ts > a settings read captured before a completed update cannot approve the old batch 247ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  23:01:46
+   Duration  2.89s (tests 79%, import 17%, transform 4%)

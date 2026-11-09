@@ -1,0 +1,50 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts > batch configuration unchanged while the first runner starts
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts > batch configuration unchanged while the first runner starts 234ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts > batch configuration disabled while the first runner starts
+EXPECTED: [ 80 ] ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts > batch configuration disabled while the first runner starts 204ms
+   → expected [ 80, 81 ] to deeply equal [ 80 ]
+stdout | .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts > batch configuration capacity while the first runner starts
+EXPECTED: [ 80 ] ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts > batch configuration capacity while the first runner starts 192ms
+   → expected [ 80, 81 ] to deeply equal [ 80 ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts > batch configuration disabled while the first runner starts
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts > batch configuration capacity while the first runner starts
+AssertionError: expected [ 80, 81 ] to deeply equal [ 80 ]
+
+- Expected
++ Received
+
+  [
+    80,
++   81,
+  ]
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1068_ghaConfig.test.ts:55:20
+     53|     const expected=mode==='unchanged'?[80,81]:[80];const actual=starte…
+     54|     console.log('EXPECTED:',expected,'ACTUAL:',actual);console.log(JSO…
+     55|     expect(actual).toEqual(expected);
+       |                    ^
+     56|   }finally{release();await pending;}
+     57| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  22:57:31
+   Duration  1.83s (tests 37%, transform 33%, import 30%)

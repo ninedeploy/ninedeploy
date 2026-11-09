@@ -1,0 +1,48 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/githubRunnerConfigDrift.test.ts > batch configuration unchanged while the first runner starts
+EXPECTED: [ 80, 81 ] ACTUAL: [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/githubRunnerConfigDrift.test.ts > batch configuration unchanged while the first runner starts 210ms
+stdout | test/lib/githubRunnerConfigDrift.test.ts > batch configuration disabled while the first runner starts
+EXPECTED: [ 80 ] ACTUAL: [ 80 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/githubRunnerConfigDrift.test.ts > batch configuration disabled while the first runner starts 245ms
+stdout | test/lib/githubRunnerConfigDrift.test.ts > batch configuration capacity while the first runner starts
+EXPECTED: [ 80 ] ACTUAL: [ 80 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/githubRunnerConfigDrift.test.ts > batch configuration capacity while the first runner starts 221ms
+stdout | test/lib/githubRunnerConfigDrift.test.ts > a settings read captured before a completed update cannot approve the old batch
+EXPECTED: [80]; ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × test/lib/githubRunnerConfigDrift.test.ts > a settings read captured before a completed update cannot approve the old batch 201ms
+   → expected [ 80, 81 ] to deeply equal [ 80 ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/githubRunnerConfigDrift.test.ts > a settings read captured before a completed update cannot approve the old batch
+AssertionError: expected [ 80, 81 ] to deeply equal [ 80 ]
+
+- Expected
++ Received
+
+  [
+    80,
++   81,
+  ]
+
+ ❯ test/lib/githubRunnerConfigDrift.test.ts:69:141
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  23:01:37
+   Duration  1.77s (tests 55%, import 34%, transform 11%)

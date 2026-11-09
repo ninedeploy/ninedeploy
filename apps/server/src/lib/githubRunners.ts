@@ -67,6 +67,9 @@ const DOCKER_RUN_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ── configuration ──────────────────────────────────────────────────────────
 
+const runnerConfigGenerations = new WeakMap<DB, Map<number, object>>();
+const runnerConfigGeneration = (db: DB, githubAppId: number): object | undefined => runnerConfigGenerations.get(db)?.get(githubAppId);
+
 export async function getRunnerConfig(db: DB, githubAppId: number): Promise<GithubRunnerConfig> {
   const stored = await getSettingJson<unknown>(db, settingKey(githubAppId));
   const parsed = githubRunnerConfig.safeParse({ ...GITHUB_RUNNER_DEFAULTS, ...(stored && typeof stored === 'object' ? stored : {}) });
@@ -75,6 +78,12 @@ export async function getRunnerConfig(db: DB, githubAppId: number): Promise<Gith
 
 export async function setRunnerConfig(db: DB, githubAppId: number, config: GithubRunnerConfig): Promise<void> {
   await setSettingJson(db, settingKey(githubAppId), config);
+  let generations = runnerConfigGenerations.get(db);
+  if (!generations) {
+    generations = new Map();
+    runnerConfigGenerations.set(db, generations);
+  }
+  generations.set(githubAppId, {});
 }
 
 // ── job matching ───────────────────────────────────────────────────────────
@@ -614,11 +623,16 @@ async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boole
     }
     // The host this App's runners start on cannot be counted: its jobs wait for the next sweep.
     if (unreachable.has(config.serverId ?? null)) continue;
+    const configSnapshot = JSON.stringify(config);
     let running = containers.filter((c) => c.githubAppId === githubAppId).length;
     for (const job of jobs) {
       if (running >= config.maxConcurrent) break;
       const key = pendingKey(githubAppId, job.jobId);
       const waiting = !opts.recheck || await stillQueued(db, ghApp, job);
+      // A changed policy needs a fresh host/slot count before another start.
+      const generation = runnerConfigGeneration(db, githubAppId);
+      const currentConfig = await getRunnerConfig(db, githubAppId);
+      if (generation !== runnerConfigGeneration(db, githubAppId) || JSON.stringify(currentConfig) !== configSnapshot) break;
       // Another job's startup or this recheck may outlive a later delivery.
       if (pending.get(key) !== job) continue;
       pending.delete(key);

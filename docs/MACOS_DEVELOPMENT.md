@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 48
+### Further audit checkpoints through round 49
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -307,6 +307,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1065 | CI log admission and append serialize per file within the panel process, retaining byte order and idempotent overlapping retries | 96 |
 | F1066 | Recoverable CI log file failures preserve prior bytes and roll back their sequence reservation for retry | 100 |
 | F1067 | GitHub runner drains retain pending-entry identity across earlier job startup and online status awaits | 114 |
+| F1068 | Changed runner settings stop further admissions in an old batch, including writes overlapping the final config read | 118 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -373,6 +374,14 @@ verifier passed three times, including later workflow events during JIT/status
 waits and preparation failure controls. Its 114-test scope and resource-bound
 server static checks passed. These use mocked GitHub/Docker/node boundaries;
 an already-admitted runner startup can still finish under its original scope.
+
+Round 49 passed nine independent config/read/resume cases three times and
+118 neighboring tests. Successful same-process config writes change a per-App
+generation token, fencing a settings read that captured the previous value.
+Pending work resumes under a fresh capacity/resource pass. Intermediate fixture
+mistakes and the initial stale-read gap are retained in the ledger. Direct
+external SQL/multiple-process settings writes and full queued-job eligibility
+revalidation remain separate scopes; server static checks used `GOMAXPROCS=4`.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed
