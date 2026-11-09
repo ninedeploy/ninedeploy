@@ -1,0 +1,48 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 50+0
+EXPECTED: 50 ACTUAL: 50 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 50+0 188ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 0+50
+EXPECTED: 50 ACTUAL: 50 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 0+50 175ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 25+25
+EXPECTED: 50 ACTUAL: 50 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 25+25 185ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 0+0
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 0+0 177ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 24+25
+EXPECTED: 50 ACTUAL: 50 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > mixed capacity 24+25 167ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > another service and terminal/running rows do not consume this capacity
+EXPECTED: 5 ACTUAL: 5 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > another service and terminal/running rows do not consume this capacity 179ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > 2 jobs share the last slot
+EXPECTED: 50 ACTUAL: 50 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > 2 jobs share the last slot 219ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > 5 jobs share the last slot
+EXPECTED: 50 ACTUAL: 50 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > 5 jobs share the last slot 188ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > user admission fills the slot while a scheduled capacity read is suspended
+EXPECTED: 50 ACTUAL: 50 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > user admission fills the slot while a scheduled capacity read is suspended 169ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > an unrelated insertion failure propagates and releases the job for retry
+EXPECTED: 1 ACTUAL: 1 FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1059_jobCapacity.test.ts > an unrelated insertion failure propagates and releases the job for retry 178ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  21:56:41
+   Duration  2.36s (tests 82%, import 15%, transform 3%)

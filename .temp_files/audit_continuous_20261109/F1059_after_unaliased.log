@@ -1,0 +1,23 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full queued capacity
+EXPECTED: 50 ACTUAL: 50
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full queued capacity 171ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full awaiting_ci capacity
+EXPECTED: 50 ACTUAL: 50
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full awaiting_ci capacity 193ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > different jobs contend for the same last service slot
+EXPECTED: 50 ACTUAL: 50
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > different jobs contend for the same last service slot 187ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  21:55:41
+   Duration  1.66s (tests 44%, import 33%, transform 23%)

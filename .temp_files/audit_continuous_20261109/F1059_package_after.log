@@ -1,0 +1,11 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/jobQueueCapacity.test.ts > a full queued service queue skips a scheduled deploy 234ms
+ ✓ test/lib/jobQueueCapacity.test.ts > a full awaiting_ci service queue skips a scheduled deploy 189ms
+ ✓ test/lib/jobQueueCapacity.test.ts > different jobs cannot both claim the last service slot 186ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  21:53:08
+   Duration  1.29s (tests 52%, import 39%, transform 9%)

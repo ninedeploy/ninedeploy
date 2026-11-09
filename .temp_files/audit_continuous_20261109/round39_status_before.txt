@@ -1,0 +1,2 @@
+?? e2e/
+?? scripts/smoke-browser-e2e.mjs

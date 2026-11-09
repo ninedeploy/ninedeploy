@@ -1,0 +1,83 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/jobQueueCapacity.test.ts > a full queued service queue skips a scheduled deploy 193ms
+ ✓ test/lib/jobQueueCapacity.test.ts > a full awaiting_ci service queue skips a scheduled deploy 175ms
+ ✓ test/lib/jobQueueCapacity.test.ts > different jobs cannot both claim the last service slot 212ms
+ ✓ test/jobs.test.ts > jobs routes > requires authentication 88ms
+ ✓ test/jobs.test.ts > jobs routes > lists jobs for a service 5ms
+ ✓ test/jobs.test.ts > jobs routes > creates a deploy job with a valid cron 13ms
+ ✓ test/jobs.test.ts > jobs routes > creates a deploy job with an empty body shape, a non-string command and enabled: false 4ms
+ ✓ test/jobs.test.ts > jobs routes > creates an exec job when a command is given 2ms
+ ✓ test/jobs.test.ts > jobs routes > forbids exec job creation for members (container command execution) 2ms
+ ✓ test/jobs.test.ts > jobs routes > forbids backup job creation for members, like PATCH and run-now already do (r097) 2ms
+ ✓ test/jobs.test.ts > jobs routes > forbids deploy-job creation for members on a host-privileged service (S1) 3ms
+ ✓ test/jobs.test.ts > jobs routes > still allows deploy-job creation for operators on a host-privileged service 6ms
+ ✓ test/jobs.test.ts > jobs routes > rejects an invalid cron expression 4ms
+ ✓ test/jobs.test.ts > jobs routes > F240: rejects 6- and 7-field crons (a seconds field fires every second) 7ms
+ ✓ test/jobs.test.ts > jobs routes > rejects an exec job without a command 3ms
+ ✓ test/jobs.test.ts > jobs routes > forbids exec jobs (create, patch, run) for members 10ms
+ ✓ test/jobs.test.ts > jobs routes > rejects missing name or cron on create and reports failed inserts 4ms
+ ✓ test/jobs.test.ts > jobs routes > 404s when creating a job for a missing service 1ms
+ ✓ test/jobs.test.ts > jobs routes > patches name, cron and enabled 2ms
+ ✓ test/jobs.test.ts > jobs routes > rejects a patch with an invalid cron and ignores blank fields 2ms
+ ✓ test/jobs.test.ts > jobs routes > accepts an empty body on patch (no changes) 2ms
+ ✓ test/jobs.test.ts > jobs routes > rejects a patch with invalid field types 2ms
+ ✓ test/jobs.test.ts > jobs routes > 404s when patching a missing job 2ms
+ ✓ test/jobs.test.ts > jobs routes > deletes a job 2ms
+ ✓ test/jobs.test.ts > jobs routes > r280: exec/backup jobs are operator material on delete and read too > a member cannot delete an exec or backup job 3ms
+ ✓ test/jobs.test.ts > jobs routes > r280: exec/backup jobs are operator material on delete and read too > a member may still delete a deploy job 1ms
+ ✓ test/jobs.test.ts > jobs routes > r280: exec/backup jobs are operator material on delete and read too > deleting a job that does not exist is a 404 and writes no audit row 1ms
+ ✓ test/jobs.test.ts > jobs routes > r280: exec/backup jobs are operator material on delete and read too > a non-operator sees an exec job but not its command 2ms
+ ✓ test/jobs.test.ts > jobs routes > r280: exec/backup jobs are operator material on delete and read too > a non-operator gets exec run history without the captured output 3ms
+ ✓ test/jobs.test.ts > jobs routes > r280: exec/backup jobs are operator material on delete and read too > F241: switching an exec job to deploy/backup clears its command (non-operators would see it) 4ms
+ ✓ test/jobs.test.ts > jobs routes > runs a job immediately 2ms
+ ✓ test/jobs.test.ts > jobs routes > 404s when running a missing job 1ms
+ ✓ test/jobs.test.ts > jobs routes > lists run history 2ms
+ ✓ test/jobs.test.ts > jobs routes > accepts an empty body on create (validation error) 1ms
+ ✓ test/jobs.test.ts > runJob > enqueues a scheduled deployment for deploy jobs 1ms
+ ✓ test/jobs.test.ts > runJob > refuses a scheduled deploy on a host-privileged service owned by a non-operator (S1) 1ms
+ ✓ test/jobs.test.ts > runJob > runs a scheduled deploy for a host-privileged service owned by an operator 0ms
+ ✓ test/jobs.test.ts > runJob > runs exec jobs inside the runtime container and records output 0ms
+ ✓ test/jobs.test.ts > runJob > records a failed exec run when the command fails 1ms
+ ✓ test/jobs.test.ts > runJob > skips exec jobs when the runtime is gone or the command is missing 0ms
+ ✓ test/jobs.test.ts > runJob > does nothing for a missing job or service 1ms
+ ✓ test/jobs.test.ts > runJob > truncates very large exec output 0ms
+ ✓ test/jobs.test.ts > r523: exec jobs only where the panel can exec > refuses creating an exec job for a node-pinned or PM2 service, with the reason 3ms
+ ✓ test/jobs.test.ts > r523: exec jobs only where the panel can exec > still accepts exec jobs for local docker and compose services 2ms
+ ✓ test/jobs.test.ts > r523: exec jobs only where the panel can exec > refuses keeping an unrunnable exec job enabled on patch, but lets it be disabled 1ms
+ ✓ test/jobs.test.ts > r523: exec jobs only where the panel can exec > fails the run with the reason instead of a docker error (existing jobs) 1ms
+ ✓ test/plugins/jobScheduler.test.ts > job scheduler plugin > arms a cron per enabled job and fires it 82ms
+ ✓ test/plugins/jobScheduler.test.ts > job scheduler plugin > skips invalid cron expressions without breaking the plugin 1ms
+ ✓ test/plugins/jobScheduler.test.ts > job scheduler plugin > stops all crons and timers on close 1ms
+ ✓ test/plugins/jobScheduler.test.ts > job scheduler plugin > survives a failing job query (pre-migration table) 1ms
+ ✓ test/plugins/jobScheduler.test.ts > job scheduler plugin > fires jobs on their cron callback and reports failures to the log 11ms
+ ✓ test/plugins/jobScheduler.test.ts > job scheduler plugin > stops the reload loop when the app closes mid-reload 3ms
+ ✓ test/plugins/jobScheduler.test.ts > job scheduler — stored seconds-field crons (F102) > skips a legacy 6-field cron instead of firing it every second 7ms
+ ✓ test/plugins/jobSchedulerReload.test.ts > preserves the next job deadline during a quick control reload 64ms
+ ✓ test/plugins/jobSchedulerReload.test.ts > preserves the next job deadline during a pending reload 2ms
+ ✓ test/plugins/jobSchedulerReload.test.ts > preserves the next job deadline during a failed reload 1ms
+ ✓ test/deployQueueWiring.test.ts > deployment enqueue wiring (r640) > no module inserts a queued deployment outside the shared helper 12ms
+ ✓ test/deployQueueWiring.test.ts > deployment enqueue wiring (r640) > the allowlist is not stale (each entry still matches its file) 1ms
+ ✓ test/deployQueueWiring.test.ts > deployment enqueue wiring (r640) > the deploy and volume routes use the helper 0ms
+ ✓ test/deployQueueWiring.test.ts > deployment enqueue wiring (r640) > the detector itself recognises a direct queued insert 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — exec jobs > runs the command inside the runtime container and records success 4ms
+ ✓ test/lib/jobRunner.test.ts > runJob — exec jobs > records a coarse failure when the exec layer throws 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — exec jobs > skips a second concurrent run of the same job (per-job lock) 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — exec jobs > returns quietly when the job row is gone 1ms
+ ✓ test/lib/jobRunner.test.ts > runJob — exec jobs > returns quietly when the service row is gone 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — exec jobs > does not run a scheduled tick of a job that has since been disabled 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — exec jobs > still runs a disabled job on an explicit run-now 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — exec jobs > runs a scheduled tick of an enabled job 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — backup jobs (r039 coverage) > audits job.backup after a fully successful volume backup 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — backup jobs (r039 coverage) > audits job.backup_failed when any volume backup fails 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — backup jobs (r039 coverage) > records the thrown error message when the backup explodes 0ms
+ ✓ test/lib/jobRunner.test.ts > runJob — backup jobs (r039 coverage) > returns silently when an exec job has no runtimeId or command 0ms
+
+ Test Files  6 passed (6)
+      Tests  72 passed (72)
+   Start at  21:56:53
+   Duration  3.42s (import 55%, tests 36%, transform 8%, worker 1%)
+
+    Isolate  6 workers spawned · ~108ms startup each (spawn + environment, per file)
+             at least ~542ms faster with isolate: false — reuses workers across files instead of one per file

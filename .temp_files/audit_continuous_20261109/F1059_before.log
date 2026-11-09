@@ -1,0 +1,65 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full queued capacity
+EXPECTED: 50 ACTUAL: 50
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full queued capacity 314ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full awaiting_ci capacity
+EXPECTED: 50 ACTUAL: 51
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full awaiting_ci capacity 313ms
+   → expected [ …(51) ] to have a length of 50 but got 51
+stdout | .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > different jobs contend for the same last service slot
+EXPECTED: 50 ACTUAL: 51
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > different jobs contend for the same last service slot 244ms
+   → expected [ …(51) ] to have a length of 50 but got 51
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full awaiting_ci capacity
+AssertionError: expected [ …(51) ] to have a length of 50 but got 51
+
+- Expected
++ Received
+
+- 50
++ 51
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts:29:28
+     27| for (const status of ['queued', 'awaiting_ci'] as const) it(`full ${st…
+     28|   await seed(status); await runJob(db, 1, { scheduled: true });
+     29|   expect(await observed()).toHaveLength(MAX);
+       |                            ^
+     30|   expect(audit.mock.calls.some(call => call[2] === 'job.deploy_skipped…
+     31| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > different jobs contend for the same last service slot
+AssertionError: expected [ …(51) ] to have a length of 50 but got 51
+
+- Expected
++ Received
+
+- 50
++ 51
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts:46:18
+     44|     release(); await pending;
+     45|     const rows = await observed();
+
+     46|     expect(rows).toHaveLength(MAX);
+       |                  ^
+     47|     expect(rows.filter(row => row.trigger === 'schedule')).toHaveLengt…
+     48|     expect(audit.mock.calls.filter(call => call[2] === 'job.deploy_ski…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  21:49:49
+   Duration  2.91s (import 57%, tests 33%, transform 10%)

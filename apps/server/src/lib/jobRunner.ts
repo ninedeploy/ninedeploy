@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, DrizzleQueryError, eq, inArray, sql } from 'drizzle-orm';
 import { deployments, jobRuns, scheduledJobs, services, type DB } from '@ninedeploy/db';
 import { run } from './exec.js';
 import { audit } from './audit.js';
@@ -119,7 +119,7 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
     // (lib/deployQueue). An every-minute deploy job behind a slow or stalled
     // worker used to stack one queued row per tick without limit.
     const queued = await db.query.deployments.findMany({
-      where: and(eq(deployments.serviceId, job.serviceId), eq(deployments.status, 'queued')),
+      where: and(eq(deployments.serviceId, job.serviceId), inArray(deployments.status, ['queued', 'awaiting_ci'])),
       columns: { id: true },
     });
     if (queued.length >= MAX_QUEUED_PER_SERVICE) {
@@ -132,12 +132,21 @@ async function runJobInner(db: DB, jobId: number, opts: RunJobOptions): Promise<
       return;
     }
     // Delegated to the deployments table; the worker picks it up like any other.
-    await db.insert(deployments).values({
-      serviceId: job.serviceId,
-      status: 'queued',
-      trigger: 'schedule',
-      message: `Scheduled job: ${job.name}`,
-    });
+    try {
+      await db.insert(deployments).values({
+        serviceId: job.serviceId,
+        status: 'queued',
+        trigger: sql`(select case when count(*) < ${MAX_QUEUED_PER_SERVICE} then 'schedule' else null end
+          from ${deployments} where ${deployments.serviceId} = ${job.serviceId} and ${deployments.status} in ('queued', 'awaiting_ci'))`,
+        message: `Scheduled job: ${job.name}`,
+      });
+    } catch (err) {
+      if (err instanceof DrizzleQueryError && err.cause?.message.endsWith('NOT NULL constraint failed: deployments.trigger')) {
+        void audit(db, null, 'job.deploy_skipped', `${job.name}: the service reached the queued deploy limit (max ${MAX_QUEUED_PER_SERVICE})`);
+        return;
+      }
+      throw err;
+    }
     void audit(db, null, 'job.deploy', job.name);
     return;
   }

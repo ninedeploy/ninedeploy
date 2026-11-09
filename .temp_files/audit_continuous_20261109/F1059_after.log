@@ -1,0 +1,68 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full queued capacity
+EXPECTED: 50 ACTUAL: 50
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full queued capacity 253ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full awaiting_ci capacity
+EXPECTED: 50 ACTUAL: 50
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > full awaiting_ci capacity 247ms
+ × .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > different jobs contend for the same last service slot 231ms
+   → Failed query: insert into "deployments" ("id", "service_id", "status", "commit_sha", "ci_gate", "artifact", "promotion_source_deployment_id", "image_digest", "message", "author", "trigger", "log_path", "config_snapshot", "restored_from_deployment_id", "build_host", "image_id", "reviewed_by", "reviewed_at", "started_at", "finished_at", "created_at") values (null, ?, ?, null, null, null, null, null, ?, null, (select case when count(*) < ? then 'schedule' else null end
+          from "deployments" where "deployments"."service_id" = ? and "deployments"."status" in ('queued', 'awaiting_ci')), null, null, null, null, null, null, null, null, null, (unixepoch()))
+params: 1,queued,Scheduled job: job-2,50,1
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1059_jobCapacity.test.ts > different jobs contend for the same last service slot
+Error: Failed query: insert into "deployments" ("id", "service_id", "status", "commit_sha", "ci_gate", "artifact", "promotion_source_deployment_id", "image_digest", "message", "author", "trigger", "log_path", "config_snapshot", "restored_from_deployment_id", "build_host", "image_id", "reviewed_by", "reviewed_at", "started_at", "finished_at", "created_at") values (null, ?, ?, null, null, null, null, null, ?, null, (select case when count(*) < ? then 'schedule' else null end
+          from "deployments" where "deployments"."service_id" = ? and "deployments"."status" in ('queued', 'awaiting_ci')), null, null, null, null, null, null, null, null, null, (unixepoch()))
+params: 1,queued,Scheduled job: job-2,50,1
+ ❯ LibSQLPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/src/sqlite-core/session.ts:80:11
+ ❯ LibSQLPreparedQuery.run node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/src/libsql/session.ts:197:10
+ ❯ runJobInner apps/server/src/lib/jobRunner.ts:136:7
+    134|     // Delegated to the deployments table; the worker picks it up like…
+    135|     try {
+    136|       await db.insert(deployments).values({
+       |       ^
+    137|         serviceId: job.serviceId,
+    138|         status: 'queued',
+ ❯ runJob apps/server/src/lib/jobRunner.ts:87:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { query: 'insert into "deployments" ("id", "service_id", "status", "commit_sha", "ci_gate", "artifact", "promotion_source_deployment_id", "image_digest", "message", "author", "trigger", "log_path", "config_snapshot", "restored_from_deployment_id", "build_host", "image_id", "reviewed_by", "reviewed_at", "started_at", "finished_at", "created_at") values (null, ?, ?, null, null, null, null, null, ?, null, (select case when count(*) < ? then 'schedule' else null end
+          from "deployments" where "deployments"."service_id" = ? and "deployments"."status" in ('queued', 'awaiting_ci')), null, null, null, null, null, null, null, null, null, (unixepoch()))', params: [ 1, 'queued', 'Scheduled job: job-2', 50, 1 ] }
+Caused by: LibsqlError: SQLITE_CONSTRAINT: NOT NULL constraint failed: deployments.trigger
+ ❯ mapSqliteError node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:653:16
+ ❯ executeStmt node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:556:15
+ ❯ Sqlite3Client.execute node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:245:20
+ ❯ LibSQLPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/drizzle-orm/sqlite-core/session.js:41:16
+ ❯ LibSQLPreparedQuery.run node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/drizzle-orm/libsql/session.js:121:12
+ ❯ runJobInner apps/server/src/lib/jobRunner.ts:136:7
+ ❯ runJob apps/server/src/lib/jobRunner.ts:87:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'SQLITE_CONSTRAINT', extendedCode: 'SQLITE_CONSTRAINT_NOTNULL', rawCode: 1299 }
+Caused by: SqliteError: NOT NULL constraint failed: deployments.trigger
+ ❯ convertError node_modules/.pnpm/libsql@0.5.29/node_modules/libsql/index.js:59:12
+ ❯ Statement.run node_modules/.pnpm/libsql@0.5.29/node_modules/libsql/index.js:335:13
+ ❯ executeStmt node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:549:34
+ ❯ Sqlite3Client.execute node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:245:20
+ ❯ LibSQLPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/drizzle-orm/sqlite-core/session.js:41:16
+ ❯ LibSQLPreparedQuery.run node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/drizzle-orm/libsql/session.js:121:12
+ ❯ runJobInner apps/server/src/lib/jobRunner.ts:136:7
+ ❯ runJob apps/server/src/lib/jobRunner.ts:87:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'SQLITE_CONSTRAINT_NOTNULL', rawCode: 1299 }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  21:51:15
+   Duration  1.79s (tests 56%, import 37%, transform 6%)
