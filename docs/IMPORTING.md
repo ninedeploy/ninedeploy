@@ -6,7 +6,7 @@
 |---|---|---|
 | 1. Plan | Read the source and list each service, domain, environment variable name, volume and database, with every unsupported option | Available (CLI) |
 | 2. Apply | Create the planned services and databases in NineDeploy, resumably, with a receipt per item, and leave the source untouched | Available (CLI) |
-| 3. Data | Move database contents and volumes, checksummed, then switch DNS as an explicit last step | Not yet |
+| 3. Data | Move database contents, checksummed; then deploy, switch DNS and add the domains as the last step | Databases available (CLI); volumes and the domain cutover by hand for now |
 
 ## Run a plan
 
@@ -49,6 +49,36 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
 - It records each item's state (`done`, `skipped`, `failed`), its NineDeploy id and notes: what still needs a person, and which domains wait for the cutover. It never contains a value.
 - Running the same command again repeats only what is not `done`. Each item is written as pending before the panel is called. Creates are sent with `reuseExisting`, so a run that stopped halfway picks up your own idle service or database of the same definition instead of failing on the name.
 - A receipt is tied to one panel and one source. Apply refuses a receipt from another one.
+
+## Move the data
+
+```bash
+ninedeploy import data plan.json                                  # the order, and a dump command per database
+ninedeploy import data plan.json --dump pgreal=pgreal.dump --yes  # imports it
+```
+
+Without `--yes`, `import data` prints the order that loses no writes, and the dump command to run on the source host for each database:
+
+1. A day ahead, lower the TTL of each domain's DNS record.
+2. Stop writes on the source. A dump of a live database misses every write made after it.
+3. Take the final dumps.
+4. Import them with `--dump <database>=<file> --yes`.
+5. Deploy each service and check it is healthy. Connection strings copied from the source may still name its database hosts: attach the new database to the service (it sets `DATABASE_URL` or the engine's own variable at deploy), or edit them.
+6. Switch DNS, then add each domain in the service's Domains tab.
+
+**The dump commands**
+- The commands produce what the panel's import accepts: `pg_dump -Fc`, `mysqldump` or `mariadb-dump` of the app's database, a gzipped `mongodump --archive`, or an RDB snapshot.
+- They read credentials from the database container's own environment, inside single quotes, so no password appears in the output or in your shell history.
+- The CapRover commands were run against a live CapRover v1.16.0: a PostgreSQL 16 one-click app with 500 rows arrived with the same row count and checksum. The Coolify and Dokploy commands follow their source code.
+
+**The import**
+- Each file goes through the panel's chunked dump import with its sha256 declared. The panel checks the hash before it restores anything.
+- The receipt records the import id, sha256 and size.
+- A run that stops during the upload resumes the same import.
+- A database whose data is already in is not imported again. The same file is skipped, and a different file is refused; use `ninedeploy databases import` directly if you mean it.
+- ClickHouse has no dump import, so move its data by hand.
+
+**Volumes** are not moved yet. Copy their files from the source host, then upload them in the service's Volumes & Storage tab.
 
 ## What a plan contains
 

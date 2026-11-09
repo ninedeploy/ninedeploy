@@ -144,7 +144,8 @@ function databaseItem(db: Obj): PlanDatabase {
   if (engine === null) issues.push({ level: 'unsupported', option: 'database_type', detail: type === 'standalone-sqlite' ? 'SQLite is a file inside an app, not a managed server; NineDeploy has no managed SQLite.' : `Unknown database type "${type}".` });
   else issues.push(DATA_NOT_MOVED);
   if (db['is_public'] === true) issues.push({ level: 'manual', option: 'is_public', detail: 'Public access was on; turn on public access in NineDeploy if you still need it.' });
-  return { ref: String(db['uuid']), name: str(db['name']) ?? String(db['uuid']), engine, image: str(db['image']) ?? null, issues };
+  // Coolify names a standalone database's container after its uuid.
+  return { ref: String(db['uuid']), name: str(db['name']) ?? String(db['uuid']), engine, image: str(db['image']) ?? null, runtime: { kind: 'container', name: String(db['uuid']) }, issues };
 }
 
 export async function planFromCoolify(get: SourceGet, url: string): Promise<ImportPlan> {

@@ -43,12 +43,16 @@ export interface ApplyClient {
 
 export type ReceiptState = 'pending' | 'done' | 'skipped' | 'failed';
 export interface ReceiptItem {
-  kind: 'service' | 'database' | 'env';
+  kind: 'service' | 'database' | 'env' | 'data';
   ref: string;
   name: string;
   state: ReceiptState;
-  /** The NineDeploy id (the service's for an env item). */
+  /** The NineDeploy id (the service's for an env item, the database's for a data item). */
   id?: number;
+  /** Data items (`import data`): the panel's import id, and the dump's sha256 and size. */
+  importId?: number;
+  sha256?: string;
+  bytes?: number;
   at: string;
   notes: string[];
 }
@@ -248,8 +252,8 @@ const MARK: Record<ReceiptState, string> = { done: '✓', skipped: '–', failed
 export function renderReceipt(receipt: ImportReceipt): string {
   const out: string[] = [];
   for (const item of Object.values(receipt.items)) {
-    const id = item.id !== undefined && item.kind !== 'env' ? ` #${item.id}` : '';
-    const label = item.kind === 'env' ? `env of ${item.name}` : `${item.kind} ${item.name}`;
+    const id = item.id !== undefined && item.kind !== 'env' && item.kind !== 'data' ? ` #${item.id}` : '';
+    const label = item.kind === 'env' ? `env of ${item.name}` : item.kind === 'data' ? `data of ${item.name}` : `${item.kind} ${item.name}`;
     out.push(`  ${MARK[item.state]} ${label}${id}: ${item.state}`);
     for (const n of item.notes) out.push(`      ${n}`);
   }
@@ -276,7 +280,8 @@ export function renderApplyPreview(plan: ImportPlan, receipt: ImportReceipt | nu
   return out.join('\n');
 }
 
-function writeReceipt(path: string, receipt: ImportReceipt): void {
+/** Write the receipt atomically (temp file, then rename). */
+export function writeReceipt(path: string, receipt: ImportReceipt): void {
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(receipt, null, 2)}\n`);
   renameSync(tmp, path);

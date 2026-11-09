@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Environment values come only from `--dotenv <service>=<file>`, through the panel's `.env` import. The flag is not `--env-file`, because Node reads that flag itself from anywhere on the command line.
   - A receipt next to the plan records each item's state and id, never a value. Running the command again repeats only what is not done, and a run that stopped halfway picks its items up again without duplicates.
   - Checked live: a plan of a real CapRover v1.16.0, applied to a disposable panel, then a resume after a simulated crash.
+- **`ninedeploy import data`: move database contents from Coolify, Dokploy or CapRover.**
+  - Without `--yes` it prints the order that loses no writes: lower the TTL, stop writes, take the final dumps, import, deploy and check health, then switch DNS and add the domains.
+  - It also prints the dump command to run on the source host for each database. The command reads credentials from the database container's own environment, so no password appears in the output or the shell history.
+  - `--dump <database>=<file> --yes` imports through the panel's chunked dump import with the file's sha256 declared, which the panel checks before restoring.
+  - The receipt keeps the import id, hash and size. A stopped upload resumes the same import, and a database is never imported twice.
+  - Checked live: a CapRover v1.16.0 PostgreSQL 16 app with 500 rows, dumped with the printed command, arrived with the same row count and checksum.
+  - Plans now record where each database runs on the source (`runtime`). The live run showed that CapRover 1.16 names an app's Swarm service after the app; only legacy apps keep the `srv-captain--` prefix.
 
 ### Fixed
 

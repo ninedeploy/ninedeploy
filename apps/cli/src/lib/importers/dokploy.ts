@@ -150,6 +150,9 @@ export async function planFromDokploy(get: SourceGet, url: string): Promise<Impo
             : [{ level: 'unsupported', option: 'libsql', detail: 'libSQL has no managed NineDeploy equivalent.' }];
           if (row['externalPort'] != null) issues.push({ level: 'manual', option: 'externalPort', detail: 'Public access was on; turn on public access in NineDeploy if you still need it.' });
           const item: PlanDatabase = { ref: id, name: str(row['name']) ?? str(d['name']) ?? id, engine: kind.engine, image: str(row['dockerImage']) ?? null, issues };
+          // Dokploy runs each database as a Swarm service named after its appName.
+          const appName = str(row['appName']) ?? str(d['appName']);
+          if (appName) item.runtime = { kind: 'swarm-service', name: appName };
           plan.databases.push(item);
         }
       }

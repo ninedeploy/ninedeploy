@@ -72,6 +72,12 @@ export interface PlanDatabase {
   engine: PlanEngine | null;
   /** The source image (the version lives in its tag), when the source says. */
   image: string | null;
+  /**
+   * Where it runs on the source host, for the dump commands of `import data`:
+   * a plain container name, or a Swarm service whose task container is found
+   * by its com.docker.swarm.service.name label. Optional and additive.
+   */
+  runtime?: { kind: 'container' | 'swarm-service'; name: string };
   issues: PlanIssue[];
 }
 

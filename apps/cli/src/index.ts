@@ -130,6 +130,7 @@ import {
 } from './commands/egress.js';
 import { importPlanAction } from './commands/importPlan.js';
 import { importApplyAction } from './commands/importApply.js';
+import { importDataAction } from './commands/importData.js';
 import { ipsForgetAction, ipsListAction, ipsSetAction } from './commands/hostIps.js';
 import {
   ssoAddAction, ssoListAction, ssoRemoveAction,
@@ -714,6 +715,13 @@ importCmd
   .option('--dotenv <service=path>', 'Environment values for a service, from a .env file (repeatable)', (v: string, prev: string[]) => [...prev, v], [] as string[])
   .option('--receipt <file>', 'Receipt file (default: <plan>.receipt.json)')
   .action((plan: string, opts: { yes?: boolean; project?: string; dotenv?: string[]; receipt?: string }) => importApplyAction(plan, opts));
+importCmd
+  .command('data <plan>')
+  .description('Move database contents into the databases import apply created. Without --yes it prints the cutover order and the dump command to run on the source host for each database.')
+  .option('--dump <database=file>', 'A dump to import into that database (repeatable); its sha256 is checked by the panel', (v: string, prev: string[]) => [...prev, v], [] as string[])
+  .option('--yes', 'Import the dumps')
+  .option('--receipt <file>', 'Receipt file (default: <plan>.receipt.json)')
+  .action((plan: string, opts: { dump?: string[]; yes?: boolean; receipt?: string }) => importDataAction(plan, opts));
 
 // ── SSO (G-22) ───────────────────────────────────────────────────────────
 const ssoCmd = program.command('sso').description('Manage OIDC / SAML SSO providers (G-22)');

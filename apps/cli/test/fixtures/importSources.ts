@@ -83,7 +83,7 @@ export const dokploy: Record<string, unknown> = {
   },
   '/api/compose.one?composeId=c-raw': { composeId: 'c-raw', name: 'monitoring', sourceType: 'raw', composeFile: `services:\n  x:\n    environment:\n      - TOKEN=${SENTINEL}\n`, composeType: 'docker-compose', env: '', domains: [{ host: 'grafana.acme.example', https: true }], mounts: [] },
   '/api/compose.one?composeId=c-gh': { composeId: 'c-gh', name: 'mail', sourceType: 'github', owner: 'acme', repository: 'mail', branch: 'main', composePath: './compose.yml', composeType: 'stack', env: `SMTP_PASS=${SENTINEL}`, domains: [], mounts: [{ type: 'bind', hostPath: '/srv/mail', mountPath: '/var/mail' }] },
-  '/api/postgres.one?postgresId=pg1': { postgresId: 'pg1', name: 'main-db', dockerImage: 'postgres:16', databasePassword: SENTINEL, externalPort: 5433 },
+  '/api/postgres.one?postgresId=pg1': { postgresId: 'pg1', name: 'main-db', appName: 'main-db-a1b2', dockerImage: 'postgres:16', databasePassword: SENTINEL, externalPort: 5433 },
   '/api/mongo.one?mongoId=mg1': { mongoId: 'mg1', name: 'events', dockerImage: 'mongo:8', databasePassword: SENTINEL, externalPort: null },
   '/api/redis.one?redisId=rd1': { redisId: 'rd1', name: 'cache', dockerImage: 'redis:7', databasePassword: SENTINEL },
   '/api/libsql.one?libsqlId=ls1': { libsqlId: 'ls1', name: 'edge', dockerImage: 'ghcr.io/tursodatabase/libsql-server' },

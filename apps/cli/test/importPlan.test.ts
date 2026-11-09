@@ -99,6 +99,7 @@ describe('Coolify adapter', async () => {
     expect(issue(stack.issues, 'docker_compose')?.level).toBe('manual');
     expect(plan.databases.map((d) => [d.name, d.engine])).toEqual([['shop-db', 'postgres'], ['cache', 'keydb'], ['tiny', null]]);
     expect(issue(plan.databases[0]!.issues, 'is_public')?.level).toBe('manual');
+    expect(plan.databases[0]!.runtime).toEqual({ kind: 'container', name: plan.databases[0]!.ref });
     expect(issue(plan.databases[2]!.issues, 'database_type')?.level).toBe('unsupported');
     expect(plan.source).toEqual({ kind: 'coolify', url: 'https://coolify.example', version: '4.7.0', scope: 'the team the API token belongs to' });
   });
@@ -164,6 +165,9 @@ describe('Dokploy adapter', async () => {
       ['main-db', 'postgres', 'postgres:16'], ['events', 'mongo', 'mongo:8'], ['cache', 'redis', 'redis:7'], ['edge', null, 'ghcr.io/tursodatabase/libsql-server'],
     ]);
     expect(issue(plan.databases[0]!.issues, 'externalPort')?.level).toBe('manual');
+    // Dokploy runs a database as the Swarm service named after its appName (the dump commands target it).
+    expect(plan.databases[0]!.runtime).toEqual({ kind: 'swarm-service', name: 'main-db-a1b2' });
+    expect(plan.databases[1]!.runtime).toBeUndefined();
     expect(plan.source.scope).toMatch(/organization the API key belongs to/);
   });
 
@@ -245,6 +249,15 @@ describe('CapRover adapter, against a capture from a live v1.16.0', async () => 
   it('lists a never-deployed one-click database without the placeholder as its image', () => {
     expect(plan.databases).toEqual([expect.objectContaining({ name: 'pg', engine: 'postgres', image: null })]);
     expect(issue(plan.databases[0]!.issues, 'deployedVersion')?.level).toBe('info');
+    // Live v1.16.0: the Swarm service is named after the app (no srv-captain-- prefix unless isLegacyAppName).
+    expect(plan.databases[0]!.runtime).toEqual({ kind: 'swarm-service', name: 'pg' });
+  });
+
+  it('keeps the srv-captain-- service prefix for a legacy app', async () => {
+    const p = await planFromCaprover(fromFixture({
+      '/api/v2/user/apps/appDefinitions/': { rootDomain: 'x.example', appDefinitions: [{ appName: 'old', isLegacyAppName: true, tags: [{ tagName: 'mysql' }], versions: [] }] },
+    }), 'https://c.example');
+    expect(p.databases[0]!.runtime).toEqual({ kind: 'swarm-service', name: 'srv-captain--old' });
   });
 
   it('never plans the placeholder image for an app that was never deployed', async () => {

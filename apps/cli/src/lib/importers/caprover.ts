@@ -111,7 +111,11 @@ function databaseOf(app: Obj): PlanDatabase | null {
     const issues: PlanIssue[] = [DATA_NOT_MOVED];
     if (neverDeployed) issues.push({ level: 'info', option: 'deployedVersion', detail: 'Never deployed in CapRover, so the source has no engine version: choose one in NineDeploy.' });
     if (list(app['ports']).length) issues.push({ level: 'manual', option: 'ports', detail: 'A host port was published; turn on public access in NineDeploy if you still need it.' });
-    return { ref: String(app['appName']), name: String(app['appName']), engine, image: image ?? null, issues };
+    // The app's Swarm service is named after it; apps from before the namespace change
+    // (isLegacyAppName) keep the srv-captain-- prefix. Checked live on v1.16.0.
+    const appName = String(app['appName']);
+    const service = app['isLegacyAppName'] === true ? `srv-captain--${appName}` : appName;
+    return { ref: appName, name: appName, engine, image: image ?? null, runtime: { kind: 'swarm-service', name: service }, issues };
   }
   return null;
 }
