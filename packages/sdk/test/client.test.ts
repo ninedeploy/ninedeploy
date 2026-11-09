@@ -573,6 +573,13 @@ describe('createClient', () => {
       await client.system.updateCheck(true);
       expect(last(calls).url).toBe('/v1/system/update-check?force=1');
 
+      // A6: the update channel.
+      await client.system.updateChannel.get();
+      expect(last(calls)).toMatchObject({ url: '/v1/system/update-channel', init: { method: 'GET' } });
+      await client.system.updateChannel.set('stable');
+      expect(last(calls)).toMatchObject({ url: '/v1/system/update-channel', init: { method: 'PUT' } });
+      expect(String(last(calls).init?.body)).toBe('{"channel":"stable"}');
+
       await client.system.updateStatus();
       expect(last(calls)).toMatchObject({ url: '/v1/system/update-status', init: { method: 'GET' } });
 
